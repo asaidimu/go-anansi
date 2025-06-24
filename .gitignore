@@ -21,3 +21,8 @@ go.work
 .DS_Store
 *~
 *.log
+.readme.md
+.env
+go-anansi
+dist
+*.db
