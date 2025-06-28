@@ -21,8 +21,8 @@ type Persistence struct {
 	executor      *Executor
 	fmap          schema.FunctionMap
 	logger        *zap.Logger
-		subscriptions map[string]*SubscriptionInfo // To store unsubscribe functions
-	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
+	subscriptions map[string]*SubscriptionInfo // To store unsubscribe functions
+	subMu         sync.RWMutex                 // Mutex to protect subscriptions map
 	bus           *events.TypedEventBus[PersistenceEvent]
 }
 
@@ -50,7 +50,7 @@ func NewPersistence(interactor DatabaseInteractor, fmap schema.FunctionMap) (*Pe
 	}
 
 	executor := NewExecutor(interactor, nil)
-	collection, err := NewCollection(&schema, executor, fmap)
+	collection, err := NewCollection(bus, &schema, executor, fmap)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to initialize schemas collection collections %w", err)
 	}
@@ -73,7 +73,7 @@ func (pi *Persistence) Collection(name string) (PersistenceCollectionInterface, 
 		return nil, err
 	}
 
-	collection, err := NewCollection(schema, pi.executor, pi.fmap)
+	collection, err := NewCollection(pi.bus, schema, pi.executor, pi.fmap)
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +102,32 @@ func (pi *Persistence) Transact(callback func(tx PersistenceTransactionInterface
 
 // Collections returns a list of collection names.
 func (pi *Persistence) Collections() ([]string, error) {
-	return []string{}, nil
+	q := query.NewQueryBuilder().Build()
+	result, err := pi.collection.Read(&q)
+	if err != nil {
+		return nil, fmt.Errorf("error reading schemas to get collection names: %v", err)
+	}
+
+	var collectionNames []string
+	if result.Data != nil {
+		if docs, ok := result.Data.([]schema.Document); ok {
+			for _, doc := range docs {
+				record, err := mapToSchemaRecord(doc)
+				if err != nil {
+					pi.logger.Warn("Failed to convert map to SchemaRecord while listing collections", zap.Error(err))
+					continue
+				}
+				collectionNames = append(collectionNames, record.Name)
+			}
+		} else if doc, ok := result.Data.(schema.Document); ok { // Handle case where Read returns a single document
+			record, err := mapToSchemaRecord(doc)
+			if err != nil {
+				return nil, fmt.Errorf("error converting map to SchemaRecord for single collection: %v", err)
+			}
+			collectionNames = append(collectionNames, record.Name)
+		}
+	}
+	return collectionNames, nil
 }
 
 // Create creates a new collection based on the schema.
@@ -141,7 +166,7 @@ func (pi *Persistence) Create(schema schema.SchemaDefinition) (PersistenceCollec
 		return nil, err
 	}
 
-	collection, err := NewCollection(&schema, pi.executor, pi.fmap)
+	collection, err := NewCollection(pi.bus, &schema, pi.executor, pi.fmap)
 	if err != nil {
 		return nil, err
 	}
@@ -155,7 +180,7 @@ func (pi *Persistence) schemaCollection(tx DatabaseInteractor) (PersistenceColle
 	} else {
 		executor = NewExecutor(pi.interactor, nil)
 	}
-	collection, err := NewCollection(pi.schema, executor, pi.fmap)
+	collection, err := NewCollection(pi.bus, pi.schema, executor, pi.fmap)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to initialize schemas collection collections %w", err)
 	}
@@ -229,16 +254,6 @@ func (pi *Persistence) Schema(name string) (*schema.SchemaDefinition, error) {
 	return &schema, nil
 }
 
-// Metadata retrieves metadata based on the filter.
-func (pi *Persistence) Metadata(
-	filter *MetadataFilter,
-	includeCollections bool,
-	includeSchemas bool,
-	forceRefresh bool,
-) (Metadata, error) {
-	return Metadata{}, fmt.Errorf("Metadata method stub") // Stub: not implemented
-}
-
 // RegisterSubscription registers a new subscription.
 func (pi *Persistence) RegisterSubscription(options RegisterSubscriptionOptions) string {
 	pi.subMu.Lock()
@@ -248,6 +263,7 @@ func (pi *Persistence) RegisterSubscription(options RegisterSubscriptionOptions)
 	callbackID := id.String()
 
 	data := SubscriptionInfo{
+		Id:          &callbackID,
 		Event:       options.Event,
 		Unsubscribe: unsubscribe,
 		Label:       options.Label,
@@ -271,5 +287,23 @@ func (pi *Persistence) UnregisterSubscription(callback string) {
 
 // Subscriptions returns all registered subscriptions.
 func (pi *Persistence) Subscriptions() ([]SubscriptionInfo, error) {
-	return []SubscriptionInfo{}, nil // Stub: return empty slice
+	pi.subMu.RLock()
+	defer pi.subMu.RUnlock()
+
+	subs := make([]SubscriptionInfo, 0, len(pi.subscriptions))
+	for _, sub := range pi.subscriptions {
+		subs = append(subs, *sub)
+	}
+
+	return subs, nil
 }
+
+// Metadata retrieves metadata based on the filter.
+func (pi *Persistence) Metadata(
+	filter *MetadataFilter,
+	forceRefresh bool,
+) (Metadata, error) {
+	metadata := Metadata{}
+	return metadata, nil
+}
+

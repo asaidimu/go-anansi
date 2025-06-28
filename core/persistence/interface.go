@@ -85,14 +85,6 @@ type SubscriptionEvent struct {
 	CallbackID string `json:"callbackId"`
 }
 
-// CollectionEvent specific fields
-type CollectionEvent struct {
-	PersistenceEvent
-	CollectionName string           `json:"collectionName"`
-	Schema         schema.SchemaDefinition `json:"schema"`           // Assuming schema.schema.schema.SchemaDefinition is correctly defined elsewhere
-	Exists         *bool            `json:"exists,omitempty"` // For create/delete success/failed
-}
-
 // PersistenceOperationEvent specific fields (for document:*:* events)
 type PersistenceOperationEvent struct {
 	PersistenceEvent
@@ -123,6 +115,7 @@ type EventCallbackFunction func(ctx context.Context, event PersistenceEvent) err
 
 // SubscriptionInfo describes a subscription configuration.
 type SubscriptionInfo struct {
+	Id          *string              `json:"string"`
 	Event       PersistenceEventType `json:"event"`                 // The event subscribed to.
 	Label       *string              `json:"label,omitempty"`       // Optional short identifier.
 	Description *string              `json:"description,omitempty"` // Optional description.
@@ -181,11 +174,9 @@ type CollectionMetadata struct {
 	Status           string                   `json:"status"`
 	CreatedAt        string                   `json:"createdAt"`
 	CreatedBy        string                   `json:"createdBy"`
-	LastModifiedAt   string                   `json:"lastModifiedAt"`
-	LastModifiedBy   string                   `json:"lastModifiedBy"`
 	RecordCount      int64                    `json:"recordCount"`                // Number of records.
 	DataSizeBytes    int64                    `json:"dataSizeBytes"`              // Storage used in bytes.
-	Schema           schema.SchemaDefinition         `json:"schema"`                     // Schema definition (reference existing schema.schema.schema.SchemaDefinition).
+	Schema           schema.SchemaDefinition  `json:"schema"`                     // Schema definition (reference existing schema.SchemaDefinition).
 	LastModified     int64                    `json:"lastModified"`               // Timestamp of last operation (Unix milliseconds).
 	ConnectionStatus *string                  `json:"connectionStatus,omitempty"` // "connected" | "disconnected" | "error"
 	ConnectionError  *string                  `json:"connectionError,omitempty"`
@@ -199,18 +190,13 @@ type CollectionMetadata struct {
 // This corresponds to the comprehensive Metadata type in TypeScript, which can also include
 // fields relevant to a single collection.
 type Metadata struct {
-	CollectionCount   *int64               `json:"collectionCount,omitempty"`
-	StorageUsageBytes *int64               `json:"storageUsageBytes,omitempty"`
-	ConnectionStatus  *string              `json:"connectionStatus,omitempty"`
-	ConnectionError   *string              `json:"connectionError,omitempty"`
-	Schemas           []schema.SchemaDefinition   `json:"schemas,omitempty"`
-	Collections       []CollectionMetadata `json:"collections,omitempty"`
-	Subscriptions     []SubscriptionInfo   `json:"subscriptions"`
-	// These fields are optionally present if this Metadata instance also represents a single collection's metadata (union in TS)
-	RecordCount   *int64            `json:"recordCount,omitempty"`
-	DataSizeBytes *int64            `json:"dataSizeBytes,omitempty"`
-	Schema        *schema.SchemaDefinition `json:"schema,omitempty"` // Note: Pointer, as it's optional for global metadata.
-	LastModified  *int64            `json:"lastModified,omitempty"`
+	CollectionCount   *int64                    `json:"collectionCount,omitempty"`
+	StorageUsageBytes *int64                    `json:"storageUsageBytes,omitempty"`
+	ConnectionStatus  *string                   `json:"connectionStatus,omitempty"`
+	ConnectionError   *string                   `json:"connectionError,omitempty"`
+	Schemas           []schema.SchemaDefinition `json:"schemas,omitempty"`
+	Collections       []CollectionMetadata      `json:"collections,omitempty"`
+	Subscriptions     []SubscriptionInfo        `json:"subscriptions"`
 }
 
 // CreateResult defines the result structure for create operations.
@@ -233,10 +219,10 @@ type DeleteResult struct {
 
 // CreateCollectionOptions defines options for creating a new collection.
 type CreateCollectionOptions struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	Schema      schema.SchemaDefinition `json:"schema"` // schema.schema.schema.SchemaDefinition[T, FunctionMap]
-	Labels      []string         `json:"labels,omitempty"`
+	Name        string                  `json:"name"`
+	Description string                  `json:"description"`
+	Schema      schema.SchemaDefinition `json:"schema"` // schema.SchemaDefinition[T, FunctionMap]
+	Labels      []string                `json:"labels,omitempty"`
 }
 
 // MigrateOptions defines options for migrating a schema.
@@ -302,18 +288,14 @@ type PersistenceTransactionInterface interface {
 	Collection(name string) (PersistenceCollectionInterface, error)
 	Metadata(
 		filter *MetadataFilter,
-		includeCollections bool,
-		includeSchemas bool,
 		forceRefresh bool,
 	) (Metadata, error)
 }
 
 type CollectionUpdate struct {
-	Data   map[string]any `json:"data,omitempty"` // Partial<T>
-	Filter *query.QueryFilter    `json:"filter"`         // QueryFilter<T, FunctionMap>
+	Data   map[string]any     `json:"data,omitempty"` // Partial<T>
+	Filter *query.QueryFilter `json:"filter"`         // QueryFilter<T, FunctionMap>
 }
-
-
 
 // PersistenceCollection defines the interface for operations on a specific collection.
 // It extends ObservabilityInterface and EventTaskInterface implicitly.
@@ -329,7 +311,7 @@ type PersistenceCollectionInterface interface {
 		dryRun *bool,
 	) (struct {
 		Schema  schema.SchemaDefinition `json:"schema"`
-		Preview any              `json:"preview"`
+		Preview any                     `json:"preview"`
 	}, error)
 	Migrate(
 		description string,
@@ -337,7 +319,7 @@ type PersistenceCollectionInterface interface {
 		dryRun *bool,
 	) (struct {
 		Schema  schema.SchemaDefinition `json:"schema"`
-		Preview any              `json:"preview"`
+		Preview any                     `json:"preview"`
 	}, error)
 
 	// Methods from ObservabilityInterface (collection-scoped)

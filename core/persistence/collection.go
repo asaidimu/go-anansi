@@ -19,16 +19,12 @@ type CollectionBase struct {
 	validator     *schema.Validator
 	bus           *events.TypedEventBus[PersistenceEvent]
 	subscriptions map[string]*SubscriptionInfo // To store unsubscribe functions
-	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
+	subMu         sync.RWMutex                 // Mutex to protect subscriptions map
 }
 
 // NewPersistence creates a new instance of Persistence.
-func NewCollection(sc *schema.SchemaDefinition, executor *Executor, fmap schema.FunctionMap) (PersistenceCollectionInterface, error) {
+func NewCollection(bus *events.TypedEventBus[PersistenceEvent], sc *schema.SchemaDefinition, executor *Executor, fmap schema.FunctionMap) (PersistenceCollectionInterface, error) {
 	validator := schema.NewValidator(sc, fmap)
-	bus, err := events.NewTypedEventBus[PersistenceEvent](events.DefaultConfig())
-	if err != nil {
-		return nil, fmt.Errorf("Could not initialize event bus %v", err)
-	}
 
 	collection := NewEventEmittingCollection(&CollectionBase{
 		schema:        sc,
@@ -120,12 +116,12 @@ func (ci *CollectionBase) Validate(data any, loose bool) (*schema.ValidationResu
 // Rollback rolls back the collection's schema.
 func (ci *CollectionBase) Rollback(version *string, dryRun *bool) (struct {
 	Schema  schema.SchemaDefinition `json:"schema"`
-	Preview any                   `json:"preview"`
+	Preview any                     `json:"preview"`
 }, error) {
 	// TODO: Discuss & Design
 	return struct {
 		Schema  schema.SchemaDefinition `json:"schema"`
-		Preview any                   `json:"preview"`
+		Preview any                     `json:"preview"`
 	}{}, fmt.Errorf("Rollback method stub for collection '%s'", ci.schema.Name) // Stub: not implemented
 }
 
@@ -136,12 +132,12 @@ func (ci *CollectionBase) Migrate(
 	dryRun *bool,
 ) (struct {
 	Schema  schema.SchemaDefinition `json:"schema"`
-	Preview any                   `json:"preview"`
+	Preview any                     `json:"preview"`
 }, error) {
 	// TODO: Discuss & Design
 	return struct {
 		Schema  schema.SchemaDefinition `json:"schema"`
-		Preview any                   `json:"preview"`
+		Preview any                     `json:"preview"`
 	}{}, fmt.Errorf("Migrate method stub for collection '%s'", ci.schema.Name) // Stub: not implemented
 }
 
@@ -156,11 +152,18 @@ func (ci *CollectionBase) Metadata(
 func (ci *CollectionBase) RegisterSubscription(options RegisterSubscriptionOptions) string {
 	ci.subMu.Lock()
 	defer ci.subMu.Unlock()
-	unsubscribe := ci.bus.Subscribe(string(options.Event), options.Callback)
+	unsubscribe := ci.bus.Subscribe(string(options.Event),
+		func(ctx context.Context, payload PersistenceEvent) error {
+			if payload.Collection == nil || *payload.Collection != ci.schema.Name {
+				return nil
+			}
+			return options.Callback(ctx, payload)
+		})
 	id := uuid.New()
 	callbackID := id.String()
 
 	data := SubscriptionInfo{
+		Id:          &callbackID,
 		Event:       options.Event,
 		Unsubscribe: unsubscribe,
 		Label:       options.Label,
@@ -182,7 +185,14 @@ func (ci *CollectionBase) UnregisterSubscription(id string) {
 	}
 }
 
-// Subscriptions returns all registered collection-scoped subscriptions.
 func (ci *CollectionBase) Subscriptions() ([]SubscriptionInfo, error) {
-	return []SubscriptionInfo{}, nil // Stub: return empty slice
+	ci.subMu.RLock()
+	defer ci.subMu.RUnlock()
+
+	subs := make([]SubscriptionInfo, 0, len(ci.subscriptions))
+	for _, sub := range ci.subscriptions {
+		subs = append(subs, *sub)
+	}
+
+	return subs, nil
 }
