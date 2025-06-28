@@ -1,3 +1,16 @@
+# [4.0.0](https://github.com/asaidimu/go-anansi/compare/v3.0.0...v4.0.0) (2025-06-28)
+
+
+* feat(core)!: streamline persistence API and introduce new examples ([a2cdb3a](https://github.com/asaidimu/go-anansi/commit/a2cdb3a922acb3b8d5826ee847ce4a75a421b3b0))
+
+
+### BREAKING CHANGES
+
+* 1. persistence.PersistenceInterface.Transaction() method has been removed. Use persistence.Persistence.Transact() helper for atomic operations.
+2. persistence.PersistenceInterface.Metadata() and PersistenceTransactionInterface.Metadata() signatures have changed, removing includeCollections, includeSchemas, and forceRefresh boolean parameters.
+3. persistence.NewPersistence() now returns persistence.PersistenceInterface instead of the concrete *persistence.Persistence type. Callers explicitly using *persistence.Persistence will need to update to use the interface.
+4. Default DropIfExists option in sqlite.DefaultInteractorOptions() has been removed. Users relying on the explicit false default should now set DropIfExists: false in persistence.InteractorOptions if needed.
+
 # [3.0.0](https://github.com/asaidimu/go-anansi/compare/v2.0.0...v3.0.0) (2025-06-28)
 
 
