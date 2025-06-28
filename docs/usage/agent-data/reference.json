@@ -1,0 +1,1656 @@
+{
+  "system": {
+    "name": "Anansi (Go Implementation)",
+    "language": "Go",
+    "description": "A comprehensive Go toolkit for schema-driven data persistence, versioning, and querying, featuring a pluggable architecture and in-memory Go function processing.",
+    "keyFeatures": [
+      "Schema-Driven Data Modeling",
+      "Pluggable Persistence Layer (SQLite adapter included)",
+      "Declarative Query DSL with `json_extract` support",
+      "In-memory Go Functions (Computed Fields, Custom Filters)",
+      "Comprehensive CRUD Operations",
+      "Transaction Management",
+      "Event-driven Architecture"
+    ]
+  },
+  "dependencies": {
+    "external": [
+      {
+        "name": "github.com/mattn/go-sqlite3",
+        "purpose": "SQLite database driver",
+        "interfaces": [],
+        "installation": "go get github.com/mattn/go-sqlite3",
+        "version": ">=1.14.22"
+      },
+      {
+        "name": "go.uber.org/zap",
+        "purpose": "Structured logging library",
+        "interfaces": [],
+        "installation": "go get go.uber.org/zap",
+        "version": ">=1.27.0"
+      },
+      {
+        "name": "github.com/asaidimu/go-events",
+        "purpose": "Generic typed event bus for internal event emission",
+        "interfaces": [
+          {
+            "name": "TypedEventBus[T]",
+            "description": "Provides methods for subscribing to and emitting typed events.",
+            "methods": [
+              {
+                "name": "Subscribe",
+                "signature": "Subscribe(eventName string, callback events.EventCallback[T]) func()",
+                "parameters": "eventName: string - The name of the event to subscribe to; callback: events.EventCallback[T] - The function to call when the event is emitted.",
+                "returnValue": "func() - A function that can be called to unsubscribe."
+              },
+              {
+                "name": "Emit",
+                "signature": "Emit(eventName string, payload T)",
+                "parameters": "eventName: string - The name of the event to emit; payload: T - The event payload.",
+                "returnValue": "void"
+              }
+            ]
+          }
+        ],
+        "installation": "go get github.com/asaidimu/go-events",
+        "version": ">=0.0.0"
+      },
+      {
+        "name": "github.com/google/uuid",
+        "purpose": "Library for generating UUIDs",
+        "interfaces": [],
+        "installation": "go get github.com/google/uuid",
+        "version": ">=1.6.0"
+      }
+    ],
+    "peer": []
+  },
+  "integration": {
+    "environmentRequirements": "Go Runtime: Version 1.24.4 or newer.\nSQLite C Library: Required for `github.com/mattn/go-sqlite3`. Typically pre-installed on Linux/macOS. Windows users may need to install via MSYS2 or pre-compiled binaries.",
+    "initializationPatterns": [
+      {
+        "description": "Standard setup for initializing Anansi Persistence with SQLite.",
+        "codeExample": "package main\n\nimport (\n\t\"database/sql\"\n\t\"log\"\n\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n\t\"github.com/asaidimu/go-anansi/core/schema\"\n\t\"github.com/asaidimu/go-anansi/sqlite\"\n\t_ \"github.com/mattn/go-sqlite3\" // SQLite driver\n)\n\nfunc main() {\n\t// Open database connection\n\tdb, err := sql.Open(\"sqlite3\", \"./my_app.db\")\n\tif err != nil {\n\t\tlog.Fatalf(\"Failed to open database: %v\", err)\n\t}\n\tdefer db.Close()\n\n\t// Initialize SQLite Interactor with default options\n\t// A zap.Logger instance can be passed instead of nil for logging\n\tinteractor := sqlite.NewSQLiteInteractor(db, nil, sqlite.DefaultInteractorOptions(), nil)\n\n\t// Initialize the Anansi Persistence service\n\t// Pass an empty schema.FunctionMap if no custom Go functions are needed initially\n\tpersistenceSvc, err := persistence.NewPersistence(interactor, schema.FunctionMap{})\n\tif err != nil {\n\t\tlog.Fatalf(\"Failed to initialize persistence: %v\", err)\n\t}\n\n\t// Example: Create a collection\n\t// var mySchema schema.SchemaDefinition = ... // Your schema definition\n\t// _, err = persistenceSvc.Create(mySchema)\n\t// if err != nil { log.Fatalf(\"Failed to create collection: %v\", err) }\n}\n"
+      }
+    ],
+    "commonPitfalls": [
+      {
+        "issue": "Forgetting to import the SQLite driver with `_`.",
+        "solution": "Ensure `_ \"github.com/mattn/go-sqlite3\"` is present in your import statements."
+      },
+      {
+        "issue": "Not handling `sql.DB` connection closing with `defer db.Close()`.",
+        "solution": "Always `defer db.Close()` immediately after `sql.Open` to ensure resources are released."
+      },
+      {
+        "issue": "Attempting to create a collection with a name that already exists without `DropIfExists` or `IfNotExists` configured.",
+        "solution": "Set `persistence.InteractorOptions.DropIfExists = true` for development/testing, or `IfNotExists = true` for idempotent creation, or check `CollectionExists` before `Create`."
+      },
+      {
+        "issue": "Passing a nil `schema.FunctionMap` when custom Go functions are expected.",
+        "solution": "Always pass a populated `schema.FunctionMap` if you plan to use custom computed fields or filter predicates."
+      }
+    ],
+    "lifecycleDependencies": "The `persistence.Persistence` service depends on an initialized `persistence.DatabaseInteractor`. The `DatabaseInteractor` itself requires an active `*sql.DB` connection. Therefore, `*sql.DB` must be opened and `DatabaseInteractor` initialized before `persistence.NewPersistence` can be called. All database connections should be gracefully closed (e.g., via `defer db.Close()`). Transactions initiated via `StartTransaction` create new, isolated `DatabaseInteractor` instances which must be explicitly `Commit`ted or `Rollback`ed."
+  },
+  "types": {
+    "SchemaDefinition": {
+      "id": "type:SchemaDefinition",
+      "definition": "struct {\n    Name        string                           `json:\"name\"`\n    Version     string                           `json:\"version\"`\n    Description *string                          `json:\"description,omitempty\"`\n    Fields      map[string]*FieldDefinition `json:\"fields\"`\n    NestedSchemas map[string]*NestedSchemaDefinition `json:\"nestedSchemas,omitempty\"`\n    Indexes       []IndexDefinition                  `json:\"indexes,omitempty\"`\n    Constraints   SchemaConstraint[FieldType]        `json:\"constraints,omitempty\"`\n    Metadata      map[string]any                     `json:\"metadata,omitempty\"`\n    Migrations    []Migration[any]                   `json:\"migrations,omitempty\"`\n    Hint          *SchemaHint                        `json:\"hint,omitempty\"`\n    Mock func(faker any) (any, error) `json:\"-\"`\n}",
+      "purpose": "Defines the structure, types, constraints, and relationships of a data model, used to create and validate collections.",
+      "related": {
+        "methods": [],
+        "patterns": []
+      },
+      "interfaceContract": {}
+    },
+    "FieldDefinition": {
+      "id": "type:FieldDefinition",
+      "definition": "struct {\n    Name string    `json:\"name\"`\n    Type FieldType `json:\"type\"`\n    Required *bool `json:\"required,omitempty\"`\n    Constraints SchemaConstraint[FieldType] `json:\"constraints,omitempty\"`\n    Default any `json:\"default,omitempty\"`\n    Values []any `json:\"values,omitempty\"`\n    Schema any `json:\"schema,omitempty\"`\n    ItemsType *FieldType `json:\"itemsType,omitempty\"`\n    Deprecated *bool `json:\"deprecated,omitempty\"`\n    Description *string `json:\"description,omitempty\"`\n    Unique *bool `json:\"unique,omitempty\"`\n    Hint *struct { Input InputHint `json:\"input\"` } `json:\"hint,omitempty\"`\n}",
+      "purpose": "Describes a single field within a schema, including its type, validation rules, and default values.",
+      "related": {
+        "methods": [],
+        "patterns": []
+      },
+      "interfaceContract": {}
+    },
+    "DatabaseInteractor": {
+      "id": "type:DatabaseInteractor",
+      "definition": "interface {\n    SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.QueryDSL) ([]schema.Document, error)\n    UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error)\n    InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []map[string]any) ([]schema.Document, error)\n    DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error)\n    CreateCollection(schema schema.SchemaDefinition) error\n    GetColumnType(fieldType schema.FieldType, field *schema.FieldDefinition) string\n    CreateIndex(name string, index schema.IndexDefinition) error\n    DropCollection(name string) error\n    CollectionExists(name string) (bool, error)\n    StartTransaction(ctx context.Context) (DatabaseInteractor, error)\n    Commit(ctx context.Context) error\n    Rollback(ctx context.Context) error\n}",
+      "purpose": "Defines the contract for low-level database interactions, including CRUD, DDL, and transaction management, allowing for pluggable database backends.",
+      "related": {
+        "methods": [],
+        "patterns": []
+      },
+      "interfaceContract": {
+        "requiredMethods": [
+          {
+            "name": "SelectDocuments",
+            "signature": "SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.QueryDSL) ([]schema.Document, error)",
+            "parameters": "ctx: context.Context - The context for the operation; schema: *schema.SchemaDefinition - The schema of the collection; dsl: *query.QueryDSL - The query DSL to apply.",
+            "returnValue": "[]schema.Document - A slice of documents (map[string]any) matching the query; error - An error if the operation fails.",
+            "sideEffects": "Reads data from the database."
+          },
+          {
+            "name": "UpdateDocuments",
+            "signature": "UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error)",
+            "parameters": "ctx: context.Context - The context; schema: *schema.SchemaDefinition - The schema; updates: map[string]any - Fields to update; filters: *query.QueryFilter - Filter to select documents to update.",
+            "returnValue": "int64 - Number of rows affected; error - An error if the operation fails.",
+            "sideEffects": "Modifies data in the database."
+          },
+          {
+            "name": "InsertDocuments",
+            "signature": "InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []map[string]any) ([]schema.Document, error)",
+            "parameters": "ctx: context.Context - The context; schema: *schema.SchemaDefinition - The schema; records: []map[string]any - Documents to insert.",
+            "returnValue": "[]schema.Document - The inserted documents (with generated IDs/defaults); error - An error if the operation fails.",
+            "sideEffects": "Inserts new data into the database."
+          },
+          {
+            "name": "DeleteDocuments",
+            "signature": "DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error)",
+            "parameters": "ctx: context.Context - The context; schema: *schema.SchemaDefinition - The schema; filters: *query.QueryFilter - Filter to select documents to delete; unsafeDelete: bool - If true, allows deletion without a filter.",
+            "returnValue": "int64 - Number of rows affected; error - An error if the operation fails.",
+            "sideEffects": "Removes data from the database."
+          },
+          {
+            "name": "CreateCollection",
+            "signature": "CreateCollection(schema schema.SchemaDefinition) error",
+            "parameters": "schema: schema.SchemaDefinition - The schema definition for the collection.",
+            "returnValue": "error - An error if table creation fails.",
+            "sideEffects": "Creates a new table and associated indexes in the database."
+          },
+          {
+            "name": "GetColumnType",
+            "signature": "GetColumnType(fieldType schema.FieldType, field *schema.FieldDefinition) string",
+            "parameters": "fieldType: schema.FieldType - The generic field type; field: *schema.FieldDefinition - The specific field definition.",
+            "returnValue": "string - The database-specific column type string (e.g., \"TEXT\", \"INTEGER\").",
+            "sideEffects": "None."
+          },
+          {
+            "name": "CreateIndex",
+            "signature": "CreateIndex(name string, index schema.IndexDefinition) error",
+            "parameters": "name: string - The name of the collection/table; index: schema.IndexDefinition - The index definition.",
+            "returnValue": "error - An error if index creation fails.",
+            "sideEffects": "Creates a new index in the database."
+          },
+          {
+            "name": "DropCollection",
+            "signature": "DropCollection(name string) error",
+            "parameters": "name: string - The name of the collection/table to drop.",
+            "returnValue": "error - An error if table dropping fails.",
+            "sideEffects": "Drops a table and its associated data from the database."
+          },
+          {
+            "name": "CollectionExists",
+            "signature": "CollectionExists(name string) (bool, error)",
+            "parameters": "name: string - The name of the collection/table.",
+            "returnValue": "bool - True if the collection exists, false otherwise; error - An error if the check fails.",
+            "sideEffects": "None."
+          },
+          {
+            "name": "StartTransaction",
+            "signature": "StartTransaction(ctx context.Context) (DatabaseInteractor, error)",
+            "parameters": "ctx: context.Context - The context for the transaction.",
+            "returnValue": "DatabaseInteractor - A *new* interactor instance operating within the transaction; error - An error if the transaction cannot be started.",
+            "sideEffects": "Initiates a database transaction."
+          },
+          {
+            "name": "Commit",
+            "signature": "Commit(ctx context.Context) error",
+            "parameters": "ctx: context.Context - The context for the commit.",
+            "returnValue": "error - An error if the commit fails.",
+            "sideEffects": "Persists changes made within the transaction to the database. Only callable on a transactional interactor."
+          },
+          {
+            "name": "Rollback",
+            "signature": "Rollback(ctx context.Context) error",
+            "parameters": "ctx: context.Context - The context for the rollback.",
+            "returnValue": "error - An error if the rollback fails.",
+            "sideEffects": "Discards changes made within the transaction. Only callable on a transactional interactor."
+          }
+        ],
+        "optionalMethods": [],
+        "parameterObjectStructures": {}
+      }
+    },
+    "PersistenceInterface": {
+      "id": "type:PersistenceInterface",
+      "definition": "interface {\n    Collection(name string) (PersistenceCollectionInterface, error)\n    Transaction() error\n    Collections() ([]string, error)\n    Create(sc schema.SchemaDefinition) (PersistenceCollectionInterface, error)\n    Delete(id string) (bool, error)\n    Schema(id string) (*schema.SchemaDefinition, error)\n    Transact(callback func(tx PersistenceTransactionInterface) (any, error)) (any, error)\n    Metadata(filter *MetadataFilter, includeCollections bool, includeSchemas bool, forceRefresh bool) (Metadata, error)\n    RegisterSubscription(options RegisterSubscriptionOptions) string\n    UnregisterSubscription(id string)\n    Subscriptions() ([]SubscriptionInfo, error)\n}",
+      "purpose": "The top-level interface for interacting with the Anansi persistence layer, managing collections, schemas, and transactions.",
+      "related": {
+        "methods": [],
+        "patterns": []
+      },
+      "interfaceContract": {
+        "requiredMethods": [
+          {
+            "name": "Collection",
+            "signature": "Collection(name string) (PersistenceCollectionInterface, error)",
+            "parameters": "name: string - The name of the collection.",
+            "returnValue": "PersistenceCollectionInterface - The interface for interacting with the specified collection; error - An error if the collection's schema is not found.",
+            "sideEffects": "None."
+          },
+          {
+            "name": "Collections",
+            "signature": "Collections() ([]string, error)",
+            "parameters": "None.",
+            "returnValue": "[]string - A list of all collection names registered with the persistence service; error - An error if collections cannot be listed.",
+            "sideEffects": "None."
+          },
+          {
+            "name": "Create",
+            "signature": "Create(sc schema.SchemaDefinition) (PersistenceCollectionInterface, error)",
+            "parameters": "sc: schema.SchemaDefinition - The schema definition for the new collection.",
+            "returnValue": "PersistenceCollectionInterface - The newly created collection interface; error - An error if collection creation fails (e.g., name already exists, DDL error).",
+            "sideEffects": "Creates a new database table and registers its schema internally."
+          },
+          {
+            "name": "Delete",
+            "signature": "Delete(id string) (bool, error)",
+            "parameters": "id: string - The name/ID of the collection to delete.",
+            "returnValue": "bool - True if deletion was successful; error - An error if deletion fails.",
+            "sideEffects": "Deletes the database table and unregisters its schema."
+          },
+          {
+            "name": "Schema",
+            "signature": "Schema(id string) (*schema.SchemaDefinition, error)",
+            "parameters": "id: string - The name/ID of the schema.",
+            "returnValue": "*schema.SchemaDefinition - The schema definition; error - An error if the schema is not found.",
+            "sideEffects": "None."
+          },
+          {
+            "name": "Transact",
+            "signature": "Transact(callback func(tx PersistenceTransactionInterface) (any, error)) (any, error)",
+            "parameters": "callback: func(tx PersistenceTransactionInterface) (any, error) - A function containing operations to be executed transactionally. It receives a transactional `PersistenceTransactionInterface`.",
+            "returnValue": "any - The result of the callback function; error - An error if the transaction fails, causing a rollback.",
+            "sideEffects": "Begins a transaction, executes the callback, then commits or rolls back based on the callback's return value."
+          },
+          {
+            "name": "Metadata",
+            "signature": "Metadata(filter *MetadataFilter, includeCollections bool, includeSchemas bool, forceRefresh bool) (Metadata, error)",
+            "parameters": "filter: *MetadataFilter - Optional filter criteria; includeCollections: bool (Deprecated) - Whether to include collection metadata; includeSchemas: bool (Deprecated) - Whether to include schema definitions; forceRefresh: bool - If true, fetches fresh metadata.",
+            "returnValue": "Metadata - The system's metadata; error - An error if metadata retrieval fails.",
+            "sideEffects": "None."
+          },
+          {
+            "name": "RegisterSubscription",
+            "signature": "RegisterSubscription(options RegisterSubscriptionOptions) string",
+            "parameters": "options: RegisterSubscriptionOptions - Configuration for the subscription, including the event type and callback.",
+            "returnValue": "string - A unique ID for the registered subscription.",
+            "sideEffects": "Registers a global event listener."
+          },
+          {
+            "name": "UnregisterSubscription",
+            "signature": "UnregisterSubscription(id string)",
+            "parameters": "id: string - The ID of the subscription to unregister.",
+            "returnValue": "void",
+            "sideEffects": "Removes a global event listener."
+          },
+          {
+            "name": "Subscriptions",
+            "signature": "Subscriptions() ([]SubscriptionInfo, error)",
+            "parameters": "None.",
+            "returnValue": "[]SubscriptionInfo - A list of all globally registered subscriptions; error - An error if subscriptions cannot be listed.",
+            "sideEffects": "None."
+          }
+        ],
+        "optionalMethods": [],
+        "parameterObjectStructures": {}
+      }
+    },
+    "PersistenceCollectionInterface": {
+      "id": "type:PersistenceCollectionInterface",
+      "definition": "interface {\n    Create(data any) (any, error)\n    Read(query *query.QueryDSL) (*query.QueryResult, error)\n    Update(params *CollectionUpdate) (int, error)\n    Delete(query *query.QueryFilter, unsafe bool) (int, error)\n    Validate(data any, loose bool) (*schema.ValidationResult, error)\n    Rollback(version *string, dryRun *bool) (struct { Schema schema.SchemaDefinition `json:\"schema\"`; Preview any `json:\"preview\"` }, error)\n    Migrate(description string, cb func(h schema.SchemaMigrationHelper) (schema.DataTransform[any, any], error), dryRun *bool) (struct { Schema schema.SchemaDefinition `json:\"schema\"`; Preview any `json:\"preview\"` }, error)\n    Metadata(filter *MetadataFilter, forceRefresh bool) (Metadata, error)\n    RegisterSubscription(options RegisterSubscriptionOptions) string\n    UnregisterSubscription(id string)\n    Subscriptions() ([]SubscriptionInfo, error)\n}",
+      "purpose": "Defines the interface for operations on a specific collection (table).",
+      "related": {
+        "methods": [],
+        "patterns": []
+      },
+      "interfaceContract": {
+        "requiredMethods": [
+          {
+            "name": "Create",
+            "signature": "Create(data any) (any, error)",
+            "parameters": "data: any - A single `map[string]any` document or a `[]map[string]any` slice of documents to insert.",
+            "returnValue": "any - A `*query.QueryResult` containing the inserted document(s) with any generated IDs/defaults; error - An error if creation fails (e.g., validation, unique constraint).",
+            "sideEffects": "Inserts data into the collection, triggers `DocumentCreate` events."
+          },
+          {
+            "name": "Read",
+            "signature": "Read(query *query.QueryDSL) (*query.QueryResult, error)",
+            "parameters": "query: *query.QueryDSL - The declarative query defining filters, sorting, projection, etc.",
+            "returnValue": "*query.QueryResult - The query result containing the fetched documents and count; error - An error if reading fails.",
+            "sideEffects": "Reads data from the collection, triggers `DocumentRead` events."
+          },
+          {
+            "name": "Update",
+            "signature": "Update(params *CollectionUpdate) (int, error)",
+            "parameters": "params: *CollectionUpdate - An object containing the `Data` to update and a `Filter` to select target documents.",
+            "returnValue": "int - The number of documents updated; error - An error if updating fails.",
+            "sideEffects": "Modifies existing data in the collection, triggers `DocumentUpdate` events."
+          },
+          {
+            "name": "Delete",
+            "signature": "Delete(query *query.QueryFilter, unsafe bool) (int, error)",
+            "parameters": "query: *query.QueryFilter - The filter to select documents for deletion; unsafe: bool - If `true`, allows deletion without a filter (deletes all records).",
+            "returnValue": "int - The number of documents deleted; error - An error if deletion fails.",
+            "sideEffects": "Removes data from the collection, triggers `DocumentDelete` events."
+          },
+          {
+            "name": "Validate",
+            "signature": "Validate(data any, loose bool) (*schema.ValidationResult, error)",
+            "parameters": "data: any - The document (`map[string]any`) to validate; loose: bool - If `true`, ignores `REQUIRED_FIELD_MISSING` validation errors.",
+            "returnValue": "*schema.ValidationResult - The validation result including validity status and any issues; error - An error if the validation process itself encounters an issue.",
+            "sideEffects": "None."
+          },
+          {
+            "name": "Rollback",
+            "signature": "Rollback(version *string, dryRun *bool) (struct { Schema schema.SchemaDefinition \"json:\\\"schema\\\"\"; Preview any \"json:\\\"preview\\\"\" }, error)",
+            "parameters": "version: *string - Target schema version for rollback (optional); dryRun: *bool - If true, simulates rollback without applying changes.",
+            "returnValue": "{Schema: schema.SchemaDefinition, Preview: any} - The schema after rollback (or preview) and a preview of data transformation; error - An error if rollback fails.",
+            "sideEffects": "Attempts to revert the collection's schema and potentially data. (Planned feature)."
+          },
+          {
+            "name": "Migrate",
+            "signature": "Migrate(description string, cb func(h schema.SchemaMigrationHelper) (schema.DataTransform[any, any], error), dryRun *bool) (struct { Schema schema.SchemaDefinition \"json:\\\"schema\\\"\"; Preview any \"json:\\\"preview\\\"\" }, error)",
+            "parameters": "description: string - Description of the migration; cb: func(h schema.SchemaMigrationHelper) (schema.DataTransform[any, any], error) - Callback to define schema changes and data transforms; dryRun: *bool - If true, simulates migration.",
+            "returnValue": "{Schema: schema.SchemaDefinition, Preview: any} - The new schema after migration (or preview) and a preview of data transformation; error - An error if migration fails.",
+            "sideEffects": "Applies schema changes and data transformations to the collection. (Planned feature)."
+          },
+          {
+            "name": "Metadata",
+            "signature": "Metadata(filter *MetadataFilter, forceRefresh bool) (Metadata, error)",
+            "parameters": "filter: *MetadataFilter - Optional filter criteria; forceRefresh: bool - If true, fetches fresh metadata.",
+            "returnValue": "Metadata - Collection-specific metadata including subscriptions; error - An error if metadata retrieval fails.",
+            "sideEffects": "None."
+          },
+          {
+            "name": "RegisterSubscription",
+            "signature": "RegisterSubscription(options RegisterSubscriptionOptions) string",
+            "parameters": "options: RegisterSubscriptionOptions - Configuration for the collection-scoped subscription.",
+            "returnValue": "string - A unique ID for the registered subscription.",
+            "sideEffects": "Registers a collection-specific event listener."
+          },
+          {
+            "name": "UnregisterSubscription",
+            "signature": "UnregisterSubscription(id string)",
+            "parameters": "id: string - The ID of the subscription to unregister.",
+            "returnValue": "void",
+            "sideEffects": "Removes a collection-specific event listener."
+          },
+          {
+            "name": "Subscriptions",
+            "signature": "Subscriptions() ([]SubscriptionInfo, error)",
+            "parameters": "None.",
+            "returnValue": "[]SubscriptionInfo - A list of all active subscriptions for this collection; error - An error if subscriptions cannot be listed.",
+            "sideEffects": "None."
+          }
+        ],
+        "optionalMethods": [],
+        "parameterObjectStructures": {
+          "params": "{Data map[string]any `json:\"data,omitempty\"`; Filter *query.QueryFilter `json:\"filter\"`}"
+        }
+      }
+    }
+  },
+  "methods": {
+    "sqlite.NewSQLiteInteractor": {
+      "id": "method:sqlite.NewSQLiteInteractor",
+      "useCase": "To create a new instance of `DatabaseInteractor` for SQLite, enabling interaction with an SQLite database.",
+      "signature": "NewSQLiteInteractor(db *sql.DB, logger *zap.Logger, options *persistence.InteractorOptions, tx *sql.Tx) persistence.DatabaseInteractor",
+      "parameters": "db: *sql.DB - The underlying database connection pool; logger: *zap.Logger - Optional structured logger (defaults to no-op if nil); options: *persistence.InteractorOptions - Optional configuration for interactor behavior (e.g., table prefixes, DDL options); tx: *sql.Tx - Optional active transaction (makes the interactor transactional).",
+      "prerequisites": "`*sql.DB` must be an open and valid SQLite database connection.",
+      "sideEffects": "None directly, but the returned interactor will perform database operations.",
+      "returnValue": "persistence.DatabaseInteractor - A new SQLite interactor instance.",
+      "exceptions": [],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:DatabaseInteractor",
+          "type:persistence.InteractorOptions"
+        ],
+        "patterns": [
+          "pattern:Anansi Persistence Initialization"
+        ],
+        "errors": []
+      }
+    },
+    "sqlite.SQLiteInteractor.SelectDocuments": {
+      "id": "method:sqlite.SQLiteInteractor.SelectDocuments",
+      "useCase": "To execute a SELECT query against an SQLite database using a `QueryDSL` and retrieve results as `schema.Document`.",
+      "signature": "(e *SQLiteInteractor) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.QueryDSL) ([]schema.Document, error)",
+      "parameters": "ctx: context.Context - The context for the operation; schema: *schema.SchemaDefinition - The schema definition of the collection; dsl: *query.QueryDSL - The query DSL.",
+      "prerequisites": "The `SQLiteInteractor` must be properly initialized and connected to a database. The provided `schema.SchemaDefinition` must match the actual database table structure.",
+      "sideEffects": "None (read-only operation).",
+      "returnValue": "[]schema.Document - A slice of maps representing rows, with values coerced according to schema types; error - An error if SQL generation or query execution fails.",
+      "exceptions": [
+        "FailedToGenerateSQL",
+        "FailedToExecuteSELECTQuery"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:DatabaseInteractor",
+          "type:QueryDSL",
+          "type:SchemaDefinition",
+          "type:schema.Document"
+        ],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "sqlite.SQLiteInteractor.UpdateDocuments": {
+      "id": "method:sqlite.SQLiteInteractor.UpdateDocuments",
+      "useCase": "To execute an UPDATE query against an SQLite database, modifying documents matching a `QueryFilter`.",
+      "signature": "(e *SQLiteInteractor) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error)",
+      "parameters": "ctx: context.Context - The context; schema: *schema.SchemaDefinition - The schema; updates: map[string]any - Fields and their new values; filters: *query.QueryFilter - Filter for matching documents.",
+      "prerequisites": "The interactor must be initialized. The `schema.SchemaDefinition` must correspond to the target table. `updates` should contain valid field names present in the schema.",
+      "sideEffects": "Modifies data in the database. Can affect multiple rows.",
+      "returnValue": "int64 - The number of rows affected by the update; error - An error if SQL generation or execution fails.",
+      "exceptions": [
+        "FailedToGenerateSQL",
+        "FailedToExecuteUPDATEQuery"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:DatabaseInteractor",
+          "type:QueryFilter",
+          "type:SchemaDefinition"
+        ],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "sqlite.SQLiteInteractor.InsertDocuments": {
+      "id": "method:sqlite.SQLiteInteractor.InsertDocuments",
+      "useCase": "To insert one or more documents into an SQLite database collection, returning the inserted documents (including auto-generated IDs and defaults).",
+      "signature": "(e *SQLiteInteractor) InsertDocuments(ctx context.Context, sc *schema.SchemaDefinition, records []map[string]any) ([]schema.Document, error)",
+      "parameters": "ctx: context.Context - The context; sc: *schema.SchemaDefinition - The schema; records: []map[string]any - A slice of documents to insert.",
+      "prerequisites": "The interactor must be initialized. The `schema.SchemaDefinition` must correspond to the target table. Requires SQLite 3.35.0+ for `RETURNING *` clause functionality.",
+      "sideEffects": "Inserts new rows into the database.",
+      "returnValue": "[]schema.Document - A slice of the inserted documents, including any database-generated fields like `id`; error - An error if SQL generation or execution fails.",
+      "exceptions": [
+        "FailedToGenerateSQL",
+        "FailedToExecuteINSERTQuery"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:DatabaseInteractor",
+          "type:SchemaDefinition",
+          "type:schema.Document"
+        ],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "sqlite.SQLiteInteractor.DeleteDocuments": {
+      "id": "method:sqlite.SQLiteInteractor.DeleteDocuments",
+      "useCase": "To delete documents from an SQLite database collection based on a `QueryFilter`.",
+      "signature": "(e *SQLiteInteractor) DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error)",
+      "parameters": "ctx: context.Context - The context; schema: *schema.SchemaDefinition - The schema; filters: *query.QueryFilter - Filter for matching documents to delete; unsafeDelete: bool - If true, allows deletion of all records (no filter).",
+      "prerequisites": "The interactor must be initialized. The `schema.SchemaDefinition` must correspond to the target table.",
+      "sideEffects": "Removes data from the database. Can affect multiple rows.",
+      "returnValue": "int64 - The number of rows affected by the delete; error - An error if SQL generation or execution fails.",
+      "exceptions": [
+        "FailedToGenerateSQL",
+        "FailedToExecuteDELETEQuery",
+        "DeleteWithoutWhereClause"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:DatabaseInteractor",
+          "type:QueryFilter",
+          "type:SchemaDefinition"
+        ],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "sqlite.SQLiteInteractor.StartTransaction": {
+      "id": "method:sqlite.SQLiteInteractor.StartTransaction",
+      "useCase": "To initiate a new database transaction, returning a new interactor instance bound to that transaction.",
+      "signature": "(e *SQLiteInteractor) StartTransaction(ctx context.Context) (persistence.DatabaseInteractor, error)",
+      "parameters": "ctx: context.Context - The context for the transaction.",
+      "prerequisites": "The `SQLiteInteractor` must be a non-transactional instance (i.e., not created with a `*sql.Tx`).",
+      "sideEffects": "Starts a database transaction.",
+      "returnValue": "persistence.DatabaseInteractor - A *new* `SQLiteInteractor` instance that operates within the scope of the started transaction; error - An error if beginning the transaction fails or if called on an existing transactional interactor.",
+      "exceptions": [
+        "CannotStartTransactionFromExistingTransactionalInteractor",
+        "FailedToBeginTransaction"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:DatabaseInteractor"
+        ],
+        "patterns": [
+          "pattern:Execute Transaction"
+        ],
+        "errors": [
+          "error:CannotStartTransactionFromExistingTransactionalInteractor"
+        ]
+      }
+    },
+    "sqlite.SQLiteInteractor.Commit": {
+      "id": "method:sqlite.SQLiteInteractor.Commit",
+      "useCase": "To commit the active database transaction, making all changes permanent.",
+      "signature": "(e *SQLiteInteractor) Commit(ctx context.Context) error",
+      "parameters": "ctx: context.Context - The context for the commit.",
+      "prerequisites": "This method must be called on an `SQLiteInteractor` instance that was obtained from `StartTransaction` (i.e., it has an active `*sql.Tx`).",
+      "sideEffects": "Persists all changes made within the transaction to the database.",
+      "returnValue": "error - An error if the commit operation fails or if called outside a transactional context.",
+      "exceptions": [
+        "CommitNotApplicableNotTransactionalContext"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:DatabaseInteractor"
+        ],
+        "patterns": [
+          "pattern:Execute Transaction"
+        ],
+        "errors": [
+          "error:CommitNotApplicableNotTransactionalContext"
+        ]
+      }
+    },
+    "sqlite.SQLiteInteractor.Rollback": {
+      "id": "method:sqlite.SQLiteInteractor.Rollback",
+      "useCase": "To roll back the active database transaction, discarding all uncommitted changes.",
+      "signature": "(e *SQLiteInteractor) Rollback(ctx context.Context) error",
+      "parameters": "ctx: context.Context - The context for the rollback.",
+      "prerequisites": "This method must be called on an `SQLiteInteractor` instance that was obtained from `StartTransaction` (i.e., it has an active `*sql.Tx`).",
+      "sideEffects": "Discards all changes made within the transaction, reverting the database state.",
+      "returnValue": "error - An error if the rollback operation fails or if called outside a transactional context.",
+      "exceptions": [
+        "RollbackNotApplicableNotTransactionalContext"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:DatabaseInteractor"
+        ],
+        "patterns": [
+          "pattern:Execute Transaction"
+        ],
+        "errors": [
+          "error:RollbackNotApplicableNotTransactionalContext"
+        ]
+      }
+    },
+    "sqlite.SQLiteInteractor.CreateCollection": {
+      "id": "method:sqlite.SQLiteInteractor.CreateCollection",
+      "useCase": "To generate and execute DDL (Data Definition Language) SQL statements to create a table and its associated indexes in the SQLite database based on a schema definition.",
+      "signature": "(s *SQLiteInteractor) CreateCollection(sc schema.SchemaDefinition) error",
+      "parameters": "sc: schema.SchemaDefinition - The schema definition used to generate the CREATE TABLE and CREATE INDEX statements.",
+      "prerequisites": "The `SQLiteInteractor` must be properly initialized and connected to a database. Database user must have DDL privileges.",
+      "sideEffects": "Creates a new table and potentially indexes in the database. If `DropIfExists` option is true, it first drops the table.",
+      "returnValue": "error - Returns an error if SQL generation or execution fails during table or index creation.",
+      "exceptions": [
+        "FailedToDropTable",
+        "FailedToGenerateSQLForTable",
+        "FailedToExecuteSQLStatement",
+        "FailedToGenerateSQLForIndex",
+        "FailedToCreateIndex"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:SchemaDefinition",
+          "type:persistence.InteractorOptions"
+        ],
+        "patterns": [
+          "pattern:Schema Unmarshaling and Collection Creation"
+        ],
+        "errors": []
+      }
+    },
+    "sqlite.SQLiteInteractor.DropCollection": {
+      "id": "method:sqlite.SQLiteInteractor.DropCollection",
+      "useCase": "To remove a table from the SQLite database.",
+      "signature": "(s *SQLiteInteractor) DropCollection(collection string) error",
+      "parameters": "collection: string - The base name of the collection (table) to drop. The configured `TablePrefix` will be applied automatically.",
+      "prerequisites": "The `SQLiteInteractor` must be properly initialized and connected to a database. Database user must have DDL privileges.",
+      "sideEffects": "Deletes the specified table and all its data from the database.",
+      "returnValue": "error - Returns an error if the DROP TABLE statement fails.",
+      "exceptions": [
+        "FailedToDropTable"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "sqlite.SQLiteInteractor.CollectionExists": {
+      "id": "method:sqlite.SQLiteInteractor.CollectionExists",
+      "useCase": "To check if a table with a given name (after applying prefix) exists in the SQLite database.",
+      "signature": "(s *SQLiteInteractor) CollectionExists(collection string) (bool, error)",
+      "parameters": "collection: string - The base name of the collection to check.",
+      "prerequisites": "The `SQLiteInteractor` must be properly initialized and connected to a database.",
+      "sideEffects": "None (read-only query against `sqlite_master`).",
+      "returnValue": "bool - `true` if the table exists, `false` otherwise; error - An error if the database query fails.",
+      "exceptions": [],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "persistence.NewPersistence": {
+      "id": "method:persistence.NewPersistence",
+      "useCase": "To initialize the main Anansi Persistence service, which manages collections and schemas.",
+      "signature": "NewPersistence(interactor DatabaseInteractor, fmap schema.FunctionMap) (*Persistence, error)",
+      "parameters": "interactor: DatabaseInteractor - The database interactor implementation (e.g., `sqlite.NewSQLiteInteractor`); fmap: schema.FunctionMap - A map of custom Go functions for computed fields and filter predicates.",
+      "prerequisites": "A valid `DatabaseInteractor` instance must be provided. The underlying database should be accessible.",
+      "sideEffects": "Initializes an internal event bus, creates a `_schemas` collection (table) if it doesn't exist, and prepares the `Executor` for query processing.",
+      "returnValue": "*Persistence - A pointer to the initialized Persistence service; error - An error if initialization fails (e.g., database connection issue, `_schemas` table creation failure).",
+      "exceptions": [
+        "CouldNotInitializeEventBus",
+        "ErrorUnmarshalingSchemasCollectionSchema",
+        "ErrorLookingUpSchemaCollection",
+        "FailedToCreateTableForCollections",
+        "FailedToInitializeSchemasCollectionCollections"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:PersistenceInterface",
+          "type:DatabaseInteractor",
+          "type:schema.FunctionMap"
+        ],
+        "patterns": [
+          "pattern:Anansi Persistence Initialization"
+        ],
+        "errors": []
+      }
+    },
+    "persistence.Persistence.Collection": {
+      "id": "method:persistence.Persistence.Collection",
+      "useCase": "To retrieve a `PersistenceCollectionInterface` for a specific named collection, allowing CRUD operations on that collection.",
+      "signature": "(pi *Persistence) Collection(name string) (PersistenceCollectionInterface, error)",
+      "parameters": "name: string - The name of the collection.",
+      "prerequisites": "The `Persistence` service must be initialized. A schema for the given `name` must already be registered (e.g., via `Persistence.Create`).",
+      "sideEffects": "None.",
+      "returnValue": "PersistenceCollectionInterface - An interface for the specified collection; error - An error if the collection's schema cannot be found.",
+      "exceptions": [
+        "SchemaNotFound",
+        "FailedToInitializeCollection"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:PersistenceCollectionInterface"
+        ],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "persistence.Persistence.Transact": {
+      "id": "method:persistence.Persistence.Transact",
+      "useCase": "To execute a series of database operations within a single, atomic transaction. All operations within the provided callback will either succeed together or be fully rolled back.",
+      "signature": "(pi *Persistence) Transact(callback func(tx PersistenceTransactionInterface) (any, error)) (any, error)",
+      "parameters": "callback: func(tx PersistenceTransactionInterface) (any, error) - A function that takes a transactional `PersistenceTransactionInterface` and returns any result and an error. If the error is non-nil, the transaction is rolled back.",
+      "prerequisites": "The `Persistence` service must be initialized. The underlying `DatabaseInteractor` must support transactions.",
+      "sideEffects": "Starts a database transaction, potentially modifies database state, then commits or rolls back.",
+      "returnValue": "any - The value returned by the `callback` function; error - An error if the transaction cannot be started, the callback returns an error, or the commit fails.",
+      "exceptions": [
+        "FailedToStartTransaction",
+        "TransactionCallbackFailed",
+        "TransactionCommitFailed"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:PersistenceTransactionInterface"
+        ],
+        "patterns": [
+          "pattern:Execute Transaction"
+        ],
+        "errors": []
+      }
+    },
+    "persistence.Persistence.Collections": {
+      "id": "method:persistence.Persistence.Collections",
+      "useCase": "To retrieve a list of all collection names currently managed by the Anansi persistence service.",
+      "signature": "(pi *Persistence) Collections() ([]string, error)",
+      "parameters": "None.",
+      "prerequisites": "The `Persistence` service must be initialized.",
+      "sideEffects": "None.",
+      "returnValue": "[]string - A slice of strings, where each string is the name of a registered collection; error - An error if reading the internal schemas collection fails.",
+      "exceptions": [
+        "ErrorReadingSchemasToGetCollectionNames"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "persistence.Persistence.Create": {
+      "id": "method:persistence.Persistence.Create",
+      "useCase": "To create a new collection (database table) based on a provided `SchemaDefinition` and register it with the persistence service.",
+      "signature": "(pi *Persistence) Create(schema schema.SchemaDefinition) (PersistenceCollectionInterface, error)",
+      "parameters": "schema: schema.SchemaDefinition - The complete schema definition for the new collection.",
+      "prerequisites": "The `Persistence` service must be initialized. The collection name in the schema must not already exist.",
+      "sideEffects": "Creates a new table and indexes in the underlying database. Stores the schema definition in the internal `_schemas` collection.",
+      "returnValue": "PersistenceCollectionInterface - The interface for the newly created collection; error - An error if creation fails (e.g., collection already exists, DDL error, failed to save schema).",
+      "exceptions": [
+        "CollectionExists",
+        "FailedToCreateCollection",
+        "FailedToMarshalSchemaToJSON",
+        "FailedToSaveSchemaRecord",
+        "FailedToInitializeCollection"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:SchemaDefinition",
+          "type:PersistenceCollectionInterface"
+        ],
+        "patterns": [
+          "pattern:Schema Unmarshaling and Collection Creation"
+        ],
+        "errors": []
+      }
+    },
+    "persistence.Persistence.Delete": {
+      "id": "method:persistence.Persistence.Delete",
+      "useCase": "To delete an entire collection (database table) and unregister its schema from the persistence service.",
+      "signature": "(pi *Persistence) Delete(name string) (bool, error)",
+      "parameters": "name: string - The name of the collection to delete.",
+      "prerequisites": "The `Persistence` service must be initialized. The collection must exist.",
+      "sideEffects": "Deletes the physical table from the database. Removes the schema record from the internal `_schemas` collection.",
+      "returnValue": "bool - `true` if the collection was successfully deleted; error - An error if deletion fails (e.g., table not found, permissions, transaction failure).",
+      "exceptions": [
+        "TransactionFailed",
+        "FailedToDeleteSchemaRecord",
+        "FailedToDropCollection"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "persistence.Persistence.Schema": {
+      "id": "method:persistence.Persistence.Schema",
+      "useCase": "To retrieve the `SchemaDefinition` for a specific named collection.",
+      "signature": "(pi *Persistence) Schema(name string) (*schema.SchemaDefinition, error)",
+      "parameters": "name: string - The name of the collection whose schema is to be retrieved.",
+      "prerequisites": "The `Persistence` service must be initialized. The collection's schema must have been previously created and registered.",
+      "sideEffects": "None (read-only operation from internal schema collection).",
+      "returnValue": "*schema.SchemaDefinition - The schema definition; error - An error if the collection does not exist or schema retrieval fails.",
+      "exceptions": [
+        "CollectionDoesNotExist",
+        "ErrorReadingSchemaCollection",
+        "UnexpectedCountForSchemaName",
+        "ErrorConvertingMapToSchemaRecord",
+        "ErrorUnmarshalingJSON"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:SchemaDefinition"
+        ],
+        "patterns": [
+          "pattern:Retrieve Collection Schema"
+        ],
+        "errors": [
+          "error:CollectionDoesNotExist"
+        ]
+      }
+    },
+    "persistence.Persistence.RegisterSubscription": {
+      "id": "method:persistence.Persistence.RegisterSubscription",
+      "useCase": "To register a global subscription to a `PersistenceEventType`, allowing custom code to react to system-wide persistence events.",
+      "signature": "(pi *Persistence) RegisterSubscription(options RegisterSubscriptionOptions) string",
+      "parameters": "options: RegisterSubscriptionOptions - Configuration for the subscription, including the `Event` type and `Callback` function.",
+      "prerequisites": "The `Persistence` service must be initialized.",
+      "sideEffects": "Adds an event listener to the internal event bus. Emits a `SubscriptionRegister` event.",
+      "returnValue": "string - A unique ID that identifies this specific subscription, which can be used for unregistration.",
+      "exceptions": [],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:PersistenceEventType",
+          "type:RegisterSubscriptionOptions",
+          "type:SubscriptionInfo"
+        ],
+        "patterns": [
+          "pattern:Register Event Listener"
+        ],
+        "errors": []
+      }
+    },
+    "persistence.Persistence.UnregisterSubscription": {
+      "id": "method:persistence.Persistence.UnregisterSubscription",
+      "useCase": "To remove a previously registered global subscription.",
+      "signature": "(pi *Persistence) UnregisterSubscription(callback string)",
+      "parameters": "callback: string - The unique ID of the subscription to unregister (obtained from `RegisterSubscription`).",
+      "prerequisites": "The subscription with the given ID must exist.",
+      "sideEffects": "Removes the event listener from the internal event bus. Emits a `SubscriptionUnregister` event.",
+      "returnValue": "void",
+      "exceptions": [],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:SubscriptionInfo"
+        ],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "persistence.Persistence.Subscriptions": {
+      "id": "method:persistence.Persistence.Subscriptions",
+      "useCase": "To retrieve a list of all currently active global subscriptions.",
+      "signature": "(pi *Persistence) Subscriptions() ([]SubscriptionInfo, error)",
+      "parameters": "None.",
+      "prerequisites": "The `Persistence` service must be initialized.",
+      "sideEffects": "None.",
+      "returnValue": "[]SubscriptionInfo - A slice of `SubscriptionInfo` detailing each active subscription; error - Always `nil` for current implementation.",
+      "exceptions": [],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:SubscriptionInfo"
+        ],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "persistence.Persistence.Metadata": {
+      "id": "method:persistence.Persistence.Metadata",
+      "useCase": "To retrieve overall system metadata (e.g., collection count, connection status).",
+      "signature": "(pi *Persistence) Metadata(filter *MetadataFilter, includeCollections bool, includeSchemas bool, forceRefresh bool) (Metadata, error)",
+      "parameters": "filter: *MetadataFilter - (Not fully implemented) filter criteria; includeCollections: bool - (Deprecated, ignored) formerly included collection metadata; includeSchemas: bool - (Deprecated, ignored) formerly included schema definitions; forceRefresh: bool - If true, fetches fresh metadata (if applicable).",
+      "prerequisites": "The `Persistence` service must be initialized.",
+      "sideEffects": "None.",
+      "returnValue": "Metadata - The system's metadata; error - Currently returns a stubbed error.",
+      "exceptions": [],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:Metadata",
+          "type:MetadataFilter"
+        ],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "persistence.Collection.Create": {
+      "id": "method:persistence.Collection.Create",
+      "useCase": "To insert one or more documents into a specific collection, validating data against the schema before insertion.",
+      "signature": "(e *Collection) Create(data any) (any, error)",
+      "parameters": "data: any - A single `map[string]any` document or a `[]map[string]any` slice of documents to insert.",
+      "prerequisites": "The collection must exist and its schema must be defined. Input `data` must conform to the collection's schema.",
+      "sideEffects": "Inserts data into the database. Emits `DocumentCreateStart`, `DocumentCreateSuccess`, or `DocumentCreateFailed` events.",
+      "returnValue": "any - A `*query.QueryResult` containing the inserted document(s) with any generated IDs/defaults; error - An error if validation fails, data type is incorrect, or insertion into the database fails.",
+      "exceptions": [
+        "InvalidDataTypeForCreate",
+        "DataValidationFailed",
+        "FailedToInsertData"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:PersistenceCollectionInterface",
+          "type:schema.ValidationResult",
+          "type:query.QueryResult"
+        ],
+        "patterns": [
+          "pattern:Create Single Document"
+        ],
+        "errors": [
+          "error:DataValidationFailed",
+          "error:InvalidDataTypeForCreate"
+        ]
+      }
+    },
+    "persistence.Collection.Read": {
+      "id": "method:persistence.Collection.Read",
+      "useCase": "To retrieve documents from a specific collection based on a `QueryDSL`, applying filters, sorting, and projections.",
+      "signature": "(e *Collection) Read(q *query.QueryDSL) (*query.QueryResult, error)",
+      "parameters": "q: *query.QueryDSL - The declarative query definition.",
+      "prerequisites": "The collection must exist.",
+      "sideEffects": "None (read-only operation). Emits `DocumentReadStart`, `DocumentReadSuccess`, or `DocumentReadFailed` events.",
+      "returnValue": "*query.QueryResult - The result containing the fetched documents and their count; error - An error if the query cannot be executed or processed.",
+      "exceptions": [
+        "FailedToReadData"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:PersistenceCollectionInterface",
+          "type:query.QueryDSL",
+          "type:query.QueryResult"
+        ],
+        "patterns": [
+          "pattern:Read All Documents",
+          "pattern:Read with Filter"
+        ],
+        "errors": []
+      }
+    },
+    "persistence.Collection.Update": {
+      "id": "method:persistence.Collection.Update",
+      "useCase": "To modify existing documents in a collection based on specified data and a filter.",
+      "signature": "(e *Collection) Update(params *CollectionUpdate) (int, error)",
+      "parameters": "params: *CollectionUpdate - An object containing `Data` (the fields to update) and a `Filter` (which documents to update).",
+      "prerequisites": "The collection must exist. The `Filter` should target existing documents. `Data` must conform to the schema (validation happens at a lower layer or implicitly by DB).",
+      "sideEffects": "Modifies data in the database. Emits `DocumentUpdateStart`, `DocumentUpdateSuccess`, or `DocumentUpdateFailed` events.",
+      "returnValue": "int - The number of documents that were updated; error - An error if the update operation fails.",
+      "exceptions": [
+        "FailedToUpdateData"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:PersistenceCollectionInterface",
+          "type:CollectionUpdate"
+        ],
+        "patterns": [
+          "pattern:Update Documents"
+        ],
+        "errors": []
+      }
+    },
+    "persistence.Collection.Delete": {
+      "id": "method:persistence.Collection.Delete",
+      "useCase": "To remove documents from a collection that match a given filter.",
+      "signature": "(e *Collection) Delete(params *query.QueryFilter, unsafe bool) (int, error)",
+      "parameters": "params: *query.QueryFilter - The filter to select documents for deletion; unsafe: bool - If `true`, allows deletion without any filter (deleting all records).",
+      "prerequisites": "The collection must exist. A filter is generally required unless `unsafe` is `true`.",
+      "sideEffects": "Removes data from the database. Emits `DocumentDeleteStart`, `DocumentDeleteSuccess`, or `DocumentDeleteFailed` events.",
+      "returnValue": "int - The number of documents deleted; error - An error if deletion fails.",
+      "exceptions": [
+        "FailedToDeleteData"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:PersistenceCollectionInterface",
+          "type:query.QueryFilter"
+        ],
+        "patterns": [
+          "pattern:Delete Documents with Filter"
+        ],
+        "errors": [
+          "error:DeleteWithoutWhereClause"
+        ]
+      }
+    },
+    "persistence.Collection.Validate": {
+      "id": "method:persistence.Collection.Validate",
+      "useCase": "To validate a document (`map[string]any`) against the collection's schema definition.",
+      "signature": "(e *Collection) Validate(data any, loose bool) (*schema.ValidationResult, error)",
+      "parameters": "data: any - The document to validate (must be `map[string]any`); loose: bool - If `true`, the validation ignores `REQUIRED_FIELD_MISSING` issues.",
+      "prerequisites": "The collection must have an associated `SchemaDefinition`.",
+      "sideEffects": "None.",
+      "returnValue": "*schema.ValidationResult - An object indicating if the data is valid and a list of issues if not; error - An error if the input `data` is not a `map[string]any`.",
+      "exceptions": [
+        "FailedToConvertDataToMap"
+      ],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:PersistenceCollectionInterface",
+          "type:schema.ValidationResult",
+          "type:schema.Issue"
+        ],
+        "patterns": [
+          "pattern:Validate Data"
+        ],
+        "errors": [
+          "error:FailedToConvertDataToMap"
+        ]
+      }
+    },
+    "persistence.Collection.RegisterSubscription": {
+      "id": "method:persistence.Collection.RegisterSubscription",
+      "useCase": "To register a subscription for events specific to this collection.",
+      "signature": "(e *Collection) RegisterSubscription(options RegisterSubscriptionOptions) string",
+      "parameters": "options: RegisterSubscriptionOptions - Configuration including the `Event` type and `Callback` function.",
+      "prerequisites": "The collection must be initialized.",
+      "sideEffects": "Adds a collection-scoped event listener. Emits a `SubscriptionRegister` event.",
+      "returnValue": "string - A unique ID for the registered subscription.",
+      "exceptions": [],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:PersistenceCollectionInterface",
+          "type:PersistenceEventType",
+          "type:RegisterSubscriptionOptions"
+        ],
+        "patterns": [
+          "pattern:Register Event Listener"
+        ],
+        "errors": []
+      }
+    },
+    "persistence.Collection.UnregisterSubscription": {
+      "id": "method:persistence.Collection.UnregisterSubscription",
+      "useCase": "To remove a previously registered collection-scoped subscription.",
+      "signature": "(e *Collection) UnregisterSubscription(id string)",
+      "parameters": "id: string - The ID of the subscription to unregister.",
+      "prerequisites": "The subscription with the given ID must exist.",
+      "sideEffects": "Removes the event listener from the internal event bus. Emits a `SubscriptionUnregister` event.",
+      "returnValue": "void",
+      "exceptions": [],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "persistence.Collection.Subscriptions": {
+      "id": "method:persistence.Collection.Subscriptions",
+      "useCase": "To retrieve a list of all currently active subscriptions registered for this specific collection.",
+      "signature": "(e *Collection) Subscriptions() ([]SubscriptionInfo, error)",
+      "parameters": "None.",
+      "prerequisites": "The collection must be initialized.",
+      "sideEffects": "None.",
+      "returnValue": "[]SubscriptionInfo - A slice of `SubscriptionInfo` detailing each active collection-scoped subscription; error - Always `nil` for current implementation.",
+      "exceptions": [],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:SubscriptionInfo"
+        ],
+        "patterns": [],
+        "errors": []
+      }
+    },
+    "persistence.Collection.Metadata": {
+      "id": "method:persistence.Collection.Metadata",
+      "useCase": "To retrieve metadata specific to this collection.",
+      "signature": "(e *Collection) Metadata(filter *MetadataFilter, forceRefresh bool) (Metadata, error)",
+      "parameters": "filter: *MetadataFilter - (Not fully implemented) filter criteria; forceRefresh: bool - If true, fetches fresh metadata (if applicable).",
+      "prerequisites": "The collection must be initialized.",
+      "sideEffects": "Emits a `MetadataCalled` telemetry event.",
+      "returnValue": "Metadata - Collection-specific metadata; error - Currently returns a stubbed error.",
+      "exceptions": [],
+      "availability": "sync",
+      "status": "active",
+      "related": {
+        "types": [
+          "type:Metadata",
+          "type:MetadataFilter"
+        ],
+        "patterns": [],
+        "errors": []
+      }
+    }
+  },
+  "decisionTrees": {
+    "ExecuteTransaction": {
+      "id": "decisionTree:ExecuteTransaction",
+      "question": "Should a series of database operations be atomic?",
+      "logic": "IF atomicity_required THEN StartTransaction AND perform_operations_on_transactional_interactor AND IF all_operations_succeed THEN Commit ELSE Rollback ELSE perform_operations_individually",
+      "validationMethod": "Check the return value of `persistenceSvc.Transact`. A `nil` error indicates success and commit; a non-`nil` error indicates failure and rollback. Verify database state after `Transact` completes.",
+      "related": {
+        "methods": [
+          "method:persistence.Persistence.Transact",
+          "method:sqlite.SQLiteInteractor.StartTransaction",
+          "method:sqlite.SQLiteInteractor.Commit",
+          "method:sqlite.SQLiteInteractor.Rollback"
+        ],
+        "patterns": [
+          "pattern:Execute Transaction"
+        ]
+      }
+    },
+    "HandleValidationFailure": {
+      "id": "decisionTree:HandleValidationFailure",
+      "question": "How to handle data that does not conform to the schema?",
+      "logic": "IF data_is_invalid THEN inspect_ValidationResult.Issues AND provide_feedback_or_correct_data ELSE proceed_with_persistence_operation",
+      "validationMethod": "Call `collection.Validate(data, false)` and check `ValidationResult.Valid`. If false, iterate `ValidationResult.Issues` for specific error codes, messages, and paths.",
+      "related": {
+        "methods": [
+          "method:persistence.Collection.Validate",
+          "method:persistence.Collection.Create"
+        ],
+        "patterns": [
+          "pattern:Validate Data"
+        ],
+        "errors": [
+          "error:DataValidationFailed",
+          "error:REQUIRED_FIELD_MISSING",
+          "error:TYPE_MISMATCH",
+          "error:ENUM_VIOLATION"
+        ]
+      }
+    },
+    "DetermineQueryStrategy": {
+      "id": "decisionTree:DetermineQueryStrategy",
+      "question": "How to retrieve data efficiently and with desired transformations?",
+      "logic": "IF complex_filtering_or_sorting_needed THEN use_QueryBuilder_to_construct_QueryDSL ELSE use_simple_Read_with_no_filters AND IF in_memory_computation_required THEN register_Go_functions_and_use_AddComputed_or_Custom_operators ELSE rely_on_SQL_native_capabilities",
+      "validationMethod": "Inspect the `*query.QueryResult.Data` structure and `Count` to ensure the correct data is returned and transformed as expected. Monitor database logs for generated SQL queries.",
+      "related": {
+        "methods": [
+          "method:persistence.Collection.Read",
+          "method:query.QueryBuilder.Where",
+          "method:query.QueryBuilder.OrderBy",
+          "method:query.QueryBuilder.Select",
+          "method:query.QueryBuilder.AddComputed",
+          "method:query.QueryBuilder.Custom"
+        ],
+        "patterns": [
+          "pattern:Read with Filter",
+          "pattern:Sorting and Pagination",
+          "pattern:Add a Computed Field",
+          "pattern:Use a Custom Filter"
+        ]
+      }
+    }
+  },
+  "patterns": {
+    "Anansi Persistence Initialization": {
+      "id": "pattern:Anansi Persistence Initialization",
+      "description": "Initializes the core Anansi persistence service by setting up the SQLite database connection and interactor.",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"database/sql\"\n\t\"log\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n\t\"github.com/asaidimu/go-anansi/core/schema\"\n\t\"github.com/asaidimu/go-anansi/sqlite\"\n\t_ \"github.com/mattn/go-sqlite3\" \n)\n\nfunc main() {\n\tdb, err := sql.Open(\"sqlite3\", \"./my_app.db\")\n\tif err != nil {\n\t\tlog.Fatalf(\"Failed to open database: %v\", err)\n\t}\n\tdefer db.Close()\n\n\tinteractor := sqlite.NewSQLiteInteractor(db, nil, sqlite.DefaultInteractorOptions(), nil)\n\tpersistenceSvc, err := persistence.NewPersistence(interactor, schema.FunctionMap{})\n\tif err != nil {\n\t\tlog.Fatalf(\"Failed to initialize persistence: %v\", err)\n\t}\n\tlog.Println(\"Anansi persistence initialized.\")\n}",
+        "validation": "log output confirms 'Anansi persistence initialized.' without errors, and a SQLite database file is created/accessed successfully."
+      },
+      "related": {
+        "methods": [
+          "method:sqlite.NewSQLiteInteractor",
+          "method:persistence.NewPersistence"
+        ],
+        "errors": [
+          "error:DatabaseConnectionFailed",
+          "error:PersistenceInitializationFailed"
+        ]
+      }
+    },
+    "Schema Unmarshaling and Collection Creation": {
+      "id": "pattern:Schema Unmarshaling and Collection Creation",
+      "description": "Demonstrates how to unmarshal a JSON schema string into a `SchemaDefinition` and then use it to create a new collection (database table).",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"encoding/json\"\n\t\"log\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n\t\"github.com/asaidimu/go-anansi/core/schema\"\n)\n\n// Assuming persistenceSvc is already initialized\nconst mySchemaJSON = `{\"name\": \"products\", \"version\": \"1.0.0\", \"fields\": {\"id\": {\"name\": \"id\", \"type\": \"integer\"}}}`\n\nfunc createProductCollection(persistenceSvc *persistence.Persistence) {\n\tvar productSchema schema.SchemaDefinition\n\tif err := json.Unmarshal([]byte(mySchemaJSON), &productSchema); err != nil {\n\t\tlog.Fatalf(\"Failed to unmarshal schema: %v\", err)\n\t}\n\n\t_, err := persistenceSvc.Create(productSchema)\n\tif err != nil {\n\t\tlog.Fatalf(\"Failed to create 'products' collection: %v\", err)\n\t}\n\tlog.Println(\"'products' collection created.\")\n}",
+        "validation": "Log output confirms 'products' collection created successfully. Inspecting the database with `sqlite3` should show a new 'products' table."
+      },
+      "related": {
+        "methods": [
+          "method:persistence.Persistence.Create",
+          "method:sqlite.SQLiteInteractor.CreateCollection"
+        ],
+        "errors": [
+          "error:SchemaUnmarshalFailed",
+          "error:CollectionCreationFailed"
+        ]
+      }
+    },
+    "Create Single Document": {
+      "id": "pattern:Create Single Document",
+      "description": "Inserts a single document (record) into an Anansi collection.",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"log\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n\t\"github.com/asaidimu/go-anansi/core/schema\"\n)\n\n// Assuming 'collection' is an initialized PersistenceCollectionInterface\nfunc insertOneUser(collection persistence.PersistenceCollectionInterface) {\n\tuserData := map[string]any{\n\t\t\"name\":      \"John Doe\",\n\t\t\"email\":     \"john.doe@example.com\",\n\t\t\"age\":       29,\n\t\t\"is_active\": true,\n\t}\n\tinsertedResult, err := collection.Create(userData)\n\tif err != nil {\n\t\tlog.Fatalf(\"Failed to insert user: %v\", err)\n\t}\n\tlog.Printf(\"Inserted user with ID: %v\\n\", insertedResult.(*query.QueryResult).Data.(schema.Document)[\"id\"])\n}",
+        "validation": "Log output shows the inserted user ID, and a subsequent `Read` operation confirms the presence of the new record in the database."
+      },
+      "related": {
+        "methods": [
+          "method:persistence.Collection.Create",
+          "method:sqlite.SQLiteInteractor.InsertDocuments"
+        ],
+        "errors": [
+          "error:DataValidationFailed"
+        ]
+      }
+    },
+    "Read All Documents": {
+      "id": "pattern:Read All Documents",
+      "description": "Retrieves all documents from a specified collection using a basic QueryDSL.",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"log\"\n\t\"fmt\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n\t\"github.com/asaidimu/go-anansi/core/query\"\n\t\"github.com/asaidimu/go-anansi/core/schema\"\n)\n\n// Assuming 'collection' is an initialized PersistenceCollectionInterface\nfunc readAllUsers(collection persistence.PersistenceCollectionInterface) {\n\tqueryAll := query.NewQueryBuilder().Build()\n\tresult, err := collection.Read(&queryAll)\n\tif err != nil {\n\t\tlog.Fatalf(\"Failed to read all users: %v\", err)\n\t}\n\n\tfmt.Printf(\"Total users: %d\\n\", result.Count)\n\tfor _, user := range result.Data.([]schema.Document) {\n\t\tfmt.Printf(\"  %v\\n\", user)\n\t}\n}",
+        "validation": "Log output shows the count of documents and prints each document. The count should match the number of documents previously inserted."
+      },
+      "related": {
+        "methods": [
+          "method:persistence.Collection.Read",
+          "method:query.QueryBuilder.Build",
+          "method:sqlite.SQLiteInteractor.SelectDocuments"
+        ],
+        "errors": []
+      }
+    },
+    "Read with Filter": {
+      "id": "pattern:Read with Filter",
+      "description": "Retrieves documents from a collection that match specific filter criteria using the `QueryBuilder`'s `Where` and comparison operators.",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"log\"\n\t\"fmt\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n\t\"github.com/asaidimu/go-anansi/core/query\"\n\t\"github.com/asaidimu/go-anansi/core/schema\"\n)\n\n// Assuming 'collection' is an initialized PersistenceCollectionInterface\nfunc readFilteredUsers(collection persistence.PersistenceCollectionInterface) {\n\tqueryActiveAdults := query.NewQueryBuilder().\n\t\tWhereGroup(query.LogicalOperatorAnd).\n\t\t\tWhere(\"is_active\").Eq(true).\n\t\t\tWhere(\"age\").Gt(25).\n\t\tEnd().\n\t\tBuild()\n\n\tresult, err := collection.Read(&queryActiveAdults)\n\tif err != nil {\n\t\tlog.Fatalf(\"Failed to read filtered users: %v\", err)\n\t}\n\n\tfmt.Printf(\"Active users older than 25: %d\\n\", result.Count)\n\tfor _, user := range result.Data.([]schema.Document) {\n\t\tfmt.Printf(\"  Name: %v, Age: %v\\n\", user[\"name\"], user[\"age\"])\n\t}\n}",
+        "validation": "Log output shows the count of filtered documents, and the printed documents confirm that only active users older than 25 are included."
+      },
+      "related": {
+        "methods": [
+          "method:persistence.Collection.Read",
+          "method:query.QueryBuilder.Where",
+          "method:query.QueryBuilder.WhereGroup"
+        ],
+        "errors": []
+      }
+    },
+    "Update Documents": {
+      "id": "pattern:Update Documents",
+      "description": "Updates existing documents in a collection that match a specified filter.",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"log\"\n\t\"fmt\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n\t\"github.com/asaidimu/go-anansi/core/query\"\n)\n\n// Assuming 'collection' is an initialized PersistenceCollectionInterface\nfunc updateUsers(collection persistence.PersistenceCollectionInterface) {\n\tupdates := map[string]any{\n\t\t\"is_active\": false,\n\t}\n\tfilter := query.NewQueryBuilder().Where(\"email\").Eq(\"john.doe@example.com\").Build().Filters\n\n\tupdateParams := &persistence.CollectionUpdate{\n\t\tData:   updates,\n\t\tFilter: filter,\n\t}\n\n\trowsAffected, err := collection.Update(updateParams)\n\tif err != nil {\n\t\tlog.Fatalf(\"Failed to update user: %v\", err)\n\t}\n\tfmt.Printf(\"Rows updated: %d\\n\", rowsAffected)\n}",
+        "validation": "Log output shows `Rows updated: 1`. A subsequent `Read` operation filtered by `email` and `is_active=false` should retrieve the updated user."
+      },
+      "related": {
+        "methods": [
+          "method:persistence.Collection.Update",
+          "method:sqlite.SQLiteInteractor.UpdateDocuments"
+        ],
+        "errors": []
+      }
+    },
+    "Delete Documents with Filter": {
+      "id": "pattern:Delete Documents with Filter",
+      "description": "Deletes documents from a collection that match a specified filter. The `unsafe` parameter is set to `false` to prevent accidental mass deletion.",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"log\"\n\t\"fmt\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n\t\"github.com/asaidimu/go-anansi/core/query\"\n)\n\n// Assuming 'collection' is an initialized PersistenceCollectionInterface\nfunc deleteInactiveUsers(collection persistence.PersistenceCollectionInterface) {\n\tfilterInactive := query.NewQueryBuilder().Where(\"is_active\").Eq(false).Build().Filters\n\trowsAffected, err := collection.Delete(filterInactive, false) // false means filter is mandatory\n\tif err != nil {\n\t\tlog.Fatalf(\"Failed to delete inactive users: %v\", err)\n\t}\n\tfmt.Printf(\"Inactive users deleted: %d\\n\", rowsAffected)\n}",
+        "validation": "Log output shows the number of users deleted. A subsequent `Read` operation for inactive users should return 0 results."
+      },
+      "related": {
+        "methods": [
+          "method:persistence.Collection.Delete",
+          "method:sqlite.SQLiteInteractor.DeleteDocuments"
+        ],
+        "errors": [
+          "error:DeleteWithoutWhereClause"
+        ]
+      }
+    },
+    "Validate Data": {
+      "id": "pattern:Validate Data",
+      "description": "Validates a `map[string]any` document against the collection's schema, providing detailed issues for invalid data.",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"log\"\n\t\"fmt\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n\t\"github.com/asaidimu/go-anansi/core/schema\"\n)\n\n// Assuming 'collection' is an initialized PersistenceCollectionInterface\nfunc validateUserData(collection persistence.PersistenceCollectionInterface) {\n\tinvalidData := map[string]any{\n\t\t\"name\": \"Invalid User\",\n\t\t// \"email\" is required but missing based on typical schemas\n\t\t\"age\": \"abc\", // Wrong type\n\t}\n\n\tvalidationResult, err := collection.Validate(invalidData, false) // Strict validation\n\tif err != nil {\n\t\tlog.Printf(\"Error during validation: %v\\n\", err)\n\t}\n\n\tif !validationResult.Valid {\n\t\tfmt.Println(\"Validation Failed! Issues:\")\n\t\tfor _, issue := range validationResult.Issues {\n\t\t\tfmt.Printf(\"  Code: %s, Message: %s, Path: %s\\n\", issue.Code, issue.Message, issue.Path)\n\t\t}\n\t} else {\n\t\tfmt.Println(\"Validation Successful!\")\n\t}\n}",
+        "validation": "Log output indicates 'Validation Failed!' and lists issues like `REQUIRED_FIELD_MISSING` for 'email' and `TYPE_MISMATCH` for 'age'."
+      },
+      "related": {
+        "methods": [
+          "method:persistence.Collection.Validate"
+        ],
+        "errors": [
+          "error:DataValidationFailed",
+          "error:REQUIRED_FIELD_MISSING",
+          "error:TYPE_MISMATCH"
+        ]
+      }
+    },
+    "Register Event Listener": {
+      "id": "pattern:Register Event Listener",
+      "description": "Registers a callback function to be executed when a specific `PersistenceEventType` occurs for a collection.",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"context\"\n\t\"fmt\"\n\t\"log\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n\t\"github.com/asaidimu/go-anansi/core/query\"\n\t\"github.com/asaidimu/go-anansi/core/schema\"\n)\n\n// Assuming 'collection' is an initialized PersistenceCollectionInterface\nfunc registerCreateSubscription(collection persistence.PersistenceCollectionInterface) {\n\tsubscriptionId := collection.RegisterSubscription(persistence.RegisterSubscriptionOptions{\n\t\tEvent: persistence.DocumentCreateSuccess,\n\t\tCallback: func(ctx context.Context, event persistence.PersistenceEvent) error {\n\t\t\tfmt.Printf(\"[EVENT] Document Created in '%s': ID %v\\n\",\n\t\t\t\t*event.Collection, event.Output.(*query.QueryResult).Data.([]schema.Document)[0][\"id\"])\n\t\t\treturn nil\n\t\t},\n\t})\n\tlog.Printf(\"Subscription registered with ID: %s\\n\", subscriptionId)\n\n\t// Trigger the event\n\tcollection.Create(map[string]any{\"name\": \"Event User\", \"email\": \"event@user.com\", \"age\": 30, \"is_active\": true})\n}",
+        "validation": "Log output shows 'Subscription registered...' and then '[EVENT] Document Created...' after the `Create` call, confirming the callback executed."
+      },
+      "related": {
+        "methods": [
+          "method:persistence.Collection.RegisterSubscription"
+        ],
+        "errors": []
+      }
+    },
+    "Execute Transaction": {
+      "id": "pattern:Execute Transaction",
+      "description": "Executes a block of operations atomically within a database transaction. If the callback returns an error, the transaction is rolled back.",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"fmt\"\n\t\"log\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n)\n\n// Assuming 'persistenceSvc' is an initialized *persistence.Persistence\nfunc runAtomicOperations(persistenceSvc *persistence.Persistence) {\n\t_, err := persistenceSvc.Transact(func(tx persistence.PersistenceTransactionInterface) (any, error) {\n\t\t// Operations within this callback are transactional\n\t\ttxCollection, err := tx.Collection(\"users\")\n\t\tif err != nil { return nil, err }\n\t\t_, err = txCollection.Create(map[string]any{\"name\": \"Tx User\", \"email\": \"tx@user.com\", \"age\": 30, \"is_active\": true})\n\t\tif err != nil { return nil, err } // This will cause a rollback\n\t\t// return nil, fmt.Errorf(\"simulated error\") // Uncomment to force rollback\n\t\treturn \"Transaction Success\", nil\n\t})\n\n\tif err != nil {\n\t\tfmt.Printf(\"Transaction failed: %v\\n\", err)\n\t} else {\n\t\tfmt.Println(\"Transaction committed successfully.\")\n\t}\n}",
+        "validation": "If the callback returns `nil, nil`, log output confirms 'Transaction committed successfully.', and the new user is found via subsequent `Read`. If the callback returns an `error`, output confirms 'Transaction failed:', and the user is NOT found."
+      },
+      "related": {
+        "methods": [
+          "method:persistence.Persistence.Transact",
+          "method:sqlite.SQLiteInteractor.StartTransaction",
+          "method:sqlite.SQLiteInteractor.Commit",
+          "method:sqlite.SQLiteInteractor.Rollback"
+        ],
+        "errors": [
+          "error:TransactionFailed"
+        ]
+      }
+    },
+    "Add a Computed Field": {
+      "id": "pattern:Add a Computed Field",
+      "description": "Demonstrates how to add a dynamically computed field to query results using a custom Go function.",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"fmt\"\n\t\"log\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n\t\"github.com/asaidimu/go-anansi/core/query\"\n\t\"github.com/asaidimu/go-anansi/core/schema\"\n)\n\nfunc getFullName(row schema.Document, args query.FilterValue) (any, error) {\n\tfirstName, ok1 := row[\"first_name\"].(string)\n\tlastName, ok2 := row[\"last_name\"].(string)\n\tif ok1 && ok2 {\n\t\treturn fmt.Sprintf(\"%s %s\", firstName, lastName), nil\n\t}\n\treturn \"\", fmt.Errorf(\"missing name fields\")\n}\n\n// Assume 'persistenceSvc' is initialized, and a 'people' collection exists with first_name, last_name fields\nfunc queryWithComputedField(persistenceSvc *persistence.Persistence) {\n\t// Register the custom function (this should be done during persistence init)\n\tpersistenceSvc.(*persistence.Persistence).executor.RegisterComputeFunction(\"full_name\", getFullName)\n\n\tcollection, err := persistenceSvc.Collection(\"people\")\n\tif err != nil { log.Fatalf(\"Failed to get collection: %v\", err) }\n\n\t// Ensure data exists for 'people' table, e.g., collection.Create(...)\n\n\tq := query.NewQueryBuilder().\n\t\tSelect().\n\t\t\tInclude(\"first_name\", \"last_name\"). // Ensure base fields are selected from DB\n\t\t\tAddComputed(\"fullDisplayName\", \"full_name\").\n\t\tEnd().\n\t\tBuild()\n\n\tresult, err := collection.Read(&q)\n\tif err != nil { log.Fatalf(\"Failed to read with computed field: %v\", err) }\n\n\tfor _, row := range result.Data.([]schema.Document) {\n\t\tfmt.Printf(\"Original Name: %v %v, Computed: %v\\n\", row[\"first_name\"], row[\"last_name\"], row[\"fullDisplayName\"])\n\t}\n}",
+        "validation": "Query results will include a new `fullDisplayName` field with concatenated names, demonstrating the `ComputeFunction` was applied correctly."
+      },
+      "related": {
+        "methods": [
+          "method:persistence.Executor.RegisterComputeFunction",
+          "method:query.QueryBuilder.AddComputed"
+        ],
+        "errors": [
+          "error:GoFunctionRegistrationMissing",
+          "error:GoFunctionRuntimeError"
+        ]
+      }
+    },
+    "Use a Custom Filter": {
+      "id": "pattern:Use a Custom Filter",
+      "description": "Shows how to define and use a custom Go predicate function for in-memory filtering that cannot be expressed in standard SQL.",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"fmt\"\n\t\"log\"\n\t\"strings\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n\t\"github.com/asaidimu/go-anansi/core/query\"\n\t\"github.com/asaidimu/go-anansi/core/schema\"\n)\n\nfunc containsForbiddenWord(doc schema.Document, field string, args query.FilterValue) (bool, error) {\n\ttext, ok := doc[field].(string)\n\tif !ok { return false, fmt.Errorf(\"field not string\") }\n\tforbiddenWords, ok := args.([]any)\n\tif !ok { return false, fmt.Errorf(\"args not string slice\") }\n\n\tfor _, word := range forbiddenWords {\n\t\tif w, ok := word.(string); ok && strings.Contains(text, w) {\n\t\t\treturn true, nil\n\t\t}\n\t}\n\treturn false, nil\n}\n\n// Assume 'persistenceSvc' is initialized, and a 'articles' collection exists with 'content' field\nfunc queryWithCustomFilter(persistenceSvc *persistence.Persistence) {\n\t// Register the custom filter function (should be done during persistence init)\n\tpersistenceSvc.(*persistence.Persistence).executor.RegisterFilterFunction(query.ComparisonOperator(\"has_forbidden_word\"), containsForbiddenWord)\n\n\tcollection, err := persistenceSvc.Collection(\"articles\")\n\tif err != nil { log.Fatalf(\"Failed to get collection: %v\", err) }\n\n\t// Ensure data exists for 'articles' table, e.g., collection.Create(...)\n\n\tq := query.NewQueryBuilder().\n\t\tWhere(\"content\").Custom(query.ComparisonOperator(\"has_forbidden_word\"), []any{\"bad_word\", \"offensive_term\"}).\n\t\tBuild()\n\n\tresult, err := collection.Read(&q)\n\tif err != nil { log.Fatalf(\"Failed to read with custom filter: %v\", err) }\n\n\tfmt.Printf(\"Articles with forbidden words: %d\\n\", result.Count)\n}",
+        "validation": "The query result count and content should reflect only those articles whose `content` field contains any of the specified forbidden words, demonstrating the custom filter's effect."
+      },
+      "related": {
+        "methods": [
+          "method:persistence.Executor.RegisterFilterFunction",
+          "method:query.QueryBuilder.Custom"
+        ],
+        "errors": [
+          "error:GoFunctionRegistrationMissing",
+          "error:GoFunctionRuntimeError"
+        ]
+      }
+    },
+    "Retrieve Collection Schema": {
+      "id": "pattern:Retrieve Collection Schema",
+      "description": "Retrieves the full `SchemaDefinition` for a previously created and registered collection.",
+      "example": {
+        "code": "package main\n\nimport (\n\t\"log\"\n\t\"fmt\"\n\t\"github.com/asaidimu/go-anansi/core/persistence\"\n)\n\n// Assuming 'persistenceSvc' is an initialized *persistence.Persistence\nfunc getCollectionSchema(persistenceSvc *persistence.Persistence) {\n\t// Assuming 'users' collection was previously created\n\tuserSchema, err := persistenceSvc.Schema(\"users\")\n\tif err != nil {\n\t\tlog.Fatalf(\"Failed to get 'users' schema: %v\", err)\n\t}\n\tfmt.Printf(\"Retrieved schema for '%s' (version %s). Fields: %v\\n\", userSchema.Name, userSchema.Version, userSchema.Fields)\n}",
+        "validation": "Log output confirms successful retrieval of the schema, printing its name, version, and a snippet of its fields."
+      },
+      "related": {
+        "methods": [
+          "method:persistence.Persistence.Schema"
+        ],
+        "errors": [
+          "error:CollectionDoesNotExist"
+        ]
+      }
+    }
+  },
+  "errors": {
+    "DatabaseConnectionFailed": {
+      "id": "error:DatabaseConnectionFailed",
+      "type": "*errors.errorString (fmt.Errorf)",
+      "symptoms": "Application fails to start or connect to the database. Error messages like 'Failed to open database connection' or 'Error looking up schema collection'.",
+      "properties": "None (error is typically wrapped, check underlying `err.Error()` for root cause).",
+      "scenarios": [
+        {
+          "trigger": "Attempting `sql.Open` with an invalid database file path or insufficient permissions.",
+          "example": "db, err := sql.Open(\"sqlite3\", \"/non/existent/path/db.db\")",
+          "reason": "Permissions error, file not found, or SQLite C library missing."
+        },
+        {
+          "trigger": "Database is locked or corrupted (less common on first connect).",
+          "example": "db, err := sql.Open(\"sqlite3\", \"./locked.db\")",
+          "reason": "Another process holds an exclusive lock."
+        }
+      ],
+      "diagnosis": "Check database file path correctness, file system permissions, and ensure the SQLite C library is installed and accessible to your Go environment. Review wrapped errors for more specific database driver messages.",
+      "resolution": "Correct database file path, grant necessary read/write permissions, install `libsqlite3` (if on Linux/macOS) or ensure `sqlite3.dll` is in PATH (Windows).",
+      "prevention": "Implement robust error checking on `sql.Open`. Ensure deployment environment has necessary database dependencies.",
+      "handlingPatterns": "Log the error, provide user-friendly message, and exit the application gracefully if critical.",
+      "propagationBehavior": "Typically fatal if during application startup, or returned directly to the caller for subsequent database operations."
+    },
+    "SchemaUnmarshalFailed": {
+      "id": "error:SchemaUnmarshalFailed",
+      "type": "*json.SyntaxError or *json.UnmarshalTypeError",
+      "symptoms": "Application crashes during schema definition load. Error messages like 'Failed to unmarshal user schema JSON: unexpected end of JSON input' or 'invalid character 'x' looking for beginning of value'.",
+      "properties": "Error object may contain `Offset` and `Error()` message for syntax errors, or `Value`, `Type`, `StructField` for type mismatches.",
+      "scenarios": [
+        {
+          "trigger": "Providing malformed JSON string to `json.Unmarshal` when loading `SchemaDefinition`.",
+          "example": "err = json.Unmarshal([]byte(`{ \"name\": \"users\", `), &userSchema)",
+          "reason": "Incomplete or syntactically incorrect JSON."
+        },
+        {
+          "trigger": "JSON field type does not match `schema.SchemaDefinition` struct field type.",
+          "example": "JSON: `\"fields\": \"invalid\"`, Go: `Fields map[string]*FieldDefinition`",
+          "reason": "JSON structure mismatch with Go struct."
+        }
+      ],
+      "diagnosis": "Use a JSON linter to validate your schema JSON string. Compare the JSON structure and field types with the `schema.SchemaDefinition` and `schema.FieldDefinition` Go structs.",
+      "resolution": "Correct JSON syntax and ensure field types in JSON match the expected Go types. Review documentation for `SchemaDefinition` structure.",
+      "prevention": "Use strong typing for schema definitions in Go or validate JSON schema strings before deployment.",
+      "handlingPatterns": "Catch the error, log it with the problematic JSON snippet, and provide guidance to the developer.",
+      "propagationBehavior": "Returned by `json.Unmarshal` calls. Usually handled at the initialization phase and causes application exit."
+    },
+    "CollectionCreationFailed": {
+      "id": "error:CollectionCreationFailed",
+      "type": "*errors.errorString (fmt.Errorf) wrapping underlying SQL errors",
+      "symptoms": "`persistenceSvc.Create(schema)` returns an error. Messages like 'A collection with a similar name exists' or 'Failed to create collection <name>: SQL logic error'.",
+      "properties": "Underlying SQL errors might provide more details (e.g., 'table <name> already exists').",
+      "scenarios": [
+        {
+          "trigger": "Attempting to `Create` a collection with a `Name` that already exists in the database and `IfNotExists` is false or `DropIfExists` is false.",
+          "example": "persistenceSvc.Create(mySchema) where 'mySchema.Name' already exists.",
+          "reason": "Duplicate table creation attempt."
+        },
+        {
+          "trigger": "Schema definition contains invalid SQL constructs (e.g., reserved keywords as column names, invalid data types) that the `QueryGenerator` translates poorly.",
+          "example": "Schema with field name 'FROM'.",
+          "reason": "Generated SQL syntax error."
+        }
+      ],
+      "diagnosis": "Check if a table with the same name (considering `TablePrefix`) already exists in the database. Inspect the schema definition for problematic field names or types. If verbose logging is enabled, check the generated DDL SQL statements.",
+      "resolution": "Use a unique collection name. Set `persistence.InteractorOptions.DropIfExists = true` for idempotent recreation (dev/test) or `IfNotExists = true` for safe creation. Correct invalid field names/types in the schema. Ensure SQLite version supports all DDL features (e.g., `RETURNING` for `InsertDocuments`).",
+      "prevention": "Implement a check using `Persistence.CollectionExists` before `Create`. Validate schemas more strictly against SQL reserved keywords or non-standard characters.",
+      "handlingPatterns": "Log the error, inform the user about the duplicate collection, or advise on schema correction.",
+      "propagationBehavior": "Returned directly by `Persistence.Create` or `sqlite.SQLiteInteractor.CreateCollection`."
+    },
+    "DataValidationFailed": {
+      "id": "error:DataValidationFailed",
+      "type": "*errors.errorString (fmt.Errorf) wrapping `schema.ValidationResult` context.",
+      "symptoms": "`collection.Create` or `collection.Validate` returns an error. Messages like 'Provided data does not conform to the collections schema'.",
+      "properties": "The error itself doesn't contain issues directly, but the `Validate` method returns a `*schema.ValidationResult` which contains `Issues []schema.Issue`.",
+      "scenarios": [
+        {
+          "trigger": "An input `map[string]any` is missing a field marked as `\"required\": true` in the schema.",
+          "example": "Schema requires `email`, input `{\"name\": \"test\"}`.",
+          "reason": "Missing required field. Issue Code: `REQUIRED_FIELD_MISSING`."
+        },
+        {
+          "trigger": "An input field's value has a different Go type than specified by `FieldType` in the schema (and cannot be coerced).",
+          "example": "Schema `\"age\": {\"type\": \"integer\"}`, input `{\"age\": \"twenty\"}`.",
+          "reason": "Type mismatch. Issue Code: `TYPE_MISMATCH`."
+        },
+        {
+          "trigger": "An `enum` field's value is not found in the `values` array.",
+          "example": "Schema `\"status\": {\"type\": \"enum\", \"values\": [\"active\"]}`, input `{\"status\": \"pending\"}`.",
+          "reason": "Invalid enum value. Issue Code: `ENUM_VIOLATION`."
+        }
+      ],
+      "diagnosis": "Examine the `*schema.ValidationResult` object returned by `collection.Validate` (or implicitly by `collection.Create`). Iterate through `ValidationResult.Issues` to find specific `Code`, `Message`, and `Path` details.",
+      "resolution": "Modify the input data (`map[string]any`) to comply with the schema's field definitions (e.g., add missing required fields, provide correct data types, use allowed enum values).",
+      "prevention": "Always call `collection.Validate` before `collection.Create` (though `Create` internally validates too). Use strong data contracts on your application's input layer.",
+      "handlingPatterns": "Log validation issues, return a bad request error to the client, or prompt the user for correct input.",
+      "propagationBehavior": "Returned by `persistence.Collection.Validate` and `persistence.Collection.Create`."
+    },
+    "InvalidDataTypeForCreate": {
+      "id": "error:InvalidDataTypeForCreate",
+      "type": "*errors.errorString (fmt.Errorf)",
+      "symptoms": "`collection.Create` returns 'invalid data type for Create: expected map[string]any or []map[string]any, got <Type>'.",
+      "properties": "None.",
+      "scenarios": [
+        {
+          "trigger": "Calling `collection.Create` with a type other than `map[string]any` or `[]map[string]any`.",
+          "example": "collection.Create(someStruct)",
+          "reason": "Incorrect input type for the method."
+        }
+      ],
+      "diagnosis": "Check the type of the argument passed to `collection.Create`.",
+      "resolution": "Convert the input data to `map[string]any` or `[]map[string]any` before passing it to `Create`.",
+      "prevention": "Ensure all data intended for insertion is marshaled or cast to the correct generic `map[string]any` format.",
+      "handlingPatterns": "Log the error and inform the developer about the expected input type.",
+      "propagationBehavior": "Returned directly by `persistence.Collection.Create`."
+    },
+    "DeleteWithoutWhereClause": {
+      "id": "error:DeleteWithoutWhereClause",
+      "type": "*errors.errorString (fmt.Errorf)",
+      "symptoms": "`collection.Delete` returns 'DELETE without WHERE clause is not allowed for safety. Set unsafeDelete=true to override'.",
+      "properties": "None.",
+      "scenarios": [
+        {
+          "trigger": "Attempting to delete all records from a collection by calling `collection.Delete(nil, false)` or `collection.Delete(query.NewQueryBuilder().Build().Filters, false)`.",
+          "example": "collection.Delete(nil, false)",
+          "reason": "Safety mechanism to prevent accidental mass deletion without explicit intent."
+        }
+      ],
+      "diagnosis": "The `Delete` method was called without a `QueryFilter` or with a filter that evaluates to an empty WHERE clause, and the `unsafeDelete` parameter was `false`.",
+      "resolution": "Provide a meaningful `query.QueryFilter` to target specific documents for deletion, or explicitly set `unsafeDelete` to `true` if a full table truncation is intended (use with extreme caution).",
+      "prevention": "Always use specific filters for deletions unless you explicitly want to clear the entire table.",
+      "handlingPatterns": "Log the error, provide user feedback, or enforce filter construction in your application logic.",
+      "propagationBehavior": "Returned directly by `persistence.Collection.Delete` and `sqlite.SQLiteInteractor.DeleteDocuments`."
+    },
+    "CannotStartTransactionFromExistingTransactionalInteractor": {
+      "id": "error:CannotStartTransactionFromExistingTransactionalInteractor",
+      "type": "*errors.errorString (fmt.Errorf)",
+      "symptoms": "`StartTransaction` returns 'Cannot start a new transaction from an existing transactional interactor'.",
+      "properties": "None.",
+      "scenarios": [
+        {
+          "trigger": "Calling `StartTransaction` on an `SQLiteInteractor` instance that was itself obtained from a prior `StartTransaction` call.",
+          "example": "tx1, _ := interactor.StartTransaction(...); tx2, _ := tx1.StartTransaction(...)",
+          "reason": "Attempting to nest transactions directly on the same interactor object, which is not supported by Anansi's `DatabaseInteractor` pattern."
+        }
+      ],
+      "diagnosis": "Ensure that `StartTransaction` is always called on the *original* non-transactional `DatabaseInteractor` instance or handled through the higher-level `Persistence.Transact` which manages interactor instances.",
+      "resolution": "Refactor transaction logic to use a single `StartTransaction` call per atomic unit, or leverage `Persistence.Transact` which handles interactor management for you.",
+      "prevention": "Understand the lifecycle of `DatabaseInteractor` instances: `NewSQLiteInteractor(..., nil)` creates a non-transactional one; `StartTransaction` *returns a new* transactional one.",
+      "handlingPatterns": "Log the error, and indicate that nested `StartTransaction` calls on an already transactional interactor are not supported directly.",
+      "propagationBehavior": "Returned directly by `sqlite.SQLiteInteractor.StartTransaction`."
+    },
+    "CommitNotApplicableNotTransactionalContext": {
+      "id": "error:CommitNotApplicableNotTransactionalContext",
+      "type": "*errors.errorString (fmt.Errorf)",
+      "symptoms": "`Commit` returns 'Commit not applicable: not in a transactional context'.",
+      "properties": "None.",
+      "scenarios": [
+        {
+          "trigger": "Calling `Commit` on an `SQLiteInteractor` instance that was not created with an active transaction (i.e., `e.tx` is nil).",
+          "example": "nonTxInteractor.Commit(ctx)",
+          "reason": "Attempting to commit on a non-transactional interactor."
+        }
+      ],
+      "diagnosis": "Verify that `Commit` is only called on the `DatabaseInteractor` instance returned by `StartTransaction` (or implicitly by `Persistence.Transact`).",
+      "resolution": "Ensure `Commit` (and `Rollback`) are invoked on the correct transactional interactor instance.",
+      "prevention": "Always pair `StartTransaction` with a `defer txInteractor.Rollback()` or `txInteractor.Commit()` on the *returned* interactor.",
+      "handlingPatterns": "Log the error, indicating incorrect usage of transactional methods.",
+      "propagationBehavior": "Returned directly by `sqlite.SQLiteInteractor.Commit`."
+    },
+    "RollbackNotApplicableNotTransactionalContext": {
+      "id": "error:RollbackNotApplicableNotTransactionalContext",
+      "type": "*errors.errorString (fmt.Errorf)",
+      "symptoms": "`Rollback` returns 'Rollback not applicable: not in a transactional context'.",
+      "properties": "None.",
+      "scenarios": [
+        {
+          "trigger": "Calling `Rollback` on an `SQLiteInteractor` instance that was not created with an active transaction.",
+          "example": "nonTxInteractor.Rollback(ctx)",
+          "reason": "Attempting to rollback on a non-transactional interactor."
+        }
+      ],
+      "diagnosis": "Verify that `Rollback` is only called on the `DatabaseInteractor` instance returned by `StartTransaction`.",
+      "resolution": "Ensure `Rollback` is invoked on the correct transactional interactor instance.",
+      "prevention": "Always pair `StartTransaction` with `defer txInteractor.Rollback()` or explicit `txInteractor.Commit()`/`Rollback()` on the *returned* interactor.",
+      "handlingPatterns": "Log the error, indicating incorrect usage.",
+      "propagationBehavior": "Returned directly by `sqlite.SQLiteInteractor.Rollback`."
+    },
+    "CollectionDoesNotExist": {
+      "id": "error:CollectionDoesNotExist",
+      "type": "*errors.errorString (fmt.Errorf)",
+      "symptoms": "`Persistence.Collection` or `Persistence.Schema` returns 'Collection <name> does not exist'.",
+      "properties": "None.",
+      "scenarios": [
+        {
+          "trigger": "Requesting a collection or schema by name that has not been `Create`d via `Persistence.Create`.",
+          "example": "persistenceSvc.Collection(\"non_existent_collection\")",
+          "reason": "The collection's schema record is not found in the internal `_schemas` collection or the underlying table does not exist."
+        }
+      ],
+      "diagnosis": "Verify the collection name spelling. Check if the collection was successfully created beforehand. Check the underlying database to confirm table existence.",
+      "resolution": "Ensure the collection is created via `Persistence.Create` before attempting to `Collection` or `Schema` it.",
+      "prevention": "Maintain a clear lifecycle for collection creation and access.",
+      "handlingPatterns": "Log the error and inform the caller that the requested collection is not found.",
+      "propagationBehavior": "Returned by `persistence.Persistence.Collection` and `persistence.Persistence.Schema`."
+    },
+    "GoFunctionRegistrationMissing": {
+      "id": "error:GoFunctionRegistrationMissing",
+      "type": "*errors.errorString (fmt.Errorf)",
+      "symptoms": "Queries using `AddComputed` or `Custom` operators fail. Error messages like 'unregistered Go compute function: <func_name>' or 'unregistered Go filter function for operator: <op_name>'.",
+      "properties": "None.",
+      "scenarios": [
+        {
+          "trigger": "Attempting to use a custom Go function (compute or predicate) in a `QueryDSL` without having registered it in the `schema.FunctionMap` passed to `persistence.NewPersistence`.",
+          "example": "query.NewQueryBuilder().Select().AddComputed(\"my_alias\", \"unregistered_func\")",
+          "reason": "The `DataProcessor` cannot find the Go function corresponding to the name/operator."
+        }
+      ],
+      "diagnosis": "Verify that the function's name (for computed) or operator (for filter) exactly matches the key used when calling `executor.RegisterComputeFunction` or `executor.RegisterFilterFunction`.",
+      "resolution": "Ensure all custom Go functions are registered in the `schema.FunctionMap` when `persistence.NewPersistence` is called, or by calling `executor.RegisterComputeFunction`/`RegisterFilterFunction` on the `Executor` instance obtained from `Persistence`.",
+      "prevention": "Always register custom Go functions at application startup during Anansi initialization.",
+      "handlingPatterns": "Log the error, provide developer guidance on registering custom functions.",
+      "propagationBehavior": "Returned by `query.DataProcessor.applyGoComputeFunctions` or `query.DataProcessor.evaluateGoFilter`."
+    },
+    "GoFunctionRuntimeError": {
+      "id": "error:GoFunctionRuntimeError",
+      "type": "*errors.errorString (fmt.Errorf) or custom error type from user's function.",
+      "symptoms": "Queries using custom Go functions complete but return errors, or panic. Messages like 'error executing Go compute function ...: <your_error>' or 'error evaluating Go filter ...: <your_error>'.",
+      "properties": "The underlying error often comes from the user-defined `ComputeFunction` or `PredicateFunction`.",
+      "scenarios": [
+        {
+          "trigger": "A `ComputeFunction` or `PredicateFunction` attempts an invalid type assertion on a `schema.Document` field (e.g., asserting `any` to `string` when it's an `int`).",
+          "example": "name, ok := row[\"name\"].(string); if !ok { return nil, fmt.Errorf(\"name not string\") }",
+          "reason": "Runtime type mismatch in user's Go function logic."
+        },
+        {
+          "trigger": "A `ComputeFunction` or `PredicateFunction` encounters unexpected `nil` values or invalid `args`.",
+          "example": "if args.(string) == nil {}",
+          "reason": "Improper handling of optional or variable `FilterValue` parameters."
+        }
+      ],
+      "diagnosis": "Inspect the stack trace to pinpoint the exact line in your custom Go function where the error occurs. Pay close attention to type assertions (`value.(Type)`), null checks, and error handling within your function.",
+      "resolution": "Implement defensive programming within your `ComputeFunction` and `PredicateFunction`: use comma-ok idiom (`value, ok := ...`), check for `nil` explicitly, and handle `FilterValue` `args` with type assertions.",
+      "prevention": "Thorough unit testing of your custom Go functions with various valid and invalid inputs. Consistent data types in schemas.",
+      "handlingPatterns": "The Anansi framework will wrap and return this error to the caller of `Read`. Log the error contextually for debugging.",
+      "propagationBehavior": "Propagates from user-defined Go functions up through `query.DataProcessor` to `persistence.Executor` and `persistence.Collection.Read`."
+    }
+  }
+}
