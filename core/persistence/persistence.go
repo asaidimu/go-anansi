@@ -27,7 +27,7 @@ type Persistence struct {
 }
 
 // NewPersistence creates a new instance of Persistence.
-func NewPersistence(interactor DatabaseInteractor, fmap schema.FunctionMap) (*Persistence, error) {
+func NewPersistence(interactor DatabaseInteractor, fmap schema.FunctionMap) (PersistenceInterface, error) {
 	bus, err := events.NewTypedEventBus[PersistenceEvent](events.DefaultConfig())
 	if err != nil {
 		return nil, fmt.Errorf("Could not initialize event bus %v", err)
@@ -301,7 +301,6 @@ func (pi *Persistence) Subscriptions() ([]SubscriptionInfo, error) {
 // Metadata retrieves metadata based on the filter.
 func (pi *Persistence) Metadata(
 	filter *MetadataFilter,
-	forceRefresh bool,
 ) (Metadata, error) {
 	metadata := Metadata{}
 	return metadata, nil

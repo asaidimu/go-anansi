@@ -254,8 +254,6 @@ type UpdateOptions struct {
 // It implicitly includes methods from ObservabilityInterface and EventTaskInterface.
 type PersistenceInterface interface {
 	Collection(name string) (PersistenceCollectionInterface, error)
-	Transaction() error // Corresponds to `transact` but simplified for interface
-
 	// Methods directly from Persistence in TS
 	Collections() ([]string, error)
 	Create(sc schema.SchemaDefinition) (PersistenceCollectionInterface, error) // Returns PersistenceCollection<T, FunctionMap>
@@ -266,9 +264,6 @@ type PersistenceInterface interface {
 	// Methods from ObservabilityInterface
 	Metadata(
 		filter *MetadataFilter,
-		includeCollections bool,
-		includeSchemas bool,
-		forceRefresh bool,
 	) (Metadata, error)
 
 	// Methods from EventTaskInterface (Go-idiomatic Register/Unregister pattern)
@@ -288,7 +283,6 @@ type PersistenceTransactionInterface interface {
 	Collection(name string) (PersistenceCollectionInterface, error)
 	Metadata(
 		filter *MetadataFilter,
-		forceRefresh bool,
 	) (Metadata, error)
 }
 

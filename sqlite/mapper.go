@@ -16,7 +16,6 @@ import (
 func DefaultInteractorOptions() *persistence.InteractorOptions {
 	return &persistence.InteractorOptions{
 		IfNotExists:   true,
-		DropIfExists:  false,
 		CreateIndexes: true,
 	}
 }
@@ -43,14 +42,6 @@ func (s *SQLiteInteractor) getTableName(baseName string) string {
 // If DropIfExists option is true, the table will be dropped before creation.
 // Note: the drop operation itself occurs outside the transaction.
 func (s *SQLiteInteractor) CreateCollection(sc schema.SchemaDefinition) error {
-	if s.options.DropIfExists {
-		// Note: DropTable operates outside the transaction, as DDL commits implicitly in some databases,
-		// and for SQLite, dropping a table is typically safe outside the transaction that creates it.
-		if err := s.DropCollection(sc.Name); err != nil {
-			return fmt.Errorf("failed to drop table %s: %w", sc.Name, err)
-		}
-	}
-
 	sqlStatements, err := s.CreateTableSQL(sc)
 	if err != nil {
 		return fmt.Errorf("failed to generate SQL for table %s: %w", sc.Name, err)
