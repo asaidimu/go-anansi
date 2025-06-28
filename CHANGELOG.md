@@ -1,3 +1,17 @@
+# [2.0.0](https://github.com/asaidimu/go-anansi/compare/v1.0.0...v2.0.0) (2025-06-28)
+
+
+* refactor(core)!: reorganize core package into query and schema modules ([af5a999](https://github.com/asaidimu/go-anansi/commit/af5a999dcd26c1a188d89717bdcccf1304f1ff01))
+
+
+### BREAKING CHANGES
+
+* The 'core' package has been refactored into 'core/query' and 'core/schema' for better modularity and separation of concerns.
+- Schema definition types (e.g., core.SchemaDefinition, core.FieldDefinition, core.Issue, core.ValidationResult) are now found in 'github.com/asaidimu/go-anansi/core/schema'.
+- Query-related types (e.g., core.QueryDSL, core.QueryFilter, core.QueryBuilder, core.ComparisonOperator, core.LogicalOperator, core.Document (now schema.Document), core.ComputeFunction, core.PredicateFunction, core.DataProcessor) are now found in 'github.com/asaidimu/go-anansi/core/query'.
+- Top-level persistence interfaces and implementations (e.g., core.PersistenceInterface, core.PersistenceCollectionInterface, core.PersistenceEvent, core.RegisterSubscriptionOptions, core.CollectionUpdate) are now found in 'github.com/asaidimu/go-anansi/core/persistence'.
+Consumers of the library must update their import paths to reflect these changes.
+
 # 1.0.0 (2025-06-28)
 
 
