@@ -81,59 +81,47 @@ Before you begin, ensure you have the following installed:
 3.  **Build the project (optional, for executable):**
     ```bash
     go build -v ./...
-    # Or, to build the main executable:
-    go build -o anansi-example main.go
     ```
 
 ### Verification
 
-To verify your installation and see Anansi in action, run the example `main.go` file:
+To verify your installation and see Anansi in action, run the basic example:
 
 ```bash
-go run main.go
+go run examples/basic/main.go
 ```
 
-You should see output similar to this:
+You should see output similar to this, demonstrating schema definition, collection creation, and basic CRUD operations:
 
 ```
-Starting fresh: removed existing user.db (if any).
-Defining User schema from JSON string...
-User schema unmarshaled successfully from JSON.
-Creating 'users' table...
-'users' table created successfully.
-Document added to collection 'users', {document:create:success}
-Document added to collection 'users', {document:create:success}
-Document added to collection 'users', {document:create:success}
-Inserting sample data...
-Sample data inserted successfully.
-
-Querying data from 'users' table:
--------------------------------------------------------------------
-ID         Name                 Email                     Age   Active    
--------------------------------------------------------------------
-2          Alice Smith          alice2@example.com        27    true      
-3          Alex Smith           alice3@example.com        28    false     
--------------------------------------------------------------------
-Database created successfully at: user.db
-You can inspect this database file using the 'sqlite3' command-line tool:
-1. Open your terminal.
-2. Navigate to the directory where 'main.go' and 'user.db' are located.
-3. Run: sqlite3 user.db
-4. Inside the sqlite3 prompt, you can run SQL commands:
-    - .tables (to list tables)
-    - .schema users (to view table schema)
-    - SELECT * FROM users; (to view data)
-    - .quit (to exit)
--------------------------------------------------------------------
-ID         Name                 Email                     Age   Active    
--------------------------------------------------------------------
-2          Alice Smith          alice2@example.com        27    true      
-3          Alex Smith           alice3@example.com        28    false     
--------------------------------------------------------------------
-Database connection closed.
-Dropped 'users' table...
+INFO Anansi persistence service initialized for inventory tracking. {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO 'inventory_items' collection created successfully. {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Adding new items to inventory... {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO --- Current Inventory --- {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Found multiple items: {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Keyboard", "Quantity": 25, "Last Updated": {}}
+INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Laptop", "Quantity": 10, "Last Updated": {}}
+INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Mouse", "Quantity": 50, "Last Updated": {}}
+INFO ------------------------- {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Updating quantity for 'Laptop'... {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Laptop quantity updated {"timestamp": "2025-06-28T10:00:00.000Z", "rows_affected": 1}
+INFO --- Current Inventory --- {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Found multiple items: {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Keyboard", "Quantity": 25, "Last Updated": {}}
+INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Laptop", "Quantity": 8, "Last Updated": {}}
+INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Mouse", "Quantity": 50, "Last Updated": {}}
+INFO ------------------------- {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Deleting 'Mouse' from inventory... {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Mouse deleted {"timestamp": "2025-06-28T10:00:00.000Z", "rows_affected": 1}
+INFO --- Current Inventory --- {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Found multiple items: {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Keyboard", "Quantity": 25, "Last Updated": {}}
+INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Laptop", "Quantity": 8, "Last Updated": {}}
+INFO ------------------------- {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Reading items with quantity less than 20: {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Found 1 low stock item: {"timestamp": "2025-06-28T10:00:00.000Z"}
+INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Laptop", "Quantity": 8, "Last Updated": {}}
 ```
-
 This confirms that the application can connect to SQLite, define a schema, create a table, insert data, query it, and manage transactions using the Anansi framework.
 
 ---
@@ -146,60 +134,24 @@ Anansi operates on the principle of defining your data structure as a schema, th
 
 Schemas are defined using the `schema.SchemaDefinition` struct, which can be easily unmarshaled from JSON. This allows for externalizing your data models.
 
-**Example (`userSchemaJSON` from `main.go`):**
+**Example (`inventorySchemaJSON` from `examples/basic/main.go`):**
 
 ```json
 {
-    "name": "users",
-    "version": "1.0.0",
-    "description": "Schema for user profiles",
-    "fields": {
-        "id": {
-            "name": "id",
-            "type": "integer",
-            "required": false,
-            "unique": true,
-            "description": "Unique identifier for the user"
-        },
-        "name": {
-            "name": "name",
-            "type": "string",
-            "required": true,
-            "description": "Full name of the user"
-        },
-        "email": {
-            "name": "email",
-            "type": "string",
-            "required": true,
-            "unique": true,
-            "description": "Email address, must be unique"
-        },
-        "age": {
-            "name": "age",
-            "type": "integer",
-            "required": false,
-            "description": "Age of the user (optional)"
-        },
-        "is_active": {
-            "name": "is_active",
-            "type": "boolean",
-            "required": true,
-            "default": true,
-            "description": "User account active status"
-        }
-    },
-    "indexes": [
-        {
-            "name": "pk_user_id",
-            "fields": ["id"],
-            "type": "primary"
-        },
-        {
-            "name": "idx_user_email",
-            "fields": ["email"],
-            "type": "unique"
-        }
-    ]
+  "name": "inventory_items",
+  "version": "1.0.0",
+  "description": "Schema for tracking inventory items",
+  "fields": {
+    "id": { "name": "id", "type": "string", "required": true, "unique": true },
+    "item_name": { "name": "item_name", "type": "string", "required": true, "unique": true },
+    "description": { "name": "description", "type": "string", "required": false },
+    "quantity": { "name": "quantity", "type": "integer", "required": true },
+    "last_updated": { "name": "last_updated", "type": "datetime", "required": true }
+  },
+  "indexes": [
+    { "fields": ["item_name"], "unique": true },
+    { "fields": ["quantity"] }
+  ]
 }
 ```
 
@@ -213,7 +165,6 @@ package main
 import (
 	"database/sql"
 	"log"
-	"os"
 
 	"github.com/asaidimu/go-anansi/core/persistence"
 	"github.com/asaidimu/go-anansi/core/schema"
@@ -223,35 +174,38 @@ import (
 )
 
 func main() {
-	dbFileName := "my_app.db"
-	if err := os.Remove(dbFileName); err != nil && !os.IsNotExist(err) {
-		log.Fatalf("Failed to remove existing database file %s: %v", dbFileName, err)
-	}
+	// Setup logger
+	config := zap.NewProductionConfig()
+	config.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
+	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	config.EncoderConfig.TimeKey = "timestamp"
 
-	db, err := sql.Open("sqlite3", dbFileName)
+	logger, err := config.Build()
 	if err != nil {
-		log.Fatalf("Failed to open database connection: %v", err)
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer logger.Sync()
+
+	// 1. Open SQLite database connection
+	db, err := sql.Open("sqlite3", "./inventory.db")
+	if err != nil {
+		logger.Fatal("Failed to open database", zap.Error(err))
 	}
 	defer db.Close()
 
-	// Initialize with a logger (optional) and default interactor options
-	logger, _ := zap.NewDevelopment()
-	defer logger.Sync()
+	// 2. Initialize SQLite Interactor with default options
+	interactorOptions := sqlite.DefaultInteractorOptions()
+	interactor := sqlite.NewSQLiteInteractor(db, logger, interactorOptions, nil)
 
-	// Create an SQLite DatabaseInteractor.
-	// The interactor handles low-level DB operations and DDL.
-	interactor := sqlite.NewSQLiteInteractor(db, logger, sqlite.DefaultInteractorOptions(), nil)
-
-	// Initialize the core persistence service.
-	// This service manages collections, schemas, and orchestrates operations.
+	// 3. Initialize the Anansi Persistence service
 	// An empty schema.FunctionMap is passed for now; see "In-memory Go Functions" section.
-	persistenceService, err := persistence.NewPersistence(interactor, schema.FunctionMap{})
+	persistenceSvc, err := persistence.NewPersistence(interactor, schema.FunctionMap{})
 	if err != nil {
-		log.Fatalf("Failed to initialize persistence: %v", err)
+		logger.Fatal("Failed to initialize persistence service", zap.Error(err))
 	}
-	fmt.Println("Persistence service initialized.")
+	logger.Info("Anansi persistence service initialized.")
 
-	// ... now use persistenceService to create collections, etc.
+	// ... now use persistenceSvc to create collections, etc.
 }
 ```
 
@@ -260,12 +214,21 @@ func main() {
 Once `persistence.NewPersistence` is initialized, you can create a collection (which maps to a database table) using your schema definition.
 
 ```go
-// userSchema is your schema.SchemaDefinition unmarshaled from JSON
-collection, err := persistenceService.Create(userSchema)
-if err != nil {
-	log.Fatalf("Failed to create collection 'users': %v", err)
+// inventorySchema is your schema.SchemaDefinition unmarshaled from JSON
+var inventorySchema schema.SchemaDefinition
+if err := json.Unmarshal([]byte(inventorySchemaJSON), &inventorySchema); err != nil {
+    logger.Fatal("Failed to unmarshal inventory schema", zap.Error(err))
 }
-fmt.Println("'users' table created successfully.")
+
+var inventoryCollection persistence.PersistenceCollectionInterface
+if inventoryCollection, err = persistenceSvc.Collection(inventorySchema.Name); err != nil {
+    // Collection doesn't exist, create it
+    inventoryCollection, err = persistenceSvc.Create(inventorySchema)
+    if err != nil {
+        logger.Fatal("Failed to create 'inventory_items' collection", zap.Error(err))
+    }
+}
+logger.Info("'inventory_items' collection created successfully.")
 ```
 
 ### Basic CRUD Operations
@@ -276,35 +239,35 @@ Anansi provides methods for common database operations.
 
 ```go
 import (
+	"time"
 	"github.com/asaidimu/go-anansi/core/query"
 	"github.com/asaidimu/go-anansi/core/schema"
 )
 
 // Single record insert
-userData := map[string]any{
-    "name":      "Alice Smith",
-    "email":     "alice@example.com",
-    "age":       30,
-    "is_active": true,
+item1 := map[string]any{
+    "id":           uuid.New().String(),
+    "item_name":    "Laptop",
+    "description":  "High-performance notebook",
+    "quantity":     int64(10), // Use int64 for integer types in Anansi documents
+    "last_updated": time.Now(),
 }
-
 // The Create method accepts map[string]any or []map[string]any
-insertedResult, err := collection.Create(userData) // Returns *query.QueryResult
+_, err = inventoryCollection.Create(item1) // Returns *query.QueryResult
 if err != nil {
-    log.Fatalf("Failed to insert user: %v", err)
+    logger.Error("Failed to add Laptop", zap.Error(err))
 }
-fmt.Printf("Inserted user ID: %v\n", insertedResult.Data.(schema.Document)["id"])
 
 // Batch inserts
-batchData := []map[string]any{
-    {"name": "Bob Johnson", "email": "bob@example.com", "age": 25, "is_active": true},
-    {"name": "Charlie Brown", "email": "charlie@example.com", "age": 35, "is_active": false},
-}
-insertedBatchResult, err := collection.Create(batchData)
+item2 := map[string]any{ /* ... */ }
+item3 := map[string]any{ /* ... */ }
+batchData := []map[string]any{item2, item3}
+
+// Pass a slice of maps for batch insertion
+_, err = inventoryCollection.Create(batchData)
 if err != nil {
-    log.Fatalf("Failed to batch insert users: %v", err)
+    logger.Error("Failed to batch insert items", zap.Error(err))
 }
-fmt.Printf("Batch inserted %d users.\n", insertedBatchResult.Count)
 ```
 
 #### Read (Query)
@@ -314,28 +277,26 @@ Read operations leverage the `query.QueryBuilder` to construct complex queries.
 ```go
 import "github.com/asaidimu/go-anansi/core/query"
 
-// Query all active users younger than 28, excluding the 'age' field from the output.
-q := query.NewQueryBuilder().
-    WhereGroup(query.LogicalOperatorAnd).
-        Where("is_active").Eq(true).
-        Where("age").Lt(28).
-    End().
-    Select().
-        Exclude("age").
-    End().
-    Build()
+// Query all items, ordered by name ascending
+readQuery := query.NewQueryBuilder().OrderBy("item_name", query.SortDirectionAsc).Build()
 
-result, err := collection.Read(&q) // Read takes a pointer to QueryDSL
+result, err := inventoryCollection.Read(&readQuery) // Read takes a pointer to QueryDSL
 if err != nil {
-    log.Fatalf("Failed to read data: %v", err)
+    logger.Error("Failed to read inventory items", zap.Error(err))
+    return
 }
 
-// Results are []schema.Document (map[string]any)
-rows := result.Data.([]schema.Document)
-for _, row := range rows {
-    // Note: 'age' is excluded by the projection in this query
-    fmt.Printf("User: ID=%v, Name=%v, Email=%v, Active=%v\n",
-        row["id"], row["name"], row["email"], row["is_active"])
+// Results are []schema.Document (map[string]any) if multiple, or schema.Document if single
+if result.Count > 0 {
+	if itemDocs, ok := result.Data.([]schema.Document); ok {
+		for _, itemDoc := range itemDocs {
+			fmt.Printf("Item: ID=%v, Name=%v, Quantity=%v\n", itemDoc["id"], itemDoc["item_name"], itemDoc["quantity"])
+		}
+	} else if itemDoc, ok := result.Data.(schema.Document); ok {
+		fmt.Printf("Item: ID=%v, Name=%v, Quantity=%v\n", itemDoc["id"], itemDoc["item_name"], itemDoc["quantity"])
+	}
+} else {
+	fmt.Println("No items in inventory.")
 }
 ```
 
@@ -344,58 +305,66 @@ for _, row := range rows {
 ```go
 import "github.com/asaidimu/go-anansi/core/persistence"
 
-// Update the user whose email is 'alice@example.com' to have age 31 and name 'Alice M. Smith'
-updates := map[string]any{"age": 31, "name": "Alice M. Smith"}
-filter := query.NewQueryBuilder().Where("email").Eq("alice@example.com").Build().Filters
+// Update the quantity for 'Laptop'
+updateData := map[string]any{
+    "quantity":     int64(8), // Quantity reduced
+    "last_updated": time.Now(),
+}
+updateFilter := query.NewQueryBuilder().Where("item_name").Eq("Laptop").Build().Filters
 
 updateParams := &persistence.CollectionUpdate{
-	Data:   updates,
-	Filter: filter,
+	Data:   updateData,
+	Filter: updateFilter,
 }
 
-rowsAffected, err := collection.Update(updateParams)
+rowsAffected, err := inventoryCollection.Update(updateParams)
 if err != nil {
-    log.Fatalf("Failed to update user: %v", err)
+    logger.Error("Failed to update Laptop quantity", zap.Error(err))
+} else {
+    logger.Info("Laptop quantity updated", zap.Int("rows_affected", rowsAffected))
 }
-fmt.Printf("Updated %d rows.\n", rowsAffected)
 ```
 
 #### Delete
 
 ```go
-// Delete inactive users
-filter := query.NewQueryBuilder().Where("is_active").Eq(false).Build().Filters
+// Delete 'Mouse' from inventory
+deleteFilter := query.NewQueryBuilder().Where("item_name").Eq("Mouse").Build().Filters
 
-// By default, DELETE requires a filter for safety.
-// To delete all records (DANGER!), set unsafe to true.
-rowsAffected, err := collection.Delete(filter, false)
+// By default, DELETE requires a filter for safety (unsafe=false).
+rowsAffected, err := inventoryCollection.Delete(deleteFilter, false)
 if err != nil {
-    log.Fatalf("Failed to delete users: %v", err)
+    logger.Error("Failed to delete Mouse", zap.Error(err))
+} else {
+    logger.Info("Mouse deleted", zap.Int("rows_affected", rowsAffected))
 }
-fmt.Printf("Deleted %d rows.\n", rowsAffected)
 
-// Drop an entire collection (table)
-deleted, err := persistenceService.Delete("users")
-if err != nil {
-	log.Fatalf("Failed to drop collection: %v", err)
-}
-fmt.Printf("Collection 'users' deleted: %t\n", deleted)
+// To delete an entire collection (table) from the persistence service:
+// Note: This operation is generally irreversible.
+// deleted, err := persistenceSvc.Delete("inventory_items")
+// if err != nil {
+// 	logger.Fatal("Failed to drop collection: %v", err)
+// }
+// logger.Info("Collection 'inventory_items' deleted", zap.Bool("deleted", deleted))
 ```
 
 ### Data Validation
 
-Anansi allows you to validate data against a collection's schema constraints at runtime.
+Anansi allows you to validate data against a collection's schema constraints at runtime using `collection.Validate()`.
 
 ```go
 import "github.com/asaidimu/go-anansi/core/schema"
 
-invalidUserData := map[string]any{
-    "name": "Invalid User",
-    // 'email' is required but missing
-    "age": 20,
+// Example: Inventory item schema requires 'item_name' and 'quantity'
+invalidItemData := map[string]any{
+    "id": "123-abc",
+    // "item_name" is missing (required)
+    "description": "Invalid item attempt",
+    "quantity":    "not-a-number", // Quantity is required and must be integer
 }
 
-validationResult, err := collection.Validate(invalidUserData, false) // `false` for strict validation
+// `false` for strict validation (all required fields must be present)
+validationResult, err := inventoryCollection.Validate(invalidItemData, false)
 if err != nil {
     fmt.Printf("Error during validation: %v\n", err)
 }
@@ -423,14 +392,14 @@ import (
 )
 
 // Register a subscription to be notified when a document is created successfully
-subscriptionId := collection.RegisterSubscription(persistence.RegisterSubscriptionOptions{
+subscriptionId := inventoryCollection.RegisterSubscription(persistence.RegisterSubscriptionOptions{
     Event: persistence.DocumentCreateSuccess,
-    Label: persistence.StringPtr("log_new_user"),
-    Description: persistence.StringPtr("Logs details of newly created users."),
+    Label: persistence.StringPtr("log_new_item"),
+    Description: persistence.StringPtr("Logs details of newly created inventory items."),
     Callback: func(ctx context.Context, event persistence.PersistenceEvent) error {
-        if event.Collection != nil {
-            fmt.Printf("EVENT: Document added to collection '%s'. Input: %+v, Output: %+v\n",
-                *event.Collection, event.Input, event.Output)
+        if event.Collection != nil && event.Output != nil {
+            fmt.Printf("EVENT: Document created in collection '%s'. Output: %+v\n",
+                *event.Collection, event.Output)
         }
         return nil
     },
@@ -439,10 +408,10 @@ subscriptionId := collection.RegisterSubscription(persistence.RegisterSubscripti
 fmt.Printf("Subscribed to DocumentCreateSuccess with ID: %s\n", subscriptionId)
 
 // Later, to unsubscribe:
-// collection.UnregisterSubscription(subscriptionId)
+// inventoryCollection.UnregisterSubscription(subscriptionId)
 
 // To get all active subscriptions for this collection:
-// subs, _ := collection.Subscriptions()
+// subs, _ := inventoryCollection.Subscriptions()
 // for _, sub := range subs {
 //     fmt.Printf("Active Subscription: ID=%s, Event=%s, Label=%s\n", *sub.Id, sub.Event, *sub.Label)
 // }
@@ -450,47 +419,58 @@ fmt.Printf("Subscribed to DocumentCreateSuccess with ID: %s\n", subscriptionId)
 
 ### Transaction Management
 
-Anansi supports executing multiple operations within a single database transaction.
+Anansi supports executing multiple operations within a single database transaction using `persistence.Transact()`.
 
 ```go
-import "context"
+import (
+	"context"
+	"fmt"
+	"time"
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+)
 
-_, err = persistenceService.Transact(func(tx persistence.PersistenceTransactionInterface) (any, error) {
+_, err = persistenceSvc.Transact(func(tx persistence.PersistenceTransactionInterface) (any, error) {
     // Get a collection instance operating within this transaction
-    txCollection, err := tx.Collection("users")
+    txCollection, err := tx.Collection("inventory_items")
     if err != nil {
         return nil, fmt.Errorf("failed to get transactional collection: %w", err)
     }
 
     // Perform operations within the transaction.
-    // If any operation fails, the entire transaction will be rolled back.
+    // If any operation returns an error, the entire transaction will be rolled back.
     _, err = txCollection.Create(map[string]any{
-        "name":      "Transaction User 1",
-        "email":     "tx1@example.com",
-        "is_active": true,
+        "id":           uuid.New().String(),
+        "item_name":    "Charger",
+        "description":  "USB-C Laptop Charger",
+        "quantity":     int64(5),
+        "last_updated": time.Now(),
     })
     if err != nil {
-        return nil, fmt.Errorf("tx create 1 failed: %w", err)
+        return nil, fmt.Errorf("tx create 'Charger' failed: %w", err)
     }
 
+    // Attempt an operation that might fail (e.g., due to unique constraint violation if "Keyboard" exists)
     _, err = txCollection.Create(map[string]any{
-        "name":      "Transaction User 2",
-        "email":     "tx2@example.com",
-        "is_active": false,
+        "id":           uuid.New().String(),
+        "item_name":    "Keyboard", // This might already exist from basic example, causing a unique constraint error
+        "description":  "Another mechanical keyboard",
+        "quantity":     int64(1),
+        "last_updated": time.Now(),
     })
     if err != nil {
-        return nil, fmt.Errorf("tx create 2 failed: %w", err)
+        // Return error to trigger rollback
+        return nil, fmt.Errorf("tx create 'Keyboard' failed (expected if already exists): %w", err)
     }
 
-    // This data will only be visible in the database if the transaction commits successfully.
-    fmt.Println("Transaction operations completed, preparing to commit.")
+    logger.Info("Transaction operations completed, preparing to commit.")
     return nil, nil // Return nil, nil for success, or an error to rollback
 })
 
 if err != nil {
-    log.Fatalf("Transaction failed and was rolled back: %v", err)
+    logger.Error("Transaction failed and was rolled back", zap.Error(err))
 } else {
-    fmt.Println("Transaction committed successfully.")
+    logger.Info("Transaction committed successfully.")
 }
 ```
 
@@ -501,23 +481,32 @@ The `query.QueryBuilder` provides a rich API for constructing declarative querie
 ```go
 import "github.com/asaidimu/go-anansi/core/query"
 
-// Example: Get users, order by age descending, with pagination, and select specific fields.
-queryDSL := query.NewQueryBuilder().
-    Where("age").Gt(20). // Filter: age > 20
-    OrderByDesc("age"). // Sort by age descending
-    Limit(10).Offset(0). // Paginate: 10 results, from start
+// Example: Get items with quantity less than 20, ordered by quantity ascending, and specific fields.
+lowStockQuery := query.NewQueryBuilder().
+    Where("quantity").Lt(int64(20)). // Filter: quantity < 20
+    OrderByAsc("quantity").          // Sort by quantity ascending
+    Limit(5).Offset(0).              // Paginate: 5 results, from start
     Select().
-        Include("name", "email"). // Project: only name and email
+        Include("item_name", "quantity"). // Project: only item_name and quantity
     End().
     Build()
 
-result, err := collection.Read(&queryDSL) // Read takes a pointer to QueryDSL
+result, err := inventoryCollection.Read(&lowStockQuery) // Read takes a pointer to QueryDSL
 if err != nil {
-    log.Fatalf("Failed to read data with advanced query: %v", err)
-}
-fmt.Println("--- Advanced Query Results ---")
-for _, r := range result.Data.([]schema.Document) {
-    fmt.Printf("Name: %v, Email: %v\n", r["name"], r["email"])
+    logger.Error("Failed to read data with advanced query", zap.Error(err))
+} else {
+    fmt.Println("\n--- Advanced Query Results ---")
+    if result.Count > 0 {
+        if itemDocs, ok := result.Data.([]schema.Document); ok {
+            for _, r := range itemDocs {
+                fmt.Printf("Item Name: %v, Quantity: %v\n", r["item_name"], r["quantity"])
+            }
+        } else if itemDoc, ok := result.Data.(schema.Document); ok { // Handle single result
+            fmt.Printf("Item Name: %v, Quantity: %v\n", itemDoc["item_name"], itemDoc["quantity"])
+        }
+    } else {
+        fmt.Println("No items matching the advanced query.")
+    }
 }
 ```
 
@@ -558,61 +547,72 @@ import (
 	"github.com/asaidimu/go-anansi/sqlite"
 	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func main() {
+	// Setup logger
+	config := zap.NewProductionConfig()
+	config.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
+	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
+	config.EncoderConfig.TimeKey = "timestamp"
+	logger, err := config.Build()
+	if err != nil {
+		log.Fatalf("Failed to initialize logger: %v", err)
+	}
+	defer logger.Sync()
+
 	dbFileName := "go_functions.db"
 	if err := os.Remove(dbFileName); err != nil && !os.IsNotExist(err) {
-		log.Fatalf("Failed to remove existing database file %s: %v", dbFileName, err)
+		logger.Fatal("Failed to remove existing database file", zap.String("file", dbFileName), zap.Error(err))
 	}
 	db, err := sql.Open("sqlite3", dbFileName)
 	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
+		logger.Fatal("Failed to open database", zap.Error(err))
 	}
 	defer db.Close()
 
-	logger, _ := zap.NewDevelopment()
-	defer logger.Sync()
-
-	// 1. Define a schema with a JSON 'metadata' field
+	// 1. Define a schema with a JSON 'properties' field
 	schemaJSON := `{
-		"name": "items",
+		"name": "products",
 		"version": "1.0.0",
 		"fields": {
-			"id": {"name": "id", "type": "integer", "required": false, "unique": true},
-			"name": {"name": "name", "type": "string", "required": true},
-			"metadata": {"name": "metadata", "type": "object"}
+			"id": {"name": "id", "type": "string", "required": true, "unique": true},
+			"product_name": {"name": "product_name", "type": "string", "required": true},
+			"properties": {"name": "properties", "type": "object"}
 		},
-		"indexes": [{"name": "pk_item_id", "fields": ["id"], "type": "primary"}]
+		"indexes": [{"name": "pk_product_id", "fields": ["id"], "type": "primary"}]
 	}`
-	var itemSchema schema.SchemaDefinition
-	if err := json.Unmarshal([]byte(schemaJSON), &itemSchema); err != nil {
-		log.Fatalf("Failed to unmarshal item schema: %v", err)
+	var productSchema schema.SchemaDefinition
+	if err := json.Unmarshal([]byte(schemaJSON), &productSchema); err != nil {
+		logger.Fatal("Failed to unmarshal product schema", zap.Error(err))
 	}
 
 	// 2. Prepare the FunctionMap with your custom Go functions
 	customFunctions := schema.FunctionMap{
-		"item_display": query.ComputeFunction(func(row schema.Document, args query.FilterValue) (any, error) {
-			name, ok := row["name"].(string)
+		// A computed field function to combine product name and a property
+		"full_product_name": query.ComputeFunction(func(row schema.Document, args query.FilterValue) (any, error) {
+			pName, ok := row["product_name"].(string)
 			if !ok {
-				return nil, fmt.Errorf("name is not a string")
+				return nil, fmt.Errorf("product_name is not a string")
 			}
-			// Access nested JSON field 'metadata.category'
-			if meta, ok := row["metadata"].(map[string]any); ok {
-				if category, ok := meta["category"].(string); ok {
-					return fmt.Sprintf("%s (%s)", name, category), nil
+			// Access nested JSON field 'properties.color'
+			if props, ok := row["properties"].(map[string]any); ok {
+				if color, ok := props["color"].(string); ok {
+					return fmt.Sprintf("%s (%s)", pName, color), nil
 				}
 			}
-			return name, nil // Fallback if no category
+			return pName, nil // Fallback if no color property
 		}),
-		"is_heavy": query.PredicateFunction(func(doc schema.Document, field string, args query.FilterValue) (bool, error) {
-			// This custom filter checks if 'metadata.weight_kg' > 1.5
-			if meta, ok := doc["metadata"].(map[string]any); ok {
-				if weight, ok := meta["weight_kg"].(float64); ok {
-					return weight > 1.5, nil
+		// A custom filter function to check a nested property value
+		"is_premium": query.PredicateFunction(func(doc schema.Document, field string, args query.FilterValue) (bool, error) {
+			// This custom filter checks if 'properties.tier' is "premium"
+			if props, ok := doc["properties"].(map[string]any); ok {
+				if tier, ok := props["tier"].(string); ok {
+					return tier == "premium", nil
 				}
 			}
-			return false, nil // Not heavy or no weight defined
+			return false, nil // Not premium or no tier defined
 		}),
 	}
 
@@ -620,53 +620,54 @@ func main() {
 	interactor := sqlite.NewSQLiteInteractor(db, logger, sqlite.DefaultInteractorOptions(), nil)
 	persistenceService, err := persistence.NewPersistence(interactor, customFunctions)
 	if err != nil {
-		log.Fatalf("Failed to initialize persistence: %v", err)
+		logger.Fatal("Failed to initialize persistence", zap.Error(err))
 	}
 
-	collection, err := persistenceService.Create(itemSchema)
+	collection, err := persistenceService.Create(productSchema)
 	if err != nil {
-		log.Fatalf("Failed to create items collection: %v", err)
+		logger.Fatal("Failed to create products collection", zap.Error(err))
 	}
 
-	// Insert some data with nested JSON
-	collection.Create(map[string]any{"name": "Laptop", "metadata": map[string]any{"category": "electronics", "weight_kg": 1.8}})
-	collection.Create(map[string]any{"name": "Desk Chair", "metadata": map[string]any{"category": "furniture", "material": "mesh"}})
-	collection.Create(map[string]any{"name": "Mouse", "metadata": map[string]any{"category": "electronics", "wireless": true}})
+	// Insert some data with nested JSON properties
+	collection.Create(map[string]any{"id": "p001", "product_name": "Smartphone X", "properties": map[string]any{"color": "black", "storage_gb": 128, "tier": "standard"}})
+	collection.Create(map[string]any{"id": "p002", "product_name": "Smartwatch Y", "properties": map[string]any{"color": "silver", "tier": "premium"}})
+	collection.Create(map[string]any{"id": "p003", "product_name": "Laptop Z", "properties": map[string]any{"color": "space gray", "tier": "premium", "weight_kg": 1.5}})
 
 	// Query using the registered Compute Function
-	fmt.Println("\nQuerying with Go functions:")
+	logger.Info("Querying with Go computed field:")
 	qWithGoFuncs := query.NewQueryBuilder().
-		Where("id").Gt(0). // Base filter for all data (SQL side)
+		Where("id").Gt(""). // Base filter to retrieve all data
 		Select().
-			Include("id", "name", "metadata"). // Ensure required fields are selected from DB
-			AddComputed("item_display_name", "item_display"). // Use registered compute function
+			Include("id", "product_name", "properties"). // Ensure required fields are selected from DB
+			AddComputed("full_display_name", "full_product_name"). // Use registered compute function
 		End().
 		Build()
 
 	result, err := collection.Read(&qWithGoFuncs)
 	if err != nil {
-		log.Fatalf("Failed to query with computed field: %v", err)
+		logger.Fatal("Failed to query with computed field", zap.Error(err))
 	}
 	fmt.Println("--- Results with Computed Field ---")
 	for _, r := range result.Data.([]schema.Document) {
-		fmt.Printf("ID: %v, Name: %v, Display: %v, Metadata: %v\n", r["id"], r["name"], r["item_display_name"], r["metadata"])
+		fmt.Printf("ID: %v, Product Name: %v, Display Name: %v, Properties: %v\n", r["id"], r["product_name"], r["full_display_name"], r["properties"])
 	}
 
 	// Query using the custom Go filter
+	logger.Info("Querying with custom Go filter:")
 	qWithGoFilter := query.NewQueryBuilder().
-		Where("id").Custom("is_heavy", true). // Use registered Go filter function
+		Where("id").Custom("is_premium", true). // Use registered Go filter function
 		Select().
-			Include("id", "name", "metadata"). // Ensure metadata is fetched for the Go filter to work
+			Include("id", "product_name", "properties"). // Ensure properties are fetched for the Go filter to work
 		End().
 		Build()
 
 	resultFilter, err := collection.Read(&qWithGoFilter)
 	if err != nil {
-		log.Fatalf("Failed to query with custom filter: %v", err)
+		logger.Fatal("Failed to query with custom filter", zap.Error(err))
 	}
-	fmt.Println("\n--- Results with Custom Filter (is_heavy) ---")
+	fmt.Println("\n--- Results with Custom Filter (is_premium) ---")
 	for _, r := range resultFilter.Data.([]schema.Document) {
-		fmt.Printf("ID: %v, Name: %v\n", r["id"], r["name"])
+		fmt.Printf("ID: %v, Product Name: %v, Properties: %v\n", r["id"], r["product_name"], r["properties"])
 	}
 }
 ```
@@ -697,7 +698,7 @@ Anansi is structured to be modular and extensible, separating core persistence c
 4.  The `Executor` analyzes the `QueryDSL` to determine all fields required from the database, including dependencies for any registered Go-based functions.
 5.  It then uses the `query.QueryGenerator` (implemented by `sqlite.SqliteQuery`) to translate the SQL-executable parts of the `QueryDSL` into an SQL query string and parameters. This includes handling field path translation for nested JSON objects.
 6.  The `Executor`'s `DatabaseInteractor` (implemented by `sqlite.SQLiteInteractor`) executes this SQL query against the `sql.DB` connection.
-7.  Retrieved rows are read from `*sql.Rows` and converted into a generic `schema.Document` (map[string]any) slice, performing schema-aware type conversions (e.g., SQLite `INTEGER` to Go `bool` for `FieldTypeBoolean`).
+7.  Retrieved rows are read from `*sql.Rows` and converted into a generic `schema.Document` (map[string]any) slice, performing schema-aware type conversions (e.g., SQLite `INTEGER` to Go `bool` for `FieldTypeBoolean`, JSON strings to Go `any` for object/array types).
 8.  **Post-SQL Processing**: The `Executor` (specifically its internal `DataProcessor`) then applies any registered **Go-based filter functions** and **Go-based computed field functions** on these in-memory `schema.Document` objects.
 9.  Finally, the `Executor` applies the final projection (include/exclude fields) as specified in the `QueryDSL`.
 10. The processed `query.QueryResult` is returned to the caller.
@@ -720,7 +721,7 @@ While Anansi currently operates with dynamic data structures (`map[string]any`),
     ```go
     // Generated from your users schema definition
     type User struct {
-        ID       int64  `json:"id" anansi:"primary_key" db:"id"`
+        ID       string `json:"id" anansi:"primary_key" db:"id"`
         Name     string `json:"name" anansi:"required" db:"name"`
         Email    string `json:"email" anansi:"required,unique" db:"email"`
         Age      *int   `json:"age" anansi:"optional" db:"age"`
