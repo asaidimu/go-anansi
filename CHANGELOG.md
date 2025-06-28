@@ -1,3 +1,15 @@
+# [3.0.0](https://github.com/asaidimu/go-anansi/compare/v2.0.0...v3.0.0) (2025-06-28)
+
+
+* feat(persistence)!: implement dynamic collection and subscription listing ([b5c2d83](https://github.com/asaidimu/go-anansi/commit/b5c2d83910fff121203b2dd860e5c3f5f85ded31))
+
+
+### BREAKING CHANGES
+
+* - The Persistence.Metadata method signature has changed: includeCollections and includeSchemas boolean parameters have been removed.
+- The CollectionMetadata struct no longer includes LastModifiedAt and LastModifiedBy fields.
+- The internal CollectionEvent struct has been removed, replaced by direct usage of PersistenceEvent.
+
 # [2.0.0](https://github.com/asaidimu/go-anansi/compare/v1.0.0...v2.0.0) (2025-06-28)
 
 
