@@ -10,7 +10,6 @@ import (
 
 	"github.com/asaidimu/go-anansi/core"
 	"github.com/asaidimu/go-anansi/core/persistence"
-	"github.com/asaidimu/go-anansi/core/query"
 	"github.com/asaidimu/go-anansi/sqlite"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 )
@@ -199,7 +198,7 @@ func main() {
 		log.Fatalf("Failed to insert Alice 3: %v", err)
 	}
 
-	q := query.NewQueryBuilder().Where("age").Lt(28).Build()
+	q := core.NewQueryBuilder().Where("age").Lt(28).Build()
 	_, err = collection.Delete(q.Filters, false)
 	if err != nil {
 		log.Fatalf("Failed to delete Alice: %v", err)
@@ -207,7 +206,7 @@ func main() {
 
 	fmt.Println("Sample data inserted successfully.")
 
-	q = query.NewQueryBuilder().Where("age").Eq(28).Build()
+	q = core.NewQueryBuilder().Where("age").Eq(28).Build()
 	_, err = collection.Update(&core.CollectionUpdate{
 		Data: map[string]any{
 			"name": "Alex Smith",
@@ -222,7 +221,7 @@ func main() {
 
 	// --- Original Code Block: Query and Print ---
 	fmt.Println("\nQuerying data from 'users' table:")
-	q = query.NewQueryBuilder().Build()
+	q = core.NewQueryBuilder().Build()
 
 	out, err := collection.Read(q)
 	if err != nil {
@@ -233,8 +232,8 @@ func main() {
 	fmt.Printf("%-10s %-20s %-25s %-5s %-10s\n", "ID", "Name", "Email", "Age", "Active")
 	fmt.Println("-------------------------------------------------------------------")
 
-	result, _ := out.(*query.QueryResult)
-	rows := result.Data.([]query.Document)
+	result, _ := out.(*core.QueryResult)
+	rows := result.Data.([]core.Document)
 
 	for _, row := range rows {
 		id := row["id"].(int64)
@@ -270,7 +269,7 @@ func main() {
 			return nil, err
 		}
 
-		q = query.NewQueryBuilder().Build()
+		q = core.NewQueryBuilder().Build()
 
 		out, err := collection.Read(q)
 		if err != nil {
@@ -281,8 +280,8 @@ func main() {
 		fmt.Printf("%-10s %-20s %-25s %-5s %-10s\n", "ID", "Name", "Email", "Age", "Active")
 		fmt.Println("-------------------------------------------------------------------")
 
-		result, _ := out.(*query.QueryResult)
-		rows := result.Data.([]query.Document)
+		result, _ := out.(*core.QueryResult)
+		rows := result.Data.([]core.Document)
 
 		for _, row := range rows {
 			id := row["id"].(int64)

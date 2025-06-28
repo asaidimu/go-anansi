@@ -39,15 +39,6 @@ const (
 	CollectionDeleteFailed  PersistenceEventType = "collection:delete:failed"
 	SubscriptionRegister    PersistenceEventType = "subscription:register"
 	SubscriptionUnregister  PersistenceEventType = "subscription:unregister"
-	TriggerRegister         PersistenceEventType = "trigger:register"
-	TriggerUnregister       PersistenceEventType = "trigger:unregister"
-	TriggerExecute          PersistenceEventType = "trigger:execute"
-	TriggerFailed           PersistenceEventType = "trigger:failed"
-	TaskRegister            PersistenceEventType = "task:register"
-	TaskUnregister          PersistenceEventType = "task:unregister"
-	TaskStart               PersistenceEventType = "task:start"
-	TaskSuccess             PersistenceEventType = "task:success"
-	TaskFailed              PersistenceEventType = "task:failed"
 	MetadataCalled          PersistenceEventType = "metadata:called"
 )
 
@@ -125,22 +116,7 @@ type TransactionEvent struct {
 	TransactionID string `json:"transactionId"`
 }
 
-// TriggerLifecycleEvent specific fields
-type TriggerLifecycleEvent struct {
-	PersistenceEvent
-	TriggerID string `json:"triggerId"`
-	Label     string `json:"label"`
-}
-
-// TaskLifecycleEvent specific fields
-type TaskLifecycleEvent struct {
-	PersistenceEvent
-	TaskID    string `json:"taskId"`
-	Label     string `json:"label"`
-	Timestamp int64  `json:"timestamp"` // Time the task was started/completed
-}
-
-type CallbackFunction func(ctx context.Context, event PersistenceEvent) error
+type EventCallbackFunction func(ctx context.Context, event PersistenceEvent) error
 
 // SubscriptionInfo describes a subscription configuration.
 type SubscriptionInfo struct {
@@ -150,52 +126,6 @@ type SubscriptionInfo struct {
 	Unsubscribe func()
 }
 
-// TriggerInfo describes a trigger configuration.
-type TriggerInfo struct {
-	Event       json.RawMessage `json:"event"`               // The event(s) or pattern triggering the callback (can be string or array of strings)
-	Condition   any             `json:"condition,omitempty"` // Optional condition for the trigger (Corresponds to QueryFilter).
-	CallbackID  string          `json:"callbackId"`          // Unique identifier for the callback.
-	IsSync      bool            `json:"isSync"`              // Whether the trigger executes synchronously.
-	Label       string          `json:"label"`               // Short identifier.
-	Description string          `json:"description"`         // Description of the trigger's purpose.
-}
-
-// UnmarshalJSON for TriggerInfo to handle `Event` as string or array of strings.
-func (ti *TriggerInfo) UnmarshalJSON(data []byte) error {
-	type Alias TriggerInfo // Create an alias to avoid infinite recursion
-	aux := struct {
-		Event json.RawMessage `json:"event"`
-		*Alias
-	}{
-		Alias: (*Alias)(ti),
-	}
-
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-	ti.Event = aux.Event
-
-	return nil
-}
-
-// TaskInfo describes a scheduled task configuration.
-type TaskInfo struct {
-	ID          string         `json:"id"`                 // Unique identifier for the task.
-	Schedule    TaskSchedule   `json:"schedule"`           // Schedule for task execution.
-	CallbackID  string         `json:"callbackId"`         // Unique identifier for the callback.
-	IsSync      bool           `json:"isSync"`             // Whether the task executes synchronously.
-	Metadata    map[string]any `json:"metadata,omitempty"` // Optional metadata.
-	Label       string         `json:"label"`              // Short identifier.
-	Description string         `json:"description"`        // Description of the task's purpose.
-}
-
-// TaskSchedule defines a schedule for a task. This uses omitempty to handle the union.
-type TaskSchedule struct {
-	Cron     *string `json:"cron,omitempty"`     // e.g., "0 0 * * *"
-	At       *string `json:"at,omitempty"`       // ISO 8601
-	Interval *int64  `json:"interval,omitempty"` // Milliseconds
-}
-
 // MetadataFilter filter criteria for metadata queries.
 // Matches the nested structure of TypeScript's MetadataFilter.
 type MetadataFilter struct {
@@ -203,15 +133,6 @@ type MetadataFilter struct {
 		Event *json.RawMessage `json:"event,omitempty"` // PersistenceEventType or []PersistenceEventType
 		Label *string          `json:"label,omitempty"`
 	} `json:"subscriptions,omitempty"`
-	Triggers *struct {
-		Event *json.RawMessage `json:"event,omitempty"` // PersistenceEventType or []PersistenceEventType or `${string}:*`
-		Label *string          `json:"label,omitempty"`
-	} `json:"triggers,omitempty"`
-	Tasks *struct {
-		ID       *string        `json:"id,omitempty"`
-		Metadata map[string]any `json:"metadata,omitempty"`
-		Label    *string        `json:"label,omitempty"`
-	} `json:"tasks,omitempty"`
 	Schemas *struct {
 		ID *string `json:"id,omitempty"`
 	} `json:"schemas,omitempty"`
@@ -269,8 +190,6 @@ type CollectionMetadata struct {
 	Migrations       []MigrationMetadata      `json:"migrations,omitempty"`      // Now using defined MigrationMetadata
 	Transformations  []TransformationMetadata `json:"transformations,omitempty"` // Now using defined TransformationMetadata
 	Subscriptions    []SubscriptionInfo       `json:"subscriptions"`             // Active subscriptions.
-	Triggers         []TriggerInfo            `json:"triggers"`                  // Active triggers.
-	Tasks            []TaskInfo               `json:"tasks"`                     // Scheduled tasks.
 }
 
 // Metadata represents the overall persistence metadata (global or for a specific collection).
@@ -284,8 +203,6 @@ type Metadata struct {
 	Schemas           []SchemaDefinition   `json:"schemas,omitempty"`
 	Collections       []CollectionMetadata `json:"collections,omitempty"`
 	Subscriptions     []SubscriptionInfo   `json:"subscriptions"`
-	Triggers          []TriggerInfo        `json:"triggers"`
-	Tasks             []TaskInfo           `json:"tasks"`
 	// These fields are optionally present if this Metadata instance also represents a single collection's metadata (union in TS)
 	RecordCount   *int64            `json:"recordCount,omitempty"`
 	DataSizeBytes *int64            `json:"dataSizeBytes,omitempty"`
@@ -336,39 +253,7 @@ type RegisterSubscriptionOptions struct {
 	Event       PersistenceEventType `json:"event"`
 	Label       *string              `json:"label,omitempty"`
 	Description *string              `json:"description,omitempty"`
-	Callback    CallbackFunction
-}
-
-// RegisterTriggerOptions defines options for registering a trigger.
-type RegisterTriggerOptions struct {
-	Event       json.RawMessage `json:"event"`               // PersistenceEventType or []PersistenceEventType
-	Filter      any             `json:"condition,omitempty"` // QueryFilter (kept as any)
-	IsSync      bool            `json:"isSync"`
-	Label       string          `json:"label"`
-	Description string          `json:"description"`
-	Callback    CallbackFunction
-}
-
-// UnregisterTriggerOptions defines options for unregistering a trigger.
-type UnregisterTriggerOptions struct {
-	CallbackID string `json:"callbackId"`
-}
-
-// RegisterTaskOptions defines options for registering a task.
-// Note: In TypeScript, 'schedule' returns a cancel function. In Go interfaces, we define the 'Register'
-// and 'Unregister' methods explicitly.
-type RegisterTaskOptions struct {
-	Schedule    TaskSchedule   `json:"schedule"`
-	CallbackID  string         `json:"callbackId"`
-	IsSync      bool           `json:"isSync"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
-	Label       string         `json:"label"`
-	Description string         `json:"description"`
-}
-
-// UnregisterTaskOptions defines options for unregistering a task.
-type UnregisterTaskOptions struct {
-	CallbackID string `json:"callbackId"`
+	Callback    EventCallbackFunction
 }
 
 // UpdateOptions defines options for update operations.
@@ -400,21 +285,13 @@ type PersistenceInterface interface {
 	// Methods from EventTaskInterface (Go-idiomatic Register/Unregister pattern)
 	RegisterSubscription(options RegisterSubscriptionOptions) string
 	UnregisterSubscription(id string)
-	RegisterTrigger(options RegisterTriggerOptions) (TriggerInfo, error)
-	UnregisterTrigger(options UnregisterTriggerOptions) error
-	RegisterTask(options RegisterTaskOptions) (TaskInfo, error)
-	UnregisterTask(options UnregisterTaskOptions) error
-
 	// Getter methods for registered entities
 	Subscriptions() ([]SubscriptionInfo, error)
-	Triggers() ([]TriggerInfo, error)
-	Tasks() ([]TaskInfo, error)
 }
 
 // PersistenceTransaction interface, omitting subscribe, trigger, schedule, and transact methods.
 // In Go, this is an interface defining a subset of Persistence methods.
 type PersistenceTransactionInterface interface {
-	// Include all methods of Persistence except those explicitly Omitted in TS
 	Collections() ([]string, error)
 	Create(schema SchemaDefinition) (PersistenceCollectionInterface, error)
 	Delete(id string) (bool, error)
@@ -432,6 +309,7 @@ type CollectionUpdate struct {
 	Data   map[string]any `json:"data,omitempty"` // Partial<T>
 	Filter any            `json:"filter"`         // QueryFilter<T, FunctionMap>
 }
+
 type ValidationResult struct {
 	Valid  bool    `json:"valid"`
 	Issues []Issue `json:"issues"`
@@ -471,54 +349,7 @@ type PersistenceCollectionInterface interface {
 	// Methods from EventTaskInterface (Go-idiomatic Register/Unregister pattern, collection-scoped)
 	RegisterSubscription(options RegisterSubscriptionOptions) string
 	UnregisterSubscription(id string)
-	RegisterTrigger(options RegisterTriggerOptions) (TriggerInfo, error)
-	UnregisterTrigger(options UnregisterTriggerOptions) error
-	RegisterTask(options RegisterTaskOptions) (TaskInfo, error)
-	UnregisterTask(options UnregisterTaskOptions) error
 
 	// Getter methods for registered entities (collection-scoped)
 	Subscriptions() ([]SubscriptionInfo, error)
-	Triggers() ([]TriggerInfo, error)
-	Tasks() ([]TaskInfo, error)
-}
-
-// CollectionTriggerContext context provided to collection-specific trigger callbacks.
-// T and FunctionMap are replaced by 'any' or 'map[string]any'.
-type CollectionTriggerContext struct {
-	Event       PersistenceEvent               `json:"event"`              // The event that triggered the callback
-	Persistence PersistenceInterface           `json:"persistence"`        // The Persistence interface
-	Collection  PersistenceCollectionInterface `json:"collection"`         // The PersistenceCollection interface
-	Params      any                            `json:"params"`             // Parameters passed to the trigger (union type simplified to any)
-	Results     any                            `json:"results"`            // Results from the operation that triggered this (union type simplified to any)
-	Metadata    map[string]any                 `json:"metadata,omitempty"` // Optional metadata for the trigger itself
-	Label       string                         `json:"label"`              // Label of the trigger
-	Description string                         `json:"description"`        // Description of the trigger
-}
-
-// PersistenceTriggerContext context provided to global trigger callbacks.
-// FunctionMap is replaced by 'map[string]any'.
-type PersistenceTriggerContext struct {
-	Event       PersistenceEvent                `json:"event"`                // The event that triggered the callback
-	Persistence PersistenceInterface            `json:"persistence"`          // The Persistence interface
-	Collection  *PersistenceCollectionInterface `json:"collection,omitempty"` // Optional: The PersistenceCollection interface if event is collection-related
-	Params      any                             `json:"params"`               // Parameters passed to the trigger
-	Results     any                             `json:"results"`              // Results from the operation that triggered this
-}
-
-// TriggerContext defines a union of trigger contexts.
-// For now, we'll represent it as an 'any' which can hold either struct.
-type TriggerContext any // This will be either CollectionTriggerContext or PersistenceTriggerContext
-
-// TaskContext context provided to task callbacks.
-// T and FunctionMap are replaced by 'any' or 'map[string]any'.
-// This is a union type in TypeScript. In Go, we'll use a common struct with optional fields
-// or an interface if different behaviors are needed. For now, a common struct.
-type TaskContext struct {
-	ID          string                          `json:"id"`
-	Time        int64                           `json:"time"`
-	Persistence PersistenceInterface            `json:"persistence"`          // core.Persistence
-	Collection  *PersistenceCollectionInterface `json:"collection,omitempty"` // *core.PersistenceCollection
-	Metadata    map[string]any                  `json:"metadata,omitempty"`
-	Label       string                          `json:"label"`
-	Description string                          `json:"description"`
 }

@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/asaidimu/go-anansi/core"
-	"github.com/asaidimu/go-anansi/core/query"
 )
 
 const SCHEMA_COLLECTION_NAME = "_schemas"
@@ -74,7 +73,7 @@ var schemasCollectionSchema = []byte(`
   ]
 }`)
 
-func mapToSchemaRecord(data query.Document) (*SchemaRecord, error) {
+func mapToSchemaRecord(data core.Document) (*SchemaRecord, error) {
 	// 1. Marshal the map[string]any into JSON bytes
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {

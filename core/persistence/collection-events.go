@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/core"
-	"github.com/asaidimu/go-anansi/core/query"
 	"github.com/asaidimu/go-events"
 )
 
@@ -114,12 +113,12 @@ func (e *Collection) Create(data any) (any, error) {
 		return nil, err
 	}
 
-	return result.(*query.QueryResult), nil
+	return result.(*core.QueryResult), nil
 }
 
 // Read wraps the collection's Read method with event emission
 func (e *Collection) Read(input any) (any, error) {
-	query, ok := input.(query.QueryDSL)
+	query, ok := input.(core.QueryDSL)
 	if ! ok {
 		return nil, fmt.Errorf("Input to read is not a valid QueryDSL")
 	}
@@ -340,125 +339,8 @@ func (e *Collection) UnregisterSubscription(id string) {
 	e.emitEvent(event)
 }
 
-// RegisterTrigger wraps trigger registration with event emission
-func (e *Collection) RegisterTrigger(options core.RegisterTriggerOptions) (core.TriggerInfo, error) {
-	result, err := e.collection.RegisterTrigger(options)
-
-	var errStr *string
-	if err != nil {
-		s := err.Error()
-		errStr = &s
-	}
-
-	// Emit trigger register event
-	event := createEvent(
-		core.TriggerRegister,
-		"register_trigger",
-		e.schema.Name,
-		options,
-		result,
-		nil,
-		errStr,
-		nil,
-		time.Now(),
-	)
-	e.emitEvent(event)
-
-	return result, err
-}
-
-// UnregisterTrigger wraps trigger unregistration with event emission
-func (e *Collection) UnregisterTrigger(options core.UnregisterTriggerOptions) error {
-	err := e.collection.UnregisterTrigger(options)
-
-	var errStr *string
-	if err != nil {
-		s := err.Error()
-		errStr = &s
-	}
-
-	// Emit trigger unregister event
-	event := createEvent(
-		core.TriggerUnregister,
-		"unregister_trigger",
-		e.schema.Name,
-		options,
-		nil,
-		nil,
-		errStr,
-		nil,
-		time.Now(),
-	)
-	e.emitEvent(event)
-
-	return err
-}
-
-// RegisterTask wraps task registration with event emission
-func (e *Collection) RegisterTask(options core.RegisterTaskOptions) (core.TaskInfo, error) {
-	result, err := e.collection.RegisterTask(options)
-
-	var errStr *string
-	if err != nil {
-		s := err.Error()
-		errStr = &s
-	}
-
-	// Emit task register event
-	event := createEvent(
-		core.TaskRegister,
-		"register_task",
-		e.schema.Name,
-		options,
-		result,
-		nil,
-		errStr,
-		nil,
-		time.Now(),
-	)
-	e.emitEvent(event)
-
-	return result, err
-}
-
-// UnregisterTask wraps task unregistration with event emission
-func (e *Collection) UnregisterTask(options core.UnregisterTaskOptions) error {
-	err := e.collection.UnregisterTask(options)
-
-	var errStr *string
-	if err != nil {
-		s := err.Error()
-		errStr = &s
-	}
-
-	// Emit task unregister event
-	event := createEvent(
-		core.TaskUnregister,
-		"unregister_task",
-		e.schema.Name,
-		options,
-		nil,
-		nil,
-		errStr,
-		nil,
-		time.Now(),
-	)
-	e.emitEvent(event)
-
-	return err
-}
-
 // Subscriptions delegates to the underlying collection
 func (e *Collection) Subscriptions() ([]core.SubscriptionInfo, error) {
 	return e.collection.Subscriptions()
 }
 
-// Triggers delegates to the underlying collection
-func (e *Collection) Triggers() ([]core.TriggerInfo, error) {
-	return e.collection.Triggers()
-}
-
-// Tasks delegates to the underlying collection
-func (e *Collection) Tasks() ([]core.TaskInfo, error) {
-	return e.collection.Tasks()
-}

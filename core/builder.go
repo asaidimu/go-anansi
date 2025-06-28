@@ -1,4 +1,4 @@
-package query
+package core
 
 import (
 	"fmt"
@@ -608,43 +608,43 @@ func (qb *QueryBuilder) MaxExecutionTime(seconds int) *QueryBuilder {
 // ===== VALIDATION METHODS =====
 
 // ValidationError represents a query validation error
-type ValidationError struct {
+type QueryValidationError struct {
 	Field   string
 	Message string
 }
 
-func (ve ValidationError) Error() string {
+func (ve QueryValidationError) Error() string {
 	return fmt.Sprintf("validation error in %s: %s", ve.Field, ve.Message)
 }
 
 // ValidationResult contains validation results
-type ValidationResult struct {
+type QueryValidationResult struct {
 	IsValid bool
-	Errors  []ValidationError
+	Errors  []QueryValidationError
 }
 
 // Validate performs comprehensive validation of the built query
-func (qb *QueryBuilder) Validate() ValidationResult {
-	var errors []ValidationError
+func (qb *QueryBuilder) Validate() QueryValidationResult {
+	var errors []QueryValidationError
 
 	// Validate pagination
 	if qb.query.Pagination != nil {
 		if qb.query.Pagination.Limit <= 0 {
-			errors = append(errors, ValidationError{
+			errors = append(errors, QueryValidationError{
 				Field:   "pagination.limit",
 				Message: "limit must be greater than 0",
 			})
 		}
 
 		if qb.query.Pagination.Type == "offset" && qb.query.Pagination.Offset != nil && *qb.query.Pagination.Offset < 0 {
-			errors = append(errors, ValidationError{
+			errors = append(errors, QueryValidationError{
 				Field:   "pagination.offset",
 				Message: "offset cannot be negative",
 			})
 		}
 
 		if qb.query.Pagination.Type == "cursor" && (qb.query.Pagination.Cursor == nil || *qb.query.Pagination.Cursor == "") {
-			errors = append(errors, ValidationError{
+			errors = append(errors, QueryValidationError{
 				Field:   "pagination.cursor",
 				Message: "cursor cannot be empty for cursor-based pagination",
 			})
@@ -654,7 +654,7 @@ func (qb *QueryBuilder) Validate() ValidationResult {
 	// Validate projections
 	if qb.query.Projection != nil {
 		if len(qb.query.Projection.Include) > 0 && len(qb.query.Projection.Exclude) > 0 {
-			errors = append(errors, ValidationError{
+			errors = append(errors, QueryValidationError{
 				Field:   "projection",
 				Message: "cannot have both include and exclude fields",
 			})
@@ -664,7 +664,7 @@ func (qb *QueryBuilder) Validate() ValidationResult {
 	// Validate joins
 	for i, join := range qb.query.Joins {
 		if join.TargetTable == "" {
-			errors = append(errors, ValidationError{
+			errors = append(errors, QueryValidationError{
 				Field:   fmt.Sprintf("joins[%d].target_table", i),
 				Message: "target table cannot be empty",
 			})
@@ -674,20 +674,20 @@ func (qb *QueryBuilder) Validate() ValidationResult {
 	// Validate aggregations
 	for i, agg := range qb.query.Aggregations {
 		if agg.Field == "" && agg.Type != AggregationTypeCount {
-			errors = append(errors, ValidationError{
+			errors = append(errors, QueryValidationError{
 				Field:   fmt.Sprintf("aggregations[%d].field", i),
 				Message: "field is required for non-count aggregations",
 			})
 		}
 		if agg.Alias == "" {
-			errors = append(errors, ValidationError{
+			errors = append(errors, QueryValidationError{
 				Field:   fmt.Sprintf("aggregations[%d].alias", i),
 				Message: "alias is required for aggregations",
 			})
 		}
 	}
 
-	return ValidationResult{
+	return QueryValidationResult{
 		IsValid: len(errors) == 0,
 		Errors:  errors,
 	}

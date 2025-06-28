@@ -3,24 +3,21 @@ package persistence
 import (
 	"context"
 	"fmt"
-	"sync"
-
-	// "time"
-
 	"github.com/asaidimu/go-anansi/core"
-	"github.com/asaidimu/go-anansi/core/query"
 	"github.com/asaidimu/go-events"
 	"github.com/google/uuid"
+	"sync"
 )
 
 // CollectionBase implements core.PersistenceCollectionInterface.
 type CollectionBase struct {
 	schema        *core.SchemaDefinition
+	processor     *core.DataProcessor
 	executor      *Executor
 	validator     *core.Validator
 	bus           *events.TypedEventBus[core.PersistenceEvent]
 	subscriptions map[string]*core.SubscriptionInfo // To store unsubscribe functions
-	mu            sync.RWMutex                      // Mutex to protect subscriptions map
+	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
 }
 
 // NewPersistence creates a new instance of Persistence.
@@ -32,10 +29,10 @@ func NewCollection(schema *core.SchemaDefinition, executor *Executor, fmap core.
 	}
 
 	collection := NewEventEmittingCollection(&CollectionBase{
-		schema:    schema,
-		executor:  executor,
-		validator: validator,
-		bus:       bus,
+		schema:        schema,
+		executor:      executor,
+		validator:     validator,
+		bus:           bus,
 		subscriptions: map[string]*core.SubscriptionInfo{},
 	})
 
@@ -72,9 +69,10 @@ func (ci *CollectionBase) Create(data any) (any, error) {
 	return result, nil
 }
 
-// Read retrieves data from the collection based on a query.
-func (ci *CollectionBase) Read(query query.QueryDSL) (*query.QueryResult, error) {
-	result, err := ci.executor.Query(context.Background(), ci.schema, &query)
+// Read retrieves data from the collection based on a core.
+func (ci *CollectionBase) Read(qr any) (any, error) {
+	q := qr.(core.QueryDSL)
+	result, err := ci.executor.Query(context.Background(), ci.schema, &q)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read data from collection '%s': %w", ci.schema.Name, err)
 	}
@@ -84,11 +82,11 @@ func (ci *CollectionBase) Read(query query.QueryDSL) (*query.QueryResult, error)
 
 // Update updates data in the collection based on filter.
 func (ci *CollectionBase) Update(params *core.CollectionUpdate) (int, error) {
-	var filter *query.QueryFilter
+	var filter *core.QueryFilter
 	if params != nil {
-		f, ok := params.Filter.(*query.QueryFilter)
+		f, ok := params.Filter.(*core.QueryFilter)
 		if !ok {
-			return 0, fmt.Errorf("invalid params type for Update: expected query.QueryFilter, got %T", params.Filter)
+			return 0, fmt.Errorf("invalid params type for Update: expected core.QueryFilter, got %T", params.Filter)
 		}
 		filter = f
 	}
@@ -100,13 +98,13 @@ func (ci *CollectionBase) Update(params *core.CollectionUpdate) (int, error) {
 	return int(result), nil
 }
 
-// Delete deletes data from the collection based on query.
+// Delete deletes data from the collection based on core.
 func (ci *CollectionBase) Delete(params any, unsafe bool) (int, error) {
-	var filter *query.QueryFilter
+	var filter *core.QueryFilter
 	if params != nil {
-		f, ok := params.(*query.QueryFilter)
+		f, ok := params.(*core.QueryFilter)
 		if !ok {
-			return 0, fmt.Errorf("invalid params type for Delete: expected query.QueryFilter, got %T", params)
+			return 0, fmt.Errorf("invalid params type for Delete: expected core.QueryFilter, got %T", params)
 		}
 		filter = f
 	}
@@ -163,7 +161,6 @@ func (ci *CollectionBase) Migrate(
 	}{}, fmt.Errorf("Migrate method stub for collection '%s'", ci.schema.Name) // Stub: not implemented
 }
 
-// Metadata retrieves collection-specific metadata.
 func (ci *CollectionBase) Metadata(
 	filter *core.MetadataFilter,
 	forceRefresh bool,
@@ -173,8 +170,8 @@ func (ci *CollectionBase) Metadata(
 
 // RegisterSubscription registers a collection-scoped subscription.
 func (ci *CollectionBase) RegisterSubscription(options core.RegisterSubscriptionOptions) string {
-	ci.mu.Lock()
-	defer ci.mu.Unlock()
+	ci.subMu.Lock()
+	defer ci.subMu.Unlock()
 	unsubscribe := ci.bus.Subscribe(string(options.Event), options.Callback)
 	id := uuid.New()
 	callbackID := id.String()
@@ -192,8 +189,8 @@ func (ci *CollectionBase) RegisterSubscription(options core.RegisterSubscription
 
 // UnregisterSubscription unregisters a collection-scoped subscription.
 func (ci *CollectionBase) UnregisterSubscription(id string) {
-	ci.mu.Lock()
-	defer ci.mu.Unlock()
+	ci.subMu.Lock()
+	defer ci.subMu.Unlock()
 	info := ci.subscriptions[id]
 	if info != nil {
 		info.Unsubscribe()
@@ -201,37 +198,7 @@ func (ci *CollectionBase) UnregisterSubscription(id string) {
 	}
 }
 
-// RegisterTrigger registers a collection-scoped trigger.
-func (ci *CollectionBase) RegisterTrigger(options core.RegisterTriggerOptions) (core.TriggerInfo, error) {
-	return core.TriggerInfo{}, fmt.Errorf("RegisterTrigger method stub for collection '%s'", ci.schema.Name) // Stub: not implemented
-}
-
-// UnregisterTrigger unregisters a collection-scoped trigger.
-func (ci *CollectionBase) UnregisterTrigger(options core.UnregisterTriggerOptions) error {
-	return fmt.Errorf("UnregisterTrigger method stub for collection '%s'", ci.schema.Name) // Stub: not implemented
-}
-
-// RegisterTask registers a collection-scoped task.
-func (ci *CollectionBase) RegisterTask(options core.RegisterTaskOptions) (core.TaskInfo, error) {
-	return core.TaskInfo{}, fmt.Errorf("RegisterTask method stub for collection '%s'", ci.schema.Name) // Stub: not implemented
-}
-
-// UnregisterTask unregisters a collection-scoped task.
-func (ci *CollectionBase) UnregisterTask(options core.UnregisterTaskOptions) error {
-	return fmt.Errorf("UnregisterTask method stub for collection '%s'", ci.schema.Name) // Stub: not implemented
-}
-
 // Subscriptions returns all registered collection-scoped subscriptions.
 func (ci *CollectionBase) Subscriptions() ([]core.SubscriptionInfo, error) {
 	return []core.SubscriptionInfo{}, nil // Stub: return empty slice
-}
-
-// Triggers returns all registered collection-scoped triggers.
-func (ci *CollectionBase) Triggers() ([]core.TriggerInfo, error) {
-	return []core.TriggerInfo{}, nil // Stub: return empty slice
-}
-
-// Tasks returns all registered collection-scoped tasks.
-func (ci *CollectionBase) Tasks() ([]core.TaskInfo, error) {
-	return []core.TaskInfo{}, nil // Stub: return empty slice
 }

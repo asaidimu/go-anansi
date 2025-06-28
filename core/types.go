@@ -1,10 +1,7 @@
-package query
+package core
 
 // Ensure these match your actual type definitions from the DSL.
 // For example, if you have these in a 'querydsl.go' or 'types.go' file.
-
-// LogicalOperator for combining conditions.
-type LogicalOperator string
 
 const (
 	LogicalOperatorAnd LogicalOperator = "and"

@@ -10,7 +10,7 @@ import (
 	"github.com/asaidimu/go-anansi/core/persistence"
 )
 
-// DefaultMapperOptions returns sensible defaults for table creation.
+// DefaultInteractorOptions returns sensible defaults for table creation.
 // By default, it sets IfNotExists to true, DropIfExists to false,
 // and CreateIndexes to true.
 func DefaultInteractorOptions() *persistence.InteractorOptions {

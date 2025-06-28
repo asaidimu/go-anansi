@@ -4,26 +4,35 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/asaidimu/go-anansi/core"
-	"github.com/asaidimu/go-anansi/core/query"
+	"github.com/asaidimu/go-events"
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 // Persistence implements the core.Persistence interface.
 type Persistence struct {
-	interactor DatabaseInteractor
-	collection core.PersistenceCollectionInterface
-	schema     *core.SchemaDefinition
-	executor   *Executor
-	fmap       core.FunctionMap
-	logger     *zap.Logger
+	interactor    DatabaseInteractor
+	collection    core.PersistenceCollectionInterface
+	schema        *core.SchemaDefinition
+	executor      *Executor
+	fmap          core.FunctionMap
+	logger        *zap.Logger
+	subscriptions map[string]*core.SubscriptionInfo // To store unsubscribe functions
+	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
+	bus           *events.TypedEventBus[core.PersistenceEvent]
 }
 
 // NewPersistence creates a new instance of Persistence.
 func NewPersistence(interactor DatabaseInteractor, fmap core.FunctionMap) (*Persistence, error) {
+	bus, err := events.NewTypedEventBus[core.PersistenceEvent](events.DefaultConfig())
+	if err != nil {
+		return nil, fmt.Errorf("Could not initialize event bus %v", err)
+	}
 	var schema core.SchemaDefinition
-	err := json.Unmarshal(schemasCollectionSchema, &schema)
+	err = json.Unmarshal(schemasCollectionSchema, &schema)
 	if err != nil {
 		return nil, fmt.Errorf("Error unmarshaling JSON: %v\n", err)
 	}
@@ -51,6 +60,7 @@ func NewPersistence(interactor DatabaseInteractor, fmap core.FunctionMap) (*Pers
 		fmap:       fmap,
 		collection: collection,
 		schema:     &schema,
+		bus:        bus,
 		logger:     zap.NewNop(),
 	}, nil
 }
@@ -161,7 +171,7 @@ func (pi *Persistence) Delete(name string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	q := query.NewQueryBuilder().Where("name").Eq(name).Build()
+	q := core.NewQueryBuilder().Where("name").Eq(name).Build()
 	_, err = collection.Delete(q.Filters, false)
 	if err != nil {
 		tx.Rollback(context.Background())
@@ -194,21 +204,20 @@ func (pi *Persistence) Schema(name string) (*core.SchemaDefinition, error) {
 		return nil, fmt.Errorf("Collection %s does not exist: %v\n", name, err)
 	}
 
-	q := query.NewQueryBuilder().Where("name").Eq(name).Build()
+	q := core.NewQueryBuilder().Where("name").Eq(name).Build()
 
 	out, err := pi.collection.Read(q)
 	if err != nil {
 		return nil, fmt.Errorf("Error reading schema collection: %v\n", err)
 	}
 
-	result, _ := out.(*query.QueryResult)
-
+	result, _ := out.(*core.QueryResult)
 
 	if result.Count != 1 {
 		return nil, fmt.Errorf("Unexpected count for schema name: %v\n", result.Count)
 	}
 
-	record, err := mapToSchemaRecord(result.Data.(query.Document))
+	record, err := mapToSchemaRecord(result.Data.(core.Document))
 	if err != nil {
 		return nil, fmt.Errorf("Error converting map to SchemaRecord: %v\n", err)
 	}
@@ -232,46 +241,36 @@ func (pi *Persistence) Metadata(
 }
 
 // RegisterSubscription registers a new subscription.
-func (pi *Persistence) RegisterSubscription(options core.RegisterSubscriptionOptions) (core.SubscriptionInfo, error) {
-	return core.SubscriptionInfo{}, fmt.Errorf("RegisterSubscription method stub") // Stub: not implemented
+func (pi *Persistence) RegisterSubscription(options core.RegisterSubscriptionOptions) string {
+	pi.subMu.Lock()
+	defer pi.subMu.Unlock()
+	unsubscribe := pi.bus.Subscribe(string(options.Event), options.Callback)
+	id := uuid.New()
+	callbackID := id.String()
+
+	data := core.SubscriptionInfo{
+		Event:       options.Event,
+		Unsubscribe: unsubscribe,
+		Label:       options.Label,
+		Description: options.Description,
+	}
+
+	pi.subscriptions[callbackID] = &data
+	return callbackID
 }
 
 // UnregisterSubscription unregisters an existing subscription.
-func (pi *Persistence) UnregisterSubscription(callback string) error {
-	return fmt.Errorf("UnregisterSubscription method stub") // Stub: not implemented
-}
-
-// RegisterTrigger registers a new trigger.
-func (pi *Persistence) RegisterTrigger(options core.RegisterTriggerOptions) (core.TriggerInfo, error) {
-	return core.TriggerInfo{}, fmt.Errorf("RegisterTrigger method stub") // Stub: not implemented
-}
-
-// UnregisterTrigger unregisters an existing trigger.
-func (pi *Persistence) UnregisterTrigger(options core.UnregisterTriggerOptions) error {
-	return fmt.Errorf("UnregisterTrigger method stub") // Stub: not implemented
-}
-
-// RegisterTask registers a new task.
-func (pi *Persistence) RegisterTask(options core.RegisterTaskOptions) (core.TaskInfo, error) {
-	return core.TaskInfo{}, fmt.Errorf("RegisterTask method stub") // Stub: not implemented
-}
-
-// UnregisterTask unregisters an existing task.
-func (pi *Persistence) UnregisterTask(options core.UnregisterTaskOptions) error {
-	return fmt.Errorf("UnregisterTask method stub") // Stub: not implemented
+func (pi *Persistence) UnregisterSubscription(callback string) {
+	pi.subMu.Lock()
+	defer pi.subMu.Unlock()
+	info := pi.subscriptions[callback]
+	if info != nil {
+		info.Unsubscribe()
+		delete(pi.subscriptions, callback)
+	}
 }
 
 // Subscriptions returns all registered subscriptions.
 func (pi *Persistence) Subscriptions() ([]core.SubscriptionInfo, error) {
 	return []core.SubscriptionInfo{}, nil // Stub: return empty slice
-}
-
-// Triggers returns all registered triggers.
-func (pi *Persistence) Triggers() ([]core.TriggerInfo, error) {
-	return []core.TriggerInfo{}, nil // Stub: return empty slice
-}
-
-// Tasks returns all registered tasks.
-func (pi *Persistence) Tasks() ([]core.TaskInfo, error) {
-	return []core.TaskInfo{}, nil // Stub: return empty slice
 }

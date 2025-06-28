@@ -1,12 +1,10 @@
-package query
+package core
 
 import (
 	"context"
 	"fmt"
 	"maps"
 	"sync"
-
-	"github.com/asaidimu/go-anansi/core"
 	"go.uber.org/zap"
 )
 
@@ -232,15 +230,15 @@ func (p *DataProcessor) evaluateStandardCondition(row Document, condition *Filte
 	case ComparisonOperatorNeq:
 		return fieldValue != condition.Value, nil
 	case ComparisonOperatorGt:
-		if fvNum, okF := core.ToFloat64(fieldValue); okF {
-			if condNum, okC := core.ToFloat64(condition.Value); okC {
+		if fvNum, okF := ToFloat64(fieldValue); okF {
+			if condNum, okC := ToFloat64(condition.Value); okC {
 				return fvNum > condNum, nil
 			}
 		}
 		return false, fmt.Errorf("unsupported type for GT comparison between %T and %T", fieldValue, condition.Value)
 	case ComparisonOperatorLt:
-		if fvNum, okF := core.ToFloat64(fieldValue); okF {
-			if condNum, okC := core.ToFloat64(condition.Value); okC {
+		if fvNum, okF := ToFloat64(fieldValue); okF {
+			if condNum, okC := ToFloat64(condition.Value); okC {
 				return fvNum < condNum, nil
 			}
 		}

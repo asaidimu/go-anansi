@@ -8,7 +8,6 @@ import (
 
 	"github.com/asaidimu/go-anansi/core"
 	"github.com/asaidimu/go-anansi/core/persistence"
-	querydsl "github.com/asaidimu/go-anansi/core/query"
 	"go.uber.org/zap"
 )
 
@@ -26,7 +25,7 @@ type dbRunner interface {
 type SQLiteInteractor struct {
 	db                    *sql.DB // The underlying database connection pool
 	tx                    *sql.Tx // The active transaction (nil if not in a transaction)
-	queryGeneratorFactory querydsl.QueryGeneratorFactory
+	queryGeneratorFactory core.QueryGeneratorFactory
 	logger                *zap.Logger
 	options *persistence.InteractorOptions
 }
@@ -37,7 +36,7 @@ var _ persistence.DatabaseInteractor = (*SQLiteInteractor)(nil)
 // NewSQLiteInteractor creates a new DatabaseInteractor instance.
 // If 'tx' is provided, the instance operates in transactional mode,
 // otherwise, it operates in non-transactional mode using 'db'.
-func NewSQLiteInteractor(db *sql.DB, logger *zap.Logger, options *persistence.InteractorOptions, tx *sql.Tx) *SQLiteInteractor {
+func NewSQLiteInteractor(db *sql.DB, logger *zap.Logger, options *persistence.InteractorOptions, tx *sql.Tx) persistence.DatabaseInteractor {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -63,17 +62,17 @@ func (e *SQLiteInteractor) runner() dbRunner {
 }
 
 // readRows reads all rows from a sql.Rows result and converts them into a slice of Row maps.
-func readRows(logger *zap.Logger, schema *core.SchemaDefinition, rows *sql.Rows) ([]querydsl.Document, error) {
+func readRows(logger *zap.Logger, schema *core.SchemaDefinition, rows *sql.Rows) ([]core.Document, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get columns: %w", err)
 	}
 
-	var results []querydsl.Document
+	var results []core.Document
 	for rows.Next() {
-		row := make(querydsl.Document, len(columns))
+		row := make(core.Document, len(columns))
 		values := make([]any, len(columns))
-		scanArgs := make([]any, len(columns)) // Pointers to values for Scan
+		scanArgs := make([]any, len(columns))
 		for i := range values {
 			scanArgs[i] = &values[i]
 		}
@@ -168,7 +167,7 @@ func readRows(logger *zap.Logger, schema *core.SchemaDefinition, rows *sql.Rows)
 }
 
 
-func (e *SQLiteInteractor) SelectDocuments(ctx context.Context, schema *core.SchemaDefinition, dsl *querydsl.QueryDSL) ([]querydsl.Document, error) {
+func (e *SQLiteInteractor) SelectDocuments(ctx context.Context, schema *core.SchemaDefinition, dsl *core.QueryDSL) ([]core.Document, error) {
 	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(schema)
 	if err != nil {
 		return nil, fmt.Errorf("could not get a query generator instance: %w", err)
@@ -190,7 +189,7 @@ func (e *SQLiteInteractor) SelectDocuments(ctx context.Context, schema *core.Sch
 	return readRows(e.logger, schema, rows)
 }
 
-func (e *SQLiteInteractor) UpdateDocuments(ctx context.Context, schema *core.SchemaDefinition, updates map[string]any, filters *querydsl.QueryFilter) (int64, error) {
+func (e *SQLiteInteractor) UpdateDocuments(ctx context.Context, schema *core.SchemaDefinition, updates map[string]any, filters *core.QueryFilter) (int64, error) {
 	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(schema)
 	if err != nil {
 		return 0, fmt.Errorf("could not get a query generator instance: %w", err)
@@ -211,9 +210,9 @@ func (e *SQLiteInteractor) UpdateDocuments(ctx context.Context, schema *core.Sch
 	return result.RowsAffected()
 }
 
-func (e *SQLiteInteractor) InsertDocuments(ctx context.Context, schema *core.SchemaDefinition, records []map[string]any) ([]querydsl.Document, error) {
+func (e *SQLiteInteractor) InsertDocuments(ctx context.Context, schema *core.SchemaDefinition, records []map[string]any) ([]core.Document, error) {
 	if len(records) == 0 {
-		return []querydsl.Document{}, nil
+		return []core.Document{}, nil
 	}
 	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(schema)
 	if err != nil {
@@ -236,7 +235,7 @@ func (e *SQLiteInteractor) InsertDocuments(ctx context.Context, schema *core.Sch
 	return readRows(e.logger, schema, rows)
 }
 
-func (e *SQLiteInteractor) DeleteDocuments(ctx context.Context, schema *core.SchemaDefinition, filters *querydsl.QueryFilter, unsafeDelete bool) (int64, error) {
+func (e *SQLiteInteractor) DeleteDocuments(ctx context.Context, schema *core.SchemaDefinition, filters *core.QueryFilter, unsafeDelete bool) (int64, error) {
 	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(schema)
 	if err != nil {
 		return 0, fmt.Errorf("could not get a query generator instance: %w", err)
