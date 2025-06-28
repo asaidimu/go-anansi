@@ -4,8 +4,6 @@
 [![Build Status](https://github.com/asaidimu/go-anansi/workflows/Test%20Workflow/badge.svg)](https://github.com/asaidimu/go-anansi/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-TODO: Update readme to reflect current codebase. The existing documentation is almost obsolete
-
 Anansi is a comprehensive toolkit for defining, versioning, migrating, and persisting structured data, enabling schema-driven development with powerful runtime validation and adaptable storage layers. This repository provides the **Go implementation** of the Anansi persistence and query framework.
 
 ---
@@ -19,6 +17,9 @@ Anansi is a comprehensive toolkit for defining, versioning, migrating, and persi
     *   [Initializing Persistence](#initializing-persistence)
     *   [Creating Collections](#creating-collections)
     *   [Basic CRUD Operations](#basic-crud-operations)
+    *   [Data Validation](#data-validation)
+    *   [Event Subscriptions](#event-subscriptions)
+    *   [Transaction Management](#transaction-management)
     *   [Advanced Querying with QueryDSL](#advanced-querying-with-querydsl)
     *   [In-memory Go Functions (Computed Fields & Custom Filters)](#in-memory-go-functions-computed-fields--custom-filters)
 *   [Project Architecture](#-project-architecture)
@@ -36,12 +37,12 @@ Anansi is a comprehensive toolkit for defining, versioning, migrating, and persi
 
 Anansi is designed to bring a robust, schema-first approach to data persistence in Go applications. By externalizing data models into declarative JSON schema definitions, it allows for dynamic table creation, powerful querying, and a clear pathway for future data migrations and versioning. This framework aims to provide a high degree of flexibility and extensibility by abstracting the underlying storage mechanism.
 
-The current implementation focuses on providing a production-ready SQLite adapter, demonstrating the core capabilities of the Anansi framework. While SQLite is the primary target for initial development, the architecture is built to support other database systems through a pluggable `Mapper` and `QueryExecutor` interface. This project is still under active development, with several advanced features defined in interfaces awaiting full implementation.
+The current implementation focuses on providing a production-ready SQLite adapter, demonstrating the core capabilities of the Anansi framework. While SQLite is the primary target for initial development, the architecture is built to support other database systems through a pluggable `persistence.DatabaseInteractor` interface. This project is still under active development, with several advanced features defined in interfaces awaiting full implementation.
 
 **Key Features:**
 
-*   **Schema-Driven Data Modeling**: Define your data structures using declarative JSON schemas (`core.SchemaDefinition`) that include field types, constraints (required, unique, default), and indexing.
-*   **Pluggable Persistence Layer**: Anansi is built around interfaces (`core.Mapper`, `query.QueryExecutor`, `query.QueryGenerator`) allowing easy integration with various database systems. The initial release provides a comprehensive SQLite adapter.
+*   **Schema-Driven Data Modeling**: Define your data structures using declarative JSON schemas (`schema.SchemaDefinition`) that include field types, constraints (required, unique, default), and indexing.
+*   **Pluggable Persistence Layer**: Anansi is built around the `persistence.DatabaseInteractor` interface, allowing easy integration with various database systems. The initial release provides a comprehensive SQLite adapter.
 *   **Declarative Query DSL**: Construct complex queries using a fluent `query.QueryBuilder` API, which is then translated into efficient SQL statements by the underlying query generator.
 *   **Comprehensive CRUD Operations**: Perform `Create`, `Read`, `Update`, and `Delete` operations on your collections through a unified API.
 *   **Nested JSON Field Querying**: Seamlessly query and filter on data stored within JSON object fields in your database, treating them as first-class fields using `json_extract` for SQLite.
@@ -50,7 +51,10 @@ The current implementation focuses on providing a production-ready SQLite adapte
     *   **Custom Filters**: Implement complex, non-SQL-standard filtering logic in Go after initial database retrieval.
 *   **Table & Index Management**: Programmatically create and manage database tables and indexes directly from your schema definitions, supporting `IF NOT EXISTS`, `DROP TABLE IF EXISTS`, and various index types.
 *   **Atomic Insert Operations**: Utilizes `RETURNING *` for `INSERT` statements (where supported, e.g., SQLite 3.35+) to atomically fetch inserted records, including auto-generated IDs and default values.
-*   **Robust Error Handling & Logging**: Integrates with `go.uber.org/zap` for structured logging, aiding debugging and operational insights.
+*   **Robust Data Validation**: Validate data against defined schema constraints at runtime.
+*   **Transaction Management**: Support for atomic database operations within a transaction.
+*   **Event System**: Built-in event emission (`persistence.PersistenceEvent`) for various data operations, allowing for subscription and reactive programming.
+*   **Structured Logging**: Integrates `go.uber.org/zap` for detailed debugging and operational insights throughout the persistence layer.
 
 ---
 
@@ -67,8 +71,8 @@ Before you begin, ensure you have the following installed:
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/asaidimu/anansi.git
-    cd anansi
+    git clone https://github.com/asaidimu/go-anansi.git
+    cd go-anansi
     ```
 2.  **Download dependencies:**
     ```bash
@@ -97,33 +101,40 @@ Defining User schema from JSON string...
 User schema unmarshaled successfully from JSON.
 Creating 'users' table...
 'users' table created successfully.
+Document added to collection 'users', {document:create:success}
+Document added to collection 'users', {document:create:success}
+Document added to collection 'users', {document:create:success}
 Inserting sample data...
-Sample data inserted successfully.
-Sample data inserted successfully.
 Sample data inserted successfully.
 
 Querying data from 'users' table:
 -------------------------------------------------------------------
 ID         Name                 Email                     Age   Active    
 -------------------------------------------------------------------
-1          Alice Smith          alice@example.com         0     true      
-2          Alice Smith          alice2@example.com        0     true      
+2          Alice Smith          alice2@example.com        27    true      
+3          Alex Smith           alice3@example.com        28    false     
 -------------------------------------------------------------------
-
 Database created successfully at: user.db
 You can inspect this database file using the 'sqlite3' command-line tool:
 1. Open your terminal.
 2. Navigate to the directory where 'main.go' and 'user.db' are located.
 3. Run: sqlite3 user.db
 4. Inside the sqlite3 prompt, you can run SQL commands:
-   - .tables (to list tables)
-   - .schema users (to view table schema)
-   - SELECT * FROM users; (to view data)
-   - .quit (to exit)
+    - .tables (to list tables)
+    - .schema users (to view table schema)
+    - SELECT * FROM users; (to view data)
+    - .quit (to exit)
+-------------------------------------------------------------------
+ID         Name                 Email                     Age   Active    
+-------------------------------------------------------------------
+2          Alice Smith          alice2@example.com        27    true      
+3          Alex Smith           alice3@example.com        28    false     
+-------------------------------------------------------------------
 Database connection closed.
+Dropped 'users' table...
 ```
 
-This confirms that the application can connect to SQLite, define a schema, create a table, insert data, and query it using the Anansi framework.
+This confirms that the application can connect to SQLite, define a schema, create a table, insert data, query it, and manage transactions using the Anansi framework.
 
 ---
 
@@ -133,7 +144,7 @@ Anansi operates on the principle of defining your data structure as a schema, th
 
 ### Defining Schemas
 
-Schemas are defined using the `core.SchemaDefinition` struct, which can be easily unmarshaled from JSON. This allows for externalizing your data models.
+Schemas are defined using the `schema.SchemaDefinition` struct, which can be easily unmarshaled from JSON. This allows for externalizing your data models.
 
 **Example (`userSchemaJSON` from `main.go`):**
 
@@ -146,7 +157,7 @@ Schemas are defined using the `core.SchemaDefinition` struct, which can be easil
         "id": {
             "name": "id",
             "type": "integer",
-            "required": true,
+            "required": false,
             "unique": true,
             "description": "Unique identifier for the user"
         },
@@ -194,7 +205,7 @@ Schemas are defined using the `core.SchemaDefinition` struct, which can be easil
 
 ### Initializing Persistence
 
-To interact with your database, you'll need to initialize the SQLite-specific `Mapper` and `QueryExecutor`, then wrap them in `persistence.NewPersistence`.
+To interact with your database, you'll need to initialize a `persistence.DatabaseInteractor` (e.g., `sqlite.SQLiteInteractor`) and then pass it to `persistence.NewPersistence`.
 
 ```go
 package main
@@ -204,37 +215,41 @@ import (
 	"log"
 	"os"
 
-	"github.com/asaidimu/anansi/core"
-	"github.com/asaidimu/anansi/core/persistence"
-	"github.com/asaidimu/anansi/core/query"
-	"github.com/asaidimu/anansi/sqlite"
+	"github.com/asaidimu/go-anansi/core/persistence"
+	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/sqlite"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 	"go.uber.org/zap"
 )
 
 func main() {
 	dbFileName := "my_app.db"
-	// Ensure a fresh database for demonstration
 	if err := os.Remove(dbFileName); err != nil && !os.IsNotExist(err) {
 		log.Fatalf("Failed to remove existing database file %s: %v", dbFileName, err)
 	}
 
 	db, err := sql.Open("sqlite3", dbFileName)
 	if err != nil {
-		log.Fatalf("Failed to open database: %v", err)
+		log.Fatalf("Failed to open database connection: %v", err)
 	}
 	defer db.Close()
 
-	// Initialize with a logger for better visibility (optional)
+	// Initialize with a logger (optional) and default interactor options
 	logger, _ := zap.NewDevelopment()
 	defer logger.Sync()
 
-	// Initialize the SQLite-specific components
-	sqliteMapper := sqlite.NewSQLiteMapper(db, nil) // nil uses default options
-	sqliteExecutor := sqlite.NewSqliteExecutor(db, logger)
+	// Create an SQLite DatabaseInteractor.
+	// The interactor handles low-level DB operations and DDL.
+	interactor := sqlite.NewSQLiteInteractor(db, logger, sqlite.DefaultInteractorOptions(), nil)
 
-	// Initialize the core persistence layer
-	persistenceService := persistence.NewPersistence(core.Mapper(sqliteMapper), query.QueryExecutor(sqliteExecutor))
+	// Initialize the core persistence service.
+	// This service manages collections, schemas, and orchestrates operations.
+	// An empty schema.FunctionMap is passed for now; see "In-memory Go Functions" section.
+	persistenceService, err := persistence.NewPersistence(interactor, schema.FunctionMap{})
+	if err != nil {
+		log.Fatalf("Failed to initialize persistence: %v", err)
+	}
+	fmt.Println("Persistence service initialized.")
 
 	// ... now use persistenceService to create collections, etc.
 }
@@ -242,10 +257,10 @@ func main() {
 
 ### Creating Collections
 
-Once `persistence.Persistence` is initialized, you can create a collection (which maps to a database table) using your schema definition.
+Once `persistence.NewPersistence` is initialized, you can create a collection (which maps to a database table) using your schema definition.
 
 ```go
-// userSchema is your core.SchemaDefinition unmarshaled from JSON
+// userSchema is your schema.SchemaDefinition unmarshaled from JSON
 collection, err := persistenceService.Create(userSchema)
 if err != nil {
 	log.Fatalf("Failed to create collection 'users': %v", err)
@@ -260,6 +275,11 @@ Anansi provides methods for common database operations.
 #### Create (Insert)
 
 ```go
+import (
+	"github.com/asaidimu/go-anansi/core/query"
+	"github.com/asaidimu/go-anansi/core/schema"
+)
+
 // Single record insert
 userData := map[string]any{
     "name":      "Alice Smith",
@@ -268,23 +288,23 @@ userData := map[string]any{
     "is_active": true,
 }
 
-// The Create method can take map[string]any or []map[string]any
-insertedRecord, err := collection.Create(userData)
+// The Create method accepts map[string]any or []map[string]any
+insertedResult, err := collection.Create(userData) // Returns *query.QueryResult
 if err != nil {
     log.Fatalf("Failed to insert user: %v", err)
 }
-fmt.Printf("Inserted user: %+v\n", insertedRecord)
+fmt.Printf("Inserted user ID: %v\n", insertedResult.Data.(schema.Document)["id"])
 
 // Batch inserts
 batchData := []map[string]any{
     {"name": "Bob Johnson", "email": "bob@example.com", "age": 25, "is_active": true},
     {"name": "Charlie Brown", "email": "charlie@example.com", "age": 35, "is_active": false},
 }
-insertedRecords, err := collection.Create(batchData)
+insertedBatchResult, err := collection.Create(batchData)
 if err != nil {
     log.Fatalf("Failed to batch insert users: %v", err)
 }
-fmt.Printf("Batch inserted %d users.\n", len(insertedRecords.([]query.Row)))
+fmt.Printf("Batch inserted %d users.\n", insertedBatchResult.Count)
 ```
 
 #### Read (Query)
@@ -292,7 +312,7 @@ fmt.Printf("Batch inserted %d users.\n", len(insertedRecords.([]query.Row)))
 Read operations leverage the `query.QueryBuilder` to construct complex queries.
 
 ```go
-import "github.com/asaidimu/anansi/core/query"
+import "github.com/asaidimu/go-anansi/core/query"
 
 // Query all active users younger than 28, excluding the 'age' field from the output.
 q := query.NewQueryBuilder().
@@ -305,13 +325,13 @@ q := query.NewQueryBuilder().
     End().
     Build()
 
-result, err := collection.Read(q)
+result, err := collection.Read(&q) // Read takes a pointer to QueryDSL
 if err != nil {
     log.Fatalf("Failed to read data: %v", err)
 }
 
-// Results are []query.Row (map[string]any)
-rows := result.Data.([]query.Row)
+// Results are []schema.Document (map[string]any)
+rows := result.Data.([]schema.Document)
 for _, row := range rows {
     // Note: 'age' is excluded by the projection in this query
     fmt.Printf("User: ID=%v, Name=%v, Email=%v, Active=%v\n",
@@ -322,14 +342,18 @@ for _, row := range rows {
 #### Update
 
 ```go
-import "context"
+import "github.com/asaidimu/go-anansi/core/persistence"
 
-// Update Alice Smith's age to 31
-updates := map[string]any{"age": 31}
+// Update the user whose email is 'alice@example.com' to have age 31 and name 'Alice M. Smith'
+updates := map[string]any{"age": 31, "name": "Alice M. Smith"}
 filter := query.NewQueryBuilder().Where("email").Eq("alice@example.com").Build().Filters
 
-// The Update method is on the executor directly for now
-rowsAffected, err := sqliteExecutor.Update(context.Background(), &userSchema, updates, *filter)
+updateParams := &persistence.CollectionUpdate{
+	Data:   updates,
+	Filter: filter,
+}
+
+rowsAffected, err := collection.Update(updateParams)
 if err != nil {
     log.Fatalf("Failed to update user: %v", err)
 }
@@ -339,18 +363,135 @@ fmt.Printf("Updated %d rows.\n", rowsAffected)
 #### Delete
 
 ```go
-import "context"
-
 // Delete inactive users
 filter := query.NewQueryBuilder().Where("is_active").Eq(false).Build().Filters
 
 // By default, DELETE requires a filter for safety.
-// To delete all records, set unsafeDelete to true.
-rowsAffected, err := sqliteExecutor.Delete(context.Background(), &userSchema, *filter, false)
+// To delete all records (DANGER!), set unsafe to true.
+rowsAffected, err := collection.Delete(filter, false)
 if err != nil {
     log.Fatalf("Failed to delete users: %v", err)
 }
 fmt.Printf("Deleted %d rows.\n", rowsAffected)
+
+// Drop an entire collection (table)
+deleted, err := persistenceService.Delete("users")
+if err != nil {
+	log.Fatalf("Failed to drop collection: %v", err)
+}
+fmt.Printf("Collection 'users' deleted: %t\n", deleted)
+```
+
+### Data Validation
+
+Anansi allows you to validate data against a collection's schema constraints at runtime.
+
+```go
+import "github.com/asaidimu/go-anansi/core/schema"
+
+invalidUserData := map[string]any{
+    "name": "Invalid User",
+    // 'email' is required but missing
+    "age": 20,
+}
+
+validationResult, err := collection.Validate(invalidUserData, false) // `false` for strict validation
+if err != nil {
+    fmt.Printf("Error during validation: %v\n", err)
+}
+
+if !validationResult.Valid {
+    fmt.Println("Validation failed! Issues found:")
+    for _, issue := range validationResult.Issues {
+        fmt.Printf("  Code: %s, Message: %s, Path: %s, Severity: %s\n",
+            issue.Code, issue.Message, issue.Path, issue.Severity)
+    }
+} else {
+    fmt.Println("Validation successful!")
+}
+```
+
+### Event Subscriptions
+
+Anansi provides an event system allowing you to subscribe to various persistence lifecycle events.
+
+```go
+import (
+	"context"
+	"fmt"
+	"github.com/asaidimu/go-anansi/core/persistence"
+)
+
+// Register a subscription to be notified when a document is created successfully
+subscriptionId := collection.RegisterSubscription(persistence.RegisterSubscriptionOptions{
+    Event: persistence.DocumentCreateSuccess,
+    Label: persistence.StringPtr("log_new_user"),
+    Description: persistence.StringPtr("Logs details of newly created users."),
+    Callback: func(ctx context.Context, event persistence.PersistenceEvent) error {
+        if event.Collection != nil {
+            fmt.Printf("EVENT: Document added to collection '%s'. Input: %+v, Output: %+v\n",
+                *event.Collection, event.Input, event.Output)
+        }
+        return nil
+    },
+})
+
+fmt.Printf("Subscribed to DocumentCreateSuccess with ID: %s\n", subscriptionId)
+
+// Later, to unsubscribe:
+// collection.UnregisterSubscription(subscriptionId)
+
+// To get all active subscriptions for this collection:
+// subs, _ := collection.Subscriptions()
+// for _, sub := range subs {
+//     fmt.Printf("Active Subscription: ID=%s, Event=%s, Label=%s\n", *sub.Id, sub.Event, *sub.Label)
+// }
+```
+
+### Transaction Management
+
+Anansi supports executing multiple operations within a single database transaction.
+
+```go
+import "context"
+
+_, err = persistenceService.Transact(func(tx persistence.PersistenceTransactionInterface) (any, error) {
+    // Get a collection instance operating within this transaction
+    txCollection, err := tx.Collection("users")
+    if err != nil {
+        return nil, fmt.Errorf("failed to get transactional collection: %w", err)
+    }
+
+    // Perform operations within the transaction.
+    // If any operation fails, the entire transaction will be rolled back.
+    _, err = txCollection.Create(map[string]any{
+        "name":      "Transaction User 1",
+        "email":     "tx1@example.com",
+        "is_active": true,
+    })
+    if err != nil {
+        return nil, fmt.Errorf("tx create 1 failed: %w", err)
+    }
+
+    _, err = txCollection.Create(map[string]any{
+        "name":      "Transaction User 2",
+        "email":     "tx2@example.com",
+        "is_active": false,
+    })
+    if err != nil {
+        return nil, fmt.Errorf("tx create 2 failed: %w", err)
+    }
+
+    // This data will only be visible in the database if the transaction commits successfully.
+    fmt.Println("Transaction operations completed, preparing to commit.")
+    return nil, nil // Return nil, nil for success, or an error to rollback
+})
+
+if err != nil {
+    log.Fatalf("Transaction failed and was rolled back: %v", err)
+} else {
+    fmt.Println("Transaction committed successfully.")
+}
 ```
 
 ### Advanced Querying with QueryDSL
@@ -358,7 +499,7 @@ fmt.Printf("Deleted %d rows.\n", rowsAffected)
 The `query.QueryBuilder` provides a rich API for constructing declarative queries:
 
 ```go
-import "github.com/asaidimu/anansi/core/query"
+import "github.com/asaidimu/go-anansi/core/query"
 
 // Example: Get users, order by age descending, with pagination, and select specific fields.
 queryDSL := query.NewQueryBuilder().
@@ -370,12 +511,12 @@ queryDSL := query.NewQueryBuilder().
     End().
     Build()
 
-result, err := collection.Read(queryDSL)
+result, err := collection.Read(&queryDSL) // Read takes a pointer to QueryDSL
 if err != nil {
     log.Fatalf("Failed to read data with advanced query: %v", err)
 }
 fmt.Println("--- Advanced Query Results ---")
-for _, r := range result.Data.([]query.Row) {
+for _, r := range result.Data.([]schema.Document) {
     fmt.Printf("Name: %v, Email: %v\n", r["name"], r["email"])
 }
 ```
@@ -386,19 +527,19 @@ for _, r := range result.Data.([]query.Row) {
     *   Comparison Operators: `Eq`, `Neq`, `Lt`, `Lte`, `Gt`, `Gte`, `In`, `Nin`, `Contains`, `NotContains`, `StartsWith`, `EndsWith`, `Exists`, `NotExists`.
     *   Logical Operators: `WhereGroup` with `And`, `Or` for nested conditions.
 *   **Sorting**: `OrderByAsc`, `OrderByDesc` for single or multiple fields.
-*   **Pagination**: `Limit`, `Offset` for traditional pagination; `Cursor` for cursor-based (interface only, not fully implemented in current SQL generation).
+*   **Pagination**: `Limit`, `Offset` for traditional pagination. (Cursor-based pagination is defined in interfaces but currently not fully implemented in SQL generation.)
 *   **Projection**: `Select().Include(...)` or `Select().Exclude(...)` to control returned fields.
     *   `IncludeNested`: Placeholder for future nested document projection.
     *   `AddComputed`: For Go-based computed fields (see below).
     *   `AddCase`: For Go-based `CASE` expressions.
-*   **Joins**: `InnerJoin`, `LeftJoin`, `RightJoin`, `FullJoin` (interface only, not fully implemented in current SQL generation).
-*   **Aggregations**: `Count`, `Sum`, `Avg`, `Min`, `Max` (interface only, not fully implemented in current SQL generation).
-*   **Window Functions**: `Window` with `PartitionBy`, `OrderBy` (interface only, not fully implemented in current SQL generation).
-*   **Query Hints**: `UseIndex`, `ForceIndex`, `NoIndex`, `MaxExecutionTime` (interface only, not fully implemented in current SQL generation).
+*   **Joins**: `InnerJoin`, `LeftJoin`, `RightJoin`, `FullJoin`. (Defined in interfaces but currently not fully implemented in SQL generation.)
+*   **Aggregations**: `Count`, `Sum`, `Avg`, `Min`, `Max`. (Defined in interfaces but currently not fully implemented in SQL generation.)
+*   **Window Functions**: `Window` with `PartitionBy`, `OrderBy`. (Defined in interfaces but currently not fully implemented in SQL generation.)
+*   **Query Hints**: `UseIndex`, `ForceIndex`, `NoIndex`, `MaxExecutionTime`. (Defined in interfaces but currently not fully implemented in SQL generation.)
 
 ### In-memory Go Functions (Computed Fields & Custom Filters)
 
-Anansi allows you to register custom Go functions to perform operations that are either too complex for standard SQL or operate on data after initial database retrieval (e.g., on JSON fields that SQLite doesn't natively support querying efficiently).
+Anansi allows you to register custom Go functions to perform operations that are either too complex for standard SQL or operate on data after initial database retrieval (e.g., on JSON fields that SQLite doesn't natively support querying efficiently). These functions are registered via the `schema.FunctionMap` when initializing `persistence.NewPersistence`.
 
 ```go
 package main
@@ -411,10 +552,10 @@ import (
 	"log"
 	"os"
 
-	"github.com/asaidimu/anansi/core"
-	"github.com/asaidimu/anansi/core/persistence"
-	"github.com/asaidimu/anansi/core/query"
-	"github.com/asaidimu/anansi/sqlite"
+	"github.com/asaidimu/go-anansi/core/persistence"
+	"github.com/asaidimu/go-anansi/core/query"
+	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/sqlite"
 	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
@@ -433,25 +574,53 @@ func main() {
 	logger, _ := zap.NewDevelopment()
 	defer logger.Sync()
 
-	sqliteMapper := sqlite.NewSQLiteMapper(db, nil)
-	sqliteExecutor := sqlite.NewSqliteExecutor(db, logger)
-
-	persistenceService := persistence.NewPersistence(core.Mapper(sqliteMapper), query.QueryExecutor(sqliteExecutor))
-
-	// Define a simple schema with a JSON 'metadata' field
+	// 1. Define a schema with a JSON 'metadata' field
 	schemaJSON := `{
 		"name": "items",
 		"version": "1.0.0",
 		"fields": {
-			"id": {"name": "id", "type": "integer", "required": true, "unique": true},
+			"id": {"name": "id", "type": "integer", "required": false, "unique": true},
 			"name": {"name": "name", "type": "string", "required": true},
 			"metadata": {"name": "metadata", "type": "object"}
 		},
 		"indexes": [{"name": "pk_item_id", "fields": ["id"], "type": "primary"}]
 	}`
-	var itemSchema core.SchemaDefinition
+	var itemSchema schema.SchemaDefinition
 	if err := json.Unmarshal([]byte(schemaJSON), &itemSchema); err != nil {
 		log.Fatalf("Failed to unmarshal item schema: %v", err)
+	}
+
+	// 2. Prepare the FunctionMap with your custom Go functions
+	customFunctions := schema.FunctionMap{
+		"item_display": query.ComputeFunction(func(row schema.Document, args query.FilterValue) (any, error) {
+			name, ok := row["name"].(string)
+			if !ok {
+				return nil, fmt.Errorf("name is not a string")
+			}
+			// Access nested JSON field 'metadata.category'
+			if meta, ok := row["metadata"].(map[string]any); ok {
+				if category, ok := meta["category"].(string); ok {
+					return fmt.Sprintf("%s (%s)", name, category), nil
+				}
+			}
+			return name, nil // Fallback if no category
+		}),
+		"is_heavy": query.PredicateFunction(func(doc schema.Document, field string, args query.FilterValue) (bool, error) {
+			// This custom filter checks if 'metadata.weight_kg' > 1.5
+			if meta, ok := doc["metadata"].(map[string]any); ok {
+				if weight, ok := meta["weight_kg"].(float64); ok {
+					return weight > 1.5, nil
+				}
+			}
+			return false, nil // Not heavy or no weight defined
+		}),
+	}
+
+	// 3. Initialize Persistence with the custom functions
+	interactor := sqlite.NewSQLiteInteractor(db, logger, sqlite.DefaultInteractorOptions(), nil)
+	persistenceService, err := persistence.NewPersistence(interactor, customFunctions)
+	if err != nil {
+		log.Fatalf("Failed to initialize persistence: %v", err)
 	}
 
 	collection, err := persistenceService.Create(itemSchema)
@@ -464,66 +633,39 @@ func main() {
 	collection.Create(map[string]any{"name": "Desk Chair", "metadata": map[string]any{"category": "furniture", "material": "mesh"}})
 	collection.Create(map[string]any{"name": "Mouse", "metadata": map[string]any{"category": "electronics", "wireless": true}})
 
-	// 1. Register a Go Compute Function
-	// This function calculates a new field 'item_display_name'
-	sqliteExecutor.RegisterComputeFunction("item_display", func(row query.Row) (any, error) {
-		name, ok := row["name"].(string)
-		if !ok {
-			return nil, fmt.Errorf("name is not a string")
-		}
-		// Access nested JSON field 'metadata.category'
-		if meta, ok := row["metadata"].(map[string]any); ok {
-			if category, ok := meta["category"].(string); ok {
-				return fmt.Sprintf("%s (%s)", name, category), nil
-			}
-		}
-		return name, nil // Fallback if no category
-	})
-
-	// 2. Register a Go Filter Function
-	// This function filters items where metadata.weight_kg > 1.5
-	sqliteExecutor.RegisterFilterFunction("heavy_item", func(row query.Row) (bool, error) {
-		if meta, ok := row["metadata"].(map[string]any); ok {
-			if weight, ok := meta["weight_kg"].(float64); ok {
-				return weight > 1.5, nil
-			}
-		}
-		return false, nil // Not heavy or no weight defined
-	})
-
-	// Query using the registered functions
+	// Query using the registered Compute Function
 	fmt.Println("\nQuerying with Go functions:")
 	qWithGoFuncs := query.NewQueryBuilder().
 		Where("id").Gt(0). // Base filter for all data (SQL side)
 		Select().
 			Include("id", "name", "metadata"). // Ensure required fields are selected from DB
-			AddComputed("item_display_name", "item_display", "name", "metadata"). // Use registered compute function with arguments
+			AddComputed("item_display_name", "item_display"). // Use registered compute function
 		End().
 		Build()
 
-	result, err := collection.Read(qWithGoFuncs)
+	result, err := collection.Read(&qWithGoFuncs)
 	if err != nil {
 		log.Fatalf("Failed to query with computed field: %v", err)
 	}
 	fmt.Println("--- Results with Computed Field ---")
-	for _, r := range result.Data.([]query.Row) {
+	for _, r := range result.Data.([]schema.Document) {
 		fmt.Printf("ID: %v, Name: %v, Display: %v, Metadata: %v\n", r["id"], r["name"], r["item_display_name"], r["metadata"])
 	}
 
 	// Query using the custom Go filter
 	qWithGoFilter := query.NewQueryBuilder().
-		Where("id").Custom("heavy_item", true). // Use registered Go filter function
+		Where("id").Custom("is_heavy", true). // Use registered Go filter function
 		Select().
 			Include("id", "name", "metadata"). // Ensure metadata is fetched for the Go filter to work
 		End().
 		Build()
 
-	resultFilter, err := collection.Read(qWithGoFilter)
+	resultFilter, err := collection.Read(&qWithGoFilter)
 	if err != nil {
 		log.Fatalf("Failed to query with custom filter: %v", err)
 	}
-	fmt.Println("\n--- Results with Custom Filter (heavy_item) ---")
-	for _, r := range resultFilter.Data.([]query.Row) {
+	fmt.Println("\n--- Results with Custom Filter (is_heavy) ---")
+	for _, r := range resultFilter.Data.([]schema.Document) {
 		fmt.Printf("ID: %v, Name: %v\n", r["id"], r["name"])
 	}
 }
@@ -540,39 +682,33 @@ Anansi is structured to be modular and extensible, separating core persistence c
 
 ### Core Components
 
-*   **`core/`**: This package defines the foundational abstractions of Anansi. It contains:
-    *   `SchemaDefinition`: The declarative language for defining your data models, including fields, types, constraints, and indexes. It also supports complex nested schemas and migration definitions.
-    *   `Mapper` interface: Defines how `SchemaDefinition`s are translated into Data Definition Language (DDL) commands (e.g., `CREATE TABLE`, `CREATE INDEX`).
-    *   `query.QueryExecutor` interface: Defines how queries are executed against a database, encompassing both database-specific SQL operations and post-retrieval Go-based processing (custom filters, computed fields).
-    *   `query.QueryGenerator` interface: Defines how a high-level `query.QueryDSL` is translated into raw SQL statements that the database can understand.
-    *   `query.QueryDSL` and `query.QueryBuilder`: The declarative language and fluent API for constructing data queries, enabling powerful filtering, sorting, pagination, and projection.
-    *   `PersistenceInterface` & `PersistenceCollectionInterface`: The top-level interfaces for interacting with the persistence layer, handling collection management, CRUD operations, event subscriptions, triggers, and scheduled tasks.
-*   **`sqlite/`**: This package provides the concrete implementation of the core interfaces specifically for SQLite databases. It includes:
-    *   `SQLiteMapper`: Handles SQLite-specific DDL operations like `CREATE TABLE`, `CREATE INDEX`, and `DROP TABLE`, respecting options like `IF NOT EXISTS` and `TablePrefix`.
-    *   `SqliteExecutor`: Manages database connections, executes SQL queries generated by `SqliteQuery`, and applies Go-based filtering and computation logic in-memory.
-    *   `SqliteQuery`: Translates the generic Anansi `query.QueryDSL` into SQLite-compatible SQL, including handling JSON field access via `json_extract`.
-*   **`persistence/`**: This package orchestrates the interactions between the `Mapper` and `QueryExecutor` to provide the high-level `Persistence` and `PersistenceCollection` APIs to users. It acts as the bridge between your application and the underlying database implementation, abstracting away the database-specific details.
+*   **`core/persistence/`**: This package defines the top-level interfaces (`PersistenceInterface`, `PersistenceCollectionInterface`, `PersistenceTransactionInterface`) for interacting with the persistence layer. It also houses the `Executor` (orchestrates queries) and the event system.
+*   **`core/query/`**: This package contains the declarative `QueryDSL` structure and the fluent `QueryBuilder` API for constructing queries. It also defines the `QueryGenerator` interface for translating DSL to SQL, and the `DataProcessor` for in-memory Go-based filtering and computed fields.
+*   **`core/schema/`**: This package defines the foundational `SchemaDefinition` for describing data models, including field types, constraints, indexes, and migration primitives. It also includes the `Validator` for schema-based data validation.
+*   **`sqlite/`**: This package provides the concrete implementation for SQLite databases.
+    *   `SQLiteInteractor`: Implements the `persistence.DatabaseInteractor` interface, handling low-level SQL execution (DDL and DML) and transaction management for SQLite.
+    *   `SqliteQuery`: Implements the `query.QueryGenerator` interface, translating Anansi's `QueryDSL` into SQLite-compatible SQL, including handling nested JSON field access via `json_extract`.
 
 ### Data Flow for Queries (`collection.Read`)
 
 1.  A user constructs a `query.QueryDSL` object using `query.NewQueryBuilder()`.
 2.  The `PersistenceCollection.Read()` method receives the `query.QueryDSL`.
-3.  It passes the `query.QueryDSL` to the configured `query.QueryExecutor` (e.g., `sqlite.SqliteExecutor`).
-4.  The `SqliteExecutor` determines which fields are needed from the database by analyzing the projection and identifying dependencies for Go-based functions.
-5.  It then uses the `query.QueryGenerator` (e.g., `sqlite.SqliteQuery`) to translate the SQL-executable parts of the `query.QueryDSL` into an SQL query string and parameters. This includes handling field path translation for nested JSON objects.
-6.  The `SqliteExecutor` executes this SQL query against the `sql.DB` connection.
-7.  Retrieved rows are read from `sql.Rows` and converted into a generic `query.Row` (map[string]any) slice, performing schema-aware type conversions (e.g., SQLite `INTEGER` to Go `bool` for `FieldTypeBoolean`).
-8.  **Post-SQL Processing**: The `SqliteExecutor` then applies any registered **Go-based filter functions** and **Go-based computed field functions** on these in-memory `query.Row` objects.
-9.  Finally, the `SqliteExecutor` applies the final projection (include/exclude fields) as specified in the `query.QueryDSL`.
+3.  It delegates the operation to the internal `Executor`.
+4.  The `Executor` analyzes the `QueryDSL` to determine all fields required from the database, including dependencies for any registered Go-based functions.
+5.  It then uses the `query.QueryGenerator` (implemented by `sqlite.SqliteQuery`) to translate the SQL-executable parts of the `QueryDSL` into an SQL query string and parameters. This includes handling field path translation for nested JSON objects.
+6.  The `Executor`'s `DatabaseInteractor` (implemented by `sqlite.SQLiteInteractor`) executes this SQL query against the `sql.DB` connection.
+7.  Retrieved rows are read from `*sql.Rows` and converted into a generic `schema.Document` (map[string]any) slice, performing schema-aware type conversions (e.g., SQLite `INTEGER` to Go `bool` for `FieldTypeBoolean`).
+8.  **Post-SQL Processing**: The `Executor` (specifically its internal `DataProcessor`) then applies any registered **Go-based filter functions** and **Go-based computed field functions** on these in-memory `schema.Document` objects.
+9.  Finally, the `Executor` applies the final projection (include/exclude fields) as specified in the `QueryDSL`.
 10. The processed `query.QueryResult` is returned to the caller.
 
 ### Extension Points
 
 Anansi is designed with extensibility in mind through its interfaces:
 
-*   **`core.Mapper`**: To support a new database (e.g., PostgreSQL, MySQL), you would implement this interface to define how schemas are mapped to DDL for that specific database system.
-*   **`query.QueryExecutor`**: This interface allows you to define how queries are executed and how post-database retrieval Go logic is applied. A new database integration would likely need its own `QueryExecutor` implementation.
-*   **`query.QueryGenerator`**: This interface is responsible for transforming the `query.QueryDSL` into database-specific SQL. For each new database, a new `QueryGenerator` implementation would be required.
+*   **`persistence.DatabaseInteractor`**: To support a new SQL database (e.g., PostgreSQL, MySQL), you would implement this interface to define how DDL and DML operations are performed for that specific database system.
+*   **`query.QueryGeneratorFactory` / `query.QueryGenerator`**: For each new database, a new `QueryGenerator` implementation would be required to transform the generic `QueryDSL` into the database's specific SQL dialect.
+*   **`schema.FunctionMap`**: Allows injecting custom Go functions for computed fields and advanced filtering logic directly into the query processing pipeline.
 
 ### Static Type Mapping & Code Generation (Planned Enhancement)
 
@@ -591,7 +727,7 @@ While Anansi currently operates with dynamic data structures (`map[string]any`),
         IsActive bool   `json:"is_active" anansi:"required,default=true" db:"is_active"`
     }
     ```
-*   **Reflection-Based Mapping**: Seamlessly convert between `[]query.Row` results and strongly-typed structs, with intelligent type coercion and null handling.
+*   **Reflection-Based Mapping**: Seamlessly convert between `[]schema.Document` results and strongly-typed structs, with intelligent type coercion and null handling.
 *   **Dual Interface Support**: Continue supporting both dynamic and static approaches within the same application:
     ```go
     // Dynamic approach (current)
@@ -600,11 +736,11 @@ While Anansi currently operates with dynamic data structures (`map[string]any`),
 
     // Static approach (planned)
     user := User{Name: "Alice", Email: "alice@example.com"}
-    result, _ := collection.CreateTyped(&user)
+    result, _ := collection.CreateTyped(&user) // Planned method
 
     // Mixed querying
-    dynamicResults, _ := collection.Read(query)         // Returns []query.Row
-    typedResults, _ := collection.ReadAs[User](query)   // Returns []User (planned)
+    dynamicResults, _ := collection.Read(query)         // Returns *query.QueryResult with Data as []schema.Document
+    typedResults, _ := collection.ReadAs[User](query)   // Returns []User (planned method)
     ```
 
 **Strategic Benefits:**
@@ -635,8 +771,8 @@ Contributions are welcome! Please follow these guidelines.
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/asaidimu/anansi.git
-    cd anansi
+    git clone https://github.com/asaidimu/go-anansi.git
+    cd go-anansi
     ```
 2.  **Install dependencies:**
     ```bash
@@ -680,29 +816,26 @@ As this project is still a work in progress, detailed contribution guidelines wi
 
 ### Issue Reporting
 
-If you find a bug or have a feature request, please open an issue on the [GitHub Issue Tracker](https://github.com/asaidimu/anansi/issues).
+If you find a bug or have a feature request, please open an issue on the [GitHub Issue Tracker](https://github.com/asaidimu/go-anansi/issues).
 
 ---
 
 ## 🧭 Roadmap & Future Enhancements
 
-Anansi is under active development. The current focus is on solidifying the core persistence logic and the SQLite adapter. Many capabilities are already defined in the `core` interfaces but are currently stubbed in the `persistence` layer.
+Anansi is under active development. The current focus is on solidifying the core persistence logic and the SQLite adapter. Many capabilities are already defined in the `core` interfaces but are currently stubbed or partially implemented in the `persistence` layer.
 
 **Key areas for future development include:**
 
-*   **Schema Versioning & Migrations**: Full implementation of `core.Migration`, `core.SchemaMigrationHelper`, and associated persistence methods to allow declarative schema evolution and data transformation between versions.
-*   **Events & Observability**: Implement the `core.PersistenceEvent` system, including subscriptions, triggers, and a comprehensive metadata API (`core.MetadataFilter`, `core.CollectionMetadata`) for real-time insights and reactive programming.
-*   **Scheduled Tasks**: Full implementation of `core.TaskInfo` to enable scheduling and execution of background jobs directly managed by the persistence layer.
-*   **Transaction Management**: Expand the `core.PersistenceTransactionInterface` to provide robust, multi-operation transactional support.
-*   **More Database Adapters**: Develop `Mapper`, `QueryExecutor`, and `QueryGenerator` implementations for other popular databases (e.g., PostgreSQL, MySQL, NoSQL databases).
+*   **Schema Versioning & Migrations**: Full implementation of `core/schema.Migration`, `core/schema.SchemaMigrationHelper`, and associated persistence methods (`Collection.Migrate`, `Collection.Rollback`) to allow declarative schema evolution and data transformation between versions.
+*   **Events & Observability**: Further development of the `core/persistence.PersistenceEvent` system, including triggers and a comprehensive metadata API (`core/persistence.MetadataFilter`, `core/persistence.CollectionMetadata`) for real-time insights and reactive programming.
+*   **Scheduled Tasks**: Full implementation of `core/persistence.TaskInfo` to enable scheduling and execution of background jobs directly managed by the persistence layer.
 *   **Advanced QueryDSL Features**:
     *   Full support for cursor-based pagination.
-    *   Aggregation functions (Count, Sum, Avg, Min, Max).
-    *   Window functions (Rank, Row Number).
+    *   Aggregation functions (`Count`, `Sum`, `Avg`, `Min`, `Max`).
+    *   Window functions (`Rank`, `Row Number`).
     *   Join operations (`InnerJoin`, `LeftJoin`, etc.).
     *   Query Hints for performance optimization.
-*   **Data Validation**: Implement schema validation (`collection.Validate`) based on field constraints defined in `SchemaDefinition`.
-*   **Improved Logging**: Integrate `go.uber.org/zap` logger more comprehensively for detailed debugging and operational insights throughout the persistence layer.
+*   **More Database Adapters**: Develop `persistence.DatabaseInteractor` and `query.QueryGenerator` implementations for other popular databases (e.g., PostgreSQL, MySQL, NoSQL databases).
 
 ---
 
