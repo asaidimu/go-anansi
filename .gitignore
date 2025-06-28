@@ -26,3 +26,4 @@ go.work
 go-anansi
 dist
 *.db
+.commit-message.md

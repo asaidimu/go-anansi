@@ -307,7 +307,7 @@ type PersistenceTransactionInterface interface {
 
 type CollectionUpdate struct {
 	Data   map[string]any `json:"data,omitempty"` // Partial<T>
-	Filter any            `json:"filter"`         // QueryFilter<T, FunctionMap>
+	Filter *QueryFilter    `json:"filter"`         // QueryFilter<T, FunctionMap>
 }
 
 type ValidationResult struct {
@@ -320,9 +320,9 @@ type ValidationResult struct {
 // T generic from TypeScript is represented by 'any' in method signatures for data.
 type PersistenceCollectionInterface interface {
 	Create(data any) (any, error) // T | T[]
-	Read(query any) (any, error)
+	Read(query *QueryDSL) (*QueryResult, error)
 	Update(params *CollectionUpdate) (int, error) // Array<T>
-	Delete(query any, unsafe bool) (int, error)
+	Delete(query *QueryFilter, unsafe bool) (int, error)
 	Validate(data any, loose bool) (*ValidationResult, error)
 	Rollback(
 		version *string,

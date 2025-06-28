@@ -70,9 +70,8 @@ func (ci *CollectionBase) Create(data any) (any, error) {
 }
 
 // Read retrieves data from the collection based on a core.
-func (ci *CollectionBase) Read(qr any) (any, error) {
-	q := qr.(core.QueryDSL)
-	result, err := ci.executor.Query(context.Background(), ci.schema, &q)
+func (ci *CollectionBase) Read(query *core.QueryDSL) (*core.QueryResult, error) {
+	result, err := ci.executor.Query(context.Background(), ci.schema, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read data from collection '%s': %w", ci.schema.Name, err)
 	}
@@ -82,15 +81,7 @@ func (ci *CollectionBase) Read(qr any) (any, error) {
 
 // Update updates data in the collection based on filter.
 func (ci *CollectionBase) Update(params *core.CollectionUpdate) (int, error) {
-	var filter *core.QueryFilter
-	if params != nil {
-		f, ok := params.Filter.(*core.QueryFilter)
-		if !ok {
-			return 0, fmt.Errorf("invalid params type for Update: expected core.QueryFilter, got %T", params.Filter)
-		}
-		filter = f
-	}
-	result, err := ci.executor.Update(context.Background(), ci.schema, params.Data, filter)
+	result, err := ci.executor.Update(context.Background(), ci.schema, params.Data, params.Filter)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read data from collection '%s': %w", ci.schema.Name, err)
 	}
@@ -99,16 +90,7 @@ func (ci *CollectionBase) Update(params *core.CollectionUpdate) (int, error) {
 }
 
 // Delete deletes data from the collection based on core.
-func (ci *CollectionBase) Delete(params any, unsafe bool) (int, error) {
-	var filter *core.QueryFilter
-	if params != nil {
-		f, ok := params.(*core.QueryFilter)
-		if !ok {
-			return 0, fmt.Errorf("invalid params type for Delete: expected core.QueryFilter, got %T", params)
-		}
-		filter = f
-	}
-
+func (ci *CollectionBase) Delete(filter *core.QueryFilter, unsafe bool) (int, error) {
 	ctx := context.Background()
 	affected, err := ci.executor.Delete(ctx, ci.schema, filter, false)
 	if err != nil {

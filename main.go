@@ -223,7 +223,7 @@ func main() {
 	fmt.Println("\nQuerying data from 'users' table:")
 	q = core.NewQueryBuilder().Build()
 
-	out, err := collection.Read(q)
+	result, err := collection.Read(&q)
 	if err != nil {
 		log.Fatalf("Failed to read database: %v", err)
 	}
@@ -232,7 +232,6 @@ func main() {
 	fmt.Printf("%-10s %-20s %-25s %-5s %-10s\n", "ID", "Name", "Email", "Age", "Active")
 	fmt.Println("-------------------------------------------------------------------")
 
-	result, _ := out.(*core.QueryResult)
 	rows := result.Data.([]core.Document)
 
 	for _, row := range rows {
@@ -271,7 +270,7 @@ func main() {
 
 		q = core.NewQueryBuilder().Build()
 
-		out, err := collection.Read(q)
+		result, err := collection.Read(&q)
 		if err != nil {
 			log.Fatalf("Failed to read database: %v", err)
 		}
@@ -280,7 +279,6 @@ func main() {
 		fmt.Printf("%-10s %-20s %-25s %-5s %-10s\n", "ID", "Name", "Email", "Age", "Active")
 		fmt.Println("-------------------------------------------------------------------")
 
-		result, _ := out.(*core.QueryResult)
 		rows := result.Data.([]core.Document)
 
 		for _, row := range rows {

@@ -206,12 +206,10 @@ func (pi *Persistence) Schema(name string) (*core.SchemaDefinition, error) {
 
 	q := core.NewQueryBuilder().Where("name").Eq(name).Build()
 
-	out, err := pi.collection.Read(q)
+	result, err := pi.collection.Read(&q)
 	if err != nil {
 		return nil, fmt.Errorf("Error reading schema collection: %v\n", err)
 	}
-
-	result, _ := out.(*core.QueryResult)
 
 	if result.Count != 1 {
 		return nil, fmt.Errorf("Unexpected count for schema name: %v\n", result.Count)

@@ -1,7 +1,6 @@
 package persistence
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/asaidimu/go-anansi/core"
@@ -117,11 +116,7 @@ func (e *Collection) Create(data any) (any, error) {
 }
 
 // Read wraps the collection's Read method with event emission
-func (e *Collection) Read(input any) (any, error) {
-	query, ok := input.(core.QueryDSL)
-	if ! ok {
-		return nil, fmt.Errorf("Input to read is not a valid QueryDSL")
-	}
+func (e *Collection) Read(query *core.QueryDSL) (*core.QueryResult, error) {
 	result, err := e.withEventEmission(
 		"read",
 		core.DocumentReadStart,
@@ -138,7 +133,7 @@ func (e *Collection) Read(input any) (any, error) {
 		return nil, err
 	}
 
-	return result, nil
+	return result.(*core.QueryResult), nil
 }
 
 // Update wraps the collection's Update method with event emission
@@ -164,7 +159,7 @@ func (e *Collection) Update(params *core.CollectionUpdate) (int, error) {
 }
 
 // Delete wraps the collection's Delete method with event emission
-func (e *Collection) Delete(params any, unsafe bool) (int, error) {
+func (e *Collection) Delete(params *core.QueryFilter, unsafe bool) (int, error) {
 	result, err := e.withEventEmission(
 		"delete",
 		core.DocumentDeleteStart,
