@@ -8,8 +8,9 @@ import (
 	"log"
 	"os"
 
-	"github.com/asaidimu/go-anansi/core"
 	"github.com/asaidimu/go-anansi/core/persistence"
+	"github.com/asaidimu/go-anansi/core/query"
+	"github.com/asaidimu/go-anansi/core/schema"
 	"github.com/asaidimu/go-anansi/sqlite"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 )
@@ -93,7 +94,7 @@ func main() {
 
 	interactor := persistence.DatabaseInteractor(sqlite.NewSQLiteInteractor(db, nil, nil, nil))
 	// Initialize the persistence service
-	persistenceSvc, err := persistence.NewPersistence(interactor, core.FunctionMap{})
+	persistenceSvc, err := persistence.NewPersistence(interactor, schema.FunctionMap{})
 	if err != nil {
 		log.Fatalf("Failed to initialize persistence : %v", err)
 	}
@@ -105,7 +106,7 @@ func main() {
 	fmt.Println("Defining User schema from JSON string...")
 
 	// Unmarshal the JSON string into a core.SchemaDefinition struct
-	var userSchema core.SchemaDefinition
+	var userSchema schema.SchemaDefinition
 	err = json.Unmarshal([]byte(userSchemaJSON), &userSchema)
 	if err != nil {
 		log.Fatalf("Failed to unmarshal user schema JSON: %v", err)
@@ -128,17 +129,17 @@ func main() {
 	}
 	// --- End Original Code Block: Schema Definition and Collection Creation ---
 
-	collection.RegisterSubscription(core.RegisterSubscriptionOptions{
-		Event: core.DocumentCreateSuccess,
-		Callback: func(ctx context.Context, event core.PersistenceEvent) error {
+	collection.RegisterSubscription(persistence.RegisterSubscriptionOptions{
+		Event: persistence.DocumentCreateSuccess,
+		Callback: func(ctx context.Context, event persistence.PersistenceEvent) error {
 			fmt.Printf("Document added to collection '%s', %v \n", *event.Collection, event)
 			return nil
 		},
 	})
 
-	collection.RegisterSubscription(core.RegisterSubscriptionOptions{
-		Event: core.DocumentDeleteSuccess,
-		Callback: func(ctx context.Context, event core.PersistenceEvent) error {
+	collection.RegisterSubscription(persistence.RegisterSubscriptionOptions{
+		Event: persistence.DocumentDeleteSuccess,
+		Callback: func(ctx context.Context, event persistence.PersistenceEvent) error {
 			fmt.Printf("Document deleted from collection '%s', %v \n", *event.Collection, event)
 			return nil
 		},
@@ -198,7 +199,7 @@ func main() {
 		log.Fatalf("Failed to insert Alice 3: %v", err)
 	}
 
-	q := core.NewQueryBuilder().Where("age").Lt(28).Build()
+	q := query.NewQueryBuilder().Where("age").Lt(28).Build()
 	_, err = collection.Delete(q.Filters, false)
 	if err != nil {
 		log.Fatalf("Failed to delete Alice: %v", err)
@@ -206,8 +207,8 @@ func main() {
 
 	fmt.Println("Sample data inserted successfully.")
 
-	q = core.NewQueryBuilder().Where("age").Eq(28).Build()
-	_, err = collection.Update(&core.CollectionUpdate{
+	q = query.NewQueryBuilder().Where("age").Eq(28).Build()
+	_, err = collection.Update(&persistence.CollectionUpdate{
 		Data: map[string]any{
 			"name": "Alex Smith",
 		},
@@ -221,7 +222,7 @@ func main() {
 
 	// --- Original Code Block: Query and Print ---
 	fmt.Println("\nQuerying data from 'users' table:")
-	q = core.NewQueryBuilder().Build()
+	q = query.NewQueryBuilder().Build()
 
 	result, err := collection.Read(&q)
 	if err != nil {
@@ -232,7 +233,7 @@ func main() {
 	fmt.Printf("%-10s %-20s %-25s %-5s %-10s\n", "ID", "Name", "Email", "Age", "Active")
 	fmt.Println("-------------------------------------------------------------------")
 
-	rows := result.Data.([]core.Document)
+	rows := result.Data.([]schema.Document)
 
 	for _, row := range rows {
 		id := row["id"].(int64)
@@ -262,13 +263,13 @@ func main() {
 	fmt.Printf("    - .quit (to exit)\n")
 	// --- End Original Code Block: Instructions ---
 
-	_, err = persistenceSvc.Transact(func(tx core.PersistenceTransactionInterface) (any, error) {
+	_, err = persistenceSvc.Transact(func(tx persistence.PersistenceTransactionInterface) (any, error) {
 		collection, err := tx.Collection("users")
 		if err != nil {
 			return nil, err
 		}
 
-		q = core.NewQueryBuilder().Build()
+		q = query.NewQueryBuilder().Build()
 
 		result, err := collection.Read(&q)
 		if err != nil {
@@ -279,7 +280,7 @@ func main() {
 		fmt.Printf("%-10s %-20s %-25s %-5s %-10s\n", "ID", "Name", "Email", "Age", "Active")
 		fmt.Println("-------------------------------------------------------------------")
 
-		rows := result.Data.([]core.Document)
+		rows := result.Data.([]schema.Document)
 
 		for _, row := range rows {
 			id := row["id"].(int64)

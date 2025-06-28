@@ -1,14 +1,18 @@
-package core
+package query
+
+import (
+	"github.com/asaidimu/go-anansi/core/schema"
+)
 
 // Ensure these match your actual type definitions from the DSL.
 // For example, if you have these in a 'querydsl.go' or 'types.go' file.
 
 const (
-	LogicalOperatorAnd LogicalOperator = "and"
-	LogicalOperatorOr  LogicalOperator = "or"
-	LogicalOperatorNot LogicalOperator = "not"
-	LogicalOperatorNor LogicalOperator = "nor"
-	LogicalOperatorXor LogicalOperator = "xor"
+	LogicalOperatorAnd schema.LogicalOperator = "and"
+	LogicalOperatorOr  schema.LogicalOperator = "or"
+	LogicalOperatorNot schema.LogicalOperator = "not"
+	LogicalOperatorNor schema.LogicalOperator = "nor"
+	LogicalOperatorXor schema.LogicalOperator = "xor"
 )
 
 // ComparisonOperator for filtering.
@@ -54,7 +58,7 @@ type FilterCondition struct {
 
 // FilterGroup combines multiple conditions with a logical operator.
 type FilterGroup struct {
-	Operator   LogicalOperator // "and", "or", "not", "nor", "xor"
+	Operator   schema.LogicalOperator // "and", "or", "not", "nor", "xor"
 	Conditions []QueryFilter   // Nested filter conditions or groups
 }
 

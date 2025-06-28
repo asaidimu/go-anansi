@@ -1,8 +1,11 @@
-package core
+package persistence
 
 import (
 	"context"
 	"encoding/json"
+
+	"github.com/asaidimu/go-anansi/core/query"
+	"github.com/asaidimu/go-anansi/core/schema"
 )
 
 // PersistenceEventType defines the possible event types for persistence operations.
@@ -86,7 +89,7 @@ type SubscriptionEvent struct {
 type CollectionEvent struct {
 	PersistenceEvent
 	CollectionName string           `json:"collectionName"`
-	Schema         SchemaDefinition `json:"schema"`           // Assuming SchemaDefinition is correctly defined elsewhere
+	Schema         schema.SchemaDefinition `json:"schema"`           // Assuming schema.schema.schema.SchemaDefinition is correctly defined elsewhere
 	Exists         *bool            `json:"exists,omitempty"` // For create/delete success/failed
 }
 
@@ -182,7 +185,7 @@ type CollectionMetadata struct {
 	LastModifiedBy   string                   `json:"lastModifiedBy"`
 	RecordCount      int64                    `json:"recordCount"`                // Number of records.
 	DataSizeBytes    int64                    `json:"dataSizeBytes"`              // Storage used in bytes.
-	Schema           SchemaDefinition         `json:"schema"`                     // Schema definition (reference existing SchemaDefinition).
+	Schema           schema.SchemaDefinition         `json:"schema"`                     // Schema definition (reference existing schema.schema.schema.SchemaDefinition).
 	LastModified     int64                    `json:"lastModified"`               // Timestamp of last operation (Unix milliseconds).
 	ConnectionStatus *string                  `json:"connectionStatus,omitempty"` // "connected" | "disconnected" | "error"
 	ConnectionError  *string                  `json:"connectionError,omitempty"`
@@ -200,13 +203,13 @@ type Metadata struct {
 	StorageUsageBytes *int64               `json:"storageUsageBytes,omitempty"`
 	ConnectionStatus  *string              `json:"connectionStatus,omitempty"`
 	ConnectionError   *string              `json:"connectionError,omitempty"`
-	Schemas           []SchemaDefinition   `json:"schemas,omitempty"`
+	Schemas           []schema.SchemaDefinition   `json:"schemas,omitempty"`
 	Collections       []CollectionMetadata `json:"collections,omitempty"`
 	Subscriptions     []SubscriptionInfo   `json:"subscriptions"`
 	// These fields are optionally present if this Metadata instance also represents a single collection's metadata (union in TS)
 	RecordCount   *int64            `json:"recordCount,omitempty"`
 	DataSizeBytes *int64            `json:"dataSizeBytes,omitempty"`
-	Schema        *SchemaDefinition `json:"schema,omitempty"` // Note: Pointer, as it's optional for global metadata.
+	Schema        *schema.SchemaDefinition `json:"schema,omitempty"` // Note: Pointer, as it's optional for global metadata.
 	LastModified  *int64            `json:"lastModified,omitempty"`
 }
 
@@ -232,7 +235,7 @@ type DeleteResult struct {
 type CreateCollectionOptions struct {
 	Name        string           `json:"name"`
 	Description string           `json:"description"`
-	Schema      SchemaDefinition `json:"schema"` // SchemaDefinition[T, FunctionMap]
+	Schema      schema.SchemaDefinition `json:"schema"` // schema.schema.schema.SchemaDefinition[T, FunctionMap]
 	Labels      []string         `json:"labels,omitempty"`
 }
 
@@ -269,9 +272,9 @@ type PersistenceInterface interface {
 
 	// Methods directly from Persistence in TS
 	Collections() ([]string, error)
-	Create(schema SchemaDefinition) (PersistenceCollectionInterface, error) // Returns PersistenceCollection<T, FunctionMap>
+	Create(sc schema.SchemaDefinition) (PersistenceCollectionInterface, error) // Returns PersistenceCollection<T, FunctionMap>
 	Delete(id string) (bool, error)
-	Schema(id string) (*SchemaDefinition, error)
+	Schema(id string) (*schema.SchemaDefinition, error)
 	Transact(callback func(tx PersistenceTransactionInterface) (any, error)) (any, error) // Simplified callback signature
 
 	// Methods from ObservabilityInterface
@@ -293,9 +296,9 @@ type PersistenceInterface interface {
 // In Go, this is an interface defining a subset of Persistence methods.
 type PersistenceTransactionInterface interface {
 	Collections() ([]string, error)
-	Create(schema SchemaDefinition) (PersistenceCollectionInterface, error)
+	Create(schema schema.SchemaDefinition) (PersistenceCollectionInterface, error)
 	Delete(id string) (bool, error)
-	Schema(id string) (*SchemaDefinition, error)
+	Schema(id string) (*schema.SchemaDefinition, error)
 	Collection(name string) (PersistenceCollectionInterface, error)
 	Metadata(
 		filter *MetadataFilter,
@@ -307,36 +310,33 @@ type PersistenceTransactionInterface interface {
 
 type CollectionUpdate struct {
 	Data   map[string]any `json:"data,omitempty"` // Partial<T>
-	Filter *QueryFilter    `json:"filter"`         // QueryFilter<T, FunctionMap>
+	Filter *query.QueryFilter    `json:"filter"`         // QueryFilter<T, FunctionMap>
 }
 
-type ValidationResult struct {
-	Valid  bool    `json:"valid"`
-	Issues []Issue `json:"issues"`
-}
+
 
 // PersistenceCollection defines the interface for operations on a specific collection.
 // It extends ObservabilityInterface and EventTaskInterface implicitly.
 // T generic from TypeScript is represented by 'any' in method signatures for data.
 type PersistenceCollectionInterface interface {
 	Create(data any) (any, error) // T | T[]
-	Read(query *QueryDSL) (*QueryResult, error)
+	Read(query *query.QueryDSL) (*query.QueryResult, error)
 	Update(params *CollectionUpdate) (int, error) // Array<T>
-	Delete(query *QueryFilter, unsafe bool) (int, error)
-	Validate(data any, loose bool) (*ValidationResult, error)
+	Delete(query *query.QueryFilter, unsafe bool) (int, error)
+	Validate(data any, loose bool) (*schema.ValidationResult, error)
 	Rollback(
 		version *string,
 		dryRun *bool,
 	) (struct {
-		Schema  SchemaDefinition `json:"schema"`
+		Schema  schema.SchemaDefinition `json:"schema"`
 		Preview any              `json:"preview"`
 	}, error)
 	Migrate(
 		description string,
-		cb func(h SchemaMigrationHelper) (DataTransform[any, any], error),
+		cb func(h schema.SchemaMigrationHelper) (schema.DataTransform[any, any], error),
 		dryRun *bool,
 	) (struct {
-		Schema  SchemaDefinition `json:"schema"`
+		Schema  schema.SchemaDefinition `json:"schema"`
 		Preview any              `json:"preview"`
 	}, error)
 

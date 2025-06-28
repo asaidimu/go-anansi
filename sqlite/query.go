@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/core"
+	"github.com/asaidimu/go-anansi/core/query"
+	"github.com/asaidimu/go-anansi/core/schema"
 )
 
 // SqliteQueryGeneratorFactory implements the QueryGeneratorFactory for SQLite.
@@ -17,7 +18,7 @@ func NewSqliteQueryGeneratorFactory() *SqliteQueryGeneratorFactory {
 }
 
 // CreateGenerator creates a new SqliteQuery (which is a QueryGenerator) for the given schema.
-func (f *SqliteQueryGeneratorFactory) CreateGenerator(schema *core.SchemaDefinition) (core.QueryGenerator, error) {
+func (f *SqliteQueryGeneratorFactory) CreateGenerator(schema *schema.SchemaDefinition) (query.QueryGenerator, error) {
 	return NewSqliteQuery(schema)
 }
 
@@ -25,11 +26,11 @@ func (f *SqliteQueryGeneratorFactory) CreateGenerator(schema *core.SchemaDefinit
 // It leverages a SchemaDefinition to correctly translate high-level queries
 // against defined fields (including nested JSON fields) into valid SQLite SQL.
 type SqliteQuery struct {
-	schema *core.SchemaDefinition
+	schema *schema.SchemaDefinition
 }
 
 // NewSqliteQuery creates a new schema-aware query generator for SQLite.
-func NewSqliteQuery(schema *core.SchemaDefinition) (*SqliteQuery, error) {
+func NewSqliteQuery(schema *schema.SchemaDefinition) (*SqliteQuery, error) {
 	if schema == nil {
 		return nil, fmt.Errorf("SchemaDefinition cannot be nil")
 	}
@@ -61,7 +62,7 @@ func (s *SqliteQuery) getFieldSQL(fieldPath string) (string, error) {
 	}
 
 	switch rootField.Type {
-	case core.FieldTypeObject, core.FieldTypeRecord, core.FieldTypeUnion:
+	case schema.FieldTypeObject, schema.FieldTypeRecord, schema.FieldTypeUnion:
 		jsonPath := "$." + strings.Join(parts[1:], ".")
 		return fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(parts[0]), jsonPath), nil
 	default:
@@ -84,7 +85,7 @@ func (s *SqliteQuery) prepareValueForQuery(fieldName string, value any) (any, er
 	}
 
 	switch field.Type {
-	case core.FieldTypeBoolean:
+	case schema.FieldTypeBoolean:
 		if boolVal, ok := value.(bool); ok {
 			if boolVal {
 				return 1, nil // Go true -> SQLite 1
@@ -115,7 +116,7 @@ func (s *SqliteQuery) prepareValueForQuery(fieldName string, value any) (any, er
 		}
 		return nil, fmt.Errorf("expected boolean for FieldTypeBoolean, got %T for field '%s'", value, fieldName)
 
-	case core.FieldTypeObject, core.FieldTypeArray, core.FieldTypeSet, core.FieldTypeRecord, core.FieldTypeUnion:
+	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeSet, schema.FieldTypeRecord, schema.FieldTypeUnion:
 		// For complex types, marshal to JSON string as they are stored as TEXT in SQLite.
 		jsonBytes, err := json.Marshal(value)
 		if err != nil {
@@ -123,7 +124,7 @@ func (s *SqliteQuery) prepareValueForQuery(fieldName string, value any) (any, er
 		}
 		return string(jsonBytes), nil
 
-	case core.FieldTypeEnum:
+	case schema.FieldTypeEnum:
 		// For enum, ensure it's a string, as enums are stored as TEXT
 		if strVal, ok := value.(string); ok {
 			return strVal, nil
@@ -139,8 +140,8 @@ func (s *SqliteQuery) prepareValueForQuery(fieldName string, value any) (any, er
 }
 
 // GenerateSelectSQL creates a complete SQL SELECT query string and its corresponding
-// parameters from a `core.QueryDSL` object.
-func (s *SqliteQuery) GenerateSelectSQL(dsl *core.QueryDSL) (string, []any, error) {
+// parameters from a `query.QueryDSL` object.
+func (s *SqliteQuery) GenerateSelectSQL(dsl *query.QueryDSL) (string, []any, error) {
 	if dsl == nil {
 		return "", nil, fmt.Errorf("QueryDSL cannot be nil")
 	}
@@ -208,7 +209,7 @@ func (s *SqliteQuery) GenerateSelectSQL(dsl *core.QueryDSL) (string, []any, erro
 }
 
 // buildWhereClause recursively builds the WHERE clause from a `core.QueryFilter` object.
-func (s *SqliteQuery) buildWhereClause(filter *core.QueryFilter, params *[]any) (string, error) {
+func (s *SqliteQuery) buildWhereClause(filter *query.QueryFilter, params *[]any) (string, error) {
 	if filter.Condition != nil {
 		return s.buildCondition(filter.Condition, params)
 	}
@@ -236,7 +237,7 @@ func (s *SqliteQuery) buildWhereClause(filter *core.QueryFilter, params *[]any) 
 }
 
 // buildCondition translates a single `core.FilterCondition` into a SQL condition string.
-func (s *SqliteQuery) buildCondition(cond *core.FilterCondition, params *[]any) (string, error) {
+func (s *SqliteQuery) buildCondition(cond *query.FilterCondition, params *[]any) (string, error) {
 	accessor, err := s.getFieldSQL(cond.Field)
 	if err != nil {
 		return "", err
@@ -249,25 +250,25 @@ func (s *SqliteQuery) buildCondition(cond *core.FilterCondition, params *[]any) 
 	}
 
 	switch cond.Operator {
-	case core.ComparisonOperatorEq:
+	case query.ComparisonOperatorEq:
 		*params = append(*params, preparedValue)
 		return fmt.Sprintf("%s = ?", accessor), nil
-	case core.ComparisonOperatorNeq:
+	case query.ComparisonOperatorNeq:
 		*params = append(*params, preparedValue)
 		return fmt.Sprintf("%s != ?", accessor), nil
-	case core.ComparisonOperatorLt:
+	case query.ComparisonOperatorLt:
 		*params = append(*params, preparedValue)
 		return fmt.Sprintf("%s < ?", accessor), nil
-	case core.ComparisonOperatorLte:
+	case query.ComparisonOperatorLte:
 		*params = append(*params, preparedValue)
 		return fmt.Sprintf("%s <= ?", accessor), nil
-	case core.ComparisonOperatorGt:
+	case query.ComparisonOperatorGt:
 		*params = append(*params, preparedValue)
 		return fmt.Sprintf("%s > ?", accessor), nil
-	case core.ComparisonOperatorGte:
+	case query.ComparisonOperatorGte:
 		*params = append(*params, preparedValue)
 		return fmt.Sprintf("%s >= ?", accessor), nil
-	case core.ComparisonOperatorIn, core.ComparisonOperatorNin:
+	case query.ComparisonOperatorIn, query.ComparisonOperatorNin:
 		vals, ok := preparedValue.([]any) // preparedValue should already be []any if original was
 		if !ok { // If it wasn't a slice, try to make it one for single-value IN
 			if preparedValue != nil {
@@ -277,7 +278,7 @@ func (s *SqliteQuery) buildCondition(cond *core.FilterCondition, params *[]any) 
 		}
 		if !ok || len(vals) == 0 {
 			// If IN/NIN gets an empty or non-array value, return appropriate SQL that evaluates to true/false
-			if cond.Operator == core.ComparisonOperatorIn {
+			if cond.Operator == query.ComparisonOperatorIn {
 				return "1=0", nil // IN empty list is always false
 			}
 			return "1=1", nil // NOT IN empty list is always true
@@ -288,30 +289,30 @@ func (s *SqliteQuery) buildCondition(cond *core.FilterCondition, params *[]any) 
 			*params = append(*params, v)
 		}
 		op := "IN"
-		if cond.Operator == core.ComparisonOperatorNin {
+		if cond.Operator == query.ComparisonOperatorNin {
 			op = "NOT IN"
 		}
 		return fmt.Sprintf("%s %s (%s)", accessor, op, placeholders), nil
-	case core.ComparisonOperatorContains:
+	case query.ComparisonOperatorContains:
 		// Ensure preparedValue is string before formatting for LIKE
 		strVal := fmt.Sprintf("%v", preparedValue)
 		*params = append(*params, "%"+strVal+"%")
 		return fmt.Sprintf("%s LIKE ?", accessor), nil
-	case core.ComparisonOperatorNotContains:
+	case query.ComparisonOperatorNotContains:
 		strVal := fmt.Sprintf("%v", preparedValue)
 		*params = append(*params, "%"+strVal+"%")
 		return fmt.Sprintf("%s NOT LIKE ?", accessor), nil
-	case core.ComparisonOperatorStartsWith:
+	case query.ComparisonOperatorStartsWith:
 		strVal := fmt.Sprintf("%v", preparedValue)
 		*params = append(*params, strVal+"%")
 		return fmt.Sprintf("%s LIKE ?", accessor), nil
-	case core.ComparisonOperatorEndsWith:
+	case query.ComparisonOperatorEndsWith:
 		strVal := fmt.Sprintf("%v", preparedValue)
 		*params = append(*params, "%"+strVal)
 		return fmt.Sprintf("%s LIKE ?", accessor), nil
-	case core.ComparisonOperatorExists:
+	case query.ComparisonOperatorExists:
 		return fmt.Sprintf("%s IS NOT NULL", accessor), nil
-	case core.ComparisonOperatorNotExists:
+	case query.ComparisonOperatorNotExists:
 		return fmt.Sprintf("%s IS NULL", accessor), nil
 	default:
 		return "", fmt.Errorf("unsupported comparison operator for direct SQL: %s", cond.Operator)
@@ -319,7 +320,7 @@ func (s *SqliteQuery) buildCondition(cond *core.FilterCondition, params *[]any) 
 }
 
 // GenerateUpdateSQL creates a SQL UPDATE query, using the schema's table name.
-func (s *SqliteQuery) GenerateUpdateSQL(updates map[string]any, filters *core.QueryFilter) (string, []any, error) {
+func (s *SqliteQuery) GenerateUpdateSQL(updates map[string]any, filters *query.QueryFilter) (string, []any, error) {
 	quotedTableName := quoteIdentifier(s.schema.Name)
 	var setClauses []string
 	var queryParams []any
@@ -419,7 +420,7 @@ func (s *SqliteQuery) GenerateInsertSQL(records []map[string]any) (string, []any
 }
 
 // GenerateDeleteSQL creates a SQL DELETE query, using the schema's table name.
-func (s *SqliteQuery) GenerateDeleteSQL(filters *core.QueryFilter, unsafeDelete bool) (string, []any, error) {
+func (s *SqliteQuery) GenerateDeleteSQL(filters *query.QueryFilter, unsafeDelete bool) (string, []any, error) {
 	quotedTableName := quoteIdentifier(s.schema.Name)
 	var queryParams []any
 

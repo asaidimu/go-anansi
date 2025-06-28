@@ -2,21 +2,19 @@ package persistence
 
 import (
 	"time"
-
-	"github.com/asaidimu/go-anansi/core"
 )
 
 func createEvent(
-	eventType core.PersistenceEventType,
+	eventType PersistenceEventType,
 	operation string,
 	collectionName string,
 	input any,
 	output any,
 	query any,
 	err *string,
-	issues []core.Issue,
+	issues []Issue,
 	startTime time.Time,
-) core.PersistenceEvent {
+) PersistenceEvent {
 	var duration *int64
 	if !startTime.IsZero() {
 		d := time.Since(startTime).Milliseconds()
@@ -25,7 +23,7 @@ func createEvent(
 
 	collectionNamePtr := &collectionName
 
-	return core.PersistenceEvent{
+	return PersistenceEvent{
 		Type:       eventType,
 		Timestamp:  time.Now().UnixMilli(),
 		Operation:  operation,

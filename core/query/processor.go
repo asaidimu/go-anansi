@@ -1,12 +1,24 @@
-package core
+package query
 
 import (
 	"context"
 	"fmt"
 	"maps"
 	"sync"
+
+	"github.com/asaidimu/go-anansi/core/schema"
 	"go.uber.org/zap"
 )
+
+// GoComputeFunction is a pure Go function that computes a new value for a row.
+// It takes a Row (representing the current data) and returns the computed value
+// for a new field, and an error if computation fails.
+type ComputeFunction func(row schema.Document, args FilterValue) (any, error)
+
+// GoFilterFunction is a pure Go function that performs custom filtering logic on a row.
+// It takes a Row and returns true if the row passes the filter, false otherwise,
+// and an error if evaluation fails.
+type PredicateFunction func(doc schema.Document, field string, args FilterValue) (bool, error)
 
 // DataProcessor handles Go-based data transformations, filtering, and projections.
 type DataProcessor struct {
@@ -119,7 +131,7 @@ func (p *DataProcessor) collectGoFilterRequiredFields(filter *QueryFilter, field
 // ProcessRows applies all Go-based transformations to the provided rows.
 // It now accepts 'skippedOperators' to indicate which standard filters were
 // already applied by an external component (e.g., a database).
-func (p *DataProcessor) ProcessRows(rows []Document, dsl *QueryDSL, skippedOperators []ComparisonOperator) ([]Document, error) {
+func (p *DataProcessor) ProcessRows(rows []schema.Document, dsl *QueryDSL, skippedOperators []ComparisonOperator) ([]schema.Document, error) {
 	processedRows, err := p.applyGoFilters(rows, dsl.Filters, skippedOperators)
 	if err != nil {
 		return nil, fmt.Errorf("Go filter failed: %w", err)
@@ -142,7 +154,7 @@ func (p *DataProcessor) ProcessRows(rows []Document, dsl *QueryDSL, skippedOpera
 // PRODUCTION WARNING: This filtering happens in-memory. Queries with non-selective
 // SQL filters but highly selective Go filters can cause high memory usage.
 // Prefer native SQL filters for performance whenever possible.
-func (p *DataProcessor) applyGoFilters(rows []Document, filter *QueryFilter, skip []ComparisonOperator) ([]Document, error) {
+func (p *DataProcessor) applyGoFilters(rows []schema.Document, filter *QueryFilter, skip []ComparisonOperator) ([]schema.Document, error) {
 	if filter == nil {
 		return rows, nil
 	}
@@ -155,7 +167,7 @@ func (p *DataProcessor) applyGoFilters(rows []Document, filter *QueryFilter, ski
 		skipMap[op] = struct{}{}
 	}
 
-	var filteredRows []Document
+	var filteredRows []schema.Document
 	for _, row := range rows {
 		passes, err := p.evaluateGoFilter(row, filter, skipMap)
 		if err != nil {
@@ -170,7 +182,7 @@ func (p *DataProcessor) applyGoFilters(rows []Document, filter *QueryFilter, ski
 
 // evaluateGoFilter recursively evaluates a QueryFilter, applying Go functions where necessary.
 // It now takes a map of operators to skip.
-func (p *DataProcessor) evaluateGoFilter(row Document, filter *QueryFilter, skip map[ComparisonOperator]struct{}) (bool, error) {
+func (p *DataProcessor) evaluateGoFilter(row schema.Document, filter *QueryFilter, skip map[ComparisonOperator]struct{}) (bool, error) {
 	if filter.Condition != nil {
 		// If the operator is standard and marked to be skipped, assume it's already handled and passes.
 		if _, shouldSkip := skip[filter.Condition.Operator]; shouldSkip {
@@ -190,7 +202,7 @@ func (p *DataProcessor) evaluateGoFilter(row Document, filter *QueryFilter, skip
 	}
 	if filter.Group != nil {
 		switch filter.Group.Operator {
-		case LogicalOperatorAnd:
+		case schema.LogicalAnd:
 			for _, cond := range filter.Group.Conditions {
 				passes, err := p.evaluateGoFilter(row, &cond, skip)
 				if err != nil || !passes {
@@ -198,7 +210,7 @@ func (p *DataProcessor) evaluateGoFilter(row Document, filter *QueryFilter, skip
 				}
 			}
 			return true, nil
-		case LogicalOperatorOr:
+		case schema.LogicalOr:
 			for _, cond := range filter.Group.Conditions {
 				passes, err := p.evaluateGoFilter(row, &cond, skip)
 				if err != nil {
@@ -217,7 +229,7 @@ func (p *DataProcessor) evaluateGoFilter(row Document, filter *QueryFilter, skip
 }
 
 // evaluateStandardCondition performs the in-memory evaluation for standard comparison operators.
-func (p *DataProcessor) evaluateStandardCondition(row Document, condition *FilterCondition) (bool, error) {
+func (p *DataProcessor) evaluateStandardCondition(row schema.Document, condition *FilterCondition) (bool, error) {
 	fieldValue, ok := row[condition.Field]
 	if !ok {
 		// If the field doesn't exist in the row, the condition likely fails.
@@ -249,7 +261,7 @@ func (p *DataProcessor) evaluateStandardCondition(row Document, condition *Filte
 }
 
 // applyGoComputeFunctions iterates through rows and applies Go-based computed field functions.
-func (p *DataProcessor) applyGoComputeFunctions(rows []Document, projection *ProjectionConfiguration) ([]Document, error) {
+func (p *DataProcessor) applyGoComputeFunctions(rows []schema.Document, projection *ProjectionConfiguration) ([]schema.Document, error) {
 	if projection == nil || len(projection.Computed) == 0 {
 		return rows, nil
 	}
@@ -283,12 +295,12 @@ func (p *DataProcessor) applyGoComputeFunctions(rows []Document, projection *Pro
 }
 
 // applyFinalProjection processes rows to match the user's requested projection (include/exclude).
-func (p *DataProcessor) applyFinalProjection(rows []Document, projection *ProjectionConfiguration) []Document {
+func (p *DataProcessor) applyFinalProjection(rows []schema.Document, projection *ProjectionConfiguration) []schema.Document {
 	if projection == nil || (len(projection.Include) == 0 && len(projection.Exclude) == 0 && len(projection.Computed) == 0) {
 		return rows
 	}
 
-	var finalRows []Document
+	var finalRows []schema.Document
 	includeAll := len(projection.Include) == 0
 	excludeSet := make(map[string]struct{}, len(projection.Exclude))
 	for _, f := range projection.Exclude {
@@ -314,7 +326,7 @@ func (p *DataProcessor) applyFinalProjection(rows []Document, projection *Projec
 	}
 
 	for _, originalRow := range rows {
-		newRow := make(Document)
+		newRow := make(schema.Document)
 
 		if includeAll {
 			maps.Copy(newRow, originalRow)
@@ -341,7 +353,7 @@ func (p *DataProcessor) applyFinalProjection(rows []Document, projection *Projec
 // and an error if the evaluation encounters an issue. This method is useful
 // for applying filtering logic used in queries to in-memory data.
 // It assumes no operators are skipped when matching a single in-memory row.
-func (p *DataProcessor) Match(ctx context.Context, filters *QueryFilter, data Document) (bool, error) {
+func (p *DataProcessor) Match(ctx context.Context, filters *QueryFilter, data schema.Document) (bool, error) {
 	if filters == nil {
 		return true, nil
 	}

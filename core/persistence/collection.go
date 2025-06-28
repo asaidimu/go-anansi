@@ -3,37 +3,39 @@ package persistence
 import (
 	"context"
 	"fmt"
-	"github.com/asaidimu/go-anansi/core"
+	"sync"
+
+	"github.com/asaidimu/go-anansi/core/query"
+	"github.com/asaidimu/go-anansi/core/schema"
 	"github.com/asaidimu/go-events"
 	"github.com/google/uuid"
-	"sync"
 )
 
 // CollectionBase implements core.PersistenceCollectionInterface.
 type CollectionBase struct {
-	schema        *core.SchemaDefinition
-	processor     *core.DataProcessor
+	schema        *schema.SchemaDefinition
+	processor     *query.DataProcessor
 	executor      *Executor
-	validator     *core.Validator
-	bus           *events.TypedEventBus[core.PersistenceEvent]
-	subscriptions map[string]*core.SubscriptionInfo // To store unsubscribe functions
+	validator     *schema.Validator
+	bus           *events.TypedEventBus[PersistenceEvent]
+	subscriptions map[string]*SubscriptionInfo // To store unsubscribe functions
 	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
 }
 
 // NewPersistence creates a new instance of Persistence.
-func NewCollection(schema *core.SchemaDefinition, executor *Executor, fmap core.FunctionMap) (core.PersistenceCollectionInterface, error) {
-	validator := core.NewValidator(schema, fmap)
-	bus, err := events.NewTypedEventBus[core.PersistenceEvent](events.DefaultConfig())
+func NewCollection(sc *schema.SchemaDefinition, executor *Executor, fmap schema.FunctionMap) (PersistenceCollectionInterface, error) {
+	validator := schema.NewValidator(sc, fmap)
+	bus, err := events.NewTypedEventBus[PersistenceEvent](events.DefaultConfig())
 	if err != nil {
 		return nil, fmt.Errorf("Could not initialize event bus %v", err)
 	}
 
 	collection := NewEventEmittingCollection(&CollectionBase{
-		schema:        schema,
+		schema:        sc,
 		executor:      executor,
 		validator:     validator,
 		bus:           bus,
-		subscriptions: map[string]*core.SubscriptionInfo{},
+		subscriptions: map[string]*SubscriptionInfo{},
 	})
 
 	return collection, nil
@@ -70,7 +72,7 @@ func (ci *CollectionBase) Create(data any) (any, error) {
 }
 
 // Read retrieves data from the collection based on a core.
-func (ci *CollectionBase) Read(query *core.QueryDSL) (*core.QueryResult, error) {
+func (ci *CollectionBase) Read(query *query.QueryDSL) (*query.QueryResult, error) {
 	result, err := ci.executor.Query(context.Background(), ci.schema, query)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read data from collection '%s': %w", ci.schema.Name, err)
@@ -80,7 +82,7 @@ func (ci *CollectionBase) Read(query *core.QueryDSL) (*core.QueryResult, error) 
 }
 
 // Update updates data in the collection based on filter.
-func (ci *CollectionBase) Update(params *core.CollectionUpdate) (int, error) {
+func (ci *CollectionBase) Update(params *CollectionUpdate) (int, error) {
 	result, err := ci.executor.Update(context.Background(), ci.schema, params.Data, params.Filter)
 	if err != nil {
 		return 0, fmt.Errorf("failed to read data from collection '%s': %w", ci.schema.Name, err)
@@ -90,7 +92,7 @@ func (ci *CollectionBase) Update(params *core.CollectionUpdate) (int, error) {
 }
 
 // Delete deletes data from the collection based on core.
-func (ci *CollectionBase) Delete(filter *core.QueryFilter, unsafe bool) (int, error) {
+func (ci *CollectionBase) Delete(filter *query.QueryFilter, unsafe bool) (int, error) {
 	ctx := context.Background()
 	affected, err := ci.executor.Delete(ctx, ci.schema, filter, false)
 	if err != nil {
@@ -102,14 +104,14 @@ func (ci *CollectionBase) Delete(filter *core.QueryFilter, unsafe bool) (int, er
 }
 
 // Validate validates data against the collection's schema.
-func (ci *CollectionBase) Validate(data any, loose bool) (*core.ValidationResult, error) {
+func (ci *CollectionBase) Validate(data any, loose bool) (*schema.ValidationResult, error) {
 	values, ok := data.(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("Failed to convert data to a map")
 	}
 
 	valid, issues := ci.validator.Validate(values, loose)
-	return &core.ValidationResult{
+	return &schema.ValidationResult{
 		Valid:  valid,
 		Issues: issues,
 	}, nil
@@ -117,12 +119,12 @@ func (ci *CollectionBase) Validate(data any, loose bool) (*core.ValidationResult
 
 // Rollback rolls back the collection's schema.
 func (ci *CollectionBase) Rollback(version *string, dryRun *bool) (struct {
-	Schema  core.SchemaDefinition `json:"schema"`
+	Schema  schema.SchemaDefinition `json:"schema"`
 	Preview any                   `json:"preview"`
 }, error) {
 	// TODO: Discuss & Design
 	return struct {
-		Schema  core.SchemaDefinition `json:"schema"`
+		Schema  schema.SchemaDefinition `json:"schema"`
 		Preview any                   `json:"preview"`
 	}{}, fmt.Errorf("Rollback method stub for collection '%s'", ci.schema.Name) // Stub: not implemented
 }
@@ -130,35 +132,35 @@ func (ci *CollectionBase) Rollback(version *string, dryRun *bool) (struct {
 // Migrate migrates the collection's schema.
 func (ci *CollectionBase) Migrate(
 	description string,
-	cb func(h core.SchemaMigrationHelper) (core.DataTransform[any, any], error),
+	cb func(h schema.SchemaMigrationHelper) (schema.DataTransform[any, any], error),
 	dryRun *bool,
 ) (struct {
-	Schema  core.SchemaDefinition `json:"schema"`
+	Schema  schema.SchemaDefinition `json:"schema"`
 	Preview any                   `json:"preview"`
 }, error) {
 	// TODO: Discuss & Design
 	return struct {
-		Schema  core.SchemaDefinition `json:"schema"`
+		Schema  schema.SchemaDefinition `json:"schema"`
 		Preview any                   `json:"preview"`
 	}{}, fmt.Errorf("Migrate method stub for collection '%s'", ci.schema.Name) // Stub: not implemented
 }
 
 func (ci *CollectionBase) Metadata(
-	filter *core.MetadataFilter,
+	filter *MetadataFilter,
 	forceRefresh bool,
-) (core.Metadata, error) {
-	return core.Metadata{}, fmt.Errorf("Collection metadata method stub for '%s'", ci.schema.Name) // Stub: not implemented
+) (Metadata, error) {
+	return Metadata{}, fmt.Errorf("Collection metadata method stub for '%s'", ci.schema.Name) // Stub: not implemented
 }
 
 // RegisterSubscription registers a collection-scoped subscription.
-func (ci *CollectionBase) RegisterSubscription(options core.RegisterSubscriptionOptions) string {
+func (ci *CollectionBase) RegisterSubscription(options RegisterSubscriptionOptions) string {
 	ci.subMu.Lock()
 	defer ci.subMu.Unlock()
 	unsubscribe := ci.bus.Subscribe(string(options.Event), options.Callback)
 	id := uuid.New()
 	callbackID := id.String()
 
-	data := core.SubscriptionInfo{
+	data := SubscriptionInfo{
 		Event:       options.Event,
 		Unsubscribe: unsubscribe,
 		Label:       options.Label,
@@ -181,6 +183,6 @@ func (ci *CollectionBase) UnregisterSubscription(id string) {
 }
 
 // Subscriptions returns all registered collection-scoped subscriptions.
-func (ci *CollectionBase) Subscriptions() ([]core.SubscriptionInfo, error) {
-	return []core.SubscriptionInfo{}, nil // Stub: return empty slice
+func (ci *CollectionBase) Subscriptions() ([]SubscriptionInfo, error) {
+	return []SubscriptionInfo{}, nil // Stub: return empty slice
 }

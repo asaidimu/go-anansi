@@ -1,9 +1,10 @@
 # Anansi (Go Implementation)
 
-TODO: Update readme to reflect current codebase. The existing documentation is almost obsolete
 [![Go Reference](https://pkg.go.dev/badge/github.com/asaidimu/go-anansi.svg)](https://pkg.go.dev/github.com/asaidimu/go-anansi)
 [![Build Status](https://github.com/asaidimu/go-anansi/workflows/Test%20Workflow/badge.svg)](https://github.com/asaidimu/go-anansi/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+TODO: Update readme to reflect current codebase. The existing documentation is almost obsolete
 
 Anansi is a comprehensive toolkit for defining, versioning, migrating, and persisting structured data, enabling schema-driven development with powerful runtime validation and adaptable storage layers. This repository provides the **Go implementation** of the Anansi persistence and query framework.
 

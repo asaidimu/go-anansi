@@ -1,4 +1,4 @@
-package core
+package schema
 
 import (
 	"encoding/json"
@@ -706,3 +706,19 @@ type Migration[T any] struct {
 
 type InputHint map[string]any
 type SchemaHint map[string]any
+
+// Issue represents a validation or operational issue.
+type Issue struct {
+	Code        string `json:"code"`
+	Message     string `json:"message"`
+	Path        string `json:"path,omitempty"`
+	Severity    string `json:"severity,omitempty"` // e.g., "error", "warning"
+	Description string `json:"description,omitempty"`
+}
+
+type ValidationResult struct {
+	Valid  bool    `json:"valid"`
+	Issues []Issue `json:"issues"`
+}
+
+type Document map[string]any

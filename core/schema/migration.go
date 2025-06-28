@@ -1,4 +1,4 @@
-package core
+package schema
 
 
 // SchemaMigrationHelper defines a helper for building schema migrations.

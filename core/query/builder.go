@@ -1,8 +1,10 @@
-package core
+package query
 
 import (
 	"fmt"
 	"strings"
+
+	"github.com/asaidimu/go-anansi/core/schema"
 )
 
 // QueryBuilder provides a fluent API for building QueryDSL structures
@@ -54,7 +56,7 @@ func (qb *QueryBuilder) Where(field string) *FilterConditionBuilder {
 }
 
 // WhereGroup starts building a filter group
-func (qb *QueryBuilder) WhereGroup(operator LogicalOperator) *FilterGroupBuilder {
+func (qb *QueryBuilder) WhereGroup(operator schema.LogicalOperator) *FilterGroupBuilder {
 	fb := &FilterBuilder{parent: qb}
 	return &FilterGroupBuilder{
 		filterBuilder: fb,
@@ -159,7 +161,7 @@ func (fcb *FilterConditionBuilder) addCondition(operator ComparisonOperator, val
 // FilterGroupBuilder handles filter groups
 type FilterGroupBuilder struct {
 	filterBuilder *FilterBuilder
-	operator      LogicalOperator
+	operator      schema.LogicalOperator
 	conditions    []QueryFilter
 }
 
@@ -172,7 +174,7 @@ func (fgb *FilterGroupBuilder) Where(field string) *FilterConditionBuilderInGrou
 }
 
 // WhereGroup adds a nested group to the current group
-func (fgb *FilterGroupBuilder) WhereGroup(operator LogicalOperator) *FilterGroupBuilder {
+func (fgb *FilterGroupBuilder) WhereGroup(operator schema.LogicalOperator) *FilterGroupBuilder {
 	return &FilterGroupBuilder{
 		filterBuilder: fgb.filterBuilder,
 		operator:      operator,
@@ -772,7 +774,7 @@ func CreateSimpleFilter(field string, operator ComparisonOperator, value FilterV
 }
 
 // CreateFilterGroup creates a filter group
-func CreateFilterGroup(operator LogicalOperator, conditions ...QueryFilter) QueryFilter {
+func CreateFilterGroup(operator schema.LogicalOperator, conditions ...QueryFilter) QueryFilter {
 	return QueryFilter{
 		Group: &FilterGroup{
 			Operator:   operator,

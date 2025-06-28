@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/core"
+	"github.com/asaidimu/go-anansi/core/query"
+	"github.com/asaidimu/go-anansi/core/schema"
 	"github.com/asaidimu/go-events"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -15,23 +16,23 @@ import (
 // Persistence implements the core.Persistence interface.
 type Persistence struct {
 	interactor    DatabaseInteractor
-	collection    core.PersistenceCollectionInterface
-	schema        *core.SchemaDefinition
+	collection    PersistenceCollectionInterface
+	schema        *schema.SchemaDefinition
 	executor      *Executor
-	fmap          core.FunctionMap
+	fmap          schema.FunctionMap
 	logger        *zap.Logger
-	subscriptions map[string]*core.SubscriptionInfo // To store unsubscribe functions
+		subscriptions map[string]*SubscriptionInfo // To store unsubscribe functions
 	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
-	bus           *events.TypedEventBus[core.PersistenceEvent]
+	bus           *events.TypedEventBus[PersistenceEvent]
 }
 
 // NewPersistence creates a new instance of Persistence.
-func NewPersistence(interactor DatabaseInteractor, fmap core.FunctionMap) (*Persistence, error) {
-	bus, err := events.NewTypedEventBus[core.PersistenceEvent](events.DefaultConfig())
+func NewPersistence(interactor DatabaseInteractor, fmap schema.FunctionMap) (*Persistence, error) {
+	bus, err := events.NewTypedEventBus[PersistenceEvent](events.DefaultConfig())
 	if err != nil {
 		return nil, fmt.Errorf("Could not initialize event bus %v", err)
 	}
-	var schema core.SchemaDefinition
+	var schema schema.SchemaDefinition
 	err = json.Unmarshal(schemasCollectionSchema, &schema)
 	if err != nil {
 		return nil, fmt.Errorf("Error unmarshaling JSON: %v\n", err)
@@ -66,7 +67,7 @@ func NewPersistence(interactor DatabaseInteractor, fmap core.FunctionMap) (*Pers
 }
 
 // Collection returns a PersistenceCollectionInterface for the given name.
-func (pi *Persistence) Collection(name string) (core.PersistenceCollectionInterface, error) {
+func (pi *Persistence) Collection(name string) (PersistenceCollectionInterface, error) {
 	schema, err := pi.Schema(name)
 	if err != nil {
 		return nil, err
@@ -79,7 +80,7 @@ func (pi *Persistence) Collection(name string) (core.PersistenceCollectionInterf
 	return collection, nil
 }
 
-func (pi *Persistence) Transact(callback func(tx core.PersistenceTransactionInterface) (any, error)) (any, error) {
+func (pi *Persistence) Transact(callback func(tx PersistenceTransactionInterface) (any, error)) (any, error) {
 	tx, err := pi.interactor.StartTransaction(context.Background())
 	if err != nil {
 		return nil, err
@@ -105,7 +106,7 @@ func (pi *Persistence) Collections() ([]string, error) {
 }
 
 // Create creates a new collection based on the schema.
-func (pi *Persistence) Create(schema core.SchemaDefinition) (core.PersistenceCollectionInterface, error) {
+func (pi *Persistence) Create(schema schema.SchemaDefinition) (PersistenceCollectionInterface, error) {
 	exists, err := pi.interactor.CollectionExists(schema.Name)
 	if err != nil {
 		return nil, fmt.Errorf("Error accessing database: %v\n", err)
@@ -147,7 +148,7 @@ func (pi *Persistence) Create(schema core.SchemaDefinition) (core.PersistenceCol
 	return collection, nil
 }
 
-func (pi *Persistence) schemaCollection(tx DatabaseInteractor) (core.PersistenceCollectionInterface, error) {
+func (pi *Persistence) schemaCollection(tx DatabaseInteractor) (PersistenceCollectionInterface, error) {
 	var executor *Executor
 	if tx != nil {
 		executor = NewExecutor(tx, nil)
@@ -171,7 +172,7 @@ func (pi *Persistence) Delete(name string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	q := core.NewQueryBuilder().Where("name").Eq(name).Build()
+	q := query.NewQueryBuilder().Where("name").Eq(name).Build()
 	_, err = collection.Delete(q.Filters, false)
 	if err != nil {
 		tx.Rollback(context.Background())
@@ -194,7 +195,7 @@ func (pi *Persistence) Delete(name string) (bool, error) {
 }
 
 // Schema returns the schema definition for a given ID.
-func (pi *Persistence) Schema(name string) (*core.SchemaDefinition, error) {
+func (pi *Persistence) Schema(name string) (*schema.SchemaDefinition, error) {
 	exists, err := pi.interactor.CollectionExists(name)
 	if err != nil {
 		return nil, fmt.Errorf("Error accessing database: %v, %t\n", err, exists)
@@ -204,7 +205,7 @@ func (pi *Persistence) Schema(name string) (*core.SchemaDefinition, error) {
 		return nil, fmt.Errorf("Collection %s does not exist: %v\n", name, err)
 	}
 
-	q := core.NewQueryBuilder().Where("name").Eq(name).Build()
+	q := query.NewQueryBuilder().Where("name").Eq(name).Build()
 
 	result, err := pi.collection.Read(&q)
 	if err != nil {
@@ -215,12 +216,12 @@ func (pi *Persistence) Schema(name string) (*core.SchemaDefinition, error) {
 		return nil, fmt.Errorf("Unexpected count for schema name: %v\n", result.Count)
 	}
 
-	record, err := mapToSchemaRecord(result.Data.(core.Document))
+	record, err := mapToSchemaRecord(result.Data.(schema.Document))
 	if err != nil {
 		return nil, fmt.Errorf("Error converting map to SchemaRecord: %v\n", err)
 	}
 
-	var schema core.SchemaDefinition
+	var schema schema.SchemaDefinition
 	err = json.Unmarshal(record.Schema, &schema)
 	if err != nil {
 		return nil, fmt.Errorf("Error unmarshaling JSON: %v\n", err)
@@ -230,23 +231,23 @@ func (pi *Persistence) Schema(name string) (*core.SchemaDefinition, error) {
 
 // Metadata retrieves metadata based on the filter.
 func (pi *Persistence) Metadata(
-	filter *core.MetadataFilter,
+	filter *MetadataFilter,
 	includeCollections bool,
 	includeSchemas bool,
 	forceRefresh bool,
-) (core.Metadata, error) {
-	return core.Metadata{}, fmt.Errorf("Metadata method stub") // Stub: not implemented
+) (Metadata, error) {
+	return Metadata{}, fmt.Errorf("Metadata method stub") // Stub: not implemented
 }
 
 // RegisterSubscription registers a new subscription.
-func (pi *Persistence) RegisterSubscription(options core.RegisterSubscriptionOptions) string {
+func (pi *Persistence) RegisterSubscription(options RegisterSubscriptionOptions) string {
 	pi.subMu.Lock()
 	defer pi.subMu.Unlock()
 	unsubscribe := pi.bus.Subscribe(string(options.Event), options.Callback)
 	id := uuid.New()
 	callbackID := id.String()
 
-	data := core.SubscriptionInfo{
+	data := SubscriptionInfo{
 		Event:       options.Event,
 		Unsubscribe: unsubscribe,
 		Label:       options.Label,
@@ -269,6 +270,6 @@ func (pi *Persistence) UnregisterSubscription(callback string) {
 }
 
 // Subscriptions returns all registered subscriptions.
-func (pi *Persistence) Subscriptions() ([]core.SubscriptionInfo, error) {
-	return []core.SubscriptionInfo{}, nil // Stub: return empty slice
+func (pi *Persistence) Subscriptions() ([]SubscriptionInfo, error) {
+	return []SubscriptionInfo{}, nil // Stub: return empty slice
 }

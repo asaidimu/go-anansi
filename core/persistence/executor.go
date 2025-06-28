@@ -3,14 +3,15 @@ package persistence
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/core"
+	"github.com/asaidimu/go-anansi/core/query"
+	"github.com/asaidimu/go-anansi/core/schema"
 	"go.uber.org/zap"
 )
 
 // Executor orchestrates database operations by coordinating between QueryExecutor and DataProcessor.
 type Executor struct {
 	queryExecutor DatabaseInteractor
-	dataProcessor *core.DataProcessor
+	dataProcessor *query.DataProcessor
 	logger        *zap.Logger
 }
 
@@ -20,39 +21,39 @@ func NewExecutor(interactor DatabaseInteractor, logger *zap.Logger) *Executor {
 	}
 	return &Executor{
 		queryExecutor: interactor,
-		dataProcessor: core.NewDataProcessor(logger),
+		dataProcessor: query.NewDataProcessor(logger),
 		logger:        logger,
 	}
 }
 
 // RegisterComputeFunction registers a Go function for computed fields.
-func (e *Executor) RegisterComputeFunction(name string, fn core.ComputeFunction) {
+func (e *Executor) RegisterComputeFunction(name string, fn query.ComputeFunction) {
 	e.dataProcessor.RegisterComputeFunction(name, fn)
 }
 
 // RegisterFilterFunction registers a Go function for custom filtering.
-func (e *Executor) RegisterFilterFunction(operator core.ComparisonOperator, fn core.PredicateFunction) {
+func (e *Executor) RegisterFilterFunction(operator query.ComparisonOperator, fn query.PredicateFunction) {
 	e.dataProcessor.RegisterFilterFunction(operator, fn)
 }
 
 // RegisterComputeFunctions registers multiple GoComputeFunction functions from a map.
-func (e *Executor) RegisterComputeFunctions(functionMap map[string]core.ComputeFunction) {
+func (e *Executor) RegisterComputeFunctions(functionMap map[string]query.ComputeFunction) {
 	e.dataProcessor.RegisterComputeFunctions(functionMap)
 }
 
 // RegisterFilterFunctions registers multiple GoFilterFunction functions from a map.
-func (e *Executor) RegisterFilterFunctions(functionMap map[core.ComparisonOperator]core.PredicateFunction) {
+func (e *Executor) RegisterFilterFunctions(functionMap map[query.ComparisonOperator]query.PredicateFunction) {
 	e.dataProcessor.RegisterFilterFunctions(functionMap)
 }
 
 // Query runs a query against the database based on the provided core.
-func (e *Executor) Query(ctx context.Context, schema *core.SchemaDefinition, dsl *core.QueryDSL) (*core.QueryResult, error) {
+func (e *Executor) Query(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.QueryDSL) (*query.QueryResult, error) {
 	// Determine all fields needed for Go functions
 	fieldsToSelect := e.dataProcessor.DetermineFieldsToSelect(dsl)
 
 	// Create modified DSL for SQL execution with all required fields
 	sqlDsl := *dsl
-	sqlDsl.Projection = &core.ProjectionConfiguration{
+		sqlDsl.Projection = &query.ProjectionConfiguration{
 		Include: fieldsToSelect,
 	}
 
@@ -78,16 +79,16 @@ func (e *Executor) Query(ctx context.Context, schema *core.SchemaDefinition, dsl
 		data = finalResults
 	}
 
-	return &core.QueryResult{Data: data, Count: count}, nil
+	return &query.QueryResult{Data: data, Count: count}, nil
 }
 
 // Update performs an update operation on the database.
-func (e *Executor) Update(ctx context.Context, schema *core.SchemaDefinition, updates map[string]any, filters *core.QueryFilter) (int64, error) {
+func (e *Executor) Update(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
 	return e.queryExecutor.UpdateDocuments(ctx, schema, updates, filters)
 }
 
 // Insert performs an insert operation and atomically returns the inserted records.
-func (e *Executor) Insert(ctx context.Context, schema *core.SchemaDefinition, records []map[string]any) (*core.QueryResult, error) {
+func (e *Executor) Insert(ctx context.Context, schema *schema.SchemaDefinition, records []map[string]any) (*query.QueryResult, error) {
 	insertedRows, err := e.queryExecutor.InsertDocuments(ctx, schema, records)
 	if err != nil {
 		return nil, err
@@ -101,11 +102,11 @@ func (e *Executor) Insert(ctx context.Context, schema *core.SchemaDefinition, re
 		data = insertedRows
 	}
 
-	return &core.QueryResult{Data: data, Count: count}, nil
+	return &query.QueryResult{Data: data, Count: count}, nil
 }
 
 // Delete performs a delete operation with optional filters for safety.
-func (e *Executor) Delete(ctx context.Context, schema *core.SchemaDefinition, filters *core.QueryFilter, unsafeDelete bool) (int64, error) {
+func (e *Executor) Delete(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
 	return e.queryExecutor.DeleteDocuments(ctx, schema, filters, unsafeDelete)
 }
 

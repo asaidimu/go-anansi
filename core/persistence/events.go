@@ -3,15 +3,16 @@ package persistence
 import (
 	"time"
 
-	"github.com/asaidimu/go-anansi/core"
+	"github.com/asaidimu/go-anansi/core/query"
+	"github.com/asaidimu/go-anansi/core/schema"
 	"github.com/asaidimu/go-events"
 )
 
 // Collection wraps a PersistenceCollection and adds event emission
 type Collection struct {
 	collection *CollectionBase
-	bus        *events.TypedEventBus[core.PersistenceEvent]
-	schema     *core.SchemaDefinition
+	bus        *events.TypedEventBus[PersistenceEvent]
+	schema     *schema.SchemaDefinition
 }
 
 // NewEventEmittingCollection creates a new event-emitting collection wrapper
@@ -24,7 +25,7 @@ func NewEventEmittingCollection(collection *CollectionBase) *Collection {
 }
 
 // emitEvent is a helper method to emit events
-func (e *Collection) emitEvent(event core.PersistenceEvent) {
+func (e *Collection) emitEvent(event PersistenceEvent) {
 	if e.bus != nil {
 		e.bus.Emit(string(event.Type), event)
 	}
@@ -33,9 +34,9 @@ func (e *Collection) emitEvent(event core.PersistenceEvent) {
 // withEventEmission wraps an operation with start, success, and failure events
 func (e *Collection) withEventEmission(
 	operation string,
-	startEventType core.PersistenceEventType,
-	successEventType core.PersistenceEventType,
-	failedEventType core.PersistenceEventType,
+	startEventType PersistenceEventType,
+	successEventType PersistenceEventType,
+	failedEventType PersistenceEventType,
 	input any,
 	queryParam any,
 	fn func() (any, error),
@@ -98,9 +99,9 @@ func (e *Collection) withEventEmission(
 func (e *Collection) Create(data any) (any, error) {
 	result, err := e.withEventEmission(
 		"create",
-		core.DocumentCreateStart,
-		core.DocumentCreateSuccess,
-		core.DocumentCreateFailed,
+		DocumentCreateStart,
+		DocumentCreateSuccess,
+		DocumentCreateFailed,
 		data,
 		nil,
 		func() (any, error) {
@@ -112,20 +113,20 @@ func (e *Collection) Create(data any) (any, error) {
 		return nil, err
 	}
 
-	return result.(*core.QueryResult), nil
+	return result.(*query.QueryResult), nil
 }
 
 // Read wraps the collection's Read method with event emission
-func (e *Collection) Read(query *core.QueryDSL) (*core.QueryResult, error) {
+func (e *Collection) Read(q *query.QueryDSL) (*query.QueryResult, error) {
 	result, err := e.withEventEmission(
 		"read",
-		core.DocumentReadStart,
-		core.DocumentReadSuccess,
-		core.DocumentReadFailed,
+		DocumentReadStart,
+		DocumentReadSuccess,
+		DocumentReadFailed,
 		nil,
-		query,
+		q,
 		func() (any, error) {
-			return e.collection.Read(query)
+			return e.collection.Read(q)
 		},
 	)
 
@@ -133,16 +134,16 @@ func (e *Collection) Read(query *core.QueryDSL) (*core.QueryResult, error) {
 		return nil, err
 	}
 
-	return result.(*core.QueryResult), nil
+	return result.(*query.QueryResult), nil
 }
 
 // Update wraps the collection's Update method with event emission
-func (e *Collection) Update(params *core.CollectionUpdate) (int, error) {
+func (e *Collection) Update(params *CollectionUpdate) (int, error) {
 	result, err := e.withEventEmission(
 		"update",
-		core.DocumentUpdateStart,
-		core.DocumentUpdateSuccess,
-		core.DocumentUpdateFailed,
+		DocumentUpdateStart,
+		DocumentUpdateSuccess,
+		DocumentUpdateFailed,
 		params,
 		params.Filter,
 		func() (any, error) {
@@ -159,12 +160,12 @@ func (e *Collection) Update(params *core.CollectionUpdate) (int, error) {
 }
 
 // Delete wraps the collection's Delete method with event emission
-func (e *Collection) Delete(params *core.QueryFilter, unsafe bool) (int, error) {
+func (e *Collection) Delete(params *query.QueryFilter, unsafe bool) (int, error) {
 	result, err := e.withEventEmission(
 		"delete",
-		core.DocumentDeleteStart,
-		core.DocumentDeleteSuccess,
-		core.DocumentDeleteFailed,
+		DocumentDeleteStart,
+		DocumentDeleteSuccess,
+		DocumentDeleteFailed,
 		params,
 		params,
 		func() (any, error) {
@@ -181,13 +182,13 @@ func (e *Collection) Delete(params *core.QueryFilter, unsafe bool) (int, error) 
 }
 
 // Validate delegates to the underlying collection (no events needed for validation)
-func (e *Collection) Validate(data any, loose bool) (*core.ValidationResult, error) {
+func (e *Collection) Validate(data any, loose bool) (*schema.ValidationResult, error) {
 	return e.collection.Validate(data, loose)
 }
 
 // Rollback wraps the collection's Rollback method with event emission
 func (e *Collection) Rollback(version *string, dryRun *bool) (struct {
-	Schema  core.SchemaDefinition `json:"schema"`
+	Schema  schema.SchemaDefinition `json:"schema"`
 	Preview any                   `json:"preview"`
 }, error) {
 	input := map[string]any{
@@ -197,9 +198,9 @@ func (e *Collection) Rollback(version *string, dryRun *bool) (struct {
 
 	result, err := e.withEventEmission(
 		"rollback",
-		core.RollbackStart,
-		core.RollbackSuccess,
-		core.RollbackFailed,
+		RollbackStart,
+		RollbackSuccess,
+		RollbackFailed,
 		input,
 		nil,
 		func() (any, error) {
@@ -209,13 +210,13 @@ func (e *Collection) Rollback(version *string, dryRun *bool) (struct {
 
 	if err != nil {
 		return struct {
-			Schema  core.SchemaDefinition `json:"schema"`
+			Schema  schema.SchemaDefinition `json:"schema"`
 			Preview any                   `json:"preview"`
 		}{}, err
 	}
 
 	return result.(struct {
-		Schema  core.SchemaDefinition `json:"schema"`
+		Schema  schema.SchemaDefinition `json:"schema"`
 		Preview any                   `json:"preview"`
 	}), nil
 }
@@ -223,10 +224,10 @@ func (e *Collection) Rollback(version *string, dryRun *bool) (struct {
 // Migrate wraps the collection's Migrate method with event emission
 func (e *Collection) Migrate(
 	description string,
-	cb func(h core.SchemaMigrationHelper) (core.DataTransform[any, any], error),
+	cb func(h schema.SchemaMigrationHelper) (schema.DataTransform[any, any], error),
 	dryRun *bool,
 ) (struct {
-	Schema  core.SchemaDefinition `json:"schema"`
+	Schema  schema.SchemaDefinition `json:"schema"`
 	Preview any                   `json:"preview"`
 }, error) {
 	input := map[string]any{
@@ -236,9 +237,9 @@ func (e *Collection) Migrate(
 
 	result, err := e.withEventEmission(
 		"migrate",
-		core.MigrateStart,
-		core.MigrateSuccess,
-		core.MigrateFailed,
+		MigrateStart,
+		MigrateSuccess,
+		MigrateFailed,
 		input,
 		nil,
 		func() (any, error) {
@@ -248,27 +249,27 @@ func (e *Collection) Migrate(
 
 	if err != nil {
 		return struct {
-			Schema  core.SchemaDefinition `json:"schema"`
+			Schema  schema.SchemaDefinition `json:"schema"`
 			Preview any                   `json:"preview"`
 		}{}, err
 	}
 
 	return result.(struct {
-		Schema  core.SchemaDefinition `json:"schema"`
+		Schema  schema.SchemaDefinition `json:"schema"`
 		Preview any                   `json:"preview"`
 	}), nil
 }
 
 // Metadata delegates to the underlying collection with telemetry event
 func (e *Collection) Metadata(
-	filter *core.MetadataFilter,
+	filter *MetadataFilter,
 	forceRefresh bool,
-) (core.Metadata, error) {
+) (Metadata, error) {
 	startTime := time.Now()
 
 	// Emit telemetry event for metadata calls
 	telemetryEvent := createEvent(
-		core.MetadataCalled,
+		MetadataCalled,
 		"metadata",
 		e.schema.Name,
 		map[string]any{
@@ -287,12 +288,12 @@ func (e *Collection) Metadata(
 }
 
 // RegisterSubscription wraps subscription registration with event emission
-func (e *Collection) RegisterSubscription(options core.RegisterSubscriptionOptions) string {
+func (e *Collection) RegisterSubscription(options RegisterSubscriptionOptions) string {
 	id := e.collection.RegisterSubscription(options)
 
 	// Emit subscription register event
 	event := createEvent(
-		core.SubscriptionRegister,
+		SubscriptionRegister,
 		"register_subscription",
 		e.schema.Name,
 		map[string]any{
@@ -319,7 +320,7 @@ func (e *Collection) UnregisterSubscription(id string) {
 
 	// Emit subscription unregister event
 	event := createEvent(
-		core.SubscriptionUnregister,
+		SubscriptionUnregister,
 		"unregister_subscription",
 		e.schema.Name,
 		map[string]any{
@@ -335,7 +336,7 @@ func (e *Collection) UnregisterSubscription(id string) {
 }
 
 // Subscriptions delegates to the underlying collection
-func (e *Collection) Subscriptions() ([]core.SubscriptionInfo, error) {
+func (e *Collection) Subscriptions() ([]SubscriptionInfo, error) {
 	return e.collection.Subscriptions()
 }
 

@@ -3,7 +3,8 @@ package persistence
 import (
 	"context"
 
-	core "github.com/asaidimu/go-anansi/core"
+	"github.com/asaidimu/go-anansi/core/query"
+	"github.com/asaidimu/go-anansi/core/schema"
 )
 
 // InteractorOptions provides configuration for the interactor.
@@ -39,19 +40,19 @@ type InteractorOptions struct {
 // Note: This interface includes the transactional methods, but they only
 // become truly active/meaningful on an instance returned by StartTransaction.
 type DatabaseInteractor interface {
-	SelectDocuments(ctx context.Context, schema *core.SchemaDefinition, dsl *core.QueryDSL) ([]core.Document, error)
-	UpdateDocuments(ctx context.Context, schema *core.SchemaDefinition, updates map[string]any, filters *core.QueryFilter) (int64, error)
-	InsertDocuments(ctx context.Context, schema *core.SchemaDefinition, records []map[string]any) ([]core.Document, error)
-	DeleteDocuments(ctx context.Context, schema *core.SchemaDefinition, filters *core.QueryFilter, unsafeDelete bool) (int64, error)
+	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.QueryDSL) ([]schema.Document, error)
+	UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error)
+		InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []map[string]any) ([]schema.Document, error)
+	DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error)
 
 	// CreateCollection generates and executes DDL statements to create a table from a schema definition.
-	CreateCollection(schema core.SchemaDefinition) error
+	CreateCollection(schema schema.SchemaDefinition) error
 
 	// GetColumnType maps a FieldType to the database-specific column type.
-	GetColumnType(fieldType core.FieldType, field *core.FieldDefinition) string
+	GetColumnType(fieldType schema.FieldType, field *schema.FieldDefinition) string
 
 	// CreateIndex generates and executes DDL statements to create an index.
-	CreateIndex(name string, index core.IndexDefinition) error
+	CreateIndex(name string, index schema.IndexDefinition) error
 
 	// DropCollection drops a table if it exists.
 	DropCollection(name string) error

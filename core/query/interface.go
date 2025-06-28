@@ -1,7 +1,11 @@
-package core
+package query
+
+import (
+	"github.com/asaidimu/go-anansi/core/schema"
+)
 
 type QueryGeneratorFactory interface {
-	CreateGenerator(schema *SchemaDefinition) (QueryGenerator, error)
+	CreateGenerator(schema *schema.SchemaDefinition) (QueryGenerator, error)
 }
 
 // QueryGenerator defines the interface for generating database-specific queries

@@ -1,4 +1,4 @@
-package core
+package schema
 
 import (
 	"fmt"
@@ -12,7 +12,7 @@ import (
 type Validator struct {
 	schema *SchemaDefinition
 	fmap   FunctionMap
-	issues []Issue // This will be reset for each validation run
+		issues []Issue // This will be reset for each validation run
 }
 
 // NewValidator creates and returns a new Validator instance configured with a schema and function map.
@@ -21,7 +21,7 @@ func NewValidator(schema *SchemaDefinition, fmap FunctionMap) *Validator {
 	return &Validator{
 		schema: schema,
 		fmap:   fmap,
-		issues: make([]Issue, 0), // Initialize empty, will be reset on each Validate call
+				issues: make([]Issue, 0), // Initialize empty, will be reset on each Validate call
 	}
 }
 
@@ -37,7 +37,7 @@ func (v *Validator) Validate(data map[string]any, loose bool) (bool, []Issue) {
 	finalIssues := v.issues // Start with all issues
 
 	if loose {
-		filteredIssues := make([]Issue, 0, len(v.issues))
+				filteredIssues := make([]Issue, 0, len(v.issues))
 		for _, issue := range v.issues {
 			if issue.Code != "REQUIRED_FIELD_MISSING" {
 				filteredIssues = append(filteredIssues, issue)
@@ -551,7 +551,7 @@ func (v *Validator) validateFieldSchema(data map[string]any, fieldSchema FieldSc
 	nestedValidator := &Validator{
 		schema: tempSchemaDef,
 		fmap:   v.fmap,
-		issues: make([]Issue, 0), // Fresh issues slice for nested validation
+				issues: make([]Issue, 0), // Fresh issues slice for nested validation
 	}
 
 	nestedValidator.validateData(data, path)

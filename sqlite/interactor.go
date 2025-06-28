@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/core"
 	"github.com/asaidimu/go-anansi/core/persistence"
+	"github.com/asaidimu/go-anansi/core/query"
+	"github.com/asaidimu/go-anansi/core/schema"
 	"go.uber.org/zap"
 )
 
@@ -25,7 +26,7 @@ type dbRunner interface {
 type SQLiteInteractor struct {
 	db                    *sql.DB // The underlying database connection pool
 	tx                    *sql.Tx // The active transaction (nil if not in a transaction)
-	queryGeneratorFactory core.QueryGeneratorFactory
+	queryGeneratorFactory query.QueryGeneratorFactory
 	logger                *zap.Logger
 	options *persistence.InteractorOptions
 }
@@ -62,15 +63,15 @@ func (e *SQLiteInteractor) runner() dbRunner {
 }
 
 // readRows reads all rows from a sql.Rows result and converts them into a slice of Row maps.
-func readRows(logger *zap.Logger, schema *core.SchemaDefinition, rows *sql.Rows) ([]core.Document, error) {
+func readRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) ([]schema.Document, error) {
 	columns, err := rows.Columns()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get columns: %w", err)
 	}
 
-	var results []core.Document
+	var results []schema.Document
 	for rows.Next() {
-		row := make(core.Document, len(columns))
+		row := make(schema.Document, len(columns))
 		values := make([]any, len(columns))
 		scanArgs := make([]any, len(columns))
 		for i := range values {
@@ -88,7 +89,7 @@ func readRows(logger *zap.Logger, schema *core.SchemaDefinition, rows *sql.Rows)
 				continue
 			}
 
-			fieldDef, ok := schema.Fields[col]
+			fieldDef, ok := sc.Fields[col]
 			if !ok {
 				logger.Warn("Column not found in schema, using raw value", zap.String("column", col))
 				row[col] = val
@@ -96,7 +97,7 @@ func readRows(logger *zap.Logger, schema *core.SchemaDefinition, rows *sql.Rows)
 			}
 
 			switch fieldDef.Type {
-			case core.FieldTypeBoolean:
+			case schema.FieldTypeBoolean:
 				if intVal, isInt := val.(int64); isInt {
 					row[col] = intVal != 0
 				} else if boolVal, isBool := val.(bool); isBool {
@@ -105,7 +106,7 @@ func readRows(logger *zap.Logger, schema *core.SchemaDefinition, rows *sql.Rows)
 					logger.Warn("Unexpected type for boolean field, using raw value", zap.String("column", col), zap.Any("value", val), zap.String("type", fmt.Sprintf("%T", val)))
 					row[col] = val
 				}
-			case core.FieldTypeString, core.FieldTypeEnum:
+			case schema.FieldTypeString, schema.FieldTypeEnum:
 				if byteVal, isByte := val.([]byte); isByte {
 					row[col] = string(byteVal)
 				} else if strVal, isString := val.(string); isString {
@@ -114,7 +115,7 @@ func readRows(logger *zap.Logger, schema *core.SchemaDefinition, rows *sql.Rows)
 					logger.Warn("Unexpected type for string/enum field, using raw value", zap.String("column", col), zap.Any("value", val), zap.String("type", fmt.Sprintf("%T", val)))
 					row[col] = val
 				}
-			case core.FieldTypeInteger:
+			case schema.FieldTypeInteger:
 				if intVal, isInt := val.(int64); isInt {
 					row[col] = intVal
 				} else if floatVal, isFloat := val.(float64); isFloat {
@@ -123,7 +124,7 @@ func readRows(logger *zap.Logger, schema *core.SchemaDefinition, rows *sql.Rows)
 					logger.Warn("Unexpected type for integer field, using raw value", zap.String("column", col), zap.Any("value", val), zap.String("type", fmt.Sprintf("%T", val)))
 					row[col] = val
 				}
-			case core.FieldTypeNumber, core.FieldTypeDecimal:
+			case schema.FieldTypeNumber, schema.FieldTypeDecimal:
 				if floatVal, isFloat := val.(float64); isFloat {
 					row[col] = floatVal
 				} else if intVal, isInt := val.(int64); isInt {
@@ -132,7 +133,7 @@ func readRows(logger *zap.Logger, schema *core.SchemaDefinition, rows *sql.Rows)
 					logger.Warn("Unexpected type for number/decimal field, using raw value", zap.String("column", col), zap.Any("value", val), zap.String("type", fmt.Sprintf("%T", val)))
 					row[col] = val
 				}
-			case core.FieldTypeObject, core.FieldTypeArray, core.FieldTypeSet, core.FieldTypeRecord, core.FieldTypeUnion:
+			case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeSet, schema.FieldTypeRecord, schema.FieldTypeUnion:
 				var byteVal []byte
 				if b, ok := val.([]byte); ok {
 					byteVal = b
@@ -167,7 +168,7 @@ func readRows(logger *zap.Logger, schema *core.SchemaDefinition, rows *sql.Rows)
 }
 
 
-func (e *SQLiteInteractor) SelectDocuments(ctx context.Context, schema *core.SchemaDefinition, dsl *core.QueryDSL) ([]core.Document, error) {
+func (e *SQLiteInteractor) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.QueryDSL) ([]schema.Document, error) {
 	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(schema)
 	if err != nil {
 		return nil, fmt.Errorf("could not get a query generator instance: %w", err)
@@ -189,7 +190,7 @@ func (e *SQLiteInteractor) SelectDocuments(ctx context.Context, schema *core.Sch
 	return readRows(e.logger, schema, rows)
 }
 
-func (e *SQLiteInteractor) UpdateDocuments(ctx context.Context, schema *core.SchemaDefinition, updates map[string]any, filters *core.QueryFilter) (int64, error) {
+func (e *SQLiteInteractor) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
 	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(schema)
 	if err != nil {
 		return 0, fmt.Errorf("could not get a query generator instance: %w", err)
@@ -210,11 +211,11 @@ func (e *SQLiteInteractor) UpdateDocuments(ctx context.Context, schema *core.Sch
 	return result.RowsAffected()
 }
 
-func (e *SQLiteInteractor) InsertDocuments(ctx context.Context, schema *core.SchemaDefinition, records []map[string]any) ([]core.Document, error) {
+func (e *SQLiteInteractor) InsertDocuments(ctx context.Context, sc *schema.SchemaDefinition, records []map[string]any) ([]schema.Document, error) {
 	if len(records) == 0 {
-		return []core.Document{}, nil
+		return []schema.Document{}, nil
 	}
-	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(schema)
+	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(sc)
 	if err != nil {
 		return nil, fmt.Errorf("could not get a query generator instance: %w", err)
 	}
@@ -232,10 +233,10 @@ func (e *SQLiteInteractor) InsertDocuments(ctx context.Context, schema *core.Sch
 		return nil, fmt.Errorf("failed to execute INSERT ... RETURNING query: %w", err)
 	}
 	defer rows.Close()
-	return readRows(e.logger, schema, rows)
+	return readRows(e.logger, sc, rows)
 }
 
-func (e *SQLiteInteractor) DeleteDocuments(ctx context.Context, schema *core.SchemaDefinition, filters *core.QueryFilter, unsafeDelete bool) (int64, error) {
+func (e *SQLiteInteractor) DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
 	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(schema)
 	if err != nil {
 		return 0, fmt.Errorf("could not get a query generator instance: %w", err)

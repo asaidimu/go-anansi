@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/core"
+	"github.com/asaidimu/go-anansi/core/schema"
 )
 
 const SCHEMA_COLLECTION_NAME = "_schemas"
@@ -73,7 +73,7 @@ var schemasCollectionSchema = []byte(`
   ]
 }`)
 
-func mapToSchemaRecord(data core.Document) (*SchemaRecord, error) {
+func mapToSchemaRecord(data schema.Document) (*SchemaRecord, error) {
 	// 1. Marshal the map[string]any into JSON bytes
 	jsonBytes, err := json.Marshal(data)
 	if err != nil {
@@ -103,7 +103,7 @@ func schemaRecordToMap(record *SchemaRecord) (map[string]any, error) {
 	return data, nil
 }
 
-func schemaToRawJson(schema *core.SchemaDefinition) ([]byte, error) {
+func schemaToRawJson(schema *schema.SchemaDefinition) ([]byte, error) {
 	jsonBytes, err := json.Marshal(schema)
 	if err != nil {
 		return nil, fmt.Errorf("failed to marshal SchemaDefinition to JSON: %w", err)
