@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 )
 
 // SCHEMA_COLLECTION_NAME is the constant name for the internal collection that
@@ -15,7 +15,8 @@ import (
 const SCHEMA_COLLECTION_NAME = "_schemas"
 
 // SchemaRecord represents the structure of a document in the `_schemas` collection.
-// Each record holds the definition of a single collection's schema.	ype SchemaRecord struct {
+// Each record holds the definition of a single collection's schema.
+type SchemaRecord struct {
 	Name        string          `json:"name"`                  // The name of the collection this schema defines.
 	Description string          `json:"description,omitempty"` // A human-readable description of the schema.
 	Version     string          `json:"version"`               // The version of the schema.

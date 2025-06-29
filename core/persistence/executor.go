@@ -6,15 +6,16 @@ package persistence
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/core/query"
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/query"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 	"go.uber.org/zap"
 )
 
 // Executor is responsible for orchestrating database operations. It acts as a bridge
 // between the high-level QueryDSL and the low-level DatabaseInteractor. It uses a
 // DataProcessor to handle in-memory computations and filtering after the initial
-// data has been fetched from the database.	ype Executor struct {
+// data has been fetched from the database.
+type Executor struct {
 	queryExecutor DatabaseInteractor
 	dataProcessor *query.DataProcessor
 	logger        *zap.Logger

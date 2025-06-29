@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/core/persistence"
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/persistence"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 )
 
 // DefaultInteractorOptions returns a set of sensible default options for the

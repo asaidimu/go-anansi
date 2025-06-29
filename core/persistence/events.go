@@ -6,8 +6,8 @@ package persistence
 import (
 	"time"
 
-	"github.com/asaidimu/go-anansi/core/query"
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/query"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 	"github.com/asaidimu/go-events"
 )
 

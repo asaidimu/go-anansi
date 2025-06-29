@@ -7,12 +7,13 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 )
 
 // QueryBuilder provides a fluent and intuitive API for building QueryDSL structures.
 // It allows for the step-by-step construction of a query, including filters, sorting,
-// pagination, and more, culminating in a final QueryDSL object.	ype QueryBuilder struct {
+// pagination, and more, culminating in a final QueryDSL object.
+type QueryBuilder struct {
 	query QueryDSL
 }
 

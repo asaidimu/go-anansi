@@ -13,7 +13,8 @@ import (
 
 // Validator is responsible for validating data against a schema. It checks for
 // type correctness, required fields, and custom constraints, and it can be
-// configured with a map of predicate functions for extensibility.	ype Validator struct {
+// configured with a map of predicate functions for extensibility.
+type Validator struct {
 	schema *SchemaDefinition
 	fmap   FunctionMap
 	issues []Issue
