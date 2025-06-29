@@ -1,3 +1,6 @@
+// Package persistence provides the event-emitting functionality that wraps around the
+// core collection operations. This allows for a decoupled way to observe and react
+// to data changes within the persistence layer.
 package persistence
 
 import (
@@ -8,14 +11,20 @@ import (
 	"github.com/asaidimu/go-events"
 )
 
-// Collection wraps a PersistenceCollection and adds event emission
+// Collection is a wrapper around a CollectionBase that adds event-emitting capabilities.
+// It intercepts method calls to the underlying collection, emits events for the start,
+// success, and failure of each operation, and then calls the original method.
+// This provides a mechanism for observability and for triggering side effects in a
+// decoupled manner.
 type Collection struct {
 	collection *CollectionBase
 	bus        *events.TypedEventBus[PersistenceEvent]
 	schema     *schema.SchemaDefinition
 }
 
-// NewEventEmittingCollection creates a new event-emitting collection wrapper
+// NewEventEmittingCollection creates a new event-emitting collection wrapper.
+// It takes a CollectionBase and returns a Collection that will emit events
+// for all of its operations.
 func NewEventEmittingCollection(collection *CollectionBase) *Collection {
 	return &Collection{
 		collection: collection,
@@ -24,14 +33,16 @@ func NewEventEmittingCollection(collection *CollectionBase) *Collection {
 	}
 }
 
-// emitEvent is a helper method to emit events
+// emitEvent is a helper method to publish a persistence event to the event bus.
 func (e *Collection) emitEvent(event PersistenceEvent) {
 	if e.bus != nil {
 		e.bus.Emit(string(event.Type), event)
 	}
 }
 
-// withEventEmission wraps an operation with start, success, and failure events
+// withEventEmission is a higher-order function that wraps a persistence operation
+// with start, success, and failure events. It handles the timing of the operation
+// and constructs the appropriate event for each stage.
 func (e *Collection) withEventEmission(
 	operation string,
 	startEventType PersistenceEventType,
@@ -49,10 +60,10 @@ func (e *Collection) withEventEmission(
 		operation,
 		e.schema.Name,
 		input,
-		nil,
+		nil, // No output yet
 		queryParam,
-		nil,
-		nil,
+		nil, // No error yet
+		nil, // No issues yet
 		startTime,
 	)
 	e.emitEvent(startEvent)
@@ -68,10 +79,10 @@ func (e *Collection) withEventEmission(
 			operation,
 			e.schema.Name,
 			input,
-			nil,
+			nil, // No output on failure
 			queryParam,
 			&errStr,
-			nil,
+			nil, // Issues can be added here if available
 			startTime,
 		)
 		e.emitEvent(failEvent)
@@ -86,8 +97,8 @@ func (e *Collection) withEventEmission(
 		input,
 		result,
 		queryParam,
-		nil,
-		nil,
+		nil, // No error on success
+		nil, // No issues on success
 		startTime,
 	)
 	e.emitEvent(successEvent)
@@ -95,7 +106,8 @@ func (e *Collection) withEventEmission(
 	return result, nil
 }
 
-// Create wraps the collection's Create method with event emission
+// Create wraps the underlying collection's Create method, adding event emission
+// for the start, success, and failure of the operation.
 func (e *Collection) Create(data any) (any, error) {
 	result, err := e.withEventEmission(
 		"create",
@@ -103,7 +115,7 @@ func (e *Collection) Create(data any) (any, error) {
 		DocumentCreateSuccess,
 		DocumentCreateFailed,
 		data,
-		nil,
+		nil, // No query parameter for create
 		func() (any, error) {
 			return e.collection.Create(data)
 		},
@@ -113,17 +125,18 @@ func (e *Collection) Create(data any) (any, error) {
 		return nil, err
 	}
 
-	return result.(*query.QueryResult), nil
+	return result, nil
 }
 
-// Read wraps the collection's Read method with event emission
+// Read wraps the underlying collection's Read method, adding event emission
+// for the start, success, and failure of the operation.
 func (e *Collection) Read(q *query.QueryDSL) (*query.QueryResult, error) {
 	result, err := e.withEventEmission(
 		"read",
 		DocumentReadStart,
 		DocumentReadSuccess,
 		DocumentReadFailed,
-		nil,
+		nil, // No input data for read
 		q,
 		func() (any, error) {
 			return e.collection.Read(q)
@@ -137,18 +150,18 @@ func (e *Collection) Read(q *query.QueryDSL) (*query.QueryResult, error) {
 	return result.(*query.QueryResult), nil
 }
 
-// Update wraps the collection's Update method with event emission
+// Update wraps the underlying collection's Update method, adding event emission
+// for the start, success, and failure of the operation.
 func (e *Collection) Update(params *CollectionUpdate) (int, error) {
 	result, err := e.withEventEmission(
 		"update",
 		DocumentUpdateStart,
 		DocumentUpdateSuccess,
 		DocumentUpdateFailed,
-		params,
+		params.Data,
 		params.Filter,
 		func() (any, error) {
-			count, err := e.collection.Update(params)
-			return count, err
+			return e.collection.Update(params)
 		},
 	)
 
@@ -159,18 +172,18 @@ func (e *Collection) Update(params *CollectionUpdate) (int, error) {
 	return result.(int), nil
 }
 
-// Delete wraps the collection's Delete method with event emission
-func (e *Collection) Delete(params *query.QueryFilter, unsafe bool) (int, error) {
+// Delete wraps the underlying collection's Delete method, adding event emission
+// for the start, success, and failure of the operation.
+func (e *Collection) Delete(filter *query.QueryFilter, unsafe bool) (int, error) {
 	result, err := e.withEventEmission(
 		"delete",
 		DocumentDeleteStart,
 		DocumentDeleteSuccess,
 		DocumentDeleteFailed,
-		params,
-		params,
+		nil, // No input data for delete
+		filter,
 		func() (any, error) {
-			count, err := e.collection.Delete(params, unsafe)
-			return count, err
+			return e.collection.Delete(filter, unsafe)
 		},
 	)
 
@@ -181,12 +194,14 @@ func (e *Collection) Delete(params *query.QueryFilter, unsafe bool) (int, error)
 	return result.(int), nil
 }
 
-// Validate delegates to the underlying collection (no events needed for validation)
+// Validate delegates the call to the underlying collection's Validate method.
+// No events are emitted for validation as it is a read-only operation.
 func (e *Collection) Validate(data any, loose bool) (*schema.ValidationResult, error) {
 	return e.collection.Validate(data, loose)
 }
 
-// Rollback wraps the collection's Rollback method with event emission
+// Rollback wraps the underlying collection's Rollback method, adding event emission
+// for the start, success, and failure of the operation.
 func (e *Collection) Rollback(version *string, dryRun *bool) (struct {
 	Schema  schema.SchemaDefinition `json:"schema"`
 	Preview any                   `json:"preview"`
@@ -202,7 +217,7 @@ func (e *Collection) Rollback(version *string, dryRun *bool) (struct {
 		RollbackSuccess,
 		RollbackFailed,
 		input,
-		nil,
+		nil, // No query parameter for rollback
 		func() (any, error) {
 			return e.collection.Rollback(version, dryRun)
 		},
@@ -221,7 +236,8 @@ func (e *Collection) Rollback(version *string, dryRun *bool) (struct {
 	}), nil
 }
 
-// Migrate wraps the collection's Migrate method with event emission
+// Migrate wraps the underlying collection's Migrate method, adding event emission
+// for the start, success, and failure of the operation.
 func (e *Collection) Migrate(
 	description string,
 	cb func(h schema.SchemaMigrationHelper) (schema.DataTransform[any, any], error),
@@ -241,7 +257,7 @@ func (e *Collection) Migrate(
 		MigrateSuccess,
 		MigrateFailed,
 		input,
-		nil,
+		nil, // No query parameter for migrate
 		func() (any, error) {
 			return e.collection.Migrate(description, cb, dryRun)
 		},
@@ -260,7 +276,8 @@ func (e *Collection) Migrate(
 	}), nil
 }
 
-// Metadata delegates to the underlying collection with telemetry event
+// Metadata delegates the call to the underlying collection's Metadata method,
+// but also emits a telemetry event to record that metadata was requested.
 func (e *Collection) Metadata(
 	filter *MetadataFilter,
 	forceRefresh bool,
@@ -276,10 +293,10 @@ func (e *Collection) Metadata(
 			"filter":       filter,
 			"forceRefresh": forceRefresh,
 		},
-		nil,
-		nil,
-		nil,
-		nil,
+		nil, // No output in the event itself
+		nil, // No query parameter
+		nil, // No error
+		nil, // No issues
 		startTime,
 	)
 	e.emitEvent(telemetryEvent)
@@ -287,7 +304,8 @@ func (e *Collection) Metadata(
 	return e.collection.Metadata(filter, forceRefresh)
 }
 
-// RegisterSubscription wraps subscription registration with event emission
+// RegisterSubscription wraps the underlying collection's RegisterSubscription method,
+// emitting an event after a new subscription is successfully registered.
 func (e *Collection) RegisterSubscription(options RegisterSubscriptionOptions) string {
 	id := e.collection.RegisterSubscription(options)
 
@@ -304,9 +322,9 @@ func (e *Collection) RegisterSubscription(options RegisterSubscriptionOptions) s
 		map[string]any{
 			"subscriptionId": id,
 		},
-		nil,
-		nil,
-		nil,
+		nil, // No query parameter
+		nil, // No error
+		nil, // No issues
 		time.Now(),
 	)
 	e.emitEvent(event)
@@ -314,7 +332,8 @@ func (e *Collection) RegisterSubscription(options RegisterSubscriptionOptions) s
 	return id
 }
 
-// UnregisterSubscription wraps subscription unregistration with event emission
+// UnregisterSubscription wraps the underlying collection's UnregisterSubscription method,
+// emitting an event after a subscription is successfully unregistered.
 func (e *Collection) UnregisterSubscription(id string) {
 	e.collection.UnregisterSubscription(id)
 
@@ -326,16 +345,17 @@ func (e *Collection) UnregisterSubscription(id string) {
 		map[string]any{
 			"subscriptionId": id,
 		},
-		nil,
-		nil,
-		nil,
-		nil,
+		nil, // No output
+		nil, // No query parameter
+		nil, // No error
+		nil, // No issues
 		time.Now(),
 	)
 	e.emitEvent(event)
 }
 
-// Subscriptions delegates to the underlying collection
+// Subscriptions delegates the call to the underlying collection's Subscriptions method.
+// No events are emitted for this operation.
 func (e *Collection) Subscriptions() ([]SubscriptionInfo, error) {
 	return e.collection.Subscriptions()
 }

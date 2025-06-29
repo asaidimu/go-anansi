@@ -1,3 +1,6 @@
+// Package sqlite provides a concrete implementation of the persistence.DatabaseInteractor
+// interface for SQLite databases. It handles the specifics of connecting to, querying,
+// and managing a SQLite database.
 package sqlite
 
 import (
@@ -12,7 +15,9 @@ import (
 	"go.uber.org/zap"
 )
 
-// dbRunner interface abstracts the common methods of *sql.DB and *sql.Tx
+// dbRunner is an interface that abstracts the common methods of *sql.DB and *sql.Tx,
+// allowing for the same code to be used for both transactional and non-transactional
+// database operations.
 type dbRunner interface {
 	Exec(query string, args ...any) (sql.Result, error)
 	QueryRow(query string, args ...any) *sql.Row
@@ -21,22 +26,22 @@ type dbRunner interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 }
 
-// SQLiteInteractor handles database connection management, SQL generation, and raw database operations.
-// It can operate in either a non-transactional mode (if tx is nil) or transactional mode (if tx is not nil).
-type SQLiteInteractor struct {
-	db                    *sql.DB // The underlying database connection pool
-	tx                    *sql.Tx // The active transaction (nil if not in a transaction)
+// SQLiteInteractor is a concrete implementation of the persistence.DatabaseInteractor
+// interface for SQLite. It manages the database connection, generates SQL queries,
+// and executes them against the database. It can operate in both transactional and
+// non-transactional modes.	type SQLiteInteractor struct {
+	db                    *sql.DB
+	tx                    *sql.Tx
 	queryGeneratorFactory query.QueryGeneratorFactory
 	logger                *zap.Logger
-	options *persistence.InteractorOptions
+	options               *persistence.InteractorOptions
 }
 
-// Ensure SQLiteInteractor implements persistence.DatabaseInteractor
+// Ensure SQLiteInteractor implements the persistence.DatabaseInteractor interface.
 var _ persistence.DatabaseInteractor = (*SQLiteInteractor)(nil)
 
-// NewSQLiteInteractor creates a new DatabaseInteractor instance.
-// If 'tx' is provided, the instance operates in transactional mode,
-// otherwise, it operates in non-transactional mode using 'db'.
+// NewSQLiteInteractor creates a new instance of the SQLiteInteractor. It can be
+// configured to operate in transactional mode by providing a non-nil *sql.Tx.
 func NewSQLiteInteractor(db *sql.DB, logger *zap.Logger, options *persistence.InteractorOptions, tx *sql.Tx) persistence.DatabaseInteractor {
 	if logger == nil {
 		logger = zap.NewNop()
@@ -47,22 +52,23 @@ func NewSQLiteInteractor(db *sql.DB, logger *zap.Logger, options *persistence.In
 	return &SQLiteInteractor{
 		db:                    db,
 		tx:                    tx,
-		options: options,
+		options:               options,
 		queryGeneratorFactory: NewSqliteQueryGeneratorFactory(),
 		logger:                logger,
 	}
 }
 
-// runner determines whether to use the underlying sql.DB or the active sql.Tx
-// for executing a database operation. It returns the appropriate dbRunner.
-func (e *SQLiteInteractor) runner() dbRunner {
-	if e.tx != nil {
-		return e.tx
+// runner returns the appropriate dbRunner for the current context, either the
+// database connection pool or the active transaction.
+func (i *SQLiteInteractor) runner() dbRunner {
+	if i.tx != nil {
+		return i.tx
 	}
-	return e.db
+	return i.db
 }
 
-// readRows reads all rows from a sql.Rows result and converts them into a slice of Row maps.
+// readRows reads all rows from a *sql.Rows object and converts them into a slice
+// of schema.Document maps. It also handles type conversions for different field types.
 func readRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) ([]schema.Document, error) {
 	columns, err := rows.Columns()
 	if err != nil {
@@ -103,7 +109,6 @@ func readRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 				} else if boolVal, isBool := val.(bool); isBool {
 					row[col] = boolVal
 				} else {
-					logger.Warn("Unexpected type for boolean field, using raw value", zap.String("column", col), zap.Any("value", val), zap.String("type", fmt.Sprintf("%T", val)))
 					row[col] = val
 				}
 			case schema.FieldTypeString, schema.FieldTypeEnum:
@@ -112,7 +117,6 @@ func readRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 				} else if strVal, isString := val.(string); isString {
 					row[col] = strVal
 				} else {
-					logger.Warn("Unexpected type for string/enum field, using raw value", zap.String("column", col), zap.Any("value", val), zap.String("type", fmt.Sprintf("%T", val)))
 					row[col] = val
 				}
 			case schema.FieldTypeInteger:
@@ -121,7 +125,6 @@ func readRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 				} else if floatVal, isFloat := val.(float64); isFloat {
 					row[col] = int64(floatVal)
 				} else {
-					logger.Warn("Unexpected type for integer field, using raw value", zap.String("column", col), zap.Any("value", val), zap.String("type", fmt.Sprintf("%T", val)))
 					row[col] = val
 				}
 			case schema.FieldTypeNumber, schema.FieldTypeDecimal:
@@ -130,7 +133,6 @@ func readRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 				} else if intVal, isInt := val.(int64); isInt {
 					row[col] = float64(intVal)
 				} else {
-					logger.Warn("Unexpected type for number/decimal field, using raw value", zap.String("column", col), zap.Any("value", val), zap.String("type", fmt.Sprintf("%T", val)))
 					row[col] = val
 				}
 			case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeSet, schema.FieldTypeRecord, schema.FieldTypeUnion:
@@ -146,15 +148,12 @@ func readRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 					if err := json.Unmarshal(byteVal, &decodedValue); err == nil {
 						row[col] = decodedValue
 					} else {
-						logger.Error("Failed to unmarshal JSON for complex field", zap.String("column", col), zap.String("raw_value", string(byteVal)), zap.Error(err))
 						row[col] = val
 					}
 				} else {
-					logger.Warn("Complex field value not string/byte slice, using raw value", zap.String("column", col), zap.Any("value", val), zap.String("type", fmt.Sprintf("%T", val)))
 					row[col] = val
 				}
 			default:
-				logger.Debug("Unsupported or unhandled FieldType, using raw value", zap.String("column", col), zap.String("fieldType", string(fieldDef.Type)), zap.Any("value", val))
 				row[col] = val
 			}
 		}
@@ -167,9 +166,9 @@ func readRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 	return results, nil
 }
 
-
-func (e *SQLiteInteractor) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.QueryDSL) ([]schema.Document, error) {
-	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(schema)
+// SelectDocuments executes a SELECT query against the database.
+func (i *SQLiteInteractor) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.QueryDSL) ([]schema.Document, error) {
+	queryGenerator, err := i.queryGeneratorFactory.CreateGenerator(schema)
 	if err != nil {
 		return nil, fmt.Errorf("could not get a query generator instance: %w", err)
 	}
@@ -179,19 +178,20 @@ func (e *SQLiteInteractor) SelectDocuments(ctx context.Context, schema *schema.S
 		return nil, fmt.Errorf("failed to generate SQL query: %w", err)
 	}
 
-	e.logger.Debug("Executing SQL SELECT", zap.String("sql", sqlQuery), zap.Any("params", queryParams))
+	i.logger.Debug("Executing SQL SELECT", zap.String("sql", sqlQuery), zap.Any("params", queryParams))
 
-	rows, err := e.runner().QueryContext(ctx, sqlQuery, queryParams...)
+	rows, err := i.runner().QueryContext(ctx, sqlQuery, queryParams...)
 	if err != nil {
-		e.logger.Error("Failed to execute SELECT query", zap.Error(err), zap.String("sql", sqlQuery))
+		i.logger.Error("Failed to execute SELECT query", zap.Error(err), zap.String("sql", sqlQuery))
 		return nil, fmt.Errorf("failed to execute SELECT query: %w \n %s", err, sqlQuery)
 	}
 	defer rows.Close()
-	return readRows(e.logger, schema, rows)
+	return readRows(i.logger, schema, rows)
 }
 
-func (e *SQLiteInteractor) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
-	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(schema)
+// UpdateDocuments executes an UPDATE query against the database.
+func (i *SQLiteInteractor) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
+	queryGenerator, err := i.queryGeneratorFactory.CreateGenerator(schema)
 	if err != nil {
 		return 0, fmt.Errorf("could not get a query generator instance: %w", err)
 	}
@@ -201,21 +201,22 @@ func (e *SQLiteInteractor) UpdateDocuments(ctx context.Context, schema *schema.S
 		return 0, fmt.Errorf("failed to generate SQL UPDATE query: %w", err)
 	}
 
-	e.logger.Debug("Executing SQL UPDATE", zap.String("sql", sqlQuery), zap.Any("params", queryParams))
+	i.logger.Debug("Executing SQL UPDATE", zap.String("sql", sqlQuery), zap.Any("params", queryParams))
 
-	result, err := e.runner().ExecContext(ctx, sqlQuery, queryParams...)
+	result, err := i.runner().ExecContext(ctx, sqlQuery, queryParams...)
 	if err != nil {
-		e.logger.Error("Failed to execute UPDATE query", zap.Error(err), zap.String("sql", sqlQuery))
+		i.logger.Error("Failed to execute UPDATE query", zap.Error(err), zap.String("sql", sqlQuery))
 		return 0, fmt.Errorf("failed to execute UPDATE query: %w", err)
 	}
 	return result.RowsAffected()
 }
 
-func (e *SQLiteInteractor) InsertDocuments(ctx context.Context, sc *schema.SchemaDefinition, records []map[string]any) ([]schema.Document, error) {
+// InsertDocuments executes an INSERT query against the database.
+func (i *SQLiteInteractor) InsertDocuments(ctx context.Context, sc *schema.SchemaDefinition, records []map[string]any) ([]schema.Document, error) {
 	if len(records) == 0 {
 		return []schema.Document{}, nil
 	}
-	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(sc)
+	queryGenerator, err := i.queryGeneratorFactory.CreateGenerator(sc)
 	if err != nil {
 		return nil, fmt.Errorf("could not get a query generator instance: %w", err)
 	}
@@ -225,19 +226,20 @@ func (e *SQLiteInteractor) InsertDocuments(ctx context.Context, sc *schema.Schem
 		return nil, fmt.Errorf("failed to generate INSERT SQL: %w", err)
 	}
 
-	e.logger.Debug("Executing SQL INSERT with RETURNING clause", zap.String("sql", sqlQuery), zap.Any("params", queryParams))
+	i.logger.Debug("Executing SQL INSERT with RETURNING clause", zap.String("sql", sqlQuery), zap.Any("params", queryParams))
 
-	rows, err := e.runner().QueryContext(ctx, sqlQuery, queryParams...)
+	rows, err := i.runner().QueryContext(ctx, sqlQuery, queryParams...)
 	if err != nil {
-		e.logger.Error("Failed to execute INSERT ... RETURNING query", zap.Error(err), zap.String("sql", sqlQuery))
+		i.logger.Error("Failed to execute INSERT ... RETURNING query", zap.Error(err), zap.String("sql", sqlQuery))
 		return nil, fmt.Errorf("failed to execute INSERT ... RETURNING query: %w", err)
 	}
 	defer rows.Close()
-	return readRows(e.logger, sc, rows)
+	return readRows(i.logger, sc, rows)
 }
 
-func (e *SQLiteInteractor) DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
-	queryGenerator, err := e.queryGeneratorFactory.CreateGenerator(schema)
+// DeleteDocuments executes a DELETE query against the database.
+func (i *SQLiteInteractor) DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
+	queryGenerator, err := i.queryGeneratorFactory.CreateGenerator(schema)
 	if err != nil {
 		return 0, fmt.Errorf("could not get a query generator instance: %w", err)
 	}
@@ -247,52 +249,46 @@ func (e *SQLiteInteractor) DeleteDocuments(ctx context.Context, schema *schema.S
 		return 0, fmt.Errorf("failed to generate DELETE SQL: %w", err)
 	}
 
-	e.logger.Debug("Executing SQL DELETE", zap.String("sql", sqlQuery), zap.Any("params", queryParams))
+	i.logger.Debug("Executing SQL DELETE", zap.String("sql", sqlQuery), zap.Any("params", queryParams))
 
-	result, err := e.runner().ExecContext(ctx, sqlQuery, queryParams...)
+	result, err := i.runner().ExecContext(ctx, sqlQuery, queryParams...)
 	if err != nil {
-		e.logger.Error("Failed to execute DELETE query", zap.Error(err), zap.String("sql", sqlQuery))
+		i.logger.Error("Failed to execute DELETE query", zap.Error(err), zap.String("sql", sqlQuery))
 		return 0, fmt.Errorf("failed to execute DELETE query: %w", err)
 	}
 	return result.RowsAffected()
 }
 
-// StartTransaction initiates a new database transaction.
-// It returns a *new* SQLiteInteractor instance that operates
-// within the scope of that transaction.
-// The original interactor instance remains unchanged.
-func (e *SQLiteInteractor) StartTransaction(ctx context.Context) (persistence.DatabaseInteractor, error) {
-	if e.tx != nil {
-		return nil, fmt.Errorf("Cannot start a new transaction from an existing transactional interactor")
+// StartTransaction begins a new database transaction and returns a new SQLiteInteractor
+// that is scoped to that transaction.
+func (i *SQLiteInteractor) StartTransaction(ctx context.Context) (persistence.DatabaseInteractor, error) {
+	if i.tx != nil {
+		return nil, fmt.Errorf("cannot start a new transaction from an existing transactional interactor")
 	}
 
-	tx, err := e.db.BeginTx(ctx, nil)
+	tx, err := i.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin transaction: %w", err)
 	}
-	e.logger.Debug("Transaction initiated, returning new transactional interactor")
-	return NewSQLiteInteractor(e.db, e.logger, e.options, tx), nil
+	i.logger.Debug("Transaction initiated, returning new transactional interactor")
+	return NewSQLiteInteractor(i.db, i.logger, i.options, tx), nil
 }
 
-// Commit commits the transaction.
-// This method should only be called on an SQLiteInteractor instance
-// that was created with an active transaction (i.e., e.tx is not nil).
-func (e *SQLiteInteractor) Commit(ctx context.Context) error {
-	if e.tx == nil {
-		return fmt.Errorf("Commit not applicable: not in a transactional context")
+// Commit commits the current transaction.
+func (i *SQLiteInteractor) Commit(ctx context.Context) error {
+	if i.tx == nil {
+		return fmt.Errorf("commit not applicable: not in a transactional context")
 	}
-	e.logger.Debug("Committing transaction")
-	return e.tx.Commit()
+	i.logger.Debug("Committing transaction")
+	return i.tx.Commit()
 }
 
-// Rollback rolls back the transaction.
-// This method should only be called on an SQLiteInteractor instance
-// that was created with an active transaction (i.e., e.tx is not nil).
-func (e *SQLiteInteractor) Rollback(ctx context.Context) error {
-	if e.tx == nil {
-		return fmt.Errorf("Rollback not applicable: not in a transactional context")
+// Rollback rolls back the current transaction.
+func (i *SQLiteInteractor) Rollback(ctx context.Context) error {
+	if i.tx == nil {
+		return fmt.Errorf("rollback not applicable: not in a transactional context")
 	}
-	e.logger.Debug("Rolling back transaction")
-	return e.tx.Rollback()
+	i.logger.Debug("Rolling back transaction")
+	return i.tx.Rollback()
 }
 

@@ -1,43 +1,47 @@
+// Package schema provides the Validator, a key component for ensuring that data
+// conforms to a given schema definition. It supports detailed error reporting and
+// can be extended with custom validation logic.
 package schema
 
 import (
 	"fmt"
-	"reflect"
 	"maps"
+	"reflect"
 	"strconv"
 	"strings"
 )
 
-// Validator handles schema validation with detailed error reporting.
-type Validator struct {
+// Validator is responsible for validating data against a schema. It checks for
+// type correctness, required fields, and custom constraints, and it can be
+// configured with a map of predicate functions for extensibility.	ype Validator struct {
 	schema *SchemaDefinition
 	fmap   FunctionMap
-		issues []Issue // This will be reset for each validation run
+	issues []Issue
 }
 
-// NewValidator creates and returns a new Validator instance configured with a schema and function map.
-// This instance can be re-used to validate multiple data inputs against the same schema.
+// NewValidator creates a new Validator instance for a given schema and function map.
+// The returned validator can be reused for multiple validation operations.
 func NewValidator(schema *SchemaDefinition, fmap FunctionMap) *Validator {
 	return &Validator{
 		schema: schema,
 		fmap:   fmap,
-				issues: make([]Issue, 0), // Initialize empty, will be reset on each Validate call
+		issues: make([]Issue, 0),
 	}
 }
 
-// Validate validates data against the validator's schema definition using provided predicate functions.
-// Returns true if validation passes, false otherwise, along with any validation issues.
-// This method can be called multiple times on the same Validator instance.
+// Validate checks if a given data map conforms to the validator's schema.
+// It returns a boolean indicating whether the validation was successful, and a slice
+// of any issues that were found. The `loose` parameter can be used to ignore
+// missing required fields.
 func (v *Validator) Validate(data map[string]any, loose bool) (bool, []Issue) {
-	// Reset issues slice for a new validation run
 	v.issues = make([]Issue, 0)
 
 	v.validateData(data, "")
 	v.validateSchemaConstraints(data, "")
-	finalIssues := v.issues // Start with all issues
 
+	finalIssues := v.issues
 	if loose {
-				filteredIssues := make([]Issue, 0, len(v.issues))
+		filteredIssues := make([]Issue, 0, len(v.issues))
 		for _, issue := range v.issues {
 			if issue.Code != "REQUIRED_FIELD_MISSING" {
 				filteredIssues = append(filteredIssues, issue)
@@ -49,23 +53,19 @@ func (v *Validator) Validate(data map[string]any, loose bool) (bool, []Issue) {
 	return len(finalIssues) == 0, finalIssues
 }
 
-// coerceValue attempts to coerce a value to the expected type.
-// Returns the coerced value and whether coercion was successful.
+// coerceValue attempts to convert a value to the expected type.
 func (v *Validator) coerceValue(value any, expectedType FieldType) (any, bool) {
-	// Handle null coercion first
 	if value == nil {
 		return nil, true
 	}
 
-	// Handle string "null" to nil
 	if str, ok := value.(string); ok && strings.ToLower(str) == "null" {
 		return nil, true
 	}
 
-	// Only attempt coercion from strings to other types
 	str, ok := value.(string)
 	if !ok {
-		return value, false // Not a string, no coercion needed
+		return value, false
 	}
 
 	switch expectedType {
@@ -76,52 +76,38 @@ func (v *Validator) coerceValue(value any, expectedType FieldType) (any, bool) {
 		} else if lower == "false" {
 			return false, true
 		}
-		return value, false
-
 	case FieldTypeInteger:
-		// Only coerce if it's a valid integer (no decimal point)
 		if intVal, err := strconv.ParseInt(str, 10, 64); err == nil {
-			// Check if the string representation matches (no leading zeros, etc.)
 			if strconv.FormatInt(intVal, 10) == str {
 				return int(intVal), true
 			}
 		}
-		return value, false
-
 	case FieldTypeNumber, FieldTypeDecimal:
 		if floatVal, err := strconv.ParseFloat(str, 64); err == nil {
 			return floatVal, true
 		}
-		return value, false
-
-	default:
-		return value, false // No coercion for other types
 	}
+	return value, false
 }
 
-// validateData validates the main data structure against schema fields.
+// validateData is the main validation function that checks all fields in the data.
 func (v *Validator) validateData(data map[string]any, path string) {
-	// Check required fields
 	for fieldName, fieldDef := range v.schema.Fields {
 		fieldPath := v.buildPath(path, fieldName)
 		value, exists := data[fieldName]
 
-		// Check if required field is missing
 		if fieldDef.Required != nil && *fieldDef.Required && !exists {
 			v.addIssue("REQUIRED_FIELD_MISSING", fmt.Sprintf("Required field '%s' is missing", fieldName), fieldPath)
 			continue
 		}
 
-		// Skip validation if field doesn't exist and isn't required
 		if !exists {
 			continue
 		}
 
-		// Validate the field value
 		v.validateFieldValue(value, fieldDef, fieldPath)
 	}
 
-	// Check for unexpected fields (strict validation)
 	for dataKey := range data {
 		if _, exists := v.schema.Fields[dataKey]; !exists {
 			v.addIssue("UNEXPECTED_FIELD", fmt.Sprintf("Unexpected field '%s' not defined in schema", dataKey), v.buildPath(path, dataKey))
@@ -129,33 +115,26 @@ func (v *Validator) validateData(data map[string]any, path string) {
 	}
 }
 
-// validateFieldValue validates a single field value against its definition.
+// validateFieldValue validates a single field's value against its definition.
 func (v *Validator) validateFieldValue(value any, fieldDef *FieldDefinition, path string) {
-	// Validate field type (with coercion)
 	coercedValue, typeValid := v.validateFieldTypeWithCoercion(value, fieldDef.Type, fieldDef, path)
 	if !typeValid {
-		return // Type validation failed, skip further validation
+		return
 	}
 
-	// Use coerced value for further validation
 	value = coercedValue
 
-	// Validate field constraints
 	v.validateFieldConstraints(value, fieldDef.Constraints, path)
 
-	// Validate unique constraint (if applicable)
 	if fieldDef.Unique != nil && *fieldDef.Unique {
-		// Note: Unique validation would require access to all data instances
-		// This is a placeholder for unique constraint validation
-		// In a real implementation, this would check against a database or collection
+		// This is a placeholder for uniqueness validation, which would typically be handled
+		// by the database or a service that has access to the entire collection.
 	}
 
-	// Validate enum values
 	if fieldDef.Type == FieldTypeEnum && len(fieldDef.Values) > 0 {
 		v.validateEnumValue(value, fieldDef.Values, path)
 	}
 
-	// Validate nested schemas for object and union types
 	switch fieldDef.Type {
 	case FieldTypeObject:
 		v.validateObjectField(value, fieldDef, path)
@@ -166,15 +145,13 @@ func (v *Validator) validateFieldValue(value any, fieldDef *FieldDefinition, pat
 	}
 }
 
-// validateFieldTypeWithCoercion validates that a value matches the expected field type, attempting coercion if needed.
-// Returns the (potentially coerced) value and whether validation passed.
+// validateFieldTypeWithCoercion checks the type of a field, attempting to coerce it if necessary.
 func (v *Validator) validateFieldTypeWithCoercion(value any, expectedType FieldType, fieldDef *FieldDefinition, path string) (any, bool) {
-	// Handle null values first
-	if value == nil || (v.isStringNull(value)) {
+	if value == nil || v.isStringNull(value) {
 		coercedValue, _ := v.coerceValue(value, expectedType)
 		if coercedValue == nil {
 			if fieldDef.Required != nil && *fieldDef.Required {
-				v.addIssue("NULL_VALUE", fmt.Sprintf("Field cannot be null"), path)
+				v.addIssue("NULL_VALUE", "Field cannot be null", path)
 				return nil, false
 			}
 			return nil, true
@@ -182,16 +159,13 @@ func (v *Validator) validateFieldTypeWithCoercion(value any, expectedType FieldT
 		value = coercedValue
 	}
 
-	// Try coercion first
 	if coercedValue, coerced := v.coerceValue(value, expectedType); coerced {
 		value = coercedValue
-		// After coercion, check if it now matches the expected type
 		if v.validateFieldType(value, expectedType, fieldDef, path) {
 			return value, true
 		}
 	}
 
-	// If coercion didn't work or wasn't attempted, validate original type
 	if v.validateFieldType(value, expectedType, fieldDef, path) {
 		return value, true
 	}
@@ -199,7 +173,7 @@ func (v *Validator) validateFieldTypeWithCoercion(value any, expectedType FieldT
 	return value, false
 }
 
-// isStringNull checks if a value is the string "null"
+// isStringNull checks if a value is the string "null", case-insensitively.
 func (v *Validator) isStringNull(value any) bool {
 	if str, ok := value.(string); ok {
 		return strings.ToLower(str) == "null"
@@ -207,11 +181,11 @@ func (v *Validator) isStringNull(value any) bool {
 	return false
 }
 
-// validateFieldType validates that a value matches the expected field type.
+// validateFieldType checks if a value's type matches the expected type.
 func (v *Validator) validateFieldType(value any, expectedType FieldType, fieldDef *FieldDefinition, path string) bool {
 	if value == nil {
 		if fieldDef.Required != nil && *fieldDef.Required {
-			v.addIssue("NULL_VALUE", fmt.Sprintf("Field cannot be null"), path)
+			v.addIssue("NULL_VALUE", "Field cannot be null", path)
 			return false
 		}
 		return true
@@ -248,25 +222,19 @@ func (v *Validator) validateFieldType(value any, expectedType FieldType, fieldDe
 			v.addIssue("TYPE_MISMATCH", fmt.Sprintf("Expected object, got %T", value), path)
 			return false
 		}
-	case FieldTypeEnum:
-		// Enum type validation is handled separately in validateEnumValue
-		return true
-	case FieldTypeUnion:
-		// Union type validation is handled separately in validateUnionField
-		return true
 	}
-
 	return true
 }
 
-// validateFieldConstraints validates all constraints for a field.
+// validateFieldConstraints validates all constraints for a given field.
 func (v *Validator) validateFieldConstraints(value any, constraints SchemaConstraint[FieldType], path string) {
 	for _, rule := range constraints {
 		v.validateConstraintRule(value, rule, path)
 	}
 }
 
-// validateConstraintRule validates a single constraint rule (Constraint or ConstraintGroup).
+// validateConstraintRule validates a single constraint rule, which can be either a
+// single constraint or a group of constraints.
 func (v *Validator) validateConstraintRule(value any, rule SchemaConstraintRule[FieldType], path string) {
 	switch r := rule.(type) {
 	case Constraint[FieldType]:
@@ -278,7 +246,7 @@ func (v *Validator) validateConstraintRule(value any, rule SchemaConstraintRule[
 	}
 }
 
-// validateConstraint validates a single constraint.
+// validateConstraint validates a single constraint by executing its predicate function.
 func (v *Validator) validateConstraint(value any, constraint Constraint[FieldType], path string) {
 	predicateFunc, exists := v.fmap[constraint.Predicate]
 	if !exists {
@@ -286,21 +254,18 @@ func (v *Validator) validateConstraint(value any, constraint Constraint[FieldTyp
 		return
 	}
 
-	// Type assert to Predicate function
 	predicate, ok := predicateFunc.(func(PredicateParams[any]) bool)
 	if !ok {
-		v.addIssue("INVALID_PREDICATE_TYPE", fmt.Sprintf("Predicate '%s' has invalid type, expected func(PredicateParams[any]) bool", constraint.Predicate), path)
+		v.addIssue("INVALID_PREDICATE_TYPE", fmt.Sprintf("Predicate '%s' has invalid type", constraint.Predicate), path)
 		return
 	}
 
-	// Prepare predicate parameters
 	params := PredicateParams[any]{
 		Data:  value,
 		Field: constraint.Field,
 		Args:  constraint.Parameters,
 	}
 
-	// Execute predicate
 	if !predicate(params) {
 		message := fmt.Sprintf("Constraint '%s' failed", constraint.Name)
 		if constraint.ErrorMessage != nil {
@@ -310,23 +275,17 @@ func (v *Validator) validateConstraint(value any, constraint Constraint[FieldTyp
 	}
 }
 
-// validateConstraintGroup validates a constraint group with logical operators.
+// validateConstraintGroup validates a group of constraints.
 func (v *Validator) validateConstraintGroup(value any, group ConstraintGroup[FieldType], path string) {
 	results := make([]bool, len(group.Rules))
-
-	// Evaluate all rules (no short-circuiting for debugging purposes)
 	for i, rule := range group.Rules {
 		initialIssueCount := len(v.issues)
 		v.validateConstraintRule(value, rule, path)
-		// Check if this rule passed (no new issues added)
 		results[i] = len(v.issues) == initialIssueCount
 	}
 
-	// Apply logical operator
-	groupResult := v.evaluateLogicalOperator(group.Operator, results)
-
-	if !groupResult {
-		v.addIssue("CONSTRAINT_GROUP_VIOLATION", fmt.Sprintf("Constraint group '%s' with operator '%s' failed", group.Name, group.Operator), path)
+	if !v.evaluateLogicalOperator(group.Operator, results) {
+		v.addIssue("CONSTRAINT_GROUP_VIOLATION", fmt.Sprintf("Constraint group '%s' failed", group.Name), path)
 	}
 }
 
@@ -348,11 +307,7 @@ func (v *Validator) evaluateLogicalOperator(operator LogicalOperator, results []
 		}
 		return false
 	case LogicalNot:
-		// NOT operator should have exactly one operand
-		if len(results) != 1 {
-			return false
-		}
-		return !results[0]
+		return len(results) == 1 && !results[0]
 	case LogicalNor:
 		for _, result := range results {
 			if result {
@@ -368,9 +323,8 @@ func (v *Validator) evaluateLogicalOperator(operator LogicalOperator, results []
 			}
 		}
 		return trueCount == 1
-	default:
-		return false
 	}
+	return false
 }
 
 // validateEnumValue validates that a value is one of the allowed enum values.
@@ -395,12 +349,10 @@ func (v *Validator) validateObjectField(value any, fieldDef *FieldDefinition, pa
 		return
 	}
 
-	// Handle FieldSchema or []FieldSchema
 	switch schema := fieldDef.Schema.(type) {
 	case FieldSchema:
 		v.validateFieldSchema(objectData, schema, path)
 	case []FieldSchema:
-		// For object type, data must match exactly one schema
 		if len(schema) == 1 {
 			v.validateFieldSchema(objectData, schema[0], path)
 		} else {
@@ -430,7 +382,6 @@ func (v *Validator) validateUnionField(value any, fieldDef *FieldDefinition, pat
 		return
 	}
 
-	// Try to match against each schema
 	matched := false
 	for i, schema := range schemas {
 		schemaPath := fmt.Sprintf("%s[schema:%d]", path, i)
@@ -438,12 +389,10 @@ func (v *Validator) validateUnionField(value any, fieldDef *FieldDefinition, pat
 
 		v.validateFieldSchema(objectData, schema, schemaPath)
 
-		// If no new issues were added, this schema matches
 		if len(v.issues) == initialIssueCount {
 			matched = true
 			break
 		} else {
-			// Remove issues from this failed attempt
 			v.issues = v.issues[:initialIssueCount]
 		}
 	}
@@ -453,7 +402,7 @@ func (v *Validator) validateUnionField(value any, fieldDef *FieldDefinition, pat
 	}
 }
 
-// validateArrayField validates array or set fields.
+// validateArrayField validates an array or set field.
 func (v *Validator) validateArrayField(value any, fieldDef *FieldDefinition, path string) {
 	arrayValue, ok := value.([]any)
 	if !ok {
@@ -461,21 +410,14 @@ func (v *Validator) validateArrayField(value any, fieldDef *FieldDefinition, pat
 		return
 	}
 
-	// Validate items type if specified
 	if fieldDef.ItemsType != nil {
 		for i, item := range arrayValue {
 			itemPath := fmt.Sprintf("%s[%d]", path, i)
-
-			// Create a temporary field definition for the item
-			itemFieldDef := &FieldDefinition{
-				Type: *fieldDef.ItemsType,
-			}
-
+			itemFieldDef := &FieldDefinition{Type: *fieldDef.ItemsType}
 			v.validateFieldValue(item, itemFieldDef, itemPath)
 		}
 	}
 
-	// For sets, validate uniqueness
 	if fieldDef.Type == FieldTypeSet {
 		v.validateSetUniqueness(arrayValue, path)
 	}
@@ -485,7 +427,6 @@ func (v *Validator) validateArrayField(value any, fieldDef *FieldDefinition, pat
 func (v *Validator) validateSetUniqueness(items []any, path string) {
 	seen := make(map[string]bool)
 	for i, item := range items {
-		// Create a string representation for comparison
 		key := fmt.Sprintf("%v", item)
 		if seen[key] {
 			v.addIssue("SET_DUPLICATE", fmt.Sprintf("Duplicate value found in set at index %d", i), path)
@@ -494,7 +435,7 @@ func (v *Validator) validateSetUniqueness(items []any, path string) {
 	}
 }
 
-// validateFieldSchema validates data against a FieldSchema (nested schema).
+// validateFieldSchema validates data against a nested schema.
 func (v *Validator) validateFieldSchema(data map[string]any, fieldSchema FieldSchema, path string) {
 	nestedSchema, exists := v.schema.NestedSchemas[fieldSchema.ID]
 	if !exists {
@@ -502,33 +443,23 @@ func (v *Validator) validateFieldSchema(data map[string]any, fieldSchema FieldSc
 		return
 	}
 
-	// Create a temporary schema definition for the nested validation
-	tempSchemaDef := &SchemaDefinition{
-		Fields: make(map[string]*FieldDefinition),
-	}
+	tempSchemaDef := &SchemaDefinition{Fields: make(map[string]*FieldDefinition)}
 
-	// Handle different types of nested schemas
 	if nestedSchema.isStructured {
 		if nestedSchema.StructuredFieldsMap != nil {
 			tempSchemaDef.Fields = nestedSchema.StructuredFieldsMap
 		} else if nestedSchema.StructuredFieldsArray != nil {
-			// Handle conditional fields
 			for _, fieldGroup := range nestedSchema.StructuredFieldsArray {
 				if fieldGroup.When != nil {
-					// Check condition
-					if fieldValue, exists := data[fieldGroup.When.Field]; exists {
-						if reflect.DeepEqual(fieldValue, fieldGroup.When.Value) {
-							maps.Copy(tempSchemaDef.Fields, fieldGroup.Fields)
-						}
+					if fieldValue, exists := data[fieldGroup.When.Field]; exists && reflect.DeepEqual(fieldValue, fieldGroup.When.Value) {
+						maps.Copy(tempSchemaDef.Fields, fieldGroup.Fields)
 					}
 				} else {
-					// No condition, always include
 					maps.Copy(tempSchemaDef.Fields, fieldGroup.Fields)
 				}
 			}
 		}
 	} else {
-		// Literal schema - validate the entire data as a single value
 		if nestedSchema.Type != nil {
 			literalFieldDef := &FieldDefinition{
 				Type:        *nestedSchema.Type,
@@ -542,63 +473,61 @@ func (v *Validator) validateFieldSchema(data map[string]any, fieldSchema FieldSc
 		}
 	}
 
-	// Apply field schema constraints if any
 	if len(fieldSchema.Constraints) > 0 {
 		v.validateFieldConstraints(data, fieldSchema.Constraints, path)
 	}
 
-	// Validate nested data using a temporary validator to manage its own issues
 	nestedValidator := &Validator{
 		schema: tempSchemaDef,
 		fmap:   v.fmap,
-				issues: make([]Issue, 0), // Fresh issues slice for nested validation
+		issues: make([]Issue, 0),
 	}
 
 	nestedValidator.validateData(data, path)
 
-	// Merge issues from the nested validation into the parent validator's issues
 	for _, issue := range nestedValidator.issues {
 		v.issues = append(v.issues, issue)
 	}
 }
 
-// validateSchemaConstraints validates schema-level constraints.
+// validateSchemaConstraints validates constraints that are defined at the schema level.
 func (v *Validator) validateSchemaConstraints(data map[string]any, path string) {
 	for _, rule := range v.schema.Constraints {
 		v.validateConstraintRule(data, rule, path)
 	}
 }
 
-// Helper methods for type checking
+// isNumericType checks if a value is a numeric type.
 func (v *Validator) isNumericType(value any) bool {
 	switch value.(type) {
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
 		return true
-	default:
-		return false
 	}
+	return false
 }
 
+// isIntegerType checks if a value is an integer type.
 func (v *Validator) isIntegerType(value any) bool {
 	switch value.(type) {
 	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64:
 		return true
-	default:
-		return false
 	}
+	return false
 }
 
+// isArrayType checks if a value is an array or slice.
 func (v *Validator) isArrayType(value any) bool {
 	rv := reflect.ValueOf(value)
 	return rv.Kind() == reflect.Slice || rv.Kind() == reflect.Array
 }
 
+// isObjectType checks if a value is a map with string keys.
 func (v *Validator) isObjectType(value any) bool {
 	_, ok := value.(map[string]any)
 	return ok
 }
 
-// buildPath constructs a path string for error reporting.
+// buildPath constructs a dot-separated path string for error reporting.
 func (v *Validator) buildPath(basePath, fieldName string) string {
 	if basePath == "" {
 		return fieldName
@@ -606,7 +535,7 @@ func (v *Validator) buildPath(basePath, fieldName string) string {
 	return basePath + "." + fieldName
 }
 
-// addIssue adds a validation issue to the issues slice.
+// addIssue adds a new validation issue to the validator's list of issues.
 func (v *Validator) addIssue(code, message, path string) {
 	issue := Issue{
 		Code:     code,
