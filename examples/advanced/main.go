@@ -7,8 +7,8 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/asaidimu/go-anansi/v2/core/persistence"
-	"github.com/asaidimu/go-anansi/v2/sqlite"
+	"github.com/asaidimu/go-anansi/v5/core/persistence"
+	"github.com/asaidimu/go-anansi/v5/sqlite"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 )
 

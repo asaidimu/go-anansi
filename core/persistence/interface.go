@@ -9,8 +9,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/asaidimu/go-anansi/v2/core/query"
-	"github.com/asaidimu/go-anansi/v2/core/schema"
+	"github.com/asaidimu/go-anansi/v5/core/query"
+	"github.com/asaidimu/go-anansi/v5/core/schema"
 )
 
 // PersistenceEventType defines the set of possible event types that can be emitted

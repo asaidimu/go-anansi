@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v2/core/query"
-	"github.com/asaidimu/go-anansi/v2/core/schema"
+	"github.com/asaidimu/go-anansi/v5/core/query"
+	"github.com/asaidimu/go-anansi/v5/core/schema"
 	"github.com/asaidimu/go-events"
 	"github.com/google/uuid"
 )

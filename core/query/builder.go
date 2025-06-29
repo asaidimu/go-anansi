@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v2/core/schema"
+	"github.com/asaidimu/go-anansi/v5/core/schema"
 )
 
 // QueryBuilder provides a fluent and intuitive API for building QueryDSL structures.

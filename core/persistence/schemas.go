@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v2/core/schema"
+	"github.com/asaidimu/go-anansi/v5/core/schema"
 )
 
 // SCHEMA_COLLECTION_NAME is the constant name for the internal collection that

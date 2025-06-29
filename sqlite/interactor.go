@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v2/core/persistence"
-	"github.com/asaidimu/go-anansi/v2/core/query"
-	"github.com/asaidimu/go-anansi/v2/core/schema"
+	"github.com/asaidimu/go-anansi/v5/core/persistence"
+	"github.com/asaidimu/go-anansi/v5/core/query"
+	"github.com/asaidimu/go-anansi/v5/core/schema"
 	"go.uber.org/zap"
 )
 
