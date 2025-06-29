@@ -1,3 +1,20 @@
+# [5.0.0](https://github.com/asaidimu/go-anansi/compare/v4.0.0...v5.0.0) (2025-06-29)
+
+
+* feat(module)!: update Go module path to v2 ([4569af7](https://github.com/asaidimu/go-anansi/commit/4569af78a00e00bd7baa14b3f20f7e485518c348))
+
+
+### Bug Fixes
+
+* **persistence:** refine internal logic and enhance documentation ([2b14fbc](https://github.com/asaidimu/go-anansi/commit/2b14fbc184ce5b17536b178953c381de0bc8b063))
+
+
+### BREAKING CHANGES
+
+* Consumers of this module must update their import paths
+from github.com/asaidimu/go-anansi to github.com/asaidimu/go-anansi/v2
+to ensure compatibility and continue receiving future updates.
+
 # [4.0.0](https://github.com/asaidimu/go-anansi/compare/v3.0.0...v4.0.0) (2025-06-28)
 
 
