@@ -5,8 +5,8 @@ package persistence
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v2/core/query"
-	"github.com/asaidimu/go-anansi/v2/core/schema"
+	"github.com/asaidimu/go-anansi/v5/core/query"
+	"github.com/asaidimu/go-anansi/v5/core/schema"
 )
 
 // InteractorOptions provides a set of configurations for the DatabaseInteractor.
