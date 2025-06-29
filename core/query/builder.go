@@ -33,8 +33,42 @@ func (qb *QueryBuilder) Build() QueryDSL {
 // of new queries based on an existing one without modifying the original.
 func (qb *QueryBuilder) Clone() *QueryBuilder {
 	newBuilder := &QueryBuilder{}
-	// Note: This is a shallow copy. For a true deep copy, each field would need to be cloned.
-	newBuilder.query = qb.query
+	// Deep copy the QueryDSL
+	clonedQuery := qb.query
+	// Deep copy slices and maps within QueryDSL
+	if qb.query.Filters != nil {
+		clonedFilters := *qb.query.Filters
+		clonedQuery.Filters = &clonedFilters
+	}
+	if len(qb.query.Sort) > 0 {
+		clonedSort := make([]SortConfiguration, len(qb.query.Sort))
+		copy(clonedSort, qb.query.Sort)
+		clonedQuery.Sort = clonedSort
+	}
+	if qb.query.Pagination != nil {
+		clonedPagination := *qb.query.Pagination
+		clonedQuery.Pagination = &clonedPagination
+	}
+	if qb.query.Projection != nil {
+		clonedProjection := *qb.query.Projection
+		clonedQuery.Projection = &clonedProjection
+	}
+	if len(qb.query.Joins) > 0 {
+		clonedJoins := make([]JoinConfiguration, len(qb.query.Joins))
+		copy(clonedJoins, qb.query.Joins)
+		clonedQuery.Joins = clonedJoins
+	}
+	if len(qb.query.Aggregations) > 0 {
+		clonedAggregations := make([]AggregationConfiguration, len(qb.query.Aggregations))
+		copy(clonedAggregations, qb.query.Aggregations)
+		clonedQuery.Aggregations = clonedAggregations
+	}
+	if len(qb.query.Hints) > 0 {
+		clonedHints := make([]QueryHint, len(qb.query.Hints))
+		copy(clonedHints, qb.query.Hints)
+		clonedQuery.Hints = clonedHints
+	}
+	newBuilder.query = clonedQuery
 	return newBuilder
 }
 
@@ -187,6 +221,12 @@ func (fgb *FilterGroupBuilder) WhereGroup(operator schema.LogicalOperator) *Filt
 		operator:      operator,
 		conditions:    []QueryFilter{},
 	}
+}
+
+// Group adds a pre-built filter group to the current filter group.
+func (fgb *FilterGroupBuilder) Group(filter QueryFilter) *FilterGroupBuilder {
+	fgb.conditions = append(fgb.conditions, filter)
+	return fgb
 }
 
 // End finalizes the current filter group and returns to the main query builder.

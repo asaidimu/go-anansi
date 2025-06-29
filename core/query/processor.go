@@ -287,6 +287,21 @@ func (p *DataProcessor) applyGoComputeFunctions(rows []schema.Document, projecti
 					return nil, fmt.Errorf("error executing Go compute function '%v': %w", funcName, err)
 				}
 				rows[i][alias] = computedValue
+			} else if item.CaseExpression != nil {
+				alias := item.CaseExpression.Alias
+				caseValue := item.CaseExpression.Else
+
+				for _, caseCond := range item.CaseExpression.Cases {
+					passes, err := p.evaluateGoFilter(rows[i], &caseCond.When, map[ComparisonOperator]struct{}{})
+					if err != nil {
+						return nil, fmt.Errorf("error evaluating case condition: %w", err)
+					}
+					if passes {
+						caseValue = caseCond.Then
+						break
+					}
+				}
+				rows[i][alias] = caseValue
 			}
 		}
 	}
@@ -313,26 +328,40 @@ func (p *DataProcessor) applyFinalProjection(rows []schema.Document, projection 
 		}
 	}
 
-	for _, computedItem := range projection.Computed {
-		if computedItem.ComputedFieldExpression != nil && computedItem.ComputedFieldExpression.Alias != "" {
-			alias := computedItem.ComputedFieldExpression.Alias
-			if _, excluded := excludeSet[alias]; !excluded {
-				if includeAll || len(projection.Include) > 0 {
-					includeSet[alias] = struct{}{}
-				}
-			}
-		}
-	}
+	// If there are computed fields and no explicit includes/excludes, only include computed fields
+	// Otherwise, if there are includes, only include those. If no includes, include all non-excluded.
+	processOnlyComputed := len(projection.Computed) > 0 && includeAll && len(excludeSet) == 0
 
 	for _, originalRow := range rows {
 		newRow := make(schema.Document)
 
-		if includeAll {
+		if processOnlyComputed {
+			// Start with an empty row, computed fields will be added later
+		} else if includeAll {
 			maps.Copy(newRow, originalRow)
 		} else {
 			for fieldName, value := range originalRow {
 				if _, ok := includeSet[fieldName]; ok {
 					newRow[fieldName] = value
+				}
+			}
+		}
+
+		// Add computed fields to the new row
+		for _, computedItem := range projection.Computed {
+			if computedItem.ComputedFieldExpression != nil && computedItem.ComputedFieldExpression.Alias != "" {
+				alias := computedItem.ComputedFieldExpression.Alias
+				// Computed fields are already added to the row in applyGoComputeFunctions
+				// We just need to ensure they are not excluded if an exclude list exists
+				if _, excluded := excludeSet[alias]; !excluded {
+					newRow[alias] = originalRow[alias] // Copy the computed value from the original row
+				}
+			} else if computedItem.CaseExpression != nil && computedItem.CaseExpression.Alias != "" {
+				alias := computedItem.CaseExpression.Alias
+				// Case expressions are already added to the row in applyGoComputeFunctions
+				// We just need to ensure they are not excluded if an exclude list exists
+				if _, excluded := excludeSet[alias]; !excluded {
+					newRow[alias] = originalRow[alias] // Copy the computed value from the original row
 				}
 			}
 		}
