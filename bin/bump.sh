@@ -181,7 +181,7 @@ if [ "$CREATE_BACKUP" = true ]; then
 fi
 
 # Find files that would be affected
-AFFECTED_FILES=$(find . -type f \( -name "*.go" -o -name "go.mod" \) -exec grep -l "${MODULE_BASE_PATH}/${OLD_STRING}" {} \; 2>/dev/null || true)
+AFFECTED_FILES=$(find . -type f \( -name "*.go" -name "*.md" -o -name "go.mod" \) -exec grep -l "${MODULE_BASE_PATH}/${OLD_STRING}" {} \; 2>/dev/null || true)
 
 if [ -z "$AFFECTED_FILES" ]; then
   echo "No files found containing '${MODULE_BASE_PATH}/${OLD_STRING}'"
