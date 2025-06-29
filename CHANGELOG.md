@@ -30,7 +30,7 @@ to ensure compatibility and continue receiving future updates.
 
 ### BREAKING CHANGES
 
-* 1. persistence.PersistenceInterface.Transaction() method has been removed. Use persistence.Persistence.Transact() helper for atomic operations.
+1. persistence.PersistenceInterface.Transaction() method has been removed. Use persistence.Persistence.Transact() helper for atomic operations.
 2. persistence.PersistenceInterface.Metadata() and PersistenceTransactionInterface.Metadata() signatures have changed, removing includeCollections, includeSchemas, and forceRefresh boolean parameters.
 3. persistence.NewPersistence() now returns persistence.PersistenceInterface instead of the concrete *persistence.Persistence type. Callers explicitly using *persistence.Persistence will need to update to use the interface.
 4. Default DropIfExists option in sqlite.DefaultInteractorOptions() has been removed. Users relying on the explicit false default should now set DropIfExists: false in persistence.InteractorOptions if needed.
