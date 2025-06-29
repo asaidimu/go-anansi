@@ -1,3 +1,6 @@
+// Package sqlite provides the mapping logic from the abstract schema definition to
+// concrete SQLite DDL (Data Definition Language). It is responsible for generating
+// the SQL statements required to create tables, indexes, and other database objects.
 package sqlite
 
 import (
@@ -10,37 +13,33 @@ import (
 	"github.com/asaidimu/go-anansi/core/schema"
 )
 
-// DefaultInteractorOptions returns sensible defaults for table creation.
-// By default, it sets IfNotExists to true, DropIfExists to false,
-// and CreateIndexes to true.
+// DefaultInteractorOptions returns a set of sensible default options for the
+// SQLite interactor. These defaults are intended to provide a safe and common
+// configuration for creating and managing database tables.
 func DefaultInteractorOptions() *persistence.InteractorOptions {
 	return &persistence.InteractorOptions{
-		IfNotExists:   true,
-		CreateIndexes: true,
+		IfNotExists:   true, // Prevent errors if a table already exists.
+		CreateIndexes: true, // Automatically create indexes defined in the schema.
 	}
 }
 
-// quoteIdentifier properly quotes an identifier (like a table or column name)
-// to prevent SQL injection and handle names that might be SQL keywords or
-// contain special characters. It uses double quotes for SQLite.
+// quoteIdentifier safely quotes an identifier, such as a table or column name,
+// to prevent SQL injection and to handle names that might be keywords or contain
+// special characters.
 func (s *SQLiteInteractor) quoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
-// getTableName applies any configured TablePrefix to the baseName
-// and then properly quotes the resulting full table name.
+// getTableName constructs the full, quoted table name by applying the configured
+// table prefix to the base name.
 func (s *SQLiteInteractor) getTableName(baseName string) string {
 	name := s.options.TablePrefix + baseName
 	return s.quoteIdentifier(name)
 }
 
-// CreateCollection generates and executes DDL to create a table and its associated
-// indexes within a single database transaction. This ensures that the entire
-// table creation process is an atomic operation: either all components are
-// created successfully, or none are.
-//
-// If DropIfExists option is true, the table will be dropped before creation.
-// Note: the drop operation itself occurs outside the transaction.
+// CreateCollection generates and executes the DDL statements to create a table
+// and its associated indexes. The entire process is transactional, ensuring that
+// either all components are created successfully, or no changes are made.
 func (s *SQLiteInteractor) CreateCollection(sc schema.SchemaDefinition) error {
 	sqlStatements, err := s.CreateTableSQL(sc)
 	if err != nil {
@@ -49,14 +48,12 @@ func (s *SQLiteInteractor) CreateCollection(sc schema.SchemaDefinition) error {
 
 	fullTableName := s.getTableName(sc.Name)
 
-	// Execute table creation SQL statements
 	for _, stmt := range sqlStatements {
 		if _, err := s.runner().Exec(stmt); err != nil {
 			return fmt.Errorf("failed to execute SQL statement '%s': %w", stmt, err)
 		}
 	}
 
-	// Create indexes if enabled in options
 	if s.options.CreateIndexes {
 		for _, index := range sc.Indexes {
 			if index.Type == schema.IndexTypePrimary {
@@ -79,9 +76,9 @@ func (s *SQLiteInteractor) CreateCollection(sc schema.SchemaDefinition) error {
 	return nil
 }
 
-// CreateTableSQL generates the DDL SQL string(s) required to create a table.
-// It includes column definitions, constraints (NOT NULL, UNIQUE, DEFAULT, CHECK),
-// and a primary key definition if specified in the schema.
+// CreateTableSQL generates the DDL SQL statements required to create a table from a
+// schema definition. It includes column definitions, constraints, and primary key
+// definitions.
 func (s *SQLiteInteractor) CreateTableSQL(sc schema.SchemaDefinition) ([]string, error) {
 	collection := s.getTableName(sc.Name)
 	var sb strings.Builder
@@ -94,18 +91,13 @@ func (s *SQLiteInteractor) CreateTableSQL(sc schema.SchemaDefinition) ([]string,
 	var columns []string
 	var primaryKeys []string
 
-	// Prioritize finding an explicit PRIMARY index to define the primary key.
-	// If no IndexTypePrimary is found, it falls back to the first unique index.
 	for _, index := range sc.Indexes {
 		if index.Type == schema.IndexTypePrimary && len(index.Fields) > 0 {
 			primaryKeys = index.Fields
-			break // Found the primary key, no need to look further
+			break
 		}
 	}
 
-	// Fallback logic: If no explicit primary key index is defined by type,
-	// use the first unique index encountered in the sc. This provides
-	// backward compatibility for scs not yet using IndexTypePrimary.
 	if len(primaryKeys) == 0 {
 		for _, index := range sc.Indexes {
 			if index.Type == schema.IndexTypeUnique && len(index.Fields) > 0 {
@@ -115,7 +107,6 @@ func (s *SQLiteInteractor) CreateTableSQL(sc schema.SchemaDefinition) ([]string,
 		}
 	}
 
-	// Build column definitions
 	for fieldName, field := range sc.Fields {
 		columnDef, err := s.buildColumnDefinition(fieldName, field)
 		if err != nil {
@@ -125,7 +116,6 @@ func (s *SQLiteInteractor) CreateTableSQL(sc schema.SchemaDefinition) ([]string,
 	}
 	sb.WriteString(strings.Join(columns, ",\n"))
 
-	// Add PRIMARY KEY clause if primary keys were identified
 	if len(primaryKeys) > 0 {
 		quotedPKs := make([]string, len(primaryKeys))
 		for i, pk := range primaryKeys {
@@ -138,19 +128,15 @@ func (s *SQLiteInteractor) CreateTableSQL(sc schema.SchemaDefinition) ([]string,
 	return []string{sb.String()}, nil
 }
 
-// buildColumnDefinition constructs a single column's DDL string.
-// It includes the column name, data type, and various constraints
-// such as NOT NULL, DEFAULT, UNIQUE, and CHECK for enums.
+// buildColumnDefinition constructs the DDL string for a single column, including its
+// name, data type, and any constraints.
 func (s *SQLiteInteractor) buildColumnDefinition(fieldName string, field *schema.FieldDefinition) (string, error) {
 	var parts []string
-	// Add column name and its mapped SQL type
 	parts = append(parts, s.quoteIdentifier(fieldName), s.GetColumnType(field.Type, field))
 
-	// Add NOT NULL constraint if required
 	if field.Required != nil && *field.Required {
 		parts = append(parts, "NOT NULL")
 	}
-	// Add DEFAULT value if specified
 	if field.Default != nil {
 		defVal, err := s.formatDefaultValue(field.Default, field.Type)
 		if err != nil {
@@ -158,17 +144,12 @@ func (s *SQLiteInteractor) buildColumnDefinition(fieldName string, field *schema
 		}
 		parts = append(parts, "DEFAULT "+defVal)
 	}
-	// Add UNIQUE constraint if specified for the field.
-	// Note: If a field is part of a table-level PRIMARY KEY or UNIQUE index,
-	// this individual column UNIQUE constraint might be redundant but is harmless.
 	if field.Unique != nil && *field.Unique {
 		parts = append(parts, "UNIQUE")
 	}
-	// Add CHECK constraint for ENUM types to ensure values are within the defined set
 	if field.Type == schema.FieldTypeEnum && len(field.Values) > 0 {
 		var checkValues []string
 		for _, v := range field.Values {
-			// Format enum values as strings for the CHECK constraint
 			valStr, _ := s.formatDefaultValue(v, schema.FieldTypeString)
 			checkValues = append(checkValues, valStr)
 		}
@@ -177,48 +158,40 @@ func (s *SQLiteInteractor) buildColumnDefinition(fieldName string, field *schema
 	return strings.Join(parts, " "), nil
 }
 
-// GetColumnType maps a schema.FieldType to an appropriate SQLite column type.
-// This mapping is based on the intrinsic data type defined in the schema,
-// and determines the storage class SQLite will use.
+// GetColumnType maps a schema.FieldType to its corresponding SQLite column type.
 func (s *SQLiteInteractor) GetColumnType(fieldType schema.FieldType, field *schema.FieldDefinition) string {
 	switch fieldType {
 	case schema.FieldTypeString, schema.FieldTypeEnum:
-		return "TEXT"    // Strings and enums are stored as TEXT
+		return "TEXT"
 	case schema.FieldTypeNumber, schema.FieldTypeDecimal:
-		return "REAL"    // Generic numbers and decimals are stored as floating-point REAL
+		return "REAL"
 	case schema.FieldTypeInteger:
-		return "INTEGER" // Whole numbers are stored as INTEGER
+		return "INTEGER"
 	case schema.FieldTypeBoolean:
-		return "INTEGER" // Booleans are typically stored as 0 (false) or 1 (true)
+		return "INTEGER"
 	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeSet, schema.FieldTypeRecord, schema.FieldTypeUnion:
-		return "TEXT" // Complex types are typically serialized to JSON and stored as TEXT
+		return "TEXT"
 	default:
-		return "BLOB" // Fallback for any unknown or unhandled types
+		return "BLOB"
 	}
 }
 
-// formatDefaultValue formats a given default value into a string suitable
-// for inclusion in a SQL DDL statement. It handles various Go types and
-// marshals complex types (objects, arrays) into JSON strings.
+// formatDefaultValue formats a default value into a string suitable for use in a SQL DDL statement.
 func (s *SQLiteInteractor) formatDefaultValue(value any, fieldType schema.FieldType) (string, error) {
 	if value == nil {
-		return "NULL", nil // Explicit NULL for nil values
+		return "NULL", nil
 	}
 	switch fieldType {
 	case schema.FieldTypeString, schema.FieldTypeEnum:
-		// Quote string values and escape single quotes within them
 		return fmt.Sprintf("'%s'", strings.ReplaceAll(fmt.Sprintf("%v", value), "'", "''")), nil
 	case schema.FieldTypeNumber, schema.FieldTypeInteger:
-		// Numeric values are represented directly
 		return fmt.Sprintf("%v", value), nil
 	case schema.FieldTypeBoolean:
-		// Booleans map to 0 or 1
 		if b, ok := value.(bool); ok && b {
 			return "1", nil
 		}
 		return "0", nil
 	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeSet, schema.FieldTypeRecord, schema.FieldTypeUnion:
-		// Marshal complex types to JSON strings and quote/escape them
 		jsonBytes, err := json.Marshal(value)
 		if err != nil {
 			return "", fmt.Errorf("failed to marshal default value to JSON: %w", err)
@@ -229,10 +202,7 @@ func (s *SQLiteInteractor) formatDefaultValue(value any, fieldType schema.FieldT
 	}
 }
 
-// CreateIndex generates and executes a DDL statement to create an index
-// on an existing table. This function is typically used for creating indexes
-// independently of table creation, or in scenarios where indexes are added
-// post-creation.
+// CreateIndex generates and executes a DDL statement to create an index on a table.
 func (s *SQLiteInteractor) CreateIndex(collection string, index schema.IndexDefinition) error {
 	fullTableName := s.getTableName(collection)
 	sqlIndex, err := s.CreateIndexSQL(fullTableName, index)
@@ -241,8 +211,6 @@ func (s *SQLiteInteractor) CreateIndex(collection string, index schema.IndexDefi
 	}
 
 	if sqlIndex == "" {
-		// If CreateIndexSQL returns an empty string, it means the index was
-		// intentionally skipped (e.g., it's a primary key index already handled).
 		return nil
 	}
 
@@ -254,36 +222,28 @@ func (s *SQLiteInteractor) CreateIndex(collection string, index schema.IndexDefi
 }
 
 // CreateIndexSQL generates the DDL SQL string for creating an index.
-// It handles different index types (UNIQUE, NORMAL), names, and field orders.
-// It specifically skips generating a separate index for `IndexTypePrimary`
-// as these are defined as part of the `CREATE TABLE` statement.
 func (s *SQLiteInteractor) CreateIndexSQL(collection string, index schema.IndexDefinition) (string, error) {
-	// Primary key indexes are created as part of the CREATE TABLE statement,
-	// so no separate CREATE INDEX statement is needed for them.
 	if index.Type == schema.IndexTypePrimary {
 		return "", nil
 	}
 
 	var sb strings.Builder
 	sb.WriteString("CREATE ")
-	// Add UNIQUE keyword if the index is unique or of unique type
 	if (index.Unique != nil && *index.Unique) || index.Type == schema.IndexTypeUnique {
 		sb.WriteString("UNIQUE ")
 	}
-	sb.WriteString("INDEX IF NOT EXISTS ") // Add IF NOT EXISTS for idempotency
+	sb.WriteString("INDEX IF NOT EXISTS ")
 	indexName := index.Name
 	if indexName == "" {
-		// Generate a default index name if not provided: idx_tablename_field1_field2...
-		unquotedTableName := strings.Trim(collection, `"`) // Remove quotes for name generation
+		unquotedTableName := strings.Trim(collection, `"`)
 		indexName = fmt.Sprintf("idx_%s_%s", unquotedTableName, strings.Join(index.Fields, "_"))
 	}
-	sb.WriteString(s.quoteIdentifier(indexName)) // Quote the index name
+	sb.WriteString(s.quoteIdentifier(indexName))
 	sb.WriteString(fmt.Sprintf(" ON %s (", collection))
 
 	var fieldParts []string
 	for _, field := range index.Fields {
 		part := s.quoteIdentifier(field)
-		// Add ASC/DESC order if specified
 		if index.Order != nil && strings.ToUpper(*index.Order) == "DESC" {
 			part += " DESC"
 		}
@@ -291,18 +251,14 @@ func (s *SQLiteInteractor) CreateIndexSQL(collection string, index schema.IndexD
 	}
 	sb.WriteString(strings.Join(fieldParts, ", ") + ")")
 
-	// Placeholder for partial index WHERE clause, if implemented in schema definition
 	if index.Partial != nil {
-		// Logic to append "WHERE <condition>" for partial indexes would go here.
-		// For now, this is a placeholder for future enhancement.
+		// Placeholder for partial index logic.
 	}
 	sb.WriteString(";")
 	return sb.String(), nil
 }
 
-// DropCollection drops a table from the database if it exists.
-// It applies any configured table prefix and uses DROP TABLE IF EXISTS
-// for safe, idempotent removal.
+// DropCollection drops a table from the database.
 func (s *SQLiteInteractor) DropCollection(collection string) error {
 	fullTableName := s.getTableName(collection)
 	sql := fmt.Sprintf("DROP TABLE IF EXISTS %s;", fullTableName)
@@ -313,8 +269,7 @@ func (s *SQLiteInteractor) DropCollection(collection string) error {
 	return nil
 }
 
-// CollectionExists checks if a table with the given base name (and applied prefix)
-// currently exists in the SQLite database.
+// CollectionExists checks if a table exists in the database.
 func (s *SQLiteInteractor) CollectionExists(collection string) (bool, error) {
 	fullUnquotedName := s.options.TablePrefix + collection
 	query := "SELECT name FROM sqlite_master WHERE type='table' AND name = ?;"

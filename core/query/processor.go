@@ -1,3 +1,6 @@
+// Package query provides the DataProcessor, which is responsible for handling
+// in-memory data transformations, filtering, and projections that cannot be
+// pushed down to the database.
 package query
 
 import (
@@ -10,18 +13,16 @@ import (
 	"go.uber.org/zap"
 )
 
-// GoComputeFunction is a pure Go function that computes a new value for a row.
-// It takes a Row (representing the current data) and returns the computed value
-// for a new field, and an error if computation fails.
-type ComputeFunction func(row schema.Document, args FilterValue) (any, error)
+// ComputeFunction is a function that computes a new value for a row of data.
+// It takes a document (representing a single row) and a set of arguments, and
+// returns the computed value.	ype ComputeFunction func(row schema.Document, args FilterValue) (any, error)
 
-// GoFilterFunction is a pure Go function that performs custom filtering logic on a row.
-// It takes a Row and returns true if the row passes the filter, false otherwise,
-// and an error if evaluation fails.
-type PredicateFunction func(doc schema.Document, field string, args FilterValue) (bool, error)
+// PredicateFunction is a function that performs custom filtering logic on a row.
+// It returns true if the row should be included in the result set, and false otherwise.	ype PredicateFunction func(doc schema.Document, field string, args FilterValue) (bool, error)
 
 // DataProcessor handles Go-based data transformations, filtering, and projections.
-type DataProcessor struct {
+// It is used to perform operations on data after it has been fetched from the database,
+// allowing for complex logic that may not be supported by the underlying database.	ype DataProcessor struct {
 	goComputeFunctions map[string]ComputeFunction
 	goFilterFunctions  map[ComparisonOperator]PredicateFunction
 	mu                 sync.RWMutex
@@ -40,7 +41,7 @@ func NewDataProcessor(logger *zap.Logger) *DataProcessor {
 	}
 }
 
-// RegisterComputeFunction registers a Go function for computed fields.
+// RegisterComputeFunction registers a Go function that can be used for computed fields.
 func (p *DataProcessor) RegisterComputeFunction(name string, fn ComputeFunction) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -48,7 +49,7 @@ func (p *DataProcessor) RegisterComputeFunction(name string, fn ComputeFunction)
 	p.logger.Info("Registered compute function", zap.String("name", name))
 }
 
-// RegisterFilterFunction registers a Go function for custom filtering.
+// RegisterFilterFunction registers a Go function that can be used for custom filtering.
 func (p *DataProcessor) RegisterFilterFunction(operator ComparisonOperator, fn PredicateFunction) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -56,7 +57,7 @@ func (p *DataProcessor) RegisterFilterFunction(operator ComparisonOperator, fn P
 	p.logger.Info("Registered filter function", zap.String("operator", string(operator)))
 }
 
-// RegisterComputeFunctions registers multiple GoComputeFunction functions from a map.
+// RegisterComputeFunctions registers multiple compute functions from a map.
 func (p *DataProcessor) RegisterComputeFunctions(functionMap map[string]ComputeFunction) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -66,7 +67,7 @@ func (p *DataProcessor) RegisterComputeFunctions(functionMap map[string]ComputeF
 	}
 }
 
-// RegisterFilterFunctions registers multiple GoFilterFunction functions from a map.
+// RegisterFilterFunctions registers multiple filter functions from a map.
 func (p *DataProcessor) RegisterFilterFunctions(functionMap map[ComparisonOperator]PredicateFunction) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -76,8 +77,10 @@ func (p *DataProcessor) RegisterFilterFunctions(functionMap map[ComparisonOperat
 	}
 }
 
-// DetermineFieldsToSelect dynamically analyzes the DSL to find all fields that need to be
-// selected from the database, including dependencies for Go functions.
+// DetermineFieldsToSelect analyzes the QueryDSL to determine which fields need to be
+// selected from the database. This includes fields that are explicitly requested in
+// the projection, as well as any fields that are required for in-memory computations
+// or filters.
 func (p *DataProcessor) DetermineFieldsToSelect(dsl *QueryDSL) []ProjectionField {
 	requiredFields := make(map[string]struct{})
 
@@ -110,8 +113,8 @@ func (p *DataProcessor) DetermineFieldsToSelect(dsl *QueryDSL) []ProjectionField
 	return finalFields
 }
 
-// collectGoFilterRequiredFields recursively traverses the filter DSL to find
-// fields referenced by Go-based filter functions.
+// collectGoFilterRequiredFields recursively traverses the filter DSL to find all
+// fields that are required for Go-based filter functions.
 func (p *DataProcessor) collectGoFilterRequiredFields(filter *QueryFilter, fields map[string]struct{}) {
 	if filter == nil {
 		return
@@ -128,9 +131,9 @@ func (p *DataProcessor) collectGoFilterRequiredFields(filter *QueryFilter, field
 	}
 }
 
-// ProcessRows applies all Go-based transformations to the provided rows.
-// It now accepts 'skippedOperators' to indicate which standard filters were
-// already applied by an external component (e.g., a database).
+// ProcessRows applies all registered Go-based transformations, filters, and
+// projections to a set of rows. It can also skip certain standard operators
+// that have already been applied by the database.
 func (p *DataProcessor) ProcessRows(rows []schema.Document, dsl *QueryDSL, skippedOperators []ComparisonOperator) ([]schema.Document, error) {
 	processedRows, err := p.applyGoFilters(rows, dsl.Filters, skippedOperators)
 	if err != nil {
@@ -149,11 +152,8 @@ func (p *DataProcessor) ProcessRows(rows []schema.Document, dsl *QueryDSL, skipp
 	return finalResults, nil
 }
 
-// applyGoFilters iterates through rows and applies Go-based filter functions.
-// It now accepts a 'skip' parameter for operators already handled externally (e.g., by DB).
-// PRODUCTION WARNING: This filtering happens in-memory. Queries with non-selective
-// SQL filters but highly selective Go filters can cause high memory usage.
-// Prefer native SQL filters for performance whenever possible.
+// applyGoFilters applies all registered Go-based filter functions to a set of rows.
+// It can skip operators that have already been handled by the database.
 func (p *DataProcessor) applyGoFilters(rows []schema.Document, filter *QueryFilter, skip []ComparisonOperator) ([]schema.Document, error) {
 	if filter == nil {
 		return rows, nil
@@ -181,10 +181,8 @@ func (p *DataProcessor) applyGoFilters(rows []schema.Document, filter *QueryFilt
 }
 
 // evaluateGoFilter recursively evaluates a QueryFilter, applying Go functions where necessary.
-// It now takes a map of operators to skip.
 func (p *DataProcessor) evaluateGoFilter(row schema.Document, filter *QueryFilter, skip map[ComparisonOperator]struct{}) (bool, error) {
 	if filter.Condition != nil {
-		// If the operator is standard and marked to be skipped, assume it's already handled and passes.
 		if _, shouldSkip := skip[filter.Condition.Operator]; shouldSkip {
 			return true, nil
 		}
@@ -196,7 +194,6 @@ func (p *DataProcessor) evaluateGoFilter(row schema.Document, filter *QueryFilte
 			}
 			return fn(row, filter.Condition.Field, filter.Condition.Value)
 		}
-		// Handle standard SQL conditions in-memory if not skipped.
 		return p.evaluateStandardCondition(row, filter.Condition)
 
 	}
@@ -228,11 +225,10 @@ func (p *DataProcessor) evaluateGoFilter(row schema.Document, filter *QueryFilte
 	return false, fmt.Errorf("empty or invalid filter structure for Go evaluation")
 }
 
-// evaluateStandardCondition performs the in-memory evaluation for standard comparison operators.
+// evaluateStandardCondition performs in-memory evaluation of standard comparison operators.
 func (p *DataProcessor) evaluateStandardCondition(row schema.Document, condition *FilterCondition) (bool, error) {
 	fieldValue, ok := row[condition.Field]
 	if !ok {
-		// If the field doesn't exist in the row, the condition likely fails.
 		return false, nil
 	}
 
@@ -260,7 +256,7 @@ func (p *DataProcessor) evaluateStandardCondition(row schema.Document, condition
 	}
 }
 
-// applyGoComputeFunctions iterates through rows and applies Go-based computed field functions.
+// applyGoComputeFunctions applies all registered Go-based compute functions to a set of rows.
 func (p *DataProcessor) applyGoComputeFunctions(rows []schema.Document, projection *ProjectionConfiguration) ([]schema.Document, error) {
 	if projection == nil || len(projection.Computed) == 0 {
 		return rows, nil
@@ -294,7 +290,7 @@ func (p *DataProcessor) applyGoComputeFunctions(rows []schema.Document, projecti
 	return rows, nil
 }
 
-// applyFinalProjection processes rows to match the user's requested projection (include/exclude).
+// applyFinalProjection applies the final include/exclude projection to a set of rows.
 func (p *DataProcessor) applyFinalProjection(rows []schema.Document, projection *ProjectionConfiguration) []schema.Document {
 	if projection == nil || (len(projection.Include) == 0 && len(projection.Exclude) == 0 && len(projection.Computed) == 0) {
 		return rows
@@ -349,10 +345,7 @@ func (p *DataProcessor) applyFinalProjection(rows []schema.Document, projection 
 }
 
 // Match evaluates a given data object against a set of QueryFilter conditions.
-// It returns true if the data matches all filter conditions, false otherwise,
-// and an error if the evaluation encounters an issue. This method is useful
-// for applying filtering logic used in queries to in-memory data.
-// It assumes no operators are skipped when matching a single in-memory row.
+// It returns true if the data matches all filter conditions, and false otherwise.
 func (p *DataProcessor) Match(ctx context.Context, filters *QueryFilter, data schema.Document) (bool, error) {
 	if filters == nil {
 		return true, nil

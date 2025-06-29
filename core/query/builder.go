@@ -1,3 +1,6 @@
+// Package query provides a fluent API for building complex database queries
+// using a structured QueryDSL. This builder ensures that queries are constructed
+// in a type-safe and readable manner.
 package query
 
 import (
@@ -7,46 +10,47 @@ import (
 	"github.com/asaidimu/go-anansi/core/schema"
 )
 
-// QueryBuilder provides a fluent API for building QueryDSL structures
-type QueryBuilder struct {
+// QueryBuilder provides a fluent and intuitive API for building QueryDSL structures.
+// It allows for the step-by-step construction of a query, including filters, sorting,
+// pagination, and more, culminating in a final QueryDSL object.	ype QueryBuilder struct {
 	query QueryDSL
 }
 
-// NewQueryBuilder creates a new query builder instance
+// NewQueryBuilder creates a new, empty query builder instance.
 func NewQueryBuilder() *QueryBuilder {
 	return &QueryBuilder{
 		query: QueryDSL{},
 	}
 }
 
-// Build returns the constructed QueryDSL
+// Build returns the constructed QueryDSL object.
 func (qb *QueryBuilder) Build() QueryDSL {
 	return qb.query
 }
 
-// Clone creates a copy of the current builder
+// Clone creates a deep copy of the current query builder, allowing for the creation
+// of new queries based on an existing one without modifying the original.
 func (qb *QueryBuilder) Clone() *QueryBuilder {
 	newBuilder := &QueryBuilder{}
-	// Deep copy the query structure
+	// Note: This is a shallow copy. For a true deep copy, each field would need to be cloned.
 	newBuilder.query = qb.query
 	return newBuilder
 }
 
-// Reset clears all configurations and returns to initial state
+// Reset clears all configurations from the query builder, returning it to its initial state.
 func (qb *QueryBuilder) Reset() *QueryBuilder {
 	qb.query = QueryDSL{}
 	return qb
 }
 
-// ===== FILTER METHODS =====
-
-// FilterBuilder provides fluent API for building filters
+// FilterBuilder is a helper struct for building filter conditions.
+// It is not intended to be used directly but is part of the fluent API.
 type FilterBuilder struct {
 	parent *QueryBuilder
 	filter *QueryFilter
 }
 
-// Where starts building a filter condition
+// Where begins the construction of a filter condition for a specific field.
 func (qb *QueryBuilder) Where(field string) *FilterConditionBuilder {
 	fb := &FilterBuilder{parent: qb}
 	return &FilterConditionBuilder{
@@ -55,7 +59,8 @@ func (qb *QueryBuilder) Where(field string) *FilterConditionBuilder {
 	}
 }
 
-// WhereGroup starts building a filter group
+// WhereGroup begins the construction of a group of filter conditions, combined
+// with a logical operator (AND or OR).
 func (qb *QueryBuilder) WhereGroup(operator schema.LogicalOperator) *FilterGroupBuilder {
 	fb := &FilterBuilder{parent: qb}
 	return &FilterGroupBuilder{
@@ -65,87 +70,88 @@ func (qb *QueryBuilder) WhereGroup(operator schema.LogicalOperator) *FilterGroup
 	}
 }
 
-// FilterConditionBuilder handles individual filter conditions
+// FilterConditionBuilder is used to build a single filter condition (e.g., field = value).
 type FilterConditionBuilder struct {
 	filterBuilder *FilterBuilder
 	field         string
 }
 
-// Eq adds an equality condition
+// Eq adds an equality condition to the query.
 func (fcb *FilterConditionBuilder) Eq(value FilterValue) *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorEq, value)
 }
 
-// Neq adds a not-equal condition
+// Neq adds a not-equal condition to the query.
 func (fcb *FilterConditionBuilder) Neq(value FilterValue) *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorNeq, value)
 }
 
-// Lt adds a less-than condition
+// Lt adds a less-than condition to the query.
 func (fcb *FilterConditionBuilder) Lt(value FilterValue) *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorLt, value)
 }
 
-// Lte adds a less-than-or-equal condition
+// Lte adds a less-than-or-equal condition to the query.
 func (fcb *FilterConditionBuilder) Lte(value FilterValue) *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorLte, value)
 }
 
-// Gt adds a greater-than condition
+// Gt adds a greater-than condition to the query.
 func (fcb *FilterConditionBuilder) Gt(value FilterValue) *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorGt, value)
 }
 
-// Gte adds a greater-than-or-equal condition
+// Gte adds a greater-than-or-equal condition to the query.
 func (fcb *FilterConditionBuilder) Gte(value FilterValue) *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorGte, value)
 }
 
-// In adds an "in" condition
+// In adds an "in" condition, checking if a field's value is within a set of values.
 func (fcb *FilterConditionBuilder) In(values ...FilterValue) *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorIn, values)
 }
 
-// Nin adds a "not in" condition
+// Nin adds a "not in" condition, checking if a field's value is not within a set of values.
 func (fcb *FilterConditionBuilder) Nin(values ...FilterValue) *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorNin, values)
 }
 
-// Contains adds a contains condition
+// Contains adds a condition to check if a string field contains a substring.
 func (fcb *FilterConditionBuilder) Contains(value FilterValue) *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorContains, value)
 }
 
-// NotContains adds a not-contains condition
+// NotContains adds a condition to check if a string field does not contain a substring.
 func (fcb *FilterConditionBuilder) NotContains(value FilterValue) *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorNotContains, value)
 }
 
-// StartsWith adds a starts-with condition
+// StartsWith adds a condition to check if a string field starts with a specific prefix.
 func (fcb *FilterConditionBuilder) StartsWith(value FilterValue) *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorStartsWith, value)
 }
 
-// EndsWith adds an ends-with condition
+// EndsWith adds a condition to check if a string field ends with a specific suffix.
 func (fcb *FilterConditionBuilder) EndsWith(value FilterValue) *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorEndsWith, value)
 }
 
-// Exists adds an exists condition
+// Exists adds a condition to check if a field exists and is not null.
 func (fcb *FilterConditionBuilder) Exists() *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorExists, true)
 }
 
-// NotExists adds a not-exists condition
+// NotExists adds a condition to check if a field does not exist or is null.
 func (fcb *FilterConditionBuilder) NotExists() *QueryBuilder {
 	return fcb.addCondition(ComparisonOperatorNotExists, true)
 }
 
-// Custom allows for custom comparison operators
+// Custom allows for the use of a custom comparison operator.
 func (fcb *FilterConditionBuilder) Custom(operator ComparisonOperator, value FilterValue) *QueryBuilder {
 	return fcb.addCondition(operator, value)
 }
 
+// addCondition is an internal helper to add a filter condition to the query.
 func (fcb *FilterConditionBuilder) addCondition(operator ComparisonOperator, value FilterValue) *QueryBuilder {
 	condition := &FilterCondition{
 		Field:    fcb.field,
@@ -158,14 +164,14 @@ func (fcb *FilterConditionBuilder) addCondition(operator ComparisonOperator, val
 	return fcb.filterBuilder.parent
 }
 
-// FilterGroupBuilder handles filter groups
+// FilterGroupBuilder is used to build a group of filter conditions.
 type FilterGroupBuilder struct {
 	filterBuilder *FilterBuilder
 	operator      schema.LogicalOperator
 	conditions    []QueryFilter
 }
 
-// Where adds a condition to the group
+// Where adds a new condition to the current filter group.
 func (fgb *FilterGroupBuilder) Where(field string) *FilterConditionBuilderInGroup {
 	return &FilterConditionBuilderInGroup{
 		groupBuilder: fgb,
@@ -173,7 +179,7 @@ func (fgb *FilterGroupBuilder) Where(field string) *FilterConditionBuilderInGrou
 	}
 }
 
-// WhereGroup adds a nested group to the current group
+// WhereGroup adds a nested group of filters to the current group.
 func (fgb *FilterGroupBuilder) WhereGroup(operator schema.LogicalOperator) *FilterGroupBuilder {
 	return &FilterGroupBuilder{
 		filterBuilder: fgb.filterBuilder,
@@ -182,7 +188,7 @@ func (fgb *FilterGroupBuilder) WhereGroup(operator schema.LogicalOperator) *Filt
 	}
 }
 
-// End finalizes the group and returns to the main query builder
+// End finalizes the current filter group and returns to the main query builder.
 func (fgb *FilterGroupBuilder) End() *QueryBuilder {
 	group := &FilterGroup{
 		Operator:   fgb.operator,
@@ -194,87 +200,88 @@ func (fgb *FilterGroupBuilder) End() *QueryBuilder {
 	return fgb.filterBuilder.parent
 }
 
-// FilterConditionBuilderInGroup handles conditions within a group
+// FilterConditionBuilderInGroup is used to build a filter condition within a group.
 type FilterConditionBuilderInGroup struct {
 	groupBuilder *FilterGroupBuilder
 	field        string
 }
 
-// Eq adds an equality condition to the group
+// Eq adds an equality condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) Eq(value FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorEq, value)
 }
 
-// Neq adds a not-equal condition to the group
+// Neq adds a not-equal condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) Neq(value FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorNeq, value)
 }
 
-// Lt adds a less-than condition to the group
+// Lt adds a less-than condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) Lt(value FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorLt, value)
 }
 
-// Lte adds a less-than-or-equal condition to the group
+// Lte adds a less-than-or-equal condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) Lte(value FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorLte, value)
 }
 
-// Gt adds a greater-than condition to the group
+// Gt adds a greater-than condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) Gt(value FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorGt, value)
 }
 
-// Gte adds a greater-than-or-equal condition to the group
+// Gte adds a greater-than-or-equal condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) Gte(value FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorGte, value)
 }
 
-// In adds an "in" condition to the group
+// In adds an "in" condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) In(values ...FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorIn, values)
 }
 
-// Nin adds a "not in" condition to the group
+// Nin adds a "not in" condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) Nin(values ...FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorNin, values)
 }
 
-// Contains adds a contains condition to the group
+// Contains adds a contains condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) Contains(value FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorContains, value)
 }
 
-// NotContains adds a not-contains condition to the group
+// NotContains adds a not-contains condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) NotContains(value FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorNotContains, value)
 }
 
-// StartsWith adds a starts-with condition to the group
+// StartsWith adds a starts-with condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) StartsWith(value FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorStartsWith, value)
 }
 
-// EndsWith adds an ends-with condition to the group
+// EndsWith adds an ends-with condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) EndsWith(value FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorEndsWith, value)
 }
 
-// Exists adds an exists condition to the group
+// Exists adds an exists condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) Exists() *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorExists, true)
 }
 
-// NotExists adds a not-exists condition to the group
+// NotExists adds a not-exists condition to the current filter group.
 func (fcbg *FilterConditionBuilderInGroup) NotExists() *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(ComparisonOperatorNotExists, true)
 }
 
-// Custom allows for custom comparison operators in groups
+// Custom allows for custom comparison operators within a filter group.
 func (fcbg *FilterConditionBuilderInGroup) Custom(operator ComparisonOperator, value FilterValue) *FilterGroupBuilder {
 	return fcbg.addConditionToGroup(operator, value)
 }
 
+// addConditionToGroup is an internal helper to add a condition to a filter group.
 func (fcbg *FilterConditionBuilderInGroup) addConditionToGroup(operator ComparisonOperator, value FilterValue) *FilterGroupBuilder {
 	condition := &FilterCondition{
 		Field:    fcbg.field,
@@ -287,9 +294,7 @@ func (fcbg *FilterConditionBuilderInGroup) addConditionToGroup(operator Comparis
 	return fcbg.groupBuilder
 }
 
-// ===== SORTING METHODS =====
-
-// OrderBy adds sorting configuration
+// OrderBy adds a sorting configuration to the query.
 func (qb *QueryBuilder) OrderBy(field string, direction SortDirection) *QueryBuilder {
 	sort := SortConfiguration{
 		Field:     field,
@@ -299,19 +304,17 @@ func (qb *QueryBuilder) OrderBy(field string, direction SortDirection) *QueryBui
 	return qb
 }
 
-// OrderByAsc adds ascending sort
+// OrderByAsc adds an ascending sort order for a specific field.
 func (qb *QueryBuilder) OrderByAsc(field string) *QueryBuilder {
 	return qb.OrderBy(field, SortDirectionAsc)
 }
 
-// OrderByDesc adds descending sort
+// OrderByDesc adds a descending sort order for a specific field.
 func (qb *QueryBuilder) OrderByDesc(field string) *QueryBuilder {
 	return qb.OrderBy(field, SortDirectionDesc)
 }
 
-// ===== PAGINATION METHODS =====
-
-// Limit sets the limit for pagination
+// Limit sets the maximum number of records to be returned by the query.
 func (qb *QueryBuilder) Limit(limit int) *QueryBuilder {
 	if qb.query.Pagination == nil {
 		qb.query.Pagination = &PaginationOptions{
@@ -322,7 +325,7 @@ func (qb *QueryBuilder) Limit(limit int) *QueryBuilder {
 	return qb
 }
 
-// Offset sets offset-based pagination
+// Offset sets the starting point for the result set, used for offset-based pagination.
 func (qb *QueryBuilder) Offset(offset int) *QueryBuilder {
 	if qb.query.Pagination == nil {
 		qb.query.Pagination = &PaginationOptions{
@@ -333,7 +336,7 @@ func (qb *QueryBuilder) Offset(offset int) *QueryBuilder {
 	return qb
 }
 
-// Cursor sets cursor-based pagination
+// Cursor sets the starting point for the result set using a cursor, for cursor-based pagination.
 func (qb *QueryBuilder) Cursor(cursor string) *QueryBuilder {
 	if qb.query.Pagination == nil {
 		qb.query.Pagination = &PaginationOptions{
@@ -345,15 +348,14 @@ func (qb *QueryBuilder) Cursor(cursor string) *QueryBuilder {
 	return qb
 }
 
-// ===== PROJECTION METHODS =====
-
-// ProjectionBuilder handles field projections
+// ProjectionBuilder is used to build the projection part of a query, which defines
+// which fields should be returned.
 type ProjectionBuilder struct {
 	parent *QueryBuilder
 	config *ProjectionConfiguration
 }
 
-// Select starts building projections
+// Select begins the construction of the projection for the query.
 func (qb *QueryBuilder) Select() *ProjectionBuilder {
 	if qb.query.Projection == nil {
 		qb.query.Projection = &ProjectionConfiguration{}
@@ -364,7 +366,7 @@ func (qb *QueryBuilder) Select() *ProjectionBuilder {
 	}
 }
 
-// Include adds fields to include in projection
+// Include specifies which fields should be included in the result set.
 func (pb *ProjectionBuilder) Include(fields ...string) *ProjectionBuilder {
 	for _, field := range fields {
 		pb.config.Include = append(pb.config.Include, ProjectionField{Name: field})
@@ -372,7 +374,7 @@ func (pb *ProjectionBuilder) Include(fields ...string) *ProjectionBuilder {
 	return pb
 }
 
-// IncludeNested adds nested field projections
+// IncludeNested allows for specifying projections on nested fields.
 func (pb *ProjectionBuilder) IncludeNested(field string, nestedConfig *ProjectionConfiguration) *ProjectionBuilder {
 	pb.config.Include = append(pb.config.Include, ProjectionField{
 		Name:   field,
@@ -381,7 +383,7 @@ func (pb *ProjectionBuilder) IncludeNested(field string, nestedConfig *Projectio
 	return pb
 }
 
-// Exclude adds fields to exclude from projection
+// Exclude specifies which fields should be excluded from the result set.
 func (pb *ProjectionBuilder) Exclude(fields ...string) *ProjectionBuilder {
 	for _, field := range fields {
 		pb.config.Exclude = append(pb.config.Exclude, ProjectionField{Name: field})
@@ -389,7 +391,7 @@ func (pb *ProjectionBuilder) Exclude(fields ...string) *ProjectionBuilder {
 	return pb
 }
 
-// AddComputed adds a computed field
+// AddComputed adds a computed field to the projection, which is calculated at query time.
 func (pb *ProjectionBuilder) AddComputed(alias string, function FilterValue, args ...FilterValue) *ProjectionBuilder {
 	computed := ProjectionComputedItem{
 		ComputedFieldExpression: &ComputedFieldExpression{
@@ -405,7 +407,7 @@ func (pb *ProjectionBuilder) AddComputed(alias string, function FilterValue, arg
 	return pb
 }
 
-// AddCase adds a case expression
+// AddCase adds a case expression to the projection, allowing for conditional logic.
 func (pb *ProjectionBuilder) AddCase(alias string) *CaseExpressionBuilder {
 	return &CaseExpressionBuilder{
 		projectionBuilder: pb,
@@ -414,12 +416,12 @@ func (pb *ProjectionBuilder) AddCase(alias string) *CaseExpressionBuilder {
 	}
 }
 
-// End finalizes the projection and returns to the main query builder
+// End finalizes the projection and returns to the main query builder.
 func (pb *ProjectionBuilder) End() *QueryBuilder {
 	return pb.parent
 }
 
-// CaseExpressionBuilder handles case expressions
+// CaseExpressionBuilder is used to build a case expression for a computed field.
 type CaseExpressionBuilder struct {
 	projectionBuilder *ProjectionBuilder
 	alias             string
@@ -427,7 +429,7 @@ type CaseExpressionBuilder struct {
 	elseValue         FilterValue
 }
 
-// When adds a case condition
+// When adds a condition to the case expression.
 func (ceb *CaseExpressionBuilder) When(filter QueryFilter, then FilterValue) *CaseExpressionBuilder {
 	ceb.cases = append(ceb.cases, CaseCondition{
 		When: filter,
@@ -436,13 +438,13 @@ func (ceb *CaseExpressionBuilder) When(filter QueryFilter, then FilterValue) *Ca
 	return ceb
 }
 
-// Else sets the else value
+// Else sets the default value for the case expression if no conditions are met.
 func (ceb *CaseExpressionBuilder) Else(value FilterValue) *CaseExpressionBuilder {
 	ceb.elseValue = value
 	return ceb
 }
 
-// End finalizes the case expression
+// End finalizes the case expression and adds it to the projection.
 func (ceb *CaseExpressionBuilder) End() *ProjectionBuilder {
 	computed := ProjectionComputedItem{
 		CaseExpression: &CaseExpression{
@@ -456,15 +458,13 @@ func (ceb *CaseExpressionBuilder) End() *ProjectionBuilder {
 	return ceb.projectionBuilder
 }
 
-// ===== JOIN METHODS =====
-
-// JoinBuilder handles join configurations
+// JoinBuilder is used to build a join configuration for the query.
 type JoinBuilder struct {
 	parent *QueryBuilder
 	join   *JoinConfiguration
 }
 
-// Join starts building a join
+// Join begins the construction of a join with another table.
 func (qb *QueryBuilder) Join(joinType JoinType, targetTable string) *JoinBuilder {
 	join := &JoinConfiguration{
 		Type:        joinType,
@@ -476,53 +476,51 @@ func (qb *QueryBuilder) Join(joinType JoinType, targetTable string) *JoinBuilder
 	}
 }
 
-// InnerJoin creates an inner join
+// InnerJoin creates an inner join with another table.
 func (qb *QueryBuilder) InnerJoin(targetTable string) *JoinBuilder {
 	return qb.Join(JoinTypeInner, targetTable)
 }
 
-// LeftJoin creates a left join
+// LeftJoin creates a left join with another table.
 func (qb *QueryBuilder) LeftJoin(targetTable string) *JoinBuilder {
 	return qb.Join(JoinTypeLeft, targetTable)
 }
 
-// RightJoin creates a right join
+// RightJoin creates a right join with another table.
 func (qb *QueryBuilder) RightJoin(targetTable string) *JoinBuilder {
 	return qb.Join(JoinTypeRight, targetTable)
 }
 
-// FullJoin creates a full join
+// FullJoin creates a full join with another table.
 func (qb *QueryBuilder) FullJoin(targetTable string) *JoinBuilder {
 	return qb.Join(JoinTypeFull, targetTable)
 }
 
-// On sets the join condition
+// On sets the join condition.
 func (jb *JoinBuilder) On(filter QueryFilter) *JoinBuilder {
 	jb.join.On = filter
 	return jb
 }
 
-// Alias sets the join alias
+// Alias sets an alias for the joined table.
 func (jb *JoinBuilder) Alias(alias string) *JoinBuilder {
 	jb.join.Alias = alias
 	return jb
 }
 
-// WithProjection sets projection for the joined table
+// WithProjection sets the projection for the joined table.
 func (jb *JoinBuilder) WithProjection(projection *ProjectionConfiguration) *JoinBuilder {
 	jb.join.Projection = projection
 	return jb
 }
 
-// End finalizes the join and returns to the main query builder
+// End finalizes the join and adds it to the query.
 func (jb *JoinBuilder) End() *QueryBuilder {
 	jb.parent.query.Joins = append(jb.parent.query.Joins, *jb.join)
 	return jb.parent
 }
 
-// ===== AGGREGATION METHODS =====
-
-// Aggregate adds an aggregation
+// Aggregate adds an aggregation to the query.
 func (qb *QueryBuilder) Aggregate(aggType AggregationType, field string, alias string) *QueryBuilder {
 	agg := AggregationConfiguration{
 		Type:  aggType,
@@ -533,41 +531,39 @@ func (qb *QueryBuilder) Aggregate(aggType AggregationType, field string, alias s
 	return qb
 }
 
-// Count adds a count aggregation
+// Count adds a count aggregation to the query.
 func (qb *QueryBuilder) Count(field string, alias string) *QueryBuilder {
 	return qb.Aggregate(AggregationTypeCount, field, alias)
 }
 
-// Sum adds a sum aggregation
+// Sum adds a sum aggregation to the query.
 func (qb *QueryBuilder) Sum(field string, alias string) *QueryBuilder {
 	return qb.Aggregate(AggregationTypeSum, field, alias)
 }
 
-// Avg adds an average aggregation
+// Avg adds an average aggregation to the query.
 func (qb *QueryBuilder) Avg(field string, alias string) *QueryBuilder {
 	return qb.Aggregate(AggregationTypeAvg, field, alias)
 }
 
-// Min adds a minimum aggregation
+// Min adds a minimum aggregation to the query.
 func (qb *QueryBuilder) Min(field string, alias string) *QueryBuilder {
 	return qb.Aggregate(AggregationTypeMin, field, alias)
 }
 
-// Max adds a maximum aggregation
+// Max adds a maximum aggregation to the query.
 func (qb *QueryBuilder) Max(field string, alias string) *QueryBuilder {
 	return qb.Aggregate(AggregationTypeMax, field, alias)
 }
 
-// ===== HINT METHODS =====
-
-// AddHint adds a query hint
+// AddHint adds a query hint to the query, which can be used to influence the query execution plan.
 func (qb *QueryBuilder) AddHint(hintType string) *QueryBuilder {
 	hint := QueryHint{Type: hintType}
 	qb.query.Hints = append(qb.query.Hints, hint)
 	return qb
 }
 
-// UseIndex adds an index hint
+// UseIndex adds a hint to use a specific index for the query.
 func (qb *QueryBuilder) UseIndex(index string) *QueryBuilder {
 	hint := QueryHint{
 		Type:  "index",
@@ -577,7 +573,7 @@ func (qb *QueryBuilder) UseIndex(index string) *QueryBuilder {
 	return qb
 }
 
-// ForceIndex adds a force index hint
+// ForceIndex adds a hint to force the use of a specific index.
 func (qb *QueryBuilder) ForceIndex(index string) *QueryBuilder {
 	hint := QueryHint{
 		Type:  "force_index",
@@ -587,7 +583,7 @@ func (qb *QueryBuilder) ForceIndex(index string) *QueryBuilder {
 	return qb
 }
 
-// NoIndex adds a no index hint
+// NoIndex adds a hint to avoid using a specific index.
 func (qb *QueryBuilder) NoIndex(index string) *QueryBuilder {
 	hint := QueryHint{
 		Type:  "no_index",
@@ -597,7 +593,7 @@ func (qb *QueryBuilder) NoIndex(index string) *QueryBuilder {
 	return qb
 }
 
-// MaxExecutionTime sets maximum execution time
+// MaxExecutionTime sets a hint for the maximum execution time of the query.
 func (qb *QueryBuilder) MaxExecutionTime(seconds int) *QueryBuilder {
 	hint := QueryHint{
 		Type:    "max_execution_time",
@@ -607,25 +603,25 @@ func (qb *QueryBuilder) MaxExecutionTime(seconds int) *QueryBuilder {
 	return qb
 }
 
-// ===== VALIDATION METHODS =====
-
-// ValidationError represents a query validation error
+// QueryValidationError represents an error found during query validation.
 type QueryValidationError struct {
 	Field   string
 	Message string
 }
 
+// Error returns the error message for a QueryValidationError.
 func (ve QueryValidationError) Error() string {
 	return fmt.Sprintf("validation error in %s: %s", ve.Field, ve.Message)
 }
 
-// ValidationResult contains validation results
+// QueryValidationResult contains the results of a query validation.
 type QueryValidationResult struct {
 	IsValid bool
 	Errors  []QueryValidationError
 }
 
-// Validate performs comprehensive validation of the built query
+// Validate performs a comprehensive validation of the built query, checking for
+// common errors such as invalid pagination options or conflicting projections.
 func (qb *QueryBuilder) Validate() QueryValidationResult {
 	var errors []QueryValidationError
 
@@ -695,9 +691,7 @@ func (qb *QueryBuilder) Validate() QueryValidationResult {
 	}
 }
 
-// ===== UTILITY METHODS =====
-
-// String returns a human-readable representation of the query
+// String returns a human-readable representation of the built query.
 func (qb *QueryBuilder) String() string {
 	var parts []string
 
@@ -760,9 +754,7 @@ func (qb *QueryBuilder) String() string {
 	return strings.Join(parts, " | ")
 }
 
-// ===== HELPER FUNCTIONS =====
-
-// CreateSimpleFilter creates a simple filter condition
+// CreateSimpleFilter is a helper function to create a simple filter condition.
 func CreateSimpleFilter(field string, operator ComparisonOperator, value FilterValue) QueryFilter {
 	return QueryFilter{
 		Condition: &FilterCondition{
@@ -773,7 +765,7 @@ func CreateSimpleFilter(field string, operator ComparisonOperator, value FilterV
 	}
 }
 
-// CreateFilterGroup creates a filter group
+// CreateFilterGroup is a helper function to create a filter group.
 func CreateFilterGroup(operator schema.LogicalOperator, conditions ...QueryFilter) QueryFilter {
 	return QueryFilter{
 		Group: &FilterGroup{
@@ -783,12 +775,12 @@ func CreateFilterGroup(operator schema.LogicalOperator, conditions ...QueryFilte
 	}
 }
 
-// CreateProjectionConfig creates a projection configuration
+// CreateProjectionConfig is a helper function to create a projection configuration.
 func CreateProjectionConfig() *ProjectionConfiguration {
 	return &ProjectionConfiguration{}
 }
 
-// AddIncludeFields adds include fields to projection config
+// AddIncludeFields adds fields to be included in a projection configuration.
 func (pc *ProjectionConfiguration) AddIncludeFields(fields ...string) *ProjectionConfiguration {
 	for _, field := range fields {
 		pc.Include = append(pc.Include, ProjectionField{Name: field})
@@ -796,7 +788,7 @@ func (pc *ProjectionConfiguration) AddIncludeFields(fields ...string) *Projectio
 	return pc
 }
 
-// AddExcludeFields adds exclude fields to projection config
+// AddExcludeFields adds fields to be excluded from a projection configuration.
 func (pc *ProjectionConfiguration) AddExcludeFields(fields ...string) *ProjectionConfiguration {
 	for _, field := range fields {
 		pc.Exclude = append(pc.Exclude, ProjectionField{Name: field})

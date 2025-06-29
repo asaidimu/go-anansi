@@ -1,3 +1,5 @@
+// Package persistence defines the interfaces for direct database interactions,
+// abstracting the underlying database technology.
 package persistence
 
 import (
@@ -7,75 +9,78 @@ import (
 	"github.com/asaidimu/go-anansi/core/schema"
 )
 
-// InteractorOptions provides configuration for the interactor.
-type InteractorOptions struct {
-	// IfNotExists adds IF NOT EXISTS clause to CREATE TABLE statements.
-	// When true, the CREATE TABLE statement will include "IF NOT EXISTS",
-	// preventing an error if the table already exists.
+// InteractorOptions provides a set of configurations for the DatabaseInteractor.
+// These options allow for customizing the behavior of database operations, such as
+// table creation and naming conventions.	ype InteractorOptions struct {
+	// IfNotExists, when true, adds an "IF NOT EXISTS" clause to CREATE TABLE
+	// statements. This prevents an error from being thrown if the table already
+	// exists in the database.
 	IfNotExists bool
 
-	// DropIfExists drops the table before creating it.
-	// When true, a DROP TABLE IF EXISTS statement will be executed
-	// prior to attempting to create the new table. This operation is outside
-	// the main transaction.
+	// DropIfExists, when true, will execute a "DROP TABLE IF EXISTS" statement
+	// before attempting to create a new table. This is useful for ensuring a clean
+	// slate but should be used with caution as it is a destructive operation.
 	DropIfExists bool
 
-	// CreateIndexes determines whether to create indexes along with the table.
-	// When true, any indexes defined in the schema will be created after
-	// the table itself within the same transaction.
+	// CreateIndexes, when true, will create any indexes defined in the schema
+	// immediately after the table is created. This is done within the same
+	// transaction to ensure atomicity.
 	CreateIndexes bool
 
-	// TablePrefix adds a prefix to all table names.
-	// The prefix is prepended to the base table name from the schema definition.
+	// TablePrefix is a string that will be prepended to all table names. This is
+	// useful for avoiding naming conflicts in a shared database environment.
 	TablePrefix string
 
-	// SchemaName for databases that support it (e.g., PostgreSQL).
-	// For SQLite, this field is typically not used as SQLite databases
-	// do not have explicit schema names in the same way.
+	// SchemaName specifies the database schema (e.g., in PostgreSQL) where the
+	// tables should be created. For databases like SQLite that do not use schema
+	// names, this field is ignored.
 	SchemaName string
 }
 
-// DatabaseInteractor defines the interface for interacting with the database.
-// It can operate in either a non-transactional (default) or transactional mode.
-// Note: This interface includes the transactional methods, but they only
-// become truly active/meaningful on an instance returned by StartTransaction.
-type DatabaseInteractor interface {
+// DatabaseInteractor defines the contract for low-level database operations.
+// It abstracts the specific SQL dialect and database-dependent logic, providing a
+// consistent interface for the persistence layer to interact with the database.
+// Implementations of this interface are responsible for managing both non-transactional
+// and transactional operations.	ype DatabaseInteractor interface {
+	// SelectDocuments retrieves documents from the database based on a QueryDSL query.
 	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.QueryDSL) ([]schema.Document, error)
+
+	// UpdateDocuments modifies documents in the database that match the provided filters.
 	UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error)
-		InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []map[string]any) ([]schema.Document, error)
+
+	// InsertDocuments adds new documents to the database.
+	InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []map[string]any) ([]schema.Document, error)
+
+	// DeleteDocuments removes documents from the database that match the provided filters.
 	DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error)
 
-	// CreateCollection generates and executes DDL statements to create a table from a schema definition.
+	// CreateCollection generates and executes the necessary DDL statements to create a
+	// table based on a schema definition.
 	CreateCollection(schema schema.SchemaDefinition) error
 
-	// GetColumnType maps a FieldType to the database-specific column type.
+	// GetColumnType maps a generic FieldType from the schema to a database-specific
+	// column type (e.g., mapping FieldTypeString to VARCHAR(255) or TEXT).
 	GetColumnType(fieldType schema.FieldType, field *schema.FieldDefinition) string
 
-	// CreateIndex generates and executes DDL statements to create an index.
+	// CreateIndex generates and executes the DDL statements to create an index on a table.
 	CreateIndex(name string, index schema.IndexDefinition) error
 
-	// DropCollection drops a table if it exists.
+	// DropCollection removes a table from the database.
 	DropCollection(name string) error
 
-	// CollectionExists checks if a table exists in the database.
+	// CollectionExists checks if a table with the given name exists in the database.
 	CollectionExists(name string) (bool, error)
 
-	// StartTransaction initiates a new database transaction.
-	// It returns a *new* instance of DatabaseInteractor that operates
-	// within the scope of that transaction.
-	// Operations on the returned interactor are part of the transaction.
-	// The original interactor instance remains non-transactional.
+	// StartTransaction begins a new database transaction and returns a new instance of
+	// the DatabaseInteractor that is scoped to that transaction. All operations on the
+	// returned interactor will be part of the transaction.
 	StartTransaction(ctx context.Context) (DatabaseInteractor, error)
 
-	// Commit commits the transaction.
-	// This method should only be called on a DatabaseInteractor instance
-	// that was returned by StartTransaction. Calling it on the original
-	// (non-transactional) interactor should result in an error or no-op.
+	// Commit finalizes the transaction, making all changes permanent. This should only
+	// be called on a transactional DatabaseInteractor.
 	Commit(ctx context.Context) error
 
-	// Rollback rolls back the transaction.
-	// This method should only be called on a DatabaseInteractor instance
-	// that was returned by StartTransaction. Calling it on the original
-	// (non-transactional) interactor should result in an error or no-op.
+	// Rollback aborts the transaction, discarding all changes made within it. This
+	// should only be called on a transactional DatabaseInteractor.
 	Rollback(ctx context.Context) error
 }

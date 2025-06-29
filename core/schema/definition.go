@@ -1,3 +1,6 @@
+// Package schema provides the foundational types and structures for defining data schemas.
+// It includes definitions for fields, constraints, indexes, and migrations, forming a
+// comprehensive framework for data modeling and validation.
 package schema
 
 import (
@@ -6,111 +9,91 @@ import (
 	"maps"
 )
 
-// LogicalOperator for combining conditions.
+// LogicalOperator defines the logical operators that can be used to combine conditions
+// in constraints and filters.
 type LogicalOperator string
 
+// Supported logical operators.
 const (
-	LogicalAnd LogicalOperator = "and" // All conditions must be true
-	LogicalOr  LogicalOperator = "or"  // At least one condition must be true
-	LogicalNot LogicalOperator = "not" // Negates a condition or group of conditions
-	LogicalNor LogicalOperator = "nor" // None of the conditions must be true
-	LogicalXor LogicalOperator = "xor" // Exactly one of the conditions must be true
+	LogicalAnd LogicalOperator = "and" // Represents a logical AND.
+	LogicalOr  LogicalOperator = "or"  // Represents a logical OR.
+	LogicalNot LogicalOperator = "not" // Represents a logical NOT.
+	LogicalNor LogicalOperator = "nor" // Represents a logical NOR.
+	LogicalXor LogicalOperator = "xor" // Represents a logical XOR.
 )
 
-// FieldType represents the basic field types supported by the schema system.
+// FieldType represents the data type of a field in a schema.
 type FieldType string
 
+// Supported field types.
 const (
-	FieldTypeString  FieldType = "string"  // Text data
-	FieldTypeNumber  FieldType = "number"  // Numeric data
-	FieldTypeInteger FieldType = "integer" // Numeric data
-	FieldTypeDecimal FieldType = "decimal" // Numeric data
-	FieldTypeBoolean FieldType = "boolean" // True/false values
-	FieldTypeArray   FieldType = "array"   // Ordered list of items
-	FieldTypeSet     FieldType = "set"     // Unordered list with unique items
-	FieldTypeEnum    FieldType = "enum"    // One out of a set of pre-defined items
-	FieldTypeObject  FieldType = "object"  // Structured data with nested fields
-	FieldTypeRecord  FieldType = "record"  // Unorganized key-value object, resolves to map[string]any
-	FieldTypeUnion   FieldType = "union"   // One of a set of nested schemas, identified by schema IDs
+	FieldTypeString  FieldType = "string"
+	FieldTypeNumber  FieldType = "number"
+	FieldTypeInteger FieldType = "integer"
+	FieldTypeDecimal FieldType = "decimal"
+	FieldTypeBoolean FieldType = "boolean"
+	FieldTypeArray   FieldType = "array"
+	FieldTypeSet     FieldType = "set"
+	FieldTypeEnum    FieldType = "enum"
+	FieldTypeObject  FieldType = "object"
+	FieldTypeRecord  FieldType = "record"
+	FieldTypeUnion   FieldType = "union"
 )
 
-// IndexType represents index types for optimizing different query patterns.
+// IndexType represents the type of an index, which is used to optimize database queries.
 type IndexType string
 
+// Supported index types.
 const (
-	IndexTypeNormal    IndexType = "normal"    // General-purpose index
-	IndexTypeUnique    IndexType = "unique"    // Unique index
-	IndexTypePrimary   IndexType = "primary"   // Primary key index (implies unique)
-	IndexTypeSpatial   IndexType = "spatial"   // Index for geometric or geographical data
-	IndexTypeFullText  IndexType = "fulltext"  // Full-text search index
+	IndexTypeNormal   IndexType = "normal"
+	IndexTypeUnique   IndexType = "unique"
+	IndexTypePrimary  IndexType = "primary"
+	IndexTypeSpatial  IndexType = "spatial"
+	IndexTypeFullText IndexType = "fulltext"
 )
 
 // PredicateParameters is an interface that all predicate parameter types must satisfy.
-// This allows for generic handling of different parameter types in the Predicate function.
-// Concrete types implementing this might be simple Go primitives (string, int, bool)
-// or the specialized structs defined below.
-// Consumers are responsible for populating/asserting the correct type.
 type PredicateParameters any
 
+// PredicateParams is a generic struct that holds the parameters for a predicate function.
 type PredicateParams[T any] struct {
-    Data T
-    Field *string // Pointer allows this to be nil (optional)
-    Args PredicateParameters
+	Data  T                   // The data being validated.
+	Field *string             // The specific field being validated.
+	Args  PredicateParameters // The arguments for the predicate.
 }
-// Predicate defines a predicate function for data validation.
-// The 'data' parameter is generic, and 'field' is a string key (corresponds to keyof T).
-// 'args' will be a PredicateParameters interface, requiring type assertion within
-// the predicate implementation to access specific parameter structures.
+
+// Predicate defines a function for data validation.
 type Predicate[T any] func(params PredicateParams[T]) bool
 
 // PredicateMap is a map of predicate names to their validation functions.
-// In Go, due to the varying generic type 'T' in Predicate, we use any
-// to allow storage of different predicate instantiations. Type assertion will be needed
-// when retrieving specific predicates.
 type PredicateMap map[string]any
 
 // FunctionMap is a map of function names to generic functions.
-// Similar to PredicateMap, any is used for flexibility as Go's function types
-// are not as flexible for generic arguments in maps without explicit type parameters.
 type FunctionMap map[string]any
 
-// PredicateName represents the names of supported predicates, derived from a PredicateMap.
-// In Go, this typically maps to a string as map keys are strings.
+// PredicateName represents the name of a supported predicate.
 type PredicateName string
 
+// PredicateParam is a map of parameters for a predicate.
 type PredicateParam map[string]any
 
-// ConstraintParameters is a deprecated type, use PredicateParameters instead.
-// REMOVED: @deprecated Use PredicateParameters instead.
-// type ConstraintParameters any
-
-// ConstraintType represents the optional type of the constraint, e.g., "schema".
+// ConstraintType represents the type of a constraint.
 type ConstraintType string
 
+// Supported constraint types.
 const (
 	ConstraintTypeSchema ConstraintType = "schema"
 )
 
-// Constraint defines a constraint on a field or schema, using a predicate for validation.
+// Constraint defines a validation rule for a field or schema.
 type Constraint[T FieldType] struct {
-	// Type specifies the optional type of the constraint. For example, "schema".
-	// It's a pointer to allow it to be omitted in JSON.
-	Type *ConstraintType `json:"type,omitempty"`
-	// Predicate is the name of the predicate function to use for validation.
-	Predicate string `json:"predicate"`
-	// Field is an optional field name that the predicate applies to within the data.
-	// Corresponds to `keyof any` in TS, which is typically a string in this context.
-	Field *string `json:"field,omitempty"`
-	// Parameters are the arguments passed to the predicate. This can be various types.
-	// Uses any to hold simple types or structs like PredicateFieldParam.
-	// Consumers are responsible for populating/asserting the correct type.
-	Parameters any `json:"parameters,omitempty"`
-	// Name is the unique name of the constraint.
-	Name string `json:"name"`
-	// Description provides a brief explanation of the constraint.
-	Description *string `json:"description,omitempty"`
-	// ErrorMessage is the custom error message to display if the constraint fails.
-	ErrorMessage *string `json:"errorMessage,omitempty"`
+	Type         *ConstraintType `json:"type,omitempty"`
+	Predicate    string          `json:"predicate"`
+	Field        *string         `json:"field,omitempty"`
+	Parameters   any             `json:"parameters,omitempty"`
+	Name         string          `json:"name"`
+	Description  *string         `json:"description,omitempty"`
+	ErrorMessage *string         `json:"errorMessage,omitempty"`
 }
 
 // IsSchemaConstraintRule is a marker method to satisfy the SchemaConstraintRule interface.
@@ -118,90 +101,67 @@ func (c Constraint[T]) IsSchemaConstraintRule() {}
 
 // ConstraintGroup defines a group of multiple constraints with a logical operator.
 type ConstraintGroup[T FieldType] struct {
-	// Name is the unique name of the constraint group.
-	Name string `json:"name"`
-	// Operator specifies the logical operator (e.g., "and", "or") to apply to the rules.
-	Operator LogicalOperator `json:"operator"`
-	// Rules is an array of individual constraints or nested constraint groups.
-	// Uses the SchemaConstraintRule interface for polymorphism.
-	Rules []SchemaConstraintRule[T] `json:"rules"`
+	Name     string                  `json:"name"`
+	Operator LogicalOperator         `json:"operator"`
+	Rules    []SchemaConstraintRule[T] `json:"rules"`
 }
 
 // IsSchemaConstraintRule is a marker method to satisfy the SchemaConstraintRule interface.
 func (cg ConstraintGroup[T]) IsSchemaConstraintRule() {}
 
-// SchemaConstraintRule is an interface that both Constraint and ConstraintGroup must implement
-// to allow them to be used interchangeably in slices like SchemaConstraint.
+// SchemaConstraintRule is an interface that both Constraint and ConstraintGroup must implement.
 type SchemaConstraintRule[T FieldType] interface {
 	IsSchemaConstraintRule()
 }
 
-// SchemaConstraint represents a collection of constraints or groups applied at the schema or nested level.
-// It is a slice of SchemaConstraintRule, enabling a mix of individual constraints and constraint groups.
+// SchemaConstraint represents a collection of constraints or groups applied at the schema level.
 type SchemaConstraint[T FieldType] []SchemaConstraintRule[T]
 
-// FieldSchema defines a reference to a nested schema (mini-SchemaDefinition) with optional overrides.
+// FieldSchema defines a reference to a nested schema.
 type FieldSchema struct {
-	// ID references a key in the parent SchemaDefinition's nestedSchemas map.
-	ID string `json:"id"`
-	// Constraints overrides or adds to nested schema constraints. Uses any for any type.
+	ID          string                    `json:"id"`
 	Constraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
-	// Indexes overrides or adds to nested schema indexes.
-	Indexes []IndexDefinition `json:"indexes,omitempty"`
+	Indexes     []IndexDefinition           `json:"indexes,omitempty"`
 }
 
-// FieldDefinition defines a field within a schema, including its type, constraints, and nesting.
+// FieldDefinition defines a field within a schema.
 type FieldDefinition struct {
-	Name string    `json:"name"`
-	Type FieldType `json:"type"`
-	// Required indicates if the field is mandatory.
-	Required *bool `json:"required,omitempty"`
-	// Constraints are an array of validation rules for this field.
+	Name        string                    `json:"name"`
+	Type        FieldType                 `json:"type"`
+	Required    *bool                     `json:"required,omitempty"`
 	Constraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
-	// Default provides a default value for the field. Uses any for any type.
-	Default any `json:"default,omitempty"`
-	// Values specifies the allowed values for an 'enum' type field. Uses any for any type (string or number).
-	Values []any `json:"values,omitempty"` // Can be string or number
-	// Schema specifies the schema for 'union' or 'object' types. Can be a single FieldSchema or an array.
-	// Consumers are responsible for populating/asserting the correct type.
-	Schema any `json:"schema,omitempty"` // FieldSchema | []FieldSchema
-	// ItemsType specifies the type of items in 'array' or 'set' fields.
-	ItemsType *FieldType `json:"itemsType,omitempty"`
-	// Deprecated marks the field as deprecated.
-	Deprecated *bool `json:"deprecated,omitempty"`
-	// Description provides a brief explanation of the field.
-	Description *string `json:"description,omitempty"`
-	// Unique indicates if the field must have unique values.
-	Unique *bool `json:"unique,omitempty"`
-	// Hint provides input hints for UI generation or tooling.
-	Hint *struct {
-		Input InputHint `json:"input"` // Assuming InputHint is a simple struct or map
+	Default     any                       `json:"default,omitempty"`
+	Values      []any                     `json:"values,omitempty"`
+	Schema      any                       `json:"schema,omitempty"`
+	ItemsType   *FieldType                `json:"itemsType,omitempty"`
+	Deprecated  *bool                     `json:"deprecated,omitempty"`
+	Description *string                   `json:"description,omitempty"`
+	Unique      *bool                     `json:"unique,omitempty"`
+	Hint        *struct {
+		Input InputHint `json:"input"`
 	} `json:"hint,omitempty"`
 }
 
-// PartialIndexCondition defines a condition for partial indexes, allowing conditional indexing based on field values.
+// PartialIndexCondition defines a condition for a partial index.
 type PartialIndexCondition struct {
 	Operator   LogicalOperator         `json:"operator"`
 	Field      string                  `json:"field"`
-	Value      any                     `json:"value,omitempty"` // Any type for value
+	Value      any                     `json:"value,omitempty"`
 	Conditions []PartialIndexCondition `json:"conditions,omitempty"`
 }
 
-// IndexDefinition defines an index for optimizing queries or enforcing uniqueness.
+// IndexDefinition defines an index for a collection.
 type IndexDefinition struct {
 	Fields      []string               `json:"fields"`
 	Type        IndexType              `json:"type"`
 	Unique      *bool                  `json:"unique,omitempty"`
 	Partial     *PartialIndexCondition `json:"partial,omitempty"`
 	Description *string                `json:"description,omitempty"`
-	Order       *string                `json:"order,omitempty"` // "asc" | "desc"
+	Order       *string                `json:"order,omitempty"`
 	Name        string                 `json:"name"`
 }
 
-// NestedSchemaDefinition represents a reusable nested schema structure.
-// It can represent either a complex object with defined fields, or a direct primitive literal (string, number, boolean).
-// The union type in TypeScript is handled by implementing custom UnmarshalJSON and MarshalJSON methods
-// to enforce mutual exclusivity and proper JSON serialization/deserialization.
+// NestedSchemaDefinition represents a reusable, nested schema structure.
 type NestedSchemaDefinition struct {
 	Name        string            `json:"name"`
 	Description *string           `json:"description,omitempty"`
@@ -209,33 +169,26 @@ type NestedSchemaDefinition struct {
 	Metadata    map[string]any    `json:"metadata,omitempty"`
 	Concrete    *bool             `json:"concrete,omitempty"`
 
-	// These fields are for 'literal' nested schemas (when `Type` is present in TS).
-	Type               *FieldType                  `json:"type,omitempty"` // "string" | "number" | "boolean" | "array" | "set" | "enum" | "record"
+	Type               *FieldType                  `json:"type,omitempty"`
 	LiteralConstraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
 	LiteralDefault     any                         `json:"default,omitempty"`
-	LiteralSchema      any                         `json:"schema,omitempty"` // FieldSchema | []FieldSchema
+	LiteralSchema      any                         `json:"schema,omitempty"`
 	LiteralItemsType   *FieldType                  `json:"itemsType,omitempty"`
 
-	// These fields are for 'structured' nested schemas (when `Fields` is present in TS).
-	// Using pointers allows them to be nil, which is correctly omitted by json:"omitempty".
-	// The complex "fields" type from TS needs to be explicitly modeled.
-	StructuredFieldsMap   map[string]*FieldDefinition `json:"fields,omitempty"` // Corresponds to Record<string, FieldDefinition<any>>
+	StructuredFieldsMap   map[string]*FieldDefinition `json:"fields,omitempty"`
 	StructuredFieldsArray []struct {
 		Fields map[string]*FieldDefinition `json:"fields"`
 		When   *struct {
 			Field string `json:"field"`
 			Value any    `json:"value"`
 		} `json:"when,omitempty"`
-	} `json:"fields,omitempty"` // Corresponds to Array<{ Fields: Record<string, FieldDefinition<any>>; When: ... }>
+	} `json:"fields,omitempty"`
 
-	// Internal flag to track which type of schema it is after unmarshaling
 	isStructured bool
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface for NestedSchemaDefinition.
-// It checks for the presence of "fields" or "type" to determine the schema type and unmarshals accordingly.
 func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
-	// Use an anonymous struct to unmarshal all possible JSON fields initially
 	var temp struct {
 		Name        string            `json:"name"`
 		Description *string           `json:"description"`
@@ -243,39 +196,34 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 		Metadata    map[string]any    `json:"metadata"`
 		Concrete    *bool             `json:"concrete"`
 
-		// For literal schemas
 		Type               *FieldType                  `json:"type"`
 		LiteralConstraints SchemaConstraint[FieldType] `json:"constraints"`
 		LiteralDefault     any                         `json:"default"`
-		LiteralSchema      json.RawMessage             `json:"schema"` // Read as RawMessage to determine array or object later
+		LiteralSchema      json.RawMessage             `json:"schema"`
 		LiteralItemsType   *FieldType                  `json:"itemsType"`
 
-		// For structured schemas
-		Fields json.RawMessage `json:"fields"` // Read fields as raw JSON
+		Fields json.RawMessage `json:"fields"`
 	}
 
 	if err := json.Unmarshal(data, &temp); err != nil {
 		return err
 	}
 
-	// Assign common fields
 	nsd.Name = temp.Name
 	nsd.Description = temp.Description
 	nsd.Indexes = temp.Indexes
 	nsd.Metadata = temp.Metadata
 	nsd.Concrete = temp.Concrete
 
-	// Determine if it's a structured schema (has "fields") or literal (has "type")
 	hasFields := temp.Fields != nil
 	hasType := temp.Type != nil
 
 	if hasFields && hasType {
-		return fmt.Errorf("NestedSchemaDefinition cannot have both 'fields' and 'type' (mutual exclusivity violation)")
+		return fmt.Errorf("NestedSchemaDefinition cannot have both 'fields' and 'type'")
 	}
 
 	if hasFields {
 		nsd.isStructured = true
-		// Unmarshal 'Fields' based on its content (map or array)
 		var fieldsMap map[string]*FieldDefinition
 		if err := json.Unmarshal(temp.Fields, &fieldsMap); err == nil {
 			nsd.StructuredFieldsMap = fieldsMap
@@ -290,18 +238,16 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 			if err := json.Unmarshal(temp.Fields, &fieldsArray); err == nil {
 				nsd.StructuredFieldsArray = fieldsArray
 			} else {
-				return fmt.Errorf("failed to unmarshal NestedSchemaDefinition.fields: neither map nor array")
+				return fmt.Errorf("failed to unmarshal NestedSchemaDefinition.fields")
 			}
 		}
 	} else if hasType {
 		nsd.isStructured = false
-		// Literal schema fields
 		nsd.Type = temp.Type
 		nsd.LiteralConstraints = temp.LiteralConstraints
 		nsd.LiteralDefault = temp.LiteralDefault
 		nsd.LiteralItemsType = temp.LiteralItemsType
 
-		// Unmarshal LiteralSchema which can be FieldSchema or []FieldSchema
 		if temp.LiteralSchema != nil {
 			var singleSchema FieldSchema
 			if err := json.Unmarshal(temp.LiteralSchema, &singleSchema); err == nil {
@@ -311,7 +257,7 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 				if err := json.Unmarshal(temp.LiteralSchema, &multiSchema); err == nil {
 					nsd.LiteralSchema = multiSchema
 				} else {
-					return fmt.Errorf("failed to unmarshal NestedSchemaDefinition.literalSchema: neither single object nor array")
+					return fmt.Errorf("failed to unmarshal NestedSchemaDefinition.literalSchema")
 				}
 			}
 		}
@@ -323,13 +269,9 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 }
 
 // MarshalJSON implements the json.Marshaler interface for NestedSchemaDefinition.
-// It marshals based on whether the schema is structured or literal,
-// ensuring only relevant fields are included in the output JSON.
 func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
-	// Create a map to build the output JSON
 	m := make(map[string]any)
 
-	// Marshal common fields
 	m["name"] = nsd.Name
 	if nsd.Description != nil {
 		m["description"] = *nsd.Description
@@ -345,14 +287,12 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 	}
 
 	if nsd.isStructured {
-		// Marshal structured fields
 		if nsd.StructuredFieldsMap != nil {
 			m["fields"] = nsd.StructuredFieldsMap
 		} else if nsd.StructuredFieldsArray != nil {
 			m["fields"] = nsd.StructuredFieldsArray
 		}
-	} else { // It's a literal schema
-		// Marshal literal schema fields
+	} else {
 		if nsd.Type != nil {
 			m["type"] = *nsd.Type
 		}
@@ -373,27 +313,25 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// SchemaDefinition defines a complete schema, intended as an atomic unit within a larger domain model.
+// SchemaDefinition defines a complete schema for a collection.
 type SchemaDefinition struct {
-	Name        string                           `json:"name"`
-	Version     string                           `json:"version"`
-	Description *string                          `json:"description,omitempty"`
-	Fields      map[string]*FieldDefinition `json:"fields"` // Map of field names to FieldDefinition
-	// Reusable nested schema definitions, now as mini-SchemaDefinitions.
+	Name          string                              `json:"name"`
+	Version       string                              `json:"version"`
+	Description   *string                             `json:"description,omitempty"`
+	Fields        map[string]*FieldDefinition      `json:"fields"`
 	NestedSchemas map[string]*NestedSchemaDefinition `json:"nestedSchemas,omitempty"`
-	Indexes       []IndexDefinition                  `json:"indexes,omitempty"`
-	Constraints   SchemaConstraint[FieldType]        `json:"constraints,omitempty"`
-	Metadata      map[string]any                     `json:"metadata,omitempty"`
-	Migrations    []Migration[any]                   `json:"migrations,omitempty"`
-	Hint          *SchemaHint                        `json:"hint,omitempty"` // Assuming SchemaHint is a struct or map
-	// Mock is a function to generate mock data. In Go, this would be a function signature.
-	// The `faker` dependency would need to be brought in or mocked.
-	Mock func(faker any) (any, error) `json:"-"` // func(faker *faker.Faker) (any, error)
+	Indexes       []IndexDefinition                   `json:"indexes,omitempty"`
+	Constraints   SchemaConstraint[FieldType]         `json:"constraints,omitempty"`
+	Metadata      map[string]any                      `json:"metadata,omitempty"`
+	Migrations    []Migration[any]                    `json:"migrations,omitempty"`
+	Hint          *SchemaHint                         `json:"hint,omitempty"`
+	Mock          func(faker any) (any, error)        `json:"-"`
 }
 
 // SchemaChangeType defines the type of change in a migration.
 type SchemaChangeType string
 
+// Supported schema change types.
 const (
 	SchemaChangeTypeModifyProperty     SchemaChangeType = "modifyProperty"
 	SchemaChangeTypeAddField           SchemaChangeType = "addField"
@@ -411,10 +349,7 @@ const (
 	SchemaChangeTypeModifyNestedSchema SchemaChangeType = "modifyNestedSchema"
 )
 
-// Specific payload structs for each SchemaChangeType
-// These mirror the specific object shapes for each change.
-
-// SchemaChangeModifyPropertyPayload for SchemaChangeTypeModifyProperty
+// SchemaChangeModifyPropertyPayload is the payload for a ModifyProperty schema change.
 type SchemaChangeModifyPropertyPayload struct {
 	Name        *string        `json:"name,omitempty"`
 	Version     *string        `json:"version,omitempty"`
@@ -423,12 +358,12 @@ type SchemaChangeModifyPropertyPayload struct {
 	Hint        *SchemaHint    `json:"hint,omitempty"`
 }
 
-// SchemaChangeAddFieldPayload for SchemaChangeTypeAddField
+// SchemaChangeAddFieldPayload is the payload for an AddField schema change.
 type SchemaChangeAddFieldPayload struct {
 	Definition FieldDefinition `json:"definition"`
 }
 
-// SchemaChangeModifyFieldPayload for SchemaChangeTypeModifyField
+// SchemaChangeModifyFieldPayload is the payload for a ModifyField schema change.
 type SchemaChangeModifyFieldPayload[T any] struct {
 	Changes             PartialFieldDefinition[T] `json:"changes"`
 	NestedSchemaChanges *struct {
@@ -438,83 +373,55 @@ type SchemaChangeModifyFieldPayload[T any] struct {
 	} `json:"nestedSchemaChanges,omitempty"`
 }
 
-// SchemaChangeAddIndexPayload for SchemaChangeTypeAddIndex
+// SchemaChangeAddIndexPayload is the payload for an AddIndex schema change.
 type SchemaChangeAddIndexPayload struct {
 	Definition IndexDefinition `json:"definition"`
 }
 
-// SchemaChangeModifyIndexPayload for SchemaChangeTypeModifyIndex
+// SchemaChangeModifyIndexPayload is the payload for a ModifyIndex schema change.
 type SchemaChangeModifyIndexPayload struct {
 	Changes PartialIndexDefinition `json:"changes"`
 }
 
-// SchemaChangeAddConstraintPayload for SchemaChangeTypeAddConstraint
+// SchemaChangeAddConstraintPayload is the payload for an AddConstraint schema change.
 type SchemaChangeAddConstraintPayload struct {
 	Constraint SchemaConstraintRule[FieldType] `json:"constraint"`
 }
 
-// SchemaChangeModifyConstraintPayload for SchemaChangeTypeModifyConstraint
+// SchemaChangeModifyConstraintPayload is the payload for a ModifyConstraint schema change.
 type SchemaChangeModifyConstraintPayload struct {
-	Changes any `json:"changes"` // Partial<SchemaConstraint<any> | Constraint<any>>
+	Changes any `json:"changes"`
 }
 
-// SchemaChangeAddNestedSchemaPayload for SchemaChangeTypeAddNestedSchema
+// SchemaChangeAddNestedSchemaPayload is the payload for an AddNestedSchema schema change.
 type SchemaChangeAddNestedSchemaPayload struct {
 	Definition NestedSchemaDefinition `json:"definition"`
 }
 
-// SchemaChangeModifyNestedSchemaPayload for SchemaChangeTypeModifyNestedSchema
+// SchemaChangeModifyNestedSchemaPayload is the payload for a ModifyNestedSchema schema change.
 type SchemaChangeModifyNestedSchemaPayload struct {
 	Changes PartialNestedSchemaDefinition `json:"changes"`
 }
 
-// SchemaChange defines a change that can be made to a schema during migration.
-// This struct handles the discriminated union from TypeScript using a common 'Type' field
-// and embedding specific payload structs for each change type.
+// SchemaChange defines a single change to be made to a schema during a migration.
 type SchemaChange[T any] struct {
-	Type SchemaChangeType `json:"type"` // The discriminator field
+	Type SchemaChangeType `json:"type"`
 
-	// Common ID field used for several change types (e.g., removeField, modifyField)
-	ID *string `json:"id,omitempty"` // Pointer for optionality and omitempty
+	ID *string `json:"id,omitempty"`
 
-	// Specific payloads for each change type, embedded or as pointers.
-	// Only one of these should be meaningfully populated based on 'Type'.
-	// json:"inline" means fields of the embedded struct are marshaled at the same level.
-	// We'll combine this with custom MarshalJSON to ensure mutual exclusivity.
-
-	// ModifyProperty specific fields
 	*SchemaChangeModifyPropertyPayload
-
-	// AddField specific fields
 	*SchemaChangeAddFieldPayload
-
-	// ModifyField specific fields (ID already handled by common ID field)
 	*SchemaChangeModifyFieldPayload[T]
-
-	// AddIndex specific fields
 	*SchemaChangeAddIndexPayload
-
-	// ModifyIndex specific fields (Name already handled by common ID field)
 	*SchemaChangeModifyIndexPayload
-
-	// AddConstraint specific fields
 	*SchemaChangeAddConstraintPayload
-
-	// ModifyConstraint specific fields (Name already handled by common ID field)
 	*SchemaChangeModifyConstraintPayload
-
-	// AddNestedSchema specific fields
 	*SchemaChangeAddNestedSchemaPayload
-
-	// ModifyNestedSchema specific fields (ID already handled by common ID field)
 	*SchemaChangeModifyNestedSchemaPayload
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface for SchemaChange.
-// It reads the 'type' field and then unmarshals the remaining JSON data
-// into the appropriate specific payload struct.
 func (sc *SchemaChange[T]) UnmarshalJSON(data []byte) error {
-	// First, unmarshal into a temporary struct to get the 'type' and 'id'
 	var common struct {
 		Type SchemaChangeType `json:"type"`
 		ID   *string          `json:"id"`
@@ -526,8 +433,6 @@ func (sc *SchemaChange[T]) UnmarshalJSON(data []byte) error {
 	sc.Type = common.Type
 	sc.ID = common.ID
 
-	// Now, based on the changeType, unmarshal the rest of the data
-	// into the correct specific payload field.
 	switch sc.Type {
 	case SchemaChangeTypeModifyProperty:
 		sc.SchemaChangeModifyPropertyPayload = &SchemaChangeModifyPropertyPayload{}
@@ -570,8 +475,6 @@ func (sc *SchemaChange[T]) UnmarshalJSON(data []byte) error {
 }
 
 // MarshalJSON implements the json.Marshaler interface for SchemaChange.
-// It marshals only the common fields ('type', 'id') and the relevant
-// specific payload based on the 'type' field.
 func (sc SchemaChange[T]) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 	m["type"] = sc.Type
@@ -629,7 +532,6 @@ func (sc SchemaChange[T]) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	// Merge payload fields into the main map
 	if payloadBytes != nil {
 		var payloadMap map[string]any
 		if err := json.Unmarshal(payloadBytes, &payloadMap); err != nil {
@@ -641,6 +543,7 @@ func (sc SchemaChange[T]) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
+// PartialFieldDefinition represents a partial definition of a field, used for modifications.
 type PartialFieldDefinition[T any] struct {
 	Name        *string                     `json:"name,omitempty"`
 	Type        *FieldType                  `json:"type,omitempty"`
@@ -658,6 +561,7 @@ type PartialFieldDefinition[T any] struct {
 	} `json:"hint,omitempty"`
 }
 
+// PartialIndexDefinition represents a partial definition of an index, used for modifications.
 type PartialIndexDefinition struct {
 	Fields      []string               `json:"fields,omitempty"`
 	Type        *IndexType             `json:"type,omitempty"`
@@ -668,6 +572,7 @@ type PartialIndexDefinition struct {
 	Name        *string                `json:"name,omitempty"`
 }
 
+// PartialNestedSchemaDefinition represents a partial definition of a nested schema, used for modifications.
 type PartialNestedSchemaDefinition struct {
 	Name               *string                     `json:"name,omitempty"`
 	Description        *string                     `json:"description,omitempty"`
@@ -682,7 +587,7 @@ type PartialNestedSchemaDefinition struct {
 	LiteralItemsType   *FieldType                  `json:"itemsType,omitempty"`
 }
 
-// TransformFunction defines a transform function for data migration between schema versions.
+// TransformFunction defines a function for transforming data from one schema version to another.
 type TransformFunction[Initial, Next any] func(data Initial) (Next, error)
 
 // DataTransform represents a pair of transformations for bidirectional data migration.
@@ -691,7 +596,7 @@ type DataTransform[Initial, Next any] struct {
 	Backward TransformFunction[Next, Initial] `json:"-"`
 }
 
-// Migration defines a migration, consisting of schema changes and data transforms.
+// Migration defines a single migration, consisting of schema changes and data transformations.
 type Migration[T any] struct {
 	ID            string            `json:"id"`
 	SchemaVersion string            `json:"schemaVersion"`
@@ -704,7 +609,10 @@ type Migration[T any] struct {
 	Checksum      string            `json:"checksum"`
 }
 
+// InputHint provides hints for UI generation or tooling.
 type InputHint map[string]any
+
+// SchemaHint provides hints for the schema as a whole.
 type SchemaHint map[string]any
 
 // Issue represents a validation or operational issue.
@@ -712,13 +620,15 @@ type Issue struct {
 	Code        string `json:"code"`
 	Message     string `json:"message"`
 	Path        string `json:"path,omitempty"`
-	Severity    string `json:"severity,omitempty"` // e.g., "error", "warning"
+	Severity    string `json:"severity,omitempty"`
 	Description string `json:"description,omitempty"`
 }
 
+// ValidationResult represents the result of a validation operation.
 type ValidationResult struct {
 	Valid  bool    `json:"valid"`
 	Issues []Issue `json:"issues"`
 }
 
+// Document represents a single document or row of data.
 type Document map[string]any

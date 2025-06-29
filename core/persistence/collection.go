@@ -1,3 +1,5 @@
+// Package persistence provides the core implementation of the PersistenceCollectionInterface,
+// defining the behavior of a single collection in the database.
 package persistence
 
 import (
@@ -11,8 +13,11 @@ import (
 	"github.com/google/uuid"
 )
 
-// CollectionBase implements core.PersistenceCollectionInterface.
-type CollectionBase struct {
+// CollectionBase provides the fundamental implementation of the PersistenceCollectionInterface.
+// It encapsulates the logic for data manipulation (CRUD), validation, and event handling
+// for a specific collection, governed by a schema.
+// This struct is not meant to be used directly but rather to be embedded in other structs
+// that might add more specialized functionality, such as event emitting.	ype CollectionBase struct {
 	schema        *schema.SchemaDefinition
 	processor     *query.DataProcessor
 	executor      *Executor
@@ -22,7 +27,9 @@ type CollectionBase struct {
 	subMu         sync.RWMutex                 // Mutex to protect subscriptions map
 }
 
-// NewPersistence creates a new instance of Persistence.
+// NewCollection creates a new instance of a collection that implements the
+// PersistenceCollectionInterface. It wraps the base collection logic with event-emitting
+// capabilities, ensuring that operations on the collection are observable.
 func NewCollection(bus *events.TypedEventBus[PersistenceEvent], sc *schema.SchemaDefinition, executor *Executor, fmap schema.FunctionMap) (PersistenceCollectionInterface, error) {
 	validator := schema.NewValidator(sc, fmap)
 
@@ -31,13 +38,15 @@ func NewCollection(bus *events.TypedEventBus[PersistenceEvent], sc *schema.Schem
 		executor:      executor,
 		validator:     validator,
 		bus:           bus,
-		subscriptions: map[string]*SubscriptionInfo{},
+		subscriptions: make(map[string]*SubscriptionInfo),
 	})
 
 	return collection, nil
 }
 
-func (ci *CollectionBase) Create(data any) (any, error) {
+// Create adds one or more new documents to the collection. Before insertion, it validates
+// each document against the collection's schema to ensure data integrity.
+func (c *CollectionBase) Create(data any) (any, error) {
 	var records []map[string]any
 	switch v := data.(type) {
 	case map[string]any:
@@ -49,84 +58,89 @@ func (ci *CollectionBase) Create(data any) (any, error) {
 	}
 
 	for _, record := range records {
-		validation, err := ci.Validate(record, false)
+		validation, err := c.Validate(record, false)
 		if err != nil {
-			return nil, fmt.Errorf("An error occured when trying to validate an entry %e", err)
+			return nil, fmt.Errorf("an error occurred when trying to validate an entry: %w", err)
 		}
 
 		if !validation.Valid {
-			return nil, fmt.Errorf("Provided data does not conform to the collections schema")
+			return nil, fmt.Errorf("provided data does not conform to the collection's schema")
 		}
 	}
 
-	result, err := ci.executor.Insert(context.Background(), ci.schema, records)
+	result, err := c.executor.Insert(context.Background(), c.schema, records)
 	if err != nil {
-		return nil, fmt.Errorf("failed to insert data into collection '%s': %w", ci.schema.Name, err)
+		return nil, fmt.Errorf("failed to insert data into collection '%s': %w", c.schema.Name, err)
 	}
 
 	return result, nil
 }
 
-// Read retrieves data from the collection based on a core.
-func (ci *CollectionBase) Read(query *query.QueryDSL) (*query.QueryResult, error) {
-	result, err := ci.executor.Query(context.Background(), ci.schema, query)
+// Read retrieves documents from the collection based on a QueryDSL query.
+func (c *CollectionBase) Read(q *query.QueryDSL) (*query.QueryResult, error) {
+	result, err := c.executor.Query(context.Background(), c.schema, q)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read data from collection '%s': %w", ci.schema.Name, err)
+		return nil, fmt.Errorf("failed to read data from collection '%s': %w", c.schema.Name, err)
 	}
 
 	return result, nil
 }
 
-// Update updates data in the collection based on filter.
-func (ci *CollectionBase) Update(params *CollectionUpdate) (int, error) {
-	result, err := ci.executor.Update(context.Background(), ci.schema, params.Data, params.Filter)
+// Update modifies documents in the collection that match the provided filter.
+func (c *CollectionBase) Update(params *CollectionUpdate) (int, error) {
+	result, err := c.executor.Update(context.Background(), c.schema, params.Data, params.Filter)
 	if err != nil {
-		return 0, fmt.Errorf("failed to read data from collection '%s': %w", ci.schema.Name, err)
+		return 0, fmt.Errorf("failed to update data in collection '%s': %w", c.schema.Name, err)
 	}
 
 	return int(result), nil
 }
 
-// Delete deletes data from the collection based on core.
-func (ci *CollectionBase) Delete(filter *query.QueryFilter, unsafe bool) (int, error) {
+// Delete removes documents from the collection that match the given query filter.
+func (c *CollectionBase) Delete(filter *query.QueryFilter, unsafe bool) (int, error) {
 	ctx := context.Background()
-	affected, err := ci.executor.Delete(ctx, ci.schema, filter, false)
+	affected, err := c.executor.Delete(ctx, c.schema, filter, unsafe)
 	if err != nil {
-		return 0, fmt.Errorf("failed to delete data from collection '%s': %w", ci.schema.Name, err)
+		return 0, fmt.Errorf("failed to delete data from collection '%s': %w", c.schema.Name, err)
 	}
 
-	// Convert int64 to int
 	return int(affected), nil
 }
 
-// Validate validates data against the collection's schema.
-func (ci *CollectionBase) Validate(data any, loose bool) (*schema.ValidationResult, error) {
+// Validate checks if the given data conforms to the collection's schema. The 'loose'
+// parameter allows for partial validation, where not all fields are required.
+func (c *CollectionBase) Validate(data any, loose bool) (*schema.ValidationResult, error) {
 	values, ok := data.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("Failed to convert data to a map")
+		return nil, fmt.Errorf("failed to convert data to a map for validation")
 	}
 
-	valid, issues := ci.validator.Validate(values, loose)
+	valid, issues := c.validator.Validate(values, loose)
 	return &schema.ValidationResult{
 		Valid:  valid,
 		Issues: issues,
 	}, nil
 }
 
-// Rollback rolls back the collection's schema.
-func (ci *CollectionBase) Rollback(version *string, dryRun *bool) (struct {
+// Rollback reverts a schema migration for the collection. A specific version can be
+// targeted, and a dry run can be performed to preview the changes.
+// NOTE: This method is not yet implemented.
+func (c *CollectionBase) Rollback(version *string, dryRun *bool) (struct {
 	Schema  schema.SchemaDefinition `json:"schema"`
 	Preview any                     `json:"preview"`
 }, error) {
-	// TODO: Discuss & Design
+	// TODO: Implement schema rollback logic.
 	return struct {
 		Schema  schema.SchemaDefinition `json:"schema"`
 		Preview any                     `json:"preview"`
-	}{}, fmt.Errorf("Rollback method stub for collection '%s'", ci.schema.Name) // Stub: not implemented
+	}{}, fmt.Errorf("rollback method not implemented for collection '%s'", c.schema.Name)
 }
 
-// Migrate migrates the collection's schema.
-func (ci *CollectionBase) Migrate(
+// Migrate applies a schema migration to the collection. It takes a description and a
+// callback function that defines the data transformation. A dry run can be performed
+// to preview the changes.
+// NOTE: This method is not yet implemented.
+func (c *CollectionBase) Migrate(
 	description string,
 	cb func(h schema.SchemaMigrationHelper) (schema.DataTransform[any, any], error),
 	dryRun *bool,
@@ -134,63 +148,71 @@ func (ci *CollectionBase) Migrate(
 	Schema  schema.SchemaDefinition `json:"schema"`
 	Preview any                     `json:"preview"`
 }, error) {
-	// TODO: Discuss & Design
+	// TODO: Implement schema migration logic.
 	return struct {
 		Schema  schema.SchemaDefinition `json:"schema"`
 		Preview any                     `json:"preview"`
-	}{}, fmt.Errorf("Migrate method stub for collection '%s'", ci.schema.Name) // Stub: not implemented
+	}{}, fmt.Errorf("migrate method not implemented for collection '%s'", c.schema.Name)
 }
 
-func (ci *CollectionBase) Metadata(
+// Metadata retrieves metadata specifically for this collection, with an option to
+// force a refresh of the data.
+// NOTE: This method is not yet implemented.
+func (c *CollectionBase) Metadata(
 	filter *MetadataFilter,
 	forceRefresh bool,
 ) (Metadata, error) {
-	return Metadata{}, fmt.Errorf("Collection metadata method stub for '%s'", ci.schema.Name) // Stub: not implemented
+	// TODO: Implement collection metadata retrieval.
+	return Metadata{}, fmt.Errorf("collection metadata method not implemented for '%s'", c.schema.Name)
 }
 
-// RegisterSubscription registers a collection-scoped subscription.
-func (ci *CollectionBase) RegisterSubscription(options RegisterSubscriptionOptions) string {
-	ci.subMu.Lock()
-	defer ci.subMu.Unlock()
-	unsubscribe := ci.bus.Subscribe(string(options.Event),
+// RegisterSubscription registers a subscription for an event that is specific to this collection.
+// It filters events from the main event bus, ensuring that the callback is only invoked
+// for events relevant to this collection.
+func (c *CollectionBase) RegisterSubscription(options RegisterSubscriptionOptions) string {
+	c.subMu.Lock()
+	defer c.subMu.Unlock()
+
+	unsubscribe := c.bus.Subscribe(string(options.Event),
 		func(ctx context.Context, payload PersistenceEvent) error {
-			if payload.Collection == nil || *payload.Collection != ci.schema.Name {
-				return nil
+			if payload.Collection == nil || *payload.Collection != c.schema.Name {
+				return nil // Not for this collection
 			}
 			return options.Callback(ctx, payload)
 		})
-	id := uuid.New()
-	callbackID := id.String()
+
+	id := uuid.New().String()
 
 	data := SubscriptionInfo{
-		Id:          &callbackID,
+		Id:          &id,
 		Event:       options.Event,
 		Unsubscribe: unsubscribe,
 		Label:       options.Label,
 		Description: options.Description,
 	}
 
-	ci.subscriptions[callbackID] = &data
-	return callbackID
+	c.subscriptions[id] = &data
+	return id
 }
 
-// UnregisterSubscription unregisters a collection-scoped subscription.
-func (ci *CollectionBase) UnregisterSubscription(id string) {
-	ci.subMu.Lock()
-	defer ci.subMu.Unlock()
-	info := ci.subscriptions[id]
-	if info != nil {
+// UnregisterSubscription removes a collection-specific subscription by its ID.
+func (c *CollectionBase) UnregisterSubscription(id string) {
+	c.subMu.Lock()
+	defer c.subMu.Unlock()
+
+	if info, ok := c.subscriptions[id]; ok {
 		info.Unsubscribe()
-		delete(ci.subscriptions, id)
+		delete(c.subscriptions, id)
 	}
 }
 
-func (ci *CollectionBase) Subscriptions() ([]SubscriptionInfo, error) {
-	ci.subMu.RLock()
-	defer ci.subMu.RUnlock()
+// Subscriptions returns a list of all active subscriptions for this collection.
+func (c *CollectionBase) Subscriptions() ([]SubscriptionInfo, error) {
+	c.subMu.RLock()
+	defer c.subMu.RUnlock()
 
-	subs := make([]SubscriptionInfo, 0, len(ci.subscriptions))
-	for _, sub := range ci.subscriptions {
+	subs := make([]SubscriptionInfo, 0, len(c.subscriptions))
+	for _, sub := range c.subscriptions {
 		subs = append(subs, *sub)
 	}
 
