@@ -3,11 +3,12 @@
 package query
 
 import (
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 )
 
 // QueryGeneratorFactory defines the interface for a factory that creates QueryGenerator instances.
-// This allows for the creation of query generators that are specific to a given database schema.	ype QueryGeneratorFactory interface {
+// This allows for the creation of query generators that are specific to a given database schema.
+type QueryGeneratorFactory interface {
 	// CreateGenerator creates a new QueryGenerator for a specific schema.
 	CreateGenerator(schema *schema.SchemaDefinition) (QueryGenerator, error)
 }

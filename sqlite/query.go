@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/core/query"
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/query"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 )
 
 // SqliteQueryGeneratorFactory is an implementation of the query.QueryGeneratorFactory
@@ -29,7 +29,8 @@ func (f *SqliteQueryGeneratorFactory) CreateGenerator(schema *schema.SchemaDefin
 
 // SqliteQuery is a schema-aware query generator for SQLite. It uses a schema.SchemaDefinition
 // to translate a high-level QueryDSL into valid SQLite SQL, including handling nested
-// JSON fields.	ype SqliteQuery struct {
+// JSON fields.
+type SqliteQuery struct {
 	schema *schema.SchemaDefinition
 }
 

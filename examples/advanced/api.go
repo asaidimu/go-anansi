@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/core/persistence"
-	"github.com/asaidimu/go-anansi/core/query"
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/persistence"
+	"github.com/asaidimu/go-anansi/v2/core/query"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 	"go.uber.org/zap"
 )
 

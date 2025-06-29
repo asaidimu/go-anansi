@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/core/query"
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/query"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 	"github.com/asaidimu/go-events"
 	"github.com/google/uuid"
 )
@@ -17,7 +17,8 @@ import (
 // It encapsulates the logic for data manipulation (CRUD), validation, and event handling
 // for a specific collection, governed by a schema.
 // This struct is not meant to be used directly but rather to be embedded in other structs
-// that might add more specialized functionality, such as event emitting.	ype CollectionBase struct {
+// that might add more specialized functionality, such as event emitting.
+type CollectionBase struct {
 	schema        *schema.SchemaDefinition
 	processor     *query.DataProcessor
 	executor      *Executor

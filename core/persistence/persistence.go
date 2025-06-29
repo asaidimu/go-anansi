@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/core/query"
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/query"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 	"github.com/asaidimu/go-events"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -17,7 +17,8 @@ import (
 
 // Persistence is the main implementation of the PersistenceInterface. It orchestrates
 // interactions with the database through a DatabaseInteractor, manages schema definitions,
-// and handles event subscriptions for observability.	ype Persistence struct {
+// and handles event subscriptions for observability.
+type Persistence struct {
 	interactor    DatabaseInteractor
 	collection    PersistenceCollectionInterface
 	schema        *schema.SchemaDefinition

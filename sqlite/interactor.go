@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/core/persistence"
-	"github.com/asaidimu/go-anansi/core/query"
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/persistence"
+	"github.com/asaidimu/go-anansi/v2/core/query"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 	"go.uber.org/zap"
 )
 
@@ -29,7 +29,8 @@ type dbRunner interface {
 // SQLiteInteractor is a concrete implementation of the persistence.DatabaseInteractor
 // interface for SQLite. It manages the database connection, generates SQL queries,
 // and executes them against the database. It can operate in both transactional and
-// non-transactional modes.	type SQLiteInteractor struct {
+// non-transactional modes.
+type SQLiteInteractor struct {
 	db                    *sql.DB
 	tx                    *sql.Tx
 	queryGeneratorFactory query.QueryGeneratorFactory

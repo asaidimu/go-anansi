@@ -9,20 +9,23 @@ import (
 	"maps"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 	"go.uber.org/zap"
 )
 
 // ComputeFunction is a function that computes a new value for a row of data.
 // It takes a document (representing a single row) and a set of arguments, and
-// returns the computed value.	ype ComputeFunction func(row schema.Document, args FilterValue) (any, error)
+// returns the computed value.
+type ComputeFunction func(row schema.Document, args FilterValue) (any, error)
 
 // PredicateFunction is a function that performs custom filtering logic on a row.
-// It returns true if the row should be included in the result set, and false otherwise.	ype PredicateFunction func(doc schema.Document, field string, args FilterValue) (bool, error)
+// It returns true if the row should be included in the result set, and false otherwise.
+type PredicateFunction func(doc schema.Document, field string, args FilterValue) (bool, error)
 
 // DataProcessor handles Go-based data transformations, filtering, and projections.
 // It is used to perform operations on data after it has been fetched from the database,
-// allowing for complex logic that may not be supported by the underlying database.	ype DataProcessor struct {
+// allowing for complex logic that may not be supported by the underlying database.
+type DataProcessor struct {
 	goComputeFunctions map[string]ComputeFunction
 	goFilterFunctions  map[ComparisonOperator]PredicateFunction
 	mu                 sync.RWMutex

@@ -5,13 +5,14 @@ package persistence
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/core/query"
-	"github.com/asaidimu/go-anansi/core/schema"
+	"github.com/asaidimu/go-anansi/v2/core/query"
+	"github.com/asaidimu/go-anansi/v2/core/schema"
 )
 
 // InteractorOptions provides a set of configurations for the DatabaseInteractor.
 // These options allow for customizing the behavior of database operations, such as
-// table creation and naming conventions.	ype InteractorOptions struct {
+// table creation and naming conventions.
+type InteractorOptions struct {
 	// IfNotExists, when true, adds an "IF NOT EXISTS" clause to CREATE TABLE
 	// statements. This prevents an error from being thrown if the table already
 	// exists in the database.
@@ -41,7 +42,8 @@ import (
 // It abstracts the specific SQL dialect and database-dependent logic, providing a
 // consistent interface for the persistence layer to interact with the database.
 // Implementations of this interface are responsible for managing both non-transactional
-// and transactional operations.	ype DatabaseInteractor interface {
+// and transactional operations.
+type DatabaseInteractor interface {
 	// SelectDocuments retrieves documents from the database based on a QueryDSL query.
 	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.QueryDSL) ([]schema.Document, error)
 
