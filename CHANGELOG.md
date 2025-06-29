@@ -1,3 +1,10 @@
+# [5.1.0](https://github.com/asaidimu/go-anansi/compare/v5.0.1...v5.1.0) (2025-06-29)
+
+
+### Features
+
+* **query:** enhance QueryBuilder, DataProcessor and add comprehensive testing ([b826a23](https://github.com/asaidimu/go-anansi/commit/b826a233f5552b32a4f853d4d48cbdec7efd6950))
+
 ## [5.0.1](https://github.com/asaidimu/go-anansi/compare/v5.0.0...v5.0.1) (2025-06-29)
 
 
