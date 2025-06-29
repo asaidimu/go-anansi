@@ -1,3 +1,10 @@
+## [5.0.1](https://github.com/asaidimu/go-anansi/compare/v5.0.0...v5.0.1) (2025-06-29)
+
+
+### Bug Fixes
+
+* **module:** bump module path to v5 and update imports ([fb35199](https://github.com/asaidimu/go-anansi/commit/fb351993c106047b4e4c10131da4adbe370733b0))
+
 # [5.0.0](https://github.com/asaidimu/go-anansi/compare/v4.0.0...v5.0.0) (2025-06-29)
 
 
