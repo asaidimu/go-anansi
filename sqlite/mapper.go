@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v5/core/persistence"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/persistence"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
 // DefaultInteractorOptions returns a set of sensible default options for the
@@ -33,7 +33,7 @@ func (s *SQLiteInteractor) quoteIdentifier(name string) string {
 // getTableName constructs the full, quoted table name by applying the configured
 // table prefix to the base name.
 func (s *SQLiteInteractor) getTableName(baseName string) string {
-	name := s.options.TablePrefix + baseName
+	name := s.options.CollectionPrefix + baseName
 	return s.quoteIdentifier(name)
 }
 
@@ -68,7 +68,7 @@ func (s *SQLiteInteractor) CreateCollection(sc schema.SchemaDefinition) error {
 				continue
 			}
 			if _, err := s.runner().Exec(sqlIndex); err != nil {
-				return fmt.Errorf("failed to create index %s: %w", index.Name, err)
+				return fmt.Errorf("failed to create index %s: %w \n %s \n", index.Name, err, sqlIndex)
 			}
 		}
 	}
@@ -98,19 +98,10 @@ func (s *SQLiteInteractor) CreateTableSQL(sc schema.SchemaDefinition) ([]string,
 		}
 	}
 
-	if len(primaryKeys) == 0 {
-		for _, index := range sc.Indexes {
-			if index.Type == schema.IndexTypeUnique && len(index.Fields) > 0 {
-				primaryKeys = index.Fields
-				break
-			}
-		}
-	}
-
-	for fieldName, field := range sc.Fields {
-		columnDef, err := s.buildColumnDefinition(fieldName, field)
+	for _, field := range sc.Fields {
+		columnDef, err := s.buildColumnDefinition(field.Name, field)
 		if err != nil {
-			return nil, fmt.Errorf("error on field '%s': %w", fieldName, err)
+			return nil, fmt.Errorf("error on field '%s': %w", field.Name, err)
 		}
 		columns = append(columns, "    "+columnDef)
 	}
@@ -243,17 +234,19 @@ func (s *SQLiteInteractor) CreateIndexSQL(collection string, index schema.IndexD
 
 	var fieldParts []string
 	for _, field := range index.Fields {
-		part := s.quoteIdentifier(field)
+		part := ""
+		if strings.Contains(field, ".") {
+			jsonPath := "$." + strings.ReplaceAll(field, ".", ".")
+			part = fmt.Sprintf("json_extract(%s, '%s')", s.quoteIdentifier(field[:strings.Index(field, ".")]), jsonPath)
+		} else {
+			part = s.quoteIdentifier(field)
+		}
 		if index.Order != nil && strings.ToUpper(*index.Order) == "DESC" {
 			part += " DESC"
 		}
 		fieldParts = append(fieldParts, part)
 	}
 	sb.WriteString(strings.Join(fieldParts, ", ") + ")")
-
-	if index.Partial != nil {
-		// Placeholder for partial index logic.
-	}
 	sb.WriteString(";")
 	return sb.String(), nil
 }
@@ -271,7 +264,7 @@ func (s *SQLiteInteractor) DropCollection(collection string) error {
 
 // CollectionExists checks if a table exists in the database.
 func (s *SQLiteInteractor) CollectionExists(collection string) (bool, error) {
-	fullUnquotedName := s.options.TablePrefix + collection
+	fullUnquotedName := s.options.CollectionPrefix + collection
 	query := "SELECT name FROM sqlite_master WHERE type='table' AND name = ?;"
 
 	var name string

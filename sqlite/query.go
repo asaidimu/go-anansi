@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v5/core/query"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
 // SqliteQueryGeneratorFactory is an implementation of the query.QueryGeneratorFactory
@@ -58,8 +58,9 @@ func (s *SqliteQuery) getFieldSQL(fieldPath string) (string, error) {
 		return "", fmt.Errorf("field path cannot be empty")
 	}
 
-	rootField, ok := s.schema.Fields[parts[0]]
-	if !ok {
+	rootField := s.findField(parts[0])
+
+	if rootField == nil {
 		return "", fmt.Errorf("field '%s' not found in schema", parts[0])
 	}
 
@@ -76,11 +77,21 @@ func (s *SqliteQuery) getFieldSQL(fieldPath string) (string, error) {
 	}
 }
 
+func (s *SqliteQuery) findField(fieldName string) *schema.FieldDefinition {
+	for _, field := range s.schema.Fields {
+		if field.Name == fieldName {
+			return field
+		}
+	}
+	return nil
+}
+
 // prepareValueForQuery prepares a Go value for use as a SQL query parameter, converting
 // it to a type that is compatible with the underlying SQLite driver.
 func (s *SqliteQuery) prepareValueForQuery(fieldName string, value any) (any, error) {
-	field, exists := s.schema.Fields[fieldName]
-	if !exists {
+	field := s.findField(fieldName)
+
+	if field == nil {
 		return nil, fmt.Errorf("field '%s' not found in schema for value preparation", fieldName)
 	}
 
@@ -363,7 +374,7 @@ func (s *SqliteQuery) GenerateInsertSQL(records []map[string]any) (string, []any
 	fieldSet := make(map[string]bool)
 	for _, record := range records {
 		for fieldName := range record {
-			if _, exists := s.schema.Fields[fieldName]; !exists {
+			if f := s.findField(fieldName); f == nil {
 				return "", nil, fmt.Errorf("field '%s' not found in schema", fieldName)
 			}
 			fieldSet[fieldName] = true
@@ -395,7 +406,7 @@ func (s *SqliteQuery) GenerateInsertSQL(records []map[string]any) (string, []any
 				value = nil
 			}
 			preparedValue, err := s.prepareValueForQuery(fieldName, value)
-		if err != nil {
+			if err != nil {
 				return "", nil, fmt.Errorf("error preparing value for field '%s': %w", fieldName, err)
 			}
 			rowPlaceholders = append(rowPlaceholders, "?")

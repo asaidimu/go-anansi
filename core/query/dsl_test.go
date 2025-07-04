@@ -3,7 +3,7 @@ package query
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/stretchr/testify/assert"
 )
 

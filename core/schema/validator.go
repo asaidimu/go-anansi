@@ -5,7 +5,6 @@ package schema
 
 import (
 	"fmt"
-	"maps"
 	"reflect"
 	"strconv"
 	"strings"
@@ -93,12 +92,12 @@ func (v *Validator) coerceValue(value any, expectedType FieldType) (any, bool) {
 
 // validateData is the main validation function that checks all fields in the data.
 func (v *Validator) validateData(data map[string]any, path string) {
-	for fieldName, fieldDef := range v.schema.Fields {
-		fieldPath := v.buildPath(path, fieldName)
-		value, exists := data[fieldName]
+	for _, fieldDef := range v.schema.Fields {
+		fieldPath := v.buildPath(path, fieldDef.Name)
+		value, exists := data[fieldDef.Name]
 
 		if fieldDef.Required != nil && *fieldDef.Required && !exists {
-			v.addIssue("REQUIRED_FIELD_MISSING", fmt.Sprintf("Required field '%s' is missing", fieldName), fieldPath)
+			v.addIssue("REQUIRED_FIELD_MISSING", fmt.Sprintf("Required field '%s' is missing", fieldDef.Name), fieldPath)
 			continue
 		}
 
@@ -110,7 +109,7 @@ func (v *Validator) validateData(data map[string]any, path string) {
 	}
 
 	for dataKey := range data {
-		if _, exists := v.schema.Fields[dataKey]; !exists {
+		if exists := v.schema.FindField(dataKey); exists == nil {
 			v.addIssue("UNEXPECTED_FIELD", fmt.Sprintf("Unexpected field '%s' not defined in schema", dataKey), v.buildPath(path, dataKey))
 		}
 	}
@@ -448,18 +447,24 @@ func (v *Validator) validateFieldSchema(data map[string]any, fieldSchema FieldSc
 
 	if nestedSchema.isStructured {
 		if nestedSchema.StructuredFieldsMap != nil {
-			tempSchemaDef.Fields = nestedSchema.StructuredFieldsMap
-		} else if nestedSchema.StructuredFieldsArray != nil {
-			for _, fieldGroup := range nestedSchema.StructuredFieldsArray {
-				if fieldGroup.When != nil {
-					if fieldValue, exists := data[fieldGroup.When.Field]; exists && reflect.DeepEqual(fieldValue, fieldGroup.When.Value) {
-						maps.Copy(tempSchemaDef.Fields, fieldGroup.Fields)
-					}
-				} else {
-					maps.Copy(tempSchemaDef.Fields, fieldGroup.Fields)
-				}
-			}
-		}
+        for _, fieldDef := range nestedSchema.StructuredFieldsMap {
+            tempSchemaDef.Fields[fieldDef.Name] = fieldDef
+        }
+    } else if nestedSchema.StructuredFieldsArray != nil {
+        for _, fieldGroup := range nestedSchema.StructuredFieldsArray {
+            if fieldGroup.When != nil {
+                if fieldValue, exists := data[fieldGroup.When.Field]; exists && reflect.DeepEqual(fieldValue, fieldGroup.When.Value) {
+                    for _, fieldDef := range fieldGroup.Fields {
+                        tempSchemaDef.Fields[fieldDef.Name] = fieldDef
+                    }
+                }
+            } else {
+                for _, fieldDef := range fieldGroup.Fields {
+                    tempSchemaDef.Fields[fieldDef.Name] = fieldDef
+                }
+            }
+        }
+    }
 	} else {
 		if nestedSchema.Type != nil {
 			literalFieldDef := &FieldDefinition{

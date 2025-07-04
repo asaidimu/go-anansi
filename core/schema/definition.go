@@ -101,8 +101,8 @@ func (c Constraint[T]) IsSchemaConstraintRule() {}
 
 // ConstraintGroup defines a group of multiple constraints with a logical operator.
 type ConstraintGroup[T FieldType] struct {
-	Name     string                  `json:"name"`
-	Operator LogicalOperator         `json:"operator"`
+	Name     string                    `json:"name"`
+	Operator LogicalOperator           `json:"operator"`
 	Rules    []SchemaConstraintRule[T] `json:"rules"`
 }
 
@@ -119,27 +119,82 @@ type SchemaConstraint[T FieldType] []SchemaConstraintRule[T]
 
 // FieldSchema defines a reference to a nested schema.
 type FieldSchema struct {
-	ID          string                    `json:"id"`
+	ID          string                      `json:"id"`
 	Constraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
 	Indexes     []IndexDefinition           `json:"indexes,omitempty"`
 }
 
 // FieldDefinition defines a field within a schema.
 type FieldDefinition struct {
-	Name        string                    `json:"name"`
-	Type        FieldType                 `json:"type"`
-	Required    *bool                     `json:"required,omitempty"`
+	Name        string                      `json:"name"`
+	Type        FieldType                   `json:"type"`
+	Required    *bool                       `json:"required,omitempty"`
 	Constraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
-	Default     any                       `json:"default,omitempty"`
-	Values      []any                     `json:"values,omitempty"`
-	Schema      any                       `json:"schema,omitempty"`
-	ItemsType   *FieldType                `json:"itemsType,omitempty"`
-	Deprecated  *bool                     `json:"deprecated,omitempty"`
-	Description *string                   `json:"description,omitempty"`
-	Unique      *bool                     `json:"unique,omitempty"`
+	Default     any                         `json:"default,omitempty"`
+	Values      []any                       `json:"values,omitempty"`
+	Schema      any                         `json:"schema,omitempty"`
+	ItemsType   *FieldType                  `json:"itemsType,omitempty"`
+	Deprecated  *bool                       `json:"deprecated,omitempty"`
+	Description *string                     `json:"description,omitempty"`
+	Unique      *bool                       `json:"unique,omitempty"`
 	Hint        *struct {
 		Input InputHint `json:"input"`
 	} `json:"hint,omitempty"`
+}
+
+func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
+	type Alias FieldDefinition // Create an alias to avoid infinite recursion
+
+	// Unmarshal into a temporary struct to access the 'type' field and raw 'schema' field
+	var temp struct {
+		Type   FieldType       `json:"type"`
+		Schema json.RawMessage `json:"schema,omitempty"`
+		*Alias
+	}
+
+	temp.Alias = (*Alias)(fd) // Point Alias to the actual FieldDefinition
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	// Copy the unmarshaled data back to the original FieldDefinition
+	*fd = FieldDefinition(*temp.Alias)
+
+	// Now, handle the 'Schema' field based on its 'Type'
+	if temp.Schema != nil {
+		switch temp.Type {
+		case FieldTypeObject, FieldTypeUnion:
+			// For FieldTypeObject or FieldTypeUnion, Schema should be FieldSchema or []FieldSchema
+			var singleSchema FieldSchema
+			if err := json.Unmarshal(temp.Schema, &singleSchema); err == nil {
+				fd.Schema = singleSchema
+				return nil
+			}
+			var multiSchema []FieldSchema
+			if err := json.Unmarshal(temp.Schema, &multiSchema); err == nil {
+				fd.Schema = multiSchema
+				return nil
+			}
+			// Fall through to generic unmarshaling if specific types don't match
+		case FieldTypeRecord:
+			// For FieldTypeRecord, Schema should be SchemaDefinition
+			var recordSchema SchemaDefinition
+			if err := json.Unmarshal(temp.Schema, &recordSchema); err == nil {
+				fd.Schema = recordSchema
+				return nil
+			}
+			// Fall through to generic unmarshaling if specific types don't match
+		}
+
+		// For any other types or if specific unmarshaling failed,
+		// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
+		var genericSchema any
+		if err := json.Unmarshal(temp.Schema, &genericSchema); err != nil {
+			return fmt.Errorf("failed to unmarshal FieldDefinition.Schema into expected types or generic any: %w", err)
+		}
+		fd.Schema = genericSchema
+	}
+	return nil
 }
 
 // PartialIndexCondition defines a condition for a partial index.
@@ -315,17 +370,17 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 
 // SchemaDefinition defines a complete schema for a collection.
 type SchemaDefinition struct {
-	Name          string                              `json:"name"`
-	Version       string                              `json:"version"`
-	Description   *string                             `json:"description,omitempty"`
-	Fields        map[string]*FieldDefinition      `json:"fields"`
+	Name          string                             `json:"name"`
+	Version       string                             `json:"version"`
+	Description   *string                            `json:"description,omitempty"`
+	Fields        map[string]*FieldDefinition        `json:"fields"`
 	NestedSchemas map[string]*NestedSchemaDefinition `json:"nestedSchemas,omitempty"`
-	Indexes       []IndexDefinition                   `json:"indexes,omitempty"`
-	Constraints   SchemaConstraint[FieldType]         `json:"constraints,omitempty"`
-	Metadata      map[string]any                      `json:"metadata,omitempty"`
-	Migrations    []Migration[any]                    `json:"migrations,omitempty"`
-	Hint          *SchemaHint                         `json:"hint,omitempty"`
-	Mock          func(faker any) (any, error)        `json:"-"`
+	Indexes       []IndexDefinition                  `json:"indexes,omitempty"`
+	Constraints   SchemaConstraint[FieldType]        `json:"constraints,omitempty"`
+	Metadata      map[string]any                     `json:"metadata,omitempty"`
+	Migrations    []Migration                        `json:"migrations,omitempty"`
+	Hint          *SchemaHint                        `json:"hint,omitempty"`
+	Mock          func(faker any) (any, error)       `json:"-"`
 }
 
 // SchemaChangeType defines the type of change in a migration.
@@ -364,8 +419,8 @@ type SchemaChangeAddFieldPayload struct {
 }
 
 // SchemaChangeModifyFieldPayload is the payload for a ModifyField schema change.
-type SchemaChangeModifyFieldPayload[T any] struct {
-	Changes             PartialFieldDefinition[T] `json:"changes"`
+type SchemaChangeModifyFieldPayload struct {
+	Changes             PartialFieldDefinition `json:"changes"`
 	NestedSchemaChanges *struct {
 		ID          *string                     `json:"id,omitempty"`
 		Constraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
@@ -404,14 +459,14 @@ type SchemaChangeModifyNestedSchemaPayload struct {
 }
 
 // SchemaChange defines a single change to be made to a schema during a migration.
-type SchemaChange[T any] struct {
+type SchemaChange struct {
 	Type SchemaChangeType `json:"type"`
 
 	ID *string `json:"id,omitempty"`
 
 	*SchemaChangeModifyPropertyPayload
 	*SchemaChangeAddFieldPayload
-	*SchemaChangeModifyFieldPayload[T]
+	*SchemaChangeModifyFieldPayload
 	*SchemaChangeAddIndexPayload
 	*SchemaChangeModifyIndexPayload
 	*SchemaChangeAddConstraintPayload
@@ -421,7 +476,7 @@ type SchemaChange[T any] struct {
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface for SchemaChange.
-func (sc *SchemaChange[T]) UnmarshalJSON(data []byte) error {
+func (sc *SchemaChange) UnmarshalJSON(data []byte) error {
 	var common struct {
 		Type SchemaChangeType `json:"type"`
 		ID   *string          `json:"id"`
@@ -443,7 +498,7 @@ func (sc *SchemaChange[T]) UnmarshalJSON(data []byte) error {
 	case SchemaChangeTypeRemoveField:
 		return nil
 	case SchemaChangeTypeModifyField:
-		sc.SchemaChangeModifyFieldPayload = &SchemaChangeModifyFieldPayload[T]{}
+		sc.SchemaChangeModifyFieldPayload = &SchemaChangeModifyFieldPayload{}
 		return json.Unmarshal(data, sc.SchemaChangeModifyFieldPayload)
 	case SchemaChangeTypeAddIndex:
 		sc.SchemaChangeAddIndexPayload = &SchemaChangeAddIndexPayload{}
@@ -475,7 +530,7 @@ func (sc *SchemaChange[T]) UnmarshalJSON(data []byte) error {
 }
 
 // MarshalJSON implements the json.Marshaler interface for SchemaChange.
-func (sc SchemaChange[T]) MarshalJSON() ([]byte, error) {
+func (sc SchemaChange) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 	m["type"] = sc.Type
 	if sc.ID != nil && *sc.ID != "" {
@@ -544,7 +599,7 @@ func (sc SchemaChange[T]) MarshalJSON() ([]byte, error) {
 }
 
 // PartialFieldDefinition represents a partial definition of a field, used for modifications.
-type PartialFieldDefinition[T any] struct {
+type PartialFieldDefinition struct {
 	Name        *string                     `json:"name,omitempty"`
 	Type        *FieldType                  `json:"type,omitempty"`
 	Required    *bool                       `json:"required,omitempty"`
@@ -559,6 +614,57 @@ type PartialFieldDefinition[T any] struct {
 	Hint        *struct {
 		Input InputHint `json:"input"`
 	} `json:"hint,omitempty"`
+}
+
+func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
+	type Alias PartialFieldDefinition // Create an alias to avoid infinite recursion
+
+	// Unmarshal into a temporary struct to access the 'type' field and raw 'schema' field
+	var temp struct {
+		Type   FieldType       `json:"type"`
+		Schema json.RawMessage `json:"schema,omitempty"`
+		*Alias
+	}
+
+	temp.Alias = (*Alias)(fd) // Point Alias to the actual FieldDefinition
+	if err := json.Unmarshal(data, &temp); err != nil {
+		return err
+	}
+
+	// Copy the unmarshaled data back to the original FieldDefinition
+	*fd = PartialFieldDefinition(*temp.Alias)
+
+	// Now, handle the 'Schema' field based on its 'Type'
+	if temp.Schema != nil {
+		switch temp.Type {
+		case FieldTypeObject, FieldTypeUnion:
+			var singleSchema FieldSchema
+			if err := json.Unmarshal(temp.Schema, &singleSchema); err == nil {
+				fd.Schema = singleSchema
+				return nil
+			}
+			var multiSchema []FieldSchema
+			if err := json.Unmarshal(temp.Schema, &multiSchema); err == nil {
+				fd.Schema = multiSchema
+				return nil
+			}
+		case FieldTypeRecord:
+			var recordSchema SchemaDefinition
+			if err := json.Unmarshal(temp.Schema, &recordSchema); err == nil {
+				fd.Schema = recordSchema
+				return nil
+			}
+		}
+
+		// For any other types or if specific unmarshaling failed,
+		// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
+		var genericSchema any
+		if err := json.Unmarshal(temp.Schema, &genericSchema); err != nil {
+			return fmt.Errorf("failed to unmarshal FieldDefinition.Schema into expected types or generic any: %w", err)
+		}
+		fd.Schema = genericSchema
+	}
+	return nil
 }
 
 // PartialIndexDefinition represents a partial definition of an index, used for modifications.
@@ -597,16 +703,16 @@ type DataTransform[Initial, Next any] struct {
 }
 
 // Migration defines a single migration, consisting of schema changes and data transformations.
-type Migration[T any] struct {
-	ID            string            `json:"id"`
-	SchemaVersion string            `json:"schemaVersion"`
-	Changes       []SchemaChange[T] `json:"changes"`
-	Description   string            `json:"description"`
-	Status        string            `json:"status"`
-	Rollback      []SchemaChange[T] `json:"rollback,omitempty"`
-	Transform     any               `json:"transform"`
-	CreatedAt     string            `json:"createdAt"`
-	Checksum      string            `json:"checksum"`
+type Migration struct {
+	ID            string         `json:"id"`
+	SchemaVersion string         `json:"schemaVersion"`
+	Changes       []SchemaChange `json:"changes"`
+	Description   string         `json:"description"`
+	Status        string         `json:"status"`
+	Rollback      []SchemaChange `json:"rollback,omitempty"`
+	Transform     string         `json:"transform"`
+	CreatedAt     string         `json:"createdAt"`
+	Checksum      string         `json:"checksum"`
 }
 
 // InputHint provides hints for UI generation or tooling.

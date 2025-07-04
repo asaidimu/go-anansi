@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v5/core/persistence"
-	"github.com/asaidimu/go-anansi/v5/core/query"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/persistence"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"go.uber.org/zap"
 )
 
@@ -190,6 +190,69 @@ func (i *SQLiteInteractor) SelectDocuments(ctx context.Context, schema *schema.S
 	return readRows(i.logger, schema, rows)
 }
 
+// SelectStream executes a SELECT query and returns a channel of documents.
+func (i *SQLiteInteractor) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.QueryDSL) (<-chan schema.Document, <-chan error, error) {
+	queryGenerator, err := i.queryGeneratorFactory.CreateGenerator(sc)
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not get a query generator instance: %w", err)
+	}
+
+	sqlQuery, queryParams, err := queryGenerator.GenerateSelectSQL(dsl)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate SQL query: %w", err)
+	}
+
+	rows, err := i.runner().QueryContext(ctx, sqlQuery, queryParams...)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to execute SELECT query: %w", err)
+	}
+
+	docChan := make(chan schema.Document)
+	errChan := make(chan error, 1)
+
+	go func() {
+		defer close(docChan)
+		defer close(errChan)
+		defer rows.Close()
+
+		columns, err := rows.Columns()
+		if err != nil {
+			errChan <- fmt.Errorf("failed to get columns: %w", err)
+			return
+		}
+
+		for rows.Next() {
+			row := make(schema.Document, len(columns))
+			values := make([]any, len(columns))
+			scanArgs := make([]any, len(columns))
+			for i := range values {
+				scanArgs[i] = &values[i]
+			}
+
+			if err := rows.Scan(scanArgs...); err != nil {
+				errChan <- fmt.Errorf("failed to scan row: %w", err)
+				return
+			}
+
+			for i, col := range columns {
+				row[col] = values[i]
+			}
+
+			select {
+			case docChan <- row:
+			case <-ctx.Done():
+				return
+			}
+		}
+		if err := rows.Err(); err != nil {
+			errChan <- err
+		}
+	}()
+
+	return docChan, errChan, nil
+}
+
+
 // UpdateDocuments executes an UPDATE query against the database.
 func (i *SQLiteInteractor) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
 	queryGenerator, err := i.queryGeneratorFactory.CreateGenerator(schema)
@@ -291,5 +354,12 @@ func (i *SQLiteInteractor) Rollback(ctx context.Context) error {
 	}
 	i.logger.Debug("Rolling back transaction")
 	return i.tx.Rollback()
+}
+
+// Migrate applies a schema migration to the database for a specific collection.
+func (i *SQLiteInteractor) Migrate(ctx context.Context, collectionName string, migration schema.Migration) error {
+	// TODO: Implement migration logic here. This will involve applying schema changes
+	// and potentially transforming data based on the migration definition.
+	return fmt.Errorf("migration for collection %s not yet implemented", collectionName)
 }
 

@@ -4,7 +4,7 @@
 package query
 
 import (
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
 // Logical operators for combining filter conditions.
