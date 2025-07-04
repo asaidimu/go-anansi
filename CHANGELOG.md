@@ -1,3 +1,13 @@
+# [6.0.0](https://github.com/asaidimu/go-anansi/compare/v5.1.0...v6.0.0) (2025-07-04)
+
+
+* feat(persistence)!: overhaul schema and collection lifecycle management ([ecdff52](https://github.com/asaidimu/go-anansi/commit/ecdff52edf27de52945e8afc34bd54cda053b21b))
+
+
+### BREAKING CHANGES
+
+* The Migrate and Rollback methods have been removed from the PersistenceCollectionInterface and are now available on the PersistenceInterface with revised signatures. Additionally, the internal _schemas collection's structure has changed, introducing logical and physical name fields and directly embedding schema.SchemaDefinition, which may affect direct interactions with schema records.
+
 # [5.1.0](https://github.com/asaidimu/go-anansi/compare/v5.0.1...v5.1.0) (2025-06-29)
 
 
