@@ -3,7 +3,7 @@
 package query
 
 import (
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
 // QueryGeneratorFactory defines the interface for a factory that creates QueryGenerator instances.

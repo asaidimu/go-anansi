@@ -9,7 +9,7 @@ import (
 	"maps"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"go.uber.org/zap"
 )
 

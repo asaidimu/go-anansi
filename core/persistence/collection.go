@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v5/core/query"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-events"
 	"github.com/google/uuid"
 )
@@ -19,19 +19,21 @@ import (
 // This struct is not meant to be used directly but rather to be embedded in other structs
 // that might add more specialized functionality, such as event emitting.
 type CollectionBase struct {
-	schema        *schema.SchemaDefinition
-	processor     *query.DataProcessor
-	executor      *Executor
-	validator     *schema.Validator
-	bus           *events.TypedEventBus[PersistenceEvent]
-	subscriptions map[string]*SubscriptionInfo // To store unsubscribe functions
-	subMu         sync.RWMutex                 // Mutex to protect subscriptions map
+	name            string
+	schema          *schema.SchemaDefinition
+	processor       *query.DataProcessor
+	executor        *Executor
+	validator       *schema.Validator
+	bus             *events.TypedEventBus[PersistenceEvent]
+	subscriptions   map[string]*SubscriptionInfo // To store unsubscribe functions
+	subMu           sync.RWMutex                 // Mutex to protect subscriptions map
+	fmap            schema.FunctionMap           // Map of custom functions for validation and processing
 }
 
 // NewCollection creates a new instance of a collection that implements the
 // PersistenceCollectionInterface. It wraps the base collection logic with event-emitting
 // capabilities, ensuring that operations on the collection are observable.
-func NewCollection(bus *events.TypedEventBus[PersistenceEvent], sc *schema.SchemaDefinition, executor *Executor, fmap schema.FunctionMap) (PersistenceCollectionInterface, error) {
+func NewCollection(bus *events.TypedEventBus[PersistenceEvent], name string, sc *schema.SchemaDefinition, executor *Executor, fmap schema.FunctionMap) (PersistenceCollectionInterface, error) {
 	validator := schema.NewValidator(sc, fmap)
 
 	collection := NewEventEmittingCollection(&CollectionBase{
@@ -40,6 +42,7 @@ func NewCollection(bus *events.TypedEventBus[PersistenceEvent], sc *schema.Schem
 		validator:     validator,
 		bus:           bus,
 		subscriptions: make(map[string]*SubscriptionInfo),
+		fmap:          fmap,
 	})
 
 	return collection, nil
@@ -65,7 +68,7 @@ func (c *CollectionBase) Create(data any) (any, error) {
 		}
 
 		if !validation.Valid {
-			return nil, fmt.Errorf("provided data does not conform to the collection's schema")
+			return nil, fmt.Errorf("provided data does not conform to the collection's schema,  \n %v", validation)
 		}
 	}
 
@@ -121,39 +124,6 @@ func (c *CollectionBase) Validate(data any, loose bool) (*schema.ValidationResul
 		Valid:  valid,
 		Issues: issues,
 	}, nil
-}
-
-// Rollback reverts a schema migration for the collection. A specific version can be
-// targeted, and a dry run can be performed to preview the changes.
-// NOTE: This method is not yet implemented.
-func (c *CollectionBase) Rollback(version *string, dryRun *bool) (struct {
-	Schema  schema.SchemaDefinition `json:"schema"`
-	Preview any                     `json:"preview"`
-}, error) {
-	// TODO: Implement schema rollback logic.
-	return struct {
-		Schema  schema.SchemaDefinition `json:"schema"`
-		Preview any                     `json:"preview"`
-	}{}, fmt.Errorf("rollback method not implemented for collection '%s'", c.schema.Name)
-}
-
-// Migrate applies a schema migration to the collection. It takes a description and a
-// callback function that defines the data transformation. A dry run can be performed
-// to preview the changes.
-// NOTE: This method is not yet implemented.
-func (c *CollectionBase) Migrate(
-	description string,
-	cb func(h schema.SchemaMigrationHelper) (schema.DataTransform[any, any], error),
-	dryRun *bool,
-) (struct {
-	Schema  schema.SchemaDefinition `json:"schema"`
-	Preview any                     `json:"preview"`
-}, error) {
-	// TODO: Implement schema migration logic.
-	return struct {
-		Schema  schema.SchemaDefinition `json:"schema"`
-		Preview any                     `json:"preview"`
-	}{}, fmt.Errorf("migrate method not implemented for collection '%s'", c.schema.Name)
 }
 
 // Metadata retrieves metadata specifically for this collection, with an option to

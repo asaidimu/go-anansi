@@ -9,8 +9,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/asaidimu/go-anansi/v5/core/query"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
 // PersistenceEventType defines the set of possible event types that can be emitted
@@ -125,8 +125,8 @@ type TelemetryEvent struct {
 // It provides details about the subscription being registered or unregistered.
 type SubscriptionEvent struct {
 	PersistenceEvent
-	EventName  string `json:"eventName"` // EventName is the name of the event that was subscribed to or unsubscribed from.
-	CallbackID string `json:"callbackId"`// CallbackID is the unique identifier for the subscription's callback function.
+	EventName  string `json:"eventName"`  // EventName is the name of the event that was subscribed to or unsubscribed from.
+	CallbackID string `json:"callbackId"` // CallbackID is the unique identifier for the subscription's callback function.
 }
 
 // PersistenceOperationEvent is a specific type of PersistenceEvent for document-level
@@ -168,11 +168,11 @@ type EventCallbackFunction func(ctx context.Context, event PersistenceEvent) err
 // to identify, describe, and manage the lifecycle of a subscription, including a function
 // to unsubscribe.
 type SubscriptionInfo struct {
-	Id          *string              `json:"id"`                      // Id is the unique identifier for the subscription.
-	Event       PersistenceEventType `json:"event"`                   // Event is the type of event that this subscription listens for.
-	Label       *string              `json:"label,omitempty"`         // Label is an optional, human-readable identifier for the subscription.
-	Description *string              `json:"description,omitempty"`   // Description provides more detail about what the subscription does.
-	Unsubscribe func()                                                // Unsubscribe is a function that, when called, will unregister the subscription.
+	Id          *string              `json:"id"`                    // Id is the unique identifier for the subscription.
+	Event       PersistenceEventType `json:"event"`                 // Event is the type of event that this subscription listens for.
+	Label       *string              `json:"label,omitempty"`       // Label is an optional, human-readable identifier for the subscription.
+	Description *string              `json:"description,omitempty"` // Description provides more detail about what the subscription does.
+	Unsubscribe func()               // Unsubscribe is a function that, when called, will unregister the subscription.
 }
 
 // MetadataFilter provides criteria for filtering metadata queries. This allows clients
@@ -192,32 +192,32 @@ type MetadataFilter struct {
 // complete history of a migration's lifecycle, including its status, timestamps, and
 // any errors that occurred.
 type MigrationMetadata struct {
-	ID             string  `json:"id"`                  // ID is the unique identifier for the migration.
-	SchemaVersion  string  `json:"schemaVersion"`       // SchemaVersion is the version of the schema after this migration is applied.
-	Description    string  `json:"description"`         // Description is a human-readable summary of the changes in this migration.
-	Status         string  `json:"status"`              // Status indicates the current state of the migration (e.g., "pending", "applied", "failed", "rolledback").
-	Checksum       string  `json:"checksum"`            // Checksum is a hash of the migration script, used to verify its integrity.
-	CreatedAt      int64   `json:"createdAt"`           // CreatedAt is the timestamp when the migration was created (Unix milliseconds).
-	LastModifiedAt int64   `json:"lastModifiedAt"`      // LastModifiedAt is the timestamp when the migration was last modified (Unix milliseconds).
-	StartedAt      *int64  `json:"startedAt,omitempty"` // StartedAt is the timestamp when the migration process began (Unix milliseconds).
-	CompletedAt    *int64  `json:"completedAt,omitempty"`// CompletedAt is the timestamp when the migration process finished (Unix milliseconds).
-	Error          *string `json:"error,omitempty"`     // Error contains the error message if the migration failed.
+	ID             string  `json:"id"`                    // ID is the unique identifier for the migration.
+	SchemaVersion  string  `json:"schemaVersion"`         // SchemaVersion is the version of the schema after this migration is applied.
+	Description    string  `json:"description"`           // Description is a human-readable summary of the changes in this migration.
+	Status         string  `json:"status"`                // Status indicates the current state of the migration (e.g., "pending", "applied", "failed", "rolledback").
+	Checksum       string  `json:"checksum"`              // Checksum is a hash of the migration script, used to verify its integrity.
+	CreatedAt      int64   `json:"createdAt"`             // CreatedAt is the timestamp when the migration was created (Unix milliseconds).
+	LastModifiedAt int64   `json:"lastModifiedAt"`        // LastModifiedAt is the timestamp when the migration was last modified (Unix milliseconds).
+	StartedAt      *int64  `json:"startedAt,omitempty"`   // StartedAt is the timestamp when the migration process began (Unix milliseconds).
+	CompletedAt    *int64  `json:"completedAt,omitempty"` // CompletedAt is the timestamp when the migration process finished (Unix milliseconds).
+	Error          *string `json:"error,omitempty"`       // Error contains the error message if the migration failed.
 }
 
 // TransformationMetadata describes the metadata of a single data transformation,
 // which is typically part of a schema migration. It details the change from one
 // schema version to another.
 type TransformationMetadata struct {
-	ID                string  `json:"id"`                  // ID is the unique identifier for the transformation.
-	Name              string  `json:"name"`                // Name is a human-readable name for the transformation.
-	FromSchemaVersion string  `json:"fromSchemaVersion"`   // FromSchemaVersion is the schema version before the transformation.
-	ToSchemaVersion   string  `json:"toSchemaVersion"`     // ToSchemaVersion is the schema version after the transformation.
-	Description       string  `json:"description"`         // Description is a summary of the transformation's purpose.
-	CreatedAt         int64   `json:"createdAt"`           // CreatedAt is the timestamp when the transformation was created (Unix milliseconds).
-	LastModifiedAt    int64   `json:"lastModifiedAt"`      // LastModifiedAt is the timestamp when the transformation was last modified (Unix milliseconds).
-	Status            string  `json:"status"`              // Status indicates the current state of the transformation (e.g., "pending", "applied", "failed").
-	Checksum          string  `json:"checksum"`            // Checksum is a hash of the transformation script to ensure its integrity.
-	Error             *string `json:"error,omitempty"`     // Error contains the error message if the transformation failed.
+	ID                string  `json:"id"`                // ID is the unique identifier for the transformation.
+	Name              string  `json:"name"`              // Name is a human-readable name for the transformation.
+	FromSchemaVersion string  `json:"fromSchemaVersion"` // FromSchemaVersion is the schema version before the transformation.
+	ToSchemaVersion   string  `json:"toSchemaVersion"`   // ToSchemaVersion is the schema version after the transformation.
+	Description       string  `json:"description"`       // Description is a summary of the transformation's purpose.
+	CreatedAt         int64   `json:"createdAt"`         // CreatedAt is the timestamp when the transformation was created (Unix milliseconds).
+	LastModifiedAt    int64   `json:"lastModifiedAt"`    // LastModifiedAt is the timestamp when the transformation was last modified (Unix milliseconds).
+	Status            string  `json:"status"`            // Status indicates the current state of the transformation (e.g., "pending", "applied", "failed").
+	Checksum          string  `json:"checksum"`          // Checksum is a hash of the transformation script to ensure its integrity.
+	Error             *string `json:"error,omitempty"`   // Error contains the error message if the transformation failed.
 }
 
 // CollectionMetadata provides comprehensive metadata for a single collection.
@@ -277,9 +277,9 @@ type DeleteResult struct {
 
 // CreateCollectionOptions defines the parameters required to create a new collection.
 type CreateCollectionOptions struct {
-	Name        string                  `json:"name"`        // Name is the logical name for the new collection.
-	Description string                  `json:"description"` // Description is a human-readable summary of the collection's purpose.
-	Schema      schema.SchemaDefinition `json:"schema"`      // Schema is the schema definition that documents in this collection must adhere to.
+	Name        string                  `json:"name"`             // Name is the logical name for the new collection.
+	Description string                  `json:"description"`      // Description is a human-readable summary of the collection's purpose.
+	Schema      schema.SchemaDefinition `json:"schema"`           // Schema is the schema definition that documents in this collection must adhere to.
 	Labels      []string                `json:"labels,omitempty"` // Labels are optional tags to associate with the collection for organization.
 }
 
@@ -298,7 +298,7 @@ type RegisterSubscriptionOptions struct {
 	Event       PersistenceEventType  `json:"event"`                 // Event is the type of event to subscribe to.
 	Label       *string               `json:"label,omitempty"`       // Label is an optional, human-readable identifier for the subscription.
 	Description *string               `json:"description,omitempty"` // Description provides more detail about what the subscription does.
-	Callback    EventCallbackFunction                              // Callback is the function that will be executed when the event is triggered.
+	Callback    EventCallbackFunction // Callback is the function that will be executed when the event is triggered.
 }
 
 // UpdateOptions defines the parameters for an update operation.
@@ -321,6 +321,10 @@ type PersistenceInterface interface {
 	Delete(id string) (bool, error)
 	// Schema retrieves a schema definition by its unique ID.
 	Schema(id string) (*schema.SchemaDefinition, error)
+
+	// SchemaCollection returns a PersistenceCollectionInterface for the internal schemas collection.
+	SchemaCollection(tx DatabaseInteractor) (PersistenceCollectionInterface, error)
+
 	// Transact executes a series of operations within a single atomic transaction.
 	// The provided callback function receives a transaction object, and if the callback
 	// returns an error, the transaction is rolled back.
@@ -339,6 +343,23 @@ type PersistenceInterface interface {
 	UnregisterSubscription(id string)
 	// Subscriptions returns a list of all currently active subscriptions.
 	Subscriptions() ([]SubscriptionInfo, error)
+
+	// Rollback reverts a schema migration for the collection. A specific version can be
+	// targeted, and a dry run can be performed to preview the changes.
+	Rollback(
+		name string,
+		version *string,
+		dryRun *bool,
+	) (PersistenceCollectionInterface, error)
+
+	// Migrate applies a schema migration to the collection. It takes a description and a
+	// callback function that defines the data transformation. A dry run can be performed
+	// to preview the changes.
+	Migrate(
+		name string,
+		migration schema.Migration,
+		dryRun *bool,
+	) (PersistenceCollectionInterface, error)
 }
 
 // PersistenceTransactionInterface defines the set of operations that can be performed
@@ -356,6 +377,9 @@ type PersistenceTransactionInterface interface {
 	Schema(id string) (*schema.SchemaDefinition, error)
 	// Collection returns a handle to a specific collection within the transaction.
 	Collection(name string) (PersistenceCollectionInterface, error)
+
+	// SchemaCollection returns a PersistenceCollectionInterface for the internal schemas collection.
+	SchemaCollection(tx DatabaseInteractor) (PersistenceCollectionInterface, error)
 	// Metadata retrieves metadata about the persistence layer within the transaction.
 	Metadata(
 		filter *MetadataFilter,
@@ -386,26 +410,6 @@ type PersistenceCollectionInterface interface {
 	// Validate checks if the given data conforms to the collection's schema.
 	// The 'loose' flag allows for partial validation.
 	Validate(data any, loose bool) (*schema.ValidationResult, error)
-	// Rollback reverts a schema migration for the collection. A specific version can be
-	// targeted, and a dry run can be performed to preview the changes.
-	Rollback(
-		version *string,
-		dryRun *bool,
-	) (struct {
-		Schema  schema.SchemaDefinition `json:"schema"`
-		Preview any                     `json:"preview"`
-	}, error)
-	// Migrate applies a schema migration to the collection. It takes a description and a
-	// callback function that defines the data transformation. A dry run can be performed
-	// to preview the changes.
-	Migrate(
-		description string,
-		cb func(h schema.SchemaMigrationHelper) (schema.DataTransform[any, any], error),
-		dryRun *bool,
-	) (struct {
-		Schema  schema.SchemaDefinition `json:"schema"`
-		Preview any                     `json:"preview"`
-	}, error)
 
 	// Metadata retrieves metadata specifically for this collection, with an option to
 	// force a refresh of the data.

@@ -8,8 +8,9 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v5/core/query"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/utils"
 	"github.com/asaidimu/go-events"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -19,15 +20,16 @@ import (
 // interactions with the database through a DatabaseInteractor, manages schema definitions,
 // and handles event subscriptions for observability.
 type Persistence struct {
-	interactor    DatabaseInteractor
-	collection    PersistenceCollectionInterface
-	schema        *schema.SchemaDefinition
-	executor      *Executor
-	fmap          schema.FunctionMap
-	logger        *zap.Logger
-	subscriptions map[string]*SubscriptionInfo // To store unsubscribe functions
-	subMu         sync.RWMutex                 // Mutex to protect subscriptions map
-	bus           *events.TypedEventBus[PersistenceEvent]
+	interactor      DatabaseInteractor
+	collection      PersistenceCollectionInterface
+	schema          *schema.SchemaDefinition
+	executor        *Executor
+	fmap            schema.FunctionMap
+	logger          *zap.Logger
+	subscriptions   map[string]*SubscriptionInfo // To store unsubscribe functions
+	subMu           sync.RWMutex                 // Mutex to protect subscriptions map
+	collectionNames map[string]string
+	bus             *events.TypedEventBus[PersistenceEvent]
 }
 
 // NewPersistence creates a new instance of the Persistence service. It initializes the
@@ -50,26 +52,55 @@ func NewPersistence(interactor DatabaseInteractor, fmap schema.FunctionMap) (Per
 	}
 
 	if !exists {
-		if err := interactor.CreateCollection(s); err != nil {
+		tx, err := interactor.StartTransaction(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("failed to create system schema collection: %w", err)
+		}
+		if err := tx.CreateCollection(s); err != nil {
+			tx.Rollback(context.Background())
 			return nil, fmt.Errorf("failed to create table for collections %s: %w", s.Name, err)
 		}
+		tx.Commit(context.Background())
 	}
 
 	executor := NewExecutor(interactor, nil)
-	collection, err := NewCollection(bus, &s, executor, fmap)
+	collection, err := NewCollection(bus, s.Name, &s, executor, fmap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize schemas collection: %w", err)
 	}
 
+	q := query.NewQueryBuilder().Select().Include("name").End().Build()
+	result, err := collection.Read(&q)
+
+	if err != nil {
+		return nil, fmt.Errorf("Failed to get collection names: %w", err)
+	}
+
+	names := make(map[string]string)
+
+	if result.Count == 1 {
+		data, _ := result.Data.(schema.Document)
+		name, _ := data["name"].(map[string]string)
+		names[name["logical"]] = name["physical"]
+	} else {
+		data, _ := result.Data.([]schema.Document)
+		for _, doc := range data {
+			name, _ := doc["name"].(map[string]string)
+			names[name["logical"]] = name["physical"]
+		}
+	}
+
+	fmt.Printf("%v", names)
 	return &Persistence{
-		interactor:    interactor,
-		executor:      executor,
-		fmap:          fmap,
-		collection:    collection,
-		schema:        &s,
-		bus:           bus,
-		logger:        zap.NewNop(),
-		subscriptions: make(map[string]*SubscriptionInfo),
+		interactor:      interactor,
+		executor:        executor,
+		fmap:            fmap,
+		collection:      collection,
+		schema:          &s,
+		bus:             bus,
+		logger:          zap.NewNop(),
+		subscriptions:   make(map[string]*SubscriptionInfo),
+		collectionNames: names,
 	}, nil
 }
 
@@ -82,7 +113,9 @@ func (p *Persistence) Collection(name string) (PersistenceCollectionInterface, e
 		return nil, err
 	}
 
-	collection, err := NewCollection(p.bus, s, p.executor, p.fmap)
+	s.Name = p.collectionNames[s.Name]
+
+	collection, err := NewCollection(p.bus, name, s, p.executor, p.fmap)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +126,7 @@ func (p *Persistence) Collection(name string) (PersistenceCollectionInterface, e
 // returns an error, the transaction is rolled back; otherwise, it is committed.
 func (p *Persistence) Transact(callback func(tx PersistenceTransactionInterface) (any, error)) (any, error) {
 	tx, err := p.interactor.StartTransaction(context.Background())
+
 	if err != nil {
 		return nil, err
 	}
@@ -128,19 +162,19 @@ func (p *Persistence) Collections() ([]string, error) {
 	if result.Data != nil {
 		if docs, ok := result.Data.([]schema.Document); ok {
 			for _, doc := range docs {
-				record, err := mapToSchemaRecord(doc)
+				record, err := utils.MapToStruct[SchemaRecord](doc)
 				if err != nil {
 					p.logger.Warn("Failed to convert map to SchemaRecord while listing collections", zap.Error(err))
 					continue
 				}
-				collectionNames = append(collectionNames, record.Name)
+				collectionNames = append(collectionNames, record.Name.Logical)
 			}
 		} else if doc, ok := result.Data.(schema.Document); ok { // Handle case where Read returns a single document
-			record, err := mapToSchemaRecord(doc)
+			record, err := utils.MapToStruct[SchemaRecord](doc)
 			if err != nil {
 				return nil, fmt.Errorf("error converting map to SchemaRecord for single collection: %w", err)
 			}
-			collectionNames = append(collectionNames, record.Name)
+			collectionNames = append(collectionNames, record.Name.Logical)
 		}
 	}
 	return collectionNames, nil
@@ -149,57 +183,72 @@ func (p *Persistence) Collections() ([]string, error) {
 // Create creates a new collection based on the provided schema definition. It ensures
 // that a collection with the same name does not already exist before creating it.
 func (p *Persistence) Create(s schema.SchemaDefinition) (PersistenceCollectionInterface, error) {
-	exists, err := p.interactor.CollectionExists(s.Name)
+	if exists, err := p.Schema(s.Name); exists != nil {
+		return nil, fmt.Errorf("Collection with a similar name exists or error : %w", err)
+	}
+
+	physicalName := uuid.New().String()
+
+	record := SchemaRecord{
+		Name: NameRecord{
+			Logical:  s.Name,
+			Physical: physicalName,
+		},
+		Description: *s.Description,
+		Version:     s.Version,
+		Schema:      s,
+	}
+
+	tx, err := p.interactor.StartTransaction(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("error accessing database: %w", err)
+		return nil, err
 	}
 
-	if exists {
-		return nil, fmt.Errorf("a collection with a similar name exists")
+	recordData, err := utils.StructToMap(&record)
+
+	if err != nil {
+		tx.Rollback(context.Background())
+		return nil, err
 	}
 
-	if err := p.interactor.CreateCollection(s); err != nil {
+	collection, err := p.SchemaCollection(tx)
+	if err != nil {
+		tx.Rollback(context.Background())
+		return nil, err
+	}
+
+	_, err = collection.Create(recordData)
+	if err != nil {
+		tx.Rollback(context.Background())
+		return nil, err
+	}
+
+	s.Name = physicalName
+	if err := tx.CreateCollection(s); err != nil {
+		tx.Rollback(context.Background())
 		return nil, fmt.Errorf("failed to create collection %s: %w", s.Name, err)
 	}
 
-	schemaJSON, err := schemaToRawJSON(&s)
+	tx.Commit(context.Background())
+	result, err := NewCollection(p.bus, s.Name, &s, p.executor, p.fmap)
+
 	if err != nil {
 		return nil, err
 	}
 
-	record := SchemaRecord{
-		Name:        s.Name,
-		Description: *s.Description,
-		Version:     s.Version,
-		Schema:      schemaJSON,
-	}
-
-	data, err := schemaRecordToMap(&record)
-	if err != nil {
-		return nil, err
-	}
-	_, err = p.collection.Create(data)
-	if err != nil {
-		return nil, err
-	}
-
-	collection, err := NewCollection(p.bus, &s, p.executor, p.fmap)
-	if err != nil {
-		return nil, err
-	}
-	return collection, nil
+	return result, err
 }
 
-// schemaCollection returns a PersistenceCollectionInterface for the internal schemas collection.
+// SchemaCollection returns a PersistenceCollectionInterface for the internal schemas collection.
 // It can be configured to run within a transaction.
-func (p *Persistence) schemaCollection(tx DatabaseInteractor) (PersistenceCollectionInterface, error) {
+func (p *Persistence) SchemaCollection(tx DatabaseInteractor) (PersistenceCollectionInterface, error) {
 	var executor *Executor
 	if tx != nil {
 		executor = NewExecutor(tx, nil)
 	} else {
 		executor = NewExecutor(p.interactor, nil)
 	}
-	collection, err := NewCollection(p.bus, p.schema, executor, p.fmap)
+	collection, err := NewCollection(p.bus, p.schema.Name, p.schema, executor, p.fmap)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize schemas collection: %w", err)
 	}
@@ -214,7 +263,7 @@ func (p *Persistence) Delete(name string) (bool, error) {
 		return false, err
 	}
 
-	collection, err := p.schemaCollection(tx)
+	collection, err := p.SchemaCollection(tx)
 	if err != nil {
 		tx.Rollback(context.Background())
 		return false, err
@@ -242,15 +291,6 @@ func (p *Persistence) Delete(name string) (bool, error) {
 
 // Schema retrieves the schema definition for a given collection name.
 func (p *Persistence) Schema(name string) (*schema.SchemaDefinition, error) {
-	exists, err := p.interactor.CollectionExists(name)
-	if err != nil {
-		return nil, fmt.Errorf("error accessing database: %w, exists: %t", err, exists)
-	}
-
-	if !exists {
-		return nil, fmt.Errorf("collection %s does not exist", name)
-	}
-
 	q := query.NewQueryBuilder().Where("name").Eq(name).Build()
 
 	result, err := p.collection.Read(&q)
@@ -258,20 +298,20 @@ func (p *Persistence) Schema(name string) (*schema.SchemaDefinition, error) {
 		return nil, fmt.Errorf("error reading schema collection: %w", err)
 	}
 
-	if result.Count != 1 {
+	if result.Count == 0 {
+		return nil, fmt.Errorf("Schema %s does not exists", name)
+	}
+
+	if result.Count > 1 {
 		return nil, fmt.Errorf("unexpected count for schema name: %d", result.Count)
 	}
 
-	record, err := mapToSchemaRecord(result.Data.(schema.Document))
+	record, err := DocumentToStruct[SchemaRecord](result.Data)
 	if err != nil {
 		return nil, fmt.Errorf("error converting map to SchemaRecord: %w", err)
 	}
 
-	var s schema.SchemaDefinition
-	if err := json.Unmarshal(record.Schema, &s); err != nil {
-		return nil, fmt.Errorf("error unmarshaling JSON: %w", err)
-	}
-	return &s, nil
+	return &record.Schema, nil
 }
 
 // RegisterSubscription registers a callback for a specific persistence event. It returns
@@ -326,3 +366,21 @@ func (p *Persistence) Metadata(filter *MetadataFilter) (Metadata, error) {
 	return Metadata{}, nil
 }
 
+func (p *Persistence) Migrate(
+	name string,
+	migration schema.Migration,
+	dryRun *bool,
+) (PersistenceCollectionInterface, error) {
+	// TODO: Implement schema Migration
+	return p.Collection(name)
+}
+
+func (p *Persistence) Rollback(
+	name string,
+	version *string,
+	dryRun *bool,
+) (PersistenceCollectionInterface, error) {
+	// TODO: Implement schema rollback
+
+	return p.Collection(name)
+}

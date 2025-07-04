@@ -5,8 +5,8 @@ package persistence
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v5/core/query"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
 // InteractorOptions provides a set of configurations for the DatabaseInteractor.
@@ -28,9 +28,9 @@ type InteractorOptions struct {
 	// transaction to ensure atomicity.
 	CreateIndexes bool
 
-	// TablePrefix is a string that will be prepended to all table names. This is
+	// CollectionPrefix is a string that will be prepended to all table names. This is
 	// useful for avoiding naming conflicts in a shared database environment.
-	TablePrefix string
+	CollectionPrefix string
 
 	// SchemaName specifies the database schema (e.g., in PostgreSQL) where the
 	// tables should be created. For databases like SQLite that do not use schema
@@ -47,6 +47,8 @@ type DatabaseInteractor interface {
 	// SelectDocuments retrieves documents from the database based on a QueryDSL query.
 	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.QueryDSL) ([]schema.Document, error)
 
+	// SelectStream executes a SELECT query and returns a channel of documents.
+	SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.QueryDSL) (<-chan schema.Document, <-chan error, error)
 	// UpdateDocuments modifies documents in the database that match the provided filters.
 	UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error)
 

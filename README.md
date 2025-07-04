@@ -1,6 +1,6 @@
 # Anansi (Go Implementation)
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/asaidimu/go-anansi/v5.svg)](https://pkg.go.dev/github.com/asaidimu/go-anansi/v5)
+[![Go Reference](https://pkg.go.dev/badge/github.com/asaidimu/go-anansi/v6.svg)](https://pkg.go.dev/github.com/asaidimu/go-anansi/v6)
 [![Build Status](https://github.com/asaidimu/go-anansi/workflows/Test%20Workflow/badge.svg)](https://github.com/asaidimu/go-anansi/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -166,9 +166,9 @@ import (
 	"database/sql"
 	"log"
 
-	"github.com/asaidimu/go-anansi/v5/core/persistence"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
-	"github.com/asaidimu/go-anansi/v5/sqlite"
+	"github.com/asaidimu/go-anansi/v6/core/persistence"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/sqlite"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 	"go.uber.org/zap"
 )
@@ -240,8 +240,8 @@ Anansi provides methods for common database operations.
 ```go
 import (
 	"time"
-	"github.com/asaidimu/go-anansi/v5/core/query"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
 // Single record insert
@@ -275,7 +275,7 @@ if err != nil {
 Read operations leverage the `query.QueryBuilder` to construct complex queries.
 
 ```go
-import "github.com/asaidimu/go-anansi/v5/core/query"
+import "github.com/asaidimu/go-anansi/v6/core/query"
 
 // Query all items, ordered by name ascending
 readQuery := query.NewQueryBuilder().OrderBy("item_name", query.SortDirectionAsc).Build()
@@ -303,7 +303,7 @@ if result.Count > 0 {
 #### Update
 
 ```go
-import "github.com/asaidimu/go-anansi/v5/core/persistence"
+import "github.com/asaidimu/go-anansi/v6/core/persistence"
 
 // Update the quantity for 'Laptop'
 updateData := map[string]any{
@@ -353,7 +353,7 @@ if err != nil {
 Anansi allows you to validate data against a collection's schema constraints at runtime using `collection.Validate()`.
 
 ```go
-import "github.com/asaidimu/go-anansi/v5/core/schema"
+import "github.com/asaidimu/go-anansi/v6/core/schema"
 
 // Example: Inventory item schema requires 'item_name' and 'quantity'
 invalidItemData := map[string]any{
@@ -388,7 +388,7 @@ Anansi provides an event system allowing you to subscribe to various persistence
 import (
 	"context"
 	"fmt"
-	"github.com/asaidimu/go-anansi/v5/core/persistence"
+	"github.com/asaidimu/go-anansi/v6/core/persistence"
 )
 
 // Register a subscription to be notified when a document is created successfully
@@ -479,7 +479,7 @@ if err != nil {
 The `query.QueryBuilder` provides a rich API for constructing declarative queries:
 
 ```go
-import "github.com/asaidimu/go-anansi/v5/core/query"
+import "github.com/asaidimu/go-anansi/v6/core/query"
 
 // Example: Get items with quantity less than 20, ordered by quantity ascending, and specific fields.
 lowStockQuery := query.NewQueryBuilder().
@@ -541,10 +541,10 @@ import (
 	"log"
 	"os"
 
-	"github.com/asaidimu/go-anansi/v5/core/persistence"
-	"github.com/asaidimu/go-anansi/v5/core/query"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
-	"github.com/asaidimu/go-anansi/v5/sqlite"
+	"github.com/asaidimu/go-anansi/v6/core/persistence"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/sqlite"
 	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"

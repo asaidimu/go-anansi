@@ -6,10 +6,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v5/core/persistence"
-	"github.com/asaidimu/go-anansi/v5/core/query"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
-	"github.com/asaidimu/go-anansi/v5/sqlite"
+	"github.com/asaidimu/go-anansi/v6/core/persistence"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/sqlite"
 	"github.com/google/uuid"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 	"go.uber.org/zap"               // For logging, as recommended by Anansi docs
@@ -22,7 +22,7 @@ const inventorySchemaJSON = `{
   "version": "1.0.0",
   "description": "Schema for tracking inventory items",
   "fields": {
-    "id": { "name": "id", "type": "string", "required": true, "unique": true },
+    "id_field_name_can_be_uuid": { "name": "id", "type": "string", "required": true, "unique": true },
     "item_name": { "name": "item_name", "type": "string", "required": true, "unique": true },
     "description": { "name": "description", "type": "string", "required": false },
     "quantity": { "name": "quantity", "type": "integer", "required": true },

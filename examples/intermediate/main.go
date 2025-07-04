@@ -8,10 +8,10 @@ import (
 	"log"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v5/core/persistence"
-	"github.com/asaidimu/go-anansi/v5/core/query"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
-	"github.com/asaidimu/go-anansi/v5/sqlite"
+	"github.com/asaidimu/go-anansi/v6/core/persistence"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/sqlite"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 	"github.com/google/uuid"
 	"go.uber.org/zap"         // For logging, as recommended by Anansi docs

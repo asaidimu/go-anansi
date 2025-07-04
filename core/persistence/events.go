@@ -6,8 +6,8 @@ package persistence
 import (
 	"time"
 
-	"github.com/asaidimu/go-anansi/v5/core/query"
-	"github.com/asaidimu/go-anansi/v5/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-events"
 )
 
@@ -198,82 +198,6 @@ func (e *Collection) Delete(filter *query.QueryFilter, unsafe bool) (int, error)
 // No events are emitted for validation as it is a read-only operation.
 func (e *Collection) Validate(data any, loose bool) (*schema.ValidationResult, error) {
 	return e.collection.Validate(data, loose)
-}
-
-// Rollback wraps the underlying collection's Rollback method, adding event emission
-// for the start, success, and failure of the operation.
-func (e *Collection) Rollback(version *string, dryRun *bool) (struct {
-	Schema  schema.SchemaDefinition `json:"schema"`
-	Preview any                   `json:"preview"`
-}, error) {
-	input := map[string]any{
-		"version": version,
-		"dryRun":  dryRun,
-	}
-
-	result, err := e.withEventEmission(
-		"rollback",
-		RollbackStart,
-		RollbackSuccess,
-		RollbackFailed,
-		input,
-		nil, // No query parameter for rollback
-		func() (any, error) {
-			return e.collection.Rollback(version, dryRun)
-		},
-	)
-
-	if err != nil {
-		return struct {
-			Schema  schema.SchemaDefinition `json:"schema"`
-			Preview any                   `json:"preview"`
-		}{}, err
-	}
-
-	return result.(struct {
-		Schema  schema.SchemaDefinition `json:"schema"`
-		Preview any                   `json:"preview"`
-	}), nil
-}
-
-// Migrate wraps the underlying collection's Migrate method, adding event emission
-// for the start, success, and failure of the operation.
-func (e *Collection) Migrate(
-	description string,
-	cb func(h schema.SchemaMigrationHelper) (schema.DataTransform[any, any], error),
-	dryRun *bool,
-) (struct {
-	Schema  schema.SchemaDefinition `json:"schema"`
-	Preview any                   `json:"preview"`
-}, error) {
-	input := map[string]any{
-		"description": description,
-		"dryRun":      dryRun,
-	}
-
-	result, err := e.withEventEmission(
-		"migrate",
-		MigrateStart,
-		MigrateSuccess,
-		MigrateFailed,
-		input,
-		nil, // No query parameter for migrate
-		func() (any, error) {
-			return e.collection.Migrate(description, cb, dryRun)
-		},
-	)
-
-	if err != nil {
-		return struct {
-			Schema  schema.SchemaDefinition `json:"schema"`
-			Preview any                   `json:"preview"`
-		}{}, err
-	}
-
-	return result.(struct {
-		Schema  schema.SchemaDefinition `json:"schema"`
-		Preview any                   `json:"preview"`
-	}), nil
 }
 
 // Metadata delegates the call to the underlying collection's Metadata method,
