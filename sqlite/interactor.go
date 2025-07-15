@@ -96,8 +96,8 @@ func readRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 				continue
 			}
 
-			fieldDef, ok := sc.Fields[col]
-			if !ok {
+			fieldDef := sc.FindField(col)
+			if fieldDef == nil {
 				logger.Warn("Column not found in schema, using raw value", zap.String("column", col))
 				row[col] = val
 				continue
@@ -355,11 +355,3 @@ func (i *SQLiteInteractor) Rollback(ctx context.Context) error {
 	i.logger.Debug("Rolling back transaction")
 	return i.tx.Rollback()
 }
-
-// Migrate applies a schema migration to the database for a specific collection.
-func (i *SQLiteInteractor) Migrate(ctx context.Context, collectionName string, migration schema.Migration) error {
-	// TODO: Implement migration logic here. This will involve applying schema changes
-	// and potentially transforming data based on the migration definition.
-	return fmt.Errorf("migration for collection %s not yet implemented", collectionName)
-}
-

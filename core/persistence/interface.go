@@ -322,9 +322,6 @@ type PersistenceInterface interface {
 	// Schema retrieves a schema definition by its unique ID.
 	Schema(id string) (*schema.SchemaDefinition, error)
 
-	// SchemaCollection returns a PersistenceCollectionInterface for the internal schemas collection.
-	SchemaCollection(tx DatabaseInteractor) (PersistenceCollectionInterface, error)
-
 	// Transact executes a series of operations within a single atomic transaction.
 	// The provided callback function receives a transaction object, and if the callback
 	// returns an error, the transaction is rolled back.
@@ -360,6 +357,7 @@ type PersistenceInterface interface {
 		migration schema.Migration,
 		dryRun *bool,
 	) (PersistenceCollectionInterface, error)
+
 }
 
 // PersistenceTransactionInterface defines the set of operations that can be performed
@@ -377,20 +375,19 @@ type PersistenceTransactionInterface interface {
 	Schema(id string) (*schema.SchemaDefinition, error)
 	// Collection returns a handle to a specific collection within the transaction.
 	Collection(name string) (PersistenceCollectionInterface, error)
-
-	// SchemaCollection returns a PersistenceCollectionInterface for the internal schemas collection.
-	SchemaCollection(tx DatabaseInteractor) (PersistenceCollectionInterface, error)
 	// Metadata retrieves metadata about the persistence layer within the transaction.
 	Metadata(
 		filter *MetadataFilter,
 	) (Metadata, error)
+
 }
 
 // CollectionUpdate defines the parameters for an update operation on a collection.
 // It specifies the data to be updated and a filter to select which documents to update.
 type CollectionUpdate struct {
-	Data   map[string]any     `json:"data,omitempty"` // Data contains the fields and values to be updated.
-	Filter *query.QueryFilter `json:"filter"`         // Filter is a query that selects the documents to be updated.
+	Data    map[string]any     `json:"data,omitempty"` // Data contains the fields and values to be updated.
+	Filter  *query.QueryFilter `json:"filter"`         // Filter is a query that selects the documents to be updated.
+	Version *int               `json:"version"`        // Version is the document version for optimistic concurrency control.
 }
 
 // PersistenceCollectionInterface defines the contract for operations on a specific collection.

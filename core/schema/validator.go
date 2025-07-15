@@ -110,7 +110,7 @@ func (v *Validator) validateData(data map[string]any, path string) {
 
 	for dataKey := range data {
 		if exists := v.schema.FindField(dataKey); exists == nil {
-			v.addIssue("UNEXPECTED_FIELD", fmt.Sprintf("Unexpected field '%s' not defined in schema", dataKey), v.buildPath(path, dataKey))
+			v.addIssue("UNEXPECTED_FIELD", fmt.Sprintf("Unexpected field '%s' not defined in schema %v", dataKey, v.schema.Fields), v.buildPath(path, dataKey))
 		}
 	}
 }
@@ -445,26 +445,26 @@ func (v *Validator) validateFieldSchema(data map[string]any, fieldSchema FieldSc
 
 	tempSchemaDef := &SchemaDefinition{Fields: make(map[string]*FieldDefinition)}
 
-	if nestedSchema.isStructured {
+	if nestedSchema.IsStructured != nil && *nestedSchema.IsStructured {
 		if nestedSchema.StructuredFieldsMap != nil {
-        for _, fieldDef := range nestedSchema.StructuredFieldsMap {
-            tempSchemaDef.Fields[fieldDef.Name] = fieldDef
-        }
-    } else if nestedSchema.StructuredFieldsArray != nil {
-        for _, fieldGroup := range nestedSchema.StructuredFieldsArray {
-            if fieldGroup.When != nil {
-                if fieldValue, exists := data[fieldGroup.When.Field]; exists && reflect.DeepEqual(fieldValue, fieldGroup.When.Value) {
-                    for _, fieldDef := range fieldGroup.Fields {
-                        tempSchemaDef.Fields[fieldDef.Name] = fieldDef
-                    }
-                }
-            } else {
-                for _, fieldDef := range fieldGroup.Fields {
-                    tempSchemaDef.Fields[fieldDef.Name] = fieldDef
-                }
-            }
-        }
-    }
+			for _, fieldDef := range nestedSchema.StructuredFieldsMap {
+				tempSchemaDef.Fields[fieldDef.Name] = fieldDef
+			}
+		} else if nestedSchema.StructuredFieldsArray != nil {
+			for _, fieldGroup := range nestedSchema.StructuredFieldsArray {
+				if fieldGroup.When != nil {
+					if fieldValue, exists := data[fieldGroup.When.Field]; exists && reflect.DeepEqual(fieldValue, fieldGroup.When.Value) {
+						for _, fieldDef := range fieldGroup.Fields {
+							tempSchemaDef.Fields[fieldDef.Name] = fieldDef
+						}
+					}
+				} else {
+					for _, fieldDef := range fieldGroup.Fields {
+						tempSchemaDef.Fields[fieldDef.Name] = fieldDef
+					}
+				}
+			}
+		}
 	} else {
 		if nestedSchema.Type != nil {
 			literalFieldDef := &FieldDefinition{

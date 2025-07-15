@@ -4,13 +4,13 @@ package persistence
 
 import (
 	"context"
-	"encoding/json"
+	"errors" // Import the errors package
 	"fmt"
 	"sync"
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/utils"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/asaidimu/go-events"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -20,87 +20,42 @@ import (
 // interactions with the database through a DatabaseInteractor, manages schema definitions,
 // and handles event subscriptions for observability.
 type Persistence struct {
-	interactor      DatabaseInteractor
-	collection      PersistenceCollectionInterface
-	schema          *schema.SchemaDefinition
-	executor        *Executor
-	fmap            schema.FunctionMap
-	logger          *zap.Logger
-	subscriptions   map[string]*SubscriptionInfo // To store unsubscribe functions
-	subMu           sync.RWMutex                 // Mutex to protect subscriptions map
-	collectionNames map[string]string
-	bus             *events.TypedEventBus[PersistenceEvent]
+	interactor    DatabaseInteractor
+	collection    PersistenceCollectionInterface
+	schema        *schema.SchemaDefinition
+	executor      *Executor
+	fmap          schema.FunctionMap
+	logger        *zap.Logger
+	subscriptions map[string]*SubscriptionInfo // To store unsubscribe functions
+	subMu         sync.RWMutex                 // Mutex to protect subscriptions map
+	bus           *events.TypedEventBus[PersistenceEvent]
+	registry      *SchemaRegistry
 }
 
 // NewPersistence creates a new instance of the Persistence service. It initializes the
 // event bus, ensures that the internal schema for managing collections exists, and sets
 // up the necessary components for the persistence layer to function.
-func NewPersistence(interactor DatabaseInteractor, fmap schema.FunctionMap) (PersistenceInterface, error) {
-	bus, err := events.NewTypedEventBus[PersistenceEvent](events.DefaultConfig())
+func NewPersistence(interactor DatabaseInteractor, fmap schema.FunctionMap, logger *zap.Logger) (PersistenceInterface, error) {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+
+	executor := NewExecutor(interactor, logger)
+	registry, err := NewSchemaRegistry(interactor, executor, fmap, logger)
 	if err != nil {
-		return nil, fmt.Errorf("could not initialize event bus: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrFailedToCreateSchemaRegistry, err)
 	}
 
-	var s schema.SchemaDefinition
-	if err := json.Unmarshal(schemasCollectionSchema, &s); err != nil {
-		return nil, fmt.Errorf("error unmarshaling schemas collection schema: %w", err)
-	}
-
-	exists, err := interactor.CollectionExists(s.Name)
-	if err != nil {
-		return nil, fmt.Errorf("error looking up schema collection: %w", err)
-	}
-
-	if !exists {
-		tx, err := interactor.StartTransaction(context.Background())
-		if err != nil {
-			return nil, fmt.Errorf("failed to create system schema collection: %w", err)
-		}
-		if err := tx.CreateCollection(s); err != nil {
-			tx.Rollback(context.Background())
-			return nil, fmt.Errorf("failed to create table for collections %s: %w", s.Name, err)
-		}
-		tx.Commit(context.Background())
-	}
-
-	executor := NewExecutor(interactor, nil)
-	collection, err := NewCollection(bus, s.Name, &s, executor, fmap)
-	if err != nil {
-		return nil, fmt.Errorf("failed to initialize schemas collection: %w", err)
-	}
-
-	q := query.NewQueryBuilder().Select().Include("name").End().Build()
-	result, err := collection.Read(&q)
-
-	if err != nil {
-		return nil, fmt.Errorf("Failed to get collection names: %w", err)
-	}
-
-	names := make(map[string]string)
-
-	if result.Count == 1 {
-		data, _ := result.Data.(schema.Document)
-		name, _ := data["name"].(map[string]string)
-		names[name["logical"]] = name["physical"]
-	} else {
-		data, _ := result.Data.([]schema.Document)
-		for _, doc := range data {
-			name, _ := doc["name"].(map[string]string)
-			names[name["logical"]] = name["physical"]
-		}
-	}
-
-	fmt.Printf("%v", names)
 	return &Persistence{
-		interactor:      interactor,
-		executor:        executor,
-		fmap:            fmap,
-		collection:      collection,
-		schema:          &s,
-		bus:             bus,
-		logger:          zap.NewNop(),
-		subscriptions:   make(map[string]*SubscriptionInfo),
-		collectionNames: names,
+		interactor:    interactor,
+		executor:      executor,
+		fmap:          fmap,
+		collection:    registry.collection,
+		schema:        registry.schema,
+		bus:           registry.bus,
+		logger:        logger,
+		subscriptions: make(map[string]*SubscriptionInfo),
+		registry:      registry,
 	}, nil
 }
 
@@ -108,16 +63,19 @@ func NewPersistence(interactor DatabaseInteractor, fmap schema.FunctionMap) (Per
 // This allows for performing operations like Create, Read, Update, and Delete on that
 // specific collection.
 func (p *Persistence) Collection(name string) (PersistenceCollectionInterface, error) {
-	s, err := p.Schema(name)
+	record, err := p.registry.Lookup(name)
 	if err != nil {
 		return nil, err
 	}
 
-	s.Name = p.collectionNames[s.Name]
+	activeVersion, ok := record.Versions[record.ActiveVersion]
+	if !ok {
+		return nil, fmt.Errorf("active version '%s' not found for collection '%s'", record.ActiveVersion, name)
+	}
 
-	collection, err := NewCollection(p.bus, name, s, p.executor, p.fmap)
+	collection, err := NewCollection(p.bus, name, &activeVersion.Schema, p.executor, p.fmap)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w for %s: %v", ErrCollectionInitialization, name, err)
 	}
 	return collection, nil
 }
@@ -128,10 +86,10 @@ func (p *Persistence) Transact(callback func(tx PersistenceTransactionInterface)
 	tx, err := p.interactor.StartTransaction(context.Background())
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrFailedToStartTransaction, err)
 	}
 
-	transactionCtx, err := NewPersistence(tx, p.fmap)
+	transactionCtx, err := NewPersistence(tx, p.fmap, p.logger)
 	if err != nil {
 		tx.Rollback(context.Background())
 		return nil, err
@@ -139,12 +97,15 @@ func (p *Persistence) Transact(callback func(tx PersistenceTransactionInterface)
 
 	result, err := callback(transactionCtx)
 	if err != nil {
-		tx.Rollback(context.Background())
+		if rbErr := tx.Rollback(context.Background()); rbErr != nil {
+			p.logger.Error("Failed to rollback transaction", zap.Error(rbErr))
+			return result, fmt.Errorf("%w: %v, rollback failed", err, rbErr)
+		}
 		return result, err
 	}
 
 	if err := tx.Commit(context.Background()); err != nil {
-		return result, err
+		return result, fmt.Errorf("%w: %v", ErrFailedToCommitTransaction, err)
 	}
 
 	return result, nil
@@ -155,7 +116,7 @@ func (p *Persistence) Collections() ([]string, error) {
 	q := query.NewQueryBuilder().Build()
 	result, err := p.collection.Read(&q)
 	if err != nil {
-		return nil, fmt.Errorf("error reading schemas to get collection names: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrReadingSchemas, err)
 	}
 
 	var collectionNames []string
@@ -167,14 +128,14 @@ func (p *Persistence) Collections() ([]string, error) {
 					p.logger.Warn("Failed to convert map to SchemaRecord while listing collections", zap.Error(err))
 					continue
 				}
-				collectionNames = append(collectionNames, record.Name.Logical)
+				collectionNames = append(collectionNames, record.Name)
 			}
 		} else if doc, ok := result.Data.(schema.Document); ok { // Handle case where Read returns a single document
 			record, err := utils.MapToStruct[SchemaRecord](doc)
 			if err != nil {
-				return nil, fmt.Errorf("error converting map to SchemaRecord for single collection: %w", err)
+				return nil, fmt.Errorf("%w for single collection: %v", ErrMapToStructConversion, err)
 			}
-			collectionNames = append(collectionNames, record.Name.Logical)
+			collectionNames = append(collectionNames, record.Name)
 		}
 	}
 	return collectionNames, nil
@@ -183,59 +144,59 @@ func (p *Persistence) Collections() ([]string, error) {
 // Create creates a new collection based on the provided schema definition. It ensures
 // that a collection with the same name does not already exist before creating it.
 func (p *Persistence) Create(s schema.SchemaDefinition) (PersistenceCollectionInterface, error) {
-	if exists, err := p.Schema(s.Name); exists != nil {
-		return nil, fmt.Errorf("Collection with a similar name exists or error : %w", err)
-	}
-
-	physicalName := uuid.New().String()
-
-	record := SchemaRecord{
-		Name: NameRecord{
-			Logical:  s.Name,
-			Physical: physicalName,
-		},
-		Description: *s.Description,
-		Version:     s.Version,
-		Schema:      s,
+	s.AddVersionField()
+	if exists, err := p.Schema(s.Name); exists != nil || (err != nil && !errors.Is(err, ErrSchemaNotFound)) {
+		// If a schema exists, or an error occurred that is *not* ErrSchemaNotFound
+		if exists != nil {
+			return nil, ErrCollectionAlreadyExists
+		}
+		return nil, fmt.Errorf("Error checking for existing collection: %w", err)
 	}
 
 	tx, err := p.interactor.StartTransaction(context.Background())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %v", ErrFailedToStartTransaction, err)
 	}
 
-	recordData, err := utils.StructToMap(&record)
-
+	err = p.registry.RegisterSchema(context.Background(), tx, s)
 	if err != nil {
 		tx.Rollback(context.Background())
-		return nil, err
+		return nil, fmt.Errorf("failed to register schema: %w", err)
 	}
 
-	collection, err := p.SchemaCollection(tx)
+	// After successful registration, retrieve the schema record to get the full details
+	// including the active physical name and schema from the versions map.
+	record, err := p.registry.Lookup(s.Name)
 	if err != nil {
 		tx.Rollback(context.Background())
-		return nil, err
+		return nil, fmt.Errorf("failed to lookup schema after registration: %w", err)
 	}
 
-	_, err = collection.Create(recordData)
-	if err != nil {
+	activeVersion, ok := record.Versions[record.ActiveVersion]
+	if !ok {
 		tx.Rollback(context.Background())
-		return nil, err
+		return nil, fmt.Errorf("active version '%s' not found in versions map after registration for collection '%s'", record.ActiveVersion, s.Name)
 	}
 
-	s.Name = physicalName
-	if err := tx.CreateCollection(s); err != nil {
+	// Use the physical name and schema from the active version for collection creation
+	activeVersion.Schema.Name = activeVersion.Physical // Ensure the schema's name field is set to the physical name for DB operations
+	if err := tx.CreateCollection(activeVersion.Schema); err != nil {
 		tx.Rollback(context.Background())
-		return nil, fmt.Errorf("failed to create collection %s: %w", s.Name, err)
+		return nil, fmt.Errorf("failed to create collection %s: %w", activeVersion.Physical, err)
 	}
 
-	tx.Commit(context.Background())
-	result, err := NewCollection(p.bus, s.Name, &s, p.executor, p.fmap)
+	if err := tx.Commit(context.Background()); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrFailedToCommitTransaction, err)
+	}
+
+	// Use the logical name and the active schema for NewCollection
+	result, err := NewCollection(p.bus, s.Name, &activeVersion.Schema, p.executor, p.fmap)
 
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w for %s: %v", ErrCollectionInitialization, s.Name, err)
 	}
 
+	p.registry.RefreshNames()
 	return result, err
 }
 
@@ -250,7 +211,7 @@ func (p *Persistence) SchemaCollection(tx DatabaseInteractor) (PersistenceCollec
 	}
 	collection, err := NewCollection(p.bus, p.schema.Name, p.schema, executor, p.fmap)
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize schemas collection: %w", err)
+		return nil, fmt.Errorf("%w: %v", ErrSchemaCollectionInit, err)
 	}
 	return collection, nil
 }
@@ -260,30 +221,27 @@ func (p *Persistence) SchemaCollection(tx DatabaseInteractor) (PersistenceCollec
 func (p *Persistence) Delete(name string) (bool, error) {
 	tx, err := p.interactor.StartTransaction(context.Background())
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("%w: %v", ErrFailedToStartTransaction, err)
 	}
 
-	collection, err := p.SchemaCollection(tx)
-	if err != nil {
+	if err := p.registry.UnregisterSchema(context.Background(), tx, name); err != nil {
 		tx.Rollback(context.Background())
-		return false, err
-	}
-
-	q := query.NewQueryBuilder().Where("name").Eq(name).Build()
-	_, err = collection.Delete(q.Filters, false)
-	if err != nil {
-		tx.Rollback(context.Background())
-		return false, err
+		return false, fmt.Errorf("failed to unregister schema: %w", err)
 	}
 
 	if err := tx.DropCollection(name); err != nil {
 		tx.Rollback(context.Background())
-		return false, err
+		return false, fmt.Errorf("%w for %s: %v", ErrDropCollection, name, err)
 	}
 
 	if err := tx.Commit(context.Background()); err != nil {
 		tx.Rollback(context.Background())
-		return false, err
+		return false, fmt.Errorf("%w: %v", ErrFailedToCommitTransaction, err)
+	}
+
+	// Refresh the in-memory names map after a collection is deleted
+	if err := p.registry.RefreshNames(); err != nil {
+		return false, fmt.Errorf("failed to refresh names after collection deletion: %w", err)
 	}
 
 	return true, nil
@@ -291,27 +249,16 @@ func (p *Persistence) Delete(name string) (bool, error) {
 
 // Schema retrieves the schema definition for a given collection name.
 func (p *Persistence) Schema(name string) (*schema.SchemaDefinition, error) {
-	q := query.NewQueryBuilder().Where("name").Eq(name).Build()
-
-	result, err := p.collection.Read(&q)
+	record, err := p.registry.Lookup(name)
 	if err != nil {
-		return nil, fmt.Errorf("error reading schema collection: %w", err)
+		return nil, err
 	}
 
-	if result.Count == 0 {
-		return nil, fmt.Errorf("Schema %s does not exists", name)
+	activeVersion, ok := record.Versions[record.ActiveVersion]
+	if !ok {
+		return nil, fmt.Errorf("active version '%s' not found in schema record for collection '%s'", record.ActiveVersion, name)
 	}
-
-	if result.Count > 1 {
-		return nil, fmt.Errorf("unexpected count for schema name: %d", result.Count)
-	}
-
-	record, err := DocumentToStruct[SchemaRecord](result.Data)
-	if err != nil {
-		return nil, fmt.Errorf("error converting map to SchemaRecord: %w", err)
-	}
-
-	return &record.Schema, nil
+	return &activeVersion.Schema, nil
 }
 
 // RegisterSubscription registers a callback for a specific persistence event. It returns

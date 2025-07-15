@@ -80,7 +80,7 @@ func main() {
 	interactor := sqlite.NewSQLiteInteractor(db, logger, interactorOptions, nil)
 
 	// 3. Initialize the Anansi Persistence service
-	persistenceSvc, err := persistence.NewPersistence(interactor, schema.FunctionMap{})
+	persistenceSvc, err := persistence.NewPersistence(interactor, schema.FunctionMap{}, logger)
 	if err != nil {
 		logger.Fatal("Failed to initialize persistence service", zap.Error(err))
 	}

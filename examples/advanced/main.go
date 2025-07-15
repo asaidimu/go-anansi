@@ -37,7 +37,7 @@ func main() {
 	interactor := sqlite.NewSQLiteInteractor(db, logger, interactorOptions, nil)
 
 	// Create persistence layer
-	persistenceLayer, err := persistence.NewPersistence(interactor, nil)
+	persistenceLayer, err := persistence.NewPersistence(interactor, nil, logger)
 	if err != nil {
 		log.Fatal("Failed to initialize persistence:", err)
 	}

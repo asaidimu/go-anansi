@@ -7,7 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
+
+// VersionFieldName is the reserved name for the field used in optimistic concurrency control.
+const VersionFieldName = "_version_"
 
 // LogicalOperator defines the logical operators that can be used to combine conditions
 // in constraints and filters.
@@ -159,40 +164,44 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 
 	// Copy the unmarshaled data back to the original FieldDefinition
 	*fd = FieldDefinition(*temp.Alias)
+	fd.Type = temp.Type
 
 	// Now, handle the 'Schema' field based on its 'Type'
 	if temp.Schema != nil {
+		handled := false
 		switch temp.Type {
-		case FieldTypeObject, FieldTypeUnion:
-			// For FieldTypeObject or FieldTypeUnion, Schema should be FieldSchema or []FieldSchema
+		case FieldTypeObject:
 			var singleSchema FieldSchema
 			if err := json.Unmarshal(temp.Schema, &singleSchema); err == nil {
-				fd.Schema = singleSchema
-				return nil
+				// Check if the unmarshalled schema is valid
+				if singleSchema.ID != "" {
+					fd.Schema = singleSchema
+					handled = true
+				}
 			}
+		case FieldTypeUnion:
 			var multiSchema []FieldSchema
 			if err := json.Unmarshal(temp.Schema, &multiSchema); err == nil {
 				fd.Schema = multiSchema
-				return nil
+				handled = true
 			}
-			// Fall through to generic unmarshaling if specific types don't match
 		case FieldTypeRecord:
-			// For FieldTypeRecord, Schema should be SchemaDefinition
 			var recordSchema SchemaDefinition
 			if err := json.Unmarshal(temp.Schema, &recordSchema); err == nil {
 				fd.Schema = recordSchema
-				return nil
+				handled = true
 			}
-			// Fall through to generic unmarshaling if specific types don't match
 		}
 
-		// For any other types or if specific unmarshaling failed,
-		// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
-		var genericSchema any
-		if err := json.Unmarshal(temp.Schema, &genericSchema); err != nil {
-			return fmt.Errorf("failed to unmarshal FieldDefinition.Schema into expected types or generic any: %w", err)
+		if !handled {
+			// For any other types or if specific unmarshaling failed,
+			// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
+			var genericSchema any
+			if err := json.Unmarshal(temp.Schema, &genericSchema); err != nil {
+				return fmt.Errorf("failed to unmarshal FieldDefinition.Schema into expected types or generic any: %w", err)
+			}
+			fd.Schema = genericSchema
 		}
-		fd.Schema = genericSchema
 	}
 	return nil
 }
@@ -239,7 +248,7 @@ type NestedSchemaDefinition struct {
 		} `json:"when,omitempty"`
 	} `json:"fields,omitempty"`
 
-	isStructured bool
+	IsStructured *bool
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface for NestedSchemaDefinition.
@@ -278,7 +287,7 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 	}
 
 	if hasFields {
-		nsd.isStructured = true
+		nsd.IsStructured = utils.BoolPtr(true)
 		var fieldsMap map[string]*FieldDefinition
 		if err := json.Unmarshal(temp.Fields, &fieldsMap); err == nil {
 			nsd.StructuredFieldsMap = fieldsMap
@@ -297,7 +306,7 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 			}
 		}
 	} else if hasType {
-		nsd.isStructured = false
+		nsd.IsStructured = utils.BoolPtr(false)
 		nsd.Type = temp.Type
 		nsd.LiteralConstraints = temp.LiteralConstraints
 		nsd.LiteralDefault = temp.LiteralDefault
@@ -341,7 +350,7 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 		m["concrete"] = *nsd.Concrete
 	}
 
-	if nsd.isStructured {
+	if *nsd.IsStructured == true {
 		if nsd.StructuredFieldsMap != nil {
 			m["fields"] = nsd.StructuredFieldsMap
 		} else if nsd.StructuredFieldsArray != nil {
@@ -381,6 +390,20 @@ type SchemaDefinition struct {
 	Migrations    []Migration                        `json:"migrations,omitempty"`
 	Hint          *SchemaHint                        `json:"hint,omitempty"`
 	Mock          func(faker any) (any, error)       `json:"-"`
+}
+
+// AddVersionField adds the versioning field to the schema's fields if it doesn't already exist.
+func (s *SchemaDefinition) AddVersionField() {
+	if s.Fields == nil {
+		s.Fields = make(map[string]*FieldDefinition)
+	}
+	if _, ok := s.Fields[VersionFieldName]; !ok {
+		s.Fields[VersionFieldName] = &FieldDefinition{
+			Name: VersionFieldName,
+			Type: FieldTypeInteger,
+			Required: utils.BoolPtr(false),
+		}
+	}
 }
 
 // SchemaChangeType defines the type of change in a migration.
@@ -738,3 +761,5 @@ type ValidationResult struct {
 
 // Document represents a single document or row of data.
 type Document map[string]any
+
+

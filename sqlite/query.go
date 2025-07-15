@@ -5,11 +5,31 @@ package sqlite
 
 import (
 	"encoding/json"
+	"errors" // Import the errors package
 	"fmt"
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+)
+
+// Pre-defined errors for the sqlite query generator.
+var (
+	ErrSchemaNil               = errors.New("SchemaDefinition cannot be nil")
+	ErrTableNameMissing        = errors.New("schema must define a table name")
+	ErrFieldPathEmpty          = errors.New("field path cannot be empty")
+	ErrFieldNotFound           = errors.New("field not found in schema")
+	ErrNestedQueryNotSupported = errors.New("field does not support nested querying")
+	ErrInvalidBooleanType      = errors.New("expected boolean for FieldTypeBoolean")
+	ErrSerializationFailed     = errors.New("failed to serialize field to JSON")
+	ErrQueryDSLNil             = errors.New("QueryDSL cannot be nil")
+	ErrMissingLogicalOperator  = errors.New("logical operator missing in filter group")
+	ErrInvalidFilterStructure  = errors.New("invalid filter structure")
+	ErrUnsupportedOperator     = errors.New("unsupported comparison operator for direct SQL")
+	ErrNoFieldsForUpdate       = errors.New("no fields provided for update")
+	ErrNoRecordsForInsert      = errors.New("no records provided for insert")
+	ErrNoValidFieldsInRecords  = errors.New("no valid fields found in records")
+	ErrDeleteWithoutWhere      = errors.New("DELETE without WHERE clause is not allowed for safety")
 )
 
 // SqliteQueryGeneratorFactory is an implementation of the query.QueryGeneratorFactory
@@ -37,10 +57,10 @@ type SqliteQuery struct {
 // NewSqliteQuery creates a new schema-aware query generator for SQLite.
 func NewSqliteQuery(schema *schema.SchemaDefinition) (*SqliteQuery, error) {
 	if schema == nil {
-		return nil, fmt.Errorf("SchemaDefinition cannot be nil")
+		return nil, ErrSchemaNil // Use pre-defined error
 	}
 	if schema.Name == "" {
-		return nil, fmt.Errorf("schema must define a table name")
+		return nil, ErrTableNameMissing // Use pre-defined error
 	}
 	return &SqliteQuery{schema: schema}, nil
 }
@@ -55,13 +75,13 @@ func quoteIdentifier(s string) string {
 func (s *SqliteQuery) getFieldSQL(fieldPath string) (string, error) {
 	parts := strings.Split(fieldPath, ".")
 	if len(parts) == 0 {
-		return "", fmt.Errorf("field path cannot be empty")
+		return "", ErrFieldPathEmpty // Use pre-defined error
 	}
 
-	rootField := s.findField(parts[0])
+	rootField := s.schema.FindField(parts[0])
 
 	if rootField == nil {
-		return "", fmt.Errorf("field '%s' not found in schema", parts[0])
+		return "", fmt.Errorf("%w '%s' in schema", ErrFieldNotFound, parts[0]) // Wrap pre-defined error
 	}
 
 	if len(parts) == 1 {
@@ -73,26 +93,17 @@ func (s *SqliteQuery) getFieldSQL(fieldPath string) (string, error) {
 		jsonPath := "$." + strings.Join(parts[1:], ".")
 		return fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(parts[0]), jsonPath), nil
 	default:
-		return "", fmt.Errorf("field '%s' of type %s does not support nested querying", parts[0], rootField.Type)
+		return "", fmt.Errorf("%w '%s' of type %s", ErrNestedQueryNotSupported, parts[0], rootField.Type) // Wrap pre-defined error
 	}
-}
-
-func (s *SqliteQuery) findField(fieldName string) *schema.FieldDefinition {
-	for _, field := range s.schema.Fields {
-		if field.Name == fieldName {
-			return field
-		}
-	}
-	return nil
 }
 
 // prepareValueForQuery prepares a Go value for use as a SQL query parameter, converting
 // it to a type that is compatible with the underlying SQLite driver.
 func (s *SqliteQuery) prepareValueForQuery(fieldName string, value any) (any, error) {
-	field := s.findField(fieldName)
+	field := s.schema.FindField(fieldName)
 
 	if field == nil {
-		return nil, fmt.Errorf("field '%s' not found in schema for value preparation", fieldName)
+		return nil, fmt.Errorf("%w for value preparation '%s'", ErrFieldNotFound, fieldName) // Wrap pre-defined error
 	}
 
 	if value == nil {
@@ -109,9 +120,10 @@ func (s *SqliteQuery) prepareValueForQuery(fieldName string, value any) (any, er
 		}
 		if strVal, ok := value.(string); ok {
 			lowerStr := strings.ToLower(strVal)
-			if lowerStr == "true" {
+			switch lowerStr {
+			case "true":
 				return 1, nil
-			} else if lowerStr == "false" {
+			case "false":
 				return 0, nil
 			}
 		}
@@ -127,12 +139,12 @@ func (s *SqliteQuery) prepareValueForQuery(fieldName string, value any) (any, er
 				return 0, nil
 			}
 		}
-		return nil, fmt.Errorf("expected boolean for FieldTypeBoolean, got %T for field '%s'", value, fieldName)
+		return nil, fmt.Errorf("%w, got %T for field '%s'", ErrInvalidBooleanType, value, fieldName) // Wrap pre-defined error
 
 	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeSet, schema.FieldTypeRecord, schema.FieldTypeUnion:
 		jsonBytes, err := json.Marshal(value)
 		if err != nil {
-			return nil, fmt.Errorf("failed to serialize field '%s' to JSON: %w", fieldName, err)
+			return nil, fmt.Errorf("%w field '%s': %w", ErrSerializationFailed, fieldName, err) // Wrap pre-defined error
 		}
 		return string(jsonBytes), nil
 
@@ -150,7 +162,7 @@ func (s *SqliteQuery) prepareValueForQuery(fieldName string, value any) (any, er
 // GenerateSelectSQL generates a SQL SELECT query from a QueryDSL object.
 func (s *SqliteQuery) GenerateSelectSQL(dsl *query.QueryDSL) (string, []any, error) {
 	if dsl == nil {
-		return "", nil, fmt.Errorf("QueryDSL cannot be nil")
+		return "", nil, ErrQueryDSLNil // Use pre-defined error
 	}
 	quotedTableName := quoteIdentifier(s.schema.Name)
 
@@ -162,7 +174,7 @@ func (s *SqliteQuery) GenerateSelectSQL(dsl *query.QueryDSL) (string, []any, err
 		for _, field := range dsl.Projection.Include {
 			accessor, err := s.getFieldSQL(field.Name)
 			if err != nil {
-				return "", nil, fmt.Errorf("projection error: %w", err)
+				return "", nil, fmt.Errorf("projection error: %w", err) // Wrap original error
 			}
 			selectFields = append(selectFields, fmt.Sprintf("%s AS %s", accessor, quoteIdentifier(field.Name)))
 		}
@@ -173,7 +185,7 @@ func (s *SqliteQuery) GenerateSelectSQL(dsl *query.QueryDSL) (string, []any, err
 	if dsl.Filters != nil {
 		whereSQL, err := s.buildWhereClause(dsl.Filters, &queryParams)
 		if err != nil {
-			return "", nil, fmt.Errorf("error building WHERE clause: %w", err)
+			return "", nil, fmt.Errorf("error building WHERE clause: %w", err) // Wrap original error
 		}
 		if whereSQL != "" {
 			whereClauses = append(whereClauses, whereSQL)
@@ -184,7 +196,7 @@ func (s *SqliteQuery) GenerateSelectSQL(dsl *query.QueryDSL) (string, []any, err
 		for _, sortCfg := range dsl.Sort {
 			accessor, err := s.getFieldSQL(sortCfg.Field)
 			if err != nil {
-				return "", nil, fmt.Errorf("sort error: %w", err)
+				return "", nil, fmt.Errorf("sort error: %w", err) // Wrap original error
 			}
 			orderByClauses = append(orderByClauses, fmt.Sprintf("%s %s", accessor, strings.ToUpper(string(sortCfg.Direction))))
 		}
@@ -222,7 +234,7 @@ func (s *SqliteQuery) buildWhereClause(filter *query.QueryFilter, params *[]any)
 	}
 	if filter.Group != nil {
 		if filter.Group.Operator == "" {
-			return "", fmt.Errorf("logical operator missing in filter group")
+			return "", ErrMissingLogicalOperator // Use pre-defined error
 		}
 		var clauses []string
 		for _, cond := range filter.Group.Conditions {
@@ -240,7 +252,7 @@ func (s *SqliteQuery) buildWhereClause(filter *query.QueryFilter, params *[]any)
 		op := strings.ToUpper(string(filter.Group.Operator))
 		return fmt.Sprintf("(%s)", strings.Join(clauses, " "+op+" ")), nil
 	}
-	return "", fmt.Errorf("invalid filter structure")
+	return "", ErrInvalidFilterStructure // Use pre-defined error
 }
 
 // buildCondition translates a single filter condition into a SQL condition string.
@@ -250,9 +262,13 @@ func (s *SqliteQuery) buildCondition(cond *query.FilterCondition, params *[]any)
 		return "", err
 	}
 
+	field := s.schema.FindField(cond.Field)
+	if field == nil {
+		return "", fmt.Errorf("%w '%s' in schema", ErrFieldNotFound, cond.Field) // Wrap pre-defined error
+	}
 	preparedValue, err := s.prepareValueForQuery(cond.Field, cond.Value)
 	if err != nil {
-		return "", fmt.Errorf("failed to prepare value for condition field '%s': %w", cond.Field, err)
+		return "", fmt.Errorf("failed to prepare value for condition field '%s': %w", cond.Field, err) // Wrap original error
 	}
 
 	switch cond.Operator {
@@ -299,19 +315,19 @@ func (s *SqliteQuery) buildCondition(cond *query.FilterCondition, params *[]any)
 		}
 		return fmt.Sprintf("%s %s (%s)", accessor, op, placeholders), nil
 	case query.ComparisonOperatorContains:
-		strVal := fmt.Sprintf("%%v%v%%v", preparedValue)
+		strVal := fmt.Sprintf("%%%v%%", preparedValue)
 		*params = append(*params, strVal)
 		return fmt.Sprintf("%s LIKE ?", accessor), nil
 	case query.ComparisonOperatorNotContains:
-		strVal := fmt.Sprintf("%%v%v%%v", preparedValue)
+		strVal := fmt.Sprintf("%%%v%%", preparedValue)
 		*params = append(*params, strVal)
 		return fmt.Sprintf("%s NOT LIKE ?", accessor), nil
 	case query.ComparisonOperatorStartsWith:
-		strVal := fmt.Sprintf("%v%%v", preparedValue)
+		strVal := fmt.Sprintf("%v%%", preparedValue)
 		*params = append(*params, strVal)
 		return fmt.Sprintf("%s LIKE ?", accessor), nil
 	case query.ComparisonOperatorEndsWith:
-		strVal := fmt.Sprintf("%%v%v", preparedValue)
+		strVal := fmt.Sprintf("%%%v", preparedValue)
 		*params = append(*params, strVal)
 		return fmt.Sprintf("%s LIKE ?", accessor), nil
 	case query.ComparisonOperatorExists:
@@ -319,7 +335,7 @@ func (s *SqliteQuery) buildCondition(cond *query.FilterCondition, params *[]any)
 	case query.ComparisonOperatorNotExists:
 		return fmt.Sprintf("%s IS NULL", accessor), nil
 	default:
-		return "", fmt.Errorf("unsupported comparison operator for direct SQL: %s", cond.Operator)
+		return "", fmt.Errorf("%w: %s", ErrUnsupportedOperator, cond.Operator) // Wrap pre-defined error
 	}
 }
 
@@ -330,17 +346,17 @@ func (s *SqliteQuery) GenerateUpdateSQL(updates map[string]any, filters *query.Q
 	var queryParams []any
 
 	if len(updates) == 0 {
-		return "", nil, fmt.Errorf("no fields provided for update")
+		return "", nil, ErrNoFieldsForUpdate // Use pre-defined error
 	}
 
 	for fieldName, value := range updates {
 		accessor, err := s.getFieldSQL(fieldName)
 		if err != nil {
-			return "", nil, fmt.Errorf("update set clause error for field '%s': %w", fieldName, err)
+			return "", nil, fmt.Errorf("update set clause error for field '%s': %w", fieldName, err) // Wrap original error
 		}
 		preparedValue, err := s.prepareValueForQuery(fieldName, value)
 		if err != nil {
-			return "", nil, fmt.Errorf("error preparing value for field '%s': %w", fieldName, err)
+			return "", nil, fmt.Errorf("error preparing value for field '%s': %w", fieldName, err) // Wrap original error
 		}
 		setClauses = append(setClauses, fmt.Sprintf("%s = ?", accessor))
 		queryParams = append(queryParams, preparedValue)
@@ -352,7 +368,7 @@ func (s *SqliteQuery) GenerateUpdateSQL(updates map[string]any, filters *query.Q
 		var err error
 		whereSQL, err = s.buildWhereClause(filters, &queryParams)
 		if err != nil {
-			return "", nil, fmt.Errorf("error building WHERE clause for update: %w", err)
+			return "", nil, fmt.Errorf("error building WHERE clause for update: %w", err) // Wrap original error
 		}
 	}
 
@@ -361,21 +377,22 @@ func (s *SqliteQuery) GenerateUpdateSQL(updates map[string]any, filters *query.Q
 	if whereSQL != "" {
 		sb.WriteString(" WHERE " + whereSQL)
 	}
-	return sb.String() + ";", queryParams, nil
+	sb.WriteString(" RETURNING *;")
+	return sb.String(), queryParams, nil
 }
 
 // GenerateInsertSQL generates a SQL INSERT query.
 func (s *SqliteQuery) GenerateInsertSQL(records []map[string]any) (string, []any, error) {
 	if len(records) == 0 {
-		return "", nil, fmt.Errorf("no records provided for insert")
+		return "", nil, ErrNoRecordsForInsert // Use pre-defined error
 	}
 	quotedTableName := quoteIdentifier(s.schema.Name)
 
 	fieldSet := make(map[string]bool)
 	for _, record := range records {
 		for fieldName := range record {
-			if f := s.findField(fieldName); f == nil {
-				return "", nil, fmt.Errorf("field '%s' not found in schema", fieldName)
+			if f := s.schema.FindField(fieldName); f == nil {
+				return "", nil, fmt.Errorf("%w '%s' in schema", ErrFieldNotFound, fieldName) // Wrap pre-defined error
 			}
 			fieldSet[fieldName] = true
 		}
@@ -387,7 +404,7 @@ func (s *SqliteQuery) GenerateInsertSQL(records []map[string]any) (string, []any
 	}
 
 	if len(fields) == 0 {
-		return "", nil, fmt.Errorf("no valid fields found in records")
+		return "", nil, ErrNoValidFieldsInRecords // Use pre-defined error
 	}
 
 	var quotedFields []string
@@ -407,7 +424,7 @@ func (s *SqliteQuery) GenerateInsertSQL(records []map[string]any) (string, []any
 			}
 			preparedValue, err := s.prepareValueForQuery(fieldName, value)
 			if err != nil {
-				return "", nil, fmt.Errorf("error preparing value for field '%s': %w", fieldName, err)
+				return "", nil, fmt.Errorf("error preparing value for field '%s': %w", fieldName, err) // Wrap original error
 			}
 			rowPlaceholders = append(rowPlaceholders, "?")
 			queryParams = append(queryParams, preparedValue)
@@ -426,7 +443,7 @@ func (s *SqliteQuery) GenerateDeleteSQL(filters *query.QueryFilter, unsafeDelete
 	var queryParams []any
 
 	if filters == nil && !unsafeDelete {
-		return "", nil, fmt.Errorf("DELETE without WHERE clause is not allowed for safety. Set unsafeDelete=true to override")
+		return "", nil, ErrDeleteWithoutWhere // Use pre-defined error
 	}
 
 	var whereSQL string
@@ -434,7 +451,7 @@ func (s *SqliteQuery) GenerateDeleteSQL(filters *query.QueryFilter, unsafeDelete
 		var err error
 		whereSQL, err = s.buildWhereClause(filters, &queryParams)
 		if err != nil {
-			return "", nil, fmt.Errorf("error building WHERE clause for delete: %w", err)
+			return "", nil, fmt.Errorf("error building WHERE clause for delete: %w", err) // Wrap original error
 		}
 	}
 

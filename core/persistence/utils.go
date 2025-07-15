@@ -2,11 +2,13 @@
 package persistence
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/utils"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"go.uber.org/zap"
 )
 
 // createEvent is a helper function that constructs a PersistenceEvent. It populates
@@ -97,4 +99,46 @@ func DocumentToStruct[T any](doc any) (T, error) {
 //	// doc will be map[string]any{"name": "Alice", "address": json.RawMessage(`{"city":"New York"}`)}
 func StructToDocument[T any](record T) (schema.Document, error) {
 	return utils.StructToMap(record)
+}
+
+// processNameField extracts logical and physical names from a document's name field
+func processNameField(nameField any, logger *zap.Logger) (map[string]string, error) {
+	var name map[string]string
+
+	switch v := nameField.(type) {
+	case string:
+		err := json.Unmarshal([]byte(v), &name)
+		if err != nil {
+			logger.Error("Failed to unmarshal name string", zap.Error(err), zap.String("nameStr", v))
+			return nil, fmt.Errorf("failed to unmarshal name string: %w", err)
+		}
+	case map[string]any:
+		name = make(map[string]string)
+		for k, val := range v {
+			if strVal, ok := val.(string); ok {
+				name[k] = strVal
+			}
+		}
+	default:
+		logger.Error("Unexpected type for name field", zap.Any("nameField", nameField))
+		return nil, fmt.Errorf("unexpected type for name field: %T", nameField)
+	}
+
+	return name, nil
+}
+
+// processDocuments extracts logical->physical name mappings from documents
+func processDocuments(documents []schema.Document, logger *zap.Logger) (map[string]string, error) {
+	names := make(map[string]string)
+
+	for _, doc := range documents {
+		nameField := doc["name"]
+		name, err := processNameField(nameField, logger)
+		if err != nil {
+			return nil, err
+		}
+		names[name["logical"]] = name["physical"]
+	}
+
+	return names, nil
 }

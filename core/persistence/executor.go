@@ -16,7 +16,7 @@ import (
 // DataProcessor to handle in-memory computations and filtering after the initial
 // data has been fetched from the database.
 type Executor struct {
-	queryExecutor DatabaseInteractor
+	interactor DatabaseInteractor
 	dataProcessor *query.DataProcessor
 	logger        *zap.Logger
 }
@@ -28,7 +28,7 @@ func NewExecutor(interactor DatabaseInteractor, logger *zap.Logger) *Executor {
 		logger = zap.NewNop()
 	}
 	return &Executor{
-		queryExecutor: interactor,
+		interactor: interactor,
 		dataProcessor: query.NewDataProcessor(logger),
 		logger:        logger,
 	}
@@ -42,7 +42,7 @@ func (e *Executor) RegisterComputeFunction(name string, fn query.ComputeFunction
 
 // RegisterFilterFunction registers a Go function for custom filtering operations.
 // This allows for complex filtering logic that may not be directly translatable to SQL.
-func (e *Executor) RegisterFilterFunction(operator query.ComparisonOperator, fn query.PredicateFunction) {
+func (e *Executor) RegisterFilterFunction(operator query.ComparisonOperator, fn query.ComparisonFunction) {
 	e.dataProcessor.RegisterFilterFunction(operator, fn)
 }
 
@@ -52,7 +52,7 @@ func (e *Executor) RegisterComputeFunctions(functionMap map[string]query.Compute
 }
 
 // RegisterFilterFunctions registers multiple filter functions from a map.
-func (e *Executor) RegisterFilterFunctions(functionMap map[query.ComparisonOperator]query.PredicateFunction) {
+func (e *Executor) RegisterFilterFunctions(functionMap map[query.ComparisonOperator]query.ComparisonFunction) {
 	e.dataProcessor.RegisterFilterFunctions(functionMap)
 }
 
@@ -71,7 +71,7 @@ func (e *Executor) Query(ctx context.Context, schema *schema.SchemaDefinition, d
 	}
 
 	// Execute the database query to get the raw rows.
-	dbRows, err := e.queryExecutor.SelectDocuments(ctx, schema, &sqlDsl)
+	dbRows, err := e.interactor.SelectDocuments(ctx, schema, &sqlDsl)
 	if err != nil {
 		return nil, err
 	}
@@ -98,13 +98,13 @@ func (e *Executor) Query(ctx context.Context, schema *schema.SchemaDefinition, d
 // Update performs an update operation on the database. It directly passes the update
 // instructions to the DatabaseInteractor.
 func (e *Executor) Update(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
-	return e.queryExecutor.UpdateDocuments(ctx, schema, updates, filters)
+	return e.interactor.UpdateDocuments(ctx, schema, updates, filters)
 }
 
 // Insert performs an insert operation on the database. It passes the records to the
 // DatabaseInteractor and returns the inserted documents.
-func (e *Executor) Insert(ctx context.Context, schema *schema.SchemaDefinition, records []map[string]any) (*query.QueryResult, error) {
-	insertedRows, err := e.queryExecutor.InsertDocuments(ctx, schema, records)
+func (e *Executor) Insert(ctx context.Context, schema *schema.SchemaDefinition, records []map[string]interface{}) (*query.QueryResult, error) {
+	insertedRows, err := e.interactor.InsertDocuments(ctx, schema, records)
 	if err != nil {
 		return nil, err
 	}
@@ -123,6 +123,6 @@ func (e *Executor) Insert(ctx context.Context, schema *schema.SchemaDefinition, 
 // Delete performs a delete operation on the database. It passes the filters to the
 // DatabaseInteractor to determine which documents to delete.
 func (e *Executor) Delete(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
-	return e.queryExecutor.DeleteDocuments(ctx, schema, filters, unsafeDelete)
+	return e.interactor.DeleteDocuments(ctx, schema, filters, unsafeDelete)
 }
 

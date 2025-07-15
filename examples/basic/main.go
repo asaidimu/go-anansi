@@ -59,7 +59,7 @@ func main() {
 	interactor := sqlite.NewSQLiteInteractor(db, logger, interactorOptions, nil)
 
 	// 3. Initialize the Anansi Persistence service
-	persistenceSvc, err := persistence.NewPersistence(interactor, schema.FunctionMap{})
+	persistenceSvc, err := persistence.NewPersistence(interactor, schema.FunctionMap{}, logger)
 	if err != nil {
 		logger.Fatal("Failed to initialize persistence service", zap.Error(err))
 	}
@@ -71,11 +71,24 @@ func main() {
 	if err := json.Unmarshal([]byte(inventorySchemaJSON), &inventorySchema); err != nil {
 		logger.Fatal("Failed to unmarshal inventory schema", zap.Error(err))
 	}
+	name, _ := persistenceSvc.Schema(inventorySchema.Name)
+
+	if name !=  nil {
+	   logger.Info("Schema", zap.String("name", name.Name))
+	}
+
 	var inventoryCollection persistence.PersistenceCollectionInterface
-	if inventoryCollection, err = persistenceSvc.Collection(inventorySchema.Name); err != nil {
-		inventoryCollection, err = persistenceSvc.Create(inventorySchema)
-		if err != nil {
-			logger.Fatal("Failed to create 'inventory_items' collection", zap.Error(err))
+
+	inventoryCollection, err = persistenceSvc.Collection(inventorySchema.Name)
+	if err != nil {
+		if err == persistence.ErrSchemaNotFound {
+			logger.Info("Schema", zap.String("error", err.Error()))
+			inventoryCollection, err = persistenceSvc.Create(inventorySchema)
+			if err != nil {
+				logger.Fatal("Failed to create 'inventory_items' collection", zap.Error(err))
+			}
+		} else {
+			logger.Fatal("Failed to get 'inventory_items' collection", zap.Error(err))
 		}
 	}
 
@@ -101,10 +114,11 @@ func main() {
 			return
 		}
 
-		if result.Count == 0 {
+		switch result.Count {
+		case 0:
 			logger.Info("No items in inventory.")
 			return
-		} else if result.Count == 1 {
+		case 1:
 			// If count is 1, expect a single schema.Document
 			if itemDoc, ok := result.Data.(schema.Document); ok {
 				logger.Info("Found 1 item:")
@@ -112,7 +126,7 @@ func main() {
 			} else {
 				logger.Error("Expected single document but got unexpected type", zap.Any("data", result.Data))
 			}
-		} else { // result.Count > 1
+		default: // result.Count > 1
 			// If count is > 1, expect a slice of schema.Document
 			if itemDocs, ok := result.Data.([]schema.Document); ok {
 				logger.Info("Found multiple items:")
@@ -214,16 +228,17 @@ func main() {
 	if err != nil {
 		logger.Error("Failed to read low stock items", zap.Error(err))
 	} else {
-		if lowStockResult.Count == 0 {
+		switch lowStockResult.Count {
+		case 0:
 			logger.Info("No items with quantity less than 20.")
-		} else if lowStockResult.Count == 1 {
+		case 1:
 			if itemDoc, ok := lowStockResult.Data.(schema.Document); ok {
 				logger.Info("Found 1 low stock item:")
 				printItemDetails(logger, itemDoc)
 			} else {
 				logger.Error("Expected single low stock document but got unexpected type", zap.Any("data", lowStockResult.Data))
 			}
-		} else { // lowStockResult.Count > 1
+		default: // lowStockResult.Count > 1
 			if itemDocs, ok := lowStockResult.Data.([]schema.Document); ok {
 				logger.Info("Found multiple low stock items:")
 				for _, itemDoc := range itemDocs {
