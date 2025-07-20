@@ -1,11 +1,7 @@
-// Package persistence defines the interfaces for direct database interactions,
-// abstracting the underlying database technology.
-package persistence
+package query
 
 import (
 	"context"
-
-	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
@@ -44,19 +40,20 @@ type InteractorOptions struct {
 // Implementations of this interface are responsible for managing both non-transactional
 // and transactional operations.
 type DatabaseInteractor interface {
-	// SelectDocuments retrieves documents from the database based on a QueryDSL query.
-	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.QueryDSL) ([]schema.Document, error)
+	// SelectDocuments retrieves documents from the database based on a QueryDSL
+	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *Query) ([]schema.Document, error)
 
 	// SelectStream executes a SELECT query and returns a channel of documents.
-	SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.QueryDSL) (<-chan schema.Document, <-chan error, error)
+	SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *Query) (<-chan schema.Document, <-chan error, error)
+
 	// UpdateDocuments modifies documents in the database that match the provided filters.
-	UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error)
+	UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *QueryFilter) (int64, error)
 
 	// InsertDocuments adds new documents to the database.
-	InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []map[string]any) ([]schema.Document, error)
+	InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []schema.Document) ([]schema.Document, error)
 
 	// DeleteDocuments removes documents from the database that match the provided filters.
-	DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error)
+	DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *QueryFilter, unsafeDelete bool) (int64, error)
 
 	// CreateCollection generates and executes the necessary DDL statements to create a
 	// table based on a schema definition.
@@ -87,4 +84,8 @@ type DatabaseInteractor interface {
 	// Rollback aborts the transaction, discarding all changes made within it. This
 	// should only be called on a transactional DatabaseInteractor.
 	Rollback(ctx context.Context) error
+
+	// Capabilities returns a list of capabilities provided by the underlying
+	// database
+	Capabilities() Capabilities
 }

@@ -1,6 +1,36 @@
 package persistence
 
-import "errors"
+import (
+	"errors"
+	"fmt"
+)
+
+// PersistenceError represents a custom error type for persistence operations.
+type PersistenceError struct {
+	Message string
+	Err     error
+}
+
+// Error returns the string representation of the PersistenceError.
+func (e *PersistenceError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("%s: %v", e.Message, e.Err)
+	}
+	return e.Message
+}
+
+// Unwrap returns the underlying error, if any.
+func (e *PersistenceError) Unwrap() error {
+	return e.Err
+}
+
+// NewPersistenceError creates a new PersistenceError.
+func NewPersistenceError(message string, err error) error {
+	return &PersistenceError{
+		Message: message,
+		Err:     err,
+	}
+}
 
 // Pre-defined errors for the persistence package.
 var (
@@ -31,4 +61,7 @@ var (
 	ErrSchemaRead                   = errors.New("Error reading schema collection")
 	ErrDocumentToStructConversion   = errors.New("Error converting document to struct")
 	ErrCollectionInitialization     = errors.New("Failed to initialize collection")
+	ErrFailedToRegisterSchema       = errors.New("Failed to register schema")
+	ErrFailedToUnregisterSchema     = errors.New("Failed to unregister schema")
+	ErrFailedToRefreshNames         = errors.New("Failed to refresh names")
 )

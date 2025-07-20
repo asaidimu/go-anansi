@@ -21,7 +21,7 @@ import (
 type CollectionBase struct {
 	name          string
 	schema        *schema.SchemaDefinition
-	executor      *Executor
+	interactor    query.DatabaseInteractor
 	validator     *schema.Validator
 	bus           *events.TypedEventBus[PersistenceEvent]
 	subscriptions map[string]*SubscriptionInfo // To store unsubscribe functions
@@ -32,12 +32,12 @@ type CollectionBase struct {
 // NewCollection creates a new instance of a collection that implements the
 // PersistenceCollectionInterface. It wraps the base collection logic with event-emitting
 // capabilities, ensuring that operations on the collection are observable.
-func NewCollection(bus *events.TypedEventBus[PersistenceEvent], name string, sc *schema.SchemaDefinition, executor *Executor, fmap schema.FunctionMap) (PersistenceCollectionInterface, error) {
+func NewCollection(bus *events.TypedEventBus[PersistenceEvent], name string, sc *schema.SchemaDefinition, interactor query.DatabaseInteractor, fmap schema.FunctionMap) (PersistenceCollectionInterface, error) {
 	validator := schema.NewValidator(sc, fmap)
 
 	collection := NewEventEmittingCollection(&CollectionBase{
 		schema:        sc,
-		executor:      executor,
+		interactor:    interactor,
 		validator:     validator,
 		bus:           bus,
 		subscriptions: make(map[string]*SubscriptionInfo),
@@ -57,7 +57,7 @@ func (c *CollectionBase) Create(data any) (*query.QueryResult, error) {
 	case []map[string]any:
 		records = v
 	default:
-		return nil, fmt.Errorf("%w: got %T", ErrInvalidDataType, data) // Use pre-defined error
+		return nil, NewPersistenceError("Invalid data type for collection operation", ErrInvalidDataType)
 	}
 
 	for _, record := range records {
@@ -71,26 +71,43 @@ func (c *CollectionBase) Create(data any) (*query.QueryResult, error) {
 		}
 
 		if !validation.Valid {
-			return nil, fmt.Errorf("%w, \n %v", ErrValidationFailed, validation) // Use pre-defined error
+			return nil, NewPersistenceError("Validation failed for collection operation", ErrValidationFailed)
 		}
 	}
 
-	interfaceRecords := make([]map[string]interface{}, len(records))
+	interfaceRecords := make([]schema.Document, len(records))
 	for i, r := range records {
 		interfaceRecords[i] = r
 	}
 
-	return c.executor.Insert(context.Background(), c.schema, interfaceRecords)
+	insertedDocs, err := c.interactor.InsertDocuments(context.Background(), c.schema, interfaceRecords)
+	if err != nil {
+		return nil, NewPersistenceError("Failed to insert data into collection", ErrInsertFailed)
+	}
+
+	return &query.QueryResult{
+		Data:  insertedDocs,
+		Count: len(insertedDocs),
+	}, nil
 }
 
 // Read retrieves documents from the collection based on a QueryDSL query.
-func (c *CollectionBase) Read(q *query.QueryDSL) (*query.QueryResult, error) {
-	result, err := c.executor.Query(context.Background(), c.schema, q)
+func (c *CollectionBase) Read(q *query.Query) (*query.QueryResult, error) {
+	executor := query.NewExecutor(c.interactor, nil, nil) // Assuming no logger or cache for now
+	results, err := executor.Execute(context.Background(), c.schema, q)
 	if err != nil {
-		return nil, fmt.Errorf("%w '%s': %w", ErrReadFailed, c.schema.Name, err) // Use pre-defined error
+		return nil, NewPersistenceError("Failed to read data from collection", ErrReadFailed)
 	}
 
-	return result, nil
+	return &query.QueryResult{
+		Data:  results,
+		Count: len(results),
+	}, nil
+}
+
+// Capabilities returns the features and limitations of the underlying database backend.
+func (c *CollectionBase) Capabilities() *query.Capabilities {
+	return &query.Capabilities{}
 }
 
 // Update modifies documents in the collection that match the provided filter.
@@ -111,9 +128,9 @@ func (c *CollectionBase) Update(params *CollectionUpdate) (int, error) {
 		params.Data[schema.VersionFieldName] = *params.Version + 1
 	}
 
-	result, err := c.executor.Update(context.Background(), c.schema, params.Data, params.Filter)
+	result, err := c.interactor.UpdateDocuments(context.Background(), c.schema, params.Data, params.Filter)
 	if err != nil {
-		return 0, fmt.Errorf("%w '%s': %w", ErrUpdateFailed, c.schema.Name, err) // Use pre-defined error
+		return 0, NewPersistenceError("Failed to update data in collection", ErrUpdateFailed)
 	}
 
 	if params.Version != nil && result == 0 {
@@ -126,9 +143,9 @@ func (c *CollectionBase) Update(params *CollectionUpdate) (int, error) {
 // Delete removes documents from the collection that match the given query filter.
 func (c *CollectionBase) Delete(filter *query.QueryFilter, unsafe bool) (int, error) {
 	ctx := context.Background()
-	affected, err := c.executor.Delete(ctx, c.schema, filter, unsafe)
+	affected, err := c.interactor.DeleteDocuments(ctx, c.schema, filter, unsafe)
 	if err != nil {
-		return 0, fmt.Errorf("%w '%s': %w", ErrDeleteFailed, c.schema.Name, err) // Use pre-defined error
+		return 0, NewPersistenceError("Failed to delete data from collection", ErrDeleteFailed)
 	}
 
 	return int(affected), nil
@@ -157,7 +174,7 @@ func (c *CollectionBase) Metadata(
 	forceRefresh bool,
 ) (Metadata, error) {
 	// TODO: Implement collection metadata retrieval.
-	return Metadata{}, fmt.Errorf("%w for '%s'", ErrMetadataNotImplemented, c.schema.Name) // Use pre-defined error
+	return Metadata{}, NewPersistenceError("Collection metadata method not implemented", ErrMetadataNotImplemented)
 }
 
 // RegisterSubscription registers a subscription for an event that is specific to this collection.

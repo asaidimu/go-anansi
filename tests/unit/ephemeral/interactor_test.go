@@ -16,6 +16,10 @@ const userSchemaJSON = `{
 	"version": "1.0.0",
 	"description": "A collection of users",
 	"fields": {
+		"id": {
+			"name": "id",
+			"type": "integer"
+		},
 		"name": {
 			"name": "name",
 			"type": "string",
@@ -107,7 +111,7 @@ func TestEphemeralDatabaseInteractor_InsertAndSelectDocuments(t *testing.T) {
 	err := interactor.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
-	docsToInsert := []map[string]any{
+	docsToInsert := []schema.Document{
 		{"name": "Alice", "age": 30},
 		{"name": "Bob", "age": 25},
 	}
@@ -128,7 +132,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithFilter(t *testing.T) {
 	err := interactor.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
-	docsToInsert := []map[string]any{
+	docsToInsert := []schema.Document{
 		{"name": "Alice", "age": 30},
 		{"name": "Bob", "age": 25},
 		{"name": "Charlie", "age": 30},
@@ -148,7 +152,7 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments(t *testing.T) {
 	err := interactor.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
-	docsToInsert := []map[string]any{
+	docsToInsert := []schema.Document{
 		{"name": "Alice", "age": 30, "status": "active"},
 		{"name": "Bob", "age": 25, "status": "active"},
 	}
@@ -156,7 +160,7 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments(t *testing.T) {
 	assert.NoError(t, err)
 
 	filters := query.NewQueryBuilder().Where("name").Eq("Bob").Build().Filters
-	updates := map[string]any{"status": "inactive"}
+	updates := schema.Document{"status": "inactive"}
 
 	updatedCount, err := interactor.UpdateDocuments(context.Background(), &schemaDef, updates, filters)
 	assert.NoError(t, err)
@@ -175,7 +179,7 @@ func TestEphemeralDatabaseInteractor_DeleteDocuments(t *testing.T) {
 	err := interactor.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
-	docsToInsert := []map[string]any{
+	docsToInsert := []schema.Document{
 		{"name": "Alice", "age": 30},
 		{"name": "Bob", "age": 25},
 	}
@@ -213,7 +217,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedProjection(t *tes
 	err := interactor.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
-	docsToInsert := []map[string]any{
+	docsToInsert := []schema.Document{
 		{"name": "Alice", "age": 30, "address": map[string]any{"city": "New York", "zip": 10001}},
 	}
 	_, err = interactor.InsertDocuments(context.Background(), &schemaDef, docsToInsert)
@@ -237,7 +241,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedFilter(t *testing
 	err := interactor.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
-	docsToInsert := []map[string]any{
+	docsToInsert := []schema.Document{
 		{"name": "Alice", "age": 30, "address": map[string]any{"city": "New York"}},
 		{"name": "Bob", "age": 25, "address": map[string]any{"city": "London"}},
 	}
@@ -287,4 +291,71 @@ func TestEphemeralDatabaseInteractor_DeleteDocuments_NoMatch(t *testing.T) {
 	deletedCount, err := interactor.DeleteDocuments(context.Background(), &schemaDef, filters, false)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), deletedCount)
+}
+
+func TestEphemeralDatabaseInteractor_SelectDocuments_WithJoin(t *testing.T) {
+	interactor := ephemeral.NewEphemeralDatabaseInteractor()
+
+	// Create users collection
+	userSchema := getUserSchema(t)
+	err := interactor.CreateCollection(userSchema)
+	assert.NoError(t, err)
+
+	// Create orders collection
+	orderSchemaJSON := `{
+		"name": "orders",
+		"fields": {
+			"order_id": {"type": "integer"},
+			"user_id": {"type": "integer"},
+			"amount": {"type": "float"}
+		}
+	}`
+	var orderSchema schema.SchemaDefinition
+	err = json.Unmarshal([]byte(orderSchemaJSON), &orderSchema)
+	assert.NoError(t, err)
+	err = interactor.CreateCollection(orderSchema)
+	assert.NoError(t, err)
+
+	// Insert data
+	users := []schema.Document{
+		{"id": 1, "name": "Alice", "age": 30},
+		{"id": 2, "name": "Bob", "age": 25},
+	}
+	_, err = interactor.InsertDocuments(context.Background(), &userSchema, users)
+	assert.NoError(t, err)
+
+	orders := []schema.Document{
+		{"order_id": 101, "user_id": 1, "amount": 150.0},
+		{"order_id": 102, "user_id": 2, "amount": 200.0},
+		{"order_id": 103, "user_id": 1, "amount": 50.0},
+	}
+	_, err = interactor.InsertDocuments(context.Background(), &orderSchema, orders)
+	assert.NoError(t, err)
+
+	// Build join query
+	dsl := query.NewQueryBuilder().
+		InnerJoin("orders").
+		On(query.QueryFilter{
+			Condition: &query.FilterCondition{
+				Field:    "users.id",
+				Operator: query.ComparisonOperatorEq,
+				Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Type: "field", Field: "orders.user_id"}},
+			},
+		}).
+		End().
+		Build()
+
+	// Execute query
+	results, err := interactor.SelectDocuments(context.Background(), &userSchema, &dsl)
+	assert.NoError(t, err)
+	assert.Len(t, results, 3)
+
+	// Verify results
+	for _, r := range results {
+		user, ok := r["users"].(schema.Document)
+		assert.True(t, ok, "Expected 'users' to be a map[string]any")
+		order, ok := r["orders"].(schema.Document)
+		assert.True(t, ok, "Expected 'orders' to be a map[string]any")
+		assert.Equal(t, user["id"], order["user_id"], "User ID and Order User ID should match")
+	}
 }

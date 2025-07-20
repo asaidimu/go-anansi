@@ -220,7 +220,6 @@ func (fv *FilterValue) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-
 	// If none of the above succeeded, the data is not a recognized FilterValue type.
 	return fmt.Errorf("unsupported FilterValue type or invalid JSON: %s", string(data))
 }
@@ -313,9 +312,9 @@ func (p PaginationOptions) MarshalJSON() ([]byte, error) {
 	case "offset":
 		// For "offset" type, only include Type, Limit, and Offset.
 		aux := struct {
-			Type   string `json:"type"`
-			Limit  int    `json:"limit"`
-			Offset *int   `json:"offset,omitempty"`
+			Type   PaginationType `json:"type"`
+			Limit  int            `json:"limit"`
+			Offset *int           `json:"offset,omitempty"`
 		}{
 			Type:   p.Type,
 			Limit:  p.Limit,
@@ -325,10 +324,10 @@ func (p PaginationOptions) MarshalJSON() ([]byte, error) {
 	case "cursor":
 		// For "cursor" type, only include Type, Limit, Cursor, and Direction.
 		aux := struct {
-			Type      string  `json:"type"`
-			Limit     int     `json:"limit"`
-			Cursor    *string `json:"cursor,omitempty"`
-			Direction *string `json:"direction,omitempty"`
+			Type      PaginationType `json:"type"`
+			Limit     int            `json:"limit"`
+			Cursor    *string        `json:"cursor,omitempty"`
+			Direction *string        `json:"direction,omitempty"`
 		}{
 			Type:      p.Type,
 			Limit:     p.Limit,
@@ -346,7 +345,7 @@ func (p PaginationOptions) MarshalJSON() ([]byte, error) {
 func (p *PaginationOptions) UnmarshalJSON(b []byte) error {
 	// First, unmarshal enough to get the 'type' field.
 	var raw struct {
-		Type string `json:"type"`
+		Type PaginationType `json:"type"`
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return err
@@ -358,7 +357,7 @@ func (p *PaginationOptions) UnmarshalJSON(b []byte) error {
 	switch p.Type {
 	case "offset":
 		var aux struct {
-			Limit  int `json:"limit"`
+			Limit  int  `json:"limit"`
 			Offset *int `json:"offset,omitempty"`
 		}
 		if err := json.Unmarshal(b, &aux); err != nil {
@@ -368,7 +367,7 @@ func (p *PaginationOptions) UnmarshalJSON(b []byte) error {
 		p.Offset = aux.Offset
 	case "cursor":
 		var aux struct {
-			Limit     int `json:"limit"`
+			Limit     int     `json:"limit"`
 			Cursor    *string `json:"cursor,omitempty"`
 			Direction *string `json:"direction,omitempty"`
 		}

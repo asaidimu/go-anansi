@@ -4,17 +4,17 @@ import (
 	"fmt"
 	"reflect"
 	"strconv"
-	"strings"
 
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // sumAggregate computes the sum of a numeric field across multiple records.
-func sumAggregate(records []map[string]any, field string) (any, error) {
+func sumAggregate(records []schema.Document, field string) (any, error) {
 	var sum float64
 	foundNumeric := false
 	for _, record := range records {
-		value := getFieldValue(record, field) // Assuming getFieldValue is accessible or passed
+		value := schema.GetFieldValue(record, field) // Assuming getFieldValue is accessible or passed
 		if value == nil {
 			continue // Skip nil values
 		}
@@ -49,14 +49,14 @@ func sumAggregate(records []map[string]any, field string) (any, error) {
 }
 
 // countAggregate computes the count of records. If a field is specified, it counts non-nil values for that field.
-func countAggregate(records []map[string]any, field string) (any, error) {
+func countAggregate(records []schema.Document, field string) (any, error) {
 	if field == "" {
 		return len(records), nil // Count all records in the group
 	}
 
 	count := 0
 	for _, record := range records {
-		if getFieldValue(record, field) != nil {
+		if schema.GetFieldValue(record, field) != nil {
 			count++
 		}
 	}
@@ -64,11 +64,11 @@ func countAggregate(records []map[string]any, field string) (any, error) {
 }
 
 // avgAggregate computes the average of a numeric field across multiple records.
-func avgAggregate(records []map[string]any, field string) (any, error) {
+func avgAggregate(records []schema.Document, field string) (any, error) {
 	var sum float64
 	var count int
 	for _, record := range records {
-		value := getFieldValue(record, field)
+		value := schema.GetFieldValue(record, field)
 		if value == nil {
 			continue
 		}
@@ -99,7 +99,7 @@ func avgAggregate(records []map[string]any, field string) (any, error) {
 }
 
 // minAggregate finds the minimum value of a comparable field across multiple records.
-func minAggregate(records []map[string]any, field string) (any, error) {
+func minAggregate(records []schema.Document, field string) (any, error) {
 	if len(records) == 0 {
 		return nil, nil
 	}
@@ -108,7 +108,7 @@ func minAggregate(records []map[string]any, field string) (any, error) {
 	firstFound := false
 
 	for _, record := range records {
-		value := getFieldValue(record, field)
+		value := schema.GetFieldValue(record, field)
 		if value == nil {
 			continue
 		}
@@ -131,7 +131,7 @@ func minAggregate(records []map[string]any, field string) (any, error) {
 }
 
 // maxAggregate finds the maximum value of a comparable field across multiple records.
-func maxAggregate(records []map[string]any, field string) (any, error) {
+func maxAggregate(records []schema.Document, field string) (any, error) {
 	if len(records) == 0 {
 		return nil, nil
 	}
@@ -140,7 +140,7 @@ func maxAggregate(records []map[string]any, field string) (any, error) {
 	firstFound := false
 
 	for _, record := range records {
-		value := getFieldValue(record, field)
+		value := schema.GetFieldValue(record, field)
 		if value == nil {
 			continue
 		}
@@ -162,32 +162,4 @@ func maxAggregate(records []map[string]any, field string) (any, error) {
 	return maxValue, nil
 }
 
-// getFieldValue is a standalone helper to be used by aggregation functions.
-// This is a duplicate of the method in QueryHelper, ideally it would be shared.
-// For robust solution, consider passing QueryHelper's getFieldValue or a record accessor.
-func getFieldValue(record map[string]any, fieldPath string) any {
-	parts := strings.Split(fieldPath, ".")
-	var current any = record
 
-	for i, part := range parts {
-		if current == nil {
-			return nil
-		}
-
-		currentMap, ok := current.(map[string]any)
-		if !ok {
-			return nil
-		}
-
-		value, exists := currentMap[part]
-		if !exists {
-			return nil
-		}
-
-		if i == len(parts)-1 {
-			return value
-		}
-		current = value
-	}
-	return nil
-}

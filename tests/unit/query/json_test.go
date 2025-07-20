@@ -498,22 +498,22 @@ func TestQueryDistinctConfig_MarshalJSON(t *testing.T) {
 		})
 	}
 }
-func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
+func TestQuery_MarshalUnmarshal(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    query.QueryDSL
+		input    query.Query
 		wantJson string
 		wantErr  bool
 	}{
 		{
-			name:     "Empty QueryDSL",
-			input:    query.QueryDSL{},
+			name:     "Empty Query",
+			input:    query.Query{},
 			wantJson: `{}`, // An empty struct should marshal to an empty JSON object
 			wantErr:  false,
 		},
 		{
 			name: "Simple Filter Query",
-			input: query.QueryDSL{
+			input: query.Query{
 				Filters: &query.QueryFilter{
 					Condition: &query.FilterCondition{
 						Field:    "name",
@@ -527,7 +527,7 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "Query with Sort and Offset Pagination",
-			input: query.QueryDSL{
+			input: query.Query{
 				Sort: []query.SortConfiguration{
 					{Field: "createdAt", Direction: query.SortDirectionDesc},
 				},
@@ -542,7 +542,7 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "Query with Cursor Pagination",
-			input: query.QueryDSL{
+			input: query.Query{
 				Pagination: &query.PaginationOptions{
 					Type:      "cursor",
 					Limit:     20,
@@ -555,7 +555,7 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "Query with Basic Projection (Include)",
-			input: query.QueryDSL{
+			input: query.Query{
 				Projection: &query.ProjectionConfiguration{
 					Include: []query.ProjectionField{
 						{Name: "id"},
@@ -568,7 +568,7 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "Query with Nested Projection",
-			input: query.QueryDSL{
+			input: query.Query{
 				Projection: &query.ProjectionConfiguration{
 					Include: []query.ProjectionField{
 						{Name: "user"},
@@ -586,7 +586,7 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "Query with Computed Field Projection",
-			input: query.QueryDSL{
+			input: query.Query{
 				Projection: &query.ProjectionConfiguration{
 					Computed: []query.ProjectionComputedItem{
 						{
@@ -611,7 +611,7 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "Query with Case Expression Projection",
-			input: query.QueryDSL{
+			input: query.Query{
 				Projection: &query.ProjectionConfiguration{
 					Computed: []query.ProjectionComputedItem{
 						{
@@ -641,7 +641,7 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "Query with Distinct (boolean)",
-			input: query.QueryDSL{
+			input: query.Query{
 				Distinct: &query.QueryDistinctConfig{
 					IsDistinct: boolPtr(true),
 				},
@@ -651,7 +651,7 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "Query with Distinct (fields)",
-			input: query.QueryDSL{
+			input: query.Query{
 				Distinct: &query.QueryDistinctConfig{
 					Fields: []string{"category", "product"},
 				},
@@ -661,7 +661,7 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "Query with Aggregation (Count)",
-			input: query.QueryDSL{
+			input: query.Query{
 				Aggregations: []query.AggregationConfiguration{
 					{
 						Type:  query.AggregationTypeCount,
@@ -675,7 +675,7 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 		},
 		{
 			name: "Query with Aggregation (Sum with Group and Filter)",
-			input: query.QueryDSL{
+			input: query.Query{
 				Aggregations: []query.AggregationConfiguration{
 					{
 						Type:   query.AggregationTypeSum,
@@ -696,8 +696,8 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 			wantErr:  false,
 		},
 		{
-			name: "Full QueryDSL Marshal and Unmarshal",
-			input: query.QueryDSL{
+			name: "Full Query Marshal and Unmarshal",
+			input: query.Query{
 				Filters: &query.QueryFilter{
 					Group: &query.FilterGroup{
 						Operator: query.LogicalOperatorAnd,
@@ -766,7 +766,7 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 					{
 						Type:   query.JoinTypeInner,
 						Target: "orders",
-						On: query.QueryFilter{
+						On: &query.QueryFilter{
 							Condition: &query.FilterCondition{
 								Field:    "users.id",
 								Operator: query.ComparisonOperatorEq,
@@ -927,7 +927,7 @@ func TestQueryDSL_MarshalUnmarshal(t *testing.T) {
 			}
 
 			// --- Test Unmarshal ---
-			var gotQuery query.QueryDSL
+			var gotQuery query.Query
 			unmarshalErr := json.Unmarshal([]byte(tt.wantJson), &gotQuery)
 			if (unmarshalErr != nil) != tt.wantErr {
 				t.Errorf("Unmarshal error = %v, wantErr %v", unmarshalErr, tt.wantErr)

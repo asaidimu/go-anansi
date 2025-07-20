@@ -130,7 +130,7 @@ func (e *Collection) Create(data any) (any, error) {
 
 // Read wraps the underlying collection's Read method, adding event emission
 // for the start, success, and failure of the operation.
-func (e *Collection) Read(q *query.QueryDSL) (*query.QueryResult, error) {
+func (e *Collection) Read(q *query.Query) (*query.QueryResult, error) {
 	result, err := e.withEventEmission(
 		"read",
 		DocumentReadStart,
@@ -284,3 +284,7 @@ func (e *Collection) Subscriptions() ([]SubscriptionInfo, error) {
 	return e.collection.Subscriptions()
 }
 
+// Capabilities delegates the call to the underlying collection's Capabilities method.
+func (e *Collection) Capabilities() *query.Capabilities {
+	return e.collection.Capabilities()
+}

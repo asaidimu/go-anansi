@@ -398,7 +398,7 @@ type PersistenceCollectionInterface interface {
 	// Create adds one or more new documents to the collection.
 	Create(data any) (any, error)
 	// Read retrieves documents from the collection that match the given QueryDSL.
-	Read(query *query.QueryDSL) (*query.QueryResult, error)
+	Read(query *query.Query) (*query.QueryResult, error)
 	// Update modifies documents in the collection that match the filter in CollectionUpdate.
 	Update(params *CollectionUpdate) (int, error)
 	// Delete removes documents from the collection that match the given query filter.
@@ -422,4 +422,6 @@ type PersistenceCollectionInterface interface {
 
 	// Subscriptions returns a list of all active subscriptions for this collection.
 	Subscriptions() ([]SubscriptionInfo, error)
+	// Capabilities returns the features and limitations of the underlying database backend.
+	Capabilities() *query.Capabilities
 }

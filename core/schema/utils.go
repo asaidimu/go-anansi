@@ -132,3 +132,49 @@ func (nsd *NestedSchemaDefinition) FindField(name string) *FieldDefinition {
 	}
 	return nil
 }
+
+
+// GetFieldValue retrieves a field value from a record, supporting nested field access.
+func GetFieldValue(record map[string]any, fieldPath string) any {
+
+	parts := strings.Split(fieldPath, ".")
+	var current any = record
+
+	for i, part := range parts {
+
+		if current == nil {
+
+			return nil
+		}
+
+		currentMap, ok := current.(map[string]any)
+		if !ok {
+			// If it's a schema.Document, convert it to map[string]any
+			if doc, isDoc := current.(Document); isDoc {
+				currentMap = doc
+				ok = true
+			} else {
+
+				return nil
+			}
+		}
+
+		value, exists := currentMap[part]
+
+		if !exists {
+
+			return nil
+		}
+
+		if i == len(parts)-1 {
+
+			return value
+		}
+
+		current = value
+
+	}
+
+
+	return nil
+}

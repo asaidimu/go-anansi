@@ -3,6 +3,7 @@ package persistence
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -16,14 +17,15 @@ import (
 type SchemaRegistry struct {
 	schema     *schema.SchemaDefinition
 	collection PersistenceCollectionInterface
-	interactor DatabaseInteractor
+	interactor query.DatabaseInteractor
 	logger     *zap.Logger
 	fmap       schema.FunctionMap
 	names      map[string]string
 	bus        *events.TypedEventBus[PersistenceEvent]
+	mu         sync.RWMutex // Mutex to protect the names map
 }
 
-func NewSchemaRegistry(interactor DatabaseInteractor, executor *Executor, fmap schema.FunctionMap, logger *zap.Logger) (*SchemaRegistry, error) {
+func NewSchemaRegistry(interactor query.DatabaseInteractor, fmap schema.FunctionMap, logger *zap.Logger) (*SchemaRegistry, error) {
 	var registrySchema schema.SchemaDefinition
 	err := registrySchema.From(RegistryCollectionSchemaJson)
 	if err != nil {
@@ -32,7 +34,7 @@ func NewSchemaRegistry(interactor DatabaseInteractor, executor *Executor, fmap s
 
 	exists, err := interactor.CollectionExists(registrySchema.Name)
 	if err != nil {
-		return nil, fmt.Errorf("Error looking up schema collection: %w", err)
+		return nil, NewPersistenceError("Error reading schemas to get collection names", ErrSchemaRead)
 	}
 
 	if !exists {
@@ -42,16 +44,22 @@ func NewSchemaRegistry(interactor DatabaseInteractor, executor *Executor, fmap s
 		}
 		if err := tx.CreateCollection(registrySchema); err != nil {
 			tx.Rollback(context.Background())
-			return nil, fmt.Errorf("Failed to create schema registry collection: %w", err)
+			return nil, NewPersistenceError("Failed to create schema registry collection", err)
 		}
-		tx.Commit(context.Background())
+		if err := tx.Commit(context.Background()); err != nil {
+			return nil, NewPersistenceError("Failed to commit transaction for schema registry collection", err)
+		}
 	}
 
 	bus, err := events.NewTypedEventBus[PersistenceEvent](events.DefaultConfig())
-	collection, err := NewCollection(bus, registrySchema.Name, &registrySchema, executor, fmap)
+	if err != nil {
+		return nil, NewPersistenceError("Could not initialize event bus", ErrFailedToInitializeEventBus)
+	}
+
+	collection, err := NewCollection(bus, registrySchema.Name, &registrySchema, interactor, fmap)
 
 	if err != nil {
-		return nil, fmt.Errorf("Failed to initialize schema registry: %w", err)
+		return nil, NewPersistenceError("Failed to initialize schema registry", err)
 	}
 
 	registry := &SchemaRegistry{
@@ -65,20 +73,20 @@ func NewSchemaRegistry(interactor DatabaseInteractor, executor *Executor, fmap s
 	}
 	// Populate names map using the existing RefreshNames method
 	if err := registry.RefreshNames(); err != nil {
-		return nil, fmt.Errorf("failed to refresh names during registry initialization: %w", err)
+		return nil, NewPersistenceError("Failed to refresh names during registry initialization", err)
 	}
 
 	return registry, nil
 }
 
-func (r *SchemaRegistry) SchemaCollection(tx DatabaseInteractor) (PersistenceCollectionInterface, error) {
-	var executor *Executor
+func (r *SchemaRegistry) SchemaCollection(tx query.DatabaseInteractor) (PersistenceCollectionInterface, error) {
+	var interactor query.DatabaseInteractor
 	if tx != nil {
-		executor = NewExecutor(tx, nil)
+		interactor = tx
 	} else {
-		executor = NewExecutor(r.interactor, nil)
+		interactor = r.interactor
 	}
-	collection, err := NewCollection(r.bus, r.schema.Name, r.schema, executor, r.fmap)
+	collection, err := NewCollection(r.bus, r.schema.Name, r.schema, interactor, r.fmap)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrSchemaCollectionInit, err)
 	}
@@ -86,14 +94,10 @@ func (r *SchemaRegistry) SchemaCollection(tx DatabaseInteractor) (PersistenceCol
 }
 
 func (r *SchemaRegistry) GetPhysicalName(logicalName string) (string, bool) {
-	record, err := r.Lookup(logicalName)
-	if err != nil {
-		return "", false
-	}
-	if activeVersion, ok := record.Versions[record.ActiveVersion]; ok {
-		return activeVersion.Physical, true
-	}
-	return "", false
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	physicalName, ok := r.names[logicalName]
+	return physicalName, ok
 }
 
 // Lookup retrieves a SchemaRecord by its logical name from the internal _schemas_ collection.
@@ -123,7 +127,7 @@ func (r *SchemaRegistry) Lookup(name string) (*SchemaRecord, error) {
 
 // RegisterSchema registers a new schema definition in the internal _schemas_ collection.
 // It generates a unique physical name for the collection and stores the mapping.
-func (r *SchemaRegistry) RegisterSchema(ctx context.Context, tx DatabaseInteractor, s schema.SchemaDefinition) error {
+func (r *SchemaRegistry) RegisterSchema(ctx context.Context, tx query.DatabaseInteractor, s schema.SchemaDefinition) error {
 	physicalName := uuid.New().String()
 
 	// Initialize Versions map and add the initial schema
@@ -160,7 +164,7 @@ func (r *SchemaRegistry) RegisterSchema(ctx context.Context, tx DatabaseInteract
 }
 
 // UnregisterSchema removes a schema definition from the internal _schemas_ collection.
-func (r *SchemaRegistry) UnregisterSchema(ctx context.Context, tx DatabaseInteractor, logicalName string) error {
+func (r *SchemaRegistry) UnregisterSchema(ctx context.Context, tx query.DatabaseInteractor, logicalName string) error {
 	collection, err := r.SchemaCollection(tx)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrSchemaCollectionInit, err)
@@ -180,7 +184,7 @@ func (r *SchemaRegistry) UnregisterSchema(ctx context.Context, tx DatabaseIntera
 // for managing schema migrations.
 func (r *SchemaRegistry) SwapCollectionVersion(
 	ctx context.Context,
-	tx DatabaseInteractor,
+	tx query.DatabaseInteractor,
 	logicalName string,
 	newPhysicalName string,
 	targetVersion string,
@@ -253,6 +257,9 @@ func (r *SchemaRegistry) SwapCollectionVersion(
 }
 
 func (r *SchemaRegistry) RefreshNames() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
 	// Select logical name and activeVersion from the _schemas_ collection
 	q := query.NewQueryBuilder().Select().Include("name", "activeVersion", "versions").End().Build()
 	result, err := r.collection.Read(&q)

@@ -1,6 +1,7 @@
 package query
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -9,9 +10,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"go.uber.org/zap"
 )
 
 // AggregationFunctionsMap holds a map of supported aggregation functions.
@@ -26,27 +29,34 @@ type AggregationFunctionsMap map[AggregationType]AggregateFunction
 // Advanced features like text search, joins, unions, and hints are still
 // not fully supported by this in-memory helper beyond their DSL structure.
 type QueryHelper struct {
-	query      *QueryDSL
-	operators  *ComparisonMap           // Custom operators map
-	aggregates *AggregationFunctionsMap // Custom aggregation functions map
-	functions  *FunctionMap             // Custom functions map
+	query             *Query
+	operators         *ComparisonMap           // Custom operators map
+	aggregates        *AggregationFunctionsMap // Custom aggregation functions map
+	functions         *FunctionMap             // Custom functions map
+	computeFunctions  map[string]ComputeFunction
+	goFilterFunctions map[ComparisonOperator]PredicateFunction
+	mu                sync.RWMutex
+	logger            *zap.Logger
 }
 
-// NewQueryHelper creates a new QueryHelper with the given QueryDSL and an optional PredicateMap for custom operators,
+// NewQueryHelper creates a new QueryHelper with the given Query and an optional PredicateMap for custom operators,
 // and an optional AggregationFunctionsMap for custom aggregation functions.
 // It validates the query structure and returns an error if invalid.
 // If operators is nil, only standard operators defined in the DSL will be supported.
 // If aggregateFunctions is nil, only standard aggregations defined within the helper will be used (if any).
-func NewQueryHelper(query *QueryDSL, operators *ComparisonMap, aggregateFunctions *AggregationFunctionsMap, registeredFunctions *FunctionMap) (*QueryHelper, error) {
+func NewQueryHelper(query *Query, operators *ComparisonMap, aggregateFunctions *AggregationFunctionsMap, registeredFunctions *FunctionMap) (*QueryHelper, error) {
 	if query == nil {
 		return nil, errors.New("query cannot be nil")
 	}
 
 	helper := &QueryHelper{
-		query:      query,
-		operators:  operators,
-		aggregates: aggregateFunctions,
-		functions:  registeredFunctions,
+		query:             query,
+		operators:         operators,
+		aggregates:        aggregateFunctions,
+		functions:         registeredFunctions,
+		goFilterFunctions: make(map[ComparisonOperator]PredicateFunction),
+		computeFunctions:  make(map[string]ComputeFunction),
+		logger:            zap.NewNop(),
 	}
 
 	// Validate the query structure
@@ -55,6 +65,42 @@ func NewQueryHelper(query *QueryDSL, operators *ComparisonMap, aggregateFunction
 	}
 
 	return helper, nil
+}
+
+// RegisterComputeFunction registers a Go function that can be used for computed fields.
+func (h *QueryHelper) RegisterComputeFunction(name string, fn ComputeFunction) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.computeFunctions[name] = fn
+	h.logger.Info("Registered compute function", zap.String("name", name))
+}
+
+// RegisterFilterFunction registers a Go function that can be used for custom filtering.
+func (h *QueryHelper) RegisterFilterFunction(operator ComparisonOperator, fn PredicateFunction) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.goFilterFunctions[operator] = fn
+	h.logger.Info("Registered filter function", zap.String("operator", string(operator)))
+}
+
+// RegisterComputeFunctions registers multiple compute functions from a map.
+func (h *QueryHelper) RegisterComputeFunctions(functionMap map[string]ComputeFunction) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for name, fn := range functionMap {
+		h.computeFunctions[name] = fn
+		h.logger.Info("Registered compute function", zap.String("name", name))
+	}
+}
+
+// RegisterFilterFunctions registers multiple filter functions from a map.
+func (h *QueryHelper) RegisterFilterFunctions(functionMap map[ComparisonOperator]PredicateFunction) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for operator, fn := range functionMap {
+		h.goFilterFunctions[operator] = fn
+		h.logger.Info("Registered filter function", zap.String("operator", string(operator)))
+	}
 }
 
 // validateQuery validates the query structure for common errors and unsupported features.
@@ -459,7 +505,11 @@ func (h *QueryHelper) ApplyDistinct(records []map[string]any) ([]map[string]any,
 		for _, record := range records {
 			// Convert record to a string representation for map key
 			// This is a simplistic approach and might not work for complex nested objects
-			recordStr := fmt.Sprintf("%v", record) // Use a stable serialization if possible
+			recordBytes, err := json.Marshal(record)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal record for distinct check: %w", err)
+			}
+			recordStr := string(recordBytes)
 			if _, ok := seen[recordStr]; !ok {
 				seen[recordStr] = struct{}{}
 				distinctRecords = append(distinctRecords, record)
@@ -475,10 +525,14 @@ func (h *QueryHelper) ApplyDistinct(records []map[string]any) ([]map[string]any,
 		for _, record := range records {
 			keyValues := make(distinctKey, len(h.query.Distinct.Fields))
 			for i, field := range h.query.Distinct.Fields {
-				keyValues[i] = h.getFieldValue(record, field)
+				keyValues[i] = schema.GetFieldValue(record, field)
 			}
 			// Create a string representation of the key values for map lookup
-			keyStr := fmt.Sprintf("%v", keyValues)
+			keyBytes, err := json.Marshal(keyValues)
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal distinct key: %w", err)
+			}
+			keyStr := string(keyBytes)
 			if _, ok := seen[keyStr]; !ok {
 				seen[keyStr] = struct{}{}
 				distinctRecords = append(distinctRecords, record)
@@ -502,8 +556,8 @@ func (h *QueryHelper) Sort(records []schema.Document) ([]schema.Document, error)
 
 	sort.Slice(sorted, func(i, j int) bool {
 		for _, sortConfig := range h.query.Sort {
-			valueI := h.getFieldValue(sorted[i], sortConfig.Field)
-			valueJ := h.getFieldValue(sorted[j], sortConfig.Field)
+			valueI := schema.GetFieldValue(sorted[i], sortConfig.Field)
+			valueJ := schema.GetFieldValue(sorted[j], sortConfig.Field)
 
 			comparison := h.compareValues(valueI, valueJ)
 			if comparison == 0 {
@@ -629,7 +683,11 @@ func (h *QueryHelper) projectRecord(record map[string]any, projectionConfig *Pro
 				if i == len(parts)-1 {
 					// Last part of the path, apply nested projection if it exists
 					if field.Nested != nil {
-						if nestedMap, ok := value.(map[string]any); ok {
+						nestedMap, ok := value.(map[string]any)
+						if !ok {
+							nestedMap, ok = value.(schema.Document)
+						}
+						if ok {
 							nestedResult, err := h.projectRecord(nestedMap, field.Nested)
 							if err != nil {
 								return nil, err
@@ -643,9 +701,14 @@ func (h *QueryHelper) projectRecord(record map[string]any, projectionConfig *Pro
 						currentResult[part] = value
 					}
 				} else {
+					nestedMap, ok := value.(map[string]any)
+					if !ok {
+						nestedMap, ok = value.(schema.Document)
+					}
 					// Not the last part, traverse into nested map
-					if nestedMap, ok := value.(map[string]any); ok {
-						if _, ok := currentResult[part].(map[string]any); !ok {
+					if ok {
+						_, isDoc := currentResult[part].(schema.Document)
+						if _, ok := currentResult[part].(map[string]any); !ok && !isDoc {
 							currentResult[part] = make(map[string]any)
 						}
 						currentRecord = nestedMap
@@ -669,7 +732,11 @@ func (h *QueryHelper) projectRecord(record map[string]any, projectionConfig *Pro
 				// Last part of the path, delete the field
 				if field.Nested != nil {
 					// If nested exclude is defined, recursively exclude within the target field
-					if targetMap, ok := currentResult[part].(map[string]any); ok {
+					targetMap, ok := currentResult[part].(map[string]any)
+					if !ok {
+						targetMap, ok = currentResult[part].(schema.Document)
+					}
+					if ok {
 						nestedResult, err := h.projectRecord(targetMap, &ProjectionConfiguration{Exclude: field.Nested.Exclude})
 						if err != nil {
 							return nil, err
@@ -681,7 +748,11 @@ func (h *QueryHelper) projectRecord(record map[string]any, projectionConfig *Pro
 				}
 			} else {
 				// Not the last part, traverse into nested map in the result
-				if nestedMap, ok := currentResult[part].(map[string]any); ok {
+				nestedMap, ok := currentResult[part].(map[string]any)
+				if !ok {
+					nestedMap, ok = currentResult[part].(schema.Document)
+				}
+				if ok {
 					currentResult = nestedMap
 				} else {
 					// Path indicates nested, but value is not a map in the result, so nothing to exclude further.
@@ -771,7 +842,7 @@ func (h *QueryHelper) processGroupedAggregation(records []schema.Document, aggCo
 		currentGroupKeyValues := make(schema.Document)
 
 		for i, groupField := range aggConfig.Groups {
-			val := h.getFieldValue(record, groupField)
+			val := schema.GetFieldValue(record, groupField)
 			groupKeyParts[i] = fmt.Sprintf("%v", val) // Convert to string for map key
 			currentGroupKeyValues[groupField] = val   // Store actual values for later
 		}
@@ -835,7 +906,12 @@ func (h *QueryHelper) evaluateQueryFilter(record schema.Document, filter *QueryF
 
 // evaluateCondition evaluates a FilterCondition against a record.
 func (h *QueryHelper) evaluateCondition(record schema.Document, condition *FilterCondition) (bool, error) {
-	fieldValue := h.getFieldValue(record, condition.Field)
+	// Use rich filter function if available
+	if fn, ok := h.goFilterFunctions[condition.Operator]; ok {
+		return fn(record, condition.Field, condition.Value)
+	}
+
+	fieldValue := schema.GetFieldValue(record, condition.Field)
 	conditionVal, err := h.resolveFilterValue(record, &condition.Value)
 	if err != nil {
 		return false, err
@@ -913,7 +989,7 @@ func (h *QueryHelper) resolveFilterValue(record map[string]any, fv *FilterValue)
 	}
 
 	if fv.FieldRefVal != nil {
-		return h.getFieldValue(record, fv.FieldRefVal.Field), nil
+		return schema.GetFieldValue(record, fv.FieldRefVal.Field), nil
 	}
 
 	if fv.SubqueryVal != nil {
@@ -1051,6 +1127,11 @@ func (h *QueryHelper) evaluateCaseExpression(record map[string]any, expr *CaseEx
 
 // evaluateFunctionCall evaluates a function call.
 func (h *QueryHelper) evaluateFunctionCall(record map[string]any, fc *FunctionCall) (any, error) {
+	// Use rich compute function if available
+	if fn, ok := h.computeFunctions[fc.Function]; ok {
+		return fn(record, fc.Arguments)
+	}
+
 	resolvedArgs := make([]any, len(fc.Arguments))
 	for i, arg := range fc.Arguments {
 		val, err := h.resolveFilterValue(record, &arg)
@@ -1070,37 +1151,199 @@ func (h *QueryHelper) evaluateFunctionCall(record map[string]any, fc *FunctionCa
 	return nil, fmt.Errorf("function '%s' is not implemented or registered in this helper", fc.Function)
 }
 
-// getFieldValue retrieves a field value from a record, supporting nested field access.
-func (h *QueryHelper) getFieldValue(record map[string]any, fieldPath string) any {
-	parts := strings.Split(fieldPath, ".")
-	var current any = record
-
-	for i, part := range parts {
-		if current == nil {
-			return nil
-		}
-
-		currentMap, ok := current.(map[string]any)
-		if !ok {
-			return nil
-		}
-
-		value, exists := currentMap[part]
-		if !exists {
-			return nil
-		}
-
-		if i == len(parts)-1 {
-			return value
-		}
-
-		current = value
-	}
-
-	return nil
-}
-
 // compareValues compares two values and returns -1, 0, or 1.
 func (h *QueryHelper) compareValues(a, b any) int {
 	return utils.CompareValues(a, b)
+}
+
+func (h *QueryHelper) JoinStreams(collection string, left, right <-chan schema.Document, config *JoinConfiguration) (<-chan schema.Document, <-chan error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (h *QueryHelper) combineDocs(leftName string, leftDoc schema.Document, rightName string, rightDoc schema.Document) schema.Document {
+	combinedDoc := make(schema.Document)
+
+	// Check if leftDoc is already a nested structure from a previous join.
+	// This heuristic assumes that documents from a collection don't have map[string]any as values, which is generally true.
+	isNested := false
+	if len(leftDoc) > 0 {
+		for _, val := range leftDoc {
+			if _, ok := val.(map[string]any); ok {
+				isNested = true
+				break
+			}
+		}
+	}
+
+	if isNested {
+		maps.Copy(combinedDoc, leftDoc)
+	} else {
+		combinedDoc[leftName] = leftDoc
+	}
+
+	if rightDoc != nil {
+		combinedDoc[rightName] = rightDoc
+	} else {
+		// Explicitly set to nil if rightDoc is nil, for outer joins.
+		combinedDoc[rightName] = nil
+	}
+
+	return combinedDoc
+}
+
+func (h *QueryHelper) Join(collection string, left, right []schema.Document, config *JoinConfiguration) ([]schema.Document, error) {
+	// Validate inputs
+	if config == nil {
+		return nil, errors.New("join configuration cannot be nil")
+	}
+	if config.Target == "" {
+		return nil, errors.New("join target cannot be empty")
+	}
+	if config.On == nil {
+		return nil, errors.New("join condition ('on') cannot be nil")
+	}
+
+	var result []schema.Document
+
+	switch config.Type {
+	case JoinTypeInner:
+		result = h.performInnerJoin(collection, left, config.Target, right, config.On)
+	case JoinTypeLeft:
+		result = h.performLeftJoin(collection, left, config.Target, right, config.On)
+	case JoinTypeRight:
+		result = h.performRightJoin(collection, left, config.Target, right, config.On)
+	case JoinTypeFull:
+		result = h.performFullJoin(collection, left, config.Target, right, config.On)
+	default:
+		return nil, fmt.Errorf("unsupported join type: %s", config.Type)
+	}
+
+	// Apply projection if specified in the join configuration
+	if config.Projection != nil {
+		var projectedResult []schema.Document
+		for _, doc := range result {
+			projected, err := h.projectRecord(doc, config.Projection)
+			if err != nil {
+				return nil, fmt.Errorf("projection error during join: %w", err)
+			}
+			projectedResult = append(projectedResult, projected)
+		}
+		result = projectedResult
+	}
+
+	return result, nil
+}
+
+func (h *QueryHelper) performInnerJoin(leftName string, leftDocs []schema.Document, rightName string, rightDocs []schema.Document, condition *QueryFilter) []schema.Document {
+	var result []schema.Document
+
+	for _, leftDoc := range leftDocs {
+		for _, rightDoc := range rightDocs {
+			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, rightDoc)
+
+			matches, err := h.Match(combinedDoc, condition)
+			if err != nil {
+				continue // Skip on error
+			}
+
+			if matches {
+				result = append(result, combinedDoc)
+			}
+		}
+	}
+
+	return result
+}
+
+func (h *QueryHelper) performLeftJoin(leftName string, leftDocs []schema.Document, rightName string, rightDocs []schema.Document, condition *QueryFilter) []schema.Document {
+	var result []schema.Document
+
+	for _, leftDoc := range leftDocs {
+		hasMatch := false
+		for _, rightDoc := range rightDocs {
+			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, rightDoc)
+
+			matches, err := h.Match(combinedDoc, condition)
+			if err != nil {
+				continue
+			}
+
+			if matches {
+				result = append(result, combinedDoc)
+				hasMatch = true
+			}
+		}
+
+		if !hasMatch {
+			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, nil)
+			result = append(result, combinedDoc)
+		}
+	}
+
+	return result
+}
+
+func (h *QueryHelper) performRightJoin(leftName string, leftDocs []schema.Document, rightName string, rightDocs []schema.Document, condition *QueryFilter) []schema.Document {
+	var result []schema.Document
+	matchedLeftIndices := make(map[int]bool)
+
+	for _, rightDoc := range rightDocs {
+		hasMatch := false
+		for leftIndex, leftDoc := range leftDocs {
+			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, rightDoc)
+			matches, err := h.Match(combinedDoc, condition)
+			if err != nil {
+				continue
+			}
+
+			if matches {
+				result = append(result, combinedDoc)
+				hasMatch = true
+				matchedLeftIndices[leftIndex] = true
+			}
+		}
+
+		if !hasMatch {
+			result = append(result, h.combineDocs(leftName, nil, rightName, rightDoc))
+		}
+	}
+
+	return result
+}
+
+func (h *QueryHelper) performFullJoin(leftName string, leftDocs []schema.Document, rightName string, rightDocs []schema.Document, condition *QueryFilter) []schema.Document {
+	var result []schema.Document
+	matchedLeftIndices := make(map[int]bool)
+	matchedRightIndices := make(map[int]bool)
+
+	for leftIndex, leftDoc := range leftDocs {
+		hasMatch := false
+		for rightIndex, rightDoc := range rightDocs {
+			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, rightDoc)
+			matches, err := h.Match(combinedDoc, condition)
+			if err != nil {
+				continue
+			}
+
+			if matches {
+				result = append(result, combinedDoc)
+				hasMatch = true
+				matchedLeftIndices[leftIndex] = true
+				matchedRightIndices[rightIndex] = true
+			}
+		}
+
+		if !hasMatch {
+			result = append(result, h.combineDocs(leftName, leftDoc, rightName, nil))
+		}
+	}
+
+	for rightIndex, rightDoc := range rightDocs {
+		if !matchedRightIndices[rightIndex] {
+			result = append(result, h.combineDocs(leftName, nil, rightName, rightDoc))
+		}
+	}
+
+	return result
 }

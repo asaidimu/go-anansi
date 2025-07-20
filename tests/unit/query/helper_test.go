@@ -2,6 +2,7 @@ package query_test
 
 import (
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/query" // Assuming this is your module path
@@ -18,7 +19,7 @@ var testRecords = []schema.Document{
 
 func TestNewQueryHelper(t *testing.T) {
 	t.Run("valid query", func(t *testing.T) {
-		q := &query.QueryDSL{}
+		q := &query.Query{}
 		_, err := query.NewQueryHelper(q, nil, nil, nil)
 		if err != nil {
 			t.Errorf("expected no error, but got %v", err)
@@ -33,7 +34,7 @@ func TestNewQueryHelper(t *testing.T) {
 	})
 
 	t.Run("invalid query", func(t *testing.T) {
-		q := &query.QueryDSL{
+		q := &query.Query{
 			Sort: []query.SortConfiguration{
 				{Field: "name", Direction: "invalid"},
 			},
@@ -48,13 +49,13 @@ func TestNewQueryHelper(t *testing.T) {
 func TestFilter(t *testing.T) {
 	testCases := []struct {
 		name        string
-		query       *query.QueryDSL
+		query       *query.Query
 		expectedIDs []int
 		expectError bool
 	}{
 		{
 			name: "equal operator",
-			query: &query.QueryDSL{
+			query: &query.Query{
 				Filters: &query.QueryFilter{
 					Condition: &query.FilterCondition{Field: "age", Operator: query.ComparisonOperatorEq, Value: query.FilterValue{NumberVal: floatPtr(30)}},
 				},
@@ -63,7 +64,7 @@ func TestFilter(t *testing.T) {
 		},
 		{
 			name: "nested field equal",
-			query: &query.QueryDSL{
+			query: &query.Query{
 				Filters: &query.QueryFilter{
 					Condition: &query.FilterCondition{Field: "address.city", Operator: query.ComparisonOperatorEq, Value: query.FilterValue{StringVal: stringPtr("New York")}},
 				},
@@ -72,7 +73,7 @@ func TestFilter(t *testing.T) {
 		},
 		{
 			name: "AND group",
-			query: &query.QueryDSL{
+			query: &query.Query{
 				Filters: &query.QueryFilter{
 					Group: &query.FilterGroup{
 						Operator: "and",
@@ -87,7 +88,7 @@ func TestFilter(t *testing.T) {
 		},
 		{
 			name: "OR group",
-			query: &query.QueryDSL{
+			query: &query.Query{
 				Filters: &query.QueryFilter{
 					Group: &query.FilterGroup{
 						Operator: "or",
@@ -102,7 +103,7 @@ func TestFilter(t *testing.T) {
 		},
 		{
 			name: "IN operator",
-			query: &query.QueryDSL{
+			query: &query.Query{
 				Filters: &query.QueryFilter{
 					Condition: &query.FilterCondition{Field: "name", Operator: query.ComparisonOperatorIn, Value: query.FilterValue{
 						ArrayVal: []query.FilterValue{
@@ -117,7 +118,7 @@ func TestFilter(t *testing.T) {
 		},
 		{
 			name: "NOT operator",
-			query: &query.QueryDSL{
+			query: &query.Query{
 				Filters: &query.QueryFilter{
 					Group: &query.FilterGroup{
 						Operator: "not",
@@ -158,12 +159,12 @@ func TestFilter(t *testing.T) {
 func TestSort(t *testing.T) {
 	testCases := []struct {
 		name        string
-		query       *query.QueryDSL
+		query       *query.Query
 		expectedIDs []int
 	}{
 		{
 			name: "sort by age ascending",
-			query: &query.QueryDSL{
+			query: &query.Query{
 				Sort: []query.SortConfiguration{
 					{Field: "age", Direction: query.SortDirectionAsc},
 				},
@@ -172,7 +173,7 @@ func TestSort(t *testing.T) {
 		},
 		{
 			name: "sort by age descending, then name ascending",
-			query: &query.QueryDSL{
+			query: &query.Query{
 				Sort: []query.SortConfiguration{
 					{Field: "age", Direction: query.SortDirectionDesc},
 					{Field: "name", Direction: query.SortDirectionAsc},
@@ -212,14 +213,14 @@ func TestPaginate(t *testing.T) {
 
 	testCases := []struct {
 		name               string
-		query              *query.QueryDSL
+		query              *query.Query
 		expectedIDs        []int
 		expectedTotal      *int
 		expectedNextCursor *string
 	}{
 		{
 			name: "offset pagination",
-			query: &query.QueryDSL{
+			query: &query.Query{
 				Pagination: &query.PaginationOptions{Type: "offset", Limit: 2, Offset: &offset},
 			},
 			expectedIDs:   []int{3, 4},
@@ -227,7 +228,7 @@ func TestPaginate(t *testing.T) {
 		},
 		{
 			name: "cursor pagination",
-			query: &query.QueryDSL{
+			query: &query.Query{
 				Pagination: &query.PaginationOptions{Type: "cursor", Limit: 2, Cursor: &cursor},
 			},
 			expectedIDs:        []int{3, 4},
@@ -270,12 +271,12 @@ func TestPaginate(t *testing.T) {
 func TestProject(t *testing.T) {
 	testCases := []struct {
 		name            string
-		query           *query.QueryDSL
+		query           *query.Query
 		expectedRecords []schema.Document
 	}{
 		{
 			name: "include fields",
-			query: &query.QueryDSL{
+			query: &query.Query{
 				Projection: &query.ProjectionConfiguration{
 					Include: []query.ProjectionField{{Name: "name"}, {Name: "age"}},
 				},
@@ -290,7 +291,7 @@ func TestProject(t *testing.T) {
 		},
 		{
 			name: "exclude fields",
-			query: &query.QueryDSL{
+			query: &query.Query{
 				Projection: &query.ProjectionConfiguration{
 					Exclude: []query.ProjectionField{{Name: "active"}, {Name: "address"}},
 				},
@@ -301,6 +302,21 @@ func TestProject(t *testing.T) {
 				{"id": 3, "name": "Charlie", "age": 35},
 				{"id": 4, "name": "David", "age": 30},
 				{"id": 5, "name": "Eve", "age": 25},
+			},
+		},
+		{
+			name: "include nested field",
+			query: &query.Query{
+				Projection: &query.ProjectionConfiguration{
+					Include: []query.ProjectionField{{Name: "address.city"}},
+				},
+			},
+			expectedRecords: []schema.Document{
+				{"address": map[string]any{"city": "New York"}},
+				{"address": map[string]any{"city": "Los Angeles"}},
+				{"address": map[string]any{"city": "New York"}},
+				{"address": map[string]any{"city": "Chicago"}},
+				{},
 			},
 		},
 	}
@@ -322,4 +338,247 @@ func TestProject(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestJoin(t *testing.T) {
+	// Sample data for joins
+	users := []schema.Document{
+		{"id": 1, "name": "Alice", "city_id": 101},
+		{"id": 2, "name": "Bob", "city_id": 102},
+		{"id": 3, "name": "Charlie", "city_id": 101},
+		{"id": 4, "name": "David", "city_id": 103},
+		{"id": 5, "name": "Eve", "city_id": 999}, // No matching city
+	}
+
+	cities := []schema.Document{
+		{"id": 101, "name": "New York", "country": "USA"},
+		{"id": 102, "name": "Los Angeles", "country": "USA"},
+		{"id": 103, "name": "London", "country": "UK"},
+	}
+
+	testCases := []struct {
+		name            string
+		leftRecords     []schema.Document
+		rightRecords    []schema.Document
+		joinConfig      *query.JoinConfiguration
+		expectedRecords []schema.Document
+		expectError     bool
+	}{
+		{
+			name:         "Inner Join - users and cities on city_id",
+			leftRecords:  users,
+			rightRecords: cities,
+			joinConfig: &query.JoinConfiguration{
+				Type:   query.JoinTypeInner,
+				Target: "city",
+				On: &query.QueryFilter{
+					Condition: &query.FilterCondition{
+						Field:    "user.city_id",
+						Operator: query.ComparisonOperatorEq,
+						Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Type: "field", Field: "city.id"}},
+					},
+				},
+			},
+			expectedRecords: []schema.Document{
+				{"user": schema.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": schema.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": schema.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": schema.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": schema.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": schema.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
+				{"user": schema.Document{"id": 4, "name": "David", "city_id": 103}, "city": schema.Document{"id": 103, "name": "London", "country": "UK"}},
+			},
+		},
+		{
+			name:         "Left Join - users and cities on city_id",
+			leftRecords:  users,
+			rightRecords: cities,
+			joinConfig: &query.JoinConfiguration{
+				Type:   query.JoinTypeLeft,
+				Target: "city",
+				On: &query.QueryFilter{
+					Condition: &query.FilterCondition{
+						Field:    "user.city_id",
+						Operator: query.ComparisonOperatorEq,
+						Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Type: "field", Field: "city.id"}},
+					},
+				},
+			},
+			expectedRecords: []schema.Document{
+				{"user": schema.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": schema.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": schema.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": schema.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": schema.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": schema.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
+				{"user": schema.Document{"id": 4, "name": "David", "city_id": 103}, "city": schema.Document{"id": 103, "name": "London", "country": "UK"}},
+				{"user": schema.Document{"id": 5, "name": "Eve", "city_id": 999}, "city": nil},
+			},
+		},
+		{
+			name:         "Right Join - users and cities on city_id",
+			leftRecords:  users,
+			rightRecords: cities,
+			joinConfig: &query.JoinConfiguration{
+				Type:   query.JoinTypeRight,
+				Target: "city", // The left document is "user"
+				On: &query.QueryFilter{
+					Condition: &query.FilterCondition{
+						Field:    "user.city_id",
+						Operator: query.ComparisonOperatorEq,
+						Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Type: "field", Field: "city.id"}},
+					},
+				},
+			},
+			expectedRecords: []schema.Document{
+				{"user": schema.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": schema.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": schema.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": schema.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": schema.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": schema.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
+				{"user": schema.Document{"id": 4, "name": "David", "city_id": 103}, "city": schema.Document{"id": 103, "name": "London", "country": "UK"}},
+			},
+		},
+		{
+			name:         "Full Join - users and cities on city_id",
+			leftRecords:  users,
+			rightRecords: cities,
+			joinConfig: &query.JoinConfiguration{
+				Type:   query.JoinTypeFull,
+				Target: "city",
+				On: &query.QueryFilter{
+					Condition: &query.FilterCondition{
+						Field:    "user.city_id",
+						Operator: query.ComparisonOperatorEq,
+						Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Type: "field", Field: "city.id"}},
+					},
+				},
+			},
+			expectedRecords: []schema.Document{
+				{"user": schema.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": schema.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": schema.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": schema.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": schema.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": schema.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
+				{"user": schema.Document{"id": 4, "name": "David", "city_id": 103}, "city": schema.Document{"id": 103, "name": "London", "country": "UK"}},
+				{"user": schema.Document{"id": 5, "name": "Eve", "city_id": 999}, "city": nil},
+			},
+		},
+		/* {
+			name:         "Inner Join with Projection",
+			leftRecords:  users,
+			rightRecords: cities,
+			joinConfig: &query.JoinConfiguration{
+				Type:   query.JoinTypeInner,
+				Target: "city",
+				On: &query.QueryFilter{
+					Condition: &query.FilterCondition{
+						Field:    "user.city_id",
+						Operator: query.ComparisonOperatorEq,
+						Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Type: "field", Field: "city.id"}},
+					},
+				},
+				Projection: &query.ProjectionConfiguration{
+					Include: []query.ProjectionField{
+						{Name: "user.id"},
+						{Name: "user.name"},
+						{Name: "city.country"},
+					},
+				},
+			},
+			expectedRecords: []schema.Document{
+				{"user": schema.Document{"id": 1, "name": "Alice"}, "city": schema.Document{"country": "USA"}},
+				{"user": schema.Document{"id": 3, "name": "Charlie"}, "city": schema.Document{"country": "USA"}},
+				{"user": schema.Document{"id": 2, "name": "Bob"}, "city": schema.Document{"country": "USA"}},
+				{"user": schema.Document{"id": 4, "name": "David"}, "city": schema.Document{"country": "UK"}},
+			},
+		}, */
+		{
+			name:         "Invalid Join Configuration - Missing Target",
+			leftRecords:  users,
+			rightRecords: cities,
+			joinConfig: &query.JoinConfiguration{
+				Type: query.JoinTypeInner,
+				On: &query.QueryFilter{
+					Condition: &query.FilterCondition{
+						Field:    "user.city_id",
+						Operator: query.ComparisonOperatorEq,
+						Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Type: "field", Field: "city.id"}},
+					},
+				},
+			},
+			expectError: true,
+		},
+		{
+			name:         "Invalid Join Configuration - Missing On",
+			leftRecords:  users,
+			rightRecords: cities,
+			joinConfig: &query.JoinConfiguration{
+				Type:   query.JoinTypeInner,
+				Target: "city",
+			},
+			expectError: true,
+		},
+		{
+			name:         "Invalid Join Configuration - Unsupported Type",
+			leftRecords:  users,
+			rightRecords: cities,
+			joinConfig: &query.JoinConfiguration{
+				Type:   "unsupported",
+				Target: "city",
+				On: &query.QueryFilter{
+					Condition: &query.FilterCondition{
+						Field:    "user.city_id",
+						Operator: query.ComparisonOperatorEq,
+						Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Type: "field", Field: "city.id"}},
+					},
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			helper, err := query.NewQueryHelper(&query.Query{}, nil, nil, nil)
+			if err != nil {
+				t.Fatalf("failed to create query helper: %v", err)
+			}
+
+			// For join tests, the "collection" parameter in Join is the name given to the left records
+			// within the combined document. Let's use "user" for consistency with the test cases.
+			joinedRecords, err := helper.Join("user", tc.leftRecords, tc.rightRecords, tc.joinConfig)
+
+			if (err != nil) != tc.expectError {
+				t.Errorf("expected error: %v, got: %v", tc.expectError, err)
+				return
+			}
+			if tc.expectError {
+				return
+			}
+
+			// Deep equality comparison might be tricky with map[string]any due to order or nil vs empty map.
+			// Sort both expected and actual results if order is not guaranteed by the join type.
+			// For these specific test cases, the order is predictable based on the input slices.
+			sortedJoins := sortDocumentsByUserID(joinedRecords)
+			sortedExpected := sortDocumentsByUserID(tc.expectedRecords)
+		    if !reflect.DeepEqual(sortedJoins, sortedExpected) {
+				t.Errorf("expected records %v, but got %v", sortedExpected, sortedJoins)
+			}
+		})
+	}
+}
+
+// --- utils ---
+
+func sortDocumentsByUserID(docs []schema.Document) []schema.Document {
+	sorted := make([]schema.Document, len(docs))
+	copy(sorted, docs)
+	sort.Slice(sorted, func(i, j int) bool {
+		userI, okI := sorted[i]["user"].(schema.Document)
+		userJ, okJ := sorted[j]["user"].(schema.Document)
+		if okI && okJ {
+			idI, _ := userI["id"].(int)
+			idJ, _ := userJ["id"].(int)
+			return idI < idJ
+		}
+		if okI {
+			return true
+		}
+		if okJ {
+			return false
+		}
+		return i < j
+	})
+	return sorted
 }

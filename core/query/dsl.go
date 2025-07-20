@@ -23,7 +23,7 @@ type ComparisonOperator string
 // ComparisonMap defines a map where keys are operator names (strings) and values
 // are functions that perform a comparison between two values, returning a boolean result and an error.
 type ComparisonFunction func(left, right any) (bool, error)
-type ComparisonMap map[string] ComparisonFunction
+type ComparisonMap map[string]ComparisonFunction
 
 // Supported comparison operators.
 const (
@@ -68,8 +68,8 @@ type FieldReference struct {
 
 // In dsl.go
 type SubqueryValue struct {
-	Type  string   `json:"type"` // Should be "subquery"
-	Query QueryDSL `json:"query"`
+	Type  string `json:"type"` // Should be "subquery"
+	Query Query  `json:"query"`
 }
 
 // FunctionCall represents a call to a function, which can be either a standard SQL
@@ -90,14 +90,14 @@ type FilterValue struct {
 	// Pointers to hold one of the possible values.
 	// Using pointers allows us to distinguish between a zero value and a missing value,
 	// and enables omitempty behavior when marshalling.
-	StringVal        *string         `json:"string_value,omitempty"`
-	NumberVal        *float64        `json:"number_value,omitempty"`
-	BoolVal          *bool           `json:"bool_value,omitempty"`
-	ObjectVal        map[string]any  `json:"object_value,omitempty"`
-	ArrayVal         []FilterValue   `json:"array_value,omitempty"`
-	FieldRefVal      *FieldReference `json:"field_reference_value,omitempty"`
-	SubqueryVal      *SubqueryValue  `json:"subquery_value,omitempty"`
-	FunctionCallVal  *FunctionCall   `json:"function_call_value,omitempty"`
+	StringVal       *string         `json:"string_value,omitempty"`
+	NumberVal       *float64        `json:"number_value,omitempty"`
+	BoolVal         *bool           `json:"bool_value,omitempty"`
+	ObjectVal       map[string]any  `json:"object_value,omitempty"`
+	ArrayVal        []FilterValue   `json:"array_value,omitempty"`
+	FieldRefVal     *FieldReference `json:"field_reference_value,omitempty"`
+	SubqueryVal     *SubqueryValue  `json:"subquery_value,omitempty"`
+	FunctionCallVal *FunctionCall   `json:"function_call_value,omitempty"`
 }
 
 // FilterCondition defines a single condition for filtering the results of a query.
@@ -145,18 +145,26 @@ type SortConfiguration struct {
 	Direction SortDirection `json:"direction"`
 }
 
+type PaginationType string
+
+const (
+	PaginationTypeCursor PaginationType = "cursor"
+	PaginationTypeOffset PaginationType = "offset"
+)
+
 // PaginationOptions defines how the query results should be paginated.
 type PaginationOptions struct {
-	Type      string  `json:"type"`                // The type of pagination, either "offset" or "cursor".
-	Limit     int     `json:"limit"`               // The maximum number of records to return.
-	Offset    *int    `json:"offset,omitempty"`    // The starting offset for offset-based pagination.
-	Cursor    *string `json:"cursor,omitempty"`    // The cursor for cursor-based pagination.
-	Direction *string `json:"direction,omitempty"` // Add this for cursor-based pagination
+	Type      PaginationType `json:"type"`                // The type of pagination, either "offset" or "cursor".
+	Limit     int            `json:"limit"`               // The maximum number of records to return.
+	Offset    *int           `json:"offset,omitempty"`    // The starting offset for offset-based pagination.
+	Cursor    *string        `json:"cursor,omitempty"`    // The cursor for cursor-based pagination.
+	Direction *string        `json:"direction,omitempty"` // Add this for cursor-based pagination
 }
 
 // ProjectionField defines a field to be included or excluded in the query result.
 type ProjectionField struct {
 	Name   string                   `json:"name"`
+	Alias  *string                   `json:"alias,omitempty"`
 	Nested *ProjectionConfiguration `json:"nested,omitempty"`
 }
 
@@ -209,8 +217,8 @@ const (
 type JoinConfiguration struct {
 	Type       JoinType                 `json:"type"`
 	Target     string                   `json:"target"` // Renamed from TargetTable
-	On         QueryFilter              `json:"on"`
-	Alias      *string                  `json:"alias,omitempty"` // Change to pointer and omitempty
+	On         *QueryFilter             `json:"on"`
+	Alias      *string                  `json:"alias,omitempty"` // the name of the resulting collection after the join.
 	Projection *ProjectionConfiguration `json:"projection,omitempty"`
 }
 
@@ -242,8 +250,8 @@ type QueryHint map[string]any
 
 // QueryUnion defines a union operation between multiple queries.
 type QueryUnion struct {
-	Queries []QueryDSL `json:"queries"`
-	Type    string     `json:"type"` // Corresponds to "union" | "all" | "intersect" | "except"
+	Queries []Query `json:"queries"`
+	Type    string  `json:"type"` // Corresponds to "union" | "all" | "intersect" | "except"
 }
 
 // QueryDistinctConfig represents the distinct configuration for a query.
@@ -257,8 +265,9 @@ type QueryDistinctConfig struct {
 	Fields []string `json:"fields,omitempty"`
 }
 
-// QueryDSL is the top-level structure that represents a complete database query.
-type QueryDSL struct {
+// Query is the top-level structure that represents a complete database query.
+// It combines all the different parts of a query, such as filters, sorting, and pagination.
+type Query struct {
 	Filters      *QueryFilter               `json:"filters,omitempty"`
 	Sort         []SortConfiguration        `json:"sort,omitempty"`
 	Pagination   *PaginationOptions         `json:"pagination,omitempty"`
@@ -270,10 +279,23 @@ type QueryDSL struct {
 	Hints        []QueryHint                `json:"hints,omitempty"`
 }
 
+// IsEmpty checks if the query is empty (has no operations defined).
+func (q *Query) IsEmpty() bool {
+	return q.Filters == nil &&
+		len(q.Sort) == 0 &&
+		q.Pagination == nil &&
+		q.Projection == nil &&
+		len(q.Joins) == 0 &&
+		q.Distinct == nil &&
+		len(q.Aggregations) == 0 &&
+		q.Union == nil &&
+		len(q.Hints) == 0
+}
+
 // QueryResult represents the result of a database query.
 type QueryResult struct {
 	Data         any               `json:"data"`
-	Count        *int              `json:"count,omitempty"`      // Change to pointer and omitempty
+	Count        int               `json:"count,omitempty"`      // Change to pointer and omitempty
 	Pagination   *PaginationResult `json:"pagination,omitempty"` // Add explicit tag
 	Aggregations map[string]any    `json:"aggregations,omitempty"`
 	SearchScore  *float64          `json:"search_score,omitempty"`
@@ -331,4 +353,3 @@ func GetStandardComparisonOperators() map[ComparisonOperator]struct{} {
 func GetStandardTextSearchTypes() map[TextSearchType]struct{} {
 	return standardTextSearchTypes
 }
-

@@ -13,14 +13,14 @@ import (
 func TestNewQueryBuilder(t *testing.T) {
 	qb := query.NewQueryBuilder()
 	assert.NotNil(t, qb, "NewQueryBuilder should return a non-nil QueryBuilder")
-	assert.Equal(t, query.QueryDSL{}, qb.Build(), "New QueryBuilder should have an empty QueryDSL")
+	assert.Equal(t, query.Query{}, qb.Build(), "New QueryBuilder should have an empty query.Query")
 }
 
 func TestQueryBuilder_FilterCondition(t *testing.T) {
 	qb := query.NewQueryBuilder()
 	qb.Where("age").Eq(30)
 
-	expected := query.QueryDSL{
+	expected := query.Query{
 		Filters: &query.QueryFilter{
 			Condition: &query.FilterCondition{
 				Field:    "age",
@@ -40,7 +40,7 @@ func TestQueryBuilder_FilterGroup(t *testing.T) {
 		Where("status").Eq("active").
 		End()
 
-	expected := query.QueryDSL{
+	expected := query.Query{
 		Filters: &query.QueryFilter{
 			Group: &query.FilterGroup{
 				Operator: query.LogicalOperatorAnd,
@@ -71,7 +71,7 @@ func TestQueryBuilder_TextSearch(t *testing.T) {
 	qb := query.NewQueryBuilder()
 	qb.TextSearch("name").Contains("John")
 
-	expected := query.QueryDSL{
+	expected := query.Query{
 		Filters: &query.QueryFilter{
 			TextSearchQuery: &query.TextSearchQuery{
 				Query:  "John",
@@ -88,7 +88,7 @@ func TestQueryBuilder_Sorting(t *testing.T) {
 	qb := query.NewQueryBuilder()
 	qb.OrderByAsc("name").ThenSortByDesc("age")
 
-	expected := query.QueryDSL{
+	expected := query.Query{
 		Sort: []query.SortConfiguration{
 			{Field: "name", Direction: query.SortDirectionAsc},
 			{Field: "age", Direction: query.SortDirectionDesc},
@@ -102,7 +102,7 @@ func TestQueryBuilder_Pagination(t *testing.T) {
 	qb := query.NewQueryBuilder()
 	qb.Limit(10).Offset(20)
 
-	expected := query.QueryDSL{
+	expected := query.Query{
 		Pagination: &query.PaginationOptions{
 			Type:   "offset",
 			Limit:  10,
@@ -117,7 +117,7 @@ func TestQueryBuilder_Projection(t *testing.T) {
 	qb := query.NewQueryBuilder()
 	qb.Select().Include("name", "age").Exclude("password").End()
 
-	expected := query.QueryDSL{
+	expected := query.Query{
 		Projection: &query.ProjectionConfiguration{
 			Include: []query.ProjectionField{
 				{Name: "name"},
@@ -148,7 +148,7 @@ func TestQueryBuilder_ProjectionWithComputed(t *testing.T) {
 		End().
 		End()
 
-	expected := query.QueryDSL{
+	expected := query.Query{
 		Projection: &query.ProjectionConfiguration{
 			Computed: []query.ProjectionComputedItem{
 				{
@@ -204,12 +204,12 @@ func TestQueryBuilder_Join(t *testing.T) {
 		Alias("o").
 		End()
 
-	expected := query.QueryDSL{
+	expected := query.Query{
 		Joins: []query.JoinConfiguration{
 			{
 				Type: query.JoinTypeInner,
 				Target: "orders",
-				On: query.QueryFilter{
+				On: &query.QueryFilter{
 					Condition: &query.FilterCondition{
 						Field:    "users.id",
 						Operator: query.ComparisonOperatorEq,
@@ -238,7 +238,7 @@ func TestQueryBuilder_Aggregation(t *testing.T) {
 		}).
 		End()
 
-	expected := query.QueryDSL{
+	expected := query.Query{
 		Aggregations: []query.AggregationConfiguration{
 			{
 				Type:  query.AggregationTypeCount,
@@ -265,7 +265,7 @@ func TestQueryBuilder_Distinct(t *testing.T) {
 	qb := query.NewQueryBuilder()
 	qb.DistinctBy("name", "email")
 
-	expected := query.QueryDSL{
+	expected := query.Query{
 		Distinct: &query.QueryDistinctConfig{
 			Fields: []string{"name", "email"},
 		},
@@ -279,7 +279,7 @@ func TestQueryBuilder_Union(t *testing.T) {
 	qb2 := query.NewQueryBuilder().Where("status").Eq("active")
 	qb1.Union(qb2.Build())
 
-	expected := query.QueryDSL{
+	expected := query.Query{
 		Filters: &query.QueryFilter{
 			Condition: &query.FilterCondition{
 				Field:    "age",
@@ -288,7 +288,7 @@ func TestQueryBuilder_Union(t *testing.T) {
 			},
 		},
 		Union: &query.QueryUnion{
-			Queries: []query.QueryDSL{
+			Queries: []query.Query{
 				{
 					Filters: &query.QueryFilter{
 						Condition: &query.FilterCondition{
@@ -319,7 +319,7 @@ func TestQueryBuilder_Hints(t *testing.T) {
 	qb := query.NewQueryBuilder()
 	qb.UseIndex("idx_name").MaxExecutionTime(30)
 
-	expected := query.QueryDSL{
+	expected := query.Query{
 		Hints: []query.QueryHint{
 			{
 				"type":  "use_index",
@@ -346,7 +346,7 @@ func TestQueryBuilder_Clone(t *testing.T) {
 	original := qb.Build()
 	clonedQuery := cloned.Build()
 
-	expectedCloned := query.QueryDSL{
+	expectedCloned := query.Query{
 		Filters: &query.QueryFilter{
 			Condition: &query.FilterCondition{
 				Field:    "age",

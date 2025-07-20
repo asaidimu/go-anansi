@@ -13,7 +13,7 @@ type QueryValidationResult struct {
 
 // Main QueryBuilder implementation
 type QueryBuilder struct {
-	query QueryDSL
+	query Query
 }
 
 var _ QueryBuilderInterface = (*QueryBuilder)(nil)
@@ -21,19 +21,18 @@ var _ QueryBuilderInterface = (*QueryBuilder)(nil)
 // NewQueryBuilder creates a new QueryBuilder instance
 func NewQueryBuilder() *QueryBuilder {
 	return &QueryBuilder{
-		query: QueryDSL{},
+		query: Query{},
 	}
 }
 
-// Core Operations
-func (qb *QueryBuilder) Build() QueryDSL {
+func (qb *QueryBuilder) Build() Query {
 	return qb.query
 }
 
 func (qb *QueryBuilder) Clone() *QueryBuilder {
 	// Deep clone the query structure
 	data, _ := json.Marshal(qb.query)
-	var clonedQuery QueryDSL
+	var clonedQuery Query
 	json.Unmarshal(data, &clonedQuery)
 
 	return &QueryBuilder{
@@ -42,7 +41,7 @@ func (qb *QueryBuilder) Clone() *QueryBuilder {
 }
 
 func (qb *QueryBuilder) Reset() *QueryBuilder {
-	qb.query = QueryDSL{}
+	qb.query = Query{}
 	return qb
 }
 
@@ -73,6 +72,26 @@ func (qb *QueryBuilder) Validate() QueryValidationResult {
 		}
 		if qb.query.Pagination.Type == "offset" && qb.query.Pagination.Offset != nil && *qb.query.Pagination.Offset < 0 {
 			errors = append(errors, "pagination offset cannot be negative")
+		}
+	}
+
+	// Validate joins
+	for _, join := range qb.query.Joins {
+		if join.Target == "" {
+			errors = append(errors, "join target cannot be empty")
+		}
+		if join.On == nil {
+			errors = append(errors, "join condition cannot be nil")
+		}
+	}
+
+	// Validate aggregations
+	for _, agg := range qb.query.Aggregations {
+		if agg.Type == "" {
+			errors = append(errors, "aggregation type cannot be empty")
+		}
+		if agg.Field == "" && agg.Type != AggregationTypeCount {
+			errors = append(errors, "aggregation field cannot be empty for non-count aggregations")
 		}
 	}
 
@@ -333,10 +352,10 @@ func (qb *QueryBuilder) DistinctBy(fields ...string) *QueryBuilder {
 }
 
 // Union Operations
-func (qb *QueryBuilder) Union(otherQuery QueryDSL) *QueryBuilder {
+func (qb *QueryBuilder) Union(otherQuery Query) *QueryBuilder {
 	if qb.query.Union == nil {
 		qb.query.Union = &QueryUnion{
-			Queries: []QueryDSL{qb.query, otherQuery},
+			Queries: []Query{qb.query, otherQuery},
 			Type:    "union",
 		}
 	} else {
@@ -345,10 +364,10 @@ func (qb *QueryBuilder) Union(otherQuery QueryDSL) *QueryBuilder {
 	return qb
 }
 
-func (qb *QueryBuilder) UnionAll(otherQuery QueryDSL) *QueryBuilder {
+func (qb *QueryBuilder) UnionAll(otherQuery Query) *QueryBuilder {
 	if qb.query.Union == nil {
 		qb.query.Union = &QueryUnion{
-			Queries: []QueryDSL{qb.query, otherQuery},
+			Queries: []Query{qb.query, otherQuery},
 			Type:    "all",
 		}
 	} else {
@@ -357,10 +376,10 @@ func (qb *QueryBuilder) UnionAll(otherQuery QueryDSL) *QueryBuilder {
 	return qb
 }
 
-func (qb *QueryBuilder) Intersect(otherQuery QueryDSL) *QueryBuilder {
+func (qb *QueryBuilder) Intersect(otherQuery Query) *QueryBuilder {
 	if qb.query.Union == nil {
 		qb.query.Union = &QueryUnion{
-			Queries: []QueryDSL{qb.query, otherQuery},
+			Queries: []Query{qb.query, otherQuery},
 			Type:    "intersect",
 		}
 	} else {
@@ -369,10 +388,10 @@ func (qb *QueryBuilder) Intersect(otherQuery QueryDSL) *QueryBuilder {
 	return qb
 }
 
-func (qb *QueryBuilder) Except(otherQuery QueryDSL) *QueryBuilder {
+func (qb *QueryBuilder) Except(otherQuery Query) *QueryBuilder {
 	if qb.query.Union == nil {
 		qb.query.Union = &QueryUnion{
-			Queries: []QueryDSL{qb.query, otherQuery},
+			Queries: []Query{qb.query, otherQuery},
 			Type:    "except",
 		}
 	} else {
@@ -885,7 +904,7 @@ type JoinBuilder struct {
 }
 
 func (jb *JoinBuilder) On(filter QueryFilter) *JoinBuilder {
-	jb.joinConfig.On = filter
+	jb.joinConfig.On = &filter
 	return jb
 }
 

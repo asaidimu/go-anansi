@@ -761,5 +761,3 @@ type ValidationResult struct {
 
 // Document represents a single document or row of data.
 type Document map[string]any
-
-

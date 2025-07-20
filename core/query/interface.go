@@ -1,5 +1,5 @@
 // Package query defines the interfaces for generating database-specific queries
-// from the abstract QueryDSL.
+// from the abstract Query.
 package query
 
 import (
@@ -14,14 +14,14 @@ type QueryGeneratorFactory interface {
 }
 
 // QueryGenerator defines the interface for generating database-specific query strings
-// from a generic QueryDSL object. Each implementation of this interface will be
+// from a generic Query object. Each implementation of this interface will be
 // responsible for translating the abstract query representation into a concrete
 // SQL dialect (e.g., PostgreSQL, SQLite, MySQL).
 type QueryGenerator interface {
 	// GenerateSelectSQL creates a SQL SELECT query string and its corresponding parameters
-	// from a QueryDSL object. This includes translating filters, sorting, pagination,
+	// from a Query object. This includes translating filters, sorting, pagination,
 	// and projections into the target SQL dialect.
-	GenerateSelectSQL(dsl *QueryDSL) (string, []any, error)
+	GenerateSelectSQL(dsl *Query) (string, []any, error)
 
 	// GenerateUpdateSQL creates a SQL UPDATE query string and its parameters from a map
 	// of updates and a QueryFilter. It is responsible for constructing the SET and
@@ -40,10 +40,10 @@ type QueryGenerator interface {
 }
 
 // QueryBuilder defines the interface for building database queries.
-// It provides a fluent API to construct complex QueryDSL structures.
+// It provides a fluent API to construct complex Query structures.
 type QueryBuilderInterface interface {
 	// Core Operations
-	Build() QueryDSL
+	Build() Query
 	Clone() *QueryBuilder
 	Reset() *QueryBuilder
 	Validate() QueryValidationResult
@@ -96,10 +96,10 @@ type QueryBuilderInterface interface {
 	DistinctBy(fields ...string) *QueryBuilder
 
 	// Union Operations
-	Union(otherQuery QueryDSL) *QueryBuilder
-	UnionAll(otherQuery QueryDSL) *QueryBuilder
-	Intersect(otherQuery QueryDSL) *QueryBuilder
-	Except(otherQuery QueryDSL) *QueryBuilder
+	Union(otherQuery Query) *QueryBuilder
+	UnionAll(otherQuery Query) *QueryBuilder
+	Intersect(otherQuery Query) *QueryBuilder
+	Except(otherQuery Query) *QueryBuilder
 
 	// Query Hints
 	AddHint(hintType string) *QueryBuilder
@@ -200,3 +200,85 @@ type AggregationBuilderInterface interface {
 	WithFilter(filter QueryFilter) *AggregationBuilder
 	End() *QueryBuilder
 }
+
+// SortingCapabilities defines the specific sorting features supported by a database.
+type SortingCapabilities struct {
+	// SupportsNullsOrdering indicates if the database can handle NULLS FIRST / NULLS LAST syntax.
+	SupportsNullsOrdering bool
+	// SupportsExpression indicates if the database can sort by the result of an expression (e.g., ORDER BY LOWER(name)).
+	SupportsExpression bool
+}
+
+// FunctionCapabilities defines where and how functions can be used.
+type FunctionCapabilities struct {
+	// AllowedInFilters indicates if the function can be used in WHERE clauses.
+	AllowedInFilters bool
+	// AllowedInProjections indicates if the function can be used in SELECT clauses (computed fields).
+	AllowedInProjections bool
+	// AllowedInSort indicates if the function can be used in ORDER BY clauses.
+	AllowedInSort bool
+}
+
+// Capabilities defines the features and limitations of a database backend.
+// This struct is used by the QueryPartitioner to split a QueryDSL query
+// into a database query and a post-processing query.
+type Capabilities struct {
+	// SupportedLogicalOperators is a set of logical operators (AND, OR, NOT) that the database can handle in filter expressions.
+	SupportedLogicalOperators map[LogicalOperator]struct{}
+	// SupportedComparisonOperators is a set of comparison operators (e.g., Eq, Gt, Lt) that the database can handle natively.
+	SupportedComparisonOperators map[ComparisonOperator]struct{}
+	// SupportedExpressionOperators is a set of operators for computed fields or filters (e.g., MULTIPLY, ADD).
+	// This allows translation of an abstract function like `MULTIPLY(col, 2)` to `col * 2`.
+	SupportedExpressionOperators map[string]struct{}
+	// SupportedFunctions is a map of functions the database can execute, detailing their allowed contexts.
+	SupportedFunctions map[string]FunctionCapabilities
+	// SupportedJoinTypes is a set of JOIN types (e.g., INNER, LEFT) that the database supports.
+	// If empty, it implies joins are not supported.
+	SupportedJoinTypes map[JoinType]struct{}
+	// SupportedAggregationFunctions is a set of aggregation functions (e.g., COUNT, SUM) that the database supports.
+	// If empty, it implies aggregate functions are not supported.
+	SupportedAggregationFunctions map[AggregationType]struct{}
+	// SupportedPaginationTypes is a set of pagination methods (e.g., OFFSET, CURSOR) supported by the database.
+	SupportedPaginationTypes map[PaginationType]struct{}
+	// SupportedTextSearchTypes is a set of text search types (e.g., CONTAINS, EXACT) that the database supports.
+	SupportedTextSearchTypes map[TextSearchType]struct{}
+	// Sorting details the database's sorting capabilities.
+	Sorting SortingCapabilities
+	// SupportsGroupBy indicates whether the database can perform GROUP BY operations.
+	SupportsGroupBy bool
+	// SupportsDistinct indicates whether the database can perform DISTINCT operations.
+	SupportsDistinct bool
+	// SupportsNestedFields indicates whether the database can query nested document structures.
+	SupportsNestedFields bool
+	// MaxWhereConditions specifies the maximum number of WHERE conditions allowed in a single query. 0 means no limit.
+	MaxWhereConditions int
+	// MaxJoinClauses specifies the maximum number of JOIN clauses allowed in a single query. 0 means no limit.
+	MaxJoinClauses int
+}
+
+// QueryPartitionerInterface defines the interface for splitting a query.
+type QueryPartitionerInterface interface {
+	Partition(dsl *Query) (dbQuery *Query, postProcessingQuery *Query, err error)
+}
+
+// ComputeFunction is a function that computes a new value for a row of data.
+// It takes a document (representing a single row) and a set of arguments, and
+// returns the computed value.
+type ComputeFunction func(row schema.Document, args []FilterValue) (any, error)
+
+// PredicateFunction is a function that performs custom filtering logic on a row.
+// It returns true if the row should be included in the result set, and false otherwise.
+type PredicateFunction func(doc schema.Document, field string, value FilterValue) (bool, error)
+
+// PartitionedQuery holds the result of a query partitioning operation.
+type PartitionedQuery struct {
+	DbQuery             *Query
+	PostProcessingQuery *Query
+}
+
+// QueryCache defines the interface for a cache that stores partitioned queries.
+type QueryCache interface {
+	Get(key uint64) (*PartitionedQuery, bool)
+	Set(key uint64, value *PartitionedQuery)
+}
+
