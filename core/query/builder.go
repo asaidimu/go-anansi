@@ -245,15 +245,7 @@ func (qb *QueryBuilder) Offset(offset int) *QueryBuilder {
 	return qb
 }
 
-func (qb *QueryBuilder) Cursor(cursor string) *QueryBuilder {
-	if qb.query.Pagination == nil {
-		qb.query.Pagination = &PaginationOptions{
-			Type: "cursor",
-		}
-	}
-	qb.query.Pagination.Cursor = &cursor
-	return qb
-}
+
 
 // Projection
 func (qb *QueryBuilder) Select() ProjectionBuilderInterface {

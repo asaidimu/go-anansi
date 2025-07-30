@@ -240,28 +240,7 @@ func TestPaginationOptions_UnmarshalJSON(t *testing.T) {
 			},
 			wantErr: false,
 		},
-		{
-			name:    "Unmarshal Cursor Pagination",
-			jsonStr: `{"type": "cursor", "limit": 5, "cursor": "abc123xyz", "direction": "forward"}`,
-			want: query.PaginationOptions{
-				Type:      "cursor",
-				Limit:     5,
-				Cursor:    stringPtr("abc123xyz"),
-				Direction: stringPtr("forward"),
-			},
-			wantErr: false,
-		},
-		{
-			name:    "Unmarshal Cursor Pagination without direction",
-			jsonStr: `{"type": "cursor", "limit": 5, "cursor": "abc123xyz"}`,
-			want: query.PaginationOptions{
-				Type:      "cursor",
-				Limit:     5,
-				Cursor:    stringPtr("abc123xyz"),
-				Direction: nil, // Should be nil if not present
-			},
-			wantErr: false,
-		},
+		
 		{
 			name:    "Unmarshal Unknown Type",
 			jsonStr: `{"type": "unknown", "limit": 10}`,
@@ -325,27 +304,7 @@ func TestPaginationOptions_MarshalJSON(t *testing.T) {
 			wantJson: `{"type":"offset","limit":10}`,
 			wantErr:  false,
 		},
-		{
-			name: "Marshal Cursor Pagination",
-			input: query.PaginationOptions{
-				Type:      "cursor",
-				Limit:     5,
-				Cursor:    stringPtr("abc123xyz"),
-				Direction: stringPtr("forward"),
-			},
-			wantJson: `{"type":"cursor","limit":5,"cursor":"abc123xyz","direction":"forward"}`,
-			wantErr:  false,
-		},
-		{
-			name: "Marshal Cursor Pagination without direction",
-			input: query.PaginationOptions{
-				Type:   "cursor",
-				Limit:  5,
-				Cursor: stringPtr("abc123xyz"),
-			},
-			wantJson: `{"type":"cursor","limit":5,"cursor":"abc123xyz"}`,
-			wantErr:  false,
-		},
+		
 		{
 			name: "Marshal Unknown Type",
 			input: query.PaginationOptions{
@@ -540,19 +499,7 @@ func TestQuery_MarshalUnmarshal(t *testing.T) {
 			wantJson: `{"sort":[{"field":"createdAt","direction":"desc"}],"pagination":{"type":"offset","limit":10,"offset":5}}`,
 			wantErr:  false,
 		},
-		{
-			name: "Query with Cursor Pagination",
-			input: query.Query{
-				Pagination: &query.PaginationOptions{
-					Type:      "cursor",
-					Limit:     20,
-					Cursor:    stringPtr("abc123def456"),
-					Direction: stringPtr("next"),
-				},
-			},
-			wantJson: `{"pagination":{"type":"cursor","limit":20,"cursor":"abc123def456","direction":"next"}}`,
-			wantErr:  false,
-		},
+		
 		{
 			name: "Query with Basic Projection (Include)",
 			input: query.Query{

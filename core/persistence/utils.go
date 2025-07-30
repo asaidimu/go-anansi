@@ -2,13 +2,11 @@
 package persistence
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
-	"go.uber.org/zap"
 )
 
 // createEvent is a helper function that constructs a PersistenceEvent. It populates
@@ -73,7 +71,7 @@ func DocumentToStruct[T any](doc any) (T, error) {
 	var zero T
 	data, ok := doc.(schema.Document)
 	if !ok {
-		return zero, fmt.Errorf("DocumentToStruct: input 'doc' must be a map[string]any, got %T", doc)
+		return zero, fmt.Errorf("DocumentToStruct: input 'doc' must be DocumentLike, got %T", doc)
 	}
 	return utils.MapToStruct[T](data)
 }
@@ -102,7 +100,7 @@ func StructToDocument[T any](record T) (schema.Document, error) {
 }
 
 // processNameField extracts logical and physical names from a document's name field
-func processNameField(nameField any, logger *zap.Logger) (map[string]string, error) {
+/* func processNameField(nameField any, logger *zap.Logger) (map[string]string, error) {
 	var name map[string]string
 
 	switch v := nameField.(type) {
@@ -141,4 +139,4 @@ func processDocuments(documents []schema.Document, logger *zap.Logger) (map[stri
 	}
 
 	return names, nil
-}
+} */

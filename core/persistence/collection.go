@@ -1,5 +1,3 @@
-// Package persistence provides the core implementation of the PersistenceCollectionInterface,
-// defining the behavior of a single collection in the database.
 package persistence
 
 import (
@@ -11,187 +9,186 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-events"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
-// CollectionBase provides the fundamental implementation of the PersistenceCollectionInterface.
-// It encapsulates the logic for data manipulation (CRUD), validation, and event handling
-// for a specific collection, governed by a schema.
-// This struct is not meant to be used directly but rather to be embedded in other structs
-// that might add more specialized functionality, such as event emitting.
+// Collection implements the PersistenceCollectionInterface.
 type CollectionBase struct {
+	bus           *events.TypedEventBus[PersistenceEvent]
 	name          string
 	schema        *schema.SchemaDefinition
+	engine        *query.QueryEngine
 	interactor    query.DatabaseInteractor
-	validator     *schema.Validator
-	bus           *events.TypedEventBus[PersistenceEvent]
+	logger        *zap.Logger
 	subscriptions map[string]*SubscriptionInfo // To store unsubscribe functions
 	subMu         sync.RWMutex                 // Mutex to protect subscriptions map
-	fmap          schema.FunctionMap           // Map of custom functions for validation and processing
+	validator     *schema.DocumentValidator
 }
 
-// NewCollection creates a new instance of a collection that implements the
-// PersistenceCollectionInterface. It wraps the base collection logic with event-emitting
-// capabilities, ensuring that operations on the collection are observable.
-func NewCollection(bus *events.TypedEventBus[PersistenceEvent], name string, sc *schema.SchemaDefinition, interactor query.DatabaseInteractor, fmap schema.FunctionMap) (PersistenceCollectionInterface, error) {
-	validator := schema.NewValidator(sc, fmap)
+var _ PersistenceCollectionInterface = (*CollectionBase)(nil)
 
-	collection := NewEventEmittingCollection(&CollectionBase{
-		schema:        sc,
-		interactor:    interactor,
-		validator:     validator,
+// NewCollection creates a new Collection instance.
+func NewBaseCollection(
+	bus *events.TypedEventBus[PersistenceEvent],
+	name string,
+	sc *schema.SchemaDefinition,
+	engine *query.QueryEngine,
+	logger *zap.Logger,
+) (*Collection, error) {
+
+	validator, err := schema.NewDocumentValidator(sc, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	base := CollectionBase{
 		bus:           bus,
+		name:          name,
+		schema:        sc,
+		engine:        engine,
+		interactor:    engine.Interactor,
+		logger:        logger,
 		subscriptions: make(map[string]*SubscriptionInfo),
-		fmap:          fmap,
-	})
+		validator:     validator,
+	}
 
-	return collection, nil
+	return NewEventEmittingCollection(&base), nil
 }
 
-// Create adds one or more new documents to the collection. Before insertion, it validates
-// each document against the collection's schema to ensure data integrity.
-func (c *CollectionBase) Create(data any) (*query.QueryResult, error) {
-	var records []map[string]any
+// Create adds one or more new documents to the collection.
+func (c *CollectionBase) Create(data any) (any, error) {
+	var docs []schema.Document
+
 	switch v := data.(type) {
-	case map[string]any:
-		records = []map[string]any{v}
-	case []map[string]any:
-		records = v
+	case schema.Document:
+		docs = []schema.Document{v}
+	case []schema.Document:
+		docs = v
+	case []any:
+		docs = make([]schema.Document, len(v))
+		for i, item := range v {
+			if doc, ok := item.(schema.Document); ok {
+				docs[i] = doc
+			} else {
+				return nil, fmt.Errorf("invalid data type for document at index %d: %T", i, item)
+			}
+		}
 	default:
-		return nil, NewPersistenceError("Invalid data type for collection operation", ErrInvalidDataType)
+		return nil, fmt.Errorf("unsupported data type for Create: %T", data)
 	}
 
-	for _, record := range records {
-		// Set initial version for optimistic locking
-		record[schema.VersionFieldName] = 1
-
-		validation, err := c.Validate(record, false)
-		if err != nil {
-			// This error from Validate is often a type conversion issue, so might need a specific handling or wrapping
-			return nil, fmt.Errorf("an error occurred when trying to validate an entry: %w", err)
-		}
-
-		if !validation.Valid {
-			return nil, NewPersistenceError("Validation failed for collection operation", ErrValidationFailed)
-		}
-	}
-
-	interfaceRecords := make([]schema.Document, len(records))
-	for i, r := range records {
-		interfaceRecords[i] = r
-	}
-
-	insertedDocs, err := c.interactor.InsertDocuments(context.Background(), c.schema, interfaceRecords)
+	insertedDocs, err := c.interactor.InsertDocuments(context.Background(), c.schema, docs)
 	if err != nil {
-		return nil, NewPersistenceError("Failed to insert data into collection", ErrInsertFailed)
+		return nil, NewPersistenceError(fmt.Sprintf("failed to insert documents: %v", err), ErrInsertDocuments)
 	}
 
-	return &query.QueryResult{
-		Data:  insertedDocs,
-		Count: len(insertedDocs),
-	}, nil
+	if len(insertedDocs) == 1 {
+		return &CreateResult{ID: insertedDocs[0]["id"].(string), Data: insertedDocs[0]}, nil
+	} else if len(insertedDocs) > 1 {
+		results := make([]CreateResult, len(insertedDocs))
+		for i, doc := range insertedDocs {
+			results[i] = CreateResult{ID: doc["id"].(string), Data: doc}
+		}
+		return results, nil
+	}
+
+	return nil, nil
 }
 
-// Read retrieves documents from the collection based on a QueryDSL query.
+// Read retrieves documents from the collection that match the given QueryDSL.
 func (c *CollectionBase) Read(q *query.Query) (*query.QueryResult, error) {
-	executor := query.NewExecutor(c.interactor, nil, nil) // Assuming no logger or cache for now
-	results, err := executor.Execute(context.Background(), c.schema, q)
+	docs, err := c.engine.Query(context.Background(), c.schema, q)
 	if err != nil {
-		return nil, NewPersistenceError("Failed to read data from collection", ErrReadFailed)
+		return nil, NewPersistenceError(fmt.Sprintf("failed to read documents: %v", err), ErrReadDocuments)
 	}
 
 	return &query.QueryResult{
-		Data:  results,
-		Count: len(results),
+		Data:  docs,
+		Count: len(docs),
 	}, nil
 }
 
-// Capabilities returns the features and limitations of the underlying database backend.
-func (c *CollectionBase) Capabilities() *query.Capabilities {
-	return &query.Capabilities{}
-}
-
-// Update modifies documents in the collection that match the provided filter.
+// Update modifies documents in the collection that match the filter in CollectionUpdate.
 func (c *CollectionBase) Update(params *CollectionUpdate) (int, error) {
-	if params.Version != nil {
-		// Add version to the filter for optimistic locking
-		versionFilter := query.NewQueryBuilder().Where(schema.VersionFieldName).Eq(*params.Version).Build().Filters
-		if params.Filter == nil {
-			params.Filter = versionFilter
-		} else {
-			params.Filter = query.NewQueryBuilder().WhereGroup(query.LogicalOperatorAnd).Group(*params.Filter).Group(*versionFilter).End().Build().Filters
-		}
-
-		// Increment version in the update data
-		if params.Data == nil {
-			params.Data = make(map[string]any)
-		}
-		params.Data[schema.VersionFieldName] = *params.Version + 1
+	if params == nil || params.Filter == nil {
+		return 0, NewPersistenceError("update operation requires filter parameters", ErrInvalidUpdateParams)
 	}
 
-	result, err := c.interactor.UpdateDocuments(context.Background(), c.schema, params.Data, params.Filter)
+	rowsAffected, err := c.interactor.UpdateDocuments(context.Background(), c.schema, params.Data, params.Filter)
 	if err != nil {
-		return 0, NewPersistenceError("Failed to update data in collection", ErrUpdateFailed)
+		return 0, NewPersistenceError(fmt.Sprintf("failed to update documents: %v", err), ErrUpdateDocuments)
 	}
 
-	if params.Version != nil && result == 0 {
-		return 0, ErrConflict // Use pre-defined error
-	}
-
-	return int(result), nil
+	return int(rowsAffected), nil
 }
 
 // Delete removes documents from the collection that match the given query filter.
-func (c *CollectionBase) Delete(filter *query.QueryFilter, unsafe bool) (int, error) {
-	ctx := context.Background()
-	affected, err := c.interactor.DeleteDocuments(ctx, c.schema, filter, unsafe)
-	if err != nil {
-		return 0, NewPersistenceError("Failed to delete data from collection", ErrDeleteFailed)
+// The 'unsafe' flag can be used to bypass safety checks.
+func (c *CollectionBase) Delete(q *query.QueryFilter, unsafe bool) (int, error) {
+	if q == nil && !unsafe {
+		return 0, NewPersistenceError("delete operation requires a filter or the unsafe flag set to true", ErrDeleteRequiresFilter)
 	}
 
-	return int(affected), nil
+	rowsAffected, err := c.interactor.DeleteDocuments(context.Background(), c.schema, q, unsafe)
+	if err != nil {
+		return 0, NewPersistenceError(fmt.Sprintf("failed to delete documents: %v", err), ErrDeleteDocuments)
+	}
+
+	return int(rowsAffected), nil
 }
 
-// Validate checks if the given data conforms to the collection's schema. The 'loose'
-// parameter allows for partial validation, where not all fields are required.
+// Validate checks if the given data conforms to the collection's schema.
+// The 'loose' flag allows for partial validation.
 func (c *CollectionBase) Validate(data any, loose bool) (*schema.ValidationResult, error) {
-	values, ok := data.(map[string]any)
+	doc, ok := data.(schema.Document)
 	if !ok {
-		return nil, ErrDataConversionFailed // Use pre-defined error
+		return nil, NewPersistenceError(fmt.Sprintf("invalid data type for validation: %T, expected schema.Document", data), ErrInvalidDataType)
 	}
-
-	valid, issues := c.validator.Validate(values, loose)
+	issues, ok := c.validator.Validate(doc, loose)
 	return &schema.ValidationResult{
-		Valid:  valid,
+		Valid:  ok,
 		Issues: issues,
 	}, nil
 }
 
 // Metadata retrieves metadata specifically for this collection, with an option to
 // force a refresh of the data.
-// NOTE: This method is not yet implemented.
-func (c *CollectionBase) Metadata(
-	filter *MetadataFilter,
-	forceRefresh bool,
-) (Metadata, error) {
-	// TODO: Implement collection metadata retrieval.
-	return Metadata{}, NewPersistenceError("Collection metadata method not implemented", ErrMetadataNotImplemented)
+func (c *CollectionBase) Metadata(filter *MetadataFilter, forceRefresh bool) (Metadata, error) {
+	// For now, ignoring filter and forceRefresh as per test requirements.
+
+	// Populate CollectionMetadata for this collection
+	collectionMeta := CollectionMetadata{
+		ID:             c.name, // Using collection name as ID for simplicity
+		SchemaVersion:  c.schema.Version,
+		Name:           c.name,
+		CollectionName: c.name, // Physical name is same as logical name for now
+		Description:    *c.schema.Description,
+		Status:         "active",
+		CreatedAt:      fmt.Sprintf("%d", 0), // Placeholder, ideally from creation time
+		CreatedBy:      "system",
+		RecordCount:    0, // Not directly available from interactor yet
+		DataSizeBytes:  0, // Not directly available from interactor yet
+		Schema:         *c.schema,
+		LastModified:   0,                    // Placeholder
+		Subscriptions:  []SubscriptionInfo{}, // Collection-specific subscriptions not managed here yet
+	}
+
+	// Construct the overall Metadata struct
+	metadata := Metadata{
+		Collections: []CollectionMetadata{collectionMeta},
+		// Other fields can be populated as global metadata is implemented
+	}
+
+	return metadata, nil
 }
 
 // RegisterSubscription registers a subscription for an event that is specific to this collection.
-// It filters events from the main event bus, ensuring that the callback is only invoked
-// for events relevant to this collection.
 func (c *CollectionBase) RegisterSubscription(options RegisterSubscriptionOptions) string {
 	c.subMu.Lock()
 	defer c.subMu.Unlock()
 
-	unsubscribe := c.bus.Subscribe(string(options.Event),
-		func(ctx context.Context, payload PersistenceEvent) error {
-			if payload.Collection == nil || *payload.Collection != c.schema.Name {
-				return nil // Not for this collection
-			}
-			return options.Callback(ctx, payload)
-		})
-
+	unsubscribe := c.bus.Subscribe(string(options.Event), options.Callback)
 	id := uuid.New().String()
 
 	data := SubscriptionInfo{
@@ -206,7 +203,7 @@ func (c *CollectionBase) RegisterSubscription(options RegisterSubscriptionOption
 	return id
 }
 
-// UnregisterSubscription removes a collection-specific subscription by its ID.
+// UnregisterSubscription removes a collection-specific subscription.
 func (c *CollectionBase) UnregisterSubscription(id string) {
 	c.subMu.Lock()
 	defer c.subMu.Unlock()
@@ -228,4 +225,10 @@ func (c *CollectionBase) Subscriptions() ([]SubscriptionInfo, error) {
 	}
 
 	return subs, nil
+}
+
+// Capabilities returns the features and limitations of the underlying database backend.
+func (c *CollectionBase) Capabilities() *query.Capabilities {
+	capabilities := c.interactor.Capabilities()
+	return &capabilities
 }

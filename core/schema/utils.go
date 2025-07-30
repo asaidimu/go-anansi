@@ -3,10 +3,16 @@ package schema
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
+	"strconv"
 	"strings"
 )
 
-// FindField finds a field by its dot-separated path.
+func FieldTypePtr(fd FieldType) *FieldType {
+	return &fd
+}
+
+// FindNestedSchema finds a nested schema by it's name
 func (s *SchemaDefinition) FindNestedSchema(name string) (*NestedSchemaDefinition, bool) {
 	if s.NestedSchemas == nil {
 		return nil, false
@@ -64,10 +70,10 @@ func (fd *FieldDefinition) FindNestedField(schema *SchemaDefinition, path []stri
 		var nextField *FieldDefinition
 		switch currentField.Type {
 		case FieldTypeObject:
-			var fieldSchema *FieldSchema
-			fieldSchema, ok := currentField.Schema.(*FieldSchema)
+			var fieldSchema *NestedSchemaReference
+			fieldSchema, ok := currentField.Schema.(*NestedSchemaReference)
 			if !ok {
-				if schema, ok := currentField.Schema.(FieldSchema); ok {
+				if schema, ok := currentField.Schema.(NestedSchemaReference); ok {
 					fieldSchema = &schema
 				} else {
 					return nil
@@ -78,20 +84,23 @@ func (fd *FieldDefinition) FindNestedField(schema *SchemaDefinition, path []stri
 				return nil
 			}
 			nextField = nestedSchema.FindField(part)
-		case FieldTypeUnion:
-			var fieldSchemas []*FieldSchema
-			fieldSchemas, ok := currentField.Schema.([]*FieldSchema)
-			if !ok {
-				if schemas, ok := currentField.Schema.([]FieldSchema); ok {
-					fieldSchemas = make([]*FieldSchema, len(schemas))
-					for i := range schemas {
-						fieldSchemas[i] = &schemas[i] // Take the address of each element
+				case FieldTypeUnion:
+			var fieldSchemas []NestedSchemaReference
+			// Try to unmarshal as []NestedSchemaReference
+			if schemas, ok := currentField.Schema.([]NestedSchemaReference); ok {
+				fieldSchemas = schemas
+			} else if schemasPtr, ok := currentField.Schema.([]*NestedSchemaReference); ok {
+				// If it's []*NestedSchemaReference, convert to []NestedSchemaReference
+				fieldSchemas = make([]NestedSchemaReference, len(schemasPtr))
+				for i, s := range schemasPtr {
+					if s != nil {
+						fieldSchemas[i] = *s
 					}
-					return nil
-				} else {
-					return nil
 				}
+			} else {
+				return nil // Not a supported union schema type
 			}
+
 			for _, fs := range fieldSchemas {
 				nestedSchema, ok := schema.FindNestedSchema(fs.ID)
 				if !ok {
@@ -133,20 +142,15 @@ func (nsd *NestedSchemaDefinition) FindField(name string) *FieldDefinition {
 	return nil
 }
 
-
 // GetFieldValue retrieves a field value from a record, supporting nested field access.
-func GetFieldValue(record map[string]any, fieldPath string) any {
-
-	parts := strings.Split(fieldPath, ".")
-	var current any = record
+func (d *Document) GetFieldValue(path string) (any, bool) {
+	parts := strings.Split(path, ".")
+	var current any = *d
 
 	for i, part := range parts {
-
 		if current == nil {
-
-			return nil
+			return nil, false
 		}
-
 		currentMap, ok := current.(map[string]any)
 		if !ok {
 			// If it's a schema.Document, convert it to map[string]any
@@ -154,27 +158,122 @@ func GetFieldValue(record map[string]any, fieldPath string) any {
 				currentMap = doc
 				ok = true
 			} else {
-
-				return nil
+				return nil, false
 			}
 		}
-
 		value, exists := currentMap[part]
-
 		if !exists {
-
-			return nil
+			return nil, false
 		}
 
 		if i == len(parts)-1 {
-
-			return value
+			return value, true
 		}
-
 		current = value
+	}
+	return nil, false
+}
 
+
+func (f *FieldDefinition) CoerceValue(value any) (any, bool) {
+	str, ok := value.(string)
+	if !ok {
+		return value, false
+	}
+	switch f.Type {
+	case FieldTypeBoolean:
+		lower := strings.ToLower(str)
+		if lower == "true" {
+			return true, true
+		}
+		if lower == "false" {
+			return false, true
+		}
+	case FieldTypeInteger:
+		if intVal, err := strconv.ParseInt(str, 10, 64); err == nil {
+			return int(intVal), true
+		}
+	case FieldTypeNumber, FieldTypeDecimal:
+		if floatVal, err := strconv.ParseFloat(str, 64); err == nil {
+			return floatVal, true
+		}
+	}
+	return value, false
+}
+
+func (s *SchemaDefinition) GetValueByPath(data any, path string) (any, bool) {
+	return getValueByPath(data, path)
+}
+
+func (condition *FieldInclusionCondition) Evaluate(data map[string]any) bool {
+	if condition == nil {
+		return true // No condition means always included
 	}
 
+	fieldValue, exists := data[condition.Field]
+	if !exists {
+		return false // Condition field doesn't exist
+	}
 
-	return nil
+	// Use reflect.DeepEqual for robust value comparison
+	return reflect.DeepEqual(fieldValue, condition.Value)
 }
+
+func getValueByPath(data any, path string) (any, bool) {
+	if path == "" {
+		return data, true
+	}
+	keys := strings.Split(path, ".")
+	current := data
+	for _, key := range keys {
+		m, ok := current.(map[string]any)
+		if !ok {
+
+			return nil, false
+		}
+		current, ok = m[key]
+		if !ok {
+			return nil, false
+		}
+	}
+	return current, true
+}
+
+
+func EvaluateLogicalOperator(operator LogicalOperator, results []bool) bool {
+	switch operator {
+	case LogicalAnd:
+		for _, r := range results {
+			if !r {
+				return false
+			}
+		}
+		return true
+	case LogicalOr:
+		for _, r := range results {
+			if r {
+				return true
+			}
+		}
+		return len(results) == 0
+	case LogicalNot:
+		return len(results) == 1 && !results[0]
+	case LogicalNor:
+		for _, r := range results {
+			if r {
+				return false
+			}
+		}
+		return true
+	case LogicalXor:
+		trueCount := 0
+		for _, r := range results {
+			if r {
+				trueCount++
+			}
+		}
+		return trueCount == 1
+	}
+	return false
+}
+

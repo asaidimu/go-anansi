@@ -56,10 +56,7 @@ func TestNestedSchemaDefinition_FindField(t *testing.T) {
 		IsStructured: utils.BoolPtr(true),
 		StructuredFieldsArray: []struct {
 			Fields map[string]*schema.FieldDefinition `json:"fields"`
-			When   *struct {
-				Field string `json:"field"`
-				Value any    `json:"value"`
-			} `json:"when,omitempty"`
+			When   *schema.FieldInclusionCondition `json:"when,omitempty"`
 		}{
 			{
 				Fields: map[string]*schema.FieldDefinition{

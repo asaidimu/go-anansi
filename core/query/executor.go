@@ -11,24 +11,26 @@ import (
 	"go.uber.org/zap"
 )
 
-// Executor is the central orchestrator for executing queries. It implements the new
+// QueryEngine is the central orchestrator for executing queries. It implements the new
 // capabilities-based partitioning architecture.
-type Executor struct {
-	interactor        DatabaseInteractor
-	partitioner       *QueryPartitioner
-	computeFunctions  map[string]ComputeFunction
-	filterFunctions   map[ComparisonOperator]PredicateFunction
-	logger            *zap.Logger
-	cache             QueryCache
+type QueryEngine struct {
+	Interactor       DatabaseInteractor
+	partitioner      *QueryPartitioner
+	computeFunctions map[string]ComputeFunction
+	filterFunctions  map[ComparisonOperator]PredicateFunction
+	logger           *zap.Logger
+	cache            QueryCache
 }
 
-// NewExecutor creates a new query executor.
-func NewExecutor(interactor DatabaseInteractor, logger *zap.Logger, cache QueryCache) *Executor {
+// NewQueryEngine creates a new query executor.
+func NewQueryEngine(interactor DatabaseInteractor, logger *zap.Logger) *QueryEngine {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
-	return &Executor{
-		interactor:       interactor,
+	cache, _ := NewLRUCache(100)
+
+	return &QueryEngine{
+		Interactor:       interactor,
 		partitioner:      NewQueryPartitioner(interactor.Capabilities()),
 		computeFunctions: make(map[string]ComputeFunction),
 		filterFunctions:  make(map[ComparisonOperator]PredicateFunction),
@@ -38,17 +40,17 @@ func NewExecutor(interactor DatabaseInteractor, logger *zap.Logger, cache QueryC
 }
 
 // RegisterComputeFunction registers a custom compute function with the executor.
-func (e *Executor) RegisterComputeFunction(name string, fn ComputeFunction) {
+func (e *QueryEngine) RegisterComputeFunction(name string, fn ComputeFunction) {
 	e.computeFunctions[name] = fn
 }
 
 // RegisterFilterFunction registers a custom filter function with the executor.
-func (e *Executor) RegisterFilterFunction(operator ComparisonOperator, fn PredicateFunction) {
+func (e *QueryEngine) RegisterFilterFunction(operator ComparisonOperator, fn PredicateFunction) {
 	e.filterFunctions[operator] = fn
 }
 
-// Execute orchestrates the entire query execution process, from partitioning to final result.
-func (e *Executor) Execute(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *Query) ([]schema.Document, error) {
+// Query orchestrates the entire query execution process, from partitioning to final result.
+func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *Query) ([]schema.Document, error) {
 	var dbQuery, postProcessingQuery *Query
 	var err error
 
@@ -85,7 +87,7 @@ func (e *Executor) Execute(ctx context.Context, schemaDef *schema.SchemaDefiniti
 
 	// 2. Execute the database part of the query.
 	startDb := time.Now()
-	docs, err := e.interactor.SelectDocuments(ctx, schemaDef, dbQuery)
+	docs, err := e.Interactor.SelectDocuments(ctx, schemaDef, dbQuery)
 	dbDuration := time.Since(startDb)
 	if err != nil {
 		e.logger.Error("Database query execution failed", zap.Error(err))
@@ -130,7 +132,7 @@ func (e *Executor) Execute(ctx context.Context, schemaDef *schema.SchemaDefiniti
 	return finalDocs, nil
 }
 
-func (e *Executor) generateCacheKey(dsl *Query) (uint64, error) {
+func (e *QueryEngine) generateCacheKey(dsl *Query) (uint64, error) {
 	bytes, err := json.Marshal(dsl)
 	if err != nil {
 		return 0, err
@@ -143,7 +145,7 @@ func (e *Executor) generateCacheKey(dsl *Query) (uint64, error) {
 	return hasher.Sum64(), nil
 }
 
-func (e *Executor) runPostProcessing(helper *QueryHelper, docs []schema.Document) ([]schema.Document, error) {
+func (e *QueryEngine) runPostProcessing(helper *QueryHelper, docs []schema.Document) ([]schema.Document, error) {
 	processedDocs := docs
 	var err error
 

@@ -70,7 +70,7 @@ type QueryBuilderInterface interface {
 	// Pagination
 	Limit(limit int) *QueryBuilder
 	Offset(offset int) *QueryBuilder
-	Cursor(cursor string) *QueryBuilder
+	
 
 	// Projection
 	Select() ProjectionBuilderInterface

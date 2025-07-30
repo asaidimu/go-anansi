@@ -209,14 +209,13 @@ func TestSort(t *testing.T) {
 
 func TestPaginate(t *testing.T) {
 	offset := 2
-	cursor := "2"
+	
 
 	testCases := []struct {
 		name               string
 		query              *query.Query
 		expectedIDs        []int
 		expectedTotal      *int
-		expectedNextCursor *string
 	}{
 		{
 			name: "offset pagination",
@@ -226,14 +225,7 @@ func TestPaginate(t *testing.T) {
 			expectedIDs:   []int{3, 4},
 			expectedTotal: func(i int) *int { return &i }(5),
 		},
-		{
-			name: "cursor pagination",
-			query: &query.Query{
-				Pagination: &query.PaginationOptions{Type: "cursor", Limit: 2, Cursor: &cursor},
-			},
-			expectedIDs:        []int{3, 4},
-			expectedNextCursor: func(s string) *string { return &s }("4"),
-		},
+		
 	}
 
 	for _, tc := range testCases {
@@ -261,9 +253,7 @@ func TestPaginate(t *testing.T) {
 				t.Errorf("expected total %v, got %v", *tc.expectedTotal, result.Total)
 			}
 
-			if tc.expectedNextCursor != nil && (result.Cursor == nil || *result.Cursor != *tc.expectedNextCursor) {
-				t.Errorf("expected next cursor %v, got %v", *tc.expectedNextCursor, result.Cursor)
-			}
+			
 		})
 	}
 }

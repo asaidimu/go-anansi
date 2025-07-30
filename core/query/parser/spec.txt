@@ -76,7 +76,6 @@
 
 <pagination_type> ::=
     "OFFSET" <number_literal> "LIMIT" <number_literal>
-    | "CURSOR" <string_literal> "LIMIT" <number_literal> ["FORWARD" | "BACKWARD"]
 
 <projection_clause> ::=
     [<include_clause>]

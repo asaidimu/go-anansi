@@ -321,20 +321,6 @@ func (p PaginationOptions) MarshalJSON() ([]byte, error) {
 			Offset: p.Offset,
 		}
 		return json.Marshal(aux)
-	case "cursor":
-		// For "cursor" type, only include Type, Limit, Cursor, and Direction.
-		aux := struct {
-			Type      PaginationType `json:"type"`
-			Limit     int            `json:"limit"`
-			Cursor    *string        `json:"cursor,omitempty"`
-			Direction *string        `json:"direction,omitempty"`
-		}{
-			Type:      p.Type,
-			Limit:     p.Limit,
-			Cursor:    p.Cursor,
-			Direction: p.Direction,
-		}
-		return json.Marshal(aux)
 	default:
 		// Handle unknown or unsupported pagination types.
 		return nil, fmt.Errorf("unknown pagination type: %s", p.Type)
@@ -365,18 +351,6 @@ func (p *PaginationOptions) UnmarshalJSON(b []byte) error {
 		}
 		p.Limit = aux.Limit
 		p.Offset = aux.Offset
-	case "cursor":
-		var aux struct {
-			Limit     int     `json:"limit"`
-			Cursor    *string `json:"cursor,omitempty"`
-			Direction *string `json:"direction,omitempty"`
-		}
-		if err := json.Unmarshal(b, &aux); err != nil {
-			return fmt.Errorf("failed to unmarshal cursor pagination options: %w", err)
-		}
-		p.Limit = aux.Limit
-		p.Cursor = aux.Cursor
-		p.Direction = aux.Direction
 	default:
 		return fmt.Errorf("unknown or missing pagination type '%s' in JSON", p.Type)
 	}

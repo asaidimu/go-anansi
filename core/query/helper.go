@@ -8,7 +8,6 @@ import (
 	"reflect"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -124,13 +123,13 @@ func (h *QueryHelper) validateQuery() error {
 
 	// Validate pagination
 	if h.query.Pagination != nil {
-		if h.query.Pagination.Type != "offset" && h.query.Pagination.Type != "cursor" {
+		if h.query.Pagination.Type != "offset" {
 			return fmt.Errorf("invalid pagination type: %s", h.query.Pagination.Type)
 		}
 		if h.query.Pagination.Limit <= 0 {
 			return errors.New("pagination limit must be greater than 0")
 		}
-		if h.query.Pagination.Type == "offset" && h.query.Pagination.Offset != nil && *h.query.Pagination.Offset < 0 {
+		if h.query.Pagination.Offset != nil && *h.query.Pagination.Offset < 0 {
 			return errors.New("pagination offset cannot be negative")
 		}
 	}
@@ -525,7 +524,8 @@ func (h *QueryHelper) ApplyDistinct(records []map[string]any) ([]map[string]any,
 		for _, record := range records {
 			keyValues := make(distinctKey, len(h.query.Distinct.Fields))
 			for i, field := range h.query.Distinct.Fields {
-				keyValues[i] = schema.GetFieldValue(record, field)
+				doc := schema.Document(record)
+				keyValues[i], _ = doc.GetFieldValue(field)
 			}
 			// Create a string representation of the key values for map lookup
 			keyBytes, err := json.Marshal(keyValues)
@@ -556,8 +556,10 @@ func (h *QueryHelper) Sort(records []schema.Document) ([]schema.Document, error)
 
 	sort.Slice(sorted, func(i, j int) bool {
 		for _, sortConfig := range h.query.Sort {
-			valueI := schema.GetFieldValue(sorted[i], sortConfig.Field)
-			valueJ := schema.GetFieldValue(sorted[j], sortConfig.Field)
+			doci := schema.Document(sorted[i])
+			docj := schema.Document(sorted[j])
+			valueI , _:= doci.GetFieldValue(sortConfig.Field)
+			valueJ , _:= docj.GetFieldValue(sortConfig.Field)
 
 			comparison := h.compareValues(valueI, valueJ)
 			if comparison == 0 {
@@ -603,30 +605,6 @@ func (h *QueryHelper) Paginate(records []schema.Document) ([]schema.Document, *P
 		return records[offset:end], &PaginationResult{
 			Total: &totalCount,
 		}, nil
-
-	case "cursor":
-		startIndex := 0
-		if pagination.Cursor != nil {
-			var err error
-			startIndex, err = strconv.Atoi(*pagination.Cursor)
-			if err != nil {
-				return nil, nil, fmt.Errorf("invalid cursor: %s", *pagination.Cursor)
-			}
-		}
-
-		if startIndex >= totalCount {
-			return []schema.Document{}, &PaginationResult{}, nil
-		}
-
-		end := min(startIndex+pagination.Limit, totalCount)
-
-		result := &PaginationResult{}
-		if end < totalCount {
-			nextCursor := strconv.Itoa(end)
-			result.Cursor = &nextCursor
-		}
-
-		return records[startIndex:end], result, nil
 
 	default:
 		return nil, nil, fmt.Errorf("unsupported pagination type: %s", pagination.Type)
@@ -842,7 +820,8 @@ func (h *QueryHelper) processGroupedAggregation(records []schema.Document, aggCo
 		currentGroupKeyValues := make(schema.Document)
 
 		for i, groupField := range aggConfig.Groups {
-			val := schema.GetFieldValue(record, groupField)
+			doc := schema.Document(record)
+			val, _ := doc.GetFieldValue(groupField)
 			groupKeyParts[i] = fmt.Sprintf("%v", val) // Convert to string for map key
 			currentGroupKeyValues[groupField] = val   // Store actual values for later
 		}
@@ -911,7 +890,8 @@ func (h *QueryHelper) evaluateCondition(record schema.Document, condition *Filte
 		return fn(record, condition.Field, condition.Value)
 	}
 
-	fieldValue := schema.GetFieldValue(record, condition.Field)
+	doc := schema.Document(record)
+	fieldValue, _ := doc.GetFieldValue(condition.Field)
 	conditionVal, err := h.resolveFilterValue(record, &condition.Value)
 	if err != nil {
 		return false, err
@@ -989,7 +969,9 @@ func (h *QueryHelper) resolveFilterValue(record map[string]any, fv *FilterValue)
 	}
 
 	if fv.FieldRefVal != nil {
-		return schema.GetFieldValue(record, fv.FieldRefVal.Field), nil
+		doc := schema.Document(record)
+		result, _ := doc.GetFieldValue(fv.FieldRefVal.Field)
+		return result, nil
 	}
 
 	if fv.SubqueryVal != nil {

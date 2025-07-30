@@ -26,7 +26,7 @@ type SchemaRecord struct {
 	Description   string                             `json:"description,omitempty"` // A human-readable description of the schema.
 	ActiveVersion string                             `json:"activeVersion"`         // The current active version of the schema, pointing to an entry in 'Versions'.
 	Versions      map[string]CollectionVersionRecord `json:"versions,omitempty"`    // A map of all schema versions, keyed by version string.
-	Version       int64                              `json:"_version_"`                  // The name of the collection this schema defines.
+	Version       int64                              `json:"_version_"`             // The name of the collection this schema defines.
 }
 
 var VersionFieldDefinition = schema.FieldDefinition{
@@ -56,35 +56,26 @@ var RegistryCollectionSchemaJson = fmt.Appendf(nil, `
       "description": "A description of the schema."
     },
     "d107ad5a-b888-44c5-99dc-46f822eb84d4": {
-      "name": "activeVersion",
+      "name": "version",
       "type": "string",
       "required": true,
       "description": "The current active version of the schema."
     },
-    "b88c8bd9-0a93-4267-9273-7bf7f7673aab": {
-      "name": "%s",
-      "type": "integer",
-      "required": false,
-      "description": "The current active version of the row."
-    },
     "3f0575db-a46d-4894-b6d1-19ed82a627da": {
       "name": "versions",
       "type": "record",
+  	  "schema": {
+        "id": "SchemaVersions"
+  	  },
       "required": false,
       "description": "A list of legacy schemas, their physical name & their corresponding schema."
-    }
+    },
   },
   "nestedSchemas": {
-    "CollectionVersionsSchema": {
-      "name": "CollectionVersionsSchema",
+    "SchemaVersions": {
+      "name": "SchemaVersions",
       "description": "A list of legacy schemas, their physical name & their corresponding schema.",
       "fields": {
-        "1e65badb-5b7a-46f2-98a4-d68791fb52e8": {
-          "name": "version",
-          "type": "string",
-          "required": true,
-          "description": "The version of the schema."
-        },
         "ad90c274-3dc1-4025-b532-bf1f5de459ac": {
           "name": "physical",
           "type": "string",
@@ -109,4 +100,4 @@ var RegistryCollectionSchemaJson = fmt.Appendf(nil, `
     }
   ]
 }
-`, REGISTRY_COLLECTION_NAME, schema.VersionFieldName)
+`, REGISTRY_COLLECTION_NAME)

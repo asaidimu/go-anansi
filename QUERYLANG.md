@@ -1,4 +1,4 @@
-# Natural Language Query Grammar Specification
+# Anansi Natural Language Query Grammar Specification
 
 ## 1. Introduction
 
@@ -163,11 +163,7 @@ WITH (
 
 **Example**: `PAGINATE OFFSET 20 LIMIT 10`
 
-### 8.2 Cursor-based Pagination
 
-**Syntax**: `PAGINATE CURSOR <string_literal> LIMIT <number> [FORWARD | BACKWARD]`
-
-**Example**: `PAGINATE CURSOR "eyJpZCI6MTIzfQ==" LIMIT 25 FORWARD`
 
 ## 9. Projections (Data Selection and Shaping)
 

@@ -62,9 +62,10 @@ type PredicateParameters any
 
 // PredicateParams is a generic struct that holds the parameters for a predicate function.
 type PredicateParams[T any] struct {
-	Data  T                   // The data being validated.
-	Field *string             // The specific field being validated.
-	Args  PredicateParameters // The arguments for the predicate.
+	Data   T                   // The data being validated.
+	Field  *string             // The specific field being validated.
+	Fields []string            // The specific field being validated.
+	Args   PredicateParameters // The arguments for the predicate.
 }
 
 // Predicate defines a function for data validation.
@@ -79,9 +80,6 @@ type FunctionMap map[string]any
 // PredicateName represents the name of a supported predicate.
 type PredicateName string
 
-// PredicateParam is a map of parameters for a predicate.
-type PredicateParam map[string]any
-
 // ConstraintType represents the type of a constraint.
 type ConstraintType string
 
@@ -95,6 +93,7 @@ type Constraint[T FieldType] struct {
 	Type         *ConstraintType `json:"type,omitempty"`
 	Predicate    string          `json:"predicate"`
 	Field        *string         `json:"field,omitempty"`
+	Fields       []string        `json:"fields,omitempty"`
 	Parameters   any             `json:"parameters,omitempty"`
 	Name         string          `json:"name"`
 	Description  *string         `json:"description,omitempty"`
@@ -122,8 +121,8 @@ type SchemaConstraintRule[T FieldType] interface {
 // SchemaConstraint represents a collection of constraints or groups applied at the schema level.
 type SchemaConstraint[T FieldType] []SchemaConstraintRule[T]
 
-// FieldSchema defines a reference to a nested schema.
-type FieldSchema struct {
+// NestedSchemaReference defines a reference to a nested schema.
+type NestedSchemaReference struct {
 	ID          string                      `json:"id"`
 	Constraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
 	Indexes     []IndexDefinition           `json:"indexes,omitempty"`
@@ -170,8 +169,8 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 	if temp.Schema != nil {
 		handled := false
 		switch temp.Type {
-		case FieldTypeObject:
-			var singleSchema FieldSchema
+		case FieldTypeObject, FieldTypeArray, FieldTypeRecord:
+			var singleSchema NestedSchemaReference
 			if err := json.Unmarshal(temp.Schema, &singleSchema); err == nil {
 				// Check if the unmarshalled schema is valid
 				if singleSchema.ID != "" {
@@ -180,20 +179,19 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 				}
 			}
 		case FieldTypeUnion:
-			var multiSchema []FieldSchema
+			var multiSchema []NestedSchemaReference
 			if err := json.Unmarshal(temp.Schema, &multiSchema); err == nil {
 				fd.Schema = multiSchema
-				handled = true
-			}
-		case FieldTypeRecord:
-			var recordSchema SchemaDefinition
-			if err := json.Unmarshal(temp.Schema, &recordSchema); err == nil {
-				fd.Schema = recordSchema
 				handled = true
 			}
 		}
 
 		if !handled {
+			// If Schema is provided for a type that doesn't support it, return an error.
+			// This enforces the semantic rule that schema refs are only valid for specific types.
+			if temp.Type != FieldTypeObject && temp.Type != FieldTypeArray && temp.Type != FieldTypeRecord && temp.Type != FieldTypeUnion {
+			return fmt.Errorf("field of type '%s' cannot have a 'schema' reference", temp.Type)
+			}
 			// For any other types or if specific unmarshaling failed,
 			// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
 			var genericSchema any
@@ -202,6 +200,11 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 			}
 			fd.Schema = genericSchema
 		}
+	}
+
+	// Validate that ItemsType is only set for Array or Set types
+	if fd.ItemsType != nil && fd.Type != FieldTypeArray && fd.Type != FieldTypeSet {
+		return fmt.Errorf("field of type '%s' cannot have an 'itemsType'", fd.Type)
 	}
 	return nil
 }
@@ -225,6 +228,11 @@ type IndexDefinition struct {
 	Name        string                 `json:"name"`
 }
 
+type FieldInclusionCondition struct {
+	Field string `json:"field"`
+	Value any    `json:"value"`
+}
+
 // NestedSchemaDefinition represents a reusable, nested schema structure.
 type NestedSchemaDefinition struct {
 	Name        string            `json:"name"`
@@ -233,19 +241,16 @@ type NestedSchemaDefinition struct {
 	Metadata    map[string]any    `json:"metadata,omitempty"`
 	Concrete    *bool             `json:"concrete,omitempty"`
 
-	Type               *FieldType                  `json:"type,omitempty"`
-	LiteralConstraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
-	LiteralDefault     any                         `json:"default,omitempty"`
-	LiteralSchema      any                         `json:"schema,omitempty"`
-	LiteralItemsType   *FieldType                  `json:"itemsType,omitempty"`
+	Type      *FieldType `json:"type,omitempty"`
+	Default   any        `json:"default,omitempty"`
+	Schema    any        `json:"schema,omitempty"`
+	ItemsType *FieldType `json:"itemsType,omitempty"`
 
+	Constraints           SchemaConstraint[FieldType] `json:"constraints,omitempty"`
 	StructuredFieldsMap   map[string]*FieldDefinition `json:"fields,omitempty"`
 	StructuredFieldsArray []struct {
 		Fields map[string]*FieldDefinition `json:"fields"`
-		When   *struct {
-			Field string `json:"field"`
-			Value any    `json:"value"`
-		} `json:"when,omitempty"`
+		When   *FieldInclusionCondition    `json:"when,omitempty"`
 	} `json:"fields,omitempty"`
 
 	IsStructured *bool
@@ -260,11 +265,11 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 		Metadata    map[string]any    `json:"metadata"`
 		Concrete    *bool             `json:"concrete"`
 
-		Type               *FieldType                  `json:"type"`
-		LiteralConstraints SchemaConstraint[FieldType] `json:"constraints"`
-		LiteralDefault     any                         `json:"default"`
-		LiteralSchema      json.RawMessage             `json:"schema"`
-		LiteralItemsType   *FieldType                  `json:"itemsType"`
+		Type        *FieldType                  `json:"type"`
+		Constraints SchemaConstraint[FieldType] `json:"constraints"`
+		Default     any                         `json:"default"`
+		Schema      json.RawMessage             `json:"schema"`
+		ItemsType   *FieldType                  `json:"itemsType"`
 
 		Fields json.RawMessage `json:"fields"`
 	}
@@ -286,6 +291,7 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("NestedSchemaDefinition cannot have both 'fields' and 'type'")
 	}
 
+	nsd.Constraints = temp.Constraints
 	if hasFields {
 		nsd.IsStructured = utils.BoolPtr(true)
 		var fieldsMap map[string]*FieldDefinition
@@ -294,10 +300,7 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 		} else {
 			var fieldsArray []struct {
 				Fields map[string]*FieldDefinition `json:"fields"`
-				When   *struct {
-					Field string `json:"field"`
-					Value any    `json:"value"`
-				} `json:"when,omitempty"`
+				When   *FieldInclusionCondition    `json:"when,omitempty"`
 			}
 			if err := json.Unmarshal(temp.Fields, &fieldsArray); err == nil {
 				nsd.StructuredFieldsArray = fieldsArray
@@ -308,20 +311,19 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 	} else if hasType {
 		nsd.IsStructured = utils.BoolPtr(false)
 		nsd.Type = temp.Type
-		nsd.LiteralConstraints = temp.LiteralConstraints
-		nsd.LiteralDefault = temp.LiteralDefault
-		nsd.LiteralItemsType = temp.LiteralItemsType
+		nsd.Default = temp.Default
+		nsd.ItemsType = temp.ItemsType
 
-		if temp.LiteralSchema != nil {
-			var singleSchema FieldSchema
-			if err := json.Unmarshal(temp.LiteralSchema, &singleSchema); err == nil {
-				nsd.LiteralSchema = singleSchema
+		if temp.Schema != nil {
+			var singleSchema NestedSchemaReference
+			if err := json.Unmarshal(temp.Schema, &singleSchema); err == nil {
+				nsd.Schema = singleSchema
 			} else {
-				var multiSchema []FieldSchema
-				if err := json.Unmarshal(temp.LiteralSchema, &multiSchema); err == nil {
-					nsd.LiteralSchema = multiSchema
+				var multiSchema []NestedSchemaReference
+				if err := json.Unmarshal(temp.Schema, &multiSchema); err == nil {
+					nsd.Schema = multiSchema
 				} else {
-					return fmt.Errorf("failed to unmarshal NestedSchemaDefinition.literalSchema")
+					return fmt.Errorf("failed to unmarshal NestedSchemaDefinition.Schema")
 				}
 			}
 		}
@@ -350,6 +352,10 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 		m["concrete"] = *nsd.Concrete
 	}
 
+	if nsd.Constraints != nil {
+		m["constraints"] = nsd.Constraints
+	}
+
 	if *nsd.IsStructured == true {
 		if nsd.StructuredFieldsMap != nil {
 			m["fields"] = nsd.StructuredFieldsMap
@@ -360,17 +366,14 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 		if nsd.Type != nil {
 			m["type"] = *nsd.Type
 		}
-		if nsd.LiteralConstraints != nil {
-			m["constraints"] = nsd.LiteralConstraints
+		if nsd.Default != nil {
+			m["default"] = nsd.Default
 		}
-		if nsd.LiteralDefault != nil {
-			m["default"] = nsd.LiteralDefault
+		if nsd.Schema != nil {
+			m["schema"] = nsd.Schema
 		}
-		if nsd.LiteralSchema != nil {
-			m["schema"] = nsd.LiteralSchema
-		}
-		if nsd.LiteralItemsType != nil {
-			m["itemsType"] = *nsd.LiteralItemsType
+		if nsd.ItemsType != nil {
+			m["itemsType"] = *nsd.ItemsType
 		}
 	}
 
@@ -399,8 +402,8 @@ func (s *SchemaDefinition) AddVersionField() {
 	}
 	if _, ok := s.Fields[VersionFieldName]; !ok {
 		s.Fields[VersionFieldName] = &FieldDefinition{
-			Name: VersionFieldName,
-			Type: FieldTypeInteger,
+			Name:     VersionFieldName,
+			Type:     FieldTypeInteger,
 			Required: utils.BoolPtr(false),
 		}
 	}
@@ -660,25 +663,23 @@ func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
 	// Now, handle the 'Schema' field based on its 'Type'
 	if temp.Schema != nil {
 		switch temp.Type {
-		case FieldTypeObject, FieldTypeUnion:
-			var singleSchema FieldSchema
+		case FieldTypeObject, FieldTypeUnion, FieldTypeRecord, FieldTypeArray:
+			var singleSchema NestedSchemaReference
 			if err := json.Unmarshal(temp.Schema, &singleSchema); err == nil {
 				fd.Schema = singleSchema
 				return nil
 			}
-			var multiSchema []FieldSchema
+			var multiSchema []NestedSchemaReference
 			if err := json.Unmarshal(temp.Schema, &multiSchema); err == nil {
 				fd.Schema = multiSchema
 				return nil
 			}
-		case FieldTypeRecord:
-			var recordSchema SchemaDefinition
-			if err := json.Unmarshal(temp.Schema, &recordSchema); err == nil {
-				fd.Schema = recordSchema
-				return nil
-			}
 		}
-
+		// If Schema is provided for a type that doesn't support it, return an error.
+		// This enforces the semantic rule that schema refs are only valid for specific types.
+		if temp.Type != FieldTypeObject && temp.Type != FieldTypeArray && temp.Type != FieldTypeRecord && temp.Type != FieldTypeUnion {
+			return fmt.Errorf("field of type '%s' cannot have a 'schema' reference", temp.Type)
+		}
 		// For any other types or if specific unmarshaling failed,
 		// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
 		var genericSchema any
@@ -686,6 +687,11 @@ func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("failed to unmarshal FieldDefinition.Schema into expected types or generic any: %w", err)
 		}
 		fd.Schema = genericSchema
+	}
+
+	// Validate that ItemsType is only set for Array or Set types
+	if fd.ItemsType != nil && fd.Type != FieldTypePtr(FieldTypeArray) && fd.Type != FieldTypePtr(FieldTypeSet) {
+		return fmt.Errorf("field of type '%s' cannot have an 'itemsType'", *fd.Type)
 	}
 	return nil
 }
@@ -703,17 +709,17 @@ type PartialIndexDefinition struct {
 
 // PartialNestedSchemaDefinition represents a partial definition of a nested schema, used for modifications.
 type PartialNestedSchemaDefinition struct {
-	Name               *string                     `json:"name,omitempty"`
-	Description        *string                     `json:"description,omitempty"`
-	Indexes            []IndexDefinition           `json:"indexes,omitempty"`
-	Metadata           map[string]any              `json:"metadata,omitempty"`
-	Concrete           *bool                       `json:"concrete,omitempty"`
-	Fields             any                         `json:"fields,omitempty"`
-	Type               *FieldType                  `json:"type,omitempty"`
-	LiteralConstraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
-	LiteralDefault     any                         `json:"default,omitempty"`
-	LiteralSchema      any                         `json:"schema,omitempty"`
-	LiteralItemsType   *FieldType                  `json:"itemsType,omitempty"`
+	Name        *string                     `json:"name,omitempty"`
+	Description *string                     `json:"description,omitempty"`
+	Indexes     []IndexDefinition           `json:"indexes,omitempty"`
+	Metadata    map[string]any              `json:"metadata,omitempty"`
+	Concrete    *bool                       `json:"concrete,omitempty"`
+	Fields      any                         `json:"fields,omitempty"`
+	Type        *FieldType                  `json:"type,omitempty"`
+	Constraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
+	Default     any                         `json:"default,omitempty"`
+	Schema      any                         `json:"schema,omitempty"`
+	ItemsType   *FieldType                  `json:"itemsType,omitempty"`
 }
 
 // TransformFunction defines a function for transforming data from one schema version to another.
@@ -761,3 +767,7 @@ type ValidationResult struct {
 
 // Document represents a single document or row of data.
 type Document map[string]any
+
+type DocumentLike interface {
+	~map[string]any
+}

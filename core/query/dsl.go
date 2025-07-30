@@ -148,17 +148,14 @@ type SortConfiguration struct {
 type PaginationType string
 
 const (
-	PaginationTypeCursor PaginationType = "cursor"
 	PaginationTypeOffset PaginationType = "offset"
 )
 
 // PaginationOptions defines how the query results should be paginated.
 type PaginationOptions struct {
-	Type      PaginationType `json:"type"`                // The type of pagination, either "offset" or "cursor".
-	Limit     int            `json:"limit"`               // The maximum number of records to return.
-	Offset    *int           `json:"offset,omitempty"`    // The starting offset for offset-based pagination.
-	Cursor    *string        `json:"cursor,omitempty"`    // The cursor for cursor-based pagination.
-	Direction *string        `json:"direction,omitempty"` // Add this for cursor-based pagination
+	Type   PaginationType `json:"type"`             // The type of pagination, which is always "offset".
+	Limit  int            `json:"limit"`            // The maximum number of records to return.
+	Offset *int           `json:"offset,omitempty"` // The starting offset for offset-based pagination.
 }
 
 // ProjectionField defines a field to be included or excluded in the query result.
@@ -303,8 +300,7 @@ type QueryResult struct {
 
 // PaginationResult contains the pagination information for a query result.
 type PaginationResult struct {
-	Total  *int    `json:"total,omitempty"`  // Keep Total as it exists in TS, though deprecated
-	Cursor *string `json:"cursor,omitempty"` // Rename from NextCursor
+	Total *int `json:"total,omitempty"` // Keep Total as it exists in TS, though deprecated
 }
 
 // standardComparisonOperators is a set of all the standard, built-in comparison operators.

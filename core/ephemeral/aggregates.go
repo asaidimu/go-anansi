@@ -14,7 +14,7 @@ func sumAggregate(records []schema.Document, field string) (any, error) {
 	var sum float64
 	foundNumeric := false
 	for _, record := range records {
-		value := schema.GetFieldValue(record, field) // Assuming getFieldValue is accessible or passed
+		value, _ := record.GetFieldValue(field) // Assuming getFieldValue is accessible or passed
 		if value == nil {
 			continue // Skip nil values
 		}
@@ -56,7 +56,7 @@ func countAggregate(records []schema.Document, field string) (any, error) {
 
 	count := 0
 	for _, record := range records {
-		if schema.GetFieldValue(record, field) != nil {
+		if result, _ := record.GetFieldValue(field); result != nil {
 			count++
 		}
 	}
@@ -68,7 +68,7 @@ func avgAggregate(records []schema.Document, field string) (any, error) {
 	var sum float64
 	var count int
 	for _, record := range records {
-		value := schema.GetFieldValue(record, field)
+		value, _ := record.GetFieldValue(field)
 		if value == nil {
 			continue
 		}
@@ -108,7 +108,7 @@ func minAggregate(records []schema.Document, field string) (any, error) {
 	firstFound := false
 
 	for _, record := range records {
-		value := schema.GetFieldValue(record, field)
+		value, _ := record.GetFieldValue(field)
 		if value == nil {
 			continue
 		}
@@ -140,7 +140,7 @@ func maxAggregate(records []schema.Document, field string) (any, error) {
 	firstFound := false
 
 	for _, record := range records {
-		value := schema.GetFieldValue(record, field)
+		value,_ := record.GetFieldValue(field)
 		if value == nil {
 			continue
 		}

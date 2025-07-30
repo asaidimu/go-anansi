@@ -126,7 +126,6 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 			currentDocs = joinedDocs
 		}
 		filteredDocs = currentDocs
-		fmt.Printf("Filtered Docs after join: %v\n", filteredDocs)
 	}
 
 	// Handle Aggregations
@@ -268,6 +267,32 @@ func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schem
 	for _, doc := range records {
 		// Ensure nested maps are also of type map[string]any
 		utils.ConvertMaps(doc)
+
+		// Manually enforce unique constraints based on schema definition
+		for _, field := range schemaDef.Fields {
+			if field.Unique != nil && *field.Unique {
+				if val, ok := doc[field.Name]; ok {
+					// Iterate through existing documents to check for uniqueness
+					stream := c.data.Stream(0)
+					for {
+						existingDocResult, err := stream.Next()
+						if err != nil {
+							if err == store.ErrStreamClosed {
+								break
+							}
+							stream.Close()
+							return nil, fmt.Errorf("failed to read existing documents for unique check: %w", err)
+						}
+						if existingDocResult.Data[field.Name] == val {
+							stream.Close()
+							return nil, fmt.Errorf("unique constraint violation: field '%s' with value '%v' already exists", field.Name, val)
+						}
+					}
+					stream.Close()
+				}
+			}
+		}
+
 		id, err := c.data.Insert(doc)
 		if err != nil {
 			return nil, err
@@ -323,7 +348,7 @@ func (i *EphemeralDatabaseInteractor) DeleteDocuments(ctx context.Context, schem
 	}
 	stream.Close()
 
-	for _, id := range idsToDelete {
+	for _, id := range idsToDelete { // this should be handled in a transaction.
 		if err := c.data.Delete(id); err != nil {
 			return 0, err
 		}
@@ -343,6 +368,21 @@ func (i *EphemeralDatabaseInteractor) CreateCollection(schemaDef schema.SchemaDe
 	}
 
 	newStore := store.NewStore()
+
+	// Create indexes based on schema definition
+	for _, field := range schemaDef.Fields {
+		if field.Unique != nil && *field.Unique {
+			if err := newStore.CreateIndex(field.Name, []string{field.Name}); err != nil {
+				return fmt.Errorf("failed to create unique index for field %s: %w", field.Name, err)
+			}
+		}
+	}
+	for _, index := range schemaDef.Indexes {
+		if err := newStore.CreateIndex(index.Name, index.Fields); err != nil {
+			return fmt.Errorf("failed to create index %s: %w", index.Name, err)
+		}
+	}
+
 	newCollection := &collection{
 		Name:   schemaDef.Name,
 		schema: &schemaDef,
@@ -509,7 +549,6 @@ func (i *EphemeralDatabaseInteractor) Capabilities() query.Capabilities {
 		},
 		SupportedPaginationTypes: map[query.PaginationType]struct{}{
 			query.PaginationTypeOffset: {},
-			query.PaginationTypeCursor: {},
 		},
 		SupportsGroupBy:      true,
 		SupportsDistinct:     true,

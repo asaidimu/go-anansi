@@ -516,7 +516,7 @@ if err != nil {
     *   Comparison Operators: `Eq`, `Neq`, `Lt`, `Lte`, `Gt`, `Gte`, `In`, `Nin`, `Contains`, `NotContains`, `StartsWith`, `EndsWith`, `Exists`, `NotExists`.
     *   Logical Operators: `WhereGroup` with `And`, `Or` for nested conditions.
 *   **Sorting**: `OrderByAsc`, `OrderByDesc` for single or multiple fields.
-*   **Pagination**: `Limit`, `Offset` for traditional pagination. (Cursor-based pagination is defined in interfaces but currently not fully implemented in SQL generation.)
+*   **Pagination**: `Limit`, `Offset` for traditional pagination.
 *   **Projection**: `Select().Include(...)` or `Select().Exclude(...)` to control returned fields.
     *   `IncludeNested`: Placeholder for future nested document projection.
     *   `AddComputed`: For Go-based computed fields (see below).
@@ -831,7 +831,7 @@ Anansi is under active development. The current focus is on solidifying the core
 *   **Events & Observability**: Further development of the `core/persistence.PersistenceEvent` system, including triggers and a comprehensive metadata API (`core/persistence.MetadataFilter`, `core/persistence.CollectionMetadata`) for real-time insights and reactive programming.
 *   **Scheduled Tasks**: Full implementation of `core/persistence.TaskInfo` to enable scheduling and execution of background jobs directly managed by the persistence layer.
 *   **Advanced QueryDSL Features**:
-    *   Full support for cursor-based pagination.
+    
     *   Aggregation functions (`Count`, `Sum`, `Avg`, `Min`, `Max`).
     *   Window functions (`Rank`, `Row Number`).
     *   Join operations (`InnerJoin`, `LeftJoin`, etc.).
