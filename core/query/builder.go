@@ -3,6 +3,8 @@ package query
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/asaidimu/go-anansi/v6/core/logical"
 )
 
 // QueryValidationResult represents the result of query validation
@@ -144,7 +146,7 @@ func (qb *QueryBuilder) Where(field string) FilterConditionBuilderInterface {
 	}
 }
 
-func (qb *QueryBuilder) WhereGroup(operator LogicalOperator) FilterGroupBuilderInterface {
+func (qb *QueryBuilder) WhereGroup(operator logical.LogicalOperator) FilterGroupBuilderInterface {
 	return &FilterGroupBuilder{
 		queryBuilder: qb,
 		operator:     operator,
@@ -170,7 +172,7 @@ func (qb *QueryBuilder) AndFilter(newFilter QueryFilter) *QueryBuilder {
 	} else {
 		qb.query.Filters = &QueryFilter{
 			Group: &FilterGroup{
-				Operator:   LogicalOperatorAnd,
+				Operator:   logical.LogicalAnd,
 				Conditions: []QueryFilter{*qb.query.Filters, newFilter},
 			},
 		}
@@ -184,7 +186,7 @@ func (qb *QueryBuilder) OrFilter(newFilter QueryFilter) *QueryBuilder {
 	} else {
 		qb.query.Filters = &QueryFilter{
 			Group: &FilterGroup{
-				Operator:   LogicalOperatorOr,
+				Operator:   logical.LogicalOr,
 				Conditions: []QueryFilter{*qb.query.Filters, newFilter},
 			},
 		}
@@ -541,7 +543,7 @@ func (fcb *FilterConditionBuilder) Custom(operator ComparisonOperator, value any
 // FilterGroupBuilder implementation
 type FilterGroupBuilder struct {
 	queryBuilder *QueryBuilder
-	operator     LogicalOperator
+	operator     logical.LogicalOperator
 	conditions   []QueryFilter
 }
 
@@ -552,7 +554,7 @@ func (fgb *FilterGroupBuilder) Where(field string) FilterConditionBuilderInGroup
 	}
 }
 
-func (fgb *FilterGroupBuilder) WhereGroup(operator LogicalOperator) FilterGroupBuilderInterface {
+func (fgb *FilterGroupBuilder) WhereGroup(operator logical.LogicalOperator) FilterGroupBuilderInterface {
 	// This creates a new sub-group builder. The resulting group from this new builder
 	// would need to be added to the current group builder via the .Group() method.
 	return &FilterGroupBuilder{

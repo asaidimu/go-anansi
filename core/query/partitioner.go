@@ -2,6 +2,8 @@ package query
 
 import (
 	"fmt"
+
+	"github.com/asaidimu/go-anansi/v6/core/logical"
 )
 
 // QueryPartitioner is responsible for splitting a QueryDSL query into a database-specific query
@@ -91,7 +93,7 @@ func (p *QueryPartitioner) partitionFilters(filter *QueryFilter) (*QueryFilter, 
 
 		// If the logical operator is OR and we have a mix of DB and post-processing filters,
 		// the entire group must be handled by post-processing to ensure correct evaluation.
-		if filter.Group.Operator == LogicalOperatorOr && len(dbConditions) > 0 && len(postConditions) > 0 {
+		if filter.Group.Operator == logical.LogicalOr && len(dbConditions) > 0 && len(postConditions) > 0 {
 			return nil, filter, nil
 		}
 

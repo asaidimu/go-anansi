@@ -7,6 +7,7 @@ import (
 	"maps"
 	"sync"
 
+	"github.com/asaidimu/go-anansi/v6/core/logical"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
@@ -513,12 +514,12 @@ func (i *EphemeralDatabaseInteractor) Rollback(ctx context.Context) error {
 // Capabilities returns the capabilities of the ephemeral database interactor.
 func (i *EphemeralDatabaseInteractor) Capabilities() query.Capabilities {
 	return query.Capabilities{
-		SupportedLogicalOperators: map[query.LogicalOperator]struct{}{
-			query.LogicalOperatorAnd: {},
-			query.LogicalOperatorOr:  {},
-			query.LogicalOperatorNot: {},
-			query.LogicalOperatorNor: {},
-			query.LogicalOperatorXor: {},
+		SupportedLogicalOperators: map[logical.LogicalOperator]struct{}{
+			logical.LogicalAnd: {},
+			logical.LogicalOr:  {},
+			logical.LogicalNot: {},
+			logical.LogicalNor: {},
+			logical.LogicalXor: {},
 		},
 		SupportedComparisonOperators: map[query.ComparisonOperator]struct{}{
 			query.ComparisonOperatorEq:        {},

@@ -988,70 +988,15 @@ func (h *QueryHelper) resolveFilterValue(record map[string]any, fv *FilterValue)
 
 // evaluateGroup evaluates a FilterGroup against a record.
 func (h *QueryHelper) evaluateGroup(record map[string]any, group *FilterGroup) (bool, error) {
-	switch group.Operator {
-	case LogicalOperatorAnd:
-		for _, condition := range group.Conditions {
-			result, err := h.evaluateQueryFilter(record, &condition)
-			if err != nil {
-				return false, err
-			}
-			if !result {
-				return false, nil
-			}
-		}
-		return true, nil
-
-	case LogicalOperatorOr:
-		for _, condition := range group.Conditions {
-			result, err := h.evaluateQueryFilter(record, &condition)
-			if err != nil {
-				return false, err
-			}
-			if result {
-				return true, nil
-			}
-		}
-		return false, nil
-
-	case LogicalOperatorNot:
-		if len(group.Conditions) != 1 {
-			return false, errors.New("NOT operator requires exactly one condition")
-		}
-		result, err := h.evaluateQueryFilter(record, &group.Conditions[0])
+	results := make([]bool, len(group.Conditions))
+	for i, condition := range group.Conditions {
+		result, err := h.evaluateQueryFilter(record, &condition)
 		if err != nil {
-			return false, err
+			return false, fmt.Errorf("evaluating condition %d: %w", i, err)
 		}
-		return !result, nil
-
-	case LogicalOperatorNor:
-		for _, condition := range group.Conditions {
-			result, err := h.evaluateQueryFilter(record, &condition)
-			if err != nil {
-				return false, err
-			}
-			if result {
-				return false, nil
-			}
-		}
-		return true, nil
-
-	case LogicalOperatorXor:
-		if len(group.Conditions) != 2 {
-			return false, errors.New("XOR operator requires exactly two conditions")
-		}
-		result1, err := h.evaluateQueryFilter(record, &group.Conditions[0])
-		if err != nil {
-			return false, err
-		}
-		result2, err := h.evaluateQueryFilter(record, &group.Conditions[1])
-		if err != nil {
-			return false, err
-		}
-		return result1 != result2, nil
-
-	default:
-		return false, fmt.Errorf("unsupported logical operator: %s", group.Operator)
+		results[i] = result
 	}
+	return group.Operator.Evaluate(results)
 }
 
 // evaluateInOperator evaluates the IN operator.

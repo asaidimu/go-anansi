@@ -84,7 +84,7 @@ func (fd *FieldDefinition) FindNestedField(schema *SchemaDefinition, path []stri
 				return nil
 			}
 			nextField = nestedSchema.FindField(part)
-				case FieldTypeUnion:
+		case FieldTypeUnion:
 			var fieldSchemas []NestedSchemaReference
 			// Try to unmarshal as []NestedSchemaReference
 			if schemas, ok := currentField.Schema.([]NestedSchemaReference); ok {
@@ -174,7 +174,6 @@ func (d *Document) GetFieldValue(path string) (any, bool) {
 	return nil, false
 }
 
-
 func (f *FieldDefinition) CoerceValue(value any) (any, bool) {
 	str, ok := value.(string)
 	if !ok {
@@ -205,20 +204,6 @@ func (s *SchemaDefinition) GetValueByPath(data any, path string) (any, bool) {
 	return getValueByPath(data, path)
 }
 
-func (condition *FieldInclusionCondition) Evaluate(data map[string]any) bool {
-	if condition == nil {
-		return true // No condition means always included
-	}
-
-	fieldValue, exists := data[condition.Field]
-	if !exists {
-		return false // Condition field doesn't exist
-	}
-
-	// Use reflect.DeepEqual for robust value comparison
-	return reflect.DeepEqual(fieldValue, condition.Value)
-}
-
 func getValueByPath(data any, path string) (any, bool) {
 	if path == "" {
 		return data, true
@@ -239,41 +224,78 @@ func getValueByPath(data any, path string) (any, bool) {
 	return current, true
 }
 
-
-func EvaluateLogicalOperator(operator LogicalOperator, results []bool) bool {
-	switch operator {
-	case LogicalAnd:
-		for _, r := range results {
-			if !r {
-				return false
-			}
-		}
-		return true
-	case LogicalOr:
-		for _, r := range results {
-			if r {
-				return true
-			}
-		}
-		return len(results) == 0
-	case LogicalNot:
-		return len(results) == 1 && !results[0]
-	case LogicalNor:
-		for _, r := range results {
-			if r {
-				return false
-			}
-		}
-		return true
-	case LogicalXor:
-		trueCount := 0
-		for _, r := range results {
-			if r {
-				trueCount++
-			}
-		}
-		return trueCount == 1
+// Type checking and coercion utilities
+func (expectedType FieldType) Coerce(value any) (any, bool) {
+	str, ok := value.(string)
+	if !ok {
+		return value, false
 	}
-	return false
+	switch expectedType {
+	case FieldTypeBoolean:
+		lower := strings.ToLower(str)
+		if lower == "true" {
+			return true, true
+		}
+		if lower == "false" {
+			return false, true
+		}
+	case FieldTypeInteger:
+		if intVal, err := strconv.ParseInt(str, 10, 64); err == nil {
+			return int(intVal), true
+		}
+	case FieldTypeNumber, FieldTypeDecimal:
+		if floatVal, err := strconv.ParseFloat(str, 64); err == nil {
+			return floatVal, true
+		}
+	}
+	return value, false
 }
 
+func (fieldDef *FieldDefinition) ValidateType(value any) bool {
+	if value == nil {
+		return true
+	}
+	var ok bool
+	switch fieldDef.Type {
+	case FieldTypeString:
+		_, ok = value.(string)
+	case FieldTypeNumber, FieldTypeDecimal:
+		switch value.(type) {
+		case float64, float32, int, int64, int32:
+			ok = true
+		default:
+			ok = false
+		}
+	case FieldTypeInteger:
+		switch value.(type) {
+		case int, int64, int32, int16, int8:
+			ok = true
+		default:
+			ok = false
+		}
+	case FieldTypeBoolean:
+		_, ok = value.(bool)
+	case FieldTypeArray, FieldTypeSet:
+		_, ok = value.([]any)
+	case FieldTypeObject, FieldTypeRecord:
+		_, ok = value.(map[string]any)
+	case FieldTypeUnion, FieldTypeEnum:
+		return true
+	}
+	if !ok {
+		return false
+	}
+	return true
+}
+
+func (condition *FieldInclusionCondition) Evaluate(data map[string]any) bool {
+	if condition == nil {
+		return true // No condition means always included
+	}
+	fieldValue, exists := data[condition.Field]
+	if !exists {
+		return false // Condition field doesn't exist
+	}
+	// Use reflect.DeepEqual for robust value comparison
+	return reflect.DeepEqual(fieldValue, condition.Value)
+}

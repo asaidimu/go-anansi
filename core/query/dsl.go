@@ -3,19 +3,12 @@
 // complex query logic, including filtering, sorting, pagination, and more.
 package query
 
-import "github.com/asaidimu/go-anansi/v6/core/schema"
-
-/** Logical operators for combining conditions. */
-type LogicalOperator string
+import (
+	"github.com/asaidimu/go-anansi/v6/core/logical"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+)
 
 // Logical operators for combining filter conditions.
-const (
-	LogicalOperatorAnd LogicalOperator = "and"
-	LogicalOperatorOr  LogicalOperator = "or"
-	LogicalOperatorNot LogicalOperator = "not"
-	LogicalOperatorNor LogicalOperator = "nor"
-	LogicalOperatorXor LogicalOperator = "xor"
-)
 
 // ComparisonOperator defines the set of operators that can be used in a filter condition.
 type ComparisonOperator string
@@ -109,7 +102,7 @@ type FilterCondition struct {
 
 // FilterGroup combines multiple filter conditions using a logical operator.
 type FilterGroup struct {
-	Operator   LogicalOperator `json:"operator"`
+	Operator   logical.LogicalOperator `json:"operator"`
 	Conditions []QueryFilter   `json:"conditions"`
 }
 

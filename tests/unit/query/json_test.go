@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/logical"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 )
 
@@ -240,7 +241,7 @@ func TestPaginationOptions_UnmarshalJSON(t *testing.T) {
 			},
 			wantErr: false,
 		},
-		
+
 		{
 			name:    "Unmarshal Unknown Type",
 			jsonStr: `{"type": "unknown", "limit": 10}`,
@@ -304,7 +305,7 @@ func TestPaginationOptions_MarshalJSON(t *testing.T) {
 			wantJson: `{"type":"offset","limit":10}`,
 			wantErr:  false,
 		},
-		
+
 		{
 			name: "Marshal Unknown Type",
 			input: query.PaginationOptions{
@@ -499,7 +500,7 @@ func TestQuery_MarshalUnmarshal(t *testing.T) {
 			wantJson: `{"sort":[{"field":"createdAt","direction":"desc"}],"pagination":{"type":"offset","limit":10,"offset":5}}`,
 			wantErr:  false,
 		},
-		
+
 		{
 			name: "Query with Basic Projection (Include)",
 			input: query.Query{
@@ -647,7 +648,7 @@ func TestQuery_MarshalUnmarshal(t *testing.T) {
 			input: query.Query{
 				Filters: &query.QueryFilter{
 					Group: &query.FilterGroup{
-						Operator: query.LogicalOperatorAnd,
+						Operator: logical.LogicalAnd,
 						Conditions: []query.QueryFilter{
 							{
 								Condition: &query.FilterCondition{

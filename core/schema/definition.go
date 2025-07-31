@@ -8,24 +8,12 @@ import (
 	"fmt"
 	"maps"
 
+	"github.com/asaidimu/go-anansi/v6/core/logical"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // VersionFieldName is the reserved name for the field used in optimistic concurrency control.
 const VersionFieldName = "_version_"
-
-// LogicalOperator defines the logical operators that can be used to combine conditions
-// in constraints and filters.
-type LogicalOperator string
-
-// Supported logical operators.
-const (
-	LogicalAnd LogicalOperator = "and" // Represents a logical AND.
-	LogicalOr  LogicalOperator = "or"  // Represents a logical OR.
-	LogicalNot LogicalOperator = "not" // Represents a logical NOT.
-	LogicalNor LogicalOperator = "nor" // Represents a logical NOR.
-	LogicalXor LogicalOperator = "xor" // Represents a logical XOR.
-)
 
 // FieldType represents the data type of a field in a schema.
 type FieldType string
@@ -106,7 +94,7 @@ func (c Constraint[T]) IsSchemaConstraintRule() {}
 // ConstraintGroup defines a group of multiple constraints with a logical operator.
 type ConstraintGroup[T FieldType] struct {
 	Name     string                    `json:"name"`
-	Operator LogicalOperator           `json:"operator"`
+	Operator logical.LogicalOperator   `json:"operator"`
 	Rules    []SchemaConstraintRule[T] `json:"rules"`
 }
 
@@ -190,7 +178,7 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 			// If Schema is provided for a type that doesn't support it, return an error.
 			// This enforces the semantic rule that schema refs are only valid for specific types.
 			if temp.Type != FieldTypeObject && temp.Type != FieldTypeArray && temp.Type != FieldTypeRecord && temp.Type != FieldTypeUnion {
-			return fmt.Errorf("field of type '%s' cannot have a 'schema' reference", temp.Type)
+				return fmt.Errorf("field of type '%s' cannot have a 'schema' reference", temp.Type)
 			}
 			// For any other types or if specific unmarshaling failed,
 			// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
@@ -211,7 +199,7 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 
 // PartialIndexCondition defines a condition for a partial index.
 type PartialIndexCondition struct {
-	Operator   LogicalOperator         `json:"operator"`
+	Operator   logical.LogicalOperator `json:"operator"`
 	Field      string                  `json:"field"`
 	Value      any                     `json:"value,omitempty"`
 	Conditions []PartialIndexCondition `json:"conditions,omitempty"`
