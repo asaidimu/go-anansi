@@ -4,8 +4,7 @@
 package query
 
 import (
-	"github.com/asaidimu/go-anansi/v6/core/logical"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
 // Logical operators for combining filter conditions.
@@ -102,7 +101,7 @@ type FilterCondition struct {
 
 // FilterGroup combines multiple filter conditions using a logical operator.
 type FilterGroup struct {
-	Operator   logical.LogicalOperator `json:"operator"`
+	Operator   common.LogicalOperator `json:"operator"`
 	Conditions []QueryFilter   `json:"conditions"`
 }
 
@@ -215,7 +214,7 @@ type JoinConfiguration struct {
 // AggregationType specifies the type of aggregation to be performed.
 type AggregationType string
 
-type AggregateFunction func(records []schema.Document, field string) (any, error)
+type AggregateFunction func(records []common.Document, field string) (any, error)
 
 // Supported aggregation types.
 const (

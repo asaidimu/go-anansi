@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v6/core/logical"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
 // QueryValidationResult represents the result of query validation
@@ -104,33 +104,51 @@ func (qb *QueryBuilder) Validate() QueryValidationResult {
 }
 
 func (qb *QueryBuilder) validateQueryFilter(filter QueryFilter) error {
-	if filter.Condition != nil {
-		if filter.Condition.Field == "" {
-			return fmt.Errorf("filter condition field cannot be empty")
-		}
-		if !filter.Condition.Operator.IsStandard() {
-			return fmt.Errorf("unknown comparison operator: %s", filter.Condition.Operator)
-		}
-	}
+    // Check mutually exclusive constraint: Condition XOR Group
+    hasCondition := filter.Condition != nil
+    hasGroup := filter.Group != nil
+    hasTextSearch := filter.TextSearchQuery != nil
 
-	if filter.Group != nil {
-		for _, condition := range filter.Group.Conditions {
-			if err := qb.validateQueryFilter(condition); err != nil {
-				return err
-			}
-		}
-	}
+    // Must have at least one field
+    if !hasCondition && !hasGroup && !hasTextSearch {
+        return fmt.Errorf("QueryFilter must have at least one field populated")
+    }
 
-	if filter.TextSearchQuery != nil {
-		if filter.TextSearchQuery.Query == "" {
-			return fmt.Errorf("text search query cannot be empty")
-		}
-		if len(filter.TextSearchQuery.Fields) == 0 {
-			return fmt.Errorf("text search must specify at least one field")
-		}
-	}
+    // Condition and Group are mutually exclusive
+    if hasCondition && hasGroup {
+        return fmt.Errorf("QueryFilter cannot have both condition and group populated - they are mutually exclusive")
+    }
 
-	return nil
+    // TextSearch can be combined with either Condition or Group, so no additional constraint needed
+
+    // Existing field-specific validation...
+    if filter.Condition != nil {
+        if filter.Condition.Field == "" {
+            return fmt.Errorf("filter condition field cannot be empty")
+        }
+        if !filter.Condition.Operator.IsStandard() {
+            return fmt.Errorf("unknown comparison operator: %s", filter.Condition.Operator)
+        }
+    }
+
+    if filter.Group != nil {
+        for _, condition := range filter.Group.Conditions {
+            if err := qb.validateQueryFilter(condition); err != nil {
+                return err
+            }
+        }
+    }
+
+    if filter.TextSearchQuery != nil {
+        if filter.TextSearchQuery.Query == "" {
+            return fmt.Errorf("text search query cannot be empty")
+        }
+        if len(filter.TextSearchQuery.Fields) == 0 {
+            return fmt.Errorf("text search must specify at least one field")
+        }
+    }
+
+    return nil
 }
 
 func (qb *QueryBuilder) String() string {
@@ -146,7 +164,7 @@ func (qb *QueryBuilder) Where(field string) FilterConditionBuilderInterface {
 	}
 }
 
-func (qb *QueryBuilder) WhereGroup(operator logical.LogicalOperator) FilterGroupBuilderInterface {
+func (qb *QueryBuilder) WhereGroup(operator common.LogicalOperator) FilterGroupBuilderInterface {
 	return &FilterGroupBuilder{
 		queryBuilder: qb,
 		operator:     operator,
@@ -172,7 +190,7 @@ func (qb *QueryBuilder) AndFilter(newFilter QueryFilter) *QueryBuilder {
 	} else {
 		qb.query.Filters = &QueryFilter{
 			Group: &FilterGroup{
-				Operator:   logical.LogicalAnd,
+				Operator:   common.LogicalAnd,
 				Conditions: []QueryFilter{*qb.query.Filters, newFilter},
 			},
 		}
@@ -186,7 +204,7 @@ func (qb *QueryBuilder) OrFilter(newFilter QueryFilter) *QueryBuilder {
 	} else {
 		qb.query.Filters = &QueryFilter{
 			Group: &FilterGroup{
-				Operator:   logical.LogicalOr,
+				Operator:   common.LogicalOr,
 				Conditions: []QueryFilter{*qb.query.Filters, newFilter},
 			},
 		}
@@ -543,7 +561,7 @@ func (fcb *FilterConditionBuilder) Custom(operator ComparisonOperator, value any
 // FilterGroupBuilder implementation
 type FilterGroupBuilder struct {
 	queryBuilder *QueryBuilder
-	operator     logical.LogicalOperator
+	operator     common.LogicalOperator
 	conditions   []QueryFilter
 }
 
@@ -554,7 +572,7 @@ func (fgb *FilterGroupBuilder) Where(field string) FilterConditionBuilderInGroup
 	}
 }
 
-func (fgb *FilterGroupBuilder) WhereGroup(operator logical.LogicalOperator) FilterGroupBuilderInterface {
+func (fgb *FilterGroupBuilder) WhereGroup(operator common.LogicalOperator) FilterGroupBuilderInterface {
 	// This creates a new sub-group builder. The resulting group from this new builder
 	// would need to be added to the current group builder via the .Group() method.
 	return &FilterGroupBuilder{

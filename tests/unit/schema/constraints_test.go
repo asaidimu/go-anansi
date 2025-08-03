@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
@@ -512,10 +513,10 @@ func TestConstraintPropagation(t *testing.T) {
 		assert.False(t, ok)
 		require.Len(t, issues, 4)
 		// Check specific errors
-		assert.Contains(t, issues, schema.Issue{Code: "CONSTRAINT_VIOLATION", Path: "username", Message: "Constraint 'usernameLongEnough' failed"})
-		assert.Contains(t, issues, schema.Issue{Code: "CONSTRAINT_VIOLATION", Path: "account.city", Message: "Constraint 'accountCityStartsWithA' failed"})
-		assert.Contains(t, issues, schema.Issue{Code: "CONSTRAINT_VIOLATION", Path: "account.permissions[0].resource", Message: "Constraint 'resourceLongEnough' failed"})
-		assert.Contains(t, issues, schema.Issue{Code: "CONSTRAINT_VIOLATION", Path: "", Message: "Constraint 'globalCheck' failed"})
+		assert.Contains(t, issues, common.Issue{Code: "CONSTRAINT_VIOLATION", Path: "username", Message: "Constraint 'usernameLongEnough' failed"})
+		assert.Contains(t, issues, common.Issue{Code: "CONSTRAINT_VIOLATION", Path: "account.city", Message: "Constraint 'accountCityStartsWithA' failed"})
+		assert.Contains(t, issues, common.Issue{Code: "CONSTRAINT_VIOLATION", Path: "account.permissions[0].resource", Message: "Constraint 'resourceLongEnough' failed"})
+		assert.Contains(t, issues, common.Issue{Code: "CONSTRAINT_VIOLATION", Path: "", Message: "Constraint 'globalCheck' failed"})
 	})
 
 	// --- Nested Schema Definition Constraints (Structured Type) - Pass ---

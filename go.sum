@@ -1,7 +1,11 @@
 github.com/asaidimu/go-events v1.1.0 h1:uT2NT6EyMGMR34Pjfu2XzkDRm/0BowvAX2pdXCpflmI=
 github.com/asaidimu/go-events v1.1.0/go.mod h1:n370DkM3mqQeF3DedpTfpZBqWCpR1bQB/myN6f9FKV0=
+github.com/asaidimu/go-store v1.0.0 h1:HLer9/sC15FO9qBMSzArWQXFoP1nofUtZza1gqfXpYg=
+github.com/asaidimu/go-store v1.0.0/go.mod h1:8lhEW/ccqu94rA1zKIbFQikzz4O8IcR0E7yQsFsCz8A=
 github.com/asaidimu/go-store/v3 v3.0.0 h1:tgXozAZNL873YA+qBlP0nZzar+x5Lnq5mWFm6md3Ox8=
 github.com/asaidimu/go-store/v3 v3.0.0/go.mod h1:nw20hez9oDLNBALq/RqY/MSDkBCXjYfbUwyFb+U0hjA=
+github.com/asaidimu/go-store/v3 v3.3.0 h1:pwz1CaLnanr2md0pkuK9a2FFxIPWMPZ4B1iXDD6WlEE=
+github.com/asaidimu/go-store/v3 v3.3.0/go.mod h1:nw20hez9oDLNBALq/RqY/MSDkBCXjYfbUwyFb+U0hjA=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1 h1:vj9j/u1bqnvCEfJOwUhtlOARqs3+rkHYY13jYWTU97c=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=

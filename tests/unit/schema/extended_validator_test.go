@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/asaidimu/go-anansi/v6/core/logical"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
@@ -116,7 +116,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 		Constraints: schema.SchemaConstraint[schema.FieldType]{
 			schema.ConstraintGroup[schema.FieldType]{
 				Name:     "user_constraints",
-				Operator: logical.LogicalAnd,
+				Operator: common.LogicalAnd,
 				Rules: []schema.SchemaConstraintRule[schema.FieldType]{
 					schema.Constraint[schema.FieldType]{
 						Name:      "username_availability",

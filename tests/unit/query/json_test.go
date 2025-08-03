@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/logical"
 	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
 // Helper functions to get pointers to primitive types
@@ -648,7 +648,7 @@ func TestQuery_MarshalUnmarshal(t *testing.T) {
 			input: query.Query{
 				Filters: &query.QueryFilter{
 					Group: &query.FilterGroup{
-						Operator: logical.LogicalAnd,
+						Operator: common.LogicalAnd,
 						Conditions: []query.QueryFilter{
 							{
 								Condition: &query.FilterCondition{

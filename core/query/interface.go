@@ -3,7 +3,7 @@
 package query
 
 import (
-	"github.com/asaidimu/go-anansi/v6/core/logical"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
@@ -52,7 +52,7 @@ type QueryBuilderInterface interface {
 
 	// Filtering
 	Where(field string) FilterConditionBuilderInterface
-	WhereGroup(operator logical.LogicalOperator) FilterGroupBuilderInterface
+	WhereGroup(operator common.LogicalOperator) FilterGroupBuilderInterface
 	TextSearch(field string) TextSearchBuilderInterface // Proposed addition
 
 	// Concatenation of Filters
@@ -130,7 +130,7 @@ type FilterConditionBuilderInterface interface {
 // FilterGroupBuilderInterface defines the interface for building a group of filter conditions.
 type FilterGroupBuilderInterface interface {
 	Where(field string) FilterConditionBuilderInGroupInterface
-	WhereGroup(operator logical.LogicalOperator) FilterGroupBuilderInterface
+	WhereGroup(operator common.LogicalOperator) FilterGroupBuilderInterface
 	Group(filter QueryFilter) *FilterGroupBuilder
 	End() *QueryBuilder
 	WhereTextSearch(field string) TextSearchBuilderInGroupInterface // Proposed addition to nested groups
@@ -225,7 +225,7 @@ type FunctionCapabilities struct {
 // into a database query and a post-processing query.
 type Capabilities struct {
 	// SupportedLogicalOperators is a set of logical operators (AND, OR, NOT) that the database can handle in filter expressions.
-	SupportedLogicalOperators map[logical.LogicalOperator]struct{}
+	SupportedLogicalOperators map[common.LogicalOperator]struct{}
 	// SupportedComparisonOperators is a set of comparison operators (e.g., Eq, Gt, Lt) that the database can handle natively.
 	SupportedComparisonOperators map[ComparisonOperator]struct{}
 	// SupportedExpressionOperators is a set of operators for computed fields or filters (e.g., MULTIPLY, ADD).
@@ -265,11 +265,11 @@ type QueryPartitionerInterface interface {
 // ComputeFunction is a function that computes a new value for a row of data.
 // It takes a document (representing a single row) and a set of arguments, and
 // returns the computed value.
-type ComputeFunction func(row schema.Document, args []FilterValue) (any, error)
+type ComputeFunction func(row common.Document, args []FilterValue) (any, error)
 
 // PredicateFunction is a function that performs custom filtering logic on a row.
 // It returns true if the row should be included in the result set, and false otherwise.
-type PredicateFunction func(doc schema.Document, field string, value FilterValue) (bool, error)
+type PredicateFunction func(doc common.Document, field string, value FilterValue) (bool, error)
 
 // PartitionedQuery holds the result of a query partitioning operation.
 type PartitionedQuery struct {

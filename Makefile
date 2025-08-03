@@ -1,4 +1,4 @@
-.PHONY: all build test clean
+.PHONY: all build test
 
 all: build
 
@@ -7,6 +7,3 @@ build:
 
 test:
 	go test -v ./...
-
-clean:
-	rm -f persistence

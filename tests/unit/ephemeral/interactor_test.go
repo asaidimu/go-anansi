@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -67,51 +68,13 @@ func getUserSchema(t *testing.T) schema.SchemaDefinition {
 	return schemaDef
 }
 
-func TestEphemeralDatabaseInteractor_CreateCollection(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
-	schemaDef := getUserSchema(t)
-
-	err := interactor.CreateCollection(schemaDef)
-	assert.NoError(t, err)
-
-	exists, err := interactor.CollectionExists("users")
-	assert.NoError(t, err)
-	assert.True(t, exists)
-}
-
-func TestEphemeralDatabaseInteractor_CreateCollection_AlreadyExists(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
-	schemaDef := getUserSchema(t)
-
-	err := interactor.CreateCollection(schemaDef)
-	assert.NoError(t, err)
-
-	err = interactor.CreateCollection(schemaDef)
-	assert.Error(t, err)
-}
-
-func TestEphemeralDatabaseInteractor_DropCollection(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
-	schemaDef := getUserSchema(t)
-
-	err := interactor.CreateCollection(schemaDef)
-	assert.NoError(t, err)
-
-	err = interactor.DropCollection("users")
-	assert.NoError(t, err)
-
-	exists, err := interactor.CollectionExists("users")
-	assert.NoError(t, err)
-	assert.False(t, exists)
-}
-
 func TestEphemeralDatabaseInteractor_InsertAndSelectDocuments(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
+	interactor, manager := ephemeral.NewEphemeral()
 	schemaDef := getUserSchema(t)
-	err := interactor.CreateCollection(schemaDef)
+	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
-	docsToInsert := []schema.Document{
+	docsToInsert := []common.Document{
 		{"name": "Alice", "age": 30},
 		{"name": "Bob", "age": 25},
 	}
@@ -127,12 +90,12 @@ func TestEphemeralDatabaseInteractor_InsertAndSelectDocuments(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_SelectDocuments_WithFilter(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
+	interactor, manager := ephemeral.NewEphemeral()
 	schemaDef := getUserSchema(t)
-	err := interactor.CreateCollection(schemaDef)
+	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
-	docsToInsert := []schema.Document{
+	docsToInsert := []common.Document{
 		{"name": "Alice", "age": 30},
 		{"name": "Bob", "age": 25},
 		{"name": "Charlie", "age": 30},
@@ -147,12 +110,12 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithFilter(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_UpdateDocuments(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
+	interactor, manager := ephemeral.NewEphemeral()
 	schemaDef := getUserSchema(t)
-	err := interactor.CreateCollection(schemaDef)
+	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
-	docsToInsert := []schema.Document{
+	docsToInsert := []common.Document{
 		{"name": "Alice", "age": 30, "status": "active"},
 		{"name": "Bob", "age": 25, "status": "active"},
 	}
@@ -160,7 +123,7 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments(t *testing.T) {
 	assert.NoError(t, err)
 
 	filters := query.NewQueryBuilder().Where("name").Eq("Bob").Build().Filters
-	updates := schema.Document{"status": "inactive"}
+	updates := common.Document{"status": "inactive"}
 
 	updatedCount, err := interactor.UpdateDocuments(context.Background(), &schemaDef, updates, filters)
 	assert.NoError(t, err)
@@ -174,12 +137,12 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_DeleteDocuments(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
+	interactor, manager := ephemeral.NewEphemeral()
 	schemaDef := getUserSchema(t)
-	err := interactor.CreateCollection(schemaDef)
+	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
-	docsToInsert := []schema.Document{
+	docsToInsert := []common.Document{
 		{"name": "Alice", "age": 30},
 		{"name": "Bob", "age": 25},
 	}
@@ -197,27 +160,13 @@ func TestEphemeralDatabaseInteractor_DeleteDocuments(t *testing.T) {
 	assert.Len(t, selected, 1)
 }
 
-func TestEphemeralDatabaseInteractor_CreateIndex(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
-	schemaDef := getUserSchema(t)
-	err := interactor.CreateCollection(schemaDef)
-	assert.NoError(t, err)
-
-	index := schema.IndexDefinition{
-		Name:   "age_index",
-		Fields: []string{"age"},
-	}
-	err = interactor.CreateIndex("users", index)
-	assert.NoError(t, err)
-}
-
 func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedProjection(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
+	interactor, manager := ephemeral.NewEphemeral()
 	schemaDef := getUserSchema(t)
-	err := interactor.CreateCollection(schemaDef)
+	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
-	docsToInsert := []schema.Document{
+	docsToInsert := []common.Document{
 		{"name": "Alice", "age": 30, "address": map[string]any{"city": "New York", "zip": 10001}},
 	}
 	_, err = interactor.InsertDocuments(context.Background(), &schemaDef, docsToInsert)
@@ -236,12 +185,12 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedProjection(t *tes
 }
 
 func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedFilter(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
+	interactor, manager := ephemeral.NewEphemeral()
 	schemaDef := getUserSchema(t)
-	err := interactor.CreateCollection(schemaDef)
+	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
-	docsToInsert := []schema.Document{
+	docsToInsert := []common.Document{
 		{"name": "Alice", "age": 30, "address": map[string]any{"city": "New York"}},
 		{"name": "Bob", "age": 25, "address": map[string]any{"city": "London"}},
 	}
@@ -256,9 +205,9 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedFilter(t *testing
 }
 
 func TestEphemeralDatabaseInteractor_SelectDocuments_EmptyResult(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
+	interactor, manager := ephemeral.NewEphemeral()
 	schemaDef := getUserSchema(t)
-	err := interactor.CreateCollection(schemaDef)
+	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
 	dsl := query.NewQueryBuilder().Where("name").Eq("non-existent").Build()
@@ -268,9 +217,9 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_EmptyResult(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_UpdateDocuments_NoMatch(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
+	interactor, manager := ephemeral.NewEphemeral()
 	schemaDef := getUserSchema(t)
-	err := interactor.CreateCollection(schemaDef)
+	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
 	filters := query.NewQueryBuilder().Where("name").Eq("non-existent").Build().Filters
@@ -282,9 +231,9 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments_NoMatch(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_DeleteDocuments_NoMatch(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
+	interactor, manager := ephemeral.NewEphemeral()
 	schemaDef := getUserSchema(t)
-	err := interactor.CreateCollection(schemaDef)
+	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
 
 	filters := query.NewQueryBuilder().Where("name").Eq("non-existent").Build().Filters
@@ -294,11 +243,11 @@ func TestEphemeralDatabaseInteractor_DeleteDocuments_NoMatch(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_SelectDocuments_WithJoin(t *testing.T) {
-	interactor := ephemeral.NewEphemeralDatabaseInteractor()
+	interactor, manager := ephemeral.NewEphemeral()
 
 	// Create users collection
 	userSchema := getUserSchema(t)
-	err := interactor.CreateCollection(userSchema)
+	err := manager.CreateCollection(userSchema)
 	assert.NoError(t, err)
 
 	// Create orders collection
@@ -313,18 +262,18 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithJoin(t *testing.T) {
 	var orderSchema schema.SchemaDefinition
 	err = json.Unmarshal([]byte(orderSchemaJSON), &orderSchema)
 	assert.NoError(t, err)
-	err = interactor.CreateCollection(orderSchema)
+	err = manager.CreateCollection(orderSchema)
 	assert.NoError(t, err)
 
 	// Insert data
-	users := []schema.Document{
+	users := []common.Document{
 		{"id": 1, "name": "Alice", "age": 30},
 		{"id": 2, "name": "Bob", "age": 25},
 	}
 	_, err = interactor.InsertDocuments(context.Background(), &userSchema, users)
 	assert.NoError(t, err)
 
-	orders := []schema.Document{
+	orders := []common.Document{
 		{"order_id": 101, "user_id": 1, "amount": 150.0},
 		{"order_id": 102, "user_id": 2, "amount": 200.0},
 		{"order_id": 103, "user_id": 1, "amount": 50.0},
@@ -352,9 +301,9 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithJoin(t *testing.T) {
 
 	// Verify results
 	for _, r := range results {
-		user, ok := r["users"].(schema.Document)
+		user, ok := r["users"].(common.Document)
 		assert.True(t, ok, "Expected 'users' to be a map[string]any")
-		order, ok := r["orders"].(schema.Document)
+		order, ok := r["orders"].(common.Document)
 		assert.True(t, ok, "Expected 'orders' to be a map[string]any")
 		assert.Equal(t, user["id"], order["user_id"], "User ID and Order User ID should match")
 	}

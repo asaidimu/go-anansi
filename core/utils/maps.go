@@ -1,6 +1,10 @@
 package utils
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
+)
 
 func ConvertMaps(m map[string]any) {
 	for k, v := range m {
@@ -29,14 +33,12 @@ func ConvertMaps(m map[string]any) {
 	}
 }
 
-
 func BuildPath(basePath, fieldName string) string {
 	if basePath == "" {
 		return fieldName
 	}
 	return basePath + "." + fieldName
 }
-
 
 func GetScopedPath(path string) string {
 	if !strings.Contains(path, ".") {
@@ -46,17 +48,20 @@ func GetScopedPath(path string) string {
 	return strings.Join(parts[:len(parts)-1], ".")
 }
 
-
 func GetValueByPath(data any, path string) (any, bool) {
 	if path == "" {
 		return data, true
 	}
+
 	keys := strings.Split(path, ".")
 	current := data
 	for _, key := range keys {
 		m, ok := current.(map[string]any)
 		if !ok {
-			return nil, false
+			m, ok = current.(common.Document)
+			if !ok {
+				return nil, false
+			}
 		}
 		current, ok = m[key]
 		if !ok {
@@ -65,5 +70,3 @@ func GetValueByPath(data any, path string) (any, bool) {
 	}
 	return current, true
 }
-
-

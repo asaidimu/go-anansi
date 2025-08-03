@@ -1,0 +1,44 @@
+package ephemeral
+
+import (
+	"fmt"
+	"sync"
+
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+	store "github.com/asaidimu/go-store/v3"
+)
+
+// ephemeralStore holds the in-memory collections and a mutex for thread-safe access.
+// It is not exported and is shared between the EphemeralDatabaseInteractor and EphemeralSchemaManager.
+type ephemeralStore struct {
+	collections map[string]*collection
+	mu          sync.RWMutex
+}
+
+// collection represents a single in-memory collection, analogous to a table in a relational database.
+type collection struct {
+	Name   string
+	schema *schema.SchemaDefinition
+	data   *store.Store
+}
+
+// NewEphemeral creates a new in-memory database interactor and schema manager that share the same underlying data store.
+func NewEphemeral() (*EphemeralDatabaseInteractor, *EphemeralSchemaManager) {
+	store := &ephemeralStore{
+		collections: make(map[string]*collection),
+	}
+	interactor := &EphemeralDatabaseInteractor{store: store}
+	manager := &EphemeralSchemaManager{store: store}
+	return interactor, manager
+}
+
+// getCollection safely retrieves a collection by name from the store.
+func (s *ephemeralStore) getCollection(name string) (*collection, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	c, ok := s.collections[name]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrCollectionNotFound, name)
+	}
+	return c, nil
+}

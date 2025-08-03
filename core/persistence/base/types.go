@@ -1,14 +1,15 @@
-// Package persistence provides the interfaces and types for database operations.
+// Package types provides the interfaces and types for database operations.
 // It defines a structured and extensible framework for data storage, retrieval,
 // management, and observability within the system. This package establishes the
 // core contracts that any underlying database driver must implement, ensuring a
 // consistent API for data manipulation regardless of the storage technology used.
-package persistence
+package base
 
 import (
 	"context"
 	"encoding/json"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
@@ -84,17 +85,6 @@ const (
 	MetadataCalled PersistenceEventType = "metadata:called"
 )
 
-// Issue represents a detailed validation or operational issue. It is used to provide
-// structured, machine-readable feedback about problems encountered during an operation,
-// which is particularly useful for form validation or API error responses.
-type Issue struct {
-	Code        string `json:"code"`                  // Code is a machine-readable identifier for the type of issue (e.g., "validation_error", "not_found").
-	Message     string `json:"message"`               // Message is a human-readable description of the issue.
-	Path        string `json:"path,omitempty"`        // Path indicates the location of the issue, such as a field name in a JSON document (e.g., "user.address.zipCode").
-	Severity    string `json:"severity,omitempty"`    // Severity indicates the seriousness of the issue, typically "error" or "warning".
-	Description string `json:"description,omitempty"` // Description provides a more detailed, potentially multi-line explanation of the issue and how to resolve it.
-}
-
 // PersistenceEvent is the base struct for all events emitted by the persistence layer.
 // It contains a common set of fields that provide context about the event, such as the
 // event type, timestamp, and the operation being performed. Specific event types embed
@@ -107,7 +97,7 @@ type PersistenceEvent struct {
 	Input         any                  `json:"input,omitempty"`         // Input is the data that was passed to the operation.
 	Output        any                  `json:"output,omitempty"`        // Output is the data that was returned by the operation.
 	Error         *string              `json:"error,omitempty"`         // Error is the error message if the operation failed.
-	Issues        []Issue              `json:"issues,omitempty"`        // Issues is a list of validation or other issues that occurred.
+	Issues        []common.Issue       `json:"issues,omitempty"`        // Issues is a list of validation or other issues that occurred.
 	Query         any                  `json:"query,omitempty"`         // Query is the query used in the operation, if applicable.
 	TransactionID *string              `json:"transactionId,omitempty"` // TransactionID is the identifier for the transaction, if the operation was part of one.
 	Duration      *int64               `json:"duration,omitempty"`      // Duration is the time the operation took to complete, in milliseconds.
@@ -228,13 +218,13 @@ type CollectionMetadata struct {
 	SchemaVersion    string                   `json:"schemaVersion"`              // SchemaVersion is the version of the schema currently used by the collection.
 	Name             string                   `json:"name"`                       // Name is the logical name of the collection.
 	CollectionName   string                   `json:"collectionName"`             // CollectionName is the physical name of the collection in the database.
-	Description      string                   `json:"description"`                // Description is a human-readable summary of the collection's purpose.
+	Description      *string                  `json:"description"`                // Description is a human-readable summary of the collection's purpose.
 	Status           string                   `json:"status"`                     // Status indicates the current state of the collection (e.g., "active", "archived").
 	CreatedAt        string                   `json:"createdAt"`                  // CreatedAt is the timestamp when the collection was created.
 	CreatedBy        string                   `json:"createdBy"`                  // CreatedBy identifies the user or process that created the collection.
 	RecordCount      int64                    `json:"recordCount"`                // RecordCount is the number of records currently in the collection.
 	DataSizeBytes    int64                    `json:"dataSizeBytes"`              // DataSizeBytes is the total size of the data in the collection, in bytes.
-	Schema           schema.SchemaDefinition  `json:"schema"`                     // Schema is the schema definition associated with this collection.
+	Schema           *schema.SchemaDefinition `json:"schema"`                     // Schema is the schema definition associated with this collection.
 	LastModified     int64                    `json:"lastModified"`               // LastModified is the timestamp of the last operation on the collection (Unix milliseconds).
 	ConnectionStatus *string                  `json:"connectionStatus,omitempty"` // ConnectionStatus indicates the health of the connection to the collection (e.g., "connected", "disconnected", "error").
 	ConnectionError  *string                  `json:"connectionError,omitempty"`  // ConnectionError contains an error message if the connection is in an error state.
@@ -248,19 +238,50 @@ type CollectionMetadata struct {
 // It can provide a global overview, including aggregate statistics and lists
 // of all schemas, collections, and subscriptions across the system.
 type Metadata struct {
-	CollectionCount   *int64                    `json:"collectionCount,omitempty"`   // CollectionCount is the total number of collections in the system.
-	StorageUsageBytes *int64                    `json:"storageUsageBytes,omitempty"` // StorageUsageBytes is the total storage used by all collections, in bytes.
-	ConnectionStatus  *string                   `json:"connectionStatus,omitempty"`  // ConnectionStatus indicates the health of the main connection to the persistence layer.
-	ConnectionError   *string                   `json:"connectionError,omitempty"`   // ConnectionError contains an error message if the main connection has failed.
-	Schemas           []schema.SchemaDefinition `json:"schemas,omitempty"`           // Schemas is a list of all schema definitions available in the system.
-	Collections       []CollectionMetadata      `json:"collections,omitempty"`       // Collections is a list of metadata for all collections in the system.
-	Subscriptions     []SubscriptionInfo        `json:"subscriptions"`               // Subscriptions is a list of all active subscriptions at the global level.
+	CollectionCount   *int64                     `json:"collectionCount,omitempty"`   // CollectionCount is the total number of collections in the system.
+	StorageUsageBytes *int64                     `json:"storageUsageBytes,omitempty"` // StorageUsageBytes is the total storage used by all collections, in bytes.
+	ConnectionStatus  *string                    `json:"connectionStatus,omitempty"`  // ConnectionStatus indicates the health of the main connection to the persistence layer.
+	ConnectionError   *string                    `json:"connectionError,omitempty"`   // ConnectionError contains an error message if the main connection has failed.
+	Schemas           []*schema.SchemaDefinition `json:"schemas,omitempty"`           // Schemas is a list of all schema definitions available in the system.
+	Collections       []*CollectionMetadata      `json:"collections,omitempty"`       // Collections is a list of metadata for all collections in the system.
+	Subscriptions     []*SubscriptionInfo        `json:"subscriptions"`               // Subscriptions is a list of all active subscriptions at the global level.
 }
 
-// CreateResult defines the structure of the response for a successful create operation.
+// CreateStatus represents the outcome of a single document creation attempt.
+// It provides a clear, machine-readable indicator of the result for each document
+// in a batch operation.
+type CreateStatus string
+
+const (
+	// StatusCreated indicates the document was successfully created and persisted.
+	StatusCreated CreateStatus = "CREATED"
+
+	// StatusFailedValidation indicates the document failed schema validation
+	// and was never sent to the database.
+	StatusFailedValidation CreateStatus = "FAILED_VALIDATION"
+
+	// StatusFailedPersistence indicates the document passed validation but failed
+	// to be saved in the database for other reasons (e.g., unique constraint violation).
+	StatusFailedPersistence CreateStatus = "FAILED_PERSISTENCE"
+)
+
+// CreateResult is a rich status report for a single document creation operation.
+// It is returned for every document in a request, whether it succeeded or failed,
+// providing detailed context for both success and failure scenarios.
 type CreateResult struct {
-	ID   string `json:"id"`   // ID is the unique identifier of the newly created document.
-	Data any    `json:"data"` // Data is the content of the newly created document.
+	// Status indicates the outcome of the operation for this document.
+	Status CreateStatus `json:"status"`
+
+	// Data is the document that was processed.
+	// - On success, this is the final, enriched document as it was persisted.
+	// - On failure, this is the original document that was submitted.
+	Data common.Document `json:"data"`
+
+	// Issues contains detailed validation errors if the status is FAILED_VALIDATION.
+	Issues []common.Issue `json:"issues,omitempty"`
+
+	// Error contains the persistence error message if the status is FAILED_PERSISTENCE.
+	Error string `json:"error,omitempty"`
 }
 
 // UpdateResult defines the structure of the response for a successful update operation.
@@ -306,38 +327,48 @@ type UpdateOptions struct {
 	Upsert *bool `json:"upsert,omitempty"` // Upsert, if true, creates a new document if no document matches the update query. If false, the update fails if no document is found.
 }
 
-// PersistenceInterface defines the core contract for the persistence layer. It provides a
-// comprehensive set of methods for managing collections, schemas, transactions, and
-// observability features like metadata and event subscriptions.
-type PersistenceInterface interface {
+// BasePersistence defines the set of operations that can be performed
+// within a database transaction. It is a subset of the PersistenceInterface, ensuring
+// that transactional operations are consistent with the main persistence API, but
+// excluding non-transactional methods like creating new transactions.
+type BasePersistence interface {
 	// Collection returns a handle to a specific collection by name, allowing for operations
 	// to be performed on that collection.
-	Collection(name string) (PersistenceCollectionInterface, error)
+	Collection(name string) (Collection, error)
 	// Collections returns a list of names of all available collections.
 	Collections() ([]string, error)
 	// Create creates a new collection based on the provided schema definition.
-	Create(sc schema.SchemaDefinition) (PersistenceCollectionInterface, error)
+	Create(sc schema.SchemaDefinition) (Collection, error)
 	// Delete removes a collection entirely, specified by its ID.
 	Delete(id string) (bool, error)
 	// Schema retrieves a schema definition by its unique ID.
 	Schema(id string) (*schema.SchemaDefinition, error)
-
-	// Transact executes a series of operations within a single atomic transaction.
-	// The provided callback function receives a transaction object, and if the callback
-	// returns an error, the transaction is rolled back.
-	Transact(callback func(tx PersistenceTransactionInterface) (any, error)) (any, error)
 
 	// Metadata retrieves metadata about the persistence layer, optionally filtered
 	// by the provided criteria.
 	Metadata(
 		filter *MetadataFilter,
 	) (Metadata, error)
+}
+
+// Persistence defines the core contract for the persistence layer. It provides a
+// comprehensive set of methods for managing collections, schemas, transactions, and
+// observability features like metadata and event subscriptions.
+type Persistence interface {
+	BasePersistence
+
+	// Transact executes a series of operations within a single atomic transaction.
+	// The provided callback function receives a transaction object, and if the callback
+	// returns an error, the transaction is rolled back.
+	Transact(callback func(tx BasePersistence) (any, error)) (any, error)
 
 	// RegisterSubscription registers a callback function to be executed when a specific
 	// persistence event occurs. It returns a unique ID for the subscription.
 	RegisterSubscription(options RegisterSubscriptionOptions) string
+
 	// UnregisterSubscription removes an active subscription, specified by its ID.
 	UnregisterSubscription(id string)
+
 	// Subscriptions returns a list of all currently active subscriptions.
 	Subscriptions() ([]SubscriptionInfo, error)
 
@@ -347,7 +378,7 @@ type PersistenceInterface interface {
 		name string,
 		version *string,
 		dryRun *bool,
-	) (PersistenceCollectionInterface, error)
+	) (Collection, error)
 
 	// Migrate applies a schema migration to the collection. It takes a description and a
 	// callback function that defines the data transformation. A dry run can be performed
@@ -356,72 +387,57 @@ type PersistenceInterface interface {
 		name string,
 		migration schema.Migration,
 		dryRun *bool,
-	) (PersistenceCollectionInterface, error)
-
-}
-
-// PersistenceTransactionInterface defines the set of operations that can be performed
-// within a database transaction. It is a subset of the PersistenceInterface, ensuring
-// that transactional operations are consistent with the main persistence API, but
-// excluding non-transactional methods like creating new transactions.
-type PersistenceTransactionInterface interface {
-	// Collections returns a list of all collection names within the scope of the transaction.
-	Collections() ([]string, error)
-	// Create creates a new collection within the transaction.
-	Create(schema schema.SchemaDefinition) (PersistenceCollectionInterface, error)
-	// Delete deletes a collection within the transaction.
-	Delete(id string) (bool, error)
-	// Schema retrieves a schema definition within the transaction.
-	Schema(id string) (*schema.SchemaDefinition, error)
-	// Collection returns a handle to a specific collection within the transaction.
-	Collection(name string) (PersistenceCollectionInterface, error)
-	// Metadata retrieves metadata about the persistence layer within the transaction.
-	Metadata(
-		filter *MetadataFilter,
-	) (Metadata, error)
-
+	) (Collection, error)
 }
 
 // CollectionUpdate defines the parameters for an update operation on a collection.
 // It specifies the data to be updated and a filter to select which documents to update.
 type CollectionUpdate struct {
-	Data    map[string]any     `json:"data,omitempty"` // Data contains the fields and values to be updated.
+	Data    common.Document    `json:"data,omitempty"` // Data contains the fields and values to be updated.
 	Filter  *query.QueryFilter `json:"filter"`         // Filter is a query that selects the documents to be updated.
 	Version *int               `json:"version"`        // Version is the document version for optimistic concurrency control.
 }
 
-// PersistenceCollectionInterface defines the contract for operations on a specific collection.
+// Collection defines the contract for operations on a specific collection.
 // This includes standard CRUD (Create, Read, Update, Delete) operations, as well as methods
 // for schema management (migration, rollback), data validation, and collection-scoped
 // observability (metadata and subscriptions).
-type PersistenceCollectionInterface interface {
-	// Create adds one or more new documents to the collection.
-	Create(data any) (any, error)
+type Collection interface {
+	// CreateOne creates a single document, returning a rich result object.
+	CreateOne(doc common.Document) (*CreateResult, error)
+	// CreateMany creates multiple documents, returning a rich result for each.
+	CreateMany(docs []common.Document) ([]CreateResult, error)
+
 	// Read retrieves documents from the collection that match the given QueryDSL.
 	Read(query *query.Query) (*query.QueryResult, error)
+
 	// Update modifies documents in the collection that match the filter in CollectionUpdate.
 	Update(params *CollectionUpdate) (int, error)
+
 	// Delete removes documents from the collection that match the given query filter.
 	// The 'unsafe' flag can be used to bypass safety checks.
 	Delete(query *query.QueryFilter, unsafe bool) (int, error)
+
 	// Validate checks if the given data conforms to the collection's schema.
 	// The 'loose' flag allows for partial validation.
-	Validate(data any, loose bool) (*schema.ValidationResult, error)
+	Validate(data common.Document, loose bool) (*schema.ValidationResult, error)
 
 	// Metadata retrieves metadata specifically for this collection, with an option to
 	// force a refresh of the data.
 	Metadata(
 		filter *MetadataFilter,
 		forceRefresh bool,
-	) (Metadata, error)
+	) (*CollectionMetadata, error)
 
 	// RegisterSubscription registers a subscription for an event that is specific to this collection.
 	RegisterSubscription(options RegisterSubscriptionOptions) string
+
 	// UnregisterSubscription removes a collection-specific subscription.
 	UnregisterSubscription(id string)
 
 	// Subscriptions returns a list of all active subscriptions for this collection.
 	Subscriptions() ([]SubscriptionInfo, error)
+
 	// Capabilities returns the features and limitations of the underlying database backend.
 	Capabilities() *query.Capabilities
 }

@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/asaidimu/go-anansi/v6/core/logical"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 )
 
@@ -36,7 +36,7 @@ func TestQueryBuilder_FilterCondition(t *testing.T) {
 
 func TestQueryBuilder_FilterGroup(t *testing.T) {
 	qb := query.NewQueryBuilder()
-	qb.WhereGroup(logical.LogicalAnd).
+	qb.WhereGroup(common.LogicalAnd).
 		Where("age").Gte(18).
 		Where("status").Eq("active").
 		End()
@@ -44,7 +44,7 @@ func TestQueryBuilder_FilterGroup(t *testing.T) {
 	expected := query.Query{
 		Filters: &query.QueryFilter{
 			Group: &query.FilterGroup{
-				Operator: logical.LogicalAnd,
+				Operator: common.LogicalAnd,
 				Conditions: []query.QueryFilter{
 					{
 						Condition: &query.FilterCondition{

@@ -1,4 +1,4 @@
-// Package schema provides the foundational types and structures for defining data schemas.
+// This file provides the foundational types and structures for defining data schemas.
 // It includes definitions for fields, constraints, indexes, and migrations, forming a
 // comprehensive framework for data modeling and validation.
 package schema
@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"maps"
 
-	"github.com/asaidimu/go-anansi/v6/core/logical"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
 // VersionFieldName is the reserved name for the field used in optimistic concurrency control.
@@ -94,7 +94,7 @@ func (c Constraint[T]) IsSchemaConstraintRule() {}
 // ConstraintGroup defines a group of multiple constraints with a logical operator.
 type ConstraintGroup[T FieldType] struct {
 	Name     string                    `json:"name"`
-	Operator logical.LogicalOperator   `json:"operator"`
+	Operator common.LogicalOperator   `json:"operator"`
 	Rules    []SchemaConstraintRule[T] `json:"rules"`
 }
 
@@ -199,7 +199,7 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 
 // PartialIndexCondition defines a condition for a partial index.
 type PartialIndexCondition struct {
-	Operator   logical.LogicalOperator `json:"operator"`
+	Operator   common.LogicalOperator `json:"operator"`
 	Field      string                  `json:"field"`
 	Value      any                     `json:"value,omitempty"`
 	Conditions []PartialIndexCondition `json:"conditions,omitempty"`
@@ -738,24 +738,8 @@ type InputHint map[string]any
 // SchemaHint provides hints for the schema as a whole.
 type SchemaHint map[string]any
 
-// Issue represents a validation or operational issue.
-type Issue struct {
-	Code        string `json:"code"`
-	Message     string `json:"message"`
-	Path        string `json:"path,omitempty"`
-	Severity    string `json:"severity,omitempty"`
-	Description string `json:"description,omitempty"`
-}
-
 // ValidationResult represents the result of a validation operation.
 type ValidationResult struct {
 	Valid  bool    `json:"valid"`
-	Issues []Issue `json:"issues"`
-}
-
-// Document represents a single document or row of data.
-type Document map[string]any
-
-type DocumentLike interface {
-	~map[string]any
+	Issues []common.Issue `json:"issues"`
 }

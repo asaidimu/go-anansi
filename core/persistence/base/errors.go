@@ -1,4 +1,4 @@
-package persistence
+package base
 
 import (
 	"errors"
@@ -47,6 +47,7 @@ var (
 	ErrDataConversionFailed         = errors.New("Failed to convert data to a map for validation")
 	ErrCollectionAlreadyExists      = errors.New("Collection with a similar name already exists")
 	ErrSchemaNotFound               = errors.New("Schema does not exist")
+	ErrInvalidSchema                = errors.New("Schema provided is invalid")
 	ErrUnexpectedSchemaCount        = errors.New("Unexpected count for schema name")
 	ErrFailedToInitializeEventBus   = errors.New("Could not initialize event bus")
 	ErrFailedToCreateSchemaRegistry = errors.New("Failed to create schema registry")

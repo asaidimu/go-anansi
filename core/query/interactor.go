@@ -2,6 +2,8 @@ package query
 
 import (
 	"context"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
@@ -39,43 +41,30 @@ type InteractorOptions struct {
 // consistent interface for the persistence layer to interact with the database.
 // Implementations of this interface are responsible for managing both non-transactional
 // and transactional operations.
-type DatabaseInteractor interface {
+
+type BaseDatabaseInteractor interface {
 	// SelectDocuments retrieves documents from the database based on a QueryDSL
-	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *Query) ([]schema.Document, error)
+	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *Query) ([]common.Document, error)
 
 	// SelectStream executes a SELECT query and returns a channel of documents.
-	SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *Query) (<-chan schema.Document, <-chan error, error)
+	SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *Query) (<-chan common.Document, <-chan error, error)
 
 	// UpdateDocuments modifies documents in the database that match the provided filters.
 	UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *QueryFilter) (int64, error)
 
 	// InsertDocuments adds new documents to the database.
-	InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []schema.Document) ([]schema.Document, error)
+	InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []common.Document) ([]common.Document, error)
 
 	// DeleteDocuments removes documents from the database that match the provided filters.
 	DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *QueryFilter, unsafeDelete bool) (int64, error)
 
-	// CreateCollection generates and executes the necessary DDL statements to create a
-	// table based on a schema definition.
-	CreateCollection(schema schema.SchemaDefinition) error
+	// Capabilities returns a list of capabilities provided by the underlying
+	// database
+	Capabilities() Capabilities
+}
 
-	// GetColumnType maps a generic FieldType from the schema to a database-specific
-	// column type (e.g., mapping FieldTypeString to VARCHAR(255) or TEXT).
-	GetColumnType(fieldType schema.FieldType, field *schema.FieldDefinition) string
-
-	// CreateIndex generates and executes the DDL statements to create an index on a table.
-	CreateIndex(name string, index schema.IndexDefinition) error
-
-	// DropCollection removes a table from the database.
-	DropCollection(name string) error
-
-	// CollectionExists checks if a table with the given name exists in the database.
-	CollectionExists(name string) (bool, error)
-
-	// StartTransaction begins a new database transaction and returns a new instance of
-	// the DatabaseInteractor that is scoped to that transaction. All operations on the
-	// returned interactor will be part of the transaction.
-	StartTransaction(ctx context.Context) (DatabaseInteractor, error)
+type TransactionalDatabaseInteractor interface {
+	BaseDatabaseInteractor
 
 	// Commit finalizes the transaction, making all changes permanent. This should only
 	// be called on a transactional DatabaseInteractor.
@@ -84,8 +73,13 @@ type DatabaseInteractor interface {
 	// Rollback aborts the transaction, discarding all changes made within it. This
 	// should only be called on a transactional DatabaseInteractor.
 	Rollback(ctx context.Context) error
+}
 
-	// Capabilities returns a list of capabilities provided by the underlying
-	// database
-	Capabilities() Capabilities
+type DatabaseInteractor interface {
+	BaseDatabaseInteractor
+
+	// StartTransaction begins a new database transaction and returns a new instance of
+	// the DatabaseInteractor that is scoped to that transaction. All operations on the
+	// returned interactor will be part of the transaction.
+	StartTransaction(ctx context.Context) (TransactionalDatabaseInteractor, error)
 }

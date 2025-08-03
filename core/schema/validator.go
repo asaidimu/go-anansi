@@ -6,6 +6,9 @@ import (
 	"reflect"
 	"sort"
 	"strings"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // =============================================================================
@@ -29,7 +32,7 @@ type ValidationNode interface {
 type NodeResult struct {
 	Success bool
 	Value   any
-	Issues  []Issue
+	Issues  []common.Issue
 }
 
 // ValidationContext holds the state during a validation traversal.
@@ -612,7 +615,7 @@ func (graph *ValidationGraph) buildFromConstraintRule(rule SchemaConstraintRule[
 }
 
 
-func (graph *ValidationGraph) traverse(fmap *FunctionMap, document map[string]any, loose bool) ([]Issue, bool) {
+func (graph *ValidationGraph) traverse(fmap *FunctionMap, document map[string]any, loose bool) ([]common.Issue, bool) {
 	ctx := &ValidationContext{
 		RootData:    document,
 		Data:        document,
@@ -621,7 +624,7 @@ func (graph *ValidationGraph) traverse(fmap *FunctionMap, document map[string]an
 	}
 
 	visited := make(map[string]bool)
-	var allIssues []Issue
+	var allIssues []common.Issue
 
 	nodeIDs := make([]string, 0, len(graph.nodes))
 	for id := range graph.nodes {
@@ -658,14 +661,14 @@ func (graph *ValidationGraph) traverse(fmap *FunctionMap, document map[string]an
 		}
 
 		if !progressMade && len(nextRound) > 0 {
-			allIssues = append(allIssues, Issue{Code: "CIRCULAR_DEPENDENCY", Message: "Circular dependency detected"})
+			allIssues = append(allIssues, common.Issue{Code: "CIRCULAR_DEPENDENCY", Message: "Circular dependency detected"})
 			break
 		}
 		toProcess = nextRound
 	}
 
 	if loose {
-		filteredIssues := make([]Issue, 0, len(allIssues))
+		filteredIssues := make([]common.Issue, 0, len(allIssues))
 		for _, issue := range allIssues {
 			if issue.Code != "REQUIRED_FIELD_MISSING" {
 				filteredIssues = append(filteredIssues, issue)
@@ -718,7 +721,7 @@ func NewDocumentValidator(schema *SchemaDefinition, fmap *FunctionMap) (*Documen
 // GRAPH TRAVERSAL AND VALIDATION
 // =============================================================================
 
-func (v *DocumentValidator) Validate(document map[string]any, loose bool) ([]Issue, bool) {
+func (v *DocumentValidator) Validate(document common.Document, loose bool) ([]common.Issue, bool) {
 	return v.graph.traverse(v.fmap, document, loose)
 }
 
@@ -727,37 +730,37 @@ func (v *DocumentValidator) Validate(document map[string]any, loose bool) ([]Iss
 // =============================================================================
 
 func (n *UnexpectedFieldsNode) Execute(ctx *ValidationContext) *NodeResult {
-	currentData, exists := getValueByPath(ctx.RootData, n.path)
+	currentData, exists := utils.GetValueByPath(ctx.RootData, n.path)
 	if !exists {
 		return &NodeResult{Success: true}
 	}
 
 	dataMap, ok := currentData.(map[string]any)
 	if !ok {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for unexpected field check", Path: n.path}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for unexpected field check", Path: n.path}}}
 	}
 
-	var issues []Issue
+	var issues []common.Issue
 	for key := range dataMap {
 		if !n.expectedFields[key] {
-			issues = append(issues, Issue{Code: "UNEXPECTED_FIELD", Message: fmt.Sprintf("Unexpected field '%s'", key), Path: buildPath(n.path, key)})
+			issues = append(issues, common.Issue{Code: "UNEXPECTED_FIELD", Message: fmt.Sprintf("Unexpected field '%s'", key), Path: buildPath(n.path, key)})
 		}
 	}
 	return &NodeResult{Success: len(issues) == 0, Issues: issues}
 }
 
 func (n *ConditionalUnexpectedFieldsNode) Execute(ctx *ValidationContext) *NodeResult {
-	currentData, exists := getValueByPath(ctx.RootData, n.path)
+	currentData, exists := utils.GetValueByPath(ctx.RootData, n.path)
 	if !exists {
 		return &NodeResult{Success: true}
 	}
 
 	dataMap, ok := currentData.(map[string]any)
 	if !ok {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for conditional field check", Path: n.path}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for conditional field check", Path: n.path}}}
 	}
 
-	var issues []Issue
+	var issues []common.Issue
 
 	for fieldName := range dataMap {
 		isExpected := false
@@ -771,7 +774,7 @@ func (n *ConditionalUnexpectedFieldsNode) Execute(ctx *ValidationContext) *NodeR
 		}
 
 		if !isExpected {
-			issues = append(issues, Issue{
+			issues = append(issues, common.Issue{
 				Code:    "UNEXPECTED_FIELD",
 				Message: fmt.Sprintf("Unexpected field '%s'", fieldName),
 				Path:    buildPath(n.path, fieldName),
@@ -784,14 +787,14 @@ func (n *ConditionalUnexpectedFieldsNode) Execute(ctx *ValidationContext) *NodeR
 
 func (n *RequiredFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 	parentPath := getScopedPath(n.path)
-	parentData, exists := getValueByPath(ctx.RootData, parentPath)
+	parentData, exists := utils.GetValueByPath(ctx.RootData, parentPath)
 	if !exists {
 		return &NodeResult{Success: true}
 	}
 
 	dataMap, ok := parentData.(map[string]any)
 	if !ok {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "INVALID_DATA_STRUCTURE", Message: "Cannot check for required fields on non-object parent", Path: parentPath}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_DATA_STRUCTURE", Message: "Cannot check for required fields on non-object parent", Path: parentPath}}}
 	}
 
 	fieldName := n.path[len(parentPath)+1:]
@@ -800,21 +803,21 @@ func (n *RequiredFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 	}
 
 	if _, exists := dataMap[fieldName]; !exists {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "REQUIRED_FIELD_MISSING", Message: fmt.Sprintf("Required field '%s' is missing", fieldName), Path: n.path}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "REQUIRED_FIELD_MISSING", Message: fmt.Sprintf("Required field '%s' is missing", fieldName), Path: n.path}}}
 	}
 	return &NodeResult{Success: true}
 }
 
 func (n *ConditionalRequiredFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 	parentPath := getScopedPath(n.path)
-	parentData, exists := getValueByPath(ctx.RootData, parentPath)
+	parentData, exists := utils.GetValueByPath(ctx.RootData, parentPath)
 	if !exists {
 		return &NodeResult{Success: true}
 	}
 
 	dataMap, ok := parentData.(map[string]any)
 	if !ok {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "INVALID_DATA_STRUCTURE", Message: "Cannot check for required fields on non-object parent", Path: parentPath}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_DATA_STRUCTURE", Message: "Cannot check for required fields on non-object parent", Path: parentPath}}}
 	}
 
 	conditionMet := n.condition.Evaluate(dataMap)
@@ -825,7 +828,7 @@ func (n *ConditionalRequiredFieldNode) Execute(ctx *ValidationContext) *NodeResu
 		}
 
 		if _, exists := dataMap[fieldName]; !exists {
-			return &NodeResult{Success: false, Issues: []Issue{{Code: "REQUIRED_FIELD_MISSING", Message: fmt.Sprintf("Required field '%s' is missing", fieldName), Path: n.path}}}
+			return &NodeResult{Success: false, Issues: []common.Issue{{Code: "REQUIRED_FIELD_MISSING", Message: fmt.Sprintf("Required field '%s' is missing", fieldName), Path: n.path}}}
 		}
 	}
 
@@ -833,7 +836,7 @@ func (n *ConditionalRequiredFieldNode) Execute(ctx *ValidationContext) *NodeResu
 }
 
 func (n *ConditionalFieldNode) Execute(ctx *ValidationContext) *NodeResult {
-	parentData, exists := getValueByPath(ctx.RootData, n.path)
+	parentData, exists := utils.GetValueByPath(ctx.RootData, n.path)
 	if !exists {
 		return &NodeResult{Success: true}
 	}
@@ -848,7 +851,7 @@ func (n *ConditionalFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 		if _, fieldExists := dataMap[n.fieldName]; fieldExists {
 			return &NodeResult{
 				Success: false,
-				Issues: []Issue{{
+				Issues: []common.Issue{{
 					Code:    "CONDITIONAL_FIELD_PRESENT",
 					Message: fmt.Sprintf("Field '%s' should not be present when %s != %v", n.fieldName, n.condition.Field, n.condition.Value),
 					Path:    buildPath(n.path, n.fieldName),
@@ -862,7 +865,7 @@ func (n *ConditionalFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 }
 
 func (n *TypeCheckNode) Execute(ctx *ValidationContext) *NodeResult {
-	value, exists := getValueByPath(ctx.RootData, n.path)
+	value, exists := utils.GetValueByPath(ctx.RootData, n.path)
 	if !exists {
 		return &NodeResult{Success: true}
 	}
@@ -871,7 +874,7 @@ func (n *TypeCheckNode) Execute(ctx *ValidationContext) *NodeResult {
 	valid := n.fieldDef.ValidateType(coercedValue)
 
 	if !valid {
-		return &NodeResult{Success: false, Issues: []Issue{
+		return &NodeResult{Success: false, Issues: []common.Issue{
 			{Code: "TYPE_MISMATCH", Message: fmt.Sprintf("Expected %s, got %T", n.fieldDef.Type, value), Path: n.path},
 		}, Value: value}
 	}
@@ -879,7 +882,7 @@ func (n *TypeCheckNode) Execute(ctx *ValidationContext) *NodeResult {
 }
 
 func (n *EnumValidationNode) Execute(ctx *ValidationContext) *NodeResult {
-	value, exists := getValueByPath(ctx.RootData, n.path)
+	value, exists := utils.GetValueByPath(ctx.RootData, n.path)
 	if !exists {
 		return &NodeResult{Success: true}
 	}
@@ -888,7 +891,7 @@ func (n *EnumValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 			return &NodeResult{Success: true}
 		}
 	}
-	return &NodeResult{Success: false, Issues: []Issue{{Code: "ENUM_VIOLATION", Message: fmt.Sprintf("Value must be one of: %v", n.fieldDef.Values), Path: n.path}}}
+	return &NodeResult{Success: false, Issues: []common.Issue{{Code: "ENUM_VIOLATION", Message: fmt.Sprintf("Value must be one of: %v", n.fieldDef.Values), Path: n.path}}}
 }
 
 func (n *ArrayValidationNode) Execute(ctx *ValidationContext) *NodeResult {
@@ -896,21 +899,21 @@ func (n *ArrayValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 }
 
 func (n *ArrayValidationNode) executeArrayValidation(ctx *ValidationContext) *NodeResult {
-	value, exists := getValueByPath(ctx.RootData, n.path)
+	value, exists := utils.GetValueByPath(ctx.RootData, n.path)
 	if !exists {
 		return &NodeResult{Success: true}
 	}
 
 	items, ok := value.([]any)
 	if !ok {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "TYPE_MISMATCH", Message: "Expected array", Path: n.path}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected array", Path: n.path}}}
 	}
 
 	if n.fieldDef.ItemsType == nil {
 		return &NodeResult{Success: true}
 	}
 
-	var allIssues []Issue
+	var allIssues []common.Issue
 	itemType := *n.fieldDef.ItemsType
 
 	for i, item := range items {
@@ -922,7 +925,7 @@ func (n *ArrayValidationNode) executeArrayValidation(ctx *ValidationContext) *No
 	return &NodeResult{Success: len(allIssues) == 0, Issues: allIssues}
 }
 
-func (n *ArrayValidationNode) validateArrayItem(item any, itemType FieldType, itemPath string, ctx *ValidationContext) []Issue {
+func (n *ArrayValidationNode) validateArrayItem(item any, itemType FieldType, itemPath string, ctx *ValidationContext) []common.Issue {
 	tempRootField := FieldDefinition{
 		Name:      "item",
 		Type:      itemType,
@@ -938,7 +941,7 @@ func (n *ArrayValidationNode) validateArrayItem(item any, itemType FieldType, it
 
 	validator, err := NewDocumentValidator(tempSchema, ctx.FunctionMap)
 	if err != nil {
-		return []Issue{{Code: "VALIDATOR_CREATION_ERROR", Message: err.Error(), Path: itemPath}}
+		return []common.Issue{{Code: "VALIDATOR_CREATION_ERROR", Message: err.Error(), Path: itemPath}}
 	}
 
 	itemIssues, _ := validator.Validate(map[string]any{"item": item}, false)
@@ -955,14 +958,14 @@ func (n *RecordValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 }
 
 func (n *RecordValidationNode) executeRecordValidation(ctx *ValidationContext) *NodeResult {
-	value, exists := getValueByPath(ctx.RootData, n.path)
+	value, exists := utils.GetValueByPath(ctx.RootData, n.path)
 	if !exists {
 		return &NodeResult{Success: true}
 	}
 
 	recordMap, ok := value.(map[string]any)
 	if !ok {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for record", Path: n.path}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for record", Path: n.path}}}
 	}
 
 	if n.fieldDef.Schema == nil {
@@ -971,15 +974,15 @@ func (n *RecordValidationNode) executeRecordValidation(ctx *ValidationContext) *
 
 	ref, ok := n.fieldDef.Schema.(NestedSchemaReference)
 	if !ok {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "INVALID_RECORD_SCHEMA", Message: "Record schema must be a NestedSchemaReference", Path: n.path}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_RECORD_SCHEMA", Message: "Record schema must be a NestedSchemaReference", Path: n.path}}}
 	}
 
 	nestedDef, exists := n.schema.FindNestedSchema(ref.ID)
 	if !exists {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "NESTED_SCHEMA_NOT_FOUND", Message: fmt.Sprintf("Nested schema '%s' not found for record items", ref.ID), Path: n.path}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "NESTED_SCHEMA_NOT_FOUND", Message: fmt.Sprintf("Nested schema '%s' not found for record items", ref.ID), Path: n.path}}}
 	}
 
-	var allIssues []Issue
+	var allIssues []common.Issue
 
 	for key, itemValue := range recordMap {
 		itemPath := buildPath(n.path, key)
@@ -990,7 +993,7 @@ func (n *RecordValidationNode) executeRecordValidation(ctx *ValidationContext) *
 	return &NodeResult{Success: len(allIssues) == 0, Issues: allIssues}
 }
 
-func (n *RecordValidationNode) validateRecordItem(itemValue any, itemPath string, ref NestedSchemaReference, nestedDef *NestedSchemaDefinition, ctx *ValidationContext) []Issue {
+func (n *RecordValidationNode) validateRecordItem(itemValue any, itemPath string, ref NestedSchemaReference, nestedDef *NestedSchemaDefinition, ctx *ValidationContext) []common.Issue {
 	var tempRootField FieldDefinition
 	if nestedDef.IsStructured != nil && *nestedDef.IsStructured {
 		tempRootField = FieldDefinition{Name: "item", Type: FieldTypeObject, Schema: ref}
@@ -1008,7 +1011,7 @@ func (n *RecordValidationNode) validateRecordItem(itemValue any, itemPath string
 
 	validator, err := NewDocumentValidator(tempSchema, ctx.FunctionMap)
 	if err != nil {
-		return []Issue{{Code: "VALIDATOR_CREATION_ERROR", Message: err.Error(), Path: itemPath}}
+		return []common.Issue{{Code: "VALIDATOR_CREATION_ERROR", Message: err.Error(), Path: itemPath}}
 	}
 
 	itemIssues, _ := validator.Validate(map[string]any{"item": itemValue}, false)
@@ -1021,21 +1024,21 @@ func (n *RecordValidationNode) validateRecordItem(itemValue any, itemPath string
 }
 
 func (n *SetValidationNode) Execute(ctx *ValidationContext) *NodeResult {
-	value, exists := getValueByPath(ctx.RootData, n.path)
+	value, exists := utils.GetValueByPath(ctx.RootData, n.path)
 	if !exists {
 		return &NodeResult{Success: true}
 	}
 
 	items, ok := value.([]any)
 	if !ok {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "TYPE_MISMATCH", Message: "Expected array for set", Path: n.path}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected array for set", Path: n.path}}}
 	}
 
 	seen := make(map[string]bool)
 	for i, item := range items {
 		key := fmt.Sprintf("%v", item)
 		if seen[key] {
-			return &NodeResult{Success: false, Issues: []Issue{{Code: "SET_DUPLICATE", Message: fmt.Sprintf("Duplicate value found in set at index %d", i), Path: n.path}}}
+			return &NodeResult{Success: false, Issues: []common.Issue{{Code: "SET_DUPLICATE", Message: fmt.Sprintf("Duplicate value found in set at index %d", i), Path: n.path}}}
 		}
 		seen[key] = true
 	}
@@ -1051,17 +1054,17 @@ func (n *UnionValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 }
 
 func (n *UnionValidationNode) executeUnionValidation(ctx *ValidationContext) *NodeResult {
-	value, exists := getValueByPath(ctx.RootData, n.path)
+	value, exists := utils.GetValueByPath(ctx.RootData, n.path)
 	if !exists {
 		return &NodeResult{Success: true}
 	}
 
 	schemas, ok := n.fieldDef.Schema.([]NestedSchemaReference)
 	if !ok {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "INVALID_UNION_SCHEMA", Path: n.path}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_UNION_SCHEMA", Path: n.path}}}
 	}
 
-	var specificConstraintViolations []Issue
+	var specificConstraintViolations []common.Issue
 
 	for _, schemaRef := range schemas {
 		if matched, constraintViolations := n.tryUnionSchema(value, schemaRef, ctx); matched {
@@ -1075,10 +1078,10 @@ func (n *UnionValidationNode) executeUnionValidation(ctx *ValidationContext) *No
 		return &NodeResult{Success: false, Issues: specificConstraintViolations}
 	}
 
-	return &NodeResult{Success: false, Issues: []Issue{{Code: "UNION_NO_MATCH", Message: "Value does not match any of the union schemas", Path: n.path}}}
+	return &NodeResult{Success: false, Issues: []common.Issue{{Code: "UNION_NO_MATCH", Message: "Value does not match any of the union schemas", Path: n.path}}}
 }
 
-func (n *UnionValidationNode) tryUnionSchema(value any, schemaRef NestedSchemaReference, ctx *ValidationContext) (bool, []Issue) {
+func (n *UnionValidationNode) tryUnionSchema(value any, schemaRef NestedSchemaReference, ctx *ValidationContext) (bool, []common.Issue) {
 	nestedDef, exists := n.schema.FindNestedSchema(schemaRef.ID)
 	if !exists {
 		return false, nil
@@ -1123,7 +1126,7 @@ func (n *UnionValidationNode) tryUnionSchema(value any, schemaRef NestedSchemaRe
 
 	// Check for structural vs constraint issues
 	hasStructuralIssues := false
-	var constraintViolations []Issue
+	var constraintViolations []common.Issue
 
 	for _, issue := range itemIssues {
 		switch issue.Code {
@@ -1144,15 +1147,15 @@ func (n *UnionValidationNode) tryUnionSchema(value any, schemaRef NestedSchemaRe
 func (n *ConstraintNode) Execute(ctx *ValidationContext) *NodeResult {
 	predicateFunc, exists := (*ctx.FunctionMap)[n.constraint.Predicate]
 	if !exists {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "MISSING_PREDICATE", Message: fmt.Sprintf("Predicate '%s' not found", n.constraint.Predicate), Path: n.path}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "MISSING_PREDICATE", Message: fmt.Sprintf("Predicate '%s' not found", n.constraint.Predicate), Path: n.path}}}
 	}
 
 	predicate, ok := predicateFunc.(func(PredicateParams[any]) bool)
 	if !ok {
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "INVALID_PREDICATE_TYPE", Message: fmt.Sprintf("Predicate '%s' has invalid type", n.constraint.Predicate), Path: n.path}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_PREDICATE_TYPE", Message: fmt.Sprintf("Predicate '%s' has invalid type", n.constraint.Predicate), Path: n.path}}}
 	}
 
-	predicateData, dataExists := getValueByPath(ctx.RootData, n.path)
+	predicateData, dataExists := utils.GetValueByPath(ctx.RootData, n.path)
 	if !dataExists {
 		return &NodeResult{Success: true}
 	}
@@ -1180,7 +1183,7 @@ func (n *ConstraintNode) Execute(ctx *ValidationContext) *NodeResult {
 			}
 		}
 
-		return &NodeResult{Success: false, Issues: []Issue{{Code: "CONSTRAINT_VIOLATION", Message: message, Path: issuePath}}}
+		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "CONSTRAINT_VIOLATION", Message: message, Path: issuePath}}}
 	}
 
 	return &NodeResult{Success: true}
@@ -1198,8 +1201,8 @@ func (n *ConstraintGroupNode) Execute(ctx *ValidationContext) *NodeResult {
 	}
 
 	if ok, err := n.group.Operator.Evaluate(results); !ok || err != nil {
-		groupViolationIssue := Issue{Code: "CONSTRAINT_GROUP_VIOLATION", Message: fmt.Sprintf("Constraint group '%s' failed", n.group.Name), Path: n.path}
-		return &NodeResult{Success: false, Issues: []Issue{groupViolationIssue}}
+		groupViolationIssue := common.Issue{Code: "CONSTRAINT_GROUP_VIOLATION", Message: fmt.Sprintf("Constraint group '%s' failed", n.group.Name), Path: n.path}
+		return &NodeResult{Success: false, Issues: []common.Issue{groupViolationIssue}}
 	}
 
 	return &NodeResult{Success: true}

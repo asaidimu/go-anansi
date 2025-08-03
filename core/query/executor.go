@@ -7,6 +7,7 @@ import (
 	"hash/fnv"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"go.uber.org/zap"
 )
@@ -50,7 +51,7 @@ func (e *QueryEngine) RegisterFilterFunction(operator ComparisonOperator, fn Pre
 }
 
 // Query orchestrates the entire query execution process, from partitioning to final result.
-func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *Query) ([]schema.Document, error) {
+func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *Query) ([]common.Document, error) {
 	var dbQuery, postProcessingQuery *Query
 	var err error
 
@@ -145,7 +146,7 @@ func (e *QueryEngine) generateCacheKey(dsl *Query) (uint64, error) {
 	return hasher.Sum64(), nil
 }
 
-func (e *QueryEngine) runPostProcessing(helper *QueryHelper, docs []schema.Document) ([]schema.Document, error) {
+func (e *QueryEngine) runPostProcessing(helper *QueryHelper, docs []common.Document) ([]common.Document, error) {
 	processedDocs := docs
 	var err error
 
@@ -166,7 +167,7 @@ func (e *QueryEngine) runPostProcessing(helper *QueryHelper, docs []schema.Docum
 			e.logger.Error("Post-processing aggregation failed", zap.Error(err))
 			return nil, fmt.Errorf("post-processing aggregation failed: %w", err)
 		}
-		return []schema.Document{aggResult}, nil
+		return []common.Document{aggResult}, nil
 	}
 
 	processedDocs, err = helper.Sort(processedDocs)

@@ -5,9 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"sync"
 
-	"github.com/asaidimu/go-anansi/v6/core/logical"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
@@ -19,43 +18,19 @@ var (
 	ErrNotTransaction     = errors.New("not a transaction")
 )
 
-type collection struct {
-	Name   string
-	schema *schema.SchemaDefinition
-	data   *store.Store
-}
-
 // EphemeralDatabaseInteractor provides an in-memory implementation of the
 // persistence.DatabaseInteractor interface. This is useful for testing or for
 // applications that do not require persistent storage.
 type EphemeralDatabaseInteractor struct {
-	collections map[string]*collection
-	mu          sync.RWMutex
-	parent      *EphemeralDatabaseInteractor // if non-nil, this is a transaction
+	store  *ephemeralStore
+	parent *EphemeralDatabaseInteractor // if non-nil, this is a transaction
 }
 
 var _ query.DatabaseInteractor = (*EphemeralDatabaseInteractor)(nil)
 
-// NewEphemeralDatabaseInteractor creates a new instance of EphemeralDatabaseInteractor.
-func NewEphemeralDatabaseInteractor() *EphemeralDatabaseInteractor {
-	return &EphemeralDatabaseInteractor{
-		collections: make(map[string]*collection),
-	}
-}
-
-func (i *EphemeralDatabaseInteractor) getCollection(name string) (*collection, error) {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
-	c, ok := i.collections[name]
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrCollectionNotFound, name)
-	}
-	return c, nil
-}
-
 // SelectDocuments retrieves documents from the in-memory store.
-func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]schema.Document, error) {
-	c, err := i.getCollection(schemaDef.Name)
+func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]common.Document, error) {
+	c, err := i.store.getCollection(schemaDef.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +49,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 		return nil, err
 	}
 
-	var allDocs []schema.Document
+	var allDocs []common.Document
 	stream := c.data.Stream(0)
 	defer stream.Close()
 
@@ -86,7 +61,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 			}
 			return nil, err
 		}
-		record := schema.Document(docResult.Data)
+		record := common.Document(docResult.Data)
 		allDocs = append(allDocs, record)
 	}
 
@@ -100,12 +75,12 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 	if len(dsl.Joins) > 0 {
 		currentDocs := filteredDocs
 		for _, join := range dsl.Joins {
-			rightCollection, err := i.getCollection(join.Target)
+			rightCollection, err := i.store.getCollection(join.Target)
 			if err != nil {
 				return nil, err
 			}
 
-			var rightDocs []schema.Document
+			var rightDocs []common.Document
 			rightStream := rightCollection.data.Stream(0)
 			for {
 				docResult, err := rightStream.Next()
@@ -116,7 +91,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 					rightStream.Close()
 					return nil, err
 				}
-				rightDocs = append(rightDocs, schema.Document(docResult.Data))
+				rightDocs = append(rightDocs, common.Document(docResult.Data))
 			}
 			rightStream.Close()
 
@@ -135,7 +110,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 		if err != nil {
 			return nil, err
 		}
-		return []schema.Document{aggregationResults}, nil
+		return []common.Document{aggregationResults}, nil
 	}
 
 	// Apply projection, sorting, and pagination
@@ -158,13 +133,13 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 }
 
 // SelectStream streams documents from the in-memory store.
-func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan schema.Document, <-chan error, error) {
-	c, err := i.getCollection(sc.Name)
+func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan common.Document, <-chan error, error) {
+	c, err := i.store.getCollection(sc.Name)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	docCh := make(chan schema.Document)
+	docCh := make(chan common.Document)
 	errCh := make(chan error, 1)
 
 	go func() {
@@ -192,7 +167,7 @@ func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *sche
 					return
 				}
 
-				doc := schema.Document(docResult.Data)
+				doc := common.Document(docResult.Data)
 				docCh <- doc
 			}
 		}
@@ -203,7 +178,7 @@ func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *sche
 
 // UpdateDocuments updates documents in the in-memory store.
 func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
-	c, err := i.getCollection(schemaDef.Name)
+	c, err := i.store.getCollection(schemaDef.Name)
 	if err != nil {
 		return 0, err
 	}
@@ -226,7 +201,7 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 			return 0, err
 		}
 
-		doc := schema.Document(docResult.Data)
+		doc := common.Document(docResult.Data)
 		matches, err := queryHelper.Match(doc)
 		if err != nil {
 			stream.Close()
@@ -258,13 +233,13 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 }
 
 // InsertDocuments inserts documents into the in-memory store.
-func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, records []schema.Document) ([]schema.Document, error) {
-	c, err := i.getCollection(schemaDef.Name)
+func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, records []common.Document) ([]common.Document, error) {
+	c, err := i.store.getCollection(schemaDef.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	var insertedDocs []schema.Document
+	var insertedDocs []common.Document
 	for _, doc := range records {
 		// Ensure nested maps are also of type map[string]any
 		utils.ConvertMaps(doc)
@@ -304,7 +279,7 @@ func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schem
 			return nil, err
 		}
 
-		insertedDoc := schema.Document(retrieved.Data)
+		insertedDoc := common.Document(retrieved.Data)
 		insertedDocs = append(insertedDocs, insertedDoc)
 	}
 
@@ -313,7 +288,7 @@ func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schem
 
 // DeleteDocuments deletes documents from the in-memory store.
 func (i *EphemeralDatabaseInteractor) DeleteDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
-	c, err := i.getCollection(schemaDef.Name)
+	c, err := i.store.getCollection(schemaDef.Name)
 	if err != nil {
 		return 0, err
 	}
@@ -336,7 +311,7 @@ func (i *EphemeralDatabaseInteractor) DeleteDocuments(ctx context.Context, schem
 			return 0, err
 		}
 
-		doc := schema.Document(docResult.Data)
+		doc := common.Document(docResult.Data)
 		matches, err := queryHelper.Match(doc)
 		if err != nil {
 			stream.Close()
@@ -359,130 +334,33 @@ func (i *EphemeralDatabaseInteractor) DeleteDocuments(ctx context.Context, schem
 	return deletedCount, nil
 }
 
-// CreateCollection creates a new collection in the in-memory store.
-func (i *EphemeralDatabaseInteractor) CreateCollection(schemaDef schema.SchemaDefinition) error {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-
-	if _, exists := i.collections[schemaDef.Name]; exists {
-		return fmt.Errorf("collection '%s' already exists", schemaDef.Name)
-	}
-
-	newStore := store.NewStore()
-
-	// Create indexes based on schema definition
-	for _, field := range schemaDef.Fields {
-		if field.Unique != nil && *field.Unique {
-			if err := newStore.CreateIndex(field.Name, []string{field.Name}); err != nil {
-				return fmt.Errorf("failed to create unique index for field %s: %w", field.Name, err)
-			}
-		}
-	}
-	for _, index := range schemaDef.Indexes {
-		if err := newStore.CreateIndex(index.Name, index.Fields); err != nil {
-			return fmt.Errorf("failed to create index %s: %w", index.Name, err)
-		}
-	}
-
-	newCollection := &collection{
-		Name:   schemaDef.Name,
-		schema: &schemaDef,
-		data:   newStore,
-	}
-
-	i.collections[schemaDef.Name] = newCollection
-	return nil
-}
-
-// GetColumnType returns a generic column type for the in-memory store.
-func (i *EphemeralDatabaseInteractor) GetColumnType(fieldType schema.FieldType, field *schema.FieldDefinition) string {
-	return "any"
-}
-
-// CreateIndex creates an index in the in-memory store.
-func (i *EphemeralDatabaseInteractor) CreateIndex(name string, index schema.IndexDefinition) error {
-	c, err := i.getCollection(name)
-	if err != nil {
-		return err
-	}
-
-	return c.data.CreateIndex(index.Name, index.Fields)
-}
-
-// DropCollection removes a collection from the in-memory store.
-func (i *EphemeralDatabaseInteractor) DropCollection(name string) error {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-
-	c, ok := i.collections[name]
-	if !ok {
-		return fmt.Errorf("%w: %s", ErrCollectionNotFound, name)
-	}
-
-	c.data.Close()
-	delete(i.collections, name)
-	return nil
-}
-
-// CollectionExists checks if a collection exists in the in-memory store.
-func (i *EphemeralDatabaseInteractor) CollectionExists(name string) (bool, error) {
-	i.mu.RLock()
-	defer i.mu.RUnlock()
-
-	_, exists := i.collections[name]
-	return exists, nil
-}
-
 // StartTransaction begins a new in-memory transaction.
-func (i *EphemeralDatabaseInteractor) StartTransaction(ctx context.Context) (query.DatabaseInteractor, error) {
-	i.mu.Lock()
-	defer i.mu.Unlock()
+func (i *EphemeralDatabaseInteractor) StartTransaction(ctx context.Context) (query.TransactionalDatabaseInteractor, error) {
+	i.store.mu.Lock()
+	defer i.store.mu.Unlock()
 
-	/* // Create a deep copy of the collections for the transaction
+	// Create a deep copy of the collections for the transaction
 	txCollections := make(map[string]*collection)
-	for name, c := range i.collections {
-		txStore := store.NewStore()
-		stream := c.data.Stream(0)
-		for {
-			item, err := stream.Next()
-			if err != nil {
-				if err == store.ErrStreamClosed {
-					break
-				}
-				stream.Close()
-				return nil, err
-			}
-			// We need to copy the data to avoid modifying the original
-			dataCopy := make(map[string]any)
-			maps.Copy(dataCopy, item.Data)
-			if _, err := txStore.InsertWithID(item.ID, dataCopy); err != nil {
-				stream.Close()
-				return nil, err
-			}
-		}
-		stream.Close()
-
-		// Copy indexes
-		for _, indexName := range c.data.ListIndexes() {
-			fields, _ := c.data.GetIndex(indexName)
-			if err := txStore.CreateIndex(indexName, fields); err != nil {
-				return nil, err
-			}
+	for name, c := range i.store.collections {
+		data, err := c.data.Clone()
+		if err != nil {
+			return nil, err
 		}
 
 		txCollections[name] = &collection{
 			Name:   c.Name,
 			schema: c.schema,
-			data:   txStore,
+			data:   data,
 		}
 	}
 
 	txInteractor := &EphemeralDatabaseInteractor{
-		collections: txCollections,
-		parent:      i,
-	} */
-
-	return nil, nil
+		store: &ephemeralStore{
+			collections: txCollections,
+		},
+		parent: i,
+	}
+	return txInteractor, nil
 }
 
 // Commit commits the in-memory transaction.
@@ -491,13 +369,13 @@ func (i *EphemeralDatabaseInteractor) Commit(ctx context.Context) error {
 		return ErrNotTransaction
 	}
 
-	i.parent.mu.Lock()
-	defer i.parent.mu.Unlock()
-	i.mu.RLock()
-	defer i.mu.RUnlock()
+	i.parent.store.mu.Lock()
+	defer i.parent.store.mu.Unlock()
+	i.store.mu.RLock()
+	defer i.store.mu.RUnlock()
 
 	// Replace parent's collections with the transactional ones
-	i.parent.collections = i.collections
+	i.parent.store.collections = i.store.collections
 
 	return nil
 }
@@ -514,26 +392,26 @@ func (i *EphemeralDatabaseInteractor) Rollback(ctx context.Context) error {
 // Capabilities returns the capabilities of the ephemeral database interactor.
 func (i *EphemeralDatabaseInteractor) Capabilities() query.Capabilities {
 	return query.Capabilities{
-		SupportedLogicalOperators: map[logical.LogicalOperator]struct{}{
-			logical.LogicalAnd: {},
-			logical.LogicalOr:  {},
-			logical.LogicalNot: {},
-			logical.LogicalNor: {},
-			logical.LogicalXor: {},
+		SupportedLogicalOperators: map[common.LogicalOperator]struct{}{
+			common.LogicalAnd: {},
+			common.LogicalOr:  {},
+			common.LogicalNot: {},
+			common.LogicalNor: {},
+			common.LogicalXor: {},
 		},
 		SupportedComparisonOperators: map[query.ComparisonOperator]struct{}{
-			query.ComparisonOperatorEq:        {},
-			query.ComparisonOperatorNeq:       {},
-			query.ComparisonOperatorLt:        {},
-			query.ComparisonOperatorLte:       {},
-			query.ComparisonOperatorGt:        {},
-			query.ComparisonOperatorGte:       {},
-			query.ComparisonOperatorIn:        {},
-			query.ComparisonOperatorNin:       {},
-			query.ComparisonOperatorContains:  {},
+			query.ComparisonOperatorEq:          {},
+			query.ComparisonOperatorNeq:         {},
+			query.ComparisonOperatorLt:          {},
+			query.ComparisonOperatorLte:         {},
+			query.ComparisonOperatorGt:          {},
+			query.ComparisonOperatorGte:         {},
+			query.ComparisonOperatorIn:          {},
+			query.ComparisonOperatorNin:         {},
+			query.ComparisonOperatorContains:    {},
 			query.ComparisonOperatorNotContains: {},
-			query.ComparisonOperatorExists:    {},
-			query.ComparisonOperatorNotExists: {},
+			query.ComparisonOperatorExists:      {},
+			query.ComparisonOperatorNotExists:   {},
 		},
 		SupportedAggregationFunctions: map[query.AggregationType]struct{}{
 			query.AggregationTypeCount: {},
@@ -554,7 +432,7 @@ func (i *EphemeralDatabaseInteractor) Capabilities() query.Capabilities {
 		SupportsGroupBy:      true,
 		SupportsDistinct:     true,
 		SupportsNestedFields: true,
-		// MaxWhereConditions: 0, // 0 means no limit
-		// MaxJoinClauses:     0, // 0 means no limit
+		MaxWhereConditions:   0, // 0 means no limit
+		MaxJoinClauses:       0, // 0 means no limit
 	}
 }
