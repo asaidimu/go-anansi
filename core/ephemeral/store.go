@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	store "github.com/asaidimu/go-store/v3"
 )
@@ -23,13 +24,12 @@ type collection struct {
 }
 
 // NewEphemeral creates a new in-memory database interactor and schema manager that share the same underlying data store.
-func NewEphemeral() (*EphemeralDatabaseInteractor, *EphemeralSchemaManager) {
+func NewEphemeral() (query.DatabaseInteractor) {
 	store := &ephemeralStore{
 		collections: make(map[string]*collection),
 	}
 	interactor := &EphemeralDatabaseInteractor{store: store}
-	manager := &EphemeralSchemaManager{store: store}
-	return interactor, manager
+	return interactor
 }
 
 // getCollection safely retrieves a collection by name from the store.

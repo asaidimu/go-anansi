@@ -69,7 +69,8 @@ func getUserSchema(t *testing.T) schema.SchemaDefinition {
 }
 
 func TestEphemeralDatabaseInteractor_InsertAndSelectDocuments(t *testing.T) {
-	interactor, manager := ephemeral.NewEphemeral()
+	interactor := ephemeral.NewEphemeral()
+	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
@@ -90,7 +91,8 @@ func TestEphemeralDatabaseInteractor_InsertAndSelectDocuments(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_SelectDocuments_WithFilter(t *testing.T) {
-	interactor, manager := ephemeral.NewEphemeral()
+	interactor := ephemeral.NewEphemeral()
+	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
@@ -110,7 +112,8 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithFilter(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_UpdateDocuments(t *testing.T) {
-	interactor, manager := ephemeral.NewEphemeral()
+	interactor := ephemeral.NewEphemeral()
+	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
@@ -137,7 +140,8 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_DeleteDocuments(t *testing.T) {
-	interactor, manager := ephemeral.NewEphemeral()
+	interactor := ephemeral.NewEphemeral()
+	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
@@ -161,7 +165,8 @@ func TestEphemeralDatabaseInteractor_DeleteDocuments(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedProjection(t *testing.T) {
-	interactor, manager := ephemeral.NewEphemeral()
+	interactor := ephemeral.NewEphemeral()
+	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
@@ -185,7 +190,8 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedProjection(t *tes
 }
 
 func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedFilter(t *testing.T) {
-	interactor, manager := ephemeral.NewEphemeral()
+	interactor := ephemeral.NewEphemeral()
+	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
@@ -205,7 +211,8 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedFilter(t *testing
 }
 
 func TestEphemeralDatabaseInteractor_SelectDocuments_EmptyResult(t *testing.T) {
-	interactor, manager := ephemeral.NewEphemeral()
+	interactor := ephemeral.NewEphemeral()
+	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
@@ -217,7 +224,8 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_EmptyResult(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_UpdateDocuments_NoMatch(t *testing.T) {
-	interactor, manager := ephemeral.NewEphemeral()
+	interactor := ephemeral.NewEphemeral()
+	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
@@ -231,7 +239,8 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments_NoMatch(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_DeleteDocuments_NoMatch(t *testing.T) {
-	interactor, manager := ephemeral.NewEphemeral()
+	interactor := ephemeral.NewEphemeral()
+	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
@@ -243,7 +252,8 @@ func TestEphemeralDatabaseInteractor_DeleteDocuments_NoMatch(t *testing.T) {
 }
 
 func TestEphemeralDatabaseInteractor_SelectDocuments_WithJoin(t *testing.T) {
-	interactor, manager := ephemeral.NewEphemeral()
+	interactor := ephemeral.NewEphemeral()
+	manager := interactor.SchemaManager()
 
 	// Create users collection
 	userSchema := getUserSchema(t)

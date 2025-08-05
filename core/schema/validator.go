@@ -2,7 +2,6 @@ package schema
 
 import (
 	"fmt"
-	"maps"
 	"reflect"
 	"sort"
 	"strings"
@@ -322,7 +321,9 @@ func (graph *ValidationGraph) buildConditionalSchema(schema *SchemaDefinition, b
 
 	// Collect all field entries
 	for _, structuredFieldEntry := range nsd.StructuredFieldsArray {
-		for fieldName, fieldDef := range structuredFieldEntry.Fields {
+		for _, fieldDef := range structuredFieldEntry.Fields {
+			// CORRECTED: Use fieldDef.Name as the key, not the map key.
+			fieldName := fieldDef.Name
 			allFields[fieldName] = fieldDef
 
 			if structuredFieldEntry.When == nil {
@@ -340,8 +341,10 @@ func (graph *ValidationGraph) buildConditionalSchema(schema *SchemaDefinition, b
 
 	// Process all fields with conditional awareness
 	var allFieldNodes []*baseNode
+	// CORRECTED: The 'allFields' map is now correctly keyed by field name.
 	for fieldName, fieldDef := range allFields {
-		fieldNodes := graph.buildFieldNodes(fieldDef, basePath, []string{unexpectedNode.id}, schema, dataContext, addedConstraints, conditionalFields[fieldName])
+		condition := conditionalFields[fieldName] // This will be nil for base fields
+		fieldNodes := graph.buildFieldNodes(fieldDef, basePath, []string{unexpectedNode.id}, schema, dataContext, addedConstraints, condition)
 		allFieldNodes = append(allFieldNodes, fieldNodes...)
 	}
 
@@ -369,8 +372,9 @@ func (graph *ValidationGraph) buildRegularSchema(schema *SchemaDefinition, baseP
 
 	// Create expected fields map
 	expectedFields := make(map[string]bool)
-	for name := range fieldsToProcess {
-		expectedFields[name] = true
+	// CORRECTED: Iterate over the field definitions and use the 'Name' property, not the map key.
+	for _, fieldDef := range fieldsToProcess {
+		expectedFields[fieldDef.Name] = true
 	}
 
 	// Create unexpected fields node
@@ -532,12 +536,17 @@ func (graph *ValidationGraph) buildObjectFieldNodes(fieldDef *FieldDefinition, f
 	}
 
 	// Handle structured fields
+	// CORRECTED: Rebuild the Fields map using fieldDef.Name as the key.
 	if nestedSchemaDef.StructuredFieldsArray != nil {
 		for _, structuredFieldEntry := range nestedSchemaDef.StructuredFieldsArray {
-			maps.Copy(tempSchema.Fields, structuredFieldEntry.Fields)
+			for _, def := range structuredFieldEntry.Fields {
+				tempSchema.Fields[def.Name] = def
+			}
 		}
 	} else if nestedSchemaDef.StructuredFieldsMap != nil {
-		tempSchema.Fields = nestedSchemaDef.StructuredFieldsMap
+		for _, def := range nestedSchemaDef.StructuredFieldsMap {
+			tempSchema.Fields[def.Name] = def
+		}
 	}
 
 	nestedNodes := graph.buildFromSchema(tempSchema, fieldPath, nil, make(map[string]bool), nestedSchemaDef)
@@ -789,7 +798,12 @@ func (n *RequiredFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 	parentPath := getScopedPath(n.path)
 	parentData, exists := utils.GetValueByPath(ctx.RootData, parentPath)
 	if !exists {
-		return &NodeResult{Success: true}
+		// If parent doesn't exist, a required check on a child is moot, but for required at root, we need to check.
+		if parentPath == "" {
+			// This case is handled by checking the document directly.
+		} else {
+			return &NodeResult{Success: true}
+		}
 	}
 
 	dataMap, ok := parentData.(map[string]any)
@@ -843,6 +857,7 @@ func (n *ConditionalFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 
 	dataMap, ok := parentData.(map[string]any)
 	if !ok {
+		// Not an object, so can't evaluate condition or check for field.
 		return &NodeResult{Success: true}
 	}
 
@@ -858,9 +873,11 @@ func (n *ConditionalFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 				}},
 			}
 		}
+		// Condition not met and field is absent, which is correct.
 		return &NodeResult{Success: true}
 	}
 
+	// Condition met, so field is allowed to be present. This node doesn't check for its presence, only its absence when the condition is false.
 	return &NodeResult{Success: true}
 }
 

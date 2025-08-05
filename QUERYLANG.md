@@ -46,7 +46,7 @@ A query is composed of optional clauses. A query can contain either a `WHERE` cl
 ## 5. Filters (WHERE Clause)
 
 **Purpose**: Filter records based on field values, logical combinations, function results, or text search.
-**JSON Mapping**: `QueryDSL.filters`
+**JSON Mapping**: `Query.filters`
 
 ### 5.1 Basic Conditions
 
@@ -102,7 +102,7 @@ WHERE userId IN (
 ## 6. Text Search (SEARCH Clause)
 
 **Purpose**: Full-text search across specified fields.
-**JSON Mapping**: `QueryDSL.filters.TextMatch`
+**JSON Mapping**: `Query.filters.TextMatch`
 
 **Syntax**: `  <search_type> SEARCH <query_text> [IN (<field_list>)] [WITH (<search_options>)] `
 
@@ -146,7 +146,7 @@ WITH (
 ## 7. Sorting (SORT BY Clause)
 
 **Purpose**: Specify result ordering.
-**JSON Mapping**: `QueryDSL.sort`
+**JSON Mapping**: `Query.sort`
 
 **Syntax**: `SORT BY <field_path> [ASC | DESC] {, <field_path> [ASC | DESC]}*`
 
@@ -155,7 +155,7 @@ WITH (
 ## 8. Pagination (PAGINATE Clause)
 
 **Purpose**: Control result set size and navigation.
-**JSON Mapping**: `QueryDSL.pagination`
+**JSON Mapping**: `Query.pagination`
 
 ### 8.1 Offset-based Pagination
 
@@ -168,7 +168,7 @@ WITH (
 ## 9. Projections (Data Selection and Shaping)
 
 **Purpose**: Select, exclude, or create fields in query results.
-**JSON Mapping**: `QueryDSL.projection`
+**JSON Mapping**: `Query.projection`
 
 ### 9.1 Include Fields (INCLUDE Clause)
 
@@ -216,7 +216,7 @@ COMPUTE
 ## 10. Joins (JOIN Clause)
 
 **Purpose**: Combine data from related collections.
-**JSON Mapping**: `QueryDSL.joins`
+**JSON Mapping**: `Query.joins`
 
 **Syntax**: `JOIN <join_type> <relation_name> AS <alias> ON <join_condition> [<join_projection>]`
 
@@ -243,7 +243,7 @@ INCLUDE orderId, totalAmount, items { productId, quantity }
 ## 11. Aggregations (AGGREGATE Clause)
 
 **Purpose**: Perform summary calculations on data.
-**JSON Mapping**: `QueryDSL.aggregations`
+**JSON Mapping**: `Query.aggregations`
 
 When used with a `GROUP BY` clause, functions are calculated for each group. If `GROUP BY` is omitted, aggregation functions are calculated over the entire result set.
 
@@ -262,7 +262,7 @@ When used with a `GROUP BY` clause, functions are calculated for each group. If 
 ## 12. Grouping (GROUP BY Clause)
 
 **Purpose**: Group records for aggregation.
-**JSON Mapping**: `QueryDSL.groupBy`
+**JSON Mapping**: `Query.groupBy`
 
 **Syntax**: `GROUP BY <field_path> {, <field_path>}*`
 
@@ -271,7 +271,7 @@ When used with a `GROUP BY` clause, functions are calculated for each group. If 
 ## 13. Having Filters (HAVING Clause)
 
 **Purpose**: Filter grouped results after aggregation.
-**JSON Mapping**: `QueryDSL.having`
+**JSON Mapping**: `Query.having`
 
 **Syntax**: `HAVING <filter_expression>`
 
@@ -282,7 +282,7 @@ Uses the same syntax as WHERE clause but operates on aggregated results.
 ## 14. Query Hints (HINT Clause)
 
 **Purpose**: Provide optimization directives.
-**JSON Mapping**: `QueryDSL.hints`
+**JSON Mapping**: `Query.hints`
 
 **Syntax**: `HINT <hint_type> [<hint_value>]`
 

@@ -9,7 +9,8 @@ import (
 )
 
 func TestEphemeralSchemaManager_CreateCollection(t *testing.T) {
-	_, manager := ephemeral.NewEphemeral()
+	i := ephemeral.NewEphemeral()
+	manager := i.SchemaManager()
 	schemaDef := schema.SchemaDefinition{Name: "users"}
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
@@ -20,7 +21,8 @@ func TestEphemeralSchemaManager_CreateCollection(t *testing.T) {
 }
 
 func TestEphemeralSchemaManager_CreateCollection_AlreadyExists(t *testing.T) {
-	_, manager := ephemeral.NewEphemeral()
+	i := ephemeral.NewEphemeral()
+	manager := i.SchemaManager()
 	schemaDef := schema.SchemaDefinition{Name: "users"}
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
@@ -30,7 +32,8 @@ func TestEphemeralSchemaManager_CreateCollection_AlreadyExists(t *testing.T) {
 }
 
 func TestEphemeralSchemaManager_DropCollection(t *testing.T) {
-	_, manager := ephemeral.NewEphemeral()
+	i := ephemeral.NewEphemeral()
+	manager := i.SchemaManager()
 	schemaDef := schema.SchemaDefinition{Name: "users"}
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)
@@ -44,7 +47,8 @@ func TestEphemeralSchemaManager_DropCollection(t *testing.T) {
 }
 
 func TestEphemeralSchemaManager_CreateIndex(t *testing.T) {
-	_, manager := ephemeral.NewEphemeral()
+	i := ephemeral.NewEphemeral()
+	manager := i.SchemaManager()
 	schemaDef := schema.SchemaDefinition{Name: "users"}
 	err := manager.CreateCollection(schemaDef)
 	assert.NoError(t, err)

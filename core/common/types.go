@@ -1,5 +1,7 @@
 package common
 
+import "fmt"
+
 // Issue represents a detailed validation or operational issue. It is used to provide
 // structured, machine-readable feedback about problems encountered during an operation,
 // which is particularly useful for form validation or API error responses.
@@ -25,3 +27,11 @@ const (
 	LogicalNand LogicalOperator = "nand" // Represents a logical NAND.
 	LogicalXnor LogicalOperator = "xnor" // Represents a logical XNOR.
 )
+
+
+func (ve Issue) Error() string {
+	if ve.Path != "" {
+		return fmt.Sprintf("validation error at '%s': %s", ve.Path, ve.Message)
+	}
+	return fmt.Sprintf("validation error: %s", ve.Message)
+}

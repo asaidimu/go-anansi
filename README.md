@@ -4,57 +4,73 @@
 [![Build Status](https://github.com/asaidimu/go-anansi/workflows/Test%20Workflow/badge.svg)](https://github.com/asaidimu/go-anansi/actions)
 [![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE.md)
 
-Anansi is a comprehensive toolkit for defining, versioning, migrating, and persisting structured data, enabling schema-driven development with powerful runtime validation and adaptable storage layers. This repository provides the **Go implementation** of the Anansi persistence and query framework.
+Anansi is a comprehensive Go toolkit for schema-driven data persistence and flexible querying, supporting dynamic data models, powerful runtime validation, and adaptable storage layers.
 
 ---
 
 ## 📚 Table of Contents
 
-*   [Overview & Features](#-overview--features)
-*   [Installation & Setup](#-installation--setup)
-*   [Usage Documentation](#-usage-documentation)
-    *   [Defining Schemas](#defining-schemas)
-    *   [Initializing Persistence](#initializing-persistence)
-    *   [Creating Collections](#creating-collections)
-    *   [Basic CRUD Operations](#basic-crud-operations)
-    *   [Data Validation](#data-validation)
-    *   [Event Subscriptions](#event-subscriptions)
-    *   [Transaction Management](#transaction-management)
-    *   [Advanced Querying with QueryDSL](#advanced-querying-with-querydsl)
-    *   [In-memory Go Functions (Computed Fields & Custom Filters)](#in-memory-go-functions-computed-fields--custom-filters)
-*   [Project Architecture](#-project-architecture)
-*   [Development & Contributing](#-development--contributing)
-*   [Roadmap & Future Enhancements](#-roadmap--future-enhancements)
-*   [Additional Information](#-additional-information)
-    *   [Troubleshooting](#troubleshooting)
-    *   [FAQ](#faq)
-    *   [License](#license)
-    *   [Acknowledgments](#acknowledgments)
+*   [✨ Overview & Features](#-overview--features)
+*   [🚀 Installation & Setup](#-installation--setup)
+*   [📖 Usage Documentation](#-usage-documentation)
+*   [🏗️ Project Architecture](#%EF%B8%8F-project-architecture)
+*   [🤝 Development & Contributing](#-development--contributing)
+*   [ℹ️ Additional Information](#%EF%B8%8F-additional-information)
 
 ---
 
 ## ✨ Overview & Features
 
-Anansi is designed to bring a robust, schema-first approach to data persistence in Go applications. By externalizing data models into declarative JSON schema definitions, it allows for dynamic table creation, powerful querying, and a clear pathway for future data migrations and versioning. This framework aims to provide a high degree of flexibility and extensibility by abstracting the underlying storage mechanism.
+Anansi is designed to bring a robust, schema-first approach to data persistence in Go applications. By externalizing data models into declarative JSON schema definitions, it allows for dynamic collection (table) creation, powerful data retrieval, and a clear pathway for future data migrations and versioning. This framework aims to provide a high degree of flexibility and extensibility by abstracting the underlying storage mechanism through a pluggable `DatabaseInteractor` interface.
 
-The current implementation focuses on providing a production-ready SQLite adapter, demonstrating the core capabilities of the Anansi framework. While SQLite is the primary target for initial development, the architecture is built to support other database systems through a pluggable `persistence.DatabaseInteractor` interface. This project is still under active development, with several advanced features defined in interfaces awaiting full implementation.
+At its core, Anansi focuses on providing a rich Domain-Specific Language (DSL) for constructing queries, enabling developers to express complex data operations in a concise and intuitive manner. This DSL is designed to be highly expressive, supporting advanced filtering, sophisticated projections, multi-collection joins, and powerful aggregation capabilities, all while maintaining a clear and unambiguous mapping to structured data.
 
-**Key Features:**
+> [!WARNING]
+> This project is currently under heavy development. It is **not** ready for production use. APIs and features are subject to change.
 
-*   **Schema-Driven Data Modeling**: Define your data structures using declarative JSON schemas (`schema.SchemaDefinition`) that include field types, constraints (required, unique, default), and indexing.
-*   **Pluggable Persistence Layer**: Anansi is built around the `persistence.DatabaseInteractor` interface, allowing easy integration with various database systems. The initial release provides a comprehensive SQLite adapter.
-*   **Declarative Query DSL**: Construct complex queries using a fluent `query.QueryBuilder` API, which is then translated into efficient SQL statements by the underlying query generator.
-*   **Comprehensive CRUD Operations**: Perform `Create`, `Read`, `Update`, and `Delete` operations on your collections through a unified API.
-*   **Nested JSON Field Querying**: Seamlessly query and filter on data stored within JSON object fields in your database, treating them as first-class fields using `json_extract` for SQLite.
-*   **In-memory Go-based Processing**: Extend query capabilities with custom Go functions for:
-    *   **Computed Fields**: Define new fields dynamically by applying Go logic to retrieved data.
-    *   **Custom Filters**: Implement complex, non-SQL-standard filtering logic in Go after initial database retrieval.
-*   **Table & Index Management**: Programmatically create and manage database tables and indexes directly from your schema definitions, supporting `IF NOT EXISTS`, `DROP TABLE IF EXISTS`, and various index types.
-*   **Atomic Insert Operations**: Utilizes `RETURNING *` for `INSERT` statements (where supported, e.g., SQLite 3.35+) to atomically fetch inserted records, including auto-generated IDs and default values.
-*   **Robust Data Validation**: Validate data against defined schema constraints at runtime.
-*   **Transaction Management**: Support for atomic database operations within a transaction.
-*   **Event System**: Built-in event emission (`persistence.PersistenceEvent`) for various data operations, allowing for subscription and reactive programming.
-*   **Structured Logging**: Integrates `go.uber.org/zap` for detailed debugging and operational insights throughout the persistence layer.
+### Key Features
+
+*   **Schema-driven Development**:
+    *   Define data models using declarative JSON schemas, enabling dynamic collection creation and validation.
+    *   Support for a rich set of field types: `string`, `number`, `integer`, `boolean`, `array`, `set`, `enum`, `object`, `record`, and `union`.
+    *   Comprehensive schema validation, including required fields, type checking, enum value constraints, and custom predicate-based constraints (field-level, nested schema, and schema-level).
+    *   Support for defining indexes (e.g., unique, primary) directly within the schema.
+    *   Built-in schema versioning and migration capabilities for evolving data models.
+
+*   **Powerful Query Language (Anansi Query)**:
+    *   A natural language-like query grammar for constructing complex data retrieval operations.
+    *   **Filtering**: Basic conditions (`==`, `!=`, `<`, `<=`, `>`, `>=`, `IN`, `NOT IN`, `CONTAINS`, `NOT CONTAINS`, `EXISTS`, `NOT EXISTS`), logical combinations (`AND`, `OR`, `XOR`, `NOR`, `NOT`), and function calls as conditions.
+    *   **Text Search**: Advanced full-text search types like `MATCH`, `PHRASE`, `PREFIX`, `WILDCARD`, `FUZZY`, and `REGEX`, configurable with options like `FUZZINESS`, `MINIMUM_MATCH`, `BOOST`, `ANALYZER`, and `OPERATOR`.
+    *   **Sorting**: Multi-field sorting with ascending (`ASC`) or descending (`DESC`) order.
+    *   **Pagination**: Offset-based pagination (`OFFSET`, `LIMIT`) for controlling result set size and navigation.
+    *   **Projections**: Select (`INCLUDE`) or exclude (`EXCLUDE`) specific fields, including nested fields. Define `COMPUTE`d fields using function calls or powerful `CASE` expressions.
+    *   **Joins**: Combine data from related collections using `INNER`, `LEFT`, `RIGHT`, and `FULL` joins, with configurable `ON` conditions and nested projections for joined data.
+    *   **Aggregations**: Perform summary calculations (`COUNT`, `SUM`, `AVG`, `MIN`, `MAX`) on data, with support for `GROUP BY` fields and `HAVING` filters on aggregated results.
+    *   **Distinct Operations**: Retrieve unique records, either for the entire result set or based on specific fields.
+    *   **Union Operations**: Combine results from multiple queries using `UNION`, `UNION ALL`, `INTERSECT`, and `EXCEPT`.
+    *   **Query Hints**: Provide optimization directives to the underlying database, such as `USE INDEX`, `FORCE INDEX`, `NO INDEX`, and `MAX_TIME`.
+    *   **Functions & Case Expressions**: Support for a wide range of runtime functions and conditional logic within queries for advanced data manipulation.
+
+*   **Pluggable Persistence Layer**:
+    *   Abstract `DatabaseInteractor` interface allows seamless integration with various storage backends.
+    *   Includes a robust `ephemeral` (in-memory) implementation for rapid prototyping, testing, and lightweight use cases.
+    *   Designed to be extensible for SQL (e.g., SQLite via `mattn/go-sqlite3`), NoSQL, or other custom storage solutions.
+
+*   **Runtime Validation & Coercion**:
+    *   Automatic validation of documents against their defined schemas during write operations.
+    *   Built-in primitive type coercion (e.g., "123" to `int`, "true" to `bool`).
+
+*   **Event-Driven Observability**:
+    *   A comprehensive `PersistenceEvent` system emits events for every lifecycle operation (create, read, update, delete, migration, transaction).
+    *   Allows external modules to subscribe to and react to data changes in a decoupled manner, enabling audit logging, caching, and real-time analytics.
+
+*   **Automatic Metadata Management**:
+    *   Transparent management of an internal `_metadata_` field on every document.
+    *   Includes fields for versioning and optimistic locking, secured by HMAC-SHA256 hashing to ensure data integrity.
+
+*   **Query Optimization & Partitioning**:
+    *   A `QueryEngine` intelligently partitions complex queries, offloading native operations to the underlying database and performing unsupported operations (e.g., custom functions, complex joins on non-SQL backends) in-memory.
+    *   Leverages an LRU cache for partitioned queries to improve performance for frequently executed complex queries.
 
 ---
 
@@ -62,781 +78,631 @@ The current implementation focuses on providing a production-ready SQLite adapte
 
 ### Prerequisites
 
-Before you begin, ensure you have the following installed:
-
-*   **Go**: Version `1.24.4` or newer (as specified in `go.mod`). You can download it from [golang.org/dl](https://golang.org/dl/).
-*   **SQLite3**: The `github.com/mattn/go-sqlite3` driver requires the SQLite C library to be present on your system. Most Linux distributions and macOS come with it pre-installed. For Windows, you might need to install it manually (e.g., via MSYS2 or by downloading pre-compiled binaries).
+*   [Go](https://go.dev/dl/) (version 1.24.4 or higher recommended)
+*   Git
 
 ### Installation Steps
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/asaidimu/go-anansi.git
-    cd go-anansi
-    ```
-2.  **Download dependencies:**
-    ```bash
-    go mod tidy
-    ```
-3.  **Build the project (optional, for executable):**
-    ```bash
-    go build -v ./...
-    ```
+To get started with Anansi, you can clone the repository and build the project:
+
+```bash
+# Clone the repository
+git clone https://github.com/asaidimu/go-anansi.git
+
+# Navigate into the project directory
+cd go-anansi
+
+# Fetch Go modules and their dependencies
+go mod tidy
+
+# Build the project (optional, for local development)
+make build
+```
+
+Alternatively, if you want to use Anansi as a library in your Go project:
+
+```bash
+go get github.com/asaidimu/go-anansi/v6
+```
+
+### Configuration
+
+Anansi's configuration is primarily programmatic, defined through the options passed during the initialization of its core components like `Persistence` and `QueryEngine`.
+
+**Basic Setup with Ephemeral (In-Memory) Backend:**
+
+```go
+package main
+
+import (
+	"context"
+	"fmt"
+	"log"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
+	"github.com/asaidimu/go-anansi/v6/core/persistence"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"go.uber.org/zap"
+)
+
+func main() {
+	// 1. Initialize Logging and Event Bus
+	logger, _ := zap.NewDevelopment() // Or zap.NewProduction()
+	eventBus, err := persistence.NewEventBus(persistence.DefaultEventBusConfig())
+	if err != nil {
+		log.Fatalf("Failed to initialize event bus: %v", err)
+	}
+
+	// Optional: Subscribe to events for observability
+	eventBus.RegisterSubscription(base.RegisterSubscriptionOptions{
+		Event: base.DocumentCreateSuccess,
+		Label: utils.StringPtr("document_created_logger"),
+		Callback: func(ctx context.Context, event base.PersistenceEvent) error {
+			logger.Info("Document Created", zap.Stringp("collection", event.Collection), zap.Any("document", event.Output))
+			return nil
+		},
+	})
+
+	// 2. Setup the underlying database interactor (e.g., Ephemeral for in-memory)
+	// You could replace this with a SQL/NoSQL interactor for persistent storage
+	ephemeralInteractor, ephemeralSchemaManager := ephemeral.NewEphemeral()
+
+	// 3. Initialize the core Persistence layer
+	persistenceService, err := persistence.NewPersistence(
+		eventBus,
+		ephemeralInteractor,
+		ephemeralSchemaManager,
+		logger,
+		&base.MetadataOptions{
+			HmacSecretKey: []byte("your-super-secret-key-that-is-at-least-32-bytes-long"), // CHANGE THIS IN PROD!
+		},
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize persistence service: %v", err)
+	}
+
+	// 4. Define a Schema for your data
+	userSchema := schema.SchemaDefinition{
+		Name:    "users",
+		Version: "1.0.0",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":   {Name: "id", Type: schema.FieldTypeString, Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
+			"name": {Name: "name", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
+			"age":  {Name: "age", Type: schema.FieldTypeInteger},
+		},
+	}
+
+	// 5. Create a Collection based on the schema
+	usersCollection, err := persistenceService.Create(userSchema)
+	if err != nil {
+		log.Fatalf("Failed to create 'users' collection: %v", err)
+	}
+	fmt.Println("Collection 'users' created successfully.")
+
+	// 6. Create (Insert) Documents
+	doc1 := common.Document{"id": "user1", "name": "Alice", "age": 30}
+	doc2 := common.Document{"id": "user2", "name": "Bob", "age": 25}
+
+	createResult1, err := usersCollection.CreateOne(doc1)
+	if err != nil {
+		log.Fatalf("Failed to create document 1: %v", err)
+	}
+	fmt.Printf("Created document: %+v\n", createResult1.Data)
+
+	createResults, err := usersCollection.CreateMany([]common.Document{doc2})
+	if err != nil {
+		log.Fatalf("Failed to create document 2: %v", err)
+	}
+	fmt.Printf("Created documents count: %d\n", len(createResults))
+
+	// 7. Read Documents with Query
+	// Example: Find users older than 28, sorted by age descending, limit to 1
+	queryBuilder := query.NewQueryBuilder().
+		Where("age").Gt(28).
+		OrderByDesc("age").
+		Limit(1)
+
+	readQuery := queryBuilder.Build()
+	results, err := usersCollection.Read(&readQuery)
+	if err != nil {
+		log.Fatalf("Failed to read documents: %v", err)
+	}
+
+	fmt.Printf("\nQuery Results (Count: %d):\n", results.Count)
+	for _, doc := range results.Data.([]common.Document) {
+		doc.StripMetadata() // Optional: remove internal metadata for clean output
+		fmt.Printf("- %+v\n", doc)
+	}
+}
+```
 
 ### Verification
 
-To verify your installation and see Anansi in action, run the basic example:
+To verify your installation and setup, you can run the project's tests:
 
 ```bash
-go run examples/basic/main.go
+make test
 ```
 
-You should see output similar to this, demonstrating schema definition, collection creation, and basic CRUD operations:
-
-```
-INFO Anansi persistence service initialized for inventory tracking. {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO 'inventory_items' collection created successfully. {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Adding new items to inventory... {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO --- Current Inventory --- {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Found multiple items: {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Keyboard", "Quantity": 25, "Last Updated": {}}
-INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Laptop", "Quantity": 10, "Last Updated": {}}
-INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Mouse", "Quantity": 50, "Last Updated": {}}
-INFO ------------------------- {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Updating quantity for 'Laptop'... {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Laptop quantity updated {"timestamp": "2025-06-28T10:00:00.000Z", "rows_affected": 1}
-INFO --- Current Inventory --- {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Found multiple items: {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Keyboard", "Quantity": 25, "Last Updated": {}}
-INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Laptop", "Quantity": 8, "Last Updated": {}}
-INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Mouse", "Quantity": 50, "Last Updated": {}}
-INFO ------------------------- {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Deleting 'Mouse' from inventory... {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Mouse deleted {"timestamp": "2025-06-28T10:00:00.000Z", "rows_affected": 1}
-INFO --- Current Inventory --- {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Found multiple items: {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Keyboard", "Quantity": 25, "Last Updated": {}}
-INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Laptop", "Quantity": 8, "Last Updated": {}}
-INFO ------------------------- {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Reading items with quantity less than 20: {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Found 1 low stock item: {"timestamp": "2025-06-28T10:00:00.000Z"}
-INFO Item {"timestamp": "2025-06-28T10:00:00.000Z", "ID": "...", "Name": "Laptop", "Quantity": 8, "Last Updated": {}}
-```
-This confirms that the application can connect to SQLite, define a schema, create a table, insert data, query it, and manage transactions using the Anansi framework.
+This command will execute all unit tests and should complete successfully if everything is set up correctly.
 
 ---
 
-## 💡 Usage Documentation
+## 📖 Usage Documentation
 
-Anansi operates on the principle of defining your data structure as a schema, then using that schema to interact with the persistence layer.
+Anansi offers a rich API for interacting with its persistence and query layers. This section provides examples and details on how to leverage its core functionalities.
 
 ### Defining Schemas
 
-Schemas are defined using the `schema.SchemaDefinition` struct, which can be easily unmarshaled from JSON. This allows for externalizing your data models.
-
-**Example (`inventorySchemaJSON` from `examples/basic/main.go`):**
+Schemas are the backbone of Anansi, defining the structure and validation rules for your data. They are expressed in a declarative JSON format.
 
 ```json
 {
-  "name": "inventory_items",
+  "name": "products",
   "version": "1.0.0",
-  "description": "Schema for tracking inventory items",
+  "description": "Schema for e-commerce products",
   "fields": {
-    "id": { "name": "id", "type": "string", "required": true, "unique": true },
-    "item_name": { "name": "item_name", "type": "string", "required": true, "unique": true },
-    "description": { "name": "description", "type": "string", "required": false },
-    "quantity": { "name": "quantity", "type": "integer", "required": true },
-    "last_updated": { "name": "last_updated", "type": "datetime", "required": true }
+    "id": {
+      "name": "id",
+      "type": "string",
+      "required": true,
+      "unique": true,
+      "description": "Unique product identifier"
+    },
+    "name": {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "constraints": [
+        {
+          "name": "min_length_5",
+          "predicate": "minLength",
+          "parameters": { "min": 5 },
+          "errorMessage": "Product name must be at least 5 characters long"
+        }
+      ]
+    },
+    "price": {
+      "name": "price",
+      "type": "number",
+      "required": true,
+      "constraints": [
+        {
+          "name": "positive_price",
+          "predicate": "isPositive"
+        }
+      ]
+    },
+    "category": {
+      "name": "category",
+      "type": "enum",
+      "values": ["electronics", "apparel", "books", "home"],
+      "required": true
+    },
+    "details": {
+      "name": "details",
+      "type": "object",
+      "schema": {
+        "id": "product_details"
+      }
+    },
+    "tags": {
+      "name": "tags",
+      "type": "array",
+      "itemsType": "string"
+    },
+    "variants": {
+      "name": "variants",
+      "type": "record",
+      "schema": {
+        "id": "product_variant"
+      }
+    }
   },
+  "nestedSchemas": {
+    "product_details": {
+      "name": "product_details",
+      "description": "Details for a product",
+      "fields": {
+        "weight_kg": { "name": "weight_kg", "type": "number" },
+        "dimensions_cm": {
+          "name": "dimensions_cm",
+          "type": "object",
+          "schema": {
+            "fields": {
+              "length": { "type": "number" },
+              "width": { "type": "number" },
+              "height": { "type": "number" }
+            }
+          }
+        }
+      }
+    },
+    "product_variant": {
+      "name": "product_variant",
+      "description": "A product variant schema",
+      "type": "object",
+      "schema": {
+        "fields": {
+          "sku": { "name": "sku", "type": "string", "required": true },
+          "color": { "name": "color", "type": "string" },
+          "size": { "name": "size", "type": "string" }
+        }
+      }
+    }
+  },
+  "constraints": [
+    {
+      "name": "expensive_electronics_check",
+      "operator": "AND",
+      "rules": [
+        {
+          "predicate": "isExpensive",
+          "field": "price"
+        },
+        {
+          "predicate": "isElectronics",
+          "field": "category"
+        }
+      ]
+    }
+  ],
   "indexes": [
-    { "fields": ["item_name"], "unique": true },
-    { "fields": ["quantity"] }
+    {
+      "name": "category_price_index",
+      "fields": ["category", "price"],
+      "type": "normal"
+    }
   ]
 }
 ```
 
-### Initializing Persistence
+*Note: Custom predicates like `minLength`, `isPositive`, `isExpensive`, `isElectronics` would need to be registered with the `SchemaValidator` or `QueryHelper` respectively.*
 
-To interact with your database, you'll need to initialize a `persistence.DatabaseInteractor` (e.g., `sqlite.SQLiteInteractor`) and then pass it to `persistence.NewPersistence`.
+### Querying Data with QueryBuilder
 
-```go
-package main
-
-import (
-	"database/sql"
-	"log"
-
-	"github.com/asaidimu/go-anansi/v6/core/persistence"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/sqlite"
-	_ "github.com/mattn/go-sqlite3" // SQLite driver
-	"go.uber.org/zap"
-)
-
-func main() {
-	// Setup logger
-	config := zap.NewProductionConfig()
-	config.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
-	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	config.EncoderConfig.TimeKey = "timestamp"
-
-	logger, err := config.Build()
-	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
-	}
-	defer logger.Sync()
-
-	// 1. Open SQLite database connection
-	db, err := sql.Open("sqlite3", "./inventory.db")
-	if err != nil {
-		logger.Fatal("Failed to open database", zap.Error(err))
-	}
-	defer db.Close()
-
-	// 2. Initialize SQLite Interactor with default options
-	interactorOptions := sqlite.DefaultInteractorOptions()
-	interactor := sqlite.NewSQLiteInteractor(db, logger, interactorOptions, nil)
-
-	// 3. Initialize the Anansi Persistence service
-	// An empty schema.FunctionMap is passed for now; see "In-memory Go Functions" section.
-	persistenceSvc, err := persistence.NewPersistence(interactor, schema.FunctionMap{})
-	if err != nil {
-		logger.Fatal("Failed to initialize persistence service", zap.Error(err))
-	}
-	logger.Info("Anansi persistence service initialized.")
-
-	// ... now use persistenceSvc to create collections, etc.
-}
-```
-
-### Creating Collections
-
-Once `persistence.NewPersistence` is initialized, you can create a collection (which maps to a database table) using your schema definition.
-
-```go
-// inventorySchema is your schema.SchemaDefinition unmarshaled from JSON
-var inventorySchema schema.SchemaDefinition
-if err := json.Unmarshal([]byte(inventorySchemaJSON), &inventorySchema); err != nil {
-    logger.Fatal("Failed to unmarshal inventory schema", zap.Error(err))
-}
-
-var inventoryCollection persistence.PersistenceCollectionInterface
-if inventoryCollection, err = persistenceSvc.Collection(inventorySchema.Name); err != nil {
-    // Collection doesn't exist, create it
-    inventoryCollection, err = persistenceSvc.Create(inventorySchema)
-    if err != nil {
-        logger.Fatal("Failed to create 'inventory_items' collection", zap.Error(err))
-    }
-}
-logger.Info("'inventory_items' collection created successfully.")
-```
-
-### Basic CRUD Operations
-
-Anansi provides methods for common database operations.
-
-#### Create (Insert)
-
-```go
-import (
-	"time"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-)
-
-// Single record insert
-item1 := map[string]any{
-    "id":           uuid.New().String(),
-    "item_name":    "Laptop",
-    "description":  "High-performance notebook",
-    "quantity":     int64(10), // Use int64 for integer types in Anansi documents
-    "last_updated": time.Now(),
-}
-// The Create method accepts map[string]any or []map[string]any
-_, err = inventoryCollection.Create(item1) // Returns *query.QueryResult
-if err != nil {
-    logger.Error("Failed to add Laptop", zap.Error(err))
-}
-
-// Batch inserts
-item2 := map[string]any{ /* ... */ }
-item3 := map[string]any{ /* ... */ }
-batchData := []map[string]any{item2, item3}
-
-// Pass a slice of maps for batch insertion
-_, err = inventoryCollection.Create(batchData)
-if err != nil {
-    logger.Error("Failed to batch insert items", zap.Error(err))
-}
-```
-
-#### Read (Query)
-
-Read operations leverage the `query.QueryBuilder` to construct complex queries.
-
-```go
-import "github.com/asaidimu/go-anansi/v6/core/query"
-
-// Query all items, ordered by name ascending
-readQuery := query.NewQueryBuilder().OrderBy("item_name", query.SortDirectionAsc).Build()
-
-result, err := inventoryCollection.Read(&readQuery) // Read takes a pointer to QueryDSL
-if err != nil {
-    logger.Error("Failed to read inventory items", zap.Error(err))
-    return
-}
-
-// Results are []schema.Document (map[string]any) if multiple, or schema.Document if single
-if result.Count > 0 {
-	if itemDocs, ok := result.Data.([]schema.Document); ok {
-		for _, itemDoc := range itemDocs {
-			fmt.Printf("Item: ID=%v, Name=%v, Quantity=%v\n", itemDoc["id"], itemDoc["item_name"], itemDoc["quantity"])
-		}
-	} else if itemDoc, ok := result.Data.(schema.Document); ok {
-		fmt.Printf("Item: ID=%v, Name=%v, Quantity=%v\n", itemDoc["id"], itemDoc["item_name"], itemDoc["quantity"])
-	}
-} else {
-	fmt.Println("No items in inventory.")
-}
-```
-
-#### Update
-
-```go
-import "github.com/asaidimu/go-anansi/v6/core/persistence"
-
-// Update the quantity for 'Laptop'
-updateData := map[string]any{
-    "quantity":     int64(8), // Quantity reduced
-    "last_updated": time.Now(),
-}
-updateFilter := query.NewQueryBuilder().Where("item_name").Eq("Laptop").Build().Filters
-
-updateParams := &persistence.CollectionUpdate{
-	Data:   updateData,
-	Filter: updateFilter,
-}
-
-rowsAffected, err := inventoryCollection.Update(updateParams)
-if err != nil {
-    logger.Error("Failed to update Laptop quantity", zap.Error(err))
-} else {
-    logger.Info("Laptop quantity updated", zap.Int("rows_affected", rowsAffected))
-}
-```
-
-#### Delete
-
-```go
-// Delete 'Mouse' from inventory
-deleteFilter := query.NewQueryBuilder().Where("item_name").Eq("Mouse").Build().Filters
-
-// By default, DELETE requires a filter for safety (unsafe=false).
-rowsAffected, err := inventoryCollection.Delete(deleteFilter, false)
-if err != nil {
-    logger.Error("Failed to delete Mouse", zap.Error(err))
-} else {
-    logger.Info("Mouse deleted", zap.Int("rows_affected", rowsAffected))
-}
-
-// To delete an entire collection (table) from the persistence service:
-// Note: This operation is generally irreversible.
-// deleted, err := persistenceSvc.Delete("inventory_items")
-// if err != nil {
-// 	logger.Fatal("Failed to drop collection: %v", err)
-// }
-// logger.Info("Collection 'inventory_items' deleted", zap.Bool("deleted", deleted))
-```
-
-### Data Validation
-
-Anansi allows you to validate data against a collection's schema constraints at runtime using `collection.Validate()`.
-
-```go
-import "github.com/asaidimu/go-anansi/v6/core/schema"
-
-// Example: Inventory item schema requires 'item_name' and 'quantity'
-invalidItemData := map[string]any{
-    "id": "123-abc",
-    // "item_name" is missing (required)
-    "description": "Invalid item attempt",
-    "quantity":    "not-a-number", // Quantity is required and must be integer
-}
-
-// `false` for strict validation (all required fields must be present)
-validationResult, err := inventoryCollection.Validate(invalidItemData, false)
-if err != nil {
-    fmt.Printf("Error during validation: %v\n", err)
-}
-
-if !validationResult.Valid {
-    fmt.Println("Validation failed! Issues found:")
-    for _, issue := range validationResult.Issues {
-        fmt.Printf("  Code: %s, Message: %s, Path: %s, Severity: %s\n",
-            issue.Code, issue.Message, issue.Path, issue.Severity)
-    }
-} else {
-    fmt.Println("Validation successful!")
-}
-```
-
-### Event Subscriptions
-
-Anansi provides an event system allowing you to subscribe to various persistence lifecycle events.
-
-```go
-import (
-	"context"
-	"fmt"
-	"github.com/asaidimu/go-anansi/v6/core/persistence"
-)
-
-// Register a subscription to be notified when a document is created successfully
-subscriptionId := inventoryCollection.RegisterSubscription(persistence.RegisterSubscriptionOptions{
-    Event: persistence.DocumentCreateSuccess,
-    Label: persistence.StringPtr("log_new_item"),
-    Description: persistence.StringPtr("Logs details of newly created inventory items."),
-    Callback: func(ctx context.Context, event persistence.PersistenceEvent) error {
-        if event.Collection != nil && event.Output != nil {
-            fmt.Printf("EVENT: Document created in collection '%s'. Output: %+v\n",
-                *event.Collection, event.Output)
-        }
-        return nil
-    },
-})
-
-fmt.Printf("Subscribed to DocumentCreateSuccess with ID: %s\n", subscriptionId)
-
-// Later, to unsubscribe:
-// inventoryCollection.UnregisterSubscription(subscriptionId)
-
-// To get all active subscriptions for this collection:
-// subs, _ := inventoryCollection.Subscriptions()
-// for _, sub := range subs {
-//     fmt.Printf("Active Subscription: ID=%s, Event=%s, Label=%s\n", *sub.Id, sub.Event, *sub.Label)
-// }
-```
-
-### Transaction Management
-
-Anansi supports executing multiple operations within a single database transaction using `persistence.Transact()`.
-
-```go
-import (
-	"context"
-	"fmt"
-	"time"
-	"github.com/google/uuid"
-	"go.uber.org/zap"
-)
-
-_, err = persistenceSvc.Transact(func(tx persistence.PersistenceTransactionInterface) (any, error) {
-    // Get a collection instance operating within this transaction
-    txCollection, err := tx.Collection("inventory_items")
-    if err != nil {
-        return nil, fmt.Errorf("failed to get transactional collection: %w", err)
-    }
-
-    // Perform operations within the transaction.
-    // If any operation returns an error, the entire transaction will be rolled back.
-    _, err = txCollection.Create(map[string]any{
-        "id":           uuid.New().String(),
-        "item_name":    "Charger",
-        "description":  "USB-C Laptop Charger",
-        "quantity":     int64(5),
-        "last_updated": time.Now(),
-    })
-    if err != nil {
-        return nil, fmt.Errorf("tx create 'Charger' failed: %w", err)
-    }
-
-    // Attempt an operation that might fail (e.g., due to unique constraint violation if "Keyboard" exists)
-    _, err = txCollection.Create(map[string]any{
-        "id":           uuid.New().String(),
-        "item_name":    "Keyboard", // This might already exist from basic example, causing a unique constraint error
-        "description":  "Another mechanical keyboard",
-        "quantity":     int64(1),
-        "last_updated": time.Now(),
-    })
-    if err != nil {
-        // Return error to trigger rollback
-        return nil, fmt.Errorf("tx create 'Keyboard' failed (expected if already exists): %w", err)
-    }
-
-    logger.Info("Transaction operations completed, preparing to commit.")
-    return nil, nil // Return nil, nil for success, or an error to rollback
-})
-
-if err != nil {
-    logger.Error("Transaction failed and was rolled back", zap.Error(err))
-} else {
-    logger.Info("Transaction committed successfully.")
-}
-```
-
-### Advanced Querying with QueryDSL
-
-The `query.QueryBuilder` provides a rich API for constructing declarative queries:
-
-```go
-import "github.com/asaidimu/go-anansi/v6/core/query"
-
-// Example: Get items with quantity less than 20, ordered by quantity ascending, and specific fields.
-lowStockQuery := query.NewQueryBuilder().
-    Where("quantity").Lt(int64(20)). // Filter: quantity < 20
-    OrderByAsc("quantity").          // Sort by quantity ascending
-    Limit(5).Offset(0).              // Paginate: 5 results, from start
-    Select().
-        Include("item_name", "quantity"). // Project: only item_name and quantity
-    End().
-    Build()
-
-result, err := inventoryCollection.Read(&lowStockQuery) // Read takes a pointer to QueryDSL
-if err != nil {
-    logger.Error("Failed to read data with advanced query", zap.Error(err))
-} else {
-    fmt.Println("\n--- Advanced Query Results ---")
-    if result.Count > 0 {
-        if itemDocs, ok := result.Data.([]schema.Document); ok {
-            for _, r := range itemDocs {
-                fmt.Printf("Item Name: %v, Quantity: %v\n", r["item_name"], r["quantity"])
-            }
-        } else if itemDoc, ok := result.Data.(schema.Document); ok { // Handle single result
-            fmt.Printf("Item Name: %v, Quantity: %v\n", itemDoc["item_name"], itemDoc["quantity"])
-        }
-    } else {
-        fmt.Println("No items matching the advanced query.")
-    }
-}
-```
-
-**Supported QueryDSL Features:**
-
-*   **Filters**:
-    *   Comparison Operators: `Eq`, `Neq`, `Lt`, `Lte`, `Gt`, `Gte`, `In`, `Nin`, `Contains`, `NotContains`, `StartsWith`, `EndsWith`, `Exists`, `NotExists`.
-    *   Logical Operators: `WhereGroup` with `And`, `Or` for nested conditions.
-*   **Sorting**: `OrderByAsc`, `OrderByDesc` for single or multiple fields.
-*   **Pagination**: `Limit`, `Offset` for traditional pagination.
-*   **Projection**: `Select().Include(...)` or `Select().Exclude(...)` to control returned fields.
-    *   `IncludeNested`: Placeholder for future nested document projection.
-    *   `AddComputed`: For Go-based computed fields (see below).
-    *   `AddCase`: For Go-based `CASE` expressions.
-*   **Joins**: `InnerJoin`, `LeftJoin`, `RightJoin`, `FullJoin`. (Defined in interfaces but currently not fully implemented in SQL generation.)
-*   **Aggregations**: `Count`, `Sum`, `Avg`, `Min`, `Max`. (Defined in interfaces but currently not fully implemented in SQL generation.)
-*   **Window Functions**: `Window` with `PartitionBy`, `OrderBy`. (Defined in interfaces but currently not fully implemented in SQL generation.)
-*   **Query Hints**: `UseIndex`, `ForceIndex`, `NoIndex`, `MaxExecutionTime`. (Defined in interfaces but currently not fully implemented in SQL generation.)
-
-### In-memory Go Functions (Computed Fields & Custom Filters)
-
-Anansi allows you to register custom Go functions to perform operations that are either too complex for standard SQL or operate on data after initial database retrieval (e.g., on JSON fields that SQLite doesn't natively support querying efficiently). These functions are registered via the `schema.FunctionMap` when initializing `persistence.NewPersistence`.
+The `QueryBuilder` provides a fluent API to programmatically construct complex queries using the Anansi Query DSL. It's the recommended way to interact with the query layer in Go.
 
 ```go
 package main
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"fmt"
 	"log"
-	"os"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v6/core/persistence"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/sqlite"
-	_ "github.com/mattn/go-sqlite3"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 )
 
 func main() {
-	// Setup logger
-	config := zap.NewProductionConfig()
-	config.Level = zap.NewAtomicLevelAt(zapcore.InfoLevel)
-	config.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
-	config.EncoderConfig.TimeKey = "timestamp"
-	logger, err := config.Build()
+	logger := zap.NewNop() // Use a no-op logger for example simplicity
+	eventBus, _ := persistence.NewEventBus(persistence.DefaultEventBusConfig())
+	ephemeralInteractor, ephemeralSchemaManager := ephemeral.NewEphemeral()
+	persistenceService, err := persistence.NewPersistence(eventBus, ephemeralInteractor, ephemeralSchemaManager, logger, &base.MetadataOptions{HmacSecretKey: []byte("a-very-secret-key-for-testing-purposes-123")})
 	if err != nil {
-		log.Fatalf("Failed to initialize logger: %v", err)
+		log.Fatalf("Failed to init persistence: %v", err)
 	}
-	defer logger.Sync()
 
-	dbFileName := "go_functions.db"
-	if err := os.Remove(dbFileName); err != nil && !os.IsNotExist(err) {
-		logger.Fatal("Failed to remove existing database file", zap.String("file", dbFileName), zap.Error(err))
-	}
-	db, err := sql.Open("sqlite3", dbFileName)
-	if err != nil {
-		logger.Fatal("Failed to open database", zap.Error(err))
-	}
-	defer db.Close()
-
-	// 1. Define a schema with a JSON 'properties' field
-	schemaJSON := `{
-		"name": "products",
-		"version": "1.0.0",
-		"fields": {
-			"id": {"name": "id", "type": "string", "required": true, "unique": true},
-			"product_name": {"name": "product_name", "type": "string", "required": true},
-			"properties": {"name": "properties", "type": "object"}
+	productSchema := schema.SchemaDefinition{
+		Name:    "products",
+		Version: "1.0.0",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":          {Name: "id", Type: schema.FieldTypeString, Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
+			"name":        {Name: "name", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
+			"price":       {Name: "price", Type: schema.FieldTypeNumber, Required: utils.BoolPtr(true)},
+			"category":    {Name: "category", Type: schema.FieldTypeString},
+			"description": {Name: "description", Type: schema.FieldTypeString},
+			"stock":       {Name: "stock", Type: schema.FieldTypeInteger},
+			"available":   {Name: "available", Type: schema.FieldTypeBoolean},
+			"supplierId":  {Name: "supplierId", Type: schema.FieldTypeString},
 		},
-		"indexes": [{"name": "pk_product_id", "fields": ["id"], "type": "primary"}]
-	}`
-	var productSchema schema.SchemaDefinition
-	if err := json.Unmarshal([]byte(schemaJSON), &productSchema); err != nil {
-		logger.Fatal("Failed to unmarshal product schema", zap.Error(err))
 	}
-
-	// 2. Prepare the FunctionMap with your custom Go functions
-	customFunctions := schema.FunctionMap{
-		// A computed field function to combine product name and a property
-		"full_product_name": query.ComputeFunction(func(row schema.Document, args query.FilterValue) (any, error) {
-			pName, ok := row["product_name"].(string)
-			if !ok {
-				return nil, fmt.Errorf("product_name is not a string")
-			}
-			// Access nested JSON field 'properties.color'
-			if props, ok := row["properties"].(map[string]any); ok {
-				if color, ok := props["color"].(string); ok {
-					return fmt.Sprintf("%s (%s)", pName, color), nil
-				}
-			}
-			return pName, nil // Fallback if no color property
-		}),
-		// A custom filter function to check a nested property value
-		"is_premium": query.PredicateFunction(func(doc schema.Document, field string, args query.FilterValue) (bool, error) {
-			// This custom filter checks if 'properties.tier' is "premium"
-			if props, ok := doc["properties"].(map[string]any); ok {
-				if tier, ok := props["tier"].(string); ok {
-					return tier == "premium", nil
-				}
-			}
-			return false, nil // Not premium or no tier defined
-		}),
-	}
-
-	// 3. Initialize Persistence with the custom functions
-	interactor := sqlite.NewSQLiteInteractor(db, logger, sqlite.DefaultInteractorOptions(), nil)
-	persistenceService, err := persistence.NewPersistence(interactor, customFunctions)
+	productsCollection, err := persistenceService.Create(productSchema)
 	if err != nil {
-		logger.Fatal("Failed to initialize persistence", zap.Error(err))
+		log.Fatalf("Failed to create products collection: %v", err)
 	}
 
-	collection, err := persistenceService.Create(productSchema)
-	if err != nil {
-		logger.Fatal("Failed to create products collection", zap.Error(err))
+	// Insert some sample data
+	productsCollection.CreateMany([]common.Document{
+		{"id": "p001", "name": "Laptop Pro", "price": 1200.00, "category": "electronics", "description": "High performance laptop", "stock": 50, "available": true, "supplierId": "s101"},
+		{"id": "p002", "name": "Wireless Mouse", "price": 25.50, "category": "electronics", "description": "Ergonomic wireless mouse", "stock": 200, "available": true, "supplierId": "s102"},
+		{"id": "p003", "name": "Desk Chair", "price": 300.00, "category": "home", "description": "Comfortable office chair", "stock": 10, "available": false, "supplierId": "s101"},
+		{"id": "p004", "name": "USB-C Hub", "price": 45.00, "category": "electronics", "description": "Multiport adapter", "stock": 150, "available": true, "supplierId": "s103"},
+	})
+
+	// Example 1: Basic Filtering and Sorting
+	fmt.Println("\n--- Basic Filtering and Sorting ---")
+	q1 := query.NewQueryBuilder().
+		Where("category").Eq("electronics").
+		AndFilter(query.NewQueryBuilder().Where("price").Lte(100.00).Build().Filters).
+		OrderByDesc("price").
+		Build()
+	res1, _ := productsCollection.Read(&q1)
+	for _, doc := range res1.Data.([]common.Document) {
+		doc.StripMetadata()
+		fmt.Printf("ID: %s, Name: %s, Price: %.2f\n", doc["id"], doc["name"], doc["price"])
 	}
+	// Expected: ID: p004, Name: USB-C Hub, Price: 45.00
+	//           ID: p002, Name: Wireless Mouse, Price: 25.50
 
-	// Insert some data with nested JSON properties
-	collection.Create(map[string]any{"id": "p001", "product_name": "Smartphone X", "properties": map[string]any{"color": "black", "storage_gb": 128, "tier": "standard"}})
-	collection.Create(map[string]any{"id": "p002", "product_name": "Smartwatch Y", "properties": map[string]any{"color": "silver", "tier": "premium"}})
-	collection.Create(map[string]any{"id": "p003", "product_name": "Laptop Z", "properties": map[string]any{"color": "space gray", "tier": "premium", "weight_kg": 1.5}})
+	// Example 2: Text Search (MATCH-like behavior in ephemeral)
+	fmt.Println("\n--- Text Search ---")
+	q2 := query.NewQueryBuilder().
+		TextSearch("description").Contains("wireless mouse").
+		Build()
+	res2, _ := productsCollection.Read(&q2)
+	for _, doc := range res2.Data.([]common.Document) {
+		doc.StripMetadata()
+		fmt.Printf("ID: %s, Name: %s, Description: %s\n", doc["id"], doc["name"], doc["description"])
+	}
+	// Expected: ID: p002, Name: Wireless Mouse, Description: Ergonomic wireless mouse
 
-	// Query using the registered Compute Function
-	logger.Info("Querying with Go computed field:")
-	qWithGoFuncs := query.NewQueryBuilder().
-		Where("id").Gt(""). // Base filter to retrieve all data
+	// Example 3: Projection (Include, Exclude, Computed)
+	fmt.Println("\n--- Projections ---")
+	q3 := query.NewQueryBuilder().
 		Select().
-			Include("id", "product_name", "properties"). // Ensure required fields are selected from DB
-			AddComputed("full_display_name", "full_product_name"). // Use registered compute function
+		Include("id", "name", "price").
+		AddComputed("adjusted_price", "MULTIPLY", "price", 0.9). // Assuming MULTIPLY function is registered
+		AddCase("stock_status").
+		When(query.NewQueryBuilder().Where("stock").Gt(100).Build().Filters, "High Stock").
+		When(query.NewQueryBuilder().Where("stock").Gt(0).Build().Filters, "Low Stock").
+		Else("Out of Stock").
+		End().
+		End().
+		Build()
+	res3, _ := productsCollection.Read(&q3)
+	for _, doc := range res3.Data.([]common.Document) {
+		doc.StripMetadata()
+		fmt.Printf("ID: %s, Name: %s, Price: %.2f, Adjusted Price: %.2f, Stock Status: %s\n",
+			doc["id"], doc["name"], doc["price"], doc["adjusted_price"], doc["stock_status"])
+	}
+	// Expected (approx):
+	// ID: p001, Name: Laptop Pro, Price: 1200.00, Adjusted Price: 1080.00, Stock Status: High Stock
+	// ID: p002, Name: Wireless Mouse, Price: 25.50, Adjusted Price: 22.95, Stock Status: High Stock
+	// ID: p003, Name: Desk Chair, Price: 300.00, Adjusted Price: 270.00, Stock Status: Low Stock
+	// ID: p004, Name: USB-C Hub, Price: 45.00, Adjusted Price: 40.50, Stock Status: High Stock
+
+	// To make the computed fields work with `MULTIPLY` in the ephemeral helper,
+	// you'd need to register it:
+	// queryEngine := query.NewQueryEngine(ephemeralInteractor, logger)
+	// queryEngine.RegisterComputeFunction("MULTIPLY", func(row common.Document, args []query.FilterValue) (any, error) {
+	// 	if len(args) != 2 { return nil, fmt.Errorf("MULTIPLY expects 2 arguments") }
+	// 	val1, err1 := queryEngine.Helper.ResolveFilterValue(row, &args[0]) // simplified, actual helper needed
+	// 	val2, err2 := queryEngine.Helper.ResolveFilterValue(row, &args[1])
+	// 	// ... perform multiplication and return
+	// })
+
+	// Example 4: Aggregations with Group By
+	fmt.Println("\n--- Aggregations ---")
+	q4 := query.NewQueryBuilder().
+		Aggregate(query.AggregationTypeCount, "id", "total_products").
+		Aggregate(query.AggregationTypeAvg, "price", "avg_price_per_category").
+		GroupBy("category").
+		Build()
+	res4, _ := productsCollection.Read(&q4)
+	for _, doc := range res4.Data.([]common.Document) {
+		doc.StripMetadata()
+		fmt.Printf("Category: %s, Total Products: %.0f, Average Price: %.2f\n",
+			doc["category"], doc["total_products"], doc["avg_price_per_category"])
+	}
+	// Expected (approx):
+	// Category: electronics, Total Products: 3, Average Price: 423.50
+	// Category: home, Total Products: 1, Average Price: 300.00
+
+	// Example 5: Joining Collections (Ephemeral currently combines into a single document)
+	fmt.Println("\n--- Joins (Conceptual for Ephemeral) ---")
+	supplierSchema := schema.SchemaDefinition{
+		Name:    "suppliers",
+		Version: "1.0.0",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":   {Name: "id", Type: schema.FieldTypeString, Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
+			"name": {Name: "name", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
+			"country": {Name: "country", Type: schema.FieldTypeString},
+		},
+	}
+	suppliersCollection, err := persistenceService.Create(supplierSchema)
+	if err != nil {
+		log.Fatalf("Failed to create suppliers collection: %v", err)
+	}
+	suppliersCollection.CreateMany([]common.Document{
+		{"id": "s101", "name": "GlobalTech Inc.", "country": "USA"},
+		{"id": "s102", "name": "Asian Electronics", "country": "China"},
+		{"id": "s103", "name": "EuroParts Ltd.", "country": "Germany"},
+	})
+
+	q5 := query.NewQueryBuilder().
+		InnerJoin("suppliers").
+		On(query.NewQueryBuilder().Where("products.supplierId").Eq(query.NewFieldReference("suppliers.id")).Build().Filters).
+		Select().
+		Include("products.name", "products.price").
+		IncludeNested("suppliers", &query.ProjectionConfiguration{
+			Include: []query.ProjectionField{{Name: "name", Alias: utils.StringPtr("supplier_name")}, {Name: "country"}},
+		}).
 		End().
 		Build()
 
-	result, err := collection.Read(&qWithGoFuncs)
-	if err != nil {
-		logger.Fatal("Failed to query with computed field", zap.Error(err))
+	res5, _ := productsCollection.Read(&q5) // Read from the "left" side of the join
+	for _, doc := range res5.Data.([]common.Document) {
+		doc.StripMetadata()
+		fmt.Printf("Product: %s (%.2f), Supplier: %s, Country: %s\n",
+			doc["products"].(common.Document)["name"],
+			doc["products"].(common.Document)["price"],
+			doc["suppliers"].(common.Document)["supplier_name"],
+			doc["suppliers"].(common.Document)["country"],
+		)
 	}
-	fmt.Println("--- Results with Computed Field ---")
-	for _, r := range result.Data.([]schema.Document) {
-		fmt.Printf("ID: %v, Product Name: %v, Display Name: %v, Properties: %v\n", r["id"], r["product_name"], r["full_display_name"], r["properties"])
-	}
+	// Expected:
+	// Product: Laptop Pro (1200.00), Supplier: GlobalTech Inc., Country: USA
+	// Product: Wireless Mouse (25.50), Supplier: Asian Electronics, Country: China
+	// Product: Desk Chair (300.00), Supplier: GlobalTech Inc., Country: USA
+	// Product: USB-C Hub (45.00), Supplier: EuroParts Ltd., Country: Germany
 
-	// Query using the custom Go filter
-	logger.Info("Querying with custom Go filter:")
-	qWithGoFilter := query.NewQueryBuilder().
-		Where("id").Custom("is_premium", true). // Use registered Go filter function
-		Select().
-			Include("id", "product_name", "properties"). // Ensure properties are fetched for the Go filter to work
-		End().
-		Build()
-
-	resultFilter, err := collection.Read(&qWithGoFilter)
-	if err != nil {
-		logger.Fatal("Failed to query with custom filter", zap.Error(err))
-	}
-	fmt.Println("\n--- Results with Custom Filter (is_premium) ---")
-	for _, r := range resultFilter.Data.([]schema.Document) {
-		fmt.Printf("ID: %v, Product Name: %v, Properties: %v\n", r["id"], r["product_name"], r["properties"])
-	}
 }
 ```
 
-**Important Note on Go Functions**:
-Go-based filters and computed fields operate on data *after* it has been retrieved from the database. This means they are executed **in-memory**. For very large datasets, using highly selective SQL filters first is crucial for performance. Go functions are best suited for complex logic that cannot be expressed easily in SQL, or for operations on `TEXT` fields containing JSON that would otherwise require complex JSON functions in SQL.
+### Advanced Query Language Specification
+
+For a comprehensive understanding of the natural language-like query grammar and its mapping to the structured JSON Query DSL, please refer to the dedicated specification:
+
+*   [QUERYLANG.md](QUERYLANG.md)
+
+This document details all supported clauses, operators, data types, functions, and provides numerous examples.
 
 ---
 
 ## 🏗️ Project Architecture
 
-Anansi is structured to be modular and extensible, separating core persistence concepts from their concrete database implementations.
+Anansi's architecture is modular and layered, designed for extensibility and separation of concerns.
+
+```mermaid
+graph TD
+    A[Application Layer] --> B(Persistence Service);
+    B --> C{Collection Layer};
+    C --> D[Query Engine];
+    D --> E[Database Interactor];
+    E -- In-Memory --> F(Ephemeral Store);
+    E -- SQL --> G(SQL Driver);
+    D --> H[Query Helper (In-Memory Processing)];
+    C --> I(Schema Validation);
+
+    subgraph Core Components
+        subgraph Persistence Module
+            C;
+        end
+        subgraph Query Module
+            D;
+            H;
+        end
+        subgraph Schema Module
+            I;
+        end
+        subgraph Storage Backends
+            E;
+            F;
+            G;
+        end
+    end
+
+    style A fill:#f9f,stroke:#333,stroke-width:2px
+    style B fill:#bbf,stroke:#333,stroke-width:2px
+    style C fill:#ccf,stroke:#333,stroke-width:2px
+    style D fill:#ddf,stroke:#333,stroke-width:2px
+    style E fill:#eef,stroke:#333,stroke-width:2px
+    style F fill:#efe,stroke:#333,stroke-width:2px
+    style G fill:#efe,stroke:#333,stroke-width:2px
+    style H fill:#fef,stroke:#333,stroke-width:2px
+    style I fill:#fcf,stroke:#333,stroke-width:2px
+```
 
 ### Core Components
 
-*   **`core/persistence/`**: This package defines the top-level interfaces (`PersistenceInterface`, `PersistenceCollectionInterface`, `PersistenceTransactionInterface`) for interacting with the persistence layer. It also houses the `Executor` (orchestrates queries) and the event system.
-*   **`core/query/`**: This package contains the declarative `QueryDSL` structure and the fluent `QueryBuilder` API for constructing queries. It also defines the `QueryGenerator` interface for translating DSL to SQL, and the `DataProcessor` for in-memory Go-based filtering and computed fields.
-*   **`core/schema/`**: This package defines the foundational `SchemaDefinition` for describing data models, including field types, constraints, indexes, and migration primitives. It also includes the `Validator` for schema-based data validation.
-*   **`sqlite/`**: This package provides the concrete implementation for SQLite databases.
-    *   `SQLiteInteractor`: Implements the `persistence.DatabaseInteractor` interface, handling low-level SQL execution (DDL and DML) and transaction management for SQLite.
-    *   `SqliteQuery`: Implements the `query.QueryGenerator` interface, translating Anansi's `QueryDSL` into SQLite-compatible SQL, including handling nested JSON field access via `json_extract`.
+*   **Persistence Module (`core/persistence`)**:
+    *   **`Persistence` Service**: The top-level entry point for data operations. It manages collections, schemas, transactions, and global event subscriptions.
+    *   **`Collection`**: Represents a single data collection (like a table). It provides CRUD operations, validation, and collection-specific event subscriptions. Decorated with metadata management and event emission.
+    *   **Event System**: (`go-events` library wrapper) A robust mechanism for emitting and subscribing to `PersistenceEvent`s across the entire persistence layer, enabling observability and reactive patterns.
+    *   **Metadata Management**: Automatically injects and manages `_metadata_` fields (version, timestamps, hash) for optimistic concurrency control and data integrity.
 
-### Data Flow for Queries (`collection.Read`)
+*   **Query Module (`core/query`)**:
+    *   **`Query`**: Defines the structured representation of queries (filters, sorts, joins, aggregations, etc.).
+    *   **`QueryBuilder`**: A fluent API for programmatically constructing `Query` objects.
+    *   **`QueryParser` (`core/query/parser`)**: Responsible for parsing the natural language-like query grammar (`QUERYLANG.md`) into the structured `Query`.
+    *   **`QueryEngine`**: The central orchestrator for query execution. It takes a `Query`, partitions it based on backend `Capabilities`, executes the database-native portion, and then performs any necessary in-memory post-processing.
+    *   **`QueryPartitioner`**: Analyzes a `Query` and the `DatabaseInteractor`'s `Capabilities` to split the query into parts executable by the database and parts requiring in-memory processing.
+    *   **`QueryHelper`**: An in-memory data processor that applies filtering, sorting, pagination, projection, and aggregation logic to Go `map[string]any` slices. This is used for post-processing or for ephemeral storage.
+    *   **`DatabaseInteractor`**: An interface defining the contract for low-level database operations (Select, Insert, Update, Delete, Transactions). Concrete implementations abstract SQL dialects or NoSQL APIs.
+    *   **`SchemaManager`**: An interface for DDL operations (Create/Drop Collection, Create Index).
 
-1.  A user constructs a `query.QueryDSL` object using `query.NewQueryBuilder()`.
-2.  The `PersistenceCollection.Read()` method receives the `query.QueryDSL`.
-3.  It delegates the operation to the internal `Executor`.
-4.  The `Executor` analyzes the `QueryDSL` to determine all fields required from the database, including dependencies for any registered Go-based functions.
-5.  It then uses the `query.QueryGenerator` (implemented by `sqlite.SqliteQuery`) to translate the SQL-executable parts of the `QueryDSL` into an SQL query string and parameters. This includes handling field path translation for nested JSON objects.
-6.  The `Executor`'s `DatabaseInteractor` (implemented by `sqlite.SQLiteInteractor`) executes this SQL query against the `sql.DB` connection.
-7.  Retrieved rows are read from `*sql.Rows` and converted into a generic `schema.Document` (map[string]any) slice, performing schema-aware type conversions (e.g., SQLite `INTEGER` to Go `bool` for `FieldTypeBoolean`, JSON strings to Go `any` for object/array types).
-8.  **Post-SQL Processing**: The `Executor` (specifically its internal `DataProcessor`) then applies any registered **Go-based filter functions** and **Go-based computed field functions** on these in-memory `schema.Document` objects.
-9.  Finally, the `Executor` applies the final projection (include/exclude fields) as specified in the `QueryDSL`.
-10. The processed `query.QueryResult` is returned to the caller.
+*   **Schema Module (`core/schema`)**:
+    *   **`SchemaDefinition`**: The core type for defining data schemas, including fields, nested schemas, constraints, and indexes.
+    *   **`DocumentValidator`**: Enforces schema rules against incoming data, providing detailed validation `Issue`s.
+    *   **`Migration`**: Defines schema changes and data transformations for versioning.
+
+*   **Ephemeral Storage (`core/ephemeral`)**:
+    *   An in-memory implementation of the `DatabaseInteractor` and `SchemaManager` interfaces, built on top of `asaidimu/go-store/v3`. Ideal for testing and lightweight data needs.
+
+*   **Common Utilities (`core/common`, `core/utils`, `core/logical`)**:
+    *   Shared data structures (`Document`, `Issue`), logical operator evaluation, and helper functions for type coercion, map/struct conversions, and path manipulation.
+
+### Data Flow (Query Execution)
+
+1.  **Query Construction**: An application constructs a query using the `QueryBuilder` (programmatically) or potentially via a text string parsed by the `QueryParser`. This results in a `query.Query` (Query) object.
+2.  **Query Partitioning**: The `QueryEngine`'s `QueryPartitioner` inspects the `query.Query` and the connected `DatabaseInteractor`'s `Capabilities`. It splits the complex `Query` into two simplified `query.Query` objects: one for the database (`dbQuery`) and one for in-memory post-processing (`postProcessingQuery`).
+3.  **Database Execution**: The `QueryEngine` passes the `dbQuery` to the `DatabaseInteractor` (e.g., `EphemeralDatabaseInteractor` or a future SQL adapter). The interactor executes the query natively against the underlying storage.
+4.  **In-Memory Post-processing**: If the `postProcessingQuery` is not empty, the `QueryEngine` retrieves the results from the database. It then uses the `QueryHelper` to apply any remaining filtering, sorting, pagination, or complex aggregations that couldn't be handled natively by the database.
+5.  **Result Projection**: Finally, the overall projection (defined in the original `Query`) is applied to the processed data, and the final results are returned to the application.
 
 ### Extension Points
 
-Anansi is designed with extensibility in mind through its interfaces:
+Anansi is designed to be extensible:
 
-*   **`persistence.DatabaseInteractor`**: To support a new SQL database (e.g., PostgreSQL, MySQL), you would implement this interface to define how DDL and DML operations are performed for that specific database system.
-*   **`query.QueryGeneratorFactory` / `query.QueryGenerator`**: For each new database, a new `QueryGenerator` implementation would be required to transform the generic `QueryDSL` into the database's specific SQL dialect.
-*   **`schema.FunctionMap`**: Allows injecting custom Go functions for computed fields and advanced filtering logic directly into the query processing pipeline.
-
-### Static Type Mapping & Code Generation (Planned Enhancement)
-
-While Anansi currently operates with dynamic data structures (`map[string]any`), we're planning to add optional static type mapping capabilities that would position Anansi as a unique hybrid persistence framework in the Go ecosystem.
-
-**Planned Functionality:**
-
-*   **Automatic Struct Generation**: Generate Go structs directly from your schema definitions, complete with appropriate tags and type annotations:
-    ```go
-    // Generated from your users schema definition
-    type User struct {
-        ID       string `json:"id" anansi:"primary_key" db:"id"`
-        Name     string `json:"name" anansi:"required" db:"name"`
-        Email    string `json:"email" anansi:"required,unique" db:"email"`
-        Age      *int   `json:"age" anansi:"optional" db:"age"`
-        IsActive bool   `json:"is_active" anansi:"required,default=true" db:"is_active"`
-    }
-    ```
-*   **Reflection-Based Mapping**: Seamlessly convert between `[]schema.Document` results and strongly-typed structs, with intelligent type coercion and null handling.
-*   **Dual Interface Support**: Continue supporting both dynamic and static approaches within the same application:
-    ```go
-    // Dynamic approach (current)
-    userData := map[string]any{"name": "Alice", "email": "alice@example.com"}
-    result, _ := collection.Create(userData)
-
-    // Static approach (planned)
-    user := User{Name: "Alice", Email: "alice@example.com"}
-    result, _ := collection.CreateTyped(&user) // Planned method
-
-    // Mixed querying
-    dynamicResults, _ := collection.Read(query)         // Returns *query.QueryResult with Data as []schema.Document
-    typedResults, _ := collection.ReadAs[User](query)   // Returns []User (planned method)
-    ```
-
-**Strategic Benefits:**
-
-*   **Best of Both Worlds**: Anansi would uniquely offer the flexibility of schema-driven development with the safety and performance of static typing when desired.
-*   **Migration Path**: Applications can start with dynamic schemas for rapid prototyping and evolve to static types for production stability, all within the same framework.
-*   **Runtime Schema Evolution**: Unlike traditional ORMs, your schemas remain the source of truth and can evolve at runtime, even when using generated structs.
-*   **Enhanced Developer Experience**: Generated structs would provide compile-time safety, better IDE support, and improved refactoring capabilities while maintaining Anansi's core architectural principles.
-
-**Implementation Considerations:**
-This enhancement would maintain backward compatibility with existing dynamic operations while adding:
-
-*   Code generation tooling integrated with your build process.
-*   Intelligent type mapping between schema definitions and Go types.
-*   Validation integration leveraging schema constraints.
-*   Performance optimizations through cached reflection operations.
-*   Relationship mapping for future foreign key support.
-
-The goal is to create a Go persistence framework that seamlessly bridges the gap between dynamic, schema-driven development and traditional static ORM approaches, giving developers the flexibility to choose the right tool for each use case within a single, cohesive framework.
+*   **Database Interactors**: Implement the `query.DatabaseInteractor` and `query.SchemaManager` interfaces to add support for new database systems (e.g., PostgreSQL, MongoDB).
+*   **Custom Functions**: Register custom `ComputeFunction` (for computed fields), `PredicateFunction` (for custom filters), or general `FunctionExecutor`s with the `QueryEngine` or `QueryHelper` to extend query capabilities.
+*   **Custom Constraints**: Define new predicates for schema validation and register them with the `schema.DocumentValidator`.
+*   **Event Subscriptions**: Subscribe to `base.PersistenceEvent`s to trigger custom logic, integrate with external systems, or implement observability features.
 
 ---
 
-## 🛠️ Development & Contributing
+## 🤝 Development & Contributing
 
-Contributions are welcome! Please follow these guidelines.
+Contributions are welcome, but please note the project is in active development.
 
 ### Development Setup
 
-1.  **Clone the repository:**
+1.  **Fork the repository**: Go to the [Anansi GitHub repository](https://github.com/asaidimu/go-anansi) and click the "Fork" button.
+2.  **Clone your fork**:
     ```bash
-    git clone https://github.com/asaidimu/go-anansi.git
+    git clone https://github.com/YOUR_GITHUB_USERNAME/go-anansi.git
     cd go-anansi
     ```
-2.  **Install dependencies:**
+3.  **Install dependencies**:
     ```bash
     go mod tidy
     ```
-3.  **Run tests to ensure everything is working:**
+4.  **Build**:
     ```bash
-    make test
+    make build
     ```
 
 ### Scripts
 
-The project includes a `Makefile` for common development tasks:
-
-*   `make build`: Builds the entire Go module, compiling all packages.
-*   `make test`: Runs all unit tests with verbose output.
-*   `make clean`: Removes generated executables and temporary files.
+*   `make build`: Compiles the Go project.
+*   `make test`: Runs all unit tests.
+*   `./bin/bump.sh <OLD_VERSION_NUM> <NEW_VERSION_NUM> [--dry-run]`: A utility script to update Go module paths for major version bumps. Always use `--dry-run` first!
 
 ### Testing
 
-Tests are written using Go's built-in `testing` package and `github.com/stretchr/testify` for assertions.
+All core functionalities are covered by unit tests. To run them:
 
-*   To run all tests:
-    ```bash
-    go test -v ./...
-    ```
-*   To run tests for a specific package (e.g., `sqlite`):
-    ```bash
-    go test -v ./sqlite
-    ```
+```bash
+make test
+```
+
+Tests use `stretchr/testify` for assertions and cover `persistence`, `schema`, `ephemeral`, and `query` modules extensively.
 
 ### Contributing Guidelines
 
-As this project is still a work in progress, detailed contribution guidelines will be expanded. For now, please consider the following:
+1.  **Fork & Branch**: Fork the repository and create a new branch for your feature or bug fix (`git checkout -b feature/your-feature-name` or `bugfix/issue-description`).
+2.  **Code**: Write your code, adhering to Go idioms and maintaining clean, readable code.
+3.  **Test**: Add or update tests to cover your changes. Ensure all existing tests pass (`make test`).
+4.  **Commit**: Write clear and concise commit messages. Follow a conventional commit style if possible (e.g., `feat: add new feature`, `fix: resolve bug`).
+5.  **Pull Request**: Submit a Pull Request to the `main` branch of the original repository. Provide a detailed description of your changes.
 
-1.  **Fork the repository** and create your branch from `main`.
-2.  **Write clear, concise commit messages** following a conventional style (e.g., `feat: add new feature`, `fix: resolve bug`).
-3.  **Ensure existing tests pass**, and add new tests for your features or bug fixes.
-4.  **Adhere to Go best practices** and clean code principles.
-5.  **Open a Pull Request** with a clear description of your changes.
+Consider checking the `REFACTOR.md` file for known areas of improvement if you're looking for tasks.
 
 ### Issue Reporting
 
-If you find a bug or have a feature request, please open an issue on the [GitHub Issue Tracker](https://github.com/asaidimu/go-anansi/issues).
-
----
-
-## 🧭 Roadmap & Future Enhancements
-
-Anansi is under active development. The current focus is on solidifying the core persistence logic and the SQLite adapter. Many capabilities are already defined in the `core` interfaces but are currently stubbed or partially implemented in the `persistence` layer.
-
-**Key areas for future development include:**
-
-*   **Schema Versioning & Migrations**: Full implementation of `core/schema.Migration`, `core/schema.SchemaMigrationHelper`, and associated persistence methods (`Collection.Migrate`, `Collection.Rollback`) to allow declarative schema evolution and data transformation between versions.
-*   **Events & Observability**: Further development of the `core/persistence.PersistenceEvent` system, including triggers and a comprehensive metadata API (`core/persistence.MetadataFilter`, `core/persistence.CollectionMetadata`) for real-time insights and reactive programming.
-*   **Scheduled Tasks**: Full implementation of `core/persistence.TaskInfo` to enable scheduling and execution of background jobs directly managed by the persistence layer.
-*   **Advanced QueryDSL Features**:
-    
-    *   Aggregation functions (`Count`, `Sum`, `Avg`, `Min`, `Max`).
-    *   Window functions (`Rank`, `Row Number`).
-    *   Join operations (`InnerJoin`, `LeftJoin`, etc.).
-    *   Query Hints for performance optimization.
-*   **More Database Adapters**: Develop `persistence.DatabaseInteractor` and `query.QueryGenerator` implementations for other popular databases (e.g., PostgreSQL, MySQL, NoSQL databases).
+Please report any bugs, issues, or feature requests via the [GitHub Issues page](https://github.com/asaidimu/go-anansi/issues).
 
 ---
 
@@ -844,26 +710,23 @@ Anansi is under active development. The current focus is on solidifying the core
 
 ### Troubleshooting
 
-*   **`database/sql: unknown driver "sqlite3"`**: Ensure you have imported the SQLite driver with a blank import: `_ "github.com/mattn/go-sqlite3"`.
-*   **`... not found: [database/sqlite3]` or similar build errors**: This often means the SQLite C library is not available on your system or not found by the Go toolchain.
-    *   **Linux**: `sudo apt-get install sqlite3 libsqlite3-dev` (Debian/Ubuntu) or `sudo yum install sqlite-devel` (RHEL/CentOS).
-    *   **macOS**: SQLite3 is usually pre-installed. If not, try `brew install sqlite`.
-    *   **Windows**: This can be more complex. You might need to install MSYS2 and then `pacman -S mingw-w64-x86_64-sqlite3`, ensuring your Go environment uses the `mingw-w64` toolchain.
-*   **`SQL logic error or missing database INSERT ... RETURNING`**: Your SQLite version might be too old. The `RETURNING` clause requires SQLite version `3.35.0` or newer.
+*   **Go Module Path Errors**: If you encounter issues related to module imports (e.g., "cannot find module .../v6"), ensure your `go.mod` file and import statements correctly reference the `github.com/asaidimu/go-anansi/v6` path. If upgrading from an older major version, use `go get github.com/asaidimu/go-anansi/v6` and run `go mod tidy`. The `bin/bump.sh` script might be helpful if you are directly modifying the codebase for version bumps.
+*   **Generic Type Coercion**: The `REFACTOR.md` notes "Extensive Use of `any`" and "Pointer to Primitives." While `any` (interface{}) is sometimes necessary for a generic query engine, it can lead to runtime type assertion panics if not handled carefully. Ensure you check types (e.g., with type assertions `value.(type)`) when processing data retrieved from the `Document` type.
+*   **Proprietary License**: Remember that the software is under a proprietary license. Using it for commercial purposes without a separate commercial license is prohibited.
 
-### FAQ
+### Changelog & Roadmap
 
-*   **What is Anansi?**
-    Anansi is a Go framework designed for schema-driven data persistence. It allows you to define your data models declaratively and interact with various databases through a unified API, supporting advanced querying and post-database processing with Go functions.
-*   **What databases are supported?**
-    Currently, a robust SQLite adapter is implemented and actively developed. The architecture is pluggable, making it possible to support other SQL and NoSQL databases in the future.
-*   **Why use Go functions for filters and computed fields?**
-    This feature provides flexibility to implement complex business logic directly in Go, especially for scenarios where standard SQL is insufficient or less performant (e.g., complex calculations, custom string matching, or operations on semi-structured JSON data where full native JSON querying is not available or efficient in the underlying database). It acts as an in-memory post-processing step, augmenting the core SQL capabilities.
+For detailed version history and breaking changes, please refer to the [CHANGELOG.md](CHANGELOG.md) file.
+As the project is under heavy development, a formal roadmap is being established. Expect continued enhancements to query capabilities, additional database interactor implementations (e.g., SQLite, PostgreSQL), and further refinement of the schema and persistence layers.
 
 ### License
 
-This project is licensed under a proprietary, source-available license. Please see the [LICENSE.md](LICENSE.md) file for details. A separate commercial license is required for any form of commercial use.
+This project is licensed under the **Anansi Platform Proprietary License**. This is a **source-available license** and is **NOT** an open-source license.
+
+**A separate commercial license is required for any form of commercial use.**
+
+For the full license text, please see the [LICENSE.md](LICENSE.md) file.
 
 ### Acknowledgments
 
-Developed by Saidimu.
+Anansi is developed by Saidimu, under CyberSync Printers & Stationers.

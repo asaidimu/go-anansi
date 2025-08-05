@@ -36,6 +36,24 @@ type InteractorOptions struct {
 	SchemaName string
 }
 
+// SchemaManager defines the contract for database schema operations.
+// It abstracts the specific DDL (Data Definition Language) syntax for creating and
+// managing collections (tables) and their indexes.
+type SchemaManager interface {
+	// CreateCollection generates and executes the necessary DDL statements to create a
+	// table based on a schema definition.
+	CreateCollection(schema schema.SchemaDefinition) error
+
+	// CreateIndex generates and executes the DDL statements to create an index on a table.
+	CreateIndex(name string, index schema.IndexDefinition) error
+
+	// DropCollection removes a table from the database.
+	DropCollection(name string) error
+
+	// CollectionExists checks if a table with the given name exists in the database.
+	CollectionExists(name string) (bool, error)
+}
+
 // DatabaseInteractor defines the contract for low-level database operations.
 // It abstracts the specific SQL dialect and database-dependent logic, providing a
 // consistent interface for the persistence layer to interact with the database.
@@ -43,6 +61,8 @@ type InteractorOptions struct {
 // and transactional operations.
 
 type BaseDatabaseInteractor interface {
+	SchemaManager
+
 	// SelectDocuments retrieves documents from the database based on a QueryDSL
 	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *Query) ([]common.Document, error)
 
@@ -61,6 +81,9 @@ type BaseDatabaseInteractor interface {
 	// Capabilities returns a list of capabilities provided by the underlying
 	// database
 	Capabilities() Capabilities
+
+	// SchemaManager returns only the methods available to the schema manager
+	SchemaManager() SchemaManager
 }
 
 type TransactionalDatabaseInteractor interface {

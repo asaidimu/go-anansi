@@ -15,7 +15,7 @@ import (
 // QueryEngine is the central orchestrator for executing queries. It implements the new
 // capabilities-based partitioning architecture.
 type QueryEngine struct {
-	Interactor       DatabaseInteractor
+	Interactor       BaseDatabaseInteractor
 	partitioner      *QueryPartitioner
 	computeFunctions map[string]ComputeFunction
 	filterFunctions  map[ComparisonOperator]PredicateFunction
@@ -24,7 +24,7 @@ type QueryEngine struct {
 }
 
 // NewQueryEngine creates a new query executor.
-func NewQueryEngine(interactor DatabaseInteractor, logger *zap.Logger) *QueryEngine {
+func NewQueryEngine(interactor BaseDatabaseInteractor, logger *zap.Logger) *QueryEngine {
 	if logger == nil {
 		logger = zap.NewNop()
 	}

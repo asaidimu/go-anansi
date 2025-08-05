@@ -1,0 +1,453 @@
+package registry
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"go.uber.org/zap"
+)
+
+var ErrCollectionNotFound = errors.New("collection not found in registry")
+
+type RegistryExecutor func(transaction bool,
+	fn func(collection base.Collection, manager query.SchemaManager) (any, error),
+) (any, error)
+
+// collectionRegistryImpl implements the CollectionRegistry interface.
+// It uses a dedicated persistence collection to manage schema metadata and a
+// schema manager to perform physical DDL operations.
+type collectionRegistryImpl struct {
+	executor RegistryExecutor
+	logger   *zap.Logger
+}
+
+// NewCollectionRegistry creates a new implementation of the CollectionRegistry.
+// It also handles the crucial bootstrapping logic of ensuring that the underlying
+// "_schemas_" collection exists, creating it if it doesn't.
+func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger) (CollectionRegistry, error) {
+	_, err := executor(false, func(collection base.Collection, manager query.SchemaManager) (any, error) {
+		exists, err := manager.CollectionExists(REGISTRY_COLLECTION_NAME)
+		if err != nil {
+			return nil, fmt.Errorf("failed to check for existence of registry collection: %w", err)
+		}
+
+		if !exists {
+			logger.Info("registry collection '_schemas_' not found, creating it now")
+			// It doesn't exist, so we must create it.
+			var registrySchema schema.SchemaDefinition
+			if err := registrySchema.From([]byte(RegistryCollectionSchemaJson)); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal internal registry schema: %w", err)
+			}
+
+			if err := manager.CreateCollection(registrySchema); err != nil {
+				return nil, fmt.Errorf("failed to create registry collection '_schemas_': %w", err)
+			}
+			logger.Info("successfully created registry collection '_schemas_'")
+		}
+		return nil, nil
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &collectionRegistryImpl{
+		executor: executor,
+		logger:   logger,
+	}, nil
+}
+
+// CreateCollection creates the initial entry for a new collection in the registry.
+func (r *collectionRegistryImpl) CreateCollection(ctx context.Context, schema *schema.SchemaDefinition) (*RegistryEntry, error) {
+	return r.withSchemaValidationAndNotExists(ctx, schema, func() (*RegistryEntry, error) {
+		// Define initial version and physical name
+		initialVersion := schema.Version
+		physicalName, err := generatePhysicalName(schema)
+		if err != nil {
+			return nil, fmt.Errorf("could not generate physical name for '%s v%s': %w", schema.Name, schema.Version, err)
+		}
+
+		// Create the registry entry
+		entry := r.buildRegistryEntry(schema, initialVersion, physicalName)
+
+		// Provision the physical collection and persist the registry entry
+		return execute(r.executor, true, func(collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
+			// Create physical collection
+			if err := r.createPhysicalCollection(manager, schema, physicalName); err != nil {
+				return nil, err
+			}
+
+			// Persist registry entry
+			if err := r.persistRegistryEntry(collection, entry); err != nil {
+				return nil, err
+			}
+
+			return entry, nil
+		})
+	})
+}
+
+// DropCollection removes a collection's entire schema history from the registry.
+func (r *collectionRegistryImpl) DropCollection(ctx context.Context, name string, opts DropCollectionOptions) error {
+	entry, err := r.GetRegistryEntry(ctx, name)
+	if err != nil {
+		return err
+	}
+
+	_, err = execute(r.executor, true, func(collection base.Collection, manager query.SchemaManager) (bool, error) {
+		// Drop physical collections if requested
+		if opts.DeletePhysicalData {
+			for _, versionRecord := range entry.Versions {
+				if err := manager.DropCollection(versionRecord.Physical); err != nil {
+					return false, fmt.Errorf("failed to drop physical collection %s: %w", versionRecord.Physical, err)
+				}
+			}
+		}
+
+		// Remove registry entry
+		if err := r.deleteRegistryEntry(collection, name); err != nil {
+			return false, err
+		}
+
+		return true, nil
+	})
+
+	return err
+}
+
+// PruneVersion permanently deletes the physical database collection associated with a non-active schema version.
+func (r *collectionRegistryImpl) PruneVersion(ctx context.Context, name, version string) (*RegistryEntry, error) {
+	return r.withEntryAndVersionValidation(ctx, name, version, func(entry *RegistryEntry, versionRecord SchemaVersionRecord) (*RegistryEntry, error) {
+		if entry.ActiveVersion == version {
+			return nil, fmt.Errorf("cannot prune active version '%s' for collection '%s'", version, name)
+		}
+
+		return r.executeWithEntryUpdate(name, entry, func(collection base.Collection, manager query.SchemaManager, entry *RegistryEntry) error {
+			// Drop the physical collection
+			if err := manager.DropCollection(versionRecord.Physical); err != nil {
+				return fmt.Errorf("failed to drop physical collection %s: %w", versionRecord.Physical, err)
+			}
+
+			// Remove version from entry
+			delete(entry.Versions, version)
+			return nil
+		})
+	})
+}
+
+// GetSchema retrieves a specific schema definition for a collection.
+func (r *collectionRegistryImpl) GetSchema(ctx context.Context, name string, version ...string) (*schema.SchemaDefinition, error) {
+	return r.withEntryAndOptionalVersion(ctx, name, version, func(entry *RegistryEntry, resolvedVersion string, versionRecord SchemaVersionRecord) (*schema.SchemaDefinition, error) {
+		return &versionRecord.Schema, nil
+	})
+}
+
+// GetRegistryEntry retrieves the complete management record for a collection.
+func (r *collectionRegistryImpl) GetRegistryEntry(ctx context.Context, name string) (*RegistryEntry, error) {
+	q := r.buildNameQuery(name)
+
+	result, err := execute(r.executor, false, func(collection base.Collection, manager query.SchemaManager) (*query.QueryResult, error) {
+		return collection.Read(&q)
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query registry for collection '%s': %w", name, err)
+	}
+
+	if result.Count == 0 {
+		return nil, ErrCollectionNotFound
+	}
+
+	if result.Count > 1 {
+		return nil, fmt.Errorf("internal error: found multiple entries for collection '%s'", name)
+	}
+
+	rows := result.Data.([]common.Document)
+	return unmarshalEntry(rows[0])
+}
+
+// AddSchemaVersion introduces a new version of a schema for an existing collection.
+func (r *collectionRegistryImpl) AddSchemaVersion(ctx context.Context, name, version string, schema *schema.SchemaDefinition, physicalName ...string) (*RegistryEntry, error) {
+	return r.withSchemaValidationAndEntryExists(ctx, name, schema, func(entry *RegistryEntry) (*RegistryEntry, error) {
+		// Check if the version already exists
+		if _, exists := entry.Versions[version]; exists {
+			return nil, fmt.Errorf("version '%s' already exists for collection '%s'", version, name)
+		}
+
+		// Determine physical name
+		actualPhysicalName, err := r.resolvePhysicalName(schema, physicalName...)
+		if err != nil {
+			return nil, err
+		}
+
+		return r.executeWithEntryUpdate(name, entry, func(collection base.Collection, manager query.SchemaManager, entry *RegistryEntry) error {
+			// Create physical collection
+			if err := r.createPhysicalCollection(manager, schema, actualPhysicalName); err != nil {
+				return err
+			}
+
+			// Add version to entry
+			entry.Versions[version] = SchemaVersionRecord{
+				Physical: actualPhysicalName,
+				Schema:   *schema,
+			}
+			return nil
+		})
+	})
+}
+
+// SetActiveVersion changes the active schema version for a collection.
+func (r *collectionRegistryImpl) SetActiveVersion(ctx context.Context, name, version string) (*RegistryEntry, error) {
+	return r.withEntryAndVersionValidation(ctx, name, version, func(entry *RegistryEntry, versionRecord SchemaVersionRecord) (*RegistryEntry, error) {
+		if entry.ActiveVersion == version {
+			return nil, fmt.Errorf("requested version is already the active version for collection '%s'", name)
+		}
+
+		return r.executeWithEntryUpdate(name, entry, func(collection base.Collection, manager query.SchemaManager, entry *RegistryEntry) error {
+			entry.ActiveVersion = version
+			return nil
+		})
+	})
+}
+
+// List retrieves the registry entries for all registered collections.
+func (r *collectionRegistryImpl) List(ctx context.Context) ([]*RegistryEntry, error) {
+	q := query.NewQueryBuilder().Build()
+
+	result, err := execute(r.executor, false, func(collection base.Collection, manager query.SchemaManager) (*query.QueryResult, error) {
+		return collection.Read(&q)
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to query registry for collections: %w", err)
+	}
+
+	if result.Count == 0 {
+		return nil, ErrCollectionNotFound
+	}
+
+	rows := result.Data.([]common.Document)
+	entries := make([]*RegistryEntry, 0, len(rows))
+	for _, row := range rows {
+		entry, err := unmarshalEntry(row)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal registry entry: %w", err)
+		}
+		entries = append(entries, entry)
+	}
+
+	return entries, nil
+}
+
+// Helper methods to reduce code duplication
+
+// Higher-order functions for common patterns
+
+func (r *collectionRegistryImpl) withSchemaValidationAndNotExists(ctx context.Context, schema *schema.SchemaDefinition, fn func() (*RegistryEntry, error)) (*RegistryEntry, error) {
+	// Validate the schema
+	if err := schema.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid schema %s: %w", schema.Name, err)
+	}
+
+	// Check if a collection with the same name already exists
+	exists, err := r.GetRegistryEntry(ctx, schema.Name)
+	if exists != nil {
+		return nil, fmt.Errorf("collection with name '%s' already exists", schema.Name)
+	}
+	if !errors.Is(err, ErrCollectionNotFound) {
+		return nil, fmt.Errorf("failed to check for existing collection: %w", err)
+	}
+
+	return fn()
+}
+
+func (r *collectionRegistryImpl) withSchemaValidationAndEntryExists(ctx context.Context, name string, schema *schema.SchemaDefinition, fn func(entry *RegistryEntry) (*RegistryEntry, error)) (*RegistryEntry, error) {
+	// Validate the schema
+	if err := schema.Validate(); err != nil {
+		return nil, fmt.Errorf("invalid schema %s: %w", schema.Name, err)
+	}
+
+	// Get existing entry
+	entry, err := r.GetRegistryEntry(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	return fn(entry)
+}
+
+func (r *collectionRegistryImpl) withEntryAndVersionValidation(ctx context.Context, name, version string, fn func(entry *RegistryEntry, versionRecord SchemaVersionRecord) (*RegistryEntry, error)) (*RegistryEntry, error) {
+	entry, err := r.GetRegistryEntry(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	versionRecord, ok := entry.Versions[version]
+	if !ok {
+		return nil, fmt.Errorf("version '%s' not found for collection '%s'", version, name)
+	}
+
+	return fn(entry, versionRecord)
+}
+
+func (r *collectionRegistryImpl) withEntryAndOptionalVersion(ctx context.Context, name string, version []string, fn func(entry *RegistryEntry, resolvedVersion string, versionRecord SchemaVersionRecord) (*schema.SchemaDefinition, error)) (*schema.SchemaDefinition, error) {
+	entry, err := r.GetRegistryEntry(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+
+	resolvedVersion := entry.ActiveVersion
+	if len(version) > 0 {
+		resolvedVersion = version[0]
+	}
+
+	versionRecord, ok := entry.Versions[resolvedVersion]
+	if !ok {
+		return nil, fmt.Errorf("version '%s' not found for collection '%s'", resolvedVersion, name)
+	}
+
+	return fn(entry, resolvedVersion, versionRecord)
+}
+
+func (r *collectionRegistryImpl) executeWithEntryUpdate(name string, entry *RegistryEntry, fn func(collection base.Collection, manager query.SchemaManager, entry *RegistryEntry) error) (*RegistryEntry, error) {
+	return execute(r.executor, true, func(collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
+		if err := fn(collection, manager, entry); err != nil {
+			return nil, err
+		}
+
+		if err := r.updateRegistryEntry(collection, name, entry); err != nil {
+			return nil, err
+		}
+
+		return entry, nil
+	})
+}
+
+func (r *collectionRegistryImpl) buildRegistryEntry(schema *schema.SchemaDefinition, version, physicalName string) *RegistryEntry {
+	description := ""
+	if schema.Description != nil {
+		description = *schema.Description
+	}
+
+	return &RegistryEntry{
+		Name:          schema.Name,
+		Description:   description,
+		ActiveVersion: version,
+		Versions: map[string]SchemaVersionRecord{
+			version: {
+				Physical: physicalName,
+				Schema:   *schema,
+			},
+		},
+	}
+}
+
+func (r *collectionRegistryImpl) createPhysicalCollection(manager query.SchemaManager, schema *schema.SchemaDefinition, physicalName string) error {
+	tempSchema := *schema
+	tempSchema.Name = physicalName
+
+	if err := manager.CreateCollection(tempSchema); err != nil {
+		return fmt.Errorf("failed to create physical collection: %w", err)
+	}
+	return nil
+}
+
+func (r *collectionRegistryImpl) entryToDocument(entry *RegistryEntry) (common.Document, error) {
+	entryBytes, err := json.Marshal(entry)
+	if err != nil {
+		return common.Document{}, fmt.Errorf("failed to marshal registry entry: %w", err)
+	}
+
+	var docData map[string]any
+	if err := json.Unmarshal(entryBytes, &docData); err != nil {
+		return common.Document{}, fmt.Errorf("failed to unmarshal registry entry to document: %w", err)
+	}
+
+	return common.MustNewDocument(docData), nil
+}
+
+func (r *collectionRegistryImpl) persistRegistryEntry(collection base.Collection, entry *RegistryEntry) error {
+	doc, err := r.entryToDocument(entry)
+	if err != nil {
+		return err
+	}
+
+	result, err := collection.CreateOne(doc)
+	if err != nil {
+		return fmt.Errorf("failed to create registry entry: %w", err)
+	}
+
+	if len(result.Issues) > 0 {
+		return fmt.Errorf("failed to create registry entry with issues: %v", result.Issues)
+	}
+
+	return nil
+}
+
+func (r *collectionRegistryImpl) updateRegistryEntry(collection base.Collection, name string, entry *RegistryEntry) error {
+	doc, err := r.entryToDocument(entry)
+	if err != nil {
+		return err
+	}
+
+	q := r.buildNameQuery(name)
+	_, err = collection.Update(&base.CollectionUpdate{
+		Filter: q.Filters,
+		Data:   doc,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to update registry entry for collection %s: %w", name, err)
+	}
+
+	return nil
+}
+
+func (r *collectionRegistryImpl) deleteRegistryEntry(collection base.Collection, name string) error {
+	q := r.buildNameQuery(name)
+	_, err := collection.Delete(q.Filters, false)
+	if err != nil {
+		return fmt.Errorf("failed to delete registry entry for collection %s: %w", name, err)
+	}
+	return nil
+}
+
+func (r *collectionRegistryImpl) buildNameQuery(name string) query.Query {
+	return query.NewQueryBuilder().Where("name").Eq(name).Build()
+}
+
+func (r *collectionRegistryImpl) resolvePhysicalName(schema *schema.SchemaDefinition, physicalName ...string) (string, error) {
+	if len(physicalName) > 0 {
+		return physicalName[0], nil
+	}
+
+	actualPhysicalName, err := generatePhysicalName(schema)
+	if err != nil {
+		return "", fmt.Errorf("could not generate physical name for '%s v%s': %w", schema.Name, schema.Version, err)
+	}
+
+	return actualPhysicalName, nil
+}
+
+func execute[T any](
+	executor RegistryExecutor,
+	requiresTransaction bool,
+	fn func(collection base.Collection, manager query.SchemaManager) (T, error),
+) (T, error) {
+	result, err := executor(requiresTransaction, func(collection base.Collection, manager query.SchemaManager) (any, error) {
+		return fn(collection, manager)
+	})
+
+	if err != nil {
+		var zero T
+		return zero, err
+	}
+
+	return result.(T), nil
+}

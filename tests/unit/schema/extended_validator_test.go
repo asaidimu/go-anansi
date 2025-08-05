@@ -44,7 +44,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 				Type:     schema.FieldTypeString,
 				Required: &trueBool,
 			},
-			"permissions": {
+			"fb08c75c-4d0c-4d28-88c2-da1e6219ee26": {
 				Name:      "permissions",
 				Type:      schema.FieldTypeArray,
 				ItemsType: &objectType,
@@ -58,7 +58,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 		Name:    "user",
 		Version: "1.0",
 		Fields: map[string]*schema.FieldDefinition{
-			"username": {
+			"6015dde0-e015-4369-8fd3-8ea37282daaf": {
 				Name:     "username",
 				Type:     schema.FieldTypeString,
 				Required: &trueBool,
@@ -93,7 +93,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 			},
 		},
 		NestedSchemas: map[string]*schema.NestedSchemaDefinition{
-			"permission":   permissionSchema,
+			"6af36eb1-c0be-44b1-afa1-feb2a14f4427":   permissionSchema,
 			"role":         roleSchema,
 			"stringSchema": {Name: "stringSchema", Type: &stringType},
 			"numberSchema": {Name: "numberSchema", Type: &integerType},

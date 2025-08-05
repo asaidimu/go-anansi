@@ -27,6 +27,7 @@ type EphemeralDatabaseInteractor struct {
 }
 
 var _ query.DatabaseInteractor = (*EphemeralDatabaseInteractor)(nil)
+var _ query.SchemaManager = (*EphemeralDatabaseInteractor)(nil)
 
 // SelectDocuments retrieves documents from the in-memory store.
 func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]common.Document, error) {
@@ -389,6 +390,11 @@ func (i *EphemeralDatabaseInteractor) Rollback(ctx context.Context) error {
 	return nil
 }
 
+// SchemaManager returns only the methods available to the schema manager
+func (i *EphemeralDatabaseInteractor) SchemaManager() query.SchemaManager {
+	return  i
+}
+
 // Capabilities returns the capabilities of the ephemeral database interactor.
 func (i *EphemeralDatabaseInteractor) Capabilities() query.Capabilities {
 	return query.Capabilities{
@@ -435,4 +441,73 @@ func (i *EphemeralDatabaseInteractor) Capabilities() query.Capabilities {
 		MaxWhereConditions:   0, // 0 means no limit
 		MaxJoinClauses:       0, // 0 means no limit
 	}
+}
+
+// CreateCollection creates a new collection in the in-memory store.
+func (m *EphemeralDatabaseInteractor) CreateCollection(schemaDef schema.SchemaDefinition) error {
+	m.store.mu.Lock()
+	defer m.store.mu.Unlock()
+
+	if _, exists := m.store.collections[schemaDef.Name]; exists {
+		return fmt.Errorf("collection '%s' already exists", schemaDef.Name)
+	}
+
+	newStore := store.NewStore()
+
+	// Create indexes based on schema definition
+	for _, field := range schemaDef.Fields {
+		if field.Unique != nil && *field.Unique {
+			if err := newStore.CreateIndex(field.Name, []string{field.Name}); err != nil {
+				return fmt.Errorf("failed to create unique index for field %s: %w", field.Name, err)
+			}
+		}
+	}
+	for _, index := range schemaDef.Indexes {
+		if err := newStore.CreateIndex(index.Name, index.Fields); err != nil {
+			return fmt.Errorf("failed to create index %s: %w", index.Name, err)
+		}
+	}
+
+	newCollection := &collection{
+		Name:   schemaDef.Name,
+		schema: &schemaDef,
+		data:   newStore,
+	}
+
+	m.store.collections[schemaDef.Name] = newCollection
+	return nil
+}
+
+// CreateIndex creates an index in the in-memory store.
+func (m *EphemeralDatabaseInteractor) CreateIndex(name string, index schema.IndexDefinition) error {
+	c, err := m.store.getCollection(name)
+	if err != nil {
+		return err
+	}
+
+	return c.data.CreateIndex(index.Name, index.Fields)
+}
+
+// DropCollection removes a collection from the in-memory store.
+func (m *EphemeralDatabaseInteractor) DropCollection(name string) error {
+	m.store.mu.Lock()
+	defer m.store.mu.Unlock()
+
+	c, ok := m.store.collections[name]
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrCollectionNotFound, name)
+	}
+
+	c.data.Close()
+	delete(m.store.collections, name)
+	return nil
+}
+
+// CollectionExists checks if a collection exists in the in-memory store.
+func (m *EphemeralDatabaseInteractor) CollectionExists(name string) (bool, error) {
+	m.store.mu.RLock()
+	defer m.store.mu.RUnlock()
+
+	_, exists := m.store.collections[name]
+	return exists, nil
 }

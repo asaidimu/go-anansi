@@ -8,7 +8,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 )
 
-// createEvent is a helper function that constructs a PersistenceEvent. It populates
+// CreateEvent is a helper function that constructs a PersistenceEvent. It populates
 // the event with details about the operation, such as its type, the collection it
 // belongs to, input and output data, and timing information. This function is used
 // by the event-emitting wrappers to ensure that all events are created consistently.

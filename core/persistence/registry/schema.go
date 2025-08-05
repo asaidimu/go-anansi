@@ -1,4 +1,4 @@
-package persistence
+package registry
 
 import (
 	"fmt"
@@ -6,7 +6,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
-// CollectionVersionRecord represents a historical version of a collection's schema and its physical name.
+// SchemaVersionRecord represents a historical version of a collection's schema and its physical name.
 type SchemaVersionRecord struct {
 	Physical string                  `json:"physical"` // The physical name of the collection in the database for this version.
 	Schema   schema.SchemaDefinition `json:"schema"`   // The full schema definition for this version.
@@ -17,13 +17,16 @@ type RegistryEntry struct {
 	Description   string                         `json:"description,omitempty"` // A human-readable description of the schema.
 	ActiveVersion string                         `json:"version"`               // The current active version of the schema, pointing to an entry in 'Versions'.
 	Versions      map[string]SchemaVersionRecord `json:"versions,omitempty"`    // A map of all schema versions, keyed by version string.
+	// TODO: Watch for this should you ever decide to change the name of the
+	// metadata field
+	Metadata      map[string]any                 `json:"_metadata_,omitempty"`    // A map of all schema versions, keyed by version string.
 }
 
 // REGISTRY_COLLECTION_NAME is the constant name for the internal collection that
 // stores the schema definitions for all other collections.
 const REGISTRY_COLLECTION_NAME = "_schemas_"
 
-var RegistryCollectionSchemaJson = fmt.Appendf(nil, `
+var RegistryCollectionSchemaJson = fmt.Sprintf(`
 {
   "name": "%s",
   "version": "1.0.0",
@@ -53,10 +56,10 @@ var RegistryCollectionSchemaJson = fmt.Appendf(nil, `
   	  },
       "required": false,
       "description": "A list of legacy schemas, their physical name & their corresponding schema."
-    },
+    }
   },
   "nestedSchemas": {
-    "SchemaVersions": {
+    "00209ae3-08ca-4a8a-8b16-ddf89d87d379": {
       "name": "SchemaVersions",
       "description": "A list of legacy schemas, their physical name & their corresponding schema.",
       "fields": {

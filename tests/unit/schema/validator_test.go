@@ -13,8 +13,8 @@ func TestValidator_Validate(t *testing.T) {
 	trueBool := true
 	schemaDef := &schema.SchemaDefinition{
 		Fields: map[string]*schema.FieldDefinition{
-			"name": {
-				Name:     "name",
+			"4d160d45-9aee-4d71-96dd-3fe83e9d6e6c": { // the key of the map is supposed to be a uuid
+				Name:     "name", // and this is the actual name of the field
 				Type:     schema.FieldTypeString,
 				Required: &trueBool,
 			},

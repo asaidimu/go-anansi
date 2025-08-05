@@ -468,42 +468,10 @@ func (fcb *FilterConditionBuilder) buildCondition(operator ComparisonOperator, v
 		Condition: &FilterCondition{
 			Field:    fcb.field,
 			Operator: operator,
-			Value:    fcb.convertToFilterValue(value),
+			Value:    convertToFilterValue(value),
 		},
 	}
 	return fcb.queryBuilder.AndFilter(condition)
-}
-
-func (fcb *FilterConditionBuilder) convertToFilterValue(value any) FilterValue {
-	switch v := value.(type) {
-	case string:
-		return FilterValue{StringVal: &v}
-	case float64:
-		return FilterValue{NumberVal: &v}
-	case int:
-		floatVal := float64(v)
-		return FilterValue{NumberVal: &floatVal}
-	case bool:
-		return FilterValue{BoolVal: &v}
-	case []any:
-		var arrayVal []FilterValue
-		for _, item := range v {
-			arrayVal = append(arrayVal, fcb.convertToFilterValue(item))
-		}
-		return FilterValue{ArrayVal: arrayVal}
-	case map[string]any:
-		return FilterValue{ObjectVal: v}
-	case *FieldReference:
-		return FilterValue{FieldRefVal: v}
-	case *SubqueryValue:
-		return FilterValue{SubqueryVal: v}
-	case *FunctionCall:
-		return FilterValue{FunctionCallVal: v}
-	default:
-		// Try to convert to string as fallback
-		str := fmt.Sprintf("%v", v)
-		return FilterValue{StringVal: &str}
-	}
 }
 
 func (fcb *FilterConditionBuilder) Eq(value any) *QueryBuilder {
@@ -615,42 +583,11 @@ func (fcbig *FilterConditionBuilderInGroup) buildCondition(operator ComparisonOp
 		Condition: &FilterCondition{
 			Field:    fcbig.field,
 			Operator: operator,
-			Value:    fcbig.convertToFilterValue(value),
+			Value:    convertToFilterValue(value),
 		},
 	}
 	fcbig.groupBuilder.conditions = append(fcbig.groupBuilder.conditions, condition)
 	return fcbig.groupBuilder
-}
-
-func (fcbig *FilterConditionBuilderInGroup) convertToFilterValue(value any) FilterValue {
-	switch v := value.(type) {
-	case string:
-		return FilterValue{StringVal: &v}
-	case float64:
-		return FilterValue{NumberVal: &v}
-	case int:
-		floatVal := float64(v)
-		return FilterValue{NumberVal: &floatVal}
-	case bool:
-		return FilterValue{BoolVal: &v}
-	case []any:
-		var arrayVal []FilterValue
-		for _, item := range v {
-			arrayVal = append(arrayVal, fcbig.convertToFilterValue(item))
-		}
-		return FilterValue{ArrayVal: arrayVal}
-	case map[string]any:
-		return FilterValue{ObjectVal: v}
-	case *FieldReference:
-		return FilterValue{FieldRefVal: v}
-	case *SubqueryValue:
-		return FilterValue{SubqueryVal: v}
-	case *FunctionCall:
-		return FilterValue{FunctionCallVal: v}
-	default:
-		str := fmt.Sprintf("%v", v)
-		return FilterValue{StringVal: &str}
-	}
 }
 
 func (fcbig *FilterConditionBuilderInGroup) Eq(value any) *FilterGroupBuilder {
@@ -799,7 +736,7 @@ func (pb *ProjectionBuilder) Exclude(fields ...string) *ProjectionBuilder {
 func (pb *ProjectionBuilder) AddComputed(alias string, functionName string, args ...any) *ProjectionBuilder {
 	var filterArgs []FilterValue
 	for _, arg := range args {
-		filterArgs = append(filterArgs, pb.convertToFilterValue(arg))
+		filterArgs = append(filterArgs, convertToFilterValue(arg))
 	}
 
 	computed := ProjectionComputedItem{
@@ -829,39 +766,6 @@ func (pb *ProjectionBuilder) End() *QueryBuilder {
 	return pb.queryBuilder
 }
 
-func (pb *ProjectionBuilder) convertToFilterValue(value any) FilterValue {
-	// This is a helper function, similar to the one in FilterConditionBuilder,
-	// tailored for projection contexts.
-	switch v := value.(type) {
-	case string:
-		return FilterValue{StringVal: &v}
-	case float64:
-		return FilterValue{NumberVal: &v}
-	case int:
-		floatVal := float64(v)
-		return FilterValue{NumberVal: &floatVal}
-	case bool:
-		return FilterValue{BoolVal: &v}
-	case []any:
-		var arrayVal []FilterValue
-		for _, item := range v {
-			arrayVal = append(arrayVal, pb.convertToFilterValue(item))
-		}
-		return FilterValue{ArrayVal: arrayVal}
-	case map[string]any:
-		return FilterValue{ObjectVal: v}
-	case *FieldReference:
-		return FilterValue{FieldRefVal: v}
-	case *SubqueryValue:
-		return FilterValue{SubqueryVal: v}
-	case *FunctionCall:
-		return FilterValue{FunctionCallVal: v}
-	default:
-		str := fmt.Sprintf("%v", v)
-		return FilterValue{StringVal: &str}
-	}
-}
-
 // CaseExpressionBuilder implementation
 type CaseExpressionBuilder struct {
 	projectionBuilder *ProjectionBuilder
@@ -873,13 +777,13 @@ type CaseExpressionBuilder struct {
 func (ceb *CaseExpressionBuilder) When(filter QueryFilter, then any) *CaseExpressionBuilder {
 	ceb.conditions = append(ceb.conditions, CaseCondition{
 		When: filter,
-		Then: ceb.convertToFilterValue(then),
+		Then: convertToFilterValue(then),
 	})
 	return ceb
 }
 
 func (ceb *CaseExpressionBuilder) Else(value any) *CaseExpressionBuilder {
-	elseVal := ceb.convertToFilterValue(value)
+	elseVal := convertToFilterValue(value)
 	ceb.elseValue = &elseVal
 	return ceb
 }
@@ -902,11 +806,6 @@ func (ceb *CaseExpressionBuilder) End() *ProjectionBuilder {
 	pb := ceb.projectionBuilder
 	pb.projection.Computed = append(pb.projection.Computed, caseExprItem)
 	return pb
-}
-
-func (ceb *CaseExpressionBuilder) convertToFilterValue(value any) FilterValue {
-	// Re-using the projection builder's conversion logic
-	return ceb.projectionBuilder.convertToFilterValue(value)
 }
 
 // JoinBuilder implementation
@@ -971,4 +870,36 @@ func (ab *AggregationBuilder) WithFilter(filter QueryFilter) *AggregationBuilder
 func (ab *AggregationBuilder) End() *QueryBuilder {
 	ab.queryBuilder.query.Aggregations = append(ab.queryBuilder.query.Aggregations, *ab.aggregation)
 	return ab.queryBuilder
+}
+
+func convertToFilterValue(value any) FilterValue {
+	switch v := value.(type) {
+	case string:
+		return FilterValue{StringVal: &v}
+	case float64:
+		return FilterValue{NumberVal: &v}
+	case int:
+		floatVal := float64(v)
+		return FilterValue{NumberVal: &floatVal}
+	case bool:
+		return FilterValue{BoolVal: &v}
+	case []any:
+		var arrayVal []FilterValue
+		for _, item := range v {
+			arrayVal = append(arrayVal, convertToFilterValue(item))
+		}
+		return FilterValue{ArrayVal: arrayVal}
+	case map[string]any:
+		return FilterValue{ObjectVal: v}
+	case *FieldReference:
+		return FilterValue{FieldRefVal: v}
+	case *SubqueryValue:
+		return FilterValue{SubqueryVal: v}
+	case *FunctionCall:
+		return FilterValue{FunctionCallVal: v}
+	default:
+		// Try to convert to string as fallback
+		str := fmt.Sprintf("%v", v)
+		return FilterValue{StringVal: &str}
+	}
 }
