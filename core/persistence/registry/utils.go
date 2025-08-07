@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
@@ -89,7 +90,6 @@ func sanitizeForDatabase(input string) string {
 	return sanitized
 }
 
-// manual unmarshalling to avoid external dependencies
-func unmarshalEntry(doc common.Document) (*RegistryEntry, error) {
+func unmarshalEntry(doc common.Document) (*base.RegistryEntry, error) {
 	return utils.MapToStruct[*RegistryEntry](doc)
 }

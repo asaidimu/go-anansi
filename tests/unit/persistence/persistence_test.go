@@ -1,0 +1,582 @@
+package persistence_test
+
+import (
+	"context"
+	"testing"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
+	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+)
+
+func TestNewPersistence(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+
+	require.NoError(t, err)
+	assert.NotNil(t, p)
+}
+
+func TestPersistence_CreateAndGetCollection(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	schema := newTestSchema("my_collection")
+
+	// Create the collection
+	createdCollection, err := p.Create(*schema)
+	require.NoError(t, err)
+	assert.NotNil(t, createdCollection)
+
+	// Get the collection
+	retrievedCollection, err := p.Collection("my_collection")
+	require.NoError(t, err)
+	assert.NotNil(t, retrievedCollection)
+
+	// Ensure they are the same instance
+	assert.Equal(t, createdCollection, retrievedCollection)
+}
+
+func TestPersistence_DeleteCollection(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	schema := newTestSchema("my_collection")
+
+	// Create the collection
+	_, err = p.Create(*schema)
+	require.NoError(t, err)
+
+	// Delete the collection
+	deleted, err := p.Delete("my_collection")
+	require.NoError(t, err)
+	assert.True(t, deleted)
+
+	// Verify the collection is gone
+	_, err = p.Collection("my_collection")
+	assert.Error(t, err)
+}
+
+func TestPersistence_Subscriptions(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	var receivedEvent base.PersistenceEvent
+	callback := func(ctx context.Context, event base.PersistenceEvent) error {
+		receivedEvent = event
+		return nil
+	}
+	assert.NotNil(t, receivedEvent)
+	// Register a subscription
+	subID := p.RegisterSubscription(base.RegisterSubscriptionOptions{
+		Event:    base.CollectionCreateSuccess,
+		Callback: callback,
+	})
+
+	// Verify the subscription is active
+	subs, err := p.Subscriptions()
+	require.NoError(t, err)
+	assert.Len(t, subs, 1)
+
+	// Trigger an event
+	_, err = p.Create(*newTestSchema("another_collection"))
+	require.NoError(t, err)
+
+	// Unregister the subscription
+	p.UnregisterSubscription(subID)
+
+	// Verify the subscription is gone
+	subs, err = p.Subscriptions()
+	require.NoError(t, err)
+	assert.Len(t, subs, 0)
+}
+
+func TestPersistence_Transact(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	sc := newTestSchema("accounts")
+	sc.Fields["balance"] = &schema.FieldDefinition{Name: "balance", Type: "number"}
+
+	// Create the collection and some initial data outside the transaction
+	accounts, err := p.Create(*sc)
+	require.NoError(t, err)
+
+	_, err = accounts.CreateMany([]common.Document{
+		{"id": "A", "name": "Alice", "balance": 100.0},
+		{"id": "B", "name": "Bob", "balance": 50.0},
+	})
+
+	// Perform a successful transfer within a transaction
+	_, err = p.Transact(func(tx base.BasePersistence) (any, error) {
+		acc, err := tx.Collection("accounts")
+		if err != nil {
+			return nil, err
+		}
+
+		// Read Alice's document to get metadata
+		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
+		aliceResult, err := acc.Read(&aliceQuery)
+		if err != nil {
+			return nil, err
+		}
+
+		require.Equal(t, 1, aliceResult.Count)
+		aliceDoc := aliceResult.Data.(common.Document)
+
+		// Subtract 20 from Alice
+		aliceDoc["balance"] = 80.0
+		filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
+		_, err = acc.Update(&base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+		if err != nil {
+			return nil, err
+		}
+
+		// Read Bob's document to get metadata
+		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
+		bobResult, err := acc.Read(&bobQuery)
+		if err != nil {
+			return nil, err
+		}
+		require.Equal(t, 1, bobResult.Count)
+		bobDoc := bobResult.Data.(common.Document)
+
+		// Add 20 to Bob
+		bobDoc["balance"] = 70.0
+		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
+		_, err = acc.Update(&base.CollectionUpdate{Data: bobDoc, Filter: filterBob})
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, nil
+	})
+	require.NoError(t, err)
+
+	// Verify the balances outside the transaction
+	finalAccounts, err := p.Collection("accounts")
+	require.NoError(t, err)
+	result, err := finalAccounts.Read(&query.Query{})
+	require.NoError(t, err)
+
+	balances := make(map[string]any)
+	for _, doc := range result.Data.([]common.Document) {
+		balances[doc["id"].(string)] = doc["balance"]
+	}
+
+	assert.Equal(t, 80.0, balances["A"])
+	assert.Equal(t, 70.0, balances["B"])
+
+	// Perform a failing transaction
+	_, err = p.Transact(func(tx base.BasePersistence) (any, error) {
+		acc, err := tx.Collection("accounts")
+		if err != nil {
+			return nil, err
+		}
+
+		// Read Alice's document to get metadata
+		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
+		aliceResult, err := acc.Read(&aliceQuery)
+		if err != nil {
+			return nil, err
+		}
+		require.Equal(t, 1, aliceResult.Count)
+		aliceDoc := aliceResult.Data.(common.Document)
+
+		// Subtract 10 from Alice
+		aliceDoc["balance"] = 70.0
+		filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
+		_, err = acc.Update(&base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+		if err != nil {
+			return nil, err
+		}
+
+		// This will fail because of a non-existent field, causing a rollback
+		updateBob := common.Document{"non_existent_field": "error"}
+
+		// We still need metadata for the update to pass the initial check
+		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
+		bobResult, err := acc.Read(&bobQuery)
+		if err != nil {
+			return nil, err
+		}
+		require.Equal(t, 1, bobResult.Count)
+		bobDoc := bobResult.Data.(common.Document)
+		meta, _ := bobDoc.Metadata()
+		updateBob.SetMetadata(meta)
+
+		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
+		_, err = acc.Update(&base.CollectionUpdate{Data: updateBob, Filter: filterBob})
+
+		return nil, err // Propagate the error to trigger rollback
+	})
+
+	require.Error(t, err)
+
+	// Verify the balances were rolled back and remain unchanged
+	rollbackResult, err := finalAccounts.Read(&query.Query{})
+	require.NoError(t, err)
+
+	rollbackBalances := make(map[string]any)
+	for _, doc := range rollbackResult.Data.([]common.Document) {
+		rollbackBalances[doc["id"].(string)] = doc["balance"]
+	}
+
+	assert.Equal(t, 80.0, rollbackBalances["A"])
+	assert.Equal(t, 70.0, rollbackBalances["B"])
+}
+
+func TestPersistence_Schema(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	// Create a schema and a collection based on it
+	testSchema := newTestSchema("my_schema_collection")
+	testSchema.Version = "1.0.0"
+	_, err = p.Create(*testSchema)
+	require.NoError(t, err)
+
+	// Retrieve the schema by ID
+	retrievedSchema, err := p.Schema("my_schema_collection")
+	require.NoError(t, err)
+	assert.NotNil(t, retrievedSchema)
+	assert.Equal(t, testSchema.Description, retrievedSchema.Description)
+	assert.Equal(t, testSchema.Version, retrievedSchema.Version)
+
+	// Retrieve the schema by ID and version
+	retrievedSchemaWithVersion, err := p.Schema("my_schema_collection", "1.0.0")
+	require.NoError(t, err)
+	assert.NotNil(t, retrievedSchemaWithVersion)
+	assert.Equal(t, testSchema.Description, retrievedSchemaWithVersion.Description)
+	assert.Equal(t, testSchema.Version, retrievedSchemaWithVersion.Version)
+
+	// Try to retrieve a non-existent schema
+	_, err = p.Schema("non_existent_schema")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "collection not found")
+
+	// Try to retrieve an existent schema with a non-existent version
+	_, err = p.Schema("my_schema_collection", "2.0.0")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "version '2.0.0' not found for collection 'my_schema_collection'")
+}
+
+func TestPersistence_DeleteNonExistentCollection(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	// Try to delete a collection that doesn't exist
+	deleted, err := p.Delete("non_existent_collection")
+	require.Error(t, err)
+	assert.False(t, deleted)
+}
+
+func TestPersistence_Close(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	// Close the persistence instance
+	p.Close()
+
+	// Attempt an operation after closing, it should return an error
+	_, err = p.Create(*newTestSchema("closed_collection"))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "persistence instance is closed") // Assuming the event bus closure causes subsequent errors
+}
+
+func TestPersistence_CollectionNonExistent(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	// Try to get a collection that doesn't exist
+	_, err = p.Collection("non_existent_collection")
+	assert.Error(t, err)
+}
+
+func TestPersistence_CreateWithInvalidSchema(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	// Create an invalid schema (e.g., missing name)
+	invalidSchema := newTestSchema("")
+	_, err = p.Create(*invalidSchema)
+	assert.Error(t, err)
+}
+
+func TestPersistence_MetadataOnEmptyDB(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	// Get metadata from an empty database
+	meta, err := p.Metadata(nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(0), *meta.CollectionCount)
+	assert.Len(t, meta.Collections, 0)
+	assert.Len(t, meta.Schemas, 0)
+}
+
+func TestPersistence_TransactWithPanic(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	sc := newTestSchema("accounts")
+	sc.Fields["balance"] = &schema.FieldDefinition{Name: "balance", Type: "number"}
+
+	accounts, err := p.Create(*sc)
+	require.NoError(t, err)
+
+	_, err = accounts.CreateMany([]common.Document{
+		{"id": "A", "name": "Alice", "balance": 100.0},
+	})
+	require.NoError(t, err)
+
+	// Perform a transaction that panics
+	assert.Panics(t, func() {
+		_, _ = p.Transact(func(tx base.BasePersistence) (any, error) {
+			acc, err := tx.Collection("accounts")
+			if err != nil {
+				return nil, err
+			}
+
+			// Read Alice's document
+			aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
+			aliceResult, err := acc.Read(&aliceQuery)
+			if err != nil {
+				return nil, err
+			}
+			require.Equal(t, 1, aliceResult.Count)
+			aliceDoc := aliceResult.Data.(common.Document)
+
+			// Update Alice's balance
+			aliceDoc["balance"] = 50.0
+			filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
+			_, err = acc.Update(&base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+			if err != nil {
+				return nil, err
+			}
+
+			// Panic!
+			panic("something went wrong")
+		})
+	})
+
+	// Verify that the balance was rolled back
+	finalAccounts, err := p.Collection("accounts")
+	require.NoError(t, err)
+	result, err := finalAccounts.Read(&query.Query{})
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Count)
+	doc := result.Data.(common.Document)
+	balances := make(map[string]any)
+	balances[doc["id"].(string)] = doc["balance"]
+
+	assert.Equal(t, 100.0, balances["A"])
+}
+
+func TestPersistence_Metadata(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	// Create some collections
+	_, err = p.Create(*newTestSchema("coll1"))
+	require.NoError(t, err)
+	_, err = p.Create(*newTestSchema("coll2"))
+	require.NoError(t, err)
+
+	// Get metadata
+	meta, err := p.Metadata(nil)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(2), *meta.CollectionCount)
+	assert.Len(t, meta.Collections, 2)
+	assert.Len(t, meta.Schemas, 2)
+}
+
+func TestPersistence_SimpleLeftJoin(t *testing.T) {
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	options := base.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+
+	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	require.NoError(t, err)
+
+	// 1. Define Schemas
+	userSchema := schema.SchemaDefinition{
+		Name:    "users",
+		Version: "1.0.0",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":   {Name: "id", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
+			"name": {Name: "name", Type: schema.FieldTypeString},
+		},
+	}
+
+	profileSchema := schema.SchemaDefinition{
+		Name:    "profiles",
+		Version: "1.0.0",
+		Fields: map[string]*schema.FieldDefinition{
+			"user": {Name: "user", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
+			"bio":  {Name: "bio", Type: schema.FieldTypeString},
+		},
+	}
+
+	// 2. Create Collections
+	usersCollection, err := p.Create(userSchema)
+	require.NoError(t, err)
+	profilesCollection, err := p.Create(profileSchema)
+	require.NoError(t, err)
+
+	// 3. Insert Data
+	_, err = usersCollection.CreateMany([]common.Document{
+		{"id": "user1", "name": "Alice"},
+		{"id": "user2", "name": "Bob"},
+		{"id": "user3", "name": "Charlie"},
+	})
+
+	require.NoError(t, err)
+
+	_, err = profilesCollection.CreateMany([]common.Document{
+		{"user": "user1", "bio": "Loves Go programming"},
+		{"user": "user2", "bio": "Enjoys testing"},
+	})
+
+	require.NoError(t, err)
+
+	// 4. Construct LEFT JOIN Query
+	joinQuery := query.NewQueryBuilder().
+		LeftJoin("profiles"). // Logical name for the right side
+		On(query.QueryFilter{
+			Condition: &query.FilterCondition{
+				Field:    "users.id", // Physical name of left collection
+				Operator: query.ComparisonOperatorEq,
+				Value: query.FilterValue{
+					FieldRefVal: &query.FieldReference{
+						Type:  "field",
+						Field: "profiles.user", // Logical name of right collection
+					},
+				},
+			},
+		}).
+		End().
+		Build()
+
+	// 5. Execute Query on the 'users' collection
+	result, err := usersCollection.Read(&joinQuery)
+	require.NoError(t, err)
+	assert.NotNil(t, result)
+	data := result.Data.([]common.Document)
+
+	// 6. Assert Results
+	assert.Len(t, data, 3) // Expecting 3 documents (all users)
+
+	// Verify content
+	for _, doc := range data {
+		userData, userOk := doc["users"].(common.Document)
+		profileData, profileOk := doc["profiles"].(common.Document)
+
+		assert.True(t, userOk)
+
+		switch userData["id"] {
+		case "user1":
+			assert.True(t, profileOk)
+			assert.Equal(t, "Alice", userData["name"])
+			assert.Equal(t, "Loves Go programming", profileData["bio"])
+		case "user2":
+			assert.True(t, profileOk)
+			assert.Equal(t, "Bob", userData["name"])
+			assert.Equal(t, "Enjoys testing", profileData["bio"])
+		case "user3":
+			assert.False(t, profileOk)          // No profile for user3
+			assert.Nil(t, doc["user_profiles"]) // Ensure it's explicitly nil
+			assert.Equal(t, "Charlie", userData["name"])
+		default:
+			t.Errorf("Unexpected user ID: %v", userData["id"])
+		}
+	}
+}

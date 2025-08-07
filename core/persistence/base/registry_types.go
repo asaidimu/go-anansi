@@ -1,9 +1,25 @@
-package registry
+package base
 
 import (
 	"context"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
+
+// SchemaVersionRecord represents a historical version of a collection's schema and its physical name.
+type SchemaVersionRecord struct {
+	Physical string                  `json:"physical"` // The physical name of the collection in the database for this version.
+	Schema   schema.SchemaDefinition `json:"schema"`   // The full schema definition for this version.
+}
+
+type RegistryEntry struct {
+	Name          string                         `json:"name"`                  // The name of the collection this schema defines.
+	Description   string                         `json:"description,omitempty"` // A human-readable description of the schema.
+	ActiveVersion string                         `json:"version"`               // The current active version of the schema, pointing to an entry in 'Versions'.
+	Versions      map[string]SchemaVersionRecord `json:"versions,omitempty"`    // A map of all schema versions, keyed by version string.
+	// TODO: Watch for this should you ever decide to change the name of the
+	// metadata field
+	Metadata      map[string]any                 `json:"_metadata_,omitempty"`    // A map of all schema versions, keyed by version string.
+}
 
 // DropCollectionOptions provides flags to control the behavior of the DropCollection method,
 // ensuring that destructive operations are explicit and intentional.
@@ -55,4 +71,9 @@ type CollectionRegistry interface {
 
 	// List retrieves the registry entries for all registered collections.
 	List(ctx context.Context) ([]*RegistryEntry, error)
+
+
+	// ResolveName returns the physical name of a schema
+	// If no version is provided, it returns the currently active schema version.
+	ResolvePhysicalName(ctx context.Context, name string, version ...string) (string, error)
 }

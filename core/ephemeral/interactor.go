@@ -31,6 +31,13 @@ var _ query.SchemaManager = (*EphemeralDatabaseInteractor)(nil)
 
 // SelectDocuments retrieves documents from the in-memory store.
 func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]common.Document, error) {
+
+	if dsl.Target == nil {
+		dsl.Target = &query.QueryTarget{
+			Name: schemaDef.Name,
+		}
+	}
+
 	c, err := i.store.getCollection(schemaDef.Name)
 	if err != nil {
 		return nil, err
@@ -94,12 +101,14 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 				}
 				rightDocs = append(rightDocs, common.Document(docResult.Data))
 			}
+
 			rightStream.Close()
 
-			joinedDocs, err := queryHelper.Join(schemaDef.Name, currentDocs, rightDocs, &join)
+			joinedDocs, err := queryHelper.Join(currentDocs, rightDocs, &join)
 			if err != nil {
 				return nil, err
 			}
+
 			currentDocs = joinedDocs
 		}
 		filteredDocs = currentDocs
@@ -183,8 +192,12 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 	if err != nil {
 		return 0, err
 	}
-
-	queryHelper, err := query.NewQueryHelper(&query.Query{Filters: filters}, nil, nil, nil)
+	queryHelper, err := query.NewQueryHelper(&query.Query{
+		Target: &query.QueryTarget{
+			Name: schemaDef.Name,
+		},
+		Filters: filters,
+	}, nil, nil, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -294,7 +307,11 @@ func (i *EphemeralDatabaseInteractor) DeleteDocuments(ctx context.Context, schem
 		return 0, err
 	}
 
-	queryHelper, err := query.NewQueryHelper(&query.Query{Filters: filters}, nil, nil, nil)
+	queryHelper, err := query.NewQueryHelper(&query.Query{Filters: filters,
+		Target: &query.QueryTarget{
+			Name: schemaDef.Name,
+		},
+	}, nil, nil, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -392,7 +409,7 @@ func (i *EphemeralDatabaseInteractor) Rollback(ctx context.Context) error {
 
 // SchemaManager returns only the methods available to the schema manager
 func (i *EphemeralDatabaseInteractor) SchemaManager() query.SchemaManager {
-	return  i
+	return i
 }
 
 // Capabilities returns the capabilities of the ephemeral database interactor.

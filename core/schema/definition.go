@@ -372,7 +372,7 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 type SchemaDefinition struct {
 	Name          string                             `json:"name"`
 	Version       string                             `json:"version"`
-	Description   *string                            `json:"description,omitempty"`
+	Description   string                            `json:"description,omitempty"`
 	Fields        map[string]*FieldDefinition        `json:"fields"`
 	NestedSchemas map[string]*NestedSchemaDefinition `json:"nestedSchemas,omitempty"`
 	Indexes       []IndexDefinition                  `json:"indexes,omitempty"`
@@ -697,8 +697,8 @@ type PartialIndexDefinition struct {
 
 // PartialNestedSchemaDefinition represents a partial definition of a nested schema, used for modifications.
 type PartialNestedSchemaDefinition struct {
-	Name        *string                     `json:"name,omitempty"`
-	Description *string                     `json:"description,omitempty"`
+	Name        string                     `json:"name,omitempty"`
+	Description string                     `json:"description,omitempty"`
 	Indexes     []IndexDefinition           `json:"indexes,omitempty"`
 	Metadata    map[string]any              `json:"metadata,omitempty"`
 	Concrete    *bool                       `json:"concrete,omitempty"`

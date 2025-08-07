@@ -102,7 +102,7 @@ type FilterCondition struct {
 // FilterGroup combines multiple filter conditions using a logical operator.
 type FilterGroup struct {
 	Operator   common.LogicalOperator `json:"operator"`
-	Conditions []QueryFilter   `json:"conditions"`
+	Conditions []QueryFilter          `json:"conditions"`
 }
 
 // TextSearchQuery defines a full-text search query.
@@ -153,7 +153,7 @@ type PaginationOptions struct {
 // ProjectionField defines a field to be included or excluded in the query result.
 type ProjectionField struct {
 	Name   string                   `json:"name"`
-	Alias  *string                   `json:"alias,omitempty"`
+	Alias  *string                  `json:"alias,omitempty"`
 	Nested *ProjectionConfiguration `json:"nested,omitempty"`
 }
 
@@ -205,9 +205,9 @@ const (
 // JoinConfiguration defines a join operation with another table.
 type JoinConfiguration struct {
 	Type       JoinType                 `json:"type"`
-	Target     string                   `json:"target"` // Renamed from TargetTable
+	Target     string                   `json:"target"`
 	On         *QueryFilter             `json:"on"`
-	Alias      *string                  `json:"alias,omitempty"` // the name of the resulting collection after the join.
+	Alias      *string                  `json:"alias,omitempty"`
 	Projection *ProjectionConfiguration `json:"projection,omitempty"`
 }
 
@@ -254,9 +254,15 @@ type QueryDistinctConfig struct {
 	Fields []string `json:"fields,omitempty"`
 }
 
+type QueryTarget struct {
+	Name  string  `json:"name,omitempty"`
+	Alias *string `json:"alias,omitempty"`
+}
+
 // Query is the top-level structure that represents a complete database query.
 // It combines all the different parts of a query, such as filters, sorting, and pagination.
 type Query struct {
+	Target       *QueryTarget               `json:"target,omitempty"`
 	Filters      *QueryFilter               `json:"filters,omitempty"`
 	Sort         []SortConfiguration        `json:"sort,omitempty"`
 	Pagination   *PaginationOptions         `json:"pagination,omitempty"`

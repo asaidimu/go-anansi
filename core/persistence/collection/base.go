@@ -23,13 +23,12 @@ type baseCollection struct {
 	interactor    query.BaseDatabaseInteractor
 	logger        *zap.Logger
 	subscriptions map[string]*base.SubscriptionInfo // To store unsubscribe functions
-	subMu         sync.RWMutex                 // Mutex to protect subscriptions map
+	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
 	validator     *schema.DocumentValidator
 	metadata      *base.CollectionMetadata
 }
 
 var _ base.Collection = (*baseCollection)(nil)
-
 
 // newBaseCollection creates a new baseCollection instance, wrapping it with all necessary decorators.
 func newBaseCollection(
@@ -61,7 +60,7 @@ func newBaseCollection(
 			ID:             name, // Using collection name as ID for simplicity
 			SchemaVersion:  sc.Version,
 			Name:           name,
-			CollectionName: name, // Physical name is same as logical name for now
+			CollectionName: name, // Physical name is now sc.Name
 			Description:    sc.Description,
 			Status:         "active",
 			CreatedAt:      fmt.Sprintf("%d", 0), // Placeholder, ideally from creation time
@@ -69,7 +68,7 @@ func newBaseCollection(
 			RecordCount:    0, // Not directly available from interactor yet
 			DataSizeBytes:  0, // Not directly available from interactor yet
 			Schema:         sc,
-			LastModified:   0,                    // Placeholder
+			LastModified:   0,                         // Placeholder
 			Subscriptions:  []base.SubscriptionInfo{}, // Collection-specific subscriptions not managed here yet
 		},
 	}
@@ -143,16 +142,27 @@ func (c *baseCollection) CreateMany(docs []common.Document) ([]base.CreateResult
 }
 
 // Read retrieves documents from the collection that match the given QueryDSL.
-func (c *baseCollection) Read(q *query.Query) (*query.QueryResult, error) {
+func (c *baseCollection) Read(q *query.Query) (*base.ReadResult, error) {
 	docs, err := c.engine.Query(context.Background(), c.schema, q)
 	if err != nil {
 		return nil, base.NewPersistenceError(fmt.Sprintf("failed to read documents: %v", err), base.ErrReadDocuments)
 	}
 
-	return &query.QueryResult{
+	count := len(docs)
+	result := base.ReadResult{
 		Data:  docs,
-		Count: len(docs),
-	}, nil
+		Count: count,
+	}
+
+	if count == 0 {
+		result.Data = nil
+	}
+
+	if count == 1 {
+		result.Data = docs[0]
+	}
+
+	return &result, nil
 }
 
 // Update modifies documents in the collection that match the filter in CollectionUpdate.
@@ -213,7 +223,18 @@ func (c *baseCollection) RegisterSubscription(options base.RegisterSubscriptionO
 	c.subMu.Lock()
 	defer c.subMu.Unlock()
 
-	unsubscribe := c.bus.Subscribe(string(options.Event), options.Callback)
+	unsubscribe := c.bus.SubscribeWithOptions(string(options.Event), options.Callback,
+		events.SubscribeOptions{
+			Filter: func(event events.Event) bool {
+				payload, ok := event.Payload.(base.PersistenceEvent)
+				if !ok {
+					return false
+				}
+
+				return *payload.Collection == c.name
+			},
+		})
+
 	id := uuid.New().String()
 
 	data := base.SubscriptionInfo{

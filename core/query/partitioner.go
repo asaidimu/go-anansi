@@ -19,8 +19,13 @@ func NewQueryPartitioner(capabilities Capabilities) *QueryPartitioner {
 
 // Partition splits the given QueryDSL query into two parts: one for the database and one for post-processing.
 func (p *QueryPartitioner) Partition(dsl *Query) (*Query, *Query, error) {
-	dbQuery := &Query{}
-	postProcessingQuery := &Query{}
+	dbQuery := &Query{
+		Target: dsl.Target,
+	}
+
+	postProcessingQuery := &Query{
+		Target: dsl.Target,
+	}
 
 	// Partition filters
 	dbFilters, postFilters, err := p.partitionFilters(dsl.Filters)

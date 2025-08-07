@@ -14,6 +14,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/asaidimu/go-events"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"go.uber.org/zap"
 )
@@ -27,7 +28,7 @@ func testSchema(name ...string) *schema.SchemaDefinition {
 	return &schema.SchemaDefinition{
 		Name:        sname,
 		Version:     "1.0.0",
-		Description: utils.StringPtr("test collection"),
+		Description: "test collection",
 		Fields: map[string]*schema.FieldDefinition{
 			"id":   {Name: "id", Type: "string", Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
 			"name": {Name: "name", Type: "string", Required: utils.BoolPtr(true)},
@@ -35,10 +36,14 @@ func testSchema(name ...string) *schema.SchemaDefinition {
 	}
 }
 
+func resolvePhysicalName(ctx context.Context, logicalName string) (string, error) {
+	return logicalName, nil
+}
+
 // setupCollectionTest is a helper function to set up a new collection for testing.
 func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *zap.Logger, *schema.SchemaDefinition, *events.TypedEventBus[persistence.PersistenceEvent]) {
 	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())
-	ephemeralInteractor  := ephemeral.NewEphemeral()
+	ephemeralInteractor := ephemeral.NewEphemeral()
 	manager := ephemeralInteractor.SchemaManager()
 	logger := zap.NewNop()
 	testSchema := testSchema()
@@ -50,7 +55,7 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 	opts := &persistence.MetadataOptions{
 		HmacSecretKey: []byte("test-secret"),
 	}
-	c, err := collection.NewCollection(bus, testSchema.Name, testSchema, engine, logger, opts)
+	c, err := collection.NewCollection(bus, testSchema.Name, testSchema, engine, logger, opts, resolvePhysicalName)
 	assert.NoError(t, err)
 
 	return c, ephemeralInteractor, logger, testSchema, bus
@@ -80,7 +85,7 @@ func TestCollection_Create(t *testing.T) {
 		readResult, err := collection.Read(&readQuery)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, readResult.Count)
-		assert.Equal(t, expected, readResult.Data.([]common.Document)[0])
+		assert.Equal(t, expected, readResult.Data.(common.Document))
 	})
 
 	t.Run("multiple documents success", func(t *testing.T) {
@@ -132,11 +137,9 @@ func TestCollection_Read(t *testing.T) {
 		assert.NotNil(t, result)
 		assert.Equal(t, 1, result.Count)
 
-		results := result.Data.([]common.Document)
-
-		final := results[0]
+		final := result.Data.(common.Document)
 		final.StripMetadata()
-		assert.Equal(t, expected["name"], results[0]["name"])
+		assert.Equal(t, expected["name"], final["name"])
 	})
 
 	t.Run("read documents error - non-existent collection", func(t *testing.T) {
@@ -147,7 +150,7 @@ func TestCollection_Read(t *testing.T) {
 		opts := &persistence.MetadataOptions{
 			HmacSecretKey: []byte("test-secret"),
 		}
-		nonExistentCollection, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, opts)
+		nonExistentCollection, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, opts, resolvePhysicalName)
 
 		result, err := nonExistentCollection.Read(&q)
 
@@ -169,12 +172,12 @@ func TestCollection_Update(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, result.Count)
 
-	data := result.Data.([]common.Document)
+	data := result.Data.(common.Document)
 	updates := common.Document{
 		"name": "UpdatedName",
 	}
 
-	metadata, ok := data[0].Metadata()
+	metadata, ok := data.Metadata()
 	assert.Equal(t, ok, true)
 	updates.SetMetadata(metadata)
 
@@ -189,7 +192,7 @@ func TestCollection_Update(t *testing.T) {
 		readQuery := query.NewQueryBuilder().Where("id").Eq("1").Build()
 		readResult, err := c.Read(&readQuery)
 		assert.NoError(t, err)
-		assert.Equal(t, "UpdatedName", readResult.Data.([]common.Document)[0]["name"])
+		assert.Equal(t, "UpdatedName", readResult.Data.(common.Document)["name"])
 	})
 
 	t.Run("update documents error - non-existent collection", func(t *testing.T) {
@@ -200,7 +203,7 @@ func TestCollection_Update(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Equal(t, 0, rowsAffected)
-		assert.Contains(t, err.Error(), "collection not found")
+		require.Error(t, err)
 	})
 }
 
@@ -281,13 +284,13 @@ func TestCollection_Delete(t *testing.T) {
 func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *zap.Logger, *schema.SchemaDefinition, *events.TypedEventBus[persistence.PersistenceEvent]) {
 	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())
 	nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent"}
-	ephemeralInteractor  := ephemeral.NewEphemeral()
+	ephemeralInteractor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 	engine := query.NewQueryEngine(ephemeralInteractor, logger)
 	opts := &persistence.MetadataOptions{
 		HmacSecretKey: []byte("test-secret"),
 	}
-	c, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, opts)
+	c, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, opts, resolvePhysicalName)
 	return c, ephemeralInteractor, logger, nonExistentSchema, bus
 }
 

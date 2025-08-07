@@ -1,6 +1,8 @@
 package collection
 
 import (
+	"context"
+
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -16,11 +18,17 @@ func NewCollection(
 	engine *query.QueryEngine,
 	logger *zap.Logger,
 	opts *base.MetadataOptions,
+	resolvePhysicalNameFunc func(ctx context.Context, logicalName string) (string, error),
 ) (base.Collection, error) {
 	base, err := newBaseCollection(bus, name, sc, engine, logger)
 
 	// Decorate the base collection with the managed collection for metadata and versioning.
-	managed, err := newManagedCollection(base, opts)
+	managed, err := newManagedCollection(
+		name,
+		sc.Name,
+		base,
+		resolvePhysicalNameFunc,
+		opts)
 	if err != nil {
 		return nil, err
 	}
@@ -29,4 +37,3 @@ func NewCollection(
 	eventEmitting := newEventEmittingCollection(managed, bus, sc)
 	return eventEmitting, nil
 }
-

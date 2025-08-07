@@ -153,7 +153,7 @@ func (e *eventsCollection) CreateMany(docs []common.Document) ([]base.CreateResu
 
 // Read wraps the underlying collection's Read method, adding event emission
 // for the start, success, and failure of the operation.
-func (e *eventsCollection) Read(q *query.Query) (*query.QueryResult, error) {
+func (e *eventsCollection) Read(q *query.Query) (*base.ReadResult, error) {
 	result, err := e.withEventEmission(
 		"read",
 		base.DocumentReadStart,
@@ -170,7 +170,7 @@ func (e *eventsCollection) Read(q *query.Query) (*query.QueryResult, error) {
 		return nil, err
 	}
 
-	return result.(*query.QueryResult), nil
+	return result.(*base.ReadResult), nil
 }
 
 // Update wraps the underlying collection's Update method, adding event emission
@@ -229,25 +229,6 @@ func (e *eventsCollection) Metadata(
 	filter *base.MetadataFilter,
 	forceRefresh bool,
 ) (*base.CollectionMetadata, error) {
-	startTime := time.Now()
-
-	// Emit telemetry event for metadata calls
-	telemetryEvent := utils.CreateEvent(
-		base.MetadataCalled,
-		"metadata",
-		e.schema.Name,
-		map[string]any{
-			"filter":       filter,
-			"forceRefresh": forceRefresh,
-		},
-		nil, // No output in the event itself
-		nil, // No query parameter
-		nil, // No error
-		nil, // No issues
-		startTime,
-	)
-	e.emitEvent(telemetryEvent)
-
 	return e.collection.Metadata(filter, forceRefresh)
 }
 
@@ -255,27 +236,6 @@ func (e *eventsCollection) Metadata(
 // emitting an event after a new subscription is successfully registered.
 func (e *eventsCollection) RegisterSubscription(options base.RegisterSubscriptionOptions) string {
 	id := e.collection.RegisterSubscription(options)
-
-	// Emit subscription register event
-	event := utils.CreateEvent(
-		base.SubscriptionRegister,
-		"register_subscription",
-		e.schema.Name,
-		map[string]any{
-			"event":       options.Event,
-			"label":       options.Label,
-			"description": options.Description,
-		},
-		map[string]any{
-			"subscriptionId": id,
-		},
-		nil, // No query parameter
-		nil, // No error
-		nil, // No issues
-		time.Now(),
-	)
-	e.emitEvent(event)
-
 	return id
 }
 
@@ -283,22 +243,6 @@ func (e *eventsCollection) RegisterSubscription(options base.RegisterSubscriptio
 // emitting an event after a subscription is successfully unregistered.
 func (e *eventsCollection) UnregisterSubscription(id string) {
 	e.collection.UnregisterSubscription(id)
-
-	// Emit subscription unregister event
-	event := utils.CreateEvent(
-		base.SubscriptionUnregister,
-		"unregister_subscription",
-		e.schema.Name,
-		map[string]any{
-			"subscriptionId": id,
-		},
-		nil, // No output
-		nil, // No query parameter
-		nil, // No error
-		nil, // No issues
-		time.Now(),
-	)
-	e.emitEvent(event)
 }
 
 // Subscriptions delegates the call to the underlying collection's Subscriptions method.

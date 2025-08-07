@@ -67,4 +67,5 @@ var (
 	ErrFailedToRegisterSchema       = errors.New("Failed to register schema")
 	ErrFailedToUnregisterSchema     = errors.New("Failed to unregister schema")
 	ErrFailedToRefreshNames         = errors.New("Failed to refresh names")
+	ErrFailedToInitializePersistence = errors.New("Failed to initialize persistence layer")
 )

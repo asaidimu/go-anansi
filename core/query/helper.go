@@ -104,6 +104,11 @@ func (h *QueryHelper) RegisterFilterFunctions(functionMap map[ComparisonOperator
 
 // validateQuery validates the query structure for common errors and unsupported features.
 func (h *QueryHelper) validateQuery() error {
+	// Add target validation
+	if h.query.Target != nil && h.query.Target.Name == "" {
+		return errors.New("target name cannot be empty when target is specified")
+	}
+
 	// Validate filters
 	if h.query.Filters != nil {
 		if err := h.validateQueryFilter(h.query.Filters); err != nil {
@@ -558,8 +563,8 @@ func (h *QueryHelper) Sort(records []common.Document) ([]common.Document, error)
 		for _, sortConfig := range h.query.Sort {
 			doci := common.Document(sorted[i])
 			docj := common.Document(sorted[j])
-			valueI , _:= utils.GetValueByPath(doci,sortConfig.Field)
-			valueJ , _:= utils.GetValueByPath(docj,sortConfig.Field)
+			valueI, _ := utils.GetValueByPath(doci, sortConfig.Field)
+			valueJ, _ := utils.GetValueByPath(docj, sortConfig.Field)
 
 			comparison := h.compareValues(valueI, valueJ)
 			if comparison == 0 {
@@ -1039,7 +1044,6 @@ func (h *QueryHelper) evaluateComputedField(record map[string]any, expr *Compute
 
 // evaluateCaseExpression evaluates a case expression.
 func (h *QueryHelper) evaluateCaseExpression(record map[string]any, expr *CaseExpression) (any, error) {
-
 	for _, caseCondition := range expr.Conditions {
 		result, err := h.evaluateQueryFilter(record, &caseCondition.When)
 		if err != nil {
@@ -1083,65 +1087,49 @@ func (h *QueryHelper) compareValues(a, b any) int {
 	return utils.CompareValues(a, b)
 }
 
-func (h *QueryHelper) JoinStreams(collection string, left, right <-chan common.Document, config *JoinConfiguration) (<-chan common.Document, <-chan error) {
-	//TODO implement me
-	panic("implement me")
-}
-
 func (h *QueryHelper) combineDocs(leftName string, leftDoc common.Document, rightName string, rightDoc common.Document) common.Document {
 	combinedDoc := make(common.Document)
 
-	// Check if leftDoc is already a nested structure from a previous join.
-	// This heuristic assumes that documents from a collection don't have map[string]any as values, which is generally true.
-	isNested := false
-	if len(leftDoc) > 0 {
-		for _, val := range leftDoc {
-			if _, ok := val.(map[string]any); ok {
-				isNested = true
-				break
-			}
-		}
-	}
-
-	if isNested {
-		maps.Copy(combinedDoc, leftDoc)
-	} else {
-		combinedDoc[leftName] = leftDoc
-	}
+	// Always create a consistent nested structure
+	combinedDoc[leftName] = leftDoc
 
 	if rightDoc != nil {
 		combinedDoc[rightName] = rightDoc
 	} else {
-		// Explicitly set to nil if rightDoc is nil, for outer joins.
 		combinedDoc[rightName] = nil
 	}
 
 	return combinedDoc
 }
 
-func (h *QueryHelper) Join(collection string, left, right []common.Document, config *JoinConfiguration) ([]common.Document, error) {
+// Join performs a join operation between left and right document collections.
+// The target parameter specifies the logical name and alias for the right-side collection.
+// The config parameter defines the join type, conditions, and optional projections.
+func (h *QueryHelper) Join(left, right []common.Document, config *JoinConfiguration) ([]common.Document, error) {
 	// Validate inputs
 	if config == nil {
 		return nil, errors.New("join configuration cannot be nil")
 	}
-	if config.Target == "" {
-		return nil, errors.New("join target cannot be empty")
+
+	// Determine the right-side collection name to use in the combined document
+	rightName := config.Target
+	if config.Alias != nil && *config.Alias != "" {
+		rightName = *config.Alias
 	}
-	if config.On == nil {
-		return nil, errors.New("join condition ('on') cannot be nil")
-	}
+
+	// Determine left-side collection name
+	leftName := h.getLeftCollectionName()
 
 	var result []common.Document
-
 	switch config.Type {
 	case JoinTypeInner:
-		result = h.performInnerJoin(collection, left, config.Target, right, config.On)
+		result = h.performInnerJoin(leftName, left, rightName, right, config.On)
 	case JoinTypeLeft:
-		result = h.performLeftJoin(collection, left, config.Target, right, config.On)
+		result = h.performLeftJoin(leftName, left, rightName, right, config.On)
 	case JoinTypeRight:
-		result = h.performRightJoin(collection, left, config.Target, right, config.On)
+		result = h.performRightJoin(leftName, left, rightName, right, config.On)
 	case JoinTypeFull:
-		result = h.performFullJoin(collection, left, config.Target, right, config.On)
+		result = h.performFullJoin(leftName, left, rightName, right, config.On)
 	default:
 		return nil, fmt.Errorf("unsupported join type: %s", config.Type)
 	}
@@ -1160,6 +1148,328 @@ func (h *QueryHelper) Join(collection string, left, right []common.Document, con
 	}
 
 	return result, nil
+}
+
+// JoinStreams performs streaming joins between left and right document channels.
+// The target parameter specifies the logical name and alias for the right-side collection.
+// Returns channels for the joined results and any errors that occur during processing.
+func (h *QueryHelper) JoinStreams(left, right <-chan common.Document, target *QueryTarget, config *JoinConfiguration) (<-chan common.Document, <-chan error) {
+	resultChan := make(chan common.Document)
+	errorChan := make(chan error, 1)
+
+	go func() {
+		defer close(resultChan)
+		defer close(errorChan)
+
+		// Validate inputs
+		if config == nil {
+			errorChan <- errors.New("join configuration cannot be nil")
+			return
+		}
+
+		if target == nil {
+			errorChan <- errors.New("target cannot be nil")
+			return
+		}
+
+		if target.Name == "" {
+			errorChan <- errors.New("target name cannot be empty")
+			return
+		}
+
+		if config.On == nil {
+			errorChan <- errors.New("join condition ('on') cannot be nil")
+			return
+		}
+
+		// Determine the right-side collection name to use in the combined document
+		rightName := target.Name
+		if target.Alias != nil && *target.Alias != "" {
+			rightName = *target.Alias
+		}
+
+		// Override with config alias if provided (config takes precedence)
+		if config.Alias != nil && *config.Alias != "" {
+			rightName = *config.Alias
+		}
+
+		// Determine left-side collection name
+		leftName := h.getLeftCollectionName()
+
+		// For streaming joins, we need to handle different join types
+		switch config.Type {
+		case JoinTypeInner:
+			h.performStreamingInnerJoin(leftName, left, rightName, right, config, resultChan, errorChan)
+		case JoinTypeLeft:
+			h.performStreamingLeftJoin(leftName, left, rightName, right, config, resultChan, errorChan)
+		case JoinTypeRight:
+			h.performStreamingRightJoin(leftName, left, rightName, right, config, resultChan, errorChan)
+		case JoinTypeFull:
+			h.performStreamingFullJoin(leftName, left, rightName, right, config, resultChan, errorChan)
+		default:
+			errorChan <- fmt.Errorf("unsupported join type: %s", config.Type)
+			return
+		}
+	}()
+
+	return resultChan, errorChan
+}
+
+// getLeftCollectionName determines the name to use for the left-side collection in joins.
+// It uses the query's target information if available, otherwise defaults to a generic name.
+func (h *QueryHelper) getLeftCollectionName() string {
+	if h.query.Target != nil {
+		if h.query.Target.Alias != nil && *h.query.Target.Alias != "" {
+			return *h.query.Target.Alias
+		}
+		if h.query.Target.Name != "" {
+			return h.query.Target.Name
+		}
+	}
+	return "left" // Default fallback name
+}
+
+// GetTargetInfo returns the target information from the query.
+// This is useful for persistence layers that need to map logical to physical collection names.
+func (h *QueryHelper) GetTargetInfo() *QueryTarget {
+	return h.query.Target
+}
+
+// GetTargetName returns the logical name of the target collection.
+func (h *QueryHelper) GetTargetName() string {
+	if h.query.Target != nil && h.query.Target.Name != "" {
+		return h.query.Target.Name
+	}
+	return ""
+}
+
+// GetTargetAlias returns the alias of the target collection, or the name if no alias is set.
+func (h *QueryHelper) GetTargetAlias() string {
+	if h.query.Target != nil {
+		if h.query.Target.Alias != nil && *h.query.Target.Alias != "" {
+			return *h.query.Target.Alias
+		}
+		return h.query.Target.Name
+	}
+	return ""
+}
+
+// performStreamingInnerJoin implements streaming inner join logic.
+func (h *QueryHelper) performStreamingInnerJoin(leftName string, left <-chan common.Document, rightName string, right <-chan common.Document, config *JoinConfiguration, resultChan chan<- common.Document, errorChan chan<- error) {
+	// For streaming inner joins, we need to buffer one side (typically the smaller one)
+	// This is a simplified implementation - in practice, you might want more sophisticated buffering
+	var rightDocs []common.Document
+
+	// Buffer all right documents
+	for rightDoc := range right {
+		rightDocs = append(rightDocs, rightDoc)
+	}
+
+	// Process left documents against buffered right documents
+	for leftDoc := range left {
+		for _, rightDoc := range rightDocs {
+			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, rightDoc)
+
+			matches, err := h.Match(combinedDoc, config.On)
+			if err != nil {
+				errorChan <- fmt.Errorf("error evaluating join condition: %w", err)
+				return
+			}
+
+			if matches {
+				// Apply projection if specified
+				if config.Projection != nil {
+					projected, err := h.projectRecord(combinedDoc, config.Projection)
+					if err != nil {
+						errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+						return
+					}
+					combinedDoc = projected
+				}
+				resultChan <- combinedDoc
+			}
+		}
+	}
+}
+
+// performStreamingLeftJoin implements streaming left join logic.
+func (h *QueryHelper) performStreamingLeftJoin(leftName string, left <-chan common.Document, rightName string, right <-chan common.Document, config *JoinConfiguration, resultChan chan<- common.Document, errorChan chan<- error) {
+	// Buffer all right documents
+	var rightDocs []common.Document
+	for rightDoc := range right {
+		rightDocs = append(rightDocs, rightDoc)
+	}
+
+	// Process left documents
+	for leftDoc := range left {
+		hasMatch := false
+		for _, rightDoc := range rightDocs {
+			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, rightDoc)
+
+			matches, err := h.Match(combinedDoc, config.On)
+			if err != nil {
+				errorChan <- fmt.Errorf("error evaluating join condition: %w", err)
+				return
+			}
+
+			if matches {
+				// Apply projection if specified
+				if config.Projection != nil {
+					projected, err := h.projectRecord(combinedDoc, config.Projection)
+					if err != nil {
+						errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+						return
+					}
+					combinedDoc = projected
+				}
+				resultChan <- combinedDoc
+				hasMatch = true
+			}
+		}
+
+		// If no matches found, include left document with null right side
+		if !hasMatch {
+			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, nil)
+			if config.Projection != nil {
+				projected, err := h.projectRecord(combinedDoc, config.Projection)
+				if err != nil {
+					errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+					return
+				}
+				combinedDoc = projected
+			}
+			resultChan <- combinedDoc
+		}
+	}
+}
+
+// performStreamingRightJoin implements streaming right join logic.
+func (h *QueryHelper) performStreamingRightJoin(leftName string, left <-chan common.Document, rightName string, right <-chan common.Document, config *JoinConfiguration, resultChan chan<- common.Document, errorChan chan<- error) {
+	// Buffer all left documents
+	var leftDocs []common.Document
+	for leftDoc := range left {
+		leftDocs = append(leftDocs, leftDoc)
+	}
+
+	// Process right documents
+	for rightDoc := range right {
+		hasMatch := false
+		for _, leftDoc := range leftDocs {
+			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, rightDoc)
+
+			matches, err := h.Match(combinedDoc, config.On)
+			if err != nil {
+				errorChan <- fmt.Errorf("error evaluating join condition: %w", err)
+				return
+			}
+
+			if matches {
+				// Apply projection if specified
+				if config.Projection != nil {
+					projected, err := h.projectRecord(combinedDoc, config.Projection)
+					if err != nil {
+						errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+						return
+					}
+					combinedDoc = projected
+				}
+				resultChan <- combinedDoc
+				hasMatch = true
+			}
+		}
+
+		// If no matches found, include right document with null left side
+		if !hasMatch {
+			combinedDoc := h.combineDocs(leftName, nil, rightName, rightDoc)
+			if config.Projection != nil {
+				projected, err := h.projectRecord(combinedDoc, config.Projection)
+				if err != nil {
+					errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+					return
+				}
+				combinedDoc = projected
+			}
+			resultChan <- combinedDoc
+		}
+	}
+}
+
+// performStreamingFullJoin implements streaming full outer join logic.
+func (h *QueryHelper) performStreamingFullJoin(leftName string, left <-chan common.Document, rightName string, right <-chan common.Document, config *JoinConfiguration, resultChan chan<- common.Document, errorChan chan<- error) {
+	// Buffer both sides for full outer join
+	var leftDocs []common.Document
+	var rightDocs []common.Document
+
+	for leftDoc := range left {
+		leftDocs = append(leftDocs, leftDoc)
+	}
+
+	for rightDoc := range right {
+		rightDocs = append(rightDocs, rightDoc)
+	}
+
+	matchedLeftIndices := make(map[int]bool)
+	matchedRightIndices := make(map[int]bool)
+
+	// Find all matches
+	for leftIndex, leftDoc := range leftDocs {
+		for rightIndex, rightDoc := range rightDocs {
+			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, rightDoc)
+
+			matches, err := h.Match(combinedDoc, config.On)
+			if err != nil {
+				errorChan <- fmt.Errorf("error evaluating join condition: %w", err)
+				return
+			}
+
+			if matches {
+				// Apply projection if specified
+				if config.Projection != nil {
+					projected, err := h.projectRecord(combinedDoc, config.Projection)
+					if err != nil {
+						errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+						return
+					}
+					combinedDoc = projected
+				}
+				resultChan <- combinedDoc
+				matchedLeftIndices[leftIndex] = true
+				matchedRightIndices[rightIndex] = true
+			}
+		}
+	}
+
+	// Add unmatched left documents
+	for leftIndex, leftDoc := range leftDocs {
+		if !matchedLeftIndices[leftIndex] {
+			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, nil)
+			if config.Projection != nil {
+				projected, err := h.projectRecord(combinedDoc, config.Projection)
+				if err != nil {
+					errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+					return
+				}
+				combinedDoc = projected
+			}
+			resultChan <- combinedDoc
+		}
+	}
+
+	// Add unmatched right documents
+	for rightIndex, rightDoc := range rightDocs {
+		if !matchedRightIndices[rightIndex] {
+			combinedDoc := h.combineDocs(leftName, nil, rightName, rightDoc)
+			if config.Projection != nil {
+				projected, err := h.projectRecord(combinedDoc, config.Projection)
+				if err != nil {
+					errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+					return
+				}
+				combinedDoc = projected
+			}
+			resultChan <- combinedDoc
+		}
+	}
 }
 
 func (h *QueryHelper) performInnerJoin(leftName string, leftDocs []common.Document, rightName string, rightDocs []common.Document, condition *QueryFilter) []common.Document {
@@ -1190,7 +1500,6 @@ func (h *QueryHelper) performLeftJoin(leftName string, leftDocs []common.Documen
 		hasMatch := false
 		for _, rightDoc := range rightDocs {
 			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, rightDoc)
-
 			matches, err := h.Match(combinedDoc, condition)
 			if err != nil {
 				continue

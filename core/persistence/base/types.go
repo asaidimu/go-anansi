@@ -77,12 +77,6 @@ const (
 	CollectionDeleteSuccess PersistenceEventType = "collection:delete:success"
 	// CollectionDeleteFailed is an event triggered when a collection deletion operation fails.
 	CollectionDeleteFailed PersistenceEventType = "collection:delete:failed"
-	// SubscriptionRegister is an event triggered when a new event subscription is registered.
-	SubscriptionRegister PersistenceEventType = "subscription:register"
-	// SubscriptionUnregister is an event triggered when an event subscription is removed.
-	SubscriptionUnregister PersistenceEventType = "subscription:unregister"
-	// MetadataCalled is an event triggered when a request for metadata is made.
-	MetadataCalled PersistenceEventType = "metadata:called"
 )
 
 // PersistenceEvent is the base struct for all events emitted by the persistence layer.
@@ -109,14 +103,6 @@ type PersistenceEvent struct {
 type TelemetryEvent struct {
 	PersistenceEvent
 	Data map[string]any `json:"data"` // Data contains the arbitrary telemetry data.
-}
-
-// SubscriptionEvent is a specific type of PersistenceEvent related to managing subscriptions.
-// It provides details about the subscription being registered or unregistered.
-type SubscriptionEvent struct {
-	PersistenceEvent
-	EventName  string `json:"eventName"`  // EventName is the name of the event that was subscribed to or unsubscribed from.
-	CallbackID string `json:"callbackId"` // CallbackID is the unique identifier for the subscription's callback function.
 }
 
 // PersistenceOperationEvent is a specific type of PersistenceEvent for document-level
@@ -218,7 +204,7 @@ type CollectionMetadata struct {
 	SchemaVersion    string                   `json:"schemaVersion"`              // SchemaVersion is the version of the schema currently used by the collection.
 	Name             string                   `json:"name"`                       // Name is the logical name of the collection.
 	CollectionName   string                   `json:"collectionName"`             // CollectionName is the physical name of the collection in the database.
-	Description      *string                  `json:"description"`                // Description is a human-readable summary of the collection's purpose.
+	Description      string                   `json:"description"`                // Description is a human-readable summary of the collection's purpose.
 	Status           string                   `json:"status"`                     // Status indicates the current state of the collection (e.g., "active", "archived").
 	CreatedAt        string                   `json:"createdAt"`                  // CreatedAt is the timestamp when the collection was created.
 	CreatedBy        string                   `json:"createdBy"`                  // CreatedBy identifies the user or process that created the collection.
@@ -322,11 +308,6 @@ type RegisterSubscriptionOptions struct {
 	Callback    EventCallbackFunction // Callback is the function that will be executed when the event is triggered.
 }
 
-// UpdateOptions defines the parameters for an update operation.
-type UpdateOptions struct {
-	Upsert *bool `json:"upsert,omitempty"` // Upsert, if true, creates a new document if no document matches the update query. If false, the update fails if no document is found.
-}
-
 // BasePersistence defines the set of operations that can be performed
 // within a database transaction. It is a subset of the PersistenceInterface, ensuring
 // that transactional operations are consistent with the main persistence API, but
@@ -335,14 +316,15 @@ type BasePersistence interface {
 	// Collection returns a handle to a specific collection by name, allowing for operations
 	// to be performed on that collection.
 	Collection(name string) (Collection, error)
+
 	// Collections returns a list of names of all available collections.
 	Collections() ([]string, error)
-	// Create creates a new collection based on the provided schema definition.
-	Create(sc schema.SchemaDefinition) (Collection, error)
+
 	// Delete removes a collection entirely, specified by its ID.
 	Delete(id string) (bool, error)
+
 	// Schema retrieves a schema definition by its unique ID.
-	Schema(id string) (*schema.SchemaDefinition, error)
+	Schema(id string, version ...string) (*schema.SchemaDefinition, error)
 
 	// Metadata retrieves metadata about the persistence layer, optionally filtered
 	// by the provided criteria.
@@ -356,6 +338,9 @@ type BasePersistence interface {
 // observability features like metadata and event subscriptions.
 type Persistence interface {
 	BasePersistence
+
+	// Create creates a new collection based on the provided schema definition.
+	Create(sc schema.SchemaDefinition) (Collection, error)
 
 	// Transact executes a series of operations within a single atomic transaction.
 	// The provided callback function receives a transaction object, and if the callback
@@ -388,6 +373,9 @@ type Persistence interface {
 		migration schema.Migration,
 		dryRun *bool,
 	) (Collection, error)
+
+	// Close safely terminates all processes spawned by the persistence layer
+	Close()
 }
 
 // CollectionUpdate defines the parameters for an update operation on a collection.
@@ -396,6 +384,10 @@ type CollectionUpdate struct {
 	Data    common.Document    `json:"data,omitempty"` // Data contains the fields and values to be updated.
 	Filter  *query.QueryFilter `json:"filter"`         // Filter is a query that selects the documents to be updated.
 	Version *int               `json:"version"`        // Version is the document version for optimistic concurrency control.
+	// WARNING: Setting Recover to true will generate new metadata for the document,
+	// including a new hash, effectively re-keying it with the current HMAC secret.
+	// This is for disaster recovery only and should not be used in normal operations.
+	Recover bool `json:"recover"`
 }
 
 // Collection defines the contract for operations on a specific collection.
@@ -405,11 +397,12 @@ type CollectionUpdate struct {
 type Collection interface {
 	// CreateOne creates a single document, returning a rich result object.
 	CreateOne(doc common.Document) (*CreateResult, error)
+
 	// CreateMany creates multiple documents, returning a rich result for each.
 	CreateMany(docs []common.Document) ([]CreateResult, error)
 
 	// Read retrieves documents from the collection that match the given QueryDSL.
-	Read(query *query.Query) (*query.QueryResult, error)
+	Read(query *query.Query) (*ReadResult, error)
 
 	// Update modifies documents in the collection that match the filter in CollectionUpdate.
 	Update(params *CollectionUpdate) (int, error)
@@ -441,3 +434,10 @@ type Collection interface {
 	// Capabilities returns the features and limitations of the underlying database backend.
 	Capabilities() *query.Capabilities
 }
+
+// QueryResult represents the result of a database query.
+type ReadResult struct {
+	Data  any `json:"data"`
+	Count int `json:"count,omitempty"`
+}
+
