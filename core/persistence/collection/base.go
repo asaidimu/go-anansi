@@ -108,8 +108,8 @@ func (c *baseCollection) withTransaction(
 }
 
 // CreateOne creates a single document.
-func (c *baseCollection) CreateOne(doc common.Document) (*base.CreateResult, error) {
-	results, err := c.CreateMany([]common.Document{doc})
+func (c *baseCollection) CreateOne(ctx context.Context, doc common.Document) (*base.CreateResult, error) {
+	results, err := c.CreateMany(ctx, []common.Document{doc})
 	if err != nil {
 		return nil, err
 	}
@@ -117,12 +117,12 @@ func (c *baseCollection) CreateOne(doc common.Document) (*base.CreateResult, err
 }
 
 // CreateMany creates multiple documents.
-func (c *baseCollection) CreateMany(docs []common.Document) ([]base.CreateResult, error) {
+func (c *baseCollection) CreateMany(ctx context.Context, docs []common.Document) ([]base.CreateResult, error) {
 	results := make([]base.CreateResult, len(docs))
 
 	// Insert the documents
-	inserted, err := c.withTransaction(context.Background(), func(interactor query.BaseDatabaseInteractor) (any, error) {
-		return interactor.InsertDocuments(context.Background(), c.schema, docs)
+	inserted, err := c.withTransaction(ctx, func(interactor query.BaseDatabaseInteractor) (any, error) {
+		return interactor.InsertDocuments(ctx, c.schema, docs)
 	})
 
 	if err != nil {
@@ -142,8 +142,8 @@ func (c *baseCollection) CreateMany(docs []common.Document) ([]base.CreateResult
 }
 
 // Read retrieves documents from the collection that match the given QueryDSL.
-func (c *baseCollection) Read(q *query.Query) (*base.ReadResult, error) {
-	docs, err := c.engine.Query(context.Background(), c.schema, q)
+func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
+	docs, err := c.engine.Query(ctx, c.schema, q)
 	if err != nil {
 		return nil, base.NewPersistenceError(fmt.Sprintf("failed to read documents: %v", err), base.ErrReadDocuments)
 	}
@@ -166,13 +166,13 @@ func (c *baseCollection) Read(q *query.Query) (*base.ReadResult, error) {
 }
 
 // Update modifies documents in the collection that match the filter in CollectionUpdate.
-func (c *baseCollection) Update(params *base.CollectionUpdate) (int, error) {
+func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
 	if params == nil || params.Filter == nil {
 		return 0, base.NewPersistenceError("update operation requires filter parameters", base.ErrInvalidUpdateParams)
 	}
 
-	result, err := c.withTransaction(context.Background(), func(interactor query.BaseDatabaseInteractor) (any, error) {
-		return interactor.UpdateDocuments(context.Background(), c.schema, params.Data, params.Filter)
+	result, err := c.withTransaction(ctx, func(interactor query.BaseDatabaseInteractor) (any, error) {
+		return interactor.UpdateDocuments(ctx, c.schema, params.Data, params.Filter)
 	})
 
 	if err != nil {
@@ -185,13 +185,13 @@ func (c *baseCollection) Update(params *base.CollectionUpdate) (int, error) {
 
 // Delete removes documents from the collection that match the given query filter.
 // The 'unsafe' flag can be used to bypass safety checks.
-func (c *baseCollection) Delete(q *query.QueryFilter, unsafe bool) (int, error) {
+func (c *baseCollection) Delete(ctx context.Context, q *query.QueryFilter, unsafe bool) (int, error) {
 	if q == nil && !unsafe {
 		return 0, base.NewPersistenceError("delete operation requires a filter or the unsafe flag set to true", base.ErrDeleteRequiresFilter)
 	}
 
-	result, err := c.withTransaction(context.Background(), func(interactor query.BaseDatabaseInteractor) (any, error) {
-		return interactor.DeleteDocuments(context.Background(), c.schema, q, unsafe)
+	result, err := c.withTransaction(ctx, func(interactor query.BaseDatabaseInteractor) (any, error) {
+		return interactor.DeleteDocuments(ctx, c.schema, q, unsafe)
 	})
 
 	if err != nil {
@@ -204,7 +204,7 @@ func (c *baseCollection) Delete(q *query.QueryFilter, unsafe bool) (int, error) 
 
 // Validate checks if the given data conforms to the collection's schema.
 // The 'loose' flag allows for partial validation.
-func (c *baseCollection) Validate(data common.Document, loose bool) (*schema.ValidationResult, error) {
+func (c *baseCollection) Validate(ctx context.Context, data common.Document, loose bool) (*schema.ValidationResult, error) {
 	issues, ok := c.validator.Validate(data, loose)
 	return &schema.ValidationResult{
 		Valid:  ok,
@@ -214,12 +214,13 @@ func (c *baseCollection) Validate(data common.Document, loose bool) (*schema.Val
 
 // Metadata retrieves metadata specifically for this collection, with an option to
 // force a refresh of the data.
-func (c *baseCollection) Metadata(filter *base.MetadataFilter, forceRefresh bool) (*base.CollectionMetadata, error) {
-	return c.metadata, nil
+func (c *baseCollection) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) (*base.CollectionMetadata, error) {
+	metadata := *c.metadata
+	return &metadata, nil
 }
 
 // RegisterSubscription registers a subscription for an event that is specific to this collection.
-func (c *baseCollection) RegisterSubscription(options base.RegisterSubscriptionOptions) string {
+func (c *baseCollection) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
 	c.subMu.Lock()
 	defer c.subMu.Unlock()
 
@@ -250,7 +251,7 @@ func (c *baseCollection) RegisterSubscription(options base.RegisterSubscriptionO
 }
 
 // UnregisterSubscription removes a collection-specific subscription.
-func (c *baseCollection) UnregisterSubscription(id string) {
+func (c *baseCollection) UnregisterSubscription(ctx context.Context, id string) {
 	c.subMu.Lock()
 	defer c.subMu.Unlock()
 
@@ -261,7 +262,7 @@ func (c *baseCollection) UnregisterSubscription(id string) {
 }
 
 // Subscriptions returns a list of all active subscriptions for this collection.
-func (c *baseCollection) Subscriptions() ([]base.SubscriptionInfo, error) {
+func (c *baseCollection) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {
 	c.subMu.RLock()
 	defer c.subMu.RUnlock()
 
@@ -274,7 +275,7 @@ func (c *baseCollection) Subscriptions() ([]base.SubscriptionInfo, error) {
 }
 
 // Capabilities returns the features and limitations of the underlying database backend.
-func (c *baseCollection) Capabilities() *query.Capabilities {
+func (c *baseCollection) Capabilities(ctx context.Context) *query.Capabilities {
 	capabilities := c.interactor.Capabilities()
 	return &capabilities
 }

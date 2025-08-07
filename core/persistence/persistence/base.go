@@ -30,6 +30,7 @@ type basePersistence struct {
 	logger             *zap.Logger
 	metadataOptions    *base.MetadataOptions
 	decorators         []utils.DecoratorFunc[base.Collection]
+	txmu sync.Mutex
 }
 
 var _ base.Persistence = (*basePersistence)(nil)
@@ -78,7 +79,7 @@ func newBasePersistence(
 	return p, nil
 }
 
-func (p *basePersistence) Collection(name string) (base.Collection, error) {
+func (p *basePersistence) Collection(ctx context.Context, name string) (base.Collection, error) {
 	p.collectionsMu.RLock()
 	c, ok := p.collections[name]
 	p.collectionsMu.RUnlock()
@@ -96,7 +97,7 @@ func (p *basePersistence) Collection(name string) (base.Collection, error) {
 		return c, nil
 	}
 
-	schema, err := (*p.registry).GetSchema(context.Background(), name)
+	schema, err := (*p.registry).GetSchema(ctx, name)
 
 	if err != nil {
 		return nil, err
@@ -120,11 +121,11 @@ func (p *basePersistence) Collection(name string) (base.Collection, error) {
 
 	decorated := utils.ApplyDecorators(newCollection, p.decorators)
 	p.collections[name] = decorated
-	return newCollection, nil
+	return decorated, nil
 }
 
-func (p *basePersistence) Collections() ([]string, error) {
-	entries, err := (*p.registry).List(context.Background())
+func (p *basePersistence) Collections(ctx context.Context) ([]string, error) {
+	entries, err := (*p.registry).List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -137,18 +138,18 @@ func (p *basePersistence) Collections() ([]string, error) {
 	return names, nil
 }
 
-func (p *basePersistence) Create(sc schema.SchemaDefinition) (base.Collection, error) {
-	_, err := (*p.registry).CreateCollection(context.Background(), &sc)
+func (p *basePersistence) Create(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
+	_, err := (*p.registry).CreateCollection(ctx, &sc)
 	if err != nil {
 		return nil, err
 	}
 
-	return p.Collection(sc.Name)
+	return p.Collection(ctx, sc.Name)
 }
 
-func (p *basePersistence) Delete(id string) (bool, error) {
+func (p *basePersistence) Delete(ctx context.Context, id string) (bool, error) {
 	opts := base.DropCollectionOptions{DeletePhysicalData: true}
-	err := (*p.registry).DropCollection(context.Background(), id, opts)
+	err := (*p.registry).DropCollection(ctx, id, opts)
 	if err != nil {
 		return false, err
 	}
@@ -161,12 +162,12 @@ func (p *basePersistence) Delete(id string) (bool, error) {
 	return true, nil
 }
 
-func (p *basePersistence) Metadata(filter *base.MetadataFilter) (base.Metadata, error) {
+func (p *basePersistence) Metadata(ctx context.Context, filter *base.MetadataFilter) (base.Metadata, error) {
 	if p.registry == nil {
 		return base.Metadata{}, errors.New("registry is not initialized")
 	}
 
-	entries, err := (*p.registry).List(context.Background())
+	entries, err := (*p.registry).List(ctx)
 	if err != nil {
 		// If the registry is empty, it might return a not found error. In this case, we should return empty metadata.
 		if errors.Is(err, registry.ErrCollectionNotFound) {
@@ -191,7 +192,7 @@ func (p *basePersistence) Metadata(filter *base.MetadataFilter) (base.Metadata, 
 		}
 	}
 
-	subscriptions, _ := p.Subscriptions()
+	subscriptions, _ := p.Subscriptions(ctx)
 	globalSubscriptions := make([]*base.SubscriptionInfo, len(subscriptions))
 	for i := range subscriptions {
 		globalSubscriptions[i] = &subscriptions[i]
@@ -207,7 +208,7 @@ func (p *basePersistence) Metadata(filter *base.MetadataFilter) (base.Metadata, 
 	}, nil
 }
 
-func (p *basePersistence) RegisterSubscription(options base.RegisterSubscriptionOptions) string {
+func (p *basePersistence) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
 	p.subMu.Lock()
 	defer p.subMu.Unlock()
 
@@ -226,8 +227,8 @@ func (p *basePersistence) RegisterSubscription(options base.RegisterSubscription
 	return id
 }
 
-func (p *basePersistence) Schema(id string, version ...string) (*schema.SchemaDefinition, error) {
-	sc, err := (*p.registry).GetSchema(context.Background(), id, version...)
+func (p *basePersistence) Schema(ctx context.Context, id string, version ...string) (*schema.SchemaDefinition, error) {
+	sc, err := (*p.registry).GetSchema(ctx, id, version...)
 	if err != nil {
 		return nil, err
 	}
@@ -235,7 +236,7 @@ func (p *basePersistence) Schema(id string, version ...string) (*schema.SchemaDe
 	return sc, nil
 }
 
-func (p *basePersistence) Subscriptions() ([]base.SubscriptionInfo, error) {
+func (p *basePersistence) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {
 	p.subMu.RLock()
 	defer p.subMu.RUnlock()
 
@@ -247,8 +248,11 @@ func (p *basePersistence) Subscriptions() ([]base.SubscriptionInfo, error) {
 	return subs, nil
 }
 
-func (p *basePersistence) Transact(callback func(tx base.BasePersistence) (any, error)) (any, error) {
-	tx, err := (*p.interactor).StartTransaction(context.Background())
+func (p *basePersistence) Transact(ctx context.Context, callback func(tx base.BasePersistence) (any, error)) (any, error) {
+	p.txmu.Lock()
+	defer p.txmu.Unlock()
+
+	tx, err := (*p.interactor).StartTransaction(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -290,15 +294,15 @@ func (p *basePersistence) Transact(callback func(tx base.BasePersistence) (any, 
 
 	result, err := callback(tp)
 	if err != nil {
-		tx.Rollback(context.Background())
+		tx.Rollback(ctx)
 		return result, err
 	}
 
-	tx.Commit(context.Background())
+	tx.Commit(ctx)
 	return result, nil
 }
 
-func (p *basePersistence) UnregisterSubscription(id string) {
+func (p *basePersistence) UnregisterSubscription(ctx context.Context, id string) {
 	p.subMu.Lock()
 	defer p.subMu.Unlock()
 
@@ -309,9 +313,9 @@ func (p *basePersistence) UnregisterSubscription(id string) {
 }
 
 func (p *basePersistence) createRegistryExecutor(schema *schema.SchemaDefinition, options *base.MetadataOptions) registry.RegistryExecutor {
-	executor := func(transaction bool, fn func(collection base.Collection, manager query.SchemaManager) (any, error)) (any, error) {
+	executor := func(ctx context.Context, transaction bool, fn func(collection base.Collection, manager query.SchemaManager) (any, error)) (any, error) {
 		if transaction {
-			tx, err := (*p.interactor).StartTransaction(context.Background())
+			tx, err := (*p.interactor).StartTransaction(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -319,9 +323,7 @@ func (p *basePersistence) createRegistryExecutor(schema *schema.SchemaDefinition
 			ix := tx.(query.BaseDatabaseInteractor)
 			engine := query.NewQueryEngine(ix, p.logger)
 
-			collection, err := collection.NewCollection(
-				p.bus, registry.REGISTRY_COLLECTION_NAME, schema, engine, p.logger, options, nil,
-			)
+			collection, err := collection.NewCollection(p.bus, registry.REGISTRY_COLLECTION_NAME, schema, engine, p.logger, options, nil)
 
 			if err != nil {
 				return nil, err
@@ -329,10 +331,10 @@ func (p *basePersistence) createRegistryExecutor(schema *schema.SchemaDefinition
 
 			result, err := fn(collection, tx.SchemaManager())
 			if err != nil {
-				tx.Rollback(context.Background())
+				tx.Rollback(ctx)
 				return nil, err
 			}
-			tx.Commit(context.Background())
+			tx.Commit(ctx)
 			return result, err
 		}
 		return fn(*p.registryCollection, (*p.interactor).SchemaManager())
@@ -342,6 +344,7 @@ func (p *basePersistence) createRegistryExecutor(schema *schema.SchemaDefinition
 }
 
 func (p *basePersistence) Rollback(
+	ctx context.Context,
 	name string,
 	version *string,
 	dryRun *bool,
@@ -350,6 +353,7 @@ func (p *basePersistence) Rollback(
 }
 
 func (p *basePersistence) Migrate(
+	ctx context.Context,
 	name string,
 	migration schema.Migration,
 	dryRun *bool,
@@ -357,7 +361,7 @@ func (p *basePersistence) Migrate(
 	return nil, nil
 }
 
-func (p *basePersistence) Close() {
+func (p *basePersistence) Close(ctx context.Context) {
 	p.bus.Close()
 	p.bus = nil
 	p.registry = nil

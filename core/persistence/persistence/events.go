@@ -109,9 +109,9 @@ func (e *eventsPersistence) withEventEmission(
 }
 
 // Create wraps the underlying persistence's Create method, adding event emission.
-func (e *eventsPersistence) Create(sc schema.SchemaDefinition) (base.Collection, error) {
+func (e *eventsPersistence) Create(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
 	result, err := e.withEventEmission(
-		context.Background(),
+		ctx,
 		"createCollection",
 		base.CollectionCreateStart,
 		base.CollectionCreateSuccess,
@@ -119,7 +119,7 @@ func (e *eventsPersistence) Create(sc schema.SchemaDefinition) (base.Collection,
 		sc, // Input is the schema definition
 		nil, // Output will be set after the operation
 		func() (any, error) {
-			return e.persistence.Create(sc)
+			return e.persistence.Create(ctx, sc)
 		},
 	)
 
@@ -131,9 +131,9 @@ func (e *eventsPersistence) Create(sc schema.SchemaDefinition) (base.Collection,
 }
 
 // Delete wraps the underlying persistence's Delete method, adding event emission.
-func (e *eventsPersistence) Delete(id string) (bool, error) {
+func (e *eventsPersistence) Delete(ctx context.Context, id string) (bool, error) {
 	result, err := e.withEventEmission(
-		context.Background(),
+		ctx,
 		"deleteCollection",
 		base.CollectionDeleteStart,
 		base.CollectionDeleteSuccess,
@@ -141,7 +141,7 @@ func (e *eventsPersistence) Delete(id string) (bool, error) {
 		id, // Input is the collection ID
 		nil, // Output will be set after the operation
 		func() (any, error) {
-			return e.persistence.Delete(id)
+			return e.persistence.Delete(ctx, id)
 		},
 	)
 
@@ -154,33 +154,33 @@ func (e *eventsPersistence) Delete(id string) (bool, error) {
 
 // All other methods simply delegate to the wrapped persistence.
 
-func (e *eventsPersistence) Collection(name string) (base.Collection, error) {
-	return e.persistence.Collection(name)
+func (e *eventsPersistence) Collection(ctx context.Context, name string) (base.Collection, error) {
+	return e.persistence.Collection(ctx, name)
 }
 
-func (e *eventsPersistence) Collections() ([]string, error) {
-	return e.persistence.Collections()
+func (e *eventsPersistence) Collections(ctx context.Context) ([]string, error) {
+	return e.persistence.Collections(ctx)
 }
 
-func (e *eventsPersistence) Metadata(filter *base.MetadataFilter) (base.Metadata, error) {
-	return e.persistence.Metadata(filter)
+func (e *eventsPersistence) Metadata(ctx context.Context, filter *base.MetadataFilter) (base.Metadata, error) {
+	return e.persistence.Metadata(ctx, filter)
 }
 
-func (e *eventsPersistence) RegisterSubscription(options base.RegisterSubscriptionOptions) string {
-	return e.persistence.RegisterSubscription(options)
+func (e *eventsPersistence) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
+	return e.persistence.RegisterSubscription(ctx, options)
 }
 
-func (e *eventsPersistence) Schema(id string, version ...string) (*schema.SchemaDefinition, error) {
-	return e.persistence.Schema(id, version...)
+func (e *eventsPersistence) Schema(ctx context.Context, id string, version ...string) (*schema.SchemaDefinition, error) {
+	return e.persistence.Schema(ctx, id, version...)
 }
 
-func (e *eventsPersistence) Subscriptions() ([]base.SubscriptionInfo, error) {
-	return e.persistence.Subscriptions()
+func (e *eventsPersistence) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {
+	return e.persistence.Subscriptions(ctx)
 }
 
-func (e *eventsPersistence) Transact(callback func(tx base.BasePersistence) (any, error)) (any, error) {
+func (e *eventsPersistence) Transact(ctx context.Context, callback func(tx base.BasePersistence) (any, error)) (any, error) {
 	result, err := e.withEventEmission(
-		context.Background(),
+		ctx,
 		"transact",
 		base.TransactionStart,
 		base.TransactionSuccess,
@@ -188,7 +188,7 @@ func (e *eventsPersistence) Transact(callback func(tx base.BasePersistence) (any
 		nil, // No specific input for transaction start
 		nil, // Output will be set after the operation
 		func() (any, error) {
-			return e.persistence.Transact(callback)
+			return e.persistence.Transact(ctx, callback)
 		},
 	)
 
@@ -199,26 +199,28 @@ func (e *eventsPersistence) Transact(callback func(tx base.BasePersistence) (any
 	return result, nil
 }
 
-func (e *eventsPersistence) UnregisterSubscription(id string) {
-	e.persistence.UnregisterSubscription(id)
+func (e *eventsPersistence) UnregisterSubscription(ctx context.Context, id string) {
+	e.persistence.UnregisterSubscription(ctx, id)
 }
 
 func (e *eventsPersistence) Rollback(
+	ctx context.Context,
 	name string,
 	version *string,
 	dryRun *bool,
 ) (base.Collection, error) {
-	return e.persistence.Rollback(name, version, dryRun)
+	return e.persistence.Rollback(ctx, name, version, dryRun)
 }
 
 func (e *eventsPersistence) Migrate(
+	ctx context.Context,
 	name string,
 	migration schema.Migration,
 	dryRun *bool,
 ) (base.Collection, error) {
-	return e.persistence.Migrate(name, migration, dryRun)
+	return e.persistence.Migrate(ctx, name, migration, dryRun)
 }
 
-func (e *eventsPersistence) Close() {
-	e.persistence.Close()
+func (e *eventsPersistence) Close(ctx context.Context) {
+	e.persistence.Close(ctx)
 }

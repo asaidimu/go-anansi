@@ -42,12 +42,12 @@ func TestPersistence_CreateAndGetCollection(t *testing.T) {
 	schema := newTestSchema("my_collection")
 
 	// Create the collection
-	createdCollection, err := p.Create(*schema)
+	createdCollection, err := p.Create(context.Background(), *schema)
 	require.NoError(t, err)
 	assert.NotNil(t, createdCollection)
 
 	// Get the collection
-	retrievedCollection, err := p.Collection("my_collection")
+	retrievedCollection, err := p.Collection(context.Background(), "my_collection")
 	require.NoError(t, err)
 	assert.NotNil(t, retrievedCollection)
 
@@ -68,16 +68,16 @@ func TestPersistence_DeleteCollection(t *testing.T) {
 	schema := newTestSchema("my_collection")
 
 	// Create the collection
-	_, err = p.Create(*schema)
+	_, err = p.Create(context.Background(), *schema)
 	require.NoError(t, err)
 
 	// Delete the collection
-	deleted, err := p.Delete("my_collection")
+	deleted, err := p.Delete(context.Background(), "my_collection")
 	require.NoError(t, err)
 	assert.True(t, deleted)
 
 	// Verify the collection is gone
-	_, err = p.Collection("my_collection")
+	_, err = p.Collection(context.Background(), "my_collection")
 	assert.Error(t, err)
 }
 
@@ -98,25 +98,25 @@ func TestPersistence_Subscriptions(t *testing.T) {
 	}
 	assert.NotNil(t, receivedEvent)
 	// Register a subscription
-	subID := p.RegisterSubscription(base.RegisterSubscriptionOptions{
+	subID := p.RegisterSubscription(context.Background(), base.RegisterSubscriptionOptions{
 		Event:    base.CollectionCreateSuccess,
 		Callback: callback,
 	})
 
 	// Verify the subscription is active
-	subs, err := p.Subscriptions()
+	subs, err := p.Subscriptions(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, subs, 1)
 
 	// Trigger an event
-	_, err = p.Create(*newTestSchema("another_collection"))
+	_, err = p.Create(context.Background(), *newTestSchema("another_collection"))
 	require.NoError(t, err)
 
 	// Unregister the subscription
-	p.UnregisterSubscription(subID)
+	p.UnregisterSubscription(context.Background(), subID)
 
 	// Verify the subscription is gone
-	subs, err = p.Subscriptions()
+	subs, err = p.Subscriptions(context.Background())
 	require.NoError(t, err)
 	assert.Len(t, subs, 0)
 }
@@ -135,24 +135,24 @@ func TestPersistence_Transact(t *testing.T) {
 	sc.Fields["balance"] = &schema.FieldDefinition{Name: "balance", Type: "number"}
 
 	// Create the collection and some initial data outside the transaction
-	accounts, err := p.Create(*sc)
+	accounts, err := p.Create(context.Background(), *sc)
 	require.NoError(t, err)
 
-	_, err = accounts.CreateMany([]common.Document{
+	_, err = accounts.CreateMany(context.Background(), []common.Document{
 		{"id": "A", "name": "Alice", "balance": 100.0},
 		{"id": "B", "name": "Bob", "balance": 50.0},
 	})
 
 	// Perform a successful transfer within a transaction
-	_, err = p.Transact(func(tx base.BasePersistence) (any, error) {
-		acc, err := tx.Collection("accounts")
+	_, err = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
+		acc, err := tx.Collection(context.Background(), "accounts")
 		if err != nil {
 			return nil, err
 		}
 
 		// Read Alice's document to get metadata
 		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
-		aliceResult, err := acc.Read(&aliceQuery)
+		aliceResult, err := acc.Read(context.Background(), &aliceQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -163,14 +163,14 @@ func TestPersistence_Transact(t *testing.T) {
 		// Subtract 20 from Alice
 		aliceDoc["balance"] = 80.0
 		filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
-		_, err = acc.Update(&base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
 		if err != nil {
 			return nil, err
 		}
 
 		// Read Bob's document to get metadata
 		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
-		bobResult, err := acc.Read(&bobQuery)
+		bobResult, err := acc.Read(context.Background(), &bobQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -180,7 +180,7 @@ func TestPersistence_Transact(t *testing.T) {
 		// Add 20 to Bob
 		bobDoc["balance"] = 70.0
 		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
-		_, err = acc.Update(&base.CollectionUpdate{Data: bobDoc, Filter: filterBob})
+		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: bobDoc, Filter: filterBob})
 		if err != nil {
 			return nil, err
 		}
@@ -190,9 +190,9 @@ func TestPersistence_Transact(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify the balances outside the transaction
-	finalAccounts, err := p.Collection("accounts")
+	finalAccounts, err := p.Collection(context.Background(), "accounts")
 	require.NoError(t, err)
-	result, err := finalAccounts.Read(&query.Query{})
+	result, err := finalAccounts.Read(context.Background(), &query.Query{})
 	require.NoError(t, err)
 
 	balances := make(map[string]any)
@@ -204,15 +204,15 @@ func TestPersistence_Transact(t *testing.T) {
 	assert.Equal(t, 70.0, balances["B"])
 
 	// Perform a failing transaction
-	_, err = p.Transact(func(tx base.BasePersistence) (any, error) {
-		acc, err := tx.Collection("accounts")
+	_, err = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
+		acc, err := tx.Collection(context.Background(), "accounts")
 		if err != nil {
 			return nil, err
 		}
 
 		// Read Alice's document to get metadata
 		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
-		aliceResult, err := acc.Read(&aliceQuery)
+		aliceResult, err := acc.Read(context.Background(), &aliceQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -222,7 +222,7 @@ func TestPersistence_Transact(t *testing.T) {
 		// Subtract 10 from Alice
 		aliceDoc["balance"] = 70.0
 		filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
-		_, err = acc.Update(&base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
 		if err != nil {
 			return nil, err
 		}
@@ -232,7 +232,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 		// We still need metadata for the update to pass the initial check
 		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
-		bobResult, err := acc.Read(&bobQuery)
+		bobResult, err := acc.Read(context.Background(), &bobQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +242,7 @@ func TestPersistence_Transact(t *testing.T) {
 		updateBob.SetMetadata(meta)
 
 		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
-		_, err = acc.Update(&base.CollectionUpdate{Data: updateBob, Filter: filterBob})
+		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: updateBob, Filter: filterBob})
 
 		return nil, err // Propagate the error to trigger rollback
 	})
@@ -250,7 +250,7 @@ func TestPersistence_Transact(t *testing.T) {
 	require.Error(t, err)
 
 	// Verify the balances were rolled back and remain unchanged
-	rollbackResult, err := finalAccounts.Read(&query.Query{})
+	rollbackResult, err := finalAccounts.Read(context.Background(), &query.Query{})
 	require.NoError(t, err)
 
 	rollbackBalances := make(map[string]any)
@@ -275,30 +275,30 @@ func TestPersistence_Schema(t *testing.T) {
 	// Create a schema and a collection based on it
 	testSchema := newTestSchema("my_schema_collection")
 	testSchema.Version = "1.0.0"
-	_, err = p.Create(*testSchema)
+	_, err = p.Create(context.Background(), *testSchema)
 	require.NoError(t, err)
 
 	// Retrieve the schema by ID
-	retrievedSchema, err := p.Schema("my_schema_collection")
+	retrievedSchema, err := p.Schema(context.Background(), "my_schema_collection")
 	require.NoError(t, err)
 	assert.NotNil(t, retrievedSchema)
 	assert.Equal(t, testSchema.Description, retrievedSchema.Description)
 	assert.Equal(t, testSchema.Version, retrievedSchema.Version)
 
 	// Retrieve the schema by ID and version
-	retrievedSchemaWithVersion, err := p.Schema("my_schema_collection", "1.0.0")
+	retrievedSchemaWithVersion, err := p.Schema(context.Background(), "my_schema_collection", "1.0.0")
 	require.NoError(t, err)
 	assert.NotNil(t, retrievedSchemaWithVersion)
 	assert.Equal(t, testSchema.Description, retrievedSchemaWithVersion.Description)
 	assert.Equal(t, testSchema.Version, retrievedSchemaWithVersion.Version)
 
 	// Try to retrieve a non-existent schema
-	_, err = p.Schema("non_existent_schema")
+	_, err = p.Schema(context.Background(), "non_existent_schema")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "collection not found")
 
 	// Try to retrieve an existent schema with a non-existent version
-	_, err = p.Schema("my_schema_collection", "2.0.0")
+	_, err = p.Schema(context.Background(), "my_schema_collection", "2.0.0")
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "version '2.0.0' not found for collection 'my_schema_collection'")
 }
@@ -314,7 +314,7 @@ func TestPersistence_DeleteNonExistentCollection(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to delete a collection that doesn't exist
-	deleted, err := p.Delete("non_existent_collection")
+	deleted, err := p.Delete(context.Background(), "non_existent_collection")
 	require.Error(t, err)
 	assert.False(t, deleted)
 }
@@ -330,10 +330,10 @@ func TestPersistence_Close(t *testing.T) {
 	require.NoError(t, err)
 
 	// Close the persistence instance
-	p.Close()
+	p.Close(context.Background())
 
 	// Attempt an operation after closing, it should return an error
-	_, err = p.Create(*newTestSchema("closed_collection"))
+	_, err = p.Create(context.Background(), *newTestSchema("closed_collection"))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "persistence instance is closed") // Assuming the event bus closure causes subsequent errors
 }
@@ -349,7 +349,7 @@ func TestPersistence_CollectionNonExistent(t *testing.T) {
 	require.NoError(t, err)
 
 	// Try to get a collection that doesn't exist
-	_, err = p.Collection("non_existent_collection")
+	_, err = p.Collection(context.Background(), "non_existent_collection")
 	assert.Error(t, err)
 }
 
@@ -365,7 +365,7 @@ func TestPersistence_CreateWithInvalidSchema(t *testing.T) {
 
 	// Create an invalid schema (e.g., missing name)
 	invalidSchema := newTestSchema("")
-	_, err = p.Create(*invalidSchema)
+	_, err = p.Create(context.Background(), *invalidSchema)
 	assert.Error(t, err)
 }
 
@@ -380,7 +380,7 @@ func TestPersistence_MetadataOnEmptyDB(t *testing.T) {
 	require.NoError(t, err)
 
 	// Get metadata from an empty database
-	meta, err := p.Metadata(nil)
+	meta, err := p.Metadata(context.Background(), nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, int64(0), *meta.CollectionCount)
@@ -401,25 +401,25 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	sc := newTestSchema("accounts")
 	sc.Fields["balance"] = &schema.FieldDefinition{Name: "balance", Type: "number"}
 
-	accounts, err := p.Create(*sc)
+	accounts, err := p.Create(context.Background(), *sc)
 	require.NoError(t, err)
 
-	_, err = accounts.CreateMany([]common.Document{
+	_, err = accounts.CreateMany(context.Background(), []common.Document{
 		{"id": "A", "name": "Alice", "balance": 100.0},
 	})
 	require.NoError(t, err)
 
 	// Perform a transaction that panics
 	assert.Panics(t, func() {
-		_, _ = p.Transact(func(tx base.BasePersistence) (any, error) {
-			acc, err := tx.Collection("accounts")
+		_, _ = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
+			acc, err := tx.Collection(context.Background(), "accounts")
 			if err != nil {
 				return nil, err
 			}
 
 			// Read Alice's document
 			aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
-			aliceResult, err := acc.Read(&aliceQuery)
+			aliceResult, err := acc.Read(context.Background(), &aliceQuery)
 			if err != nil {
 				return nil, err
 			}
@@ -429,7 +429,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 			// Update Alice's balance
 			aliceDoc["balance"] = 50.0
 			filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
-			_, err = acc.Update(&base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+			_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
 			if err != nil {
 				return nil, err
 			}
@@ -440,9 +440,9 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	})
 
 	// Verify that the balance was rolled back
-	finalAccounts, err := p.Collection("accounts")
+	finalAccounts, err := p.Collection(context.Background(), "accounts")
 	require.NoError(t, err)
-	result, err := finalAccounts.Read(&query.Query{})
+	result, err := finalAccounts.Read(context.Background(), &query.Query{})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.Count)
 	doc := result.Data.(common.Document)
@@ -463,13 +463,13 @@ func TestPersistence_Metadata(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create some collections
-	_, err = p.Create(*newTestSchema("coll1"))
+	_, err = p.Create(context.Background(), *newTestSchema("coll1"))
 	require.NoError(t, err)
-	_, err = p.Create(*newTestSchema("coll2"))
+	_, err = p.Create(context.Background(), *newTestSchema("coll2"))
 	require.NoError(t, err)
 
 	// Get metadata
-	meta, err := p.Metadata(nil)
+	meta, err := p.Metadata(context.Background(), nil)
 	require.NoError(t, err)
 
 	assert.Equal(t, int64(2), *meta.CollectionCount)
@@ -507,13 +507,13 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	}
 
 	// 2. Create Collections
-	usersCollection, err := p.Create(userSchema)
+	usersCollection, err := p.Create(context.Background(), userSchema)
 	require.NoError(t, err)
-	profilesCollection, err := p.Create(profileSchema)
+	profilesCollection, err := p.Create(context.Background(), profileSchema)
 	require.NoError(t, err)
 
 	// 3. Insert Data
-	_, err = usersCollection.CreateMany([]common.Document{
+	_, err = usersCollection.CreateMany(context.Background(), []common.Document{
 		{"id": "user1", "name": "Alice"},
 		{"id": "user2", "name": "Bob"},
 		{"id": "user3", "name": "Charlie"},
@@ -521,7 +521,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = profilesCollection.CreateMany([]common.Document{
+	_, err = profilesCollection.CreateMany(context.Background(), []common.Document{
 		{"user": "user1", "bio": "Loves Go programming"},
 		{"user": "user2", "bio": "Enjoys testing"},
 	})
@@ -547,7 +547,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 		Build()
 
 	// 5. Execute Query on the 'users' collection
-	result, err := usersCollection.Read(&joinQuery)
+	result, err := usersCollection.Read(context.Background(), &joinQuery)
 	require.NoError(t, err)
 	assert.NotNil(t, result)
 	data := result.Data.([]common.Document)

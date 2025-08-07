@@ -1,7 +1,9 @@
 package persistence
 
 import (
+	"context"
 	"errors"
+
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
@@ -33,92 +35,93 @@ func (m *managedPersistence) checkClosed() error {
 }
 
 // Close sets the closed flag and delegates the call to the wrapped persistence.
-func (m *managedPersistence) Close() {
+func (m *managedPersistence) Close(ctx context.Context) {
 	m.closed = true
-	m.wrapped.Close()
+	m.wrapped.Close(ctx)
 }
 
 // Collection delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) Collection(name string) (base.Collection, error) {
+func (m *managedPersistence) Collection(ctx context.Context, name string) (base.Collection, error) {
 	if err := m.checkClosed(); err != nil {
 		return nil, err
 	}
-	return m.wrapped.Collection(name)
+	return m.wrapped.Collection(ctx, name)
 }
 
 // Collections delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) Collections() ([]string, error) {
+func (m *managedPersistence) Collections(ctx context.Context) ([]string, error) {
 	if err := m.checkClosed(); err != nil {
 		return nil, err
 	}
-	return m.wrapped.Collections()
+	return m.wrapped.Collections(ctx)
 }
 
 // Create delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) Create(sc schema.SchemaDefinition) (base.Collection, error) {
+func (m *managedPersistence) Create(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
 	if err := m.checkClosed(); err != nil {
 		return nil, err	}
-	return m.wrapped.Create(sc)
+	return m.wrapped.Create(ctx, sc)
 }
 
 // Delete delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) Delete(id string) (bool, error) {
+func (m *managedPersistence) Delete(ctx context.Context, id string) (bool, error) {
 	if err := m.checkClosed(); err != nil {
 		return false, err
 	}
-	return m.wrapped.Delete(id)
+	return m.wrapped.Delete(ctx, id)
 }
 
 // Metadata delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) Metadata(filter *base.MetadataFilter) (base.Metadata, error) {
+func (m *managedPersistence) Metadata(ctx context.Context, filter *base.MetadataFilter) (base.Metadata, error) {
 	if err := m.checkClosed(); err != nil {
 		return base.Metadata{}, err
 	}
-	return m.wrapped.Metadata(filter)
+	return m.wrapped.Metadata(ctx, filter)
 }
 
 // RegisterSubscription delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) RegisterSubscription(options base.RegisterSubscriptionOptions) string {
+func (m *managedPersistence) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
 	if err := m.checkClosed(); err != nil {
 		return "" // Or handle error appropriately, e.g., panic or log
 	}
-	return m.wrapped.RegisterSubscription(options)
+	return m.wrapped.RegisterSubscription(ctx, options)
 }
 
 // Schema delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) Schema(id string, version ...string) (*schema.SchemaDefinition, error) {
+func (m *managedPersistence) Schema(ctx context.Context, id string, version ...string) (*schema.SchemaDefinition, error) {
 	if err := m.checkClosed(); err != nil {
 		return nil, err
 	}
-	return m.wrapped.Schema(id, version...)
+	return m.wrapped.Schema(ctx, id, version...)
 }
 
 // Subscriptions delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) Subscriptions() ([]base.SubscriptionInfo, error) {
+func (m *managedPersistence) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {
 	if err := m.checkClosed(); err != nil {
 		return nil, err
 	}
-	return m.wrapped.Subscriptions()
+	return m.wrapped.Subscriptions(ctx)
 }
 
 // Transact delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) Transact(callback func(tx base.BasePersistence) (any, error)) (any, error) {
+func (m *managedPersistence) Transact(ctx context.Context, callback func(tx base.BasePersistence) (any, error)) (any, error) {
 	if err := m.checkClosed(); err != nil {
 		return nil, err
 	}
-	return m.wrapped.Transact(callback)
+	return m.wrapped.Transact(ctx, callback)
 }
 
 // UnregisterSubscription delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) UnregisterSubscription(id string) {
+func (m *managedPersistence) UnregisterSubscription(ctx context.Context, id string) {
 	if err := m.checkClosed(); err != nil {
 		return
 	}
-	m.wrapped.UnregisterSubscription(id)
+	m.wrapped.UnregisterSubscription(ctx, id)
 }
 
 // Rollback delegates the call to the wrapped persistence after checking the closed state.
 func (m *managedPersistence) Rollback(
+	ctx context.Context,
 	name string,
 	version *string,
 	dryRun *bool,
@@ -126,11 +129,12 @@ func (m *managedPersistence) Rollback(
 	if err := m.checkClosed(); err != nil {
 		return nil, err
 	}
-	return m.wrapped.Rollback(name, version, dryRun)
+	return m.wrapped.Rollback(ctx, name, version, dryRun)
 }
 
 // Migrate delegates the call to the wrapped persistence after checking the closed state.
 func (m *managedPersistence) Migrate(
+	ctx context.Context,
 	name string,
 	migration schema.Migration,
 	dryRun *bool,
@@ -138,5 +142,5 @@ func (m *managedPersistence) Migrate(
 	if err := m.checkClosed(); err != nil {
 		return nil, err
 	}
-	return m.wrapped.Migrate(name, migration, dryRun)
+	return m.wrapped.Migrate(ctx, name, migration, dryRun)
 }

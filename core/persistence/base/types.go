@@ -315,20 +315,21 @@ type RegisterSubscriptionOptions struct {
 type BasePersistence interface {
 	// Collection returns a handle to a specific collection by name, allowing for operations
 	// to be performed on that collection.
-	Collection(name string) (Collection, error)
+	Collection(ctx context.Context, name string) (Collection, error)
 
 	// Collections returns a list of names of all available collections.
-	Collections() ([]string, error)
+	Collections(ctx context.Context) ([]string, error)
 
 	// Delete removes a collection entirely, specified by its ID.
-	Delete(id string) (bool, error)
+	Delete(ctx context.Context, id string) (bool, error)
 
 	// Schema retrieves a schema definition by its unique ID.
-	Schema(id string, version ...string) (*schema.SchemaDefinition, error)
+	Schema(ctx context.Context, id string, version ...string) (*schema.SchemaDefinition, error)
 
 	// Metadata retrieves metadata about the persistence layer, optionally filtered
 	// by the provided criteria.
 	Metadata(
+		ctx context.Context,
 		filter *MetadataFilter,
 	) (Metadata, error)
 }
@@ -340,26 +341,27 @@ type Persistence interface {
 	BasePersistence
 
 	// Create creates a new collection based on the provided schema definition.
-	Create(sc schema.SchemaDefinition) (Collection, error)
+	Create(ctx context.Context, sc schema.SchemaDefinition) (Collection, error)
 
 	// Transact executes a series of operations within a single atomic transaction.
 	// The provided callback function receives a transaction object, and if the callback
 	// returns an error, the transaction is rolled back.
-	Transact(callback func(tx BasePersistence) (any, error)) (any, error)
+	Transact(ctx context.Context, callback func(tx BasePersistence) (any, error)) (any, error)
 
 	// RegisterSubscription registers a callback function to be executed when a specific
 	// persistence event occurs. It returns a unique ID for the subscription.
-	RegisterSubscription(options RegisterSubscriptionOptions) string
+	RegisterSubscription(ctx context.Context, options RegisterSubscriptionOptions) string
 
 	// UnregisterSubscription removes an active subscription, specified by its ID.
-	UnregisterSubscription(id string)
+	UnregisterSubscription(ctx context.Context, id string)
 
 	// Subscriptions returns a list of all currently active subscriptions.
-	Subscriptions() ([]SubscriptionInfo, error)
+	Subscriptions(ctx context.Context) ([]SubscriptionInfo, error)
 
 	// Rollback reverts a schema migration for the collection. A specific version can be
 	// targeted, and a dry run can be performed to preview the changes.
 	Rollback(
+		ctx context.Context,
 		name string,
 		version *string,
 		dryRun *bool,
@@ -369,13 +371,14 @@ type Persistence interface {
 	// callback function that defines the data transformation. A dry run can be performed
 	// to preview the changes.
 	Migrate(
+		ctx context.Context,
 		name string,
 		migration schema.Migration,
 		dryRun *bool,
 	) (Collection, error)
 
 	// Close safely terminates all processes spawned by the persistence layer
-	Close()
+	Close(ctx context.Context)
 }
 
 // CollectionUpdate defines the parameters for an update operation on a collection.
@@ -396,43 +399,44 @@ type CollectionUpdate struct {
 // observability (metadata and subscriptions).
 type Collection interface {
 	// CreateOne creates a single document, returning a rich result object.
-	CreateOne(doc common.Document) (*CreateResult, error)
+	CreateOne(ctx context.Context, doc common.Document) (*CreateResult, error)
 
 	// CreateMany creates multiple documents, returning a rich result for each.
-	CreateMany(docs []common.Document) ([]CreateResult, error)
+	CreateMany(ctx context.Context, docs []common.Document) ([]CreateResult, error)
 
 	// Read retrieves documents from the collection that match the given QueryDSL.
-	Read(query *query.Query) (*ReadResult, error)
+	Read(ctx context.Context, query *query.Query) (*ReadResult, error)
 
 	// Update modifies documents in the collection that match the filter in CollectionUpdate.
-	Update(params *CollectionUpdate) (int, error)
+	Update(ctx context.Context, params *CollectionUpdate) (int, error)
 
 	// Delete removes documents from the collection that match the given query filter.
 	// The 'unsafe' flag can be used to bypass safety checks.
-	Delete(query *query.QueryFilter, unsafe bool) (int, error)
+	Delete(ctx context.Context, query *query.QueryFilter, unsafe bool) (int, error)
 
 	// Validate checks if the given data conforms to the collection's schema.
 	// The 'loose' flag allows for partial validation.
-	Validate(data common.Document, loose bool) (*schema.ValidationResult, error)
+	Validate(ctx context.Context, data common.Document, loose bool) (*schema.ValidationResult, error)
 
 	// Metadata retrieves metadata specifically for this collection, with an option to
 	// force a refresh of the data.
 	Metadata(
+		ctx context.Context,
 		filter *MetadataFilter,
 		forceRefresh bool,
 	) (*CollectionMetadata, error)
 
 	// RegisterSubscription registers a subscription for an event that is specific to this collection.
-	RegisterSubscription(options RegisterSubscriptionOptions) string
+	RegisterSubscription(ctx context.Context, options RegisterSubscriptionOptions) string
 
 	// UnregisterSubscription removes a collection-specific subscription.
-	UnregisterSubscription(id string)
+	UnregisterSubscription(ctx context.Context, id string)
 
 	// Subscriptions returns a list of all active subscriptions for this collection.
-	Subscriptions() ([]SubscriptionInfo, error)
+	Subscriptions(ctx context.Context) ([]SubscriptionInfo, error)
 
 	// Capabilities returns the features and limitations of the underlying database backend.
-	Capabilities() *query.Capabilities
+	Capabilities(ctx context.Context) *query.Capabilities
 }
 
 // QueryResult represents the result of a database query.

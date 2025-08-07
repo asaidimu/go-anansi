@@ -58,9 +58,9 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 	require.NoError(t, err)
 
 	// Create the executor that provides transactional coordination
-	executor := func(transaction bool, fn func(collection base.Collection, manager query.SchemaManager) (any, error)) (any, error) {
+	executor := func(ctx context.Context, transaction bool, fn func(collection base.Collection, manager query.SchemaManager) (any, error)) (any, error) {
 		if transaction {
-			tx, err := interactor.StartTransaction(context.Background())
+			tx, err := interactor.StartTransaction(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -81,10 +81,10 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 
 			result, err := fn(collection, tx.SchemaManager())
 			if err != nil {
-				tx.Rollback(context.Background())
+				tx.Rollback(ctx)
 				return nil, err
 			}
-			tx.Commit(context.Background())
+			tx.Commit(ctx)
 			return result, err
 		}
 		return fn(registryCollection, schemaManager)

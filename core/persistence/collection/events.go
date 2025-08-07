@@ -4,6 +4,7 @@
 package collection
 
 import (
+	"context"
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
@@ -24,6 +25,9 @@ type eventsCollection struct {
 	bus        *events.TypedEventBus[base.PersistenceEvent]
 	schema     *schema.SchemaDefinition
 }
+
+
+var _ base.Collection = (*eventsCollection)(nil)
 
 // newEventEmittingCollection creates a new event-emitting collection wrapper.
 // It takes a CollectionBase and returns a Collection that will emit events
@@ -110,7 +114,7 @@ func (e *eventsCollection) withEventEmission(
 }
 
 // CreateOne wraps the underlying collection's CreateOne method, adding event emission.
-func (e *eventsCollection) CreateOne(doc common.Document) (*base.CreateResult, error) {
+func (e *eventsCollection) CreateOne(ctx context.Context, doc common.Document) (*base.CreateResult, error) {
 	result, err := e.withEventEmission(
 		"createOne",
 		base.DocumentCreateStart,
@@ -119,7 +123,7 @@ func (e *eventsCollection) CreateOne(doc common.Document) (*base.CreateResult, e
 		doc,
 		nil, // No query parameter for create
 		func() (any, error) {
-			return e.collection.CreateOne(doc)
+			return e.collection.CreateOne(ctx, doc)
 		},
 	)
 
@@ -131,7 +135,7 @@ func (e *eventsCollection) CreateOne(doc common.Document) (*base.CreateResult, e
 }
 
 // CreateMany wraps the underlying collection's CreateMany method, adding event emission.
-func (e *eventsCollection) CreateMany(docs []common.Document) ([]base.CreateResult, error) {
+func (e *eventsCollection) CreateMany(ctx context.Context, docs []common.Document) ([]base.CreateResult, error) {
 	result, err := e.withEventEmission(
 		"createMany",
 		base.DocumentCreateStart,
@@ -140,7 +144,7 @@ func (e *eventsCollection) CreateMany(docs []common.Document) ([]base.CreateResu
 		docs,
 		nil, // No query parameter for create
 		func() (any, error) {
-			return e.collection.CreateMany(docs)
+			return e.collection.CreateMany(ctx, docs)
 		},
 	)
 
@@ -153,7 +157,7 @@ func (e *eventsCollection) CreateMany(docs []common.Document) ([]base.CreateResu
 
 // Read wraps the underlying collection's Read method, adding event emission
 // for the start, success, and failure of the operation.
-func (e *eventsCollection) Read(q *query.Query) (*base.ReadResult, error) {
+func (e *eventsCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
 	result, err := e.withEventEmission(
 		"read",
 		base.DocumentReadStart,
@@ -162,7 +166,7 @@ func (e *eventsCollection) Read(q *query.Query) (*base.ReadResult, error) {
 		nil, // No input data for read
 		q,
 		func() (any, error) {
-			return e.collection.Read(q)
+			return e.collection.Read(ctx, q)
 		},
 	)
 
@@ -175,7 +179,7 @@ func (e *eventsCollection) Read(q *query.Query) (*base.ReadResult, error) {
 
 // Update wraps the underlying collection's Update method, adding event emission
 // for the start, success, and failure of the operation.
-func (e *eventsCollection) Update(params *base.CollectionUpdate) (int, error) {
+func (e *eventsCollection) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
 	result, err := e.withEventEmission(
 		"update",
 		base.DocumentUpdateStart,
@@ -184,7 +188,7 @@ func (e *eventsCollection) Update(params *base.CollectionUpdate) (int, error) {
 		params.Data,
 		params.Filter,
 		func() (any, error) {
-			return e.collection.Update(params)
+			return e.collection.Update(ctx, params)
 		},
 	)
 
@@ -197,7 +201,7 @@ func (e *eventsCollection) Update(params *base.CollectionUpdate) (int, error) {
 
 // Delete wraps the underlying collection's Delete method, adding event emission
 // for the start, success, and failure of the operation.
-func (e *eventsCollection) Delete(filter *query.QueryFilter, unsafe bool) (int, error) {
+func (e *eventsCollection) Delete(ctx context.Context, filter *query.QueryFilter, unsafe bool) (int, error) {
 	result, err := e.withEventEmission(
 		"delete",
 		base.DocumentDeleteStart,
@@ -206,7 +210,7 @@ func (e *eventsCollection) Delete(filter *query.QueryFilter, unsafe bool) (int, 
 		nil, // No input data for delete
 		filter,
 		func() (any, error) {
-			return e.collection.Delete(filter, unsafe)
+			return e.collection.Delete(ctx, filter, unsafe)
 		},
 	)
 
@@ -219,39 +223,40 @@ func (e *eventsCollection) Delete(filter *query.QueryFilter, unsafe bool) (int, 
 
 // Validate delegates the call to the underlying collection's Validate method.
 // No events are emitted for validation as it is a read-only operation.
-func (e *eventsCollection) Validate(data common.Document, loose bool) (*schema.ValidationResult, error) {
-	return e.collection.Validate(data, loose)
+func (e *eventsCollection) Validate(ctx context.Context, data common.Document, loose bool) (*schema.ValidationResult, error) {
+	return e.collection.Validate(ctx, data, loose)
 }
 
 // Metadata delegates the call to the underlying collection's Metadata method,
 // but also emits a telemetry event to record that metadata was requested.
 func (e *eventsCollection) Metadata(
+	ctx context.Context,
 	filter *base.MetadataFilter,
 	forceRefresh bool,
 ) (*base.CollectionMetadata, error) {
-	return e.collection.Metadata(filter, forceRefresh)
+	return e.collection.Metadata(ctx, filter, forceRefresh)
 }
 
 // RegisterSubscription wraps the underlying collection's RegisterSubscription method,
 // emitting an event after a new subscription is successfully registered.
-func (e *eventsCollection) RegisterSubscription(options base.RegisterSubscriptionOptions) string {
-	id := e.collection.RegisterSubscription(options)
+func (e *eventsCollection) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
+	id := e.collection.RegisterSubscription(ctx, options)
 	return id
 }
 
 // UnregisterSubscription wraps the underlying collection's UnregisterSubscription method,
 // emitting an event after a subscription is successfully unregistered.
-func (e *eventsCollection) UnregisterSubscription(id string) {
-	e.collection.UnregisterSubscription(id)
+func (e *eventsCollection) UnregisterSubscription(ctx context.Context, id string) {
+	e.collection.UnregisterSubscription(ctx, id)
 }
 
 // Subscriptions delegates the call to the underlying collection's Subscriptions method.
 // No events are emitted for this operation.
-func (e *eventsCollection) Subscriptions() ([]base.SubscriptionInfo, error) {
-	return e.collection.Subscriptions()
+func (e *eventsCollection) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {
+	return e.collection.Subscriptions(ctx)
 }
 
 // Capabilities delegates the call to the underlying collection's Capabilities method.
-func (e *eventsCollection) Capabilities() *query.Capabilities {
-	return e.collection.Capabilities()
+func (e *eventsCollection) Capabilities(ctx context.Context) *query.Capabilities {
+	return e.collection.Capabilities(ctx)
 }

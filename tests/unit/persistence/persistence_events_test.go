@@ -27,7 +27,7 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	sc := newTestSchema("test_collection")
-	collection, err := p.Create(*sc)
+	collection, err := p.Create(context.Background(), *sc)
 	require.NoError(t, err)
 
 	var mu sync.Mutex
@@ -49,7 +49,7 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	}
 
 	for _, eventType := range eventTypes {
-		p.RegisterSubscription(base.RegisterSubscriptionOptions{
+		p.RegisterSubscription(context.Background(), base.RegisterSubscriptionOptions{
 			Event:    eventType,
 			Callback: callback,
 		})
@@ -57,12 +57,12 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 
 	// Test Create
 	docToCreate := common.Document{"id": "1", "name": "value"}
-	_, err = collection.CreateOne(docToCreate)
+	_, err = collection.CreateOne(context.Background(), docToCreate)
 	require.NoError(t, err)
 
 	// Test Read
 	readQuery := query.NewQueryBuilder().Where("id").Eq("1").Build()
-	result, err := collection.Read(&readQuery)
+	result, err := collection.Read(context.Background(), &readQuery)
 	assert.Equal(t, 1, result.Count)
 	require.NoError(t, err)
 
@@ -70,12 +70,12 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	docToUpdate := result.Data.(common.Document)
 	docToUpdate["name"] = "new_value"
 	updateFilter := query.NewQueryBuilder().Where("id").Eq("1").Build().Filters
-	_, err = collection.Update(&base.CollectionUpdate{Data: docToUpdate, Filter: updateFilter})
+	_, err = collection.Update(context.Background(), &base.CollectionUpdate{Data: docToUpdate, Filter: updateFilter})
 	require.NoError(t, err)
 
 	// Test Delete
 	deleteFilter := query.NewQueryBuilder().Where("id").Eq("1").Build().Filters
-	_, err = collection.Delete(deleteFilter, false)
+	_, err = collection.Delete(context.Background(), deleteFilter, false)
 	require.NoError(t, err)
 
 	// Allow some time for events to be processed
@@ -132,7 +132,7 @@ func TestPersistence_CollectionEvents(t *testing.T) {
 	}
 
 	for _, eventType := range collectionEventTypes {
-		p.RegisterSubscription(base.RegisterSubscriptionOptions{
+		p.RegisterSubscription(context.Background(), base.RegisterSubscriptionOptions{
 			Event:    eventType,
 			Callback: callback,
 		})
@@ -140,11 +140,11 @@ func TestPersistence_CollectionEvents(t *testing.T) {
 
 	// Test Collection Create
 	sc := newTestSchema("new_test_collection")
-	_, err = p.Create(*sc)
+	_, err = p.Create(context.Background(), *sc)
 	require.NoError(t, err)
 
 	// Test Collection Delete
-	_, err = p.Delete(sc.Name)
+	_, err = p.Delete(context.Background(), sc.Name)
 	require.NoError(t, err)
 
 	// Allow some time for events to be processed
@@ -192,21 +192,21 @@ func TestPersistence_TransactionEvents(t *testing.T) {
 	}
 
 	for _, eventType := range transactionEventTypes {
-		p.RegisterSubscription(base.RegisterSubscriptionOptions{
+		p.RegisterSubscription(context.Background(), base.RegisterSubscriptionOptions{
 			Event:    eventType,
 			Callback: callback,
 		})
 	}
 
 	// Test successful transaction
-	_, err = p.Transact(func(tx base.BasePersistence) (any, error) {
+	_, err = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
 		// Perform some operation within the transaction
 		return "success", nil
 	})
 	require.NoError(t, err)
 
 	// Test failed transaction
-	_, err = p.Transact(func(tx base.BasePersistence) (any, error) {
+	_, err = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
 		// Simulate an error within the transaction
 		return nil, assert.AnError
 	})

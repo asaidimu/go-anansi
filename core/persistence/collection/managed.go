@@ -55,8 +55,8 @@ func newManagedCollection(
 // --- Core Method Overrides ---
 
 // CreateOne handles the creation of a single document.
-func (c *managedCollection) CreateOne(doc common.Document) (*base.CreateResult, error) {
-	results, err := c.CreateMany([]common.Document{doc})
+func (c *managedCollection) CreateOne(ctx context.Context, doc common.Document) (*base.CreateResult, error) {
+	results, err := c.CreateMany(ctx, []common.Document{doc})
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func (c *managedCollection) CreateOne(doc common.Document) (*base.CreateResult, 
 }
 
 // CreateMany handles the creation of multiple documents, providing a rich result for each.
-func (c *managedCollection) CreateMany(docs []common.Document) ([]base.CreateResult, error) {
+func (c *managedCollection) CreateMany(ctx context.Context, docs []common.Document) ([]base.CreateResult, error) {
 	results := make([]base.CreateResult, len(docs))
 	valid := 0
 	metadata, err := c.createEntryMetadata()
@@ -74,7 +74,7 @@ func (c *managedCollection) CreateMany(docs []common.Document) ([]base.CreateRes
 	}
 
 	for i, doc := range docs {
-		result, err := c.Validate(doc, false)
+		result, err := c.Validate(ctx, doc, false)
 
 		if err != nil {
 			return nil, fmt.Errorf("Failed to create document in collection: %w", err)
@@ -92,7 +92,7 @@ func (c *managedCollection) CreateMany(docs []common.Document) ([]base.CreateRes
 		return results, fmt.Errorf("validation failed for %d documents", len(docs)-valid)
 	}
 
-	return c.wrapped.CreateMany(docs)
+	return c.wrapped.CreateMany(ctx, docs)
 }
 
 func (c *managedCollection) createEntryMetadata(existing ...map[string]any) (map[string]any, error) {
@@ -130,7 +130,7 @@ func (c *managedCollection) createEntryMetadata(existing ...map[string]any) (map
 }
 
 // Read fetches documents and enriches them with the metadata block for transport.
-func (c *managedCollection) Read(q *query.Query) (*base.ReadResult, error) {
+func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
 	var fq *query.Query = q
 
 	if q.Joins != nil {
@@ -144,7 +144,7 @@ func (c *managedCollection) Read(q *query.Query) (*base.ReadResult, error) {
 			if c.resolvePhysicalNameFunc == nil {
 				return nil, base.NewPersistenceError("physical name resolver function is not set", nil)
 			}
-			physicalName, err := c.resolvePhysicalNameFunc(context.Background(), name)
+			physicalName, err := c.resolvePhysicalNameFunc(ctx, name)
 			if err != nil {
 				return nil, base.NewPersistenceError(fmt.Sprintf("failed to resolve physical name for join target '%s': %v", join.Target, err), err)
 			}
@@ -169,7 +169,8 @@ func (c *managedCollection) Read(q *query.Query) (*base.ReadResult, error) {
 	}
 
 	// Pass the call to the wrapped collection first
-	result, err := c.wrapped.Read(fq)
+	result, err := c.wrapped.Read(ctx, fq)
+
 	if err != nil {
 		return nil, err
 	}
@@ -179,7 +180,7 @@ func (c *managedCollection) Read(q *query.Query) (*base.ReadResult, error) {
 
 // Update verifies the integrity of the metadata block, performs an optimistic lock check,
 // and updates the document and its metadata.
-func (c *managedCollection) Update(params *base.CollectionUpdate) (int, error) {
+func (c *managedCollection) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
 	meta, ok := params.Data.Metadata()
 	if !ok {
 		return 0, fmt.Errorf("update operation requires a valid metadata block, found")
@@ -199,7 +200,7 @@ func (c *managedCollection) Update(params *base.CollectionUpdate) (int, error) {
 	}
 
 	data := params.Data.StripMetadata()
-	result, err := c.Validate(data, true)
+	result, err := c.Validate(ctx, data, true)
 
 	if err != nil {
 		return 0, fmt.Errorf("Failed to update document in collection: %w", err)
@@ -256,36 +257,36 @@ func (c *managedCollection) Update(params *base.CollectionUpdate) (int, error) {
 
 	params.Data.SetMetadata(newMeta)
 
-	return c.wrapped.Update(params)
+	return c.wrapped.Update(ctx, params)
 }
 
 // --- Passthrough Methods ---
-func (c *managedCollection) Delete(q *query.QueryFilter, unsafe bool) (int, error) {
-	return c.wrapped.Delete(q, unsafe)
+func (c *managedCollection) Delete(ctx context.Context, q *query.QueryFilter, unsafe bool) (int, error) {
+	return c.wrapped.Delete(ctx, q, unsafe)
 }
 
-func (c *managedCollection) Validate(data common.Document, loose bool) (*schema.ValidationResult, error) {
-	return c.wrapped.Validate(data, loose)
+func (c *managedCollection) Validate(ctx context.Context, data common.Document, loose bool) (*schema.ValidationResult, error) {
+	return c.wrapped.Validate(ctx, data, loose)
 }
 
-func (c *managedCollection) Metadata(filter *base.MetadataFilter, forceRefresh bool) (*base.CollectionMetadata, error) {
-	return c.wrapped.Metadata(filter, forceRefresh)
+func (c *managedCollection) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) (*base.CollectionMetadata, error) {
+	return c.wrapped.Metadata(ctx, filter, forceRefresh)
 }
 
-func (c *managedCollection) RegisterSubscription(options base.RegisterSubscriptionOptions) string {
-	return c.wrapped.RegisterSubscription(options)
+func (c *managedCollection) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
+	return c.wrapped.RegisterSubscription(ctx, options)
 }
 
-func (c *managedCollection) UnregisterSubscription(id string) {
-	c.wrapped.UnregisterSubscription(id)
+func (c *managedCollection) UnregisterSubscription(ctx context.Context, id string) {
+	c.wrapped.UnregisterSubscription(ctx, id)
 }
 
-func (c *managedCollection) Subscriptions() ([]base.SubscriptionInfo, error) {
-	return c.wrapped.Subscriptions()
+func (c *managedCollection) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {
+	return c.wrapped.Subscriptions(ctx)
 }
 
-func (c *managedCollection) Capabilities() *query.Capabilities {
-	return c.wrapped.Capabilities()
+func (c *managedCollection) Capabilities(ctx context.Context) *query.Capabilities {
+	return c.wrapped.Capabilities(ctx)
 }
 
 // --- Helper Functions ---

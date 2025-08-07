@@ -100,16 +100,6 @@ func (c *collectionCache) delete(name string) {
 	c.removeFromAccessOrder(name)
 }
 
-// markDirty marks an entry as potentially stale
-func (c *collectionCache) markDirty(name string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if entry, exists := c.entries[name]; exists {
-		entry.dirty = true
-	}
-}
-
 // clear removes all entries from cache
 func (c *collectionCache) clear() {
 	c.mu.Lock()
