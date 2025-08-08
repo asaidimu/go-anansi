@@ -1112,9 +1112,9 @@ func (h *QueryHelper) Join(left, right []common.Document, config *JoinConfigurat
 	}
 
 	// Determine the right-side collection name to use in the combined document
-	rightName := config.Target
-	if config.Alias != nil && *config.Alias != "" {
-		rightName = *config.Alias
+	rightName := config.Target.Name
+	if config.Target.Alias != nil && *config.Target.Alias != "" {
+		rightName = *config.Target.Alias
 	}
 
 	// Determine left-side collection name
@@ -1186,11 +1186,6 @@ func (h *QueryHelper) JoinStreams(left, right <-chan common.Document, target *Qu
 		rightName := target.Name
 		if target.Alias != nil && *target.Alias != "" {
 			rightName = *target.Alias
-		}
-
-		// Override with config alias if provided (config takes precedence)
-		if config.Alias != nil && *config.Alias != "" {
-			rightName = *config.Alias
 		}
 
 		// Determine left-side collection name

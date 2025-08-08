@@ -21,19 +21,21 @@ import (
 // managedCollection is a decorator that wraps a base.PersistenceCollectionInterface to provide
 // transparent metadata management, versioning, and optimistic locking.
 type managedCollection struct {
-	physicalName            string
-	logicalName             string
-	wrapped                 base.Collection
-	options                 *base.MetadataOptions
-	resolvePhysicalNameFunc func(ctx context.Context, logicalName string) (string, error) // NEW FIELD: Function to resolve logical names
+	physicalName  string
+	logicalName   string
+	wrapped       base.Collection
+	options       *base.MetadataOptions
+	schema        *schema.SchemaDefinition
+	resolveSchema func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error)
 }
 
 // newManagedCollection creates a new ManagedCollection decorator.
 func newManagedCollection(
+	schema *schema.SchemaDefinition,
 	logicalName string,
 	physicalName string,
 	wrapped base.Collection,
-	resolvePhysicalNameFunc func(ctx context.Context, logicalName string) (string, error),
+	resolveSchema func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error),
 	opts *base.MetadataOptions,
 ) (*managedCollection, error) {
 	if opts == nil || opts.HmacSecretKey == nil || len(opts.HmacSecretKey) == 0 {
@@ -44,11 +46,12 @@ func newManagedCollection(
 	}
 
 	return &managedCollection{
-		physicalName:            physicalName,
-		logicalName:             logicalName,
-		wrapped:                 wrapped,
-		options:                 opts,
-		resolvePhysicalNameFunc: resolvePhysicalNameFunc,
+		schema:        schema,
+		physicalName:  physicalName,
+		logicalName:   logicalName,
+		wrapped:       wrapped,
+		options:       opts,
+		resolveSchema: resolveSchema,
 	}, nil
 }
 
@@ -141,18 +144,20 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 		// Translate logical join targets to physical names
 		for i, join := range modifiedQuery.Joins {
 			name := join.Target
-			if c.resolvePhysicalNameFunc == nil {
+			if c.resolveSchema == nil {
 				return nil, base.NewPersistenceError("physical name resolver function is not set", nil)
 			}
-			physicalName, err := c.resolvePhysicalNameFunc(ctx, name)
+			physicalName, schema, err := c.resolveSchema(ctx, name.Name)
+
 			if err != nil {
-				return nil, base.NewPersistenceError(fmt.Sprintf("failed to resolve physical name for join target '%s': %v", join.Target, err), err)
+				return nil, base.NewPersistenceError(fmt.Sprintf("failed to resolve physical name for join target '%s': %v", join.Target.Name, err), err)
 			}
 
-			modifiedQuery.Joins[i].Target = physicalName // Update the target to the physical name
+			modifiedQuery.Joins[i].Target.Name = physicalName
+			modifiedQuery.Joins[i].Target.Schema = schema
 
-			if join.Alias == nil {
-				modifiedQuery.Joins[i].Alias = &name
+			if join.Target.Alias == nil {
+				modifiedQuery.Joins[i].Target.Alias = &name.Name
 			}
 		}
 

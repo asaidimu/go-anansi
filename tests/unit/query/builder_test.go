@@ -209,7 +209,10 @@ func TestQueryBuilder_Join(t *testing.T) {
 		Joins: []query.JoinConfiguration{
 			{
 				Type: query.JoinTypeInner,
-				Target: "orders",
+				Target: query.QueryTarget{
+					Name:  "orders",
+					Alias: stringPtr("o"),
+				},
 				On: &query.QueryFilter{
 					Condition: &query.FilterCondition{
 						Field:    "users.id",
@@ -217,7 +220,6 @@ func TestQueryBuilder_Join(t *testing.T) {
 						Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Type: "field", Field: "orders.user_id"}},
 					},
 				},
-				Alias: stringPtr("o"),
 			},
 		},
 	}

@@ -712,8 +712,11 @@ func TestQuery_MarshalUnmarshal(t *testing.T) {
 				},
 				Joins: []query.JoinConfiguration{
 					{
-						Type:   query.JoinTypeInner,
-						Target: "orders",
+						Type: query.JoinTypeInner,
+						Target: query.QueryTarget{
+							Name:  "orders",
+							Alias: stringPtr("userOrders"),
+						},
 						On: &query.QueryFilter{
 							Condition: &query.FilterCondition{
 								Field:    "users.id",
@@ -723,7 +726,6 @@ func TestQuery_MarshalUnmarshal(t *testing.T) {
 								},
 							},
 						},
-						Alias: stringPtr("userOrders"),
 						Projection: &query.ProjectionConfiguration{
 							Include: []query.ProjectionField{
 								{Name: "orderId"},
@@ -809,13 +811,15 @@ func TestQuery_MarshalUnmarshal(t *testing.T) {
 				"joins": [
 					{
 						"type": "inner",
-						"target": "orders",
+						"target": {
+							"name": "orders",
+							"alias": "userOrders"
+						},
 						"on": {
 								"field": "users.id",
 								"operator": "eq",
 								"value": {"type": "field", "field": "orders.user_id"}
-						}
-						,"alias": "userOrders",
+						},
 						"projection": {
 							"include": [
 								{"name": "orderId"},

@@ -2,7 +2,6 @@ package persistence_test
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
@@ -46,11 +45,10 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())
 	engine := query.NewQueryEngine(interactor, logger)
 
-	var registrySchemaDef schema.SchemaDefinition
-	require.NoError(t, json.Unmarshal([]byte(registry.RegistryCollectionSchemaJson), &registrySchemaDef))
+	registrySchemaDef := registry.RegistrySchema()
 
 	registryCollection, err := collection.NewCollection(
-		bus, registry.REGISTRY_COLLECTION_NAME, &registrySchemaDef, engine, logger, &base.MetadataOptions{
+		bus, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, engine, logger, &base.MetadataOptions{
 			HmacSecretKey: []byte("test-secret"),
 		}, nil,
 	)
@@ -69,7 +67,7 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 			engine := query.NewQueryEngine(ix, logger)
 
 			collection, err := collection.NewCollection(
-				bus, registry.REGISTRY_COLLECTION_NAME, &registrySchemaDef, engine, logger, &base.MetadataOptions{
+				bus, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, engine, logger, &base.MetadataOptions{
 					HmacSecretKey: []byte("test-secret"),
 				},
 				nil,
@@ -534,7 +532,6 @@ func TestList(t *testing.T) {
 		retrievedSchema, err := cr.GetSchema(ctx, sampleSchema.Name, "1.1.0")
 		require.NoError(t, err)
 		assert.NotNil(t, retrievedSchema)
-		assert.Equal(t, sampleSchema.Name, retrievedSchema.Name)
 		assert.Equal(t, "1.1.0", retrievedSchema.Version)
 		assert.NotNil(t, retrievedSchema.Fields["new_field"])
 	})

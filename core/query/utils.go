@@ -106,8 +106,8 @@ func (q *Query) Validate() error {
 
 	// Validate joins if present
 	for i, join := range q.Joins {
-		if join.Target == "" {
-			return fmt.Errorf("join at index %d: target is required", i)
+		if join.Target.Name == "" {
+			return fmt.Errorf("join at index %d: target name is required", i)
 		}
 	}
 

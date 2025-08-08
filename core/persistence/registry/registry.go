@@ -52,13 +52,9 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 
 		if !exists {
 			logger.Info("registry collection '_schemas_' not found, creating it now")
-			// It doesn't exist, so we must create it.
-			var registrySchema schema.SchemaDefinition
-			if err := registrySchema.From([]byte(RegistryCollectionSchemaJson)); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal internal registry schema: %w", err)
-			}
 
-			if err := manager.CreateCollection(registrySchema); err != nil {
+			registrySchema := RegistrySchema()
+			if err := manager.CreateCollection(*registrySchema); err != nil {
 				return nil, fmt.Errorf("failed to create registry collection '_schemas_': %w", err)
 			}
 			logger.Info("successfully created registry collection '_schemas_'")
@@ -146,7 +142,8 @@ func (r *collectionRegistry) refreshCache() error {
 
 // CreateCollection creates the initial entry for a new collection in the registry.
 func (r *collectionRegistry) CreateCollection(ctx context.Context, schema *schema.SchemaDefinition) (*RegistryEntry, error) {
-	entry, err := r.withSchemaValidationAndNotExists(ctx, schema, func() (*RegistryEntry, error) {
+	enrichedSchema := enrichSchema(schema)
+	entry, err := r.withSchemaValidationAndNotExists(ctx, enrichedSchema, func() (*RegistryEntry, error) {
 		// Define initial version and physical name
 		initialVersion := schema.Version
 		physicalName, err := generatePhysicalName(schema)
@@ -155,12 +152,12 @@ func (r *collectionRegistry) CreateCollection(ctx context.Context, schema *schem
 		}
 
 		// Create the registry entry
-		entry := r.buildRegistryEntry(schema, initialVersion, physicalName)
+		entry, sc := r.buildRegistryEntry(enrichedSchema, initialVersion, physicalName)
 
 		// Provision the physical collection and persist the registry entry
 		return execute(ctx, r.executor, true, func(collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
 			// Create physical collection
-			if err := r.createPhysicalCollection(manager, schema, physicalName); err != nil {
+			if err := r.createPhysicalCollection(manager, sc, physicalName); err != nil {
 				return nil, err
 			}
 
@@ -296,6 +293,7 @@ func (r *collectionRegistry) loadFromDatabase(ctx context.Context, name string) 
 	}
 
 	if result.Count == 0 {
+	    fmt.Printf("Collection %s \n", name)
 		return nil, ErrCollectionNotFound
 	}
 
@@ -309,7 +307,8 @@ func (r *collectionRegistry) loadFromDatabase(ctx context.Context, name string) 
 
 // AddSchemaVersion introduces a new version of a schema for an existing collection.
 func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version string, schema *schema.SchemaDefinition, physicalName ...string) (*RegistryEntry, error) {
-	entry, err := r.withSchemaValidationAndEntryExists(ctx, name, schema, func(entry *RegistryEntry) (*RegistryEntry, error) {
+	enrichedSchema := enrichSchema(schema)
+	entry, err := r.withSchemaValidationAndEntryExists(ctx, name, enrichedSchema, func(entry *RegistryEntry) (*RegistryEntry, error) {
 		// Check if the version already exists
 		if _, exists := entry.Versions[version]; exists {
 			return nil, fmt.Errorf("version '%s' already exists for collection '%s'", version, name)
@@ -323,14 +322,15 @@ func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version
 
 		return r.executeWithEntryUpdate(ctx, name, entry, func(collection base.Collection, manager query.SchemaManager, entry *RegistryEntry) error {
 			// Create physical collection
-			if err := r.createPhysicalCollection(manager, schema, actualPhysicalName); err != nil {
+			if err := r.createPhysicalCollection(manager, enrichedSchema, actualPhysicalName); err != nil {
 				return err
 			}
 
+			enrichedSchema.Name = actualPhysicalName
 			// Add version to entry
 			entry.Versions[version] = SchemaVersionRecord{
 				Physical: actualPhysicalName,
-				Schema:   *schema,
+				Schema:   *enrichedSchema,
 			}
 			return nil
 		})
@@ -443,7 +443,7 @@ func (r *collectionRegistry) loadAllFromDatabase(ctx context.Context) ([]*Regist
 func (r *collectionRegistry) withSchemaValidationAndNotExists(ctx context.Context, schema *schema.SchemaDefinition, fn func() (*RegistryEntry, error)) (*RegistryEntry, error) {
 	// Validate the schema
 	if err := schema.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid schema %s: %w", schema.Name, err)
+		return nil, fmt.Errorf("invalid schema %s: %w, %v", schema.Name, err, schema)
 	}
 
 	// Check if a collection with the same name already exists
@@ -520,12 +520,12 @@ func (r *collectionRegistry) executeWithEntryUpdate(ctx context.Context, name st
 	})
 }
 
-func (r *collectionRegistry) buildRegistryEntry(schema *schema.SchemaDefinition, version, physicalName string) *RegistryEntry {
-	tempSchema := *schema
+func (r *collectionRegistry) buildRegistryEntry(sc *schema.SchemaDefinition, version, physicalName string) (*RegistryEntry, *schema.SchemaDefinition) {
+	tempSchema := *sc
 	tempSchema.Name = physicalName
 	return &RegistryEntry{
-		Name:          schema.Name,
-		Description:   schema.Description,
+		Name:          sc.Name,
+		Description:   sc.Description,
 		ActiveVersion: version,
 		Versions: map[string]SchemaVersionRecord{
 			version: {
@@ -533,7 +533,8 @@ func (r *collectionRegistry) buildRegistryEntry(schema *schema.SchemaDefinition,
 				Schema:   tempSchema,
 			},
 		},
-	}
+	}, &tempSchema
+
 }
 
 func (r *collectionRegistry) createPhysicalCollection(manager query.SchemaManager, schema *schema.SchemaDefinition, physicalName string) error {

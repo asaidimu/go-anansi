@@ -36,8 +36,8 @@ func testSchema(name ...string) *schema.SchemaDefinition {
 	}
 }
 
-func resolvePhysicalName(ctx context.Context, logicalName string) (string, error) {
-	return logicalName, nil
+func resolveSchema(ctx context.Context, logicalName string) (string, *schema.SchemaDefinition, error) {
+	return logicalName, nil, nil
 }
 
 // setupCollectionTest is a helper function to set up a new collection for testing.
@@ -55,7 +55,7 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 	opts := &persistence.MetadataOptions{
 		HmacSecretKey: []byte("test-secret"),
 	}
-	c, err := collection.NewCollection(bus, testSchema.Name, testSchema, engine, logger, opts, resolvePhysicalName)
+	c, err := collection.NewCollection(bus, testSchema.Name, testSchema, engine, logger, opts, resolveSchema)
 	assert.NoError(t, err)
 
 	ctx := context.Background()
@@ -151,7 +151,7 @@ func TestCollection_Read(t *testing.T) {
 		opts := &persistence.MetadataOptions{
 			HmacSecretKey: []byte("test-secret"),
 		}
-		nonExistentCollection, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, opts, resolvePhysicalName)
+		nonExistentCollection, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, opts, resolveSchema)
 
 		result, err := nonExistentCollection.Read(ctx, &q)
 
@@ -291,7 +291,7 @@ func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *z
 	opts := &persistence.MetadataOptions{
 		HmacSecretKey: []byte("test-secret"),
 	}
-	c, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, opts, resolvePhysicalName)
+	c, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, opts, resolveSchema)
 	ctx := context.Background()
 	return c, ephemeralInteractor, logger, nonExistentSchema, bus, ctx
 }

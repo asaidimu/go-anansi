@@ -51,7 +51,7 @@ func validateObjectFieldSemantic(fieldDef *FieldDefinition, schema *SchemaDefini
 				return fmt.Errorf("object field '%s' cannot reference literal nested schema '%s' - only structured schemas are allowed", fieldPath, ref.ID)
 			}
 		} else {
-			return fmt.Errorf("object field '%s' references unknown nested schema '%s'", fieldPath, ref.ID)
+			return fmt.Errorf("object field '%s' references unknown nested schema '%s', %s", fieldPath, ref.ID, schema.Name)
 		}
 	}
 	return nil

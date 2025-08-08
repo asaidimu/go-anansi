@@ -22,7 +22,7 @@ type QueryGenerator interface {
 	// GenerateSelectSQL creates a SQL SELECT query string and its corresponding parameters
 	// from a Query object. This includes translating filters, sorting, pagination,
 	// and projections into the target SQL dialect.
-	GenerateSelectSQL(dsl *Query) (string, []any, error)
+	GenerateSelectSQL(query *Query) (string, []any, error)
 
 	// GenerateUpdateSQL creates a SQL UPDATE query string and its parameters from a map
 	// of updates and a QueryFilter. It is responsible for constructing the SET and
@@ -32,7 +32,7 @@ type QueryGenerator interface {
 	// GenerateInsertSQL creates a SQL INSERT query string and its parameters from a slice
 	// of records. It supports both single and batch inserts, generating the appropriate
 	// syntax for the target database.
-	GenerateInsertSQL(records []map[string]any) (string, []any, error)
+	GenerateInsertSQL(records []common.Document) (string, []any, error)
 
 	// GenerateDeleteSQL creates a SQL DELETE query string and its parameters from a
 	// QueryFilter. For safety, it requires a WHERE clause unless the `unsafeDelete`

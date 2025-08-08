@@ -18,16 +18,17 @@ func NewCollection(
 	engine *query.QueryEngine,
 	logger *zap.Logger,
 	opts *base.MetadataOptions,
-	resolvePhysicalNameFunc func(ctx context.Context, logicalName string) (string, error),
+	resolveSchema func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error),
 ) (base.Collection, error) {
 	base, err := newBaseCollection(bus, name, sc, engine, logger)
 
 	// Decorate the base collection with the managed collection for metadata and versioning.
 	managed, err := newManagedCollection(
+		sc,
 		name,
 		sc.Name,
 		base,
-		resolvePhysicalNameFunc,
+		resolveSchema,
 		opts)
 	if err != nil {
 		return nil, err

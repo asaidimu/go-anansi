@@ -7,6 +7,7 @@ require (
 	github.com/asaidimu/go-store/v3 v3.3.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
+	github.com/mattn/go-sqlite3 v1.14.30
 	github.com/stretchr/testify v1.8.1
 	go.uber.org/zap v1.27.0
 	go.uber.org/zap/exp v0.3.0

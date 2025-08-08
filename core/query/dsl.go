@@ -5,6 +5,7 @@ package query
 
 import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
 // Logical operators for combining filter conditions.
@@ -202,12 +203,17 @@ const (
 	JoinTypeFull  JoinType = "full"
 )
 
+type QueryTarget struct {
+	Name   string  `json:"name,omitempty"`
+	Alias  *string `json:"alias,omitempty"`
+	Schema *schema.SchemaDefinition `json:"schema,omitempty"`
+}
+
 // JoinConfiguration defines a join operation with another table.
 type JoinConfiguration struct {
 	Type       JoinType                 `json:"type"`
-	Target     string                   `json:"target"`
+	Target     QueryTarget              `json:"target"`
 	On         *QueryFilter             `json:"on"`
-	Alias      *string                  `json:"alias,omitempty"`
 	Projection *ProjectionConfiguration `json:"projection,omitempty"`
 }
 
@@ -252,11 +258,6 @@ type QueryDistinctConfig struct {
 	// Fields represents the distinct by fields option (e.g., `distinct: { fields: ["id", "name"] }`).
 	// It should be non-nil only when the distinct setting is an object with a 'fields' array.
 	Fields []string `json:"fields,omitempty"`
-}
-
-type QueryTarget struct {
-	Name  string  `json:"name,omitempty"`
-	Alias *string `json:"alias,omitempty"`
 }
 
 // Query is the top-level structure that represents a complete database query.

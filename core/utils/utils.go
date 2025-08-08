@@ -106,6 +106,10 @@ func MapToStruct[T any](input map[string]any) (T, error) {
 	return result, nil
 }
 
+func PrimitivePtr[T any](t T) *T {
+	return &t
+}
+
 // StringPtr is a helper function that returns a pointer to a string.
 func StringPtr(s string) *string {
 	return &s

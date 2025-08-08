@@ -359,8 +359,10 @@ func TestJoin(t *testing.T) {
 			leftRecords:  users,
 			rightRecords: cities,
 			joinConfig: &query.JoinConfiguration{
-				Type:   query.JoinTypeInner,
-				Target: "city",
+				Type: query.JoinTypeInner,
+				Target: query.QueryTarget{
+					Name: "city",
+				},
 				On: &query.QueryFilter{
 					Condition: &query.FilterCondition{
 						Field:    "user.city_id",
@@ -381,8 +383,10 @@ func TestJoin(t *testing.T) {
 			leftRecords:  users,
 			rightRecords: cities,
 			joinConfig: &query.JoinConfiguration{
-				Type:   query.JoinTypeLeft,
-				Target: "city",
+				Type: query.JoinTypeLeft,
+				Target: query.QueryTarget{
+					Name: "city",
+				},
 				On: &query.QueryFilter{
 					Condition: &query.FilterCondition{
 						Field:    "user.city_id",
@@ -404,8 +408,10 @@ func TestJoin(t *testing.T) {
 			leftRecords:  users,
 			rightRecords: cities,
 			joinConfig: &query.JoinConfiguration{
-				Type:   query.JoinTypeRight,
-				Target: "city", // The left document is "user"
+				Type: query.JoinTypeRight,
+				Target: query.QueryTarget{
+					Name: "city",
+				},
 				On: &query.QueryFilter{
 					Condition: &query.FilterCondition{
 						Field:    "user.city_id",
@@ -426,8 +432,10 @@ func TestJoin(t *testing.T) {
 			leftRecords:  users,
 			rightRecords: cities,
 			joinConfig: &query.JoinConfiguration{
-				Type:   query.JoinTypeFull,
-				Target: "city",
+				Type: query.JoinTypeFull,
+				Target: query.QueryTarget{
+					Name: "city",
+				},
 				On: &query.QueryFilter{
 					Condition: &query.FilterCondition{
 						Field:    "user.city_id",
@@ -504,8 +512,10 @@ func TestJoin(t *testing.T) {
 			leftRecords:  users,
 			rightRecords: cities,
 			joinConfig: &query.JoinConfiguration{
-				Type:   "unsupported",
-				Target: "city",
+				Type: "unsupported",
+				Target: query.QueryTarget{
+					Name: "city",
+				},
 				On: &query.QueryFilter{
 					Condition: &query.FilterCondition{
 						Field:    "user.city_id",

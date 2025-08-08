@@ -79,8 +79,8 @@ func (qb *QueryBuilder) Validate() QueryValidationResult {
 
 	// Validate joins
 	for _, join := range qb.query.Joins {
-		if join.Target == "" {
-			errors = append(errors, "join target cannot be empty")
+		if join.Target.Name == "" {
+			errors = append(errors, "join target name cannot be empty")
 		}
 		if join.On == nil {
 			errors = append(errors, "join condition cannot be nil")
@@ -281,7 +281,7 @@ func (qb *QueryBuilder) Join(joinType JoinType, target string) JoinBuilderInterf
 		queryBuilder: qb,
 		joinConfig: &JoinConfiguration{
 			Type:   joinType,
-			Target: target,
+			Target: QueryTarget{Name: target},
 		},
 	}
 }
@@ -820,7 +820,7 @@ func (jb *JoinBuilder) On(filter QueryFilter) *JoinBuilder {
 }
 
 func (jb *JoinBuilder) Alias(alias string) *JoinBuilder {
-	jb.joinConfig.Alias = &alias
+	jb.joinConfig.Target.Alias = &alias
 	return jb
 }
 

@@ -30,7 +30,7 @@ type basePersistence struct {
 	logger             *zap.Logger
 	metadataOptions    *base.MetadataOptions
 	decorators         []utils.DecoratorFunc[base.Collection]
-	txmu sync.Mutex
+	txmu               sync.Mutex
 }
 
 var _ base.Persistence = (*basePersistence)(nil)
@@ -97,7 +97,7 @@ func (p *basePersistence) Collection(ctx context.Context, name string) (base.Col
 		return c, nil
 	}
 
-	schema, err := (*p.registry).GetSchema(ctx, name)
+	sc, err := (*p.registry).GetSchema(ctx, name)
 
 	if err != nil {
 		return nil, err
@@ -106,12 +106,16 @@ func (p *basePersistence) Collection(ctx context.Context, name string) (base.Col
 	newCollection, err := collection.NewCollection(
 		p.bus,
 		name,
-		schema,
+		sc,
 		p.engine,
 		p.logger,
 		p.metadataOptions,
-		func(ctx context.Context, logicalName string) (string, error) {
-			return (*p.registry).ResolvePhysicalName(ctx, logicalName)
+		func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error) {
+			sc, err := (*p.registry).GetSchema(ctx, name)
+			if err != nil {
+				return "", nil, err
+			}
+			return sc.Name, sc, nil
 		},
 	)
 

@@ -7,6 +7,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
@@ -92,4 +93,24 @@ func sanitizeForDatabase(input string) string {
 
 func unmarshalEntry(doc common.Document) (*base.RegistryEntry, error) {
 	return utils.MapToStruct[*RegistryEntry](doc)
+}
+
+func enrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
+	tempSchema := *sc
+	// how is it that this sticks
+	tempSchema.Fields[common.MetadataFieldName] = &schema.FieldDefinition{
+		Name:   common.MetadataFieldName,
+		Type:   schema.FieldTypeObject,
+		Schema: schema.NestedSchemaReference{ID: common.MetadataFieldName},
+	}
+
+	metadata := collection.DefaultMetadataSchema()
+
+	// and this one does not
+	if tempSchema.NestedSchemas == nil {
+		tempSchema.NestedSchemas = make(map[string]*schema.NestedSchemaDefinition)
+	}
+
+	tempSchema.NestedSchemas[common.MetadataFieldName] = metadata
+	return &tempSchema
 }

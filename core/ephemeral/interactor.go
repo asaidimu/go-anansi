@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"sync"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
@@ -24,6 +25,7 @@ var (
 type EphemeralDatabaseInteractor struct {
 	store  *ephemeralStore
 	parent *EphemeralDatabaseInteractor // if non-nil, this is a transaction
+	txMu  sync.Mutex
 }
 
 var _ query.DatabaseInteractor = (*EphemeralDatabaseInteractor)(nil)
@@ -83,7 +85,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 	if len(dsl.Joins) > 0 {
 		currentDocs := filteredDocs
 		for _, join := range dsl.Joins {
-			rightCollection, err := i.store.getCollection(join.Target)
+			rightCollection, err := i.store.getCollection(join.Target.Name)
 			if err != nil {
 				return nil, err
 			}
@@ -356,6 +358,7 @@ func (i *EphemeralDatabaseInteractor) DeleteDocuments(ctx context.Context, schem
 func (i *EphemeralDatabaseInteractor) StartTransaction(ctx context.Context) (query.TransactionalDatabaseInteractor, error) {
 	i.store.mu.Lock()
 	defer i.store.mu.Unlock()
+	i.txMu.Lock()
 
 	// Create a deep copy of the collections for the transaction
 	txCollections := make(map[string]*collection)
@@ -395,6 +398,7 @@ func (i *EphemeralDatabaseInteractor) Commit(ctx context.Context) error {
 	// Replace parent's collections with the transactional ones
 	i.parent.store.collections = i.store.collections
 
+	i.parent.txMu.Unlock()
 	return nil
 }
 
@@ -403,6 +407,7 @@ func (i *EphemeralDatabaseInteractor) Rollback(ctx context.Context) error {
 	if i.parent == nil {
 		return ErrNotTransaction
 	}
+	i.parent.txMu.Unlock()
 	// Just discard the transactional interactor, no changes are applied to the parent.
 	return nil
 }
