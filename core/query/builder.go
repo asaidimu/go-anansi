@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
 // QueryValidationResult represents the result of query validation
@@ -29,6 +30,20 @@ func NewQueryBuilder() *QueryBuilder {
 
 func (qb *QueryBuilder) Build() Query {
 	return qb.query
+}
+
+func (qb *QueryBuilder) From(source string) *QueryBuilder {
+	qb.query.Target = &QueryTarget{
+		Name: source,
+	}
+	return qb
+}
+
+func (qb *QueryBuilder) Alias(alias string) *QueryBuilder {
+	if qb.query.Target != nil {
+		qb.query.Target.Alias = &alias
+	}
+	return qb
 }
 
 func (qb *QueryBuilder) Clone() *QueryBuilder {
@@ -821,6 +836,11 @@ func (jb *JoinBuilder) On(filter QueryFilter) *JoinBuilder {
 
 func (jb *JoinBuilder) Alias(alias string) *JoinBuilder {
 	jb.joinConfig.Target.Alias = &alias
+	return jb
+}
+
+func (jb *JoinBuilder) Schema(schema *schema.SchemaDefinition) *JoinBuilder {
+	jb.joinConfig.Target.Schema = schema
 	return jb
 }
 
