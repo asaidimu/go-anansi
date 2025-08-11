@@ -201,3 +201,11 @@ func CompareValues(a, b any) int {
 	// If types are different or not directly comparable, fall back to string comparison of their representation.
 	return strings.Compare(fmt.Sprintf("%v", a), fmt.Sprintf("%v", b))
 }
+
+
+// isComplexValue checks if a value is a slice or map (complex type) using reflection
+func IsComplexValue(value any) bool {
+	val := reflect.ValueOf(value)
+	kind := val.Kind()
+	return kind == reflect.Slice || kind == reflect.Map
+}

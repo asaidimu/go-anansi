@@ -623,7 +623,6 @@ func (graph *ValidationGraph) buildFromConstraintRule(rule SchemaConstraintRule[
 	return ruleDepIDs
 }
 
-
 func (graph *ValidationGraph) traverse(fmap *FunctionMap, document map[string]any, loose bool) ([]common.Issue, bool) {
 	ctx := &ValidationContext{
 		RootData:    document,
@@ -744,7 +743,7 @@ func (n *UnexpectedFieldsNode) Execute(ctx *ValidationContext) *NodeResult {
 		return &NodeResult{Success: true}
 	}
 
-	dataMap, ok := currentData.(map[string]any)
+	dataMap, ok := common.AsDocument(currentData)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for unexpected field check", Path: n.path}}}
 	}
@@ -806,7 +805,7 @@ func (n *RequiredFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 		}
 	}
 
-	dataMap, ok := parentData.(map[string]any)
+	dataMap, ok := common.AsDocument(parentData)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_DATA_STRUCTURE", Message: "Cannot check for required fields on non-object parent", Path: parentPath}}}
 	}
@@ -829,7 +828,7 @@ func (n *ConditionalRequiredFieldNode) Execute(ctx *ValidationContext) *NodeResu
 		return &NodeResult{Success: true}
 	}
 
-	dataMap, ok := parentData.(map[string]any)
+	dataMap, ok := common.AsDocument(parentData)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_DATA_STRUCTURE", Message: "Cannot check for required fields on non-object parent", Path: parentPath}}}
 	}
@@ -855,7 +854,7 @@ func (n *ConditionalFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 		return &NodeResult{Success: true}
 	}
 
-	dataMap, ok := parentData.(map[string]any)
+	dataMap, ok := common.AsDocument(parentData)
 	if !ok {
 		// Not an object, so can't evaluate condition or check for field.
 		return &NodeResult{Success: true}
@@ -980,7 +979,7 @@ func (n *RecordValidationNode) executeRecordValidation(ctx *ValidationContext) *
 		return &NodeResult{Success: true}
 	}
 
-	recordMap, ok := value.(map[string]any)
+	recordMap, ok := common.AsDocument(value)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for record", Path: n.path}}}
 	}

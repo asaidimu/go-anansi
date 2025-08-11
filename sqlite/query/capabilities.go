@@ -1,4 +1,4 @@
-package sqlite
+package query
 
 import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
@@ -6,7 +6,7 @@ import (
 )
 
 // Capabilities returns the capabilities of the SQLite interactor.
-func (i *SQLiteInteractor) Capabilities() query.Capabilities {
+func (i *sqliteFactory) Capabilities() query.Capabilities {
 	return query.Capabilities{
 		SupportedLogicalOperators: map[common.LogicalOperator]struct{}{
 			common.LogicalAnd: {},

@@ -18,16 +18,6 @@ func (f *sqliteFactory) addAlias(original, alias string) {
 	f.aliases[original] = alias
 }
 
-// isJSONFieldType checks if a field type requires JSON handling
-func isJSONFieldType(fieldType schema.FieldType) bool {
-	switch fieldType {
-	case "object", "array", "set", "record", "union":
-		return true
-	default:
-		return false
-	}
-}
-
 // resolveFieldReference resolves a field reference to proper SQL, handling JSON paths when needed
 func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[string]*schema.SchemaDefinition) string {
 	// Handle simple field references (no dots)
@@ -58,7 +48,7 @@ func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[strin
 		return fieldRef
 	}
 
-	if isJSONFieldType(fieldDef.Type) {
+	if fieldDef.Type.IsComplex() {
 		if len(parts) == 2 {
 			// Accessing the JSON field directly (e.g., u.profile)
 			return fmt.Sprintf("%s.%s", tableAlias, fieldName)
@@ -100,6 +90,9 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 	// Handle aggregations first
 	if len(p.aggregations) > 0 {
 		for _, agg := range p.aggregations {
+			if agg.Type == "" { // This is a grouping/having configuration, not a projection
+				continue
+			}
 			var aggPart string
 			switch agg.Type {
 			case query.AggregationTypeCount:
@@ -174,7 +167,30 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 
 	// Default to SELECT * if no specific fields
 	if len(parts) == 0 {
-		parts = append(parts, "*")
+		if len(p.schemas) > 0 {
+			var aliasedFields []string
+			for alias, schemaDef := range p.schemas {
+				// Ensure the schema definition and its fields are available
+				if schemaDef != nil && len(schemaDef.Fields) > 0 {
+					for _, field := range schemaDef.Fields {
+						// Qualify the field with the table alias (e.g., "u.id")
+						resolvedField := fmt.Sprintf("%s.%s", alias, field.Name)
+						// Create a unique alias for the column (e.g., "u_id")
+						fieldAlias := fmt.Sprintf("'%s.%s'", alias, field.Name)
+						aliasedFields = append(aliasedFields, fmt.Sprintf("%s AS %s", resolvedField, fieldAlias))
+					}
+				}
+			}
+			if len(aliasedFields) > 0 {
+				parts = append(parts, aliasedFields...)
+			} else {
+				// Fallback to '*' if schemas were present but had no fields.
+				parts = append(parts, "*")
+			}
+		} else {
+			// Fallback to SELECT * if no schemas are available at all.
+			parts = append(parts, "*")
+		}
 	}
 
 	sql := fmt.Sprintf("SELECT %s%s", distinctClause, strings.Join(parts, ", "))

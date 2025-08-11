@@ -128,7 +128,7 @@ func (f *sqliteFactory) buildUpdateTree(q *query.Query, extra any) (SQLNode, err
 	if extra == nil {
 		return nil, fmt.Errorf("update query must have data")
 	}
-	data, ok := extra.(common.Document)
+	data, ok := common.AsDocument(extra)
 	if !ok {
 		return nil, fmt.Errorf("invalid data type for update: %T", extra)
 	}

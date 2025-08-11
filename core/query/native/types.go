@@ -11,10 +11,14 @@ import (
 type StatementType string
 
 const (
-	StmtSelect StatementType = "SELECT"
-	StmtUpdate StatementType = "UPDATE"
-	StmtDelete StatementType = "DELETE"
-	StmtInsert StatementType = "INSERT"
+	StmtSelect       StatementType = "SELECT"
+	StmtUpdate       StatementType = "UPDATE"
+	StmtDelete       StatementType = "DELETE"
+	StmtInsert       StatementType = "INSERT"
+	StmtCreateCollection  StatementType = "CREATE_COLLECTION"
+	StmtDropCollection    StatementType = "DROP_COLLECTION"
+	StmtCreateIndex  StatementType = "CREATE_INDEX"
+	StmtDropIndex    StatementType = "DROP_INDEX"
 )
 
 // NativeQuery is a generic, type-safe representation of a database-native query.
@@ -30,11 +34,13 @@ type NativeQuery[T any] interface {
 // It converts the DSL Query into a dialect-specific NativeQuery[T].
 type QueryFactory[T any] interface {
 	Build(q *query.Query, stmtType StatementType, extra any) (NativeQuery[T], error)
+	Capabilities() query.Capabilities
 }
 
 type QueryExecutor[T any] interface {
 	Query(ctx context.Context, compiled NativeQuery[T]) ([]common.Document, error)
 	Exec(ctx context.Context, compiled NativeQuery[T]) (int64, error)
+	QueryStream(ctx context.Context, compiled NativeQuery[T]) (<-chan common.Document, <-chan error, error)
 	BeginTransaction(ctx context.Context) (QueryExecutor[T], error)
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error

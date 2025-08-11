@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"maps"
 
-	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // VersionFieldName is the reserved name for the field used in optimistic concurrency control.
@@ -31,6 +31,7 @@ const (
 	FieldTypeObject  FieldType = "object"
 	FieldTypeRecord  FieldType = "record"
 	FieldTypeUnion   FieldType = "union"
+	FieldTypeUnkown  FieldType = "unknown"
 )
 
 // IndexType represents the type of an index, which is used to optimize database queries.
@@ -94,7 +95,7 @@ func (c Constraint[T]) IsSchemaConstraintRule() {}
 // ConstraintGroup defines a group of multiple constraints with a logical operator.
 type ConstraintGroup[T FieldType] struct {
 	Name     string                    `json:"name"`
-	Operator common.LogicalOperator   `json:"operator"`
+	Operator common.LogicalOperator    `json:"operator"`
 	Rules    []SchemaConstraintRule[T] `json:"rules"`
 }
 
@@ -199,7 +200,7 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 
 // PartialIndexCondition defines a condition for a partial index.
 type PartialIndexCondition struct {
-	Operator   common.LogicalOperator `json:"operator"`
+	Operator   common.LogicalOperator  `json:"operator"`
 	Field      string                  `json:"field"`
 	Value      any                     `json:"value,omitempty"`
 	Conditions []PartialIndexCondition `json:"conditions,omitempty"`
@@ -372,7 +373,7 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 type SchemaDefinition struct {
 	Name          string                             `json:"name"`
 	Version       string                             `json:"version"`
-	Description   string                            `json:"description,omitempty"`
+	Description   string                             `json:"description,omitempty"`
 	Fields        map[string]*FieldDefinition        `json:"fields"`
 	NestedSchemas map[string]*NestedSchemaDefinition `json:"nestedSchemas,omitempty"`
 	Indexes       []IndexDefinition                  `json:"indexes,omitempty"`
@@ -697,8 +698,8 @@ type PartialIndexDefinition struct {
 
 // PartialNestedSchemaDefinition represents a partial definition of a nested schema, used for modifications.
 type PartialNestedSchemaDefinition struct {
-	Name        string                     `json:"name,omitempty"`
-	Description string                     `json:"description,omitempty"`
+	Name        string                      `json:"name,omitempty"`
+	Description string                      `json:"description,omitempty"`
 	Indexes     []IndexDefinition           `json:"indexes,omitempty"`
 	Metadata    map[string]any              `json:"metadata,omitempty"`
 	Concrete    *bool                       `json:"concrete,omitempty"`
@@ -740,6 +741,6 @@ type SchemaHint map[string]any
 
 // ValidationResult represents the result of a validation operation.
 type ValidationResult struct {
-	Valid  bool    `json:"valid"`
+	Valid  bool           `json:"valid"`
 	Issues []common.Issue `json:"issues"`
 }

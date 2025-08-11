@@ -62,7 +62,7 @@ func TestInsert(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, nq)
 
-	expectedSQL := "INSERT INTO users (age, first_name, last_name) VALUES ($1, $2, $3)"
+	expectedSQL := "INSERT INTO users (age, first_name, last_name) VALUES ($1, $2, $3) RETURNING *;"
 	assert.Equal(t, expectedSQL, nq.Raw().SQL)
 	assert.Equal(t, 3, len(nq.Raw().Params))
 	// Note: The order of params depends on the sorted order of fields
@@ -281,4 +281,61 @@ func TestSelectWithDifferentDataTypesInWhere(t *testing.T) {
 
 func stringp(s string) *string {
 	return &s
+}
+
+func float64p(f float64) *float64 {
+	return &f
+}
+
+func TestSelectWithDistinct(t *testing.T) {
+	builder := sqlite.NewSQLiteFactory()
+
+	// Test DISTINCT on all fields
+	qbAll := query.NewQueryBuilder().From("users").Distinct()
+	qAll := qbAll.Build()
+	nqAll, errAll := builder.Build(&qAll, native.StmtSelect, nil)
+	assert.NoError(t, errAll)
+	assert.NotNil(t, nqAll)
+	expectedSQLAll := "SELECT DISTINCT * FROM users"
+	assert.Equal(t, expectedSQLAll, nqAll.Raw().SQL)
+
+	// Test DISTINCT on specific fields
+	qbFields := query.NewQueryBuilder().From("users").Select().Include("country", "city").End().Distinct()
+	qFields := qbFields.Build()
+	nqFields, errFields := builder.Build(&qFields, native.StmtSelect, nil)
+	assert.NoError(t, errFields)
+	assert.NotNil(t, nqFields)
+	expectedSQLFields := "SELECT DISTINCT country, city FROM users"
+	assert.Equal(t, expectedSQLFields, nqFields.Raw().SQL)
+}
+
+func TestSelectWithAggregations(t *testing.T) {
+	builder := sqlite.NewSQLiteFactory()
+
+	qb := query.NewQueryBuilder().
+		From("sales").
+		Count("*", "total_sales").
+		Sum("amount", "total_revenue").
+		Avg("amount", "avg_sale").
+		Min("amount", "min_sale").
+		Max("amount", "max_sale").
+		GroupBy("region").
+		WithFilter(query.QueryFilter{
+			Condition: &query.FilterCondition{
+				Field:    "total_revenue", // This should refer to an alias
+				Operator: query.ComparisonOperatorGt,
+				Value:    query.FilterValue{NumberVal: float64p(1000)},
+			},
+		}).
+		End()
+
+	q := qb.Build()
+	nq, err := builder.Build(&q, native.StmtSelect, nil)
+
+	assert.NoError(t, err)
+	assert.NotNil(t, nq)
+
+	expectedSQL := "SELECT COUNT(*) AS total_sales, SUM(amount) AS total_revenue, AVG(amount) AS avg_sale, MIN(amount) AS min_sale, MAX(amount) AS max_sale FROM sales GROUP BY region HAVING total_revenue > $1"
+	assert.Equal(t, expectedSQL, nq.Raw().SQL)
+	assert.Equal(t, []interface{}{1000.0}, nq.Raw().Params)
 }

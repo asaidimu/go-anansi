@@ -6,10 +6,25 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
 func FieldTypePtr(fd FieldType) *FieldType {
 	return &fd
+}
+
+var complexFieldTypes = map[FieldType]bool{
+	FieldTypeObject: true,
+	FieldTypeArray:  true,
+	FieldTypeSet:    true,
+	FieldTypeRecord: true,
+	FieldTypeUnion:  true,
+}
+
+// FindNestedSchema finds a nested schema by it's name
+func (s *FieldType) IsComplex() (bool) {
+	return complexFieldTypes[*s]
 }
 
 // FindNestedSchema finds a nested schema by it's name
@@ -197,7 +212,7 @@ func (fieldDef *FieldDefinition) ValidateType(value any) bool {
 	case FieldTypeArray, FieldTypeSet:
 		_, ok = value.([]any)
 	case FieldTypeObject, FieldTypeRecord:
-		_, ok = value.(map[string]any)
+		_, ok = common.AsDocument(value)
 	case FieldTypeUnion, FieldTypeEnum:
 		return true
 	}

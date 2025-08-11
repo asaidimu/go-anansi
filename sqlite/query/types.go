@@ -1,6 +1,9 @@
 package query
 
-import "github.com/asaidimu/go-anansi/v6/core/query/native"
+import (
+	"github.com/asaidimu/go-anansi/v6/core/query/native"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+)
 
 type SQLNode interface {
 	Value() (string, []any, error)
@@ -36,4 +39,27 @@ type selectTree struct {
 	having     SQLNode
 	orderBy    SQLNode
 	limit      SQLNode
+}
+
+
+
+type createTableTree struct {
+	schema *schema.SchemaDefinition
+}
+
+
+
+type dropTableTree struct {
+	schema *schema.SchemaDefinition
+}
+
+type createIndexTree struct {
+	schema *schema.SchemaDefinition
+	index  *schema.IndexDefinition
+}
+
+
+
+type dropIndexTree struct {
+	index *schema.IndexDefinition
 }

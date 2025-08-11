@@ -28,6 +28,19 @@ func NewDocument[T DocumentLike](data T) (Document, bool) {
 	return result, true
 }
 
+func AsDocument(data any) (Document, bool) {
+	dataMap, ok := data.(Document)
+	if !ok {
+		other, ok := data.(map[string]any)
+		if !ok {
+			return nil, false
+		} else {
+			dataMap = MustNewDocument(other)
+		}
+	}
+	return dataMap, true
+}
+
 // Alternative constructor that panics on nil input
 func MustNewDocument[T DocumentLike](data T) Document {
 	doc, ok := NewDocument(data)
@@ -71,7 +84,6 @@ func (doc Document) StripMetadata() Document {
 	}
 	return cleaned
 }
-
 
 // PrettyPrintDocumentsTable takes a slice of common.Document and returns a
 // pretty-printed string in a tabular format.

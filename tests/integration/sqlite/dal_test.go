@@ -2,19 +2,21 @@ package sqlite_test
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 	sqlite "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func setupTestDB(t *testing.T) *sql.DB {
+func setupDALTestDB(t *testing.T) *sql.DB {
 	db, err := sql.Open("sqlite3", ":memory:")
 	require.NoError(t, err)
 
@@ -43,6 +45,16 @@ func setupTestDB(t *testing.T) *sql.DB {
 	`)
 	require.NoError(t, err)
 
+	// Create sales table
+	_, err = db.Exec(`
+		CREATE TABLE sales (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			region TEXT,
+			amount REAL
+		)
+	`)
+	require.NoError(t, err)
+
 	// Insert sample data
 	_, err = db.Exec(`
 		INSERT INTO users_1_0_0 (id, first_name, last_name, email, age, status, region) VALUES
@@ -59,11 +71,22 @@ func setupTestDB(t *testing.T) *sql.DB {
 	`)
 	require.NoError(t, err)
 
+	_, err = db.Exec(`
+		INSERT INTO sales (region, amount) VALUES
+		('North', 100.0),
+		('North', 150.0),
+		('South', 200.0),
+		('South', 250.0),
+		('East', 50.0),
+		('West', 300.0)
+	`)
+	require.NoError(t, err)
+
 	return db
 }
 
 func TestInsert_Integration(t *testing.T) {
-	db := setupTestDB(t)
+	db := setupDALTestDB(t)
 	defer db.Close()
 
 	builder := sqlite.NewSQLiteFactory()
@@ -92,7 +115,7 @@ func TestInsert_Integration(t *testing.T) {
 }
 
 func TestUpdate_Integration(t *testing.T) {
-	db := setupTestDB(t)
+	db := setupDALTestDB(t)
 	defer db.Close()
 
 	builder := sqlite.NewSQLiteFactory()
@@ -119,7 +142,7 @@ func TestUpdate_Integration(t *testing.T) {
 }
 
 func TestDelete_Integration(t *testing.T) {
-	db := setupTestDB(t)
+	db := setupDALTestDB(t)
 	defer db.Close()
 
 	builder := sqlite.NewSQLiteFactory()
@@ -144,7 +167,7 @@ func TestDelete_Integration(t *testing.T) {
 }
 
 func TestComplexTypes_Integration(t *testing.T) {
-	db := setupTestDB(t)
+	db := setupDALTestDB(t)
 	defer db.Close()
 
 	_, err := db.Exec(`
@@ -221,7 +244,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 }
 
 func TestSelectComplex_Integration(t *testing.T) {
-	db := setupTestDB(t)
+	db := setupDALTestDB(t)
 	defer db.Close()
 
 	builder := sqlite.NewSQLiteFactory()
@@ -270,7 +293,7 @@ func TestSelectComplex_Integration(t *testing.T) {
 }
 
 func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
-	db := setupTestDB(t)
+	db := setupDALTestDB(t)
 	defer db.Close()
 
 	// Add a profile column to the users table and insert data
@@ -295,9 +318,9 @@ func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
 		Name: "orders_1_0_0",
 		Fields: map[string]*schema.FieldDefinition{
 			"id":           {Name: "id", Type: schema.FieldTypeString},
-			"customer_id":  {Name: "profile", Type: schema.FieldTypeString},
-			"order_date":   {Name: "profile", Type: schema.FieldTypeString},
-			"total_amount": {Name: "profile", Type: schema.FieldTypeNumber},
+			"customer_id":  {Name: "customer_id", Type: schema.FieldTypeString},
+			"order_date":   {Name: "order_date", Type: schema.FieldTypeString},
+			"total_amount": {Name: "total_amount", Type: schema.FieldTypeNumber},
 		},
 	}
 
@@ -322,11 +345,15 @@ func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
 	nq, err := builder.Build(&q, native.StmtSelect, nil)
 	require.NoError(t, err)
 
+	// fmt.Printf("query %s\n", nq.Raw().SQL)
 	// Execute the query and expect it to work after the fix
+
 	rows, err := db.Query(nq.Raw().SQL, nq.Raw().Params...)
 	require.NoError(t, err, "SQL query failed: %s", nq.Raw().SQL)
 	defer rows.Close()
 
+	// columns, err := rows.Columns()
+	// fmt.Printf("result columns %s\n", columns)
 	var count int
 	for rows.Next() {
 		count++
@@ -335,7 +362,7 @@ func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
 }
 
 func TestUpdateWithNestedField_Integration(t *testing.T) {
-	db := setupTestDB(t)
+	db := setupDALTestDB(t)
 	defer db.Close()
 
 	// Create a table with a JSON column
@@ -399,3 +426,67 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "pending", status)
 }
+
+func TestSelectWithAggregations_Integration(t *testing.T) {
+	db := setupDALTestDB(t)
+	defer db.Close()
+
+	builder := sqlite.NewSQLiteFactory()
+
+	qb := query.NewQueryBuilder().
+		From("sales").
+		Select().Include("region").End().
+		Count("*", "sale_count").
+		Sum("amount", "total_revenue").
+		Avg("amount", "avg_sale").
+		Min("amount", "min_sale").
+		Max("amount", "max_sale").
+		GroupBy("region").
+		WithFilter(query.QueryFilter{
+			Condition: &query.FilterCondition{
+				Field:    "total_revenue",
+				Operator: query.ComparisonOperatorGt,
+				Value:    query.FilterValue{NumberVal: utils.PrimitivePtr(float64(300))},
+			},
+		}).
+		End().
+		OrderByDesc("total_revenue")
+
+	q := qb.Build()
+	nq, err := builder.Build(&q, native.StmtSelect, nil)
+	require.NoError(t, err)
+
+	rows, err := db.Query(nq.Raw().SQL, nq.Raw().Params...)
+	require.NoError(t, err)
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	fmt.Printf("result columns %s\n", columns)
+
+	var results []common.Document
+	for rows.Next() {
+		var region string
+		var saleCount int
+		var totalRevenue, avgSale, minSale, maxSale float64
+		err := rows.Scan(&saleCount, &totalRevenue, &avgSale, &minSale, &maxSale, &region,)
+		require.NoError(t, err)
+		results = append(results, common.Document{
+			"region":        region,
+			"sale_count":    saleCount,
+			"total_revenue": totalRevenue,
+			"avg_sale":      avgSale,
+			"min_sale":      minSale,
+			"max_sale":      maxSale,
+		})
+	}
+
+	require.NoError(t, rows.Err())
+	assert.Len(t, results, 1)
+	assert.Equal(t, "South", results[0]["region"])
+	assert.Equal(t, 2, results[0]["sale_count"])
+	assert.Equal(t, 450.0, results[0]["total_revenue"])
+	assert.Equal(t, 225.0, results[0]["avg_sale"])
+	assert.Equal(t, 200.0, results[0]["min_sale"])
+	assert.Equal(t, 250.0, results[0]["max_sale"])
+}
+

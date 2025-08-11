@@ -1,0 +1,167 @@
+package executor
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/query/native"
+	"github.com/asaidimu/go-anansi/v6/sqlite/types"
+	"go.uber.org/zap"
+)
+
+// runner is an interface that abstracts the common methods of *sql.DB and *sql.Tx,
+// allowing for the same code to be used for both transactional and non-transactional
+// database operations.
+type runner interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+type sqliteExecutor struct {
+	db     *sql.DB
+	tx     *sql.Tx
+	logger *zap.Logger
+}
+
+var _ (native.QueryExecutor[types.SQLitePayload]) = (*sqliteExecutor)(nil)
+
+// NewSQLiteInteractor creates a new instance of the SQLiteInteractor. It can be
+// configured to operate in transactional mode by providing a non-nil *sql.Tx.
+func NewSQLiteInteractor(db *sql.DB, logger *zap.Logger) (native.QueryExecutor[types.SQLitePayload], error) {
+	return newSQLiteExecutor(db, logger, nil)
+}
+
+func newSQLiteExecutor(db *sql.DB, logger *zap.Logger, tx *sql.Tx) (native.QueryExecutor[types.SQLitePayload], error) {
+	return &sqliteExecutor{
+		db: db,
+		logger: logger,
+		tx :tx,
+	}, nil
+}
+
+func (s *sqliteExecutor) Query(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) ([]common.Document, error) {
+	payload := compiled.Raw()
+	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to execute %s query: %w", compiled.StatementType(), err)
+	}
+
+	var data []common.Document = nil
+	if rows == nil {
+		return make([]common.Document, 0), nil
+	}
+
+	data, err = ReadRows(s.logger, payload.Schema, rows) // readRows requires schema and with joins this means multiple schemas
+	return data, err
+}
+
+func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) (<-chan common.Document, <-chan error, error) {
+	payload := compiled.Raw()
+	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
+
+	if err != nil {
+		return nil,nil, fmt.Errorf("failed to execute %s query: %w", compiled.StatementType(), err)
+	}
+
+	docChan := make(chan common.Document)
+	errChan := make(chan error, 1)
+
+	go func() {
+		defer close(docChan)
+		defer close(errChan)
+		defer rows.Close()
+
+		utilDocChan, utilErrChan := readRowsToDocs(rows)
+
+		for {
+			select {
+			case row, ok := <-utilDocChan:
+				if !ok {
+					close(docChan)
+					return
+				}
+				select {
+				case docChan <- row:
+				case <-ctx.Done():
+					return
+				}
+			case err, ok := <-utilErrChan:
+				if ok {
+					errChan <- err
+				}
+				close(docChan)
+				close(errChan)
+				return
+			}
+		}
+	}()
+
+	return docChan, errChan, nil
+}
+
+func (s *sqliteExecutor) Exec(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) (int64, error) {
+	payload := compiled.Raw()
+	result, err := s.runner().ExecContext(ctx, payload.SQL, payload.Params...)
+	if err != nil {
+		return 0, fmt.Errorf("failed to execute %s query: %w", compiled.StatementType(), err)
+	}
+	return result.RowsAffected()
+}
+
+func (s *sqliteExecutor) BeginTransaction(ctx context.Context) (native.QueryExecutor[types.SQLitePayload], error) {
+	if s.tx != nil {
+		return s, nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	ti, err := newSQLiteExecutor(s.db, s.logger, tx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create new interactor for transaction: %w", err)
+	}
+
+	return ti, nil
+}
+
+func (i *sqliteExecutor) Commit(ctx context.Context) error {
+	if i.tx == nil {
+		return fmt.Errorf("commit not applicable: not in a transactional context")
+	}
+	i.logger.Debug("Committing transaction")
+	return i.tx.Commit()
+}
+
+func (i *sqliteExecutor) Rollback(ctx context.Context) error {
+	if i.tx == nil {
+		return fmt.Errorf("rollback not applicable: not in a transactional context")
+	}
+	return i.tx.Rollback()
+}
+
+func (i *sqliteExecutor) Close() error {
+	if i.tx == nil {
+		return i.db.Close()
+	}
+
+	i.tx.Rollback()
+	i.db.Close()
+	return nil
+}
+
+// runner returns the appropriate dbRunner for the current context, either the
+// database connection pool or the active transaction.
+func (i *sqliteExecutor) runner() runner {
+	if i.tx != nil {
+		return i.tx
+	}
+	return i.db
+}

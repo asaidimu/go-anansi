@@ -38,8 +38,9 @@ func toSQLiteValue(fieldDef *schema.FieldDefinition, value any) (any, error) {
 		}
 		return string(jsonBytes), nil
 	case schema.FieldTypeBoolean:
-		if b, ok := value.(bool); ok {
-			if b {
+		if b, ok := fieldDef.Type.Coerce(value); ok {
+			val := b.(bool)
+			if val {
 				return 1, nil
 			}
 			return 0, nil

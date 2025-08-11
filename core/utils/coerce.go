@@ -70,11 +70,12 @@ func coerceToBool[T Primitive](value any) (T, bool) {
 		result = v
 	case string:
 		lower := strings.ToLower(strings.TrimSpace(v))
-		if lower == "true" {
+		switch lower {
+		case "true":
 			result = true
-		} else if lower == "false" {
+		case "false":
 			result = false
-		} else {
+		default:
 			return zero, false
 		}
 	case int, int8, int16, int32, int64:
@@ -509,4 +510,3 @@ func coerceToFloat[T Primitive](value any, isFloat32 bool) (T, bool) {
 
 	return zero, false
 }
-

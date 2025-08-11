@@ -50,6 +50,9 @@ type SchemaManager interface {
 	// DropCollection removes a table from the database.
 	DropCollection(name string) error
 
+	// DropIndex removes an index from the database.
+	// DropIndex(name string, indexName string) error
+
 	// CollectionExists checks if a table with the given name exists in the database.
 	CollectionExists(name string) (bool, error)
 }
