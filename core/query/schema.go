@@ -9,9 +9,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
-const (
-	FieldTypeUnknown schema.FieldType = "unknown"
-)
 
 // SchemaFromQueryOptions provides configuration options for schema generation
 type SchemaFromQueryOptions struct {
@@ -31,8 +28,8 @@ func DefaultSchemaFromQueryOptions() *SchemaFromQueryOptions {
 			AggregationTypeCount: schema.FieldTypeInteger,
 			AggregationTypeSum:   schema.FieldTypeNumber,
 			AggregationTypeAvg:   schema.FieldTypeNumber,
-			AggregationTypeMin:   FieldTypeUnknown, // Depends on the field type
-			AggregationTypeMax:   FieldTypeUnknown, // Depends on the field type
+			AggregationTypeMin:   schema.FieldTypeUnknown,
+			AggregationTypeMax:   schema.FieldTypeUnknown,
 		},
 	}
 }
@@ -337,7 +334,7 @@ func applyProjectionToSchema(resultSchema *schema.SchemaDefinition, projection *
 
 // createComputedFieldDefinition creates a field definition for a computed field
 func createComputedFieldDefinition(expr *ComputedFieldExpression, options *SchemaFromQueryOptions) *schema.FieldDefinition {
-	fieldType := FieldTypeUnknown
+	fieldType := schema.FieldTypeUnknown
 
 	if expr.Expression != nil {
 		if fnType, exists := options.FunctionTypeMap[expr.Expression.Function]; exists {
@@ -360,7 +357,7 @@ func createCaseFieldDefinition(expr *CaseExpression) *schema.FieldDefinition {
 	// to infer a common type
 	return &schema.FieldDefinition{
 		Name:        expr.Alias,
-		Type:        FieldTypeUnknown,
+		Type:        schema.FieldTypeUnknown,
 		Required:    utils.BoolPtr(false),
 		Description: utils.StringPtr("Case expression result"),
 	}
@@ -376,7 +373,7 @@ func inferAggregationFieldType(agg AggregationConfiguration, targetSchema *schem
 			case schema.FieldTypeNumber, schema.FieldTypeInteger, schema.FieldTypeDecimal:
 				return field.Type
 			default:
-				return FieldTypeUnknown
+				return schema.FieldTypeUnknown
 			}
 		}
 	}
@@ -386,7 +383,7 @@ func inferAggregationFieldType(agg AggregationConfiguration, targetSchema *schem
 		return fieldType
 	}
 
-	return FieldTypeUnknown
+	return schema.FieldTypeUnknown
 }
 
 // cloneSchemaDefinition creates a deep copy of a schema definition
@@ -801,7 +798,7 @@ func createComputedFieldDefinitionForNested(expr *ComputedFieldExpression) *sche
 	// In nested context, we default to unknown type since we don't have access to function type maps
 	return &schema.FieldDefinition{
 		Name:        expr.Alias,
-		Type:        FieldTypeUnknown,
+		Type:        schema.FieldTypeUnknown,
 		Required:    utils.BoolPtr(false),
 		Description: utils.StringPtr(fmt.Sprintf("Computed field using function %s", expr.Expression.Function)),
 	}
@@ -811,7 +808,7 @@ func createComputedFieldDefinitionForNested(expr *ComputedFieldExpression) *sche
 func createCaseFieldDefinitionForNested(expr *CaseExpression) *schema.FieldDefinition {
 	return &schema.FieldDefinition{
 		Name:        expr.Alias,
-		Type:        FieldTypeUnknown,
+		Type:        schema.FieldTypeUnknown,
 		Required:    utils.BoolPtr(false),
 		Description: utils.StringPtr("Case expression result"),
 	}

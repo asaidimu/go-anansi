@@ -3,12 +3,12 @@ package migration
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 )
 
 // Transformer is a function that takes a document conforming to an old schema
 // and transforms it into a document conforming to a new schema.
-type Transformer func(ctx context.Context, sourceDoc common.Document) (common.Document, error)
+type Transformer func(ctx context.Context, sourceDoc data.Document) (data.Document, error)
 
 // DataMigrator defines the interface for a service that handles the migration
 // of data from a collection of one version to another.

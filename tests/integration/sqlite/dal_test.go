@@ -2,10 +2,10 @@ package sqlite_test
 
 import (
 	"database/sql"
-	"fmt"
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -94,7 +94,7 @@ func TestInsert_Integration(t *testing.T) {
 	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users")
 	q := qb.Build()
 
-	data := common.Document{
+	data := data.Document{
 		"id":         "user-3",
 		"first_name": "Peter",
 		"last_name":  "Jones",
@@ -122,7 +122,7 @@ func TestUpdate_Integration(t *testing.T) {
 	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Where("id").Eq("user-1")
 	q := qb.Build()
 
-	data := common.Document{"age": 31}
+	data := data.Document{"age": 31}
 
 	nq, err := builder.Build(&q, native.StmtUpdate, data)
 	require.NoError(t, err)
@@ -185,8 +185,8 @@ func TestComplexTypes_Integration(t *testing.T) {
 
 	// Insert
 	tags := []string{"go", "sqlite", "testing"}
-	metadata := common.Document{"author": "Augustine", "version": 2}
-	insertData := common.Document{"id": "doc-1", "tags": tags, "metadata": metadata}
+	metadata := data.Document{"author": "Augustine", "version": 2}
+	insertData := data.Document{"id": "doc-1", "tags": tags, "metadata": metadata}
 
 	nq, err := builder.Build(&q, native.StmtInsert, insertData)
 	require.NoError(t, err)
@@ -204,7 +204,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 
 	// Update
 	updatedTags := []string{"go", "testing", "updated"}
-	updateData := common.Document{"tags": updatedTags}
+	updateData := data.Document{"tags": updatedTags}
 	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Where("id").Eq("doc-1").Build()
 
 	nq, err = builder.Build(&q, native.StmtUpdate, updateData)
@@ -277,13 +277,13 @@ func TestSelectComplex_Integration(t *testing.T) {
 	require.NoError(t, err)
 	defer rows.Close()
 
-	var results []common.Document
+	var results []data.Document
 	for rows.Next() {
 		var id string
 		var totalAmount float64
 		err := rows.Scan(&id, &totalAmount)
 		require.NoError(t, err)
-		results = append(results, common.Document{"id": id, "total_amount": totalAmount})
+		results = append(results, data.Document{"id": id, "total_amount": totalAmount})
 	}
 
 	require.NoError(t, rows.Err())
@@ -345,15 +345,10 @@ func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
 	nq, err := builder.Build(&q, native.StmtSelect, nil)
 	require.NoError(t, err)
 
-	// fmt.Printf("query %s\n", nq.Raw().SQL)
-	// Execute the query and expect it to work after the fix
-
 	rows, err := db.Query(nq.Raw().SQL, nq.Raw().Params...)
 	require.NoError(t, err, "SQL query failed: %s", nq.Raw().SQL)
 	defer rows.Close()
 
-	// columns, err := rows.Columns()
-	// fmt.Printf("result columns %s\n", columns)
 	var count int
 	for rows.Next() {
 		count++
@@ -402,7 +397,7 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 
 	q := qb.Build()
 	q.Target.Schema = docSchema
-	updateData := common.Document{"status": "approved"}
+	updateData := data.Document{"status": "approved"}
 
 	nq, err := builder.Build(&q, native.StmtUpdate, updateData)
 	require.NoError(t, err)
@@ -460,17 +455,14 @@ func TestSelectWithAggregations_Integration(t *testing.T) {
 	require.NoError(t, err)
 	defer rows.Close()
 
-	columns, err := rows.Columns()
-	fmt.Printf("result columns %s\n", columns)
-
-	var results []common.Document
+	var results []data.Document
 	for rows.Next() {
 		var region string
 		var saleCount int
 		var totalRevenue, avgSale, minSale, maxSale float64
 		err := rows.Scan(&saleCount, &totalRevenue, &avgSale, &minSale, &maxSale, &region,)
 		require.NoError(t, err)
-		results = append(results, common.Document{
+		results = append(results, data.Document{
 			"region":        region,
 			"sale_count":    saleCount,
 			"total_revenue": totalRevenue,

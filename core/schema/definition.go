@@ -31,7 +31,7 @@ const (
 	FieldTypeObject  FieldType = "object"
 	FieldTypeRecord  FieldType = "record"
 	FieldTypeUnion   FieldType = "union"
-	FieldTypeUnkown  FieldType = "unknown"
+	FieldTypeUnknown  FieldType = "unknown"
 )
 
 // IndexType represents the type of an index, which is used to optimize database queries.

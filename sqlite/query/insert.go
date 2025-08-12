@@ -2,10 +2,9 @@ package query
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -14,9 +13,10 @@ import (
 // SQLiteInsertValues handles the VALUES clause in an INSERT statement.
 type SQLiteInsertValues struct {
 	factory *sqliteFactory
-	data    common.Document
-	batch   []common.Document
+	data    data.Document
+	batch   []data.Document
 	schema  *schema.SchemaDefinition
+	fields  []string
 }
 
 func (i *SQLiteInsertValues) Value() (string, []any, error) {
@@ -30,38 +30,85 @@ func (i *SQLiteInsertValues) Value() (string, []any, error) {
 
 	// Handle single document case
 	if i.data != nil {
+		if i.schema == nil {
+			i.fields = i.data.Keys()
+		}
 		return i.buildSingleInsert(i.data)
 	}
 
 	// Handle batch case
 	if len(i.batch) == 0 {
+		if i.schema == nil {
+			i.fields = i.batch[0].Keys()
+		}
 		return "", nil, fmt.Errorf("empty batch provided for insert")
+	}
+
+	if i.schema != nil {
+		i.fields = i.schema.FieldNames()
 	}
 
 	return i.buildBatchInsert(i.batch)
 }
 
-func (i *SQLiteInsertValues) buildSingleInsert(doc common.Document) (string, []any, error) {
+func (i *SQLiteInsertValues) buildSingleInsert(doc data.Document) (string, []any, error) {
 	if len(doc) == 0 {
 		return "", nil, fmt.Errorf("empty document provided for insert")
 	}
 
-	// Get sorted fields for stable order
-	sortedFields := make([]string, 0, len(doc))
-	for field := range doc {
-		sortedFields = append(sortedFields, field)
+	placeholders, params, err := i.processDocumentFields(doc)
+	if err != nil {
+		return "", nil, err
 	}
-	sort.Strings(sortedFields)
 
-	var fields []string
-	var placeholders []string
-	var params []any
+	query := fmt.Sprintf("(%s) VALUES (%s) RETURNING *;",
+		strings.Join(i.fields, ", "),
+		strings.Join(placeholders, ", "))
 
-	for _, field := range sortedFields {
-		fields = append(fields, field)
+	return query, params, nil
+}
+
+func (i *SQLiteInsertValues) buildBatchInsert(batch []data.Document) (string, []any, error) {
+	if len(batch) == 0 {
+		return "", nil, fmt.Errorf("empty batch provided for insert")
+	}
+
+	var allPlaceholders []string
+	var allParams []any
+
+	for docIdx, doc := range batch {
+		placeholders, params, err := i.processDocumentFields(doc)
+		if err != nil {
+			return "", nil, fmt.Errorf("document %d: %w", docIdx, err)
+		}
+
+		allPlaceholders = append(allPlaceholders, fmt.Sprintf("(%s)", strings.Join(placeholders, ", ")))
+		allParams = append(allParams, params...)
+	}
+
+	query := fmt.Sprintf("(%s) VALUES %s RETURNING *;",
+		strings.Join(i.fields, ", "),
+		strings.Join(allPlaceholders, ", "))
+
+	return query, allParams, nil
+}
+
+// processDocumentFields converts document values to SQLite placeholders and params
+func (i *SQLiteInsertValues) processDocumentFields(
+	doc data.Document,
+) ([]string, []any, error) {
+	fields := i.fields
+	placeholders := make([]string, 0, len(fields))
+	params := make([]any, 0, len(fields))
+
+	for _, field := range fields {
+		value, exists := doc[field]
+		if !exists {
+			value = nil
+		}
+
 		placeholders = append(placeholders, i.factory.nextParam())
 
-		value := doc[field]
 		var fieldDef *schema.FieldDefinition
 		if i.schema != nil {
 			fieldDef = i.schema.FindField(field)
@@ -69,82 +116,13 @@ func (i *SQLiteInsertValues) buildSingleInsert(doc common.Document) (string, []a
 
 		convertedValue, err := toSQLiteValue(fieldDef, value)
 		if err != nil {
-			return "", nil, fmt.Errorf("failed to convert field %s: %w", field, err)
+			return nil, nil, fmt.Errorf("failed to convert field %s: %w", field, err)
 		}
+
 		params = append(params, convertedValue)
 	}
 
-	query := fmt.Sprintf("(%s) VALUES (%s) RETURNING *;",
-		strings.Join(fields, ", "),
-		strings.Join(placeholders, ", "))
-
-	return query, params, nil
-}
-
-func (i *SQLiteInsertValues) buildBatchInsert(batch []common.Document) (string, []any, error) {
-	if len(batch) == 0 {
-		return "", nil, fmt.Errorf("empty batch provided for insert")
-	}
-
-	// Use first document to determine field order
-	firstDoc := batch[0]
-	if len(firstDoc) == 0 {
-		return "", nil, fmt.Errorf("first document in batch is empty")
-	}
-
-	// Get sorted fields for stable order
-	sortedFields := make([]string, 0, len(firstDoc))
-	for field := range firstDoc {
-		sortedFields = append(sortedFields, field)
-	}
-	sort.Strings(sortedFields)
-
-	var fields []string
-	var allPlaceholders []string
-	var params []any
-
-	// Build field names (only once)
-	for _, field := range sortedFields {
-		fields = append(fields, field)
-	}
-
-	// Build values for each document
-	for docIdx, doc := range batch {
-		var placeholders []string
-
-		// Ensure all documents have the same fields
-		if len(doc) != len(firstDoc) {
-			return "", nil, fmt.Errorf("document %d has different number of fields than first document", docIdx)
-		}
-
-		for _, field := range sortedFields {
-			value, exists := doc[field]
-			if !exists {
-				return "", nil, fmt.Errorf("document %d missing field %s", docIdx, field)
-			}
-
-			placeholders = append(placeholders, i.factory.nextParam())
-
-			var fieldDef *schema.FieldDefinition
-			if i.schema != nil {
-				fieldDef = i.schema.FindField(field)
-			}
-
-			convertedValue, err := toSQLiteValue(fieldDef, value)
-			if err != nil {
-				return "", nil, fmt.Errorf("failed to convert field %s in document %d: %w", field, docIdx, err)
-			}
-			params = append(params, convertedValue)
-		}
-
-		allPlaceholders = append(allPlaceholders, fmt.Sprintf("(%s)", strings.Join(placeholders, ", ")))
-	}
-
-	query := fmt.Sprintf("(%s) VALUES %s RETURNING *;",
-		strings.Join(fields, ", "),
-		strings.Join(allPlaceholders, ", "))
-
-	return query, params, nil
+	return placeholders, params, nil
 }
 
 // SQLiteInsertStatement represents a complete INSERT statement
@@ -218,9 +196,9 @@ func (f *sqliteFactory) buildInsertTree(q *query.Query, extra any) (SQLNode, err
 	}
 
 	switch v := extra.(type) {
-	case common.Document:
+	case data.Document:
 		values.data = v
-	case []common.Document:
+	case []data.Document:
 		values.batch = v
 	default:
 		return nil, fmt.Errorf("invalid data type for insert: %T", extra)

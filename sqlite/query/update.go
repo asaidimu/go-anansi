@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
@@ -13,7 +13,7 @@ import (
 // SQLiteUpdateAssignments handles the SET clause in an UPDATE statement.
 type SQLiteUpdateAssignments struct {
 	factory *sqliteFactory
-	data    common.Document
+	data    data.Document
 	schema  *schema.SchemaDefinition
 }
 
@@ -35,7 +35,7 @@ func (u *SQLiteUpdateAssignments) Value() (string, []any, error) {
 	for _, field := range fields {
 		value := u.data[field]
 		param := u.factory.nextParam()
-		parts = append(parts, fmt.Sprintf("%s = %s", field, param))
+		parts = append(parts, fmt.Sprintf("%s = %s", quoteIdentifier(field), param))
 
 		var fieldDef *schema.FieldDefinition
 		if u.schema != nil {
@@ -128,7 +128,7 @@ func (f *sqliteFactory) buildUpdateTree(q *query.Query, extra any) (SQLNode, err
 	if extra == nil {
 		return nil, fmt.Errorf("update query must have data")
 	}
-	data, ok := common.AsDocument(extra)
+	data, ok := data.AsDocument(extra)
 	if !ok {
 		return nil, fmt.Errorf("invalid data type for update: %T", extra)
 	}

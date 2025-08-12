@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -301,7 +301,7 @@ func (r *collectionRegistry) loadFromDatabase(ctx context.Context, name string) 
 		return nil, fmt.Errorf("internal error: found multiple entries for collection '%s'", name)
 	}
 
-	row := result.Data.(common.Document)
+	row := result.Data.(data.Document)
 	return unmarshalEntry(row)
 }
 
@@ -419,13 +419,13 @@ func (r *collectionRegistry) loadAllFromDatabase(ctx context.Context) ([]*Regist
 
 	entries := make([]*RegistryEntry, 0, result.Count)
 
-	rows := make([]common.Document, 0, result.Count)
+	rows := make([]data.Document, 0, result.Count)
 
 	if result.Count == 1 {
-		row := result.Data.(common.Document)
+		row := result.Data.(data.Document)
 		rows = append(rows, row)
 	} else {
-		rows = result.Data.([]common.Document)
+		rows = result.Data.([]data.Document)
 	}
 
 	for _, row := range rows {
@@ -547,18 +547,18 @@ func (r *collectionRegistry) createPhysicalCollection(manager query.SchemaManage
 	return nil
 }
 
-func (r *collectionRegistry) entryToDocument(entry *RegistryEntry) (common.Document, error) {
+func (r *collectionRegistry) entryToDocument(entry *RegistryEntry) (data.Document, error) {
 	entryBytes, err := json.Marshal(entry)
 	if err != nil {
-		return common.Document{}, fmt.Errorf("failed to marshal registry entry: %w", err)
+		return data.Document{}, fmt.Errorf("failed to marshal registry entry: %w", err)
 	}
 
 	var docData map[string]any
 	if err := json.Unmarshal(entryBytes, &docData); err != nil {
-		return common.Document{}, fmt.Errorf("failed to unmarshal registry entry to document: %w", err)
+		return data.Document{}, fmt.Errorf("failed to unmarshal registry entry to document: %w", err)
 	}
 
-	return common.MustNewDocument(docData), nil
+	return data.MustNewDocument(docData), nil
 }
 
 func (r *collectionRegistry) persistRegistryEntry(ctx context.Context, collection base.Collection, entry *RegistryEntry) (*RegistryEntry, error) {

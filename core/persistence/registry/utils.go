@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -91,17 +91,17 @@ func sanitizeForDatabase(input string) string {
 	return sanitized
 }
 
-func unmarshalEntry(doc common.Document) (*base.RegistryEntry, error) {
+func unmarshalEntry(doc data.Document) (*base.RegistryEntry, error) {
 	return utils.MapToStruct[*RegistryEntry](doc)
 }
 
 func enrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
 	tempSchema := *sc
 	// how is it that this sticks
-	tempSchema.Fields[common.MetadataFieldName] = &schema.FieldDefinition{
-		Name:   common.MetadataFieldName,
+	tempSchema.Fields[data.MetadataFieldName] = &schema.FieldDefinition{
+		Name:   data.MetadataFieldName,
 		Type:   schema.FieldTypeObject,
-		Schema: schema.NestedSchemaReference{ID: common.MetadataFieldName},
+		Schema: schema.NestedSchemaReference{ID: data.MetadataFieldName},
 	}
 
 	metadata := collection.DefaultMetadataSchema()
@@ -111,6 +111,6 @@ func enrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
 		tempSchema.NestedSchemas = make(map[string]*schema.NestedSchemaDefinition)
 	}
 
-	tempSchema.NestedSchemas[common.MetadataFieldName] = metadata
+	tempSchema.NestedSchemas[data.MetadataFieldName] = metadata
 	return &tempSchema
 }

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
@@ -56,7 +56,7 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	}
 
 	// Test Create
-	docToCreate := common.Document{"id": "1", "name": "value"}
+	docToCreate := data.Document{"id": "1", "name": "value"}
 	_, err = collection.CreateOne(context.Background(), docToCreate)
 	require.NoError(t, err)
 
@@ -67,7 +67,7 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test Update
-	docToUpdate := result.Data.(common.Document)
+	docToUpdate := result.Data.(data.Document)
 	docToUpdate["name"] = "new_value"
 	updateFilter := query.NewQueryBuilder().Where("id").Eq("1").Build().Filters
 	_, err = collection.Update(context.Background(), &base.CollectionUpdate{Data: docToUpdate, Filter: updateFilter})

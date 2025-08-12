@@ -3,7 +3,7 @@ package utils
 import (
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 )
 
 func ConvertMaps(m map[string]any) {
@@ -48,17 +48,17 @@ func GetScopedPath(path string) string {
 	return strings.Join(parts[:len(parts)-1], ".")
 }
 
-func GetValueByPath(data any, path string) (any, bool) {
+func GetValueByPath(value any, path string) (any, bool) {
 	if path == "" {
-		return data, true
+		return value, true
 	}
 
 	keys := strings.Split(path, ".")
-	current := data
+	current := value
 	for _, key := range keys {
 		m, ok := current.(map[string]any)
 		if !ok {
-			m, ok = current.(common.Document)
+			m, ok = current.(data.Document)
 			if !ok {
 				return nil, false
 			}

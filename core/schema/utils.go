@@ -1,13 +1,13 @@
 package schema
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 func FieldTypePtr(fd FieldType) *FieldType {
@@ -23,7 +23,7 @@ var complexFieldTypes = map[FieldType]bool{
 }
 
 // FindNestedSchema finds a nested schema by it's name
-func (s *FieldType) IsComplex() (bool) {
+func (s *FieldType) IsComplex() bool {
 	return complexFieldTypes[*s]
 }
 
@@ -68,10 +68,7 @@ func (s *SchemaDefinition) FindField(path string) *FieldDefinition {
 }
 
 func (s *SchemaDefinition) From(jsonSchema []byte) error {
-	if err := json.Unmarshal(jsonSchema, s); err != nil {
-		return fmt.Errorf("Error unmarshaling schema: %w", err)
-	}
-	return nil
+	return utils.FromJSON(jsonSchema, s)
 }
 
 // FindNestedField finds a nested field by its path segments from the current field.
@@ -157,7 +154,6 @@ func (nsd *NestedSchemaDefinition) FindField(name string) *FieldDefinition {
 	return nil
 }
 
-
 // Type checking and coercion utilities
 func (expectedType FieldType) Coerce(value any) (any, bool) {
 	str, ok := value.(string)
@@ -212,10 +208,11 @@ func (fieldDef *FieldDefinition) ValidateType(value any) bool {
 	case FieldTypeArray, FieldTypeSet:
 		_, ok = value.([]any)
 	case FieldTypeObject, FieldTypeRecord:
-		_, ok = common.AsDocument(value)
-	case FieldTypeUnion, FieldTypeEnum:
+		_, ok = data.AsDocument(value)
+	case FieldTypeUnion, FieldTypeEnum, FieldTypeUnknown:
 		return true
 	}
+
 	if !ok {
 		return false
 	}
@@ -232,4 +229,50 @@ func (condition *FieldInclusionCondition) Evaluate(data map[string]any) bool {
 	}
 	// Use reflect.DeepEqual for robust value comparison
 	return reflect.DeepEqual(fieldValue, condition.Value)
+}
+
+func (s *SchemaDefinition) FieldNames() []string {
+	doc := data.MustNewDocument(s.Fields)
+	values := doc.Values()
+	names := make([]string, 0, len(values))
+	for _, v := range values {
+		fieldDef, ok := v.(*FieldDefinition)
+		if !ok {
+			continue
+		}
+		names = append(names, fieldDef.Name)
+	}
+	return names
+}
+
+func (s *SchemaDefinition) ToJSON() (string, error) {
+	return utils.ToJSON(s)
+}
+
+func (s *SchemaDefinition) ToJSONBytes() ([]byte, error) {
+	return utils.ToJSONBytes(s)
+}
+
+func (s *SchemaDefinition) MustToJSON() string {
+	jsonStr, err := s.ToJSON()
+	if err != nil {
+		panic(fmt.Sprintf("MustToJSON failed: %v", err))
+	}
+	return jsonStr
+}
+
+func (s *SchemaDefinition) Clone() (*SchemaDefinition, error) {
+	var newSchema SchemaDefinition
+	if err := utils.Clone(*s, &newSchema); err != nil {
+		return nil, fmt.Errorf("failed to clone schema: %w", err)
+	}
+	return &newSchema, nil
+}
+
+func (s *SchemaDefinition) MustClone() *SchemaDefinition {
+	clone, err := s.Clone()
+	if err != nil {
+		panic(fmt.Sprintf("MustClone failed: %v", err))
+	}
+	return clone
 }

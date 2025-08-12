@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -61,7 +61,7 @@ func TestInsertAndSelectIntegration(t *testing.T) {
 	builder := sqlite_query.NewSQLiteFactory()
 
 	// Insert data
-	records := []common.Document{
+	records := []data.Document{
 		{"id": "1", "name": "Alice", "age": 30, "email": "alice@example.com"},
 		{"id": "2", "name": "Bob", "age": 25, "email": "bob@example.com"},
 	}
@@ -94,8 +94,8 @@ func TestInsertAndSelectIntegration(t *testing.T) {
 	assert.Len(t, selectedDocs, 2)
 
 	// Assert content of selected documents
-	assert.Contains(t, selectedDocs, common.Document{"id": "1", "name": "Alice", "age": int64(30), "email": "alice@example.com"})
-	assert.Contains(t, selectedDocs, common.Document{"id": "2", "name": "Bob", "age": int64(25), "email": "bob@example.com"})
+	assert.Contains(t, selectedDocs, data.Document{"id": "1", "name": "Alice", "age": int64(30), "email": "alice@example.com"})
+	assert.Contains(t, selectedDocs, data.Document{"id": "2", "name": "Bob", "age": int64(25), "email": "bob@example.com"})
 }
 
 func TestUpdateIntegration(t *testing.T) {
@@ -105,7 +105,7 @@ func TestUpdateIntegration(t *testing.T) {
 	builder := sqlite_query.NewSQLiteFactory()
 
 	// Insert data
-	records := []common.Document{
+	records := []data.Document{
 		{"id": "1", "name": "Alice", "age": 30, "email": "alice@example.com"},
 	}
 	nqInsert, err := builder.Build(&query.Query{
@@ -155,7 +155,7 @@ func TestUpdateIntegration(t *testing.T) {
 	selectedDocs, err := executor.Query(context.Background(), nqSelect)
 	require.NoError(t, err)
 	assert.Len(t, selectedDocs, 1)
-	assert.Contains(t, selectedDocs, common.Document{"id": "1", "name": "Alice", "age": int64(31), "email": "alice.updated@example.com"})
+	assert.Contains(t, selectedDocs, data.Document{"id": "1", "name": "Alice", "age": int64(31), "email": "alice.updated@example.com"})
 }
 
 func TestDeleteIntegration(t *testing.T) {
@@ -165,7 +165,7 @@ func TestDeleteIntegration(t *testing.T) {
 	builder := sqlite_query.NewSQLiteFactory()
 
 	// Insert data
-	records := []common.Document{
+	records := []data.Document{
 		{"id": "1", "name": "Alice", "age": 30, "email": "alice@example.com"},
 		{"id": "2", "name": "Bob", "age": 25, "email": "bob@example.com"},
 	}
@@ -215,5 +215,5 @@ func TestDeleteIntegration(t *testing.T) {
 	selectedDocs, err := executor.Query(context.Background(), nqSelect)
 	require.NoError(t, err)
 	assert.Len(t, selectedDocs, 1)
-	assert.Contains(t, selectedDocs, common.Document{"id": "2", "name": "Bob", "age": int64(25), "email": "bob@example.com"})
+	assert.Contains(t, selectedDocs, data.Document{"id": "2", "name": "Bob", "age": int64(25), "email": "bob@example.com"})
 }

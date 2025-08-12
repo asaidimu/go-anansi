@@ -37,9 +37,9 @@ func TestCreateTableTree_Value(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, nq.Raw().Params)
 	expectedSQL := `CREATE TABLE IF NOT EXISTS users (
+    "age" INTEGER,
     "id" TEXT,
-    "name" TEXT,
-    "age" INTEGER
+    "name" TEXT
 );`
 	assert.Equal(t, expectedSQL, nq.Raw().SQL)
 }

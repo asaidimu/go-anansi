@@ -3,7 +3,7 @@ package native
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 )
 
@@ -38,9 +38,9 @@ type QueryFactory[T any] interface {
 }
 
 type QueryExecutor[T any] interface {
-	Query(ctx context.Context, compiled NativeQuery[T]) ([]common.Document, error)
+	Query(ctx context.Context, compiled NativeQuery[T]) ([]data.Document, error)
 	Exec(ctx context.Context, compiled NativeQuery[T]) (int64, error)
-	QueryStream(ctx context.Context, compiled NativeQuery[T]) (<-chan common.Document, <-chan error, error)
+	QueryStream(ctx context.Context, compiled NativeQuery[T]) (<-chan data.Document, <-chan error, error)
 	BeginTransaction(ctx context.Context) (QueryExecutor[T], error)
 	Commit(ctx context.Context) error
 	Rollback(ctx context.Context) error

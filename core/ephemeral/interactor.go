@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
@@ -25,14 +26,14 @@ var (
 type EphemeralDatabaseInteractor struct {
 	store  *ephemeralStore
 	parent *EphemeralDatabaseInteractor // if non-nil, this is a transaction
-	txMu  sync.Mutex
+	txMu   sync.Mutex
 }
 
 var _ query.DatabaseInteractor = (*EphemeralDatabaseInteractor)(nil)
 var _ query.SchemaManager = (*EphemeralDatabaseInteractor)(nil)
 
 // SelectDocuments retrieves documents from the in-memory store.
-func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]common.Document, error) {
+func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]data.Document, error) {
 
 	if dsl.Target == nil {
 		dsl.Target = &query.QueryTarget{
@@ -59,7 +60,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 		return nil, err
 	}
 
-	var allDocs []common.Document
+	var allDocs []data.Document
 	stream := c.data.Stream(0)
 	defer stream.Close()
 
@@ -71,7 +72,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 			}
 			return nil, err
 		}
-		record := common.Document(docResult.Data)
+		record := data.Document(docResult.Data)
 		allDocs = append(allDocs, record)
 	}
 
@@ -90,7 +91,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 				return nil, err
 			}
 
-			var rightDocs []common.Document
+			var rightDocs []data.Document
 			rightStream := rightCollection.data.Stream(0)
 			for {
 				docResult, err := rightStream.Next()
@@ -101,7 +102,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 					rightStream.Close()
 					return nil, err
 				}
-				rightDocs = append(rightDocs, common.Document(docResult.Data))
+				rightDocs = append(rightDocs, data.Document(docResult.Data))
 			}
 
 			rightStream.Close()
@@ -122,7 +123,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 		if err != nil {
 			return nil, err
 		}
-		return []common.Document{aggregationResults}, nil
+		return []data.Document{aggregationResults}, nil
 	}
 
 	// Apply projection, sorting, and pagination
@@ -145,13 +146,13 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 }
 
 // SelectStream streams documents from the in-memory store.
-func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan common.Document, <-chan error, error) {
+func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan data.Document, <-chan error, error) {
 	c, err := i.store.getCollection(sc.Name)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	docCh := make(chan common.Document)
+	docCh := make(chan data.Document)
 	errCh := make(chan error, 1)
 
 	go func() {
@@ -179,7 +180,7 @@ func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *sche
 					return
 				}
 
-				doc := common.Document(docResult.Data)
+				doc := data.Document(docResult.Data)
 				docCh <- doc
 			}
 		}
@@ -217,7 +218,7 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 			return 0, err
 		}
 
-		doc := common.Document(docResult.Data)
+		doc := data.Document(docResult.Data)
 		matches, err := queryHelper.Match(doc)
 		if err != nil {
 			stream.Close()
@@ -249,13 +250,13 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 }
 
 // InsertDocuments inserts documents into the in-memory store.
-func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, records []common.Document) ([]common.Document, error) {
+func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, records []data.Document) ([]data.Document, error) {
 	c, err := i.store.getCollection(schemaDef.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	var insertedDocs []common.Document
+	var insertedDocs []data.Document
 	for _, doc := range records {
 		// Ensure nested maps are also of type map[string]any
 		utils.ConvertMaps(doc)
@@ -295,7 +296,7 @@ func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schem
 			return nil, err
 		}
 
-		insertedDoc := common.Document(retrieved.Data)
+		insertedDoc := data.Document(retrieved.Data)
 		insertedDocs = append(insertedDocs, insertedDoc)
 	}
 
@@ -331,7 +332,7 @@ func (i *EphemeralDatabaseInteractor) DeleteDocuments(ctx context.Context, schem
 			return 0, err
 		}
 
-		doc := common.Document(docResult.Data)
+		doc := data.Document(docResult.Data)
 		matches, err := queryHelper.Match(doc)
 		if err != nil {
 			stream.Close()
@@ -354,10 +355,15 @@ func (i *EphemeralDatabaseInteractor) DeleteDocuments(ctx context.Context, schem
 	return deletedCount, nil
 }
 
+func (i *EphemeralDatabaseInteractor) HasTransaction(ctx context.Context) bool {
+	return i.parent != nil
+}
+
 // StartTransaction begins a new in-memory transaction.
 func (i *EphemeralDatabaseInteractor) StartTransaction(ctx context.Context) (query.TransactionalDatabaseInteractor, error) {
 	i.store.mu.Lock()
 	defer i.store.mu.Unlock()
+
 	i.txMu.Lock()
 
 	// Create a deep copy of the collections for the transaction

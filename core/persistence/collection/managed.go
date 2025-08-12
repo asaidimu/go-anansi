@@ -11,7 +11,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -58,8 +58,8 @@ func newManagedCollection(
 // --- Core Method Overrides ---
 
 // CreateOne handles the creation of a single document.
-func (c *managedCollection) CreateOne(ctx context.Context, doc common.Document) (*base.CreateResult, error) {
-	results, err := c.CreateMany(ctx, []common.Document{doc})
+func (c *managedCollection) CreateOne(ctx context.Context, doc data.Document) (*base.CreateResult, error) {
+	results, err := c.CreateMany(ctx, []data.Document{doc})
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func (c *managedCollection) CreateOne(ctx context.Context, doc common.Document) 
 }
 
 // CreateMany handles the creation of multiple documents, providing a rich result for each.
-func (c *managedCollection) CreateMany(ctx context.Context, docs []common.Document) ([]base.CreateResult, error) {
+func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) {
 	results := make([]base.CreateResult, len(docs))
 	valid := 0
 	metadata, err := c.createEntryMetadata()
@@ -204,8 +204,8 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 		return 0, fmt.Errorf("metadata hash verification failed: data may be tampered")
 	}
 
-	data := params.Data.StripMetadata()
-	result, err := c.Validate(ctx, data, true)
+	d := params.Data.StripMetadata()
+	result, err := c.Validate(ctx, d, true)
 
 	if err != nil {
 		return 0, fmt.Errorf("Failed to update document in collection: %w", err)
@@ -229,7 +229,7 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 
 	versionFilter := query.QueryFilter{
 		Condition: &query.FilterCondition{
-			Field:    fmt.Sprintf("%s.version", common.MetadataFieldName),
+			Field:    fmt.Sprintf("%s.version", data.MetadataFieldName),
 			Operator: query.ComparisonOperatorEq,
 			Value: query.FilterValue{
 				NumberVal: &version,
@@ -270,7 +270,7 @@ func (c *managedCollection) Delete(ctx context.Context, q *query.QueryFilter, un
 	return c.wrapped.Delete(ctx, q, unsafe)
 }
 
-func (c *managedCollection) Validate(ctx context.Context, data common.Document, loose bool) (*schema.ValidationResult, error) {
+func (c *managedCollection) Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error) {
 	return c.wrapped.Validate(ctx, data, loose)
 }
 

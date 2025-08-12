@@ -3,8 +3,8 @@ package query_test
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -264,18 +264,18 @@ func TestSchemaFromQuery(t *testing.T) {
 		assert.Contains(t, nestedContactSchema.StructuredFieldsMap, "phone")
 
 		// Validate the schema with a sample document
-		doc := common.Document{
+		doc := data.Document{
 			"id":      "user-123",
 			"name":    "John Doe",
 			"email":   "john.doe@example.com",
 			"age":     30,
 			"isAdmin": false,
-			"profile": common.Document{
+			"profile": data.Document{
 				"id":         "profile-456",
 				"userId":     "user-123",
 				"contactId":  "contact-789",
 				"department": "Engineering",
-				"contact": common.Document{
+				"contact": data.Document{
 					"id":      "contact-789",
 					"phone":   "123-456-7890",
 					"address": "123 Main St",

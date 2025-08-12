@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
@@ -40,7 +40,7 @@ func (i *NativeInteractor[T]) Close() error {
 }
 
 // SelectDocuments retrieves documents from the Native database.
-func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.Query) ([]common.Document, error) {
+func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.Query) ([]data.Document, error) {
 	compiled, err := (*i.b).Build(dsl, StmtSelect, nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not get a query: %w", err)
@@ -54,7 +54,7 @@ func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schem
 }
 
 // SelectStream streams documents from the Native database.
-func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan common.Document, <-chan error, error) {
+func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan data.Document, <-chan error, error) {
 	compiled, err := (*i.b).Build(dsl, StmtSelect, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("could not get a query: %w", err)
@@ -81,9 +81,9 @@ func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schem
 }
 
 // InsertDocuments inserts documents into the Native database.
-func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *schema.SchemaDefinition, records []common.Document) ([]common.Document, error) {
+func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *schema.SchemaDefinition, records []data.Document) ([]data.Document, error) {
 	if len(records) == 0 {
-		return []common.Document{}, nil
+		return []data.Document{}, nil
 	}
 
 	compiled, err := (*i.b).Build(&query.Query{
@@ -137,6 +137,10 @@ func (i *NativeInteractor[T]) StartTransaction(ctx context.Context) (query.Trans
 		return nil, fmt.Errorf("failed to create new interactor for transaction: %w", err)
 	}
 	return ti, nil
+}
+
+func (i *NativeInteractor[T]) HasTransaction(ctx context.Context) bool {
+	return i.isTransaction
 }
 
 // Commit commits the current transaction.

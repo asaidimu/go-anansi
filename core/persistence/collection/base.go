@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -84,8 +84,9 @@ func (c *baseCollection) withTransaction(
 	operation func(interactor query.BaseDatabaseInteractor) (any, error),
 ) (any, error) {
 
-	if nonTransactionalInteractor, ok := c.interactor.(query.DatabaseInteractor); ok {
-		tx, err := nonTransactionalInteractor.StartTransaction(ctx)
+	if !c.interactor.HasTransaction(ctx) {
+		interactor := c.interactor.(query.DatabaseInteractor)
+		tx, err := interactor.StartTransaction(ctx)
 		if err != nil {
 			return nil, base.NewPersistenceError("failed to start transaction", err)
 		}
@@ -108,8 +109,8 @@ func (c *baseCollection) withTransaction(
 }
 
 // CreateOne creates a single document.
-func (c *baseCollection) CreateOne(ctx context.Context, doc common.Document) (*base.CreateResult, error) {
-	results, err := c.CreateMany(ctx, []common.Document{doc})
+func (c *baseCollection) CreateOne(ctx context.Context, doc data.Document) (*base.CreateResult, error) {
+	results, err := c.CreateMany(ctx, []data.Document{doc})
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +118,7 @@ func (c *baseCollection) CreateOne(ctx context.Context, doc common.Document) (*b
 }
 
 // CreateMany creates multiple documents.
-func (c *baseCollection) CreateMany(ctx context.Context, docs []common.Document) ([]base.CreateResult, error) {
+func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) {
 	results := make([]base.CreateResult, len(docs))
 
 	// Insert the documents
@@ -132,7 +133,7 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []common.Document)
 		return results, base.NewPersistenceError("Failed to insert documents", err)
 	}
 
-	insertedDocs := inserted.([]common.Document)
+	insertedDocs := inserted.([]data.Document)
 
 	for i, doc := range insertedDocs {
 		results[i] = base.CreateResult{Status: base.StatusCreated, Data: doc}
@@ -205,7 +206,7 @@ func (c *baseCollection) Delete(ctx context.Context, q *query.QueryFilter, unsaf
 
 // Validate checks if the given data conforms to the collection's schema.
 // The 'loose' flag allows for partial validation.
-func (c *baseCollection) Validate(ctx context.Context, data common.Document, loose bool) (*schema.ValidationResult, error) {
+func (c *baseCollection) Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error) {
 	issues, ok := c.validator.Validate(data, loose)
 	return &schema.ValidationResult{
 		Valid:  ok,

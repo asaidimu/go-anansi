@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
@@ -138,7 +138,7 @@ func TestPersistence_Transact(t *testing.T) {
 	accounts, err := p.Create(context.Background(), *sc)
 	require.NoError(t, err)
 
-	_, err = accounts.CreateMany(context.Background(), []common.Document{
+	_, err = accounts.CreateMany(context.Background(), []data.Document{
 		{"id": "A", "name": "Alice", "balance": 100.0},
 		{"id": "B", "name": "Bob", "balance": 50.0},
 	})
@@ -158,7 +158,7 @@ func TestPersistence_Transact(t *testing.T) {
 		}
 
 		require.Equal(t, 1, aliceResult.Count)
-		aliceDoc := aliceResult.Data.(common.Document)
+		aliceDoc := aliceResult.Data.(data.Document)
 
 		// Subtract 20 from Alice
 		aliceDoc["balance"] = 80.0
@@ -175,7 +175,7 @@ func TestPersistence_Transact(t *testing.T) {
 			return nil, err
 		}
 		require.Equal(t, 1, bobResult.Count)
-		bobDoc := bobResult.Data.(common.Document)
+		bobDoc := bobResult.Data.(data.Document)
 
 		// Add 20 to Bob
 		bobDoc["balance"] = 70.0
@@ -196,7 +196,7 @@ func TestPersistence_Transact(t *testing.T) {
 	require.NoError(t, err)
 
 	balances := make(map[string]any)
-	for _, doc := range result.Data.([]common.Document) {
+	for _, doc := range result.Data.([]data.Document) {
 		balances[doc["id"].(string)] = doc["balance"]
 	}
 
@@ -217,7 +217,7 @@ func TestPersistence_Transact(t *testing.T) {
 			return nil, err
 		}
 		require.Equal(t, 1, aliceResult.Count)
-		aliceDoc := aliceResult.Data.(common.Document)
+		aliceDoc := aliceResult.Data.(data.Document)
 
 		// Subtract 10 from Alice
 		aliceDoc["balance"] = 70.0
@@ -228,7 +228,7 @@ func TestPersistence_Transact(t *testing.T) {
 		}
 
 		// This will fail because of a non-existent field, causing a rollback
-		updateBob := common.Document{"non_existent_field": "error"}
+		updateBob := data.Document{"non_existent_field": "error"}
 
 		// We still need metadata for the update to pass the initial check
 		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
@@ -237,7 +237,7 @@ func TestPersistence_Transact(t *testing.T) {
 			return nil, err
 		}
 		require.Equal(t, 1, bobResult.Count)
-		bobDoc := bobResult.Data.(common.Document)
+		bobDoc := bobResult.Data.(data.Document)
 		meta, _ := bobDoc.Metadata()
 		updateBob.SetMetadata(meta)
 
@@ -254,7 +254,7 @@ func TestPersistence_Transact(t *testing.T) {
 	require.NoError(t, err)
 
 	rollbackBalances := make(map[string]any)
-	for _, doc := range rollbackResult.Data.([]common.Document) {
+	for _, doc := range rollbackResult.Data.([]data.Document) {
 		rollbackBalances[doc["id"].(string)] = doc["balance"]
 	}
 
@@ -404,7 +404,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	accounts, err := p.Create(context.Background(), *sc)
 	require.NoError(t, err)
 
-	_, err = accounts.CreateMany(context.Background(), []common.Document{
+	_, err = accounts.CreateMany(context.Background(), []data.Document{
 		{"id": "A", "name": "Alice", "balance": 100.0},
 	})
 	require.NoError(t, err)
@@ -424,7 +424,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 				return nil, err
 			}
 			require.Equal(t, 1, aliceResult.Count)
-			aliceDoc := aliceResult.Data.(common.Document)
+			aliceDoc := aliceResult.Data.(data.Document)
 
 			// Update Alice's balance
 			aliceDoc["balance"] = 50.0
@@ -445,7 +445,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	result, err := finalAccounts.Read(context.Background(), &query.Query{})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.Count)
-	doc := result.Data.(common.Document)
+	doc := result.Data.(data.Document)
 	balances := make(map[string]any)
 	balances[doc["id"].(string)] = doc["balance"]
 
@@ -513,7 +513,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	require.NoError(t, err)
 
 	// 3. Insert Data
-	_, err = usersCollection.CreateMany(context.Background(), []common.Document{
+	_, err = usersCollection.CreateMany(context.Background(), []data.Document{
 		{"id": "user1", "name": "Alice"},
 		{"id": "user2", "name": "Bob"},
 		{"id": "user3", "name": "Charlie"},
@@ -521,7 +521,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = profilesCollection.CreateMany(context.Background(), []common.Document{
+	_, err = profilesCollection.CreateMany(context.Background(), []data.Document{
 		{"user": "user1", "bio": "Loves Go programming"},
 		{"user": "user2", "bio": "Enjoys testing"},
 	})
@@ -550,15 +550,15 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	result, err := usersCollection.Read(context.Background(), &joinQuery)
 	require.NoError(t, err)
 	assert.NotNil(t, result)
-	data := result.Data.([]common.Document)
+	d := result.Data.([]data.Document)
 
 	// 6. Assert Results
-	assert.Len(t, data, 3) // Expecting 3 documents (all users)
+	assert.Len(t, d, 3) // Expecting 3 documents (all users)
 
 	// Verify content
-	for _, doc := range data {
-		userData, userOk := doc["users"].(common.Document)
-		profileData, profileOk := doc["profiles"].(common.Document)
+	for _, doc := range d {
+		userData, userOk := doc["users"].(data.Document)
+		profileData, profileOk := doc["profiles"].(data.Document)
 
 		assert.True(t, userOk)
 

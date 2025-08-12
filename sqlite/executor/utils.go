@@ -6,17 +6,17 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"go.uber.org/zap"
 )
 
 // ReadRows reads all rows from a *sql.Rows object and converts them into a slice
-// of common.Document maps. It also handles type conversions for different field types.
-func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) ([]common.Document, error) {
+// of data.Document maps. It also handles type conversions for different field types.
+func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) ([]data.Document, error) {
 	utilDocChan, utilErrChan := readRowsToDocs(rows)
 
-	var results []common.Document
+	var results []data.Document
 	for row := range utilDocChan {
 		// Create global result object
 		globalResult := make(map[string]any)
@@ -55,7 +55,7 @@ func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 		}
 
 		// Determine what to return based on number of tables
-		var finalResult common.Document
+		var finalResult data.Document
 		if len(globalResult) == 1 {
 			// Single table - return the unwrapped table object
 			for _, tableObj := range globalResult {
@@ -78,8 +78,8 @@ func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 	return results, nil
 }
 
-func readRowsToDocs(rows *sql.Rows) (<-chan common.Document, <-chan error) {
-	docChan := make(chan common.Document)
+func readRowsToDocs(rows *sql.Rows) (<-chan data.Document, <-chan error) {
+	docChan := make(chan data.Document)
 	errChan := make(chan error, 1)
 
 	go func() {
@@ -94,7 +94,7 @@ func readRowsToDocs(rows *sql.Rows) (<-chan common.Document, <-chan error) {
 		}
 
 		for rows.Next() {
-			row := make(common.Document, len(columns))
+			row := make(data.Document, len(columns))
 			values := make([]any, len(columns))
 			scanArgs := make([]any, len(columns))
 			for i := range values {
@@ -148,34 +148,10 @@ func unmarshalJSON(value any) (any, error) {
 	return data, nil
 }
 
-// marshalJSON converts a value to JSON string
-func marshalJSON(value any, fieldName string) (string, error) {
-	jsonBytes, err := json.Marshal(value)
-	if err != nil {
-		if fieldName != "" {
-			return "", fmt.Errorf("failed to marshal field '%s' to JSON: %w", fieldName, err)
-		}
-		return "", fmt.Errorf("failed to marshal value to JSON: %w", err)
-	}
-	return string(jsonBytes), nil
-}
-
 // convertBooleanFromSQLite converts integer representations back to booleans
 func convertBooleanFromSQLite(value any) (any, error) {
 	if i, ok := value.(int64); ok {
 		return i == 1, nil
-	}
-	return value, nil
-}
-
-// convertBooleanToSQLite converts boolean values to integer representations for SQLite
-func convertBooleanToSQLite(fieldDef *schema.FieldDefinition, value any) (any, error) {
-	if b, ok := fieldDef.Type.Coerce(value); ok {
-		val := b.(bool)
-		if val {
-			return 1, nil
-		}
-		return 0, nil
 	}
 	return value, nil
 }

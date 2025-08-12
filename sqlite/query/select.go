@@ -18,50 +18,26 @@ func (f *sqliteFactory) addAlias(original, alias string) {
 	f.aliases[original] = alias
 }
 
-// resolveFieldReference resolves a field reference to proper SQL, handling JSON paths when needed
-func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[string]*schema.SchemaDefinition) string {
-	// Handle simple field references (no dots)
-	if !strings.Contains(fieldRef, ".") {
-		return fieldRef
+func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[string]*schema.SchemaDefinition) (string, error) {
+	if !isValidIdentifier(fieldRef) {
+		return "", fmt.Errorf("unsupported field reference: %s", fieldRef)
 	}
 
 	parts := strings.Split(fieldRef, ".")
-	if len(parts) < 2 {
-		return fieldRef
-	}
-
-	// First part should be a table alias, second part is the field name
-	tableAlias := parts[0]
-	fieldName := parts[1]
-
-	// Check if we have schema for this table alias
-	schema, exists := schemas[tableAlias]
-	if !exists {
-		// No schema found, return as regular field reference
-		return fieldRef
-	}
-
-	// Check if the field is a JSON type
-	fieldDef := schema.FindField(fieldName)
-	if fieldDef == nil {
-		// Field not found in schema, return as-is
-		return fieldRef
-	}
-
-	if fieldDef.Type.IsComplex() {
-		if len(parts) == 2 {
-			// Accessing the JSON field directly (e.g., u.profile)
-			return fmt.Sprintf("%s.%s", tableAlias, fieldName)
-		} else {
-			// Accessing nested properties (e.g., u.profile.preferences.theme)
-			nestedPath := parts[2:] // Skip table alias and field name
-			jsonPath := "$." + strings.Join(nestedPath, ".")
-			return fmt.Sprintf("json_extract(%s.%s, '%s')", tableAlias, fieldName, jsonPath)
+	if len(parts) > 1 {
+		if schema, ok := schemas[parts[0]]; ok {
+			if fieldDef := schema.FindField(parts[1]); fieldDef != nil && fieldDef.Type.IsComplex() {
+				jsonPath := "$." + strings.Join(parts[2:], ".")
+				return fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(parts[0])+"."+quoteIdentifier(parts[1]), jsonPath), nil
+			}
 		}
 	}
 
-	// Non-JSON field - return regular column reference
-	return fieldRef
+	quotedParts := make([]string, len(parts))
+	for i, part := range parts {
+		quotedParts[i] = quoteIdentifier(part)
+	}
+	return strings.Join(quotedParts, "."), nil
 }
 
 // SQLiteSelectProjection handles SELECT clause projection
@@ -99,20 +75,35 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 				if agg.Field == "*" {
 					aggPart = "COUNT(*)"
 				} else {
-					resolvedField := p.factory.resolveFieldReference(agg.Field, p.schemas)
+					resolvedField, err := p.factory.resolveFieldReference(agg.Field, p.schemas)
+					if err != nil {
+						return "", nil, err
+					}
 					aggPart = fmt.Sprintf("COUNT(%s)", resolvedField)
 				}
 			case query.AggregationTypeSum:
-				resolvedField := p.factory.resolveFieldReference(agg.Field, p.schemas)
+				resolvedField, err := p.factory.resolveFieldReference(agg.Field, p.schemas)
+				if err != nil {
+					return "", nil, err
+				}
 				aggPart = fmt.Sprintf("SUM(%s)", resolvedField)
 			case query.AggregationTypeAvg:
-				resolvedField := p.factory.resolveFieldReference(agg.Field, p.schemas)
+				resolvedField, err := p.factory.resolveFieldReference(agg.Field, p.schemas)
+				if err != nil {
+					return "", nil, err
+				}
 				aggPart = fmt.Sprintf("AVG(%s)", resolvedField)
 			case query.AggregationTypeMin:
-				resolvedField := p.factory.resolveFieldReference(agg.Field, p.schemas)
+				resolvedField, err := p.factory.resolveFieldReference(agg.Field, p.schemas)
+				if err != nil {
+					return "", nil, err
+				}
 				aggPart = fmt.Sprintf("MIN(%s)", resolvedField)
 			case query.AggregationTypeMax:
-				resolvedField := p.factory.resolveFieldReference(agg.Field, p.schemas)
+				resolvedField, err := p.factory.resolveFieldReference(agg.Field, p.schemas)
+				if err != nil {
+					return "", nil, err
+				}
 				aggPart = fmt.Sprintf("MAX(%s)", resolvedField)
 			default:
 				return "", nil, fmt.Errorf("unsupported aggregation type: %s", agg.Type)
@@ -130,7 +121,10 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 		// Handle included fields
 		if len(p.projection.Include) > 0 {
 			for _, field := range p.projection.Include {
-				resolvedField := p.factory.resolveFieldReference(field.Name, p.schemas)
+				resolvedField, err := p.factory.resolveFieldReference(field.Name, p.schemas)
+				if err != nil {
+					return "", nil, err
+				}
 				fieldPart := resolvedField
 				if field.Alias != nil {
 					fieldPart = fmt.Sprintf("%s AS %s", resolvedField, *field.Alias)
@@ -248,7 +242,10 @@ func (p *SQLiteSelectProjection) buildCaseExpression(ce *query.CaseExpression) (
 
 func (p *SQLiteSelectProjection) buildProjectionValue(value *query.FilterValue) (string, []any, error) {
 	if value.FieldRefVal != nil {
-		resolvedField := p.factory.resolveFieldReference(value.FieldRefVal.Field, p.schemas)
+		resolvedField, err := p.factory.resolveFieldReference(value.FieldRefVal.Field, p.schemas)
+		if err != nil {
+			return "", nil, err
+		}
 		return resolvedField, nil, nil
 	}
 
@@ -316,16 +313,25 @@ func (p *SQLiteSelectProjection) buildFilterCondition(condition *query.FilterCon
 		operator = "NOT LIKE"
 		valueSQL = "'%' || " + valueSQL + " || '%'"
 	case query.ComparisonOperatorExists:
-		resolvedField := p.factory.resolveFieldReference(condition.Field, p.schemas)
+		resolvedField, err := p.factory.resolveFieldReference(condition.Field, p.schemas)
+		if err != nil {
+			return "", nil, err
+		}
 		return fmt.Sprintf("%s IS NOT NULL", resolvedField), nil, nil
 	case query.ComparisonOperatorNotExists:
-		resolvedField := p.factory.resolveFieldReference(condition.Field, p.schemas)
+		resolvedField, err := p.factory.resolveFieldReference(condition.Field, p.schemas)
+		if err != nil {
+			return "", nil, err
+		}
 		return fmt.Sprintf("%s IS NULL", resolvedField), nil, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported operator: %s", condition.Operator)
 	}
 
-	resolvedField := p.factory.resolveFieldReference(condition.Field, p.schemas)
+	resolvedField, err := p.factory.resolveFieldReference(condition.Field, p.schemas)
+	if err != nil {
+		return "", nil, err
+	}
 	sql := fmt.Sprintf("%s %s %s", resolvedField, operator, valueSQL)
 	return sql, params, nil
 }
@@ -367,7 +373,10 @@ func (p *SQLiteSelectProjection) buildTextSearch(search *query.TextSearchQuery) 
 	}
 
 	for _, field := range search.Fields {
-		resolvedField := p.factory.resolveFieldReference(field, p.schemas)
+		resolvedField, err := p.factory.resolveFieldReference(field, p.schemas)
+		if err != nil {
+			return "", nil, err
+		}
 		var condition string
 		param := p.factory.nextParam()
 
@@ -420,6 +429,9 @@ func (p *SQLiteSelectProjection) buildTextSearch(search *query.TextSearchQuery) 
 
 func (p *SQLiteSelectProjection) buildFilterValue(value *query.FilterValue) (string, []any, error) {
 	if value.StringVal != nil {
+		if strings.Contains(*value.StringVal, ";") {
+			return "", nil, fmt.Errorf("unsupported filter value: %s", *value.StringVal)
+		}
 		param := p.factory.nextParam()
 		return param, []any{*value.StringVal}, nil
 	}
@@ -445,7 +457,10 @@ func (p *SQLiteSelectProjection) buildFilterValue(value *query.FilterValue) (str
 		return fmt.Sprintf("(%s)", strings.Join(placeholders, ", ")), params, nil
 	}
 	if value.FieldRefVal != nil {
-		resolvedField := p.factory.resolveFieldReference(value.FieldRefVal.Field, p.schemas)
+		resolvedField, err := p.factory.resolveFieldReference(value.FieldRefVal.Field, p.schemas)
+		if err != nil {
+			return "", nil, err
+		}
 		return resolvedField, nil, nil
 	}
 	if value.FunctionCallVal != nil {
@@ -573,7 +588,10 @@ func (g *SQLiteGroupByClause) Value() (string, []any, error) {
 	for _, agg := range g.aggregations {
 		if len(agg.Groups) > 0 {
 			for _, field := range agg.Groups {
-				resolvedField := g.factory.resolveFieldReference(field, g.schemas)
+				resolvedField, err := g.factory.resolveFieldReference(field, g.schemas)
+				if err != nil {
+					return "", nil, err
+				}
 				groupFields = append(groupFields, resolvedField)
 			}
 		}
@@ -643,7 +661,10 @@ func (o *SQLiteOrderByClause) Value() (string, []any, error) {
 
 	var parts []string
 	for _, sort := range o.sorts {
-		resolvedField := o.factory.resolveFieldReference(sort.Field, o.schemas)
+		resolvedField, err := o.factory.resolveFieldReference(sort.Field, o.schemas)
+		if err != nil {
+			return "", nil, err
+		}
 		direction := "ASC"
 		if sort.Direction == query.SortDirectionDesc {
 			direction = "DESC"
@@ -866,3 +887,4 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
 
 	return &SQLiteSelectStatement{tree: tree}, nil
 }
+

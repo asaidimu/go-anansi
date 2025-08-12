@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
@@ -729,7 +730,7 @@ func NewDocumentValidator(schema *SchemaDefinition, fmap *FunctionMap) (*Documen
 // GRAPH TRAVERSAL AND VALIDATION
 // =============================================================================
 
-func (v *DocumentValidator) Validate(document common.Document, loose bool) ([]common.Issue, bool) {
+func (v *DocumentValidator) Validate(document data.Document, loose bool) ([]common.Issue, bool) {
 	return v.graph.traverse(v.fmap, document, loose)
 }
 
@@ -743,7 +744,7 @@ func (n *UnexpectedFieldsNode) Execute(ctx *ValidationContext) *NodeResult {
 		return &NodeResult{Success: true}
 	}
 
-	dataMap, ok := common.AsDocument(currentData)
+	dataMap, ok := data.AsDocument(currentData)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for unexpected field check", Path: n.path}}}
 	}
@@ -805,7 +806,7 @@ func (n *RequiredFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 		}
 	}
 
-	dataMap, ok := common.AsDocument(parentData)
+	dataMap, ok := data.AsDocument(parentData)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_DATA_STRUCTURE", Message: "Cannot check for required fields on non-object parent", Path: parentPath}}}
 	}
@@ -828,7 +829,7 @@ func (n *ConditionalRequiredFieldNode) Execute(ctx *ValidationContext) *NodeResu
 		return &NodeResult{Success: true}
 	}
 
-	dataMap, ok := common.AsDocument(parentData)
+	dataMap, ok := data.AsDocument(parentData)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_DATA_STRUCTURE", Message: "Cannot check for required fields on non-object parent", Path: parentPath}}}
 	}
@@ -854,7 +855,7 @@ func (n *ConditionalFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 		return &NodeResult{Success: true}
 	}
 
-	dataMap, ok := common.AsDocument(parentData)
+	dataMap, ok := data.AsDocument(parentData)
 	if !ok {
 		// Not an object, so can't evaluate condition or check for field.
 		return &NodeResult{Success: true}
@@ -979,7 +980,7 @@ func (n *RecordValidationNode) executeRecordValidation(ctx *ValidationContext) *
 		return &NodeResult{Success: true}
 	}
 
-	recordMap, ok := common.AsDocument(value)
+	recordMap, ok := data.AsDocument(value)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for record", Path: n.path}}}
 	}

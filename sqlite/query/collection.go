@@ -8,13 +8,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
-// quoteIdentifier safely quotes an identifier, such as a table or column name,
-// to prevent SQL injection and to handle names that might be keywords or contain
-// special characters.
-func quoteIdentifier(name string) string {
-	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
-}
-
 func (f *sqliteFactory) buildCreateTableTree(q *query.Query) (SQLNode, error) {
 	return &createTableTree{schema: q.Target.Schema}, nil
 }
@@ -39,13 +32,15 @@ func (t *createTableTree) Value() (string, []any, error) {
 		}
 	}
 
-	for _, field := range sc.Fields {
-		columnDef, err := t.buildColumnDefinition(field.Name, field)
+	for _, name := range sc.FieldNames() {
+		field := sc.FindField(name)
+		columnDef, err := t.buildColumnDefinition(name, field)
 		if err != nil {
-			return "", nil, fmt.Errorf("error on field '%s': %w", field.Name, err)
+			return "", nil, fmt.Errorf("error on field '%s': %w", name, err)
 		}
 		columns = append(columns, "    "+columnDef)
 	}
+
 	sb.WriteString(strings.Join(columns, ",\n"))
 
 	if len(primaryKeys) > 0 {
@@ -91,6 +86,7 @@ func (s *createTableTree) buildColumnDefinition(fieldName string, field *schema.
 	}
 	return strings.Join(parts, " "), nil
 }
+
 
 func (s *createTableTree) formatDefaultValue(value any, fieldDef *schema.FieldDefinition) (string, error) {
 	if value == nil {

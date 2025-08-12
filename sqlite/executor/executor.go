@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/sqlite/types"
 	"go.uber.org/zap"
@@ -44,7 +44,7 @@ func newSQLiteExecutor(db *sql.DB, logger *zap.Logger, tx *sql.Tx) (native.Query
 	}, nil
 }
 
-func (s *sqliteExecutor) Query(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) ([]common.Document, error) {
+func (s *sqliteExecutor) Query(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) ([]data.Document, error) {
 	payload := compiled.Raw()
 	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
 
@@ -52,16 +52,16 @@ func (s *sqliteExecutor) Query(ctx context.Context, compiled native.NativeQuery[
 		return nil, fmt.Errorf("failed to execute %s query: %w", compiled.StatementType(), err)
 	}
 
-	var data []common.Document = nil
+	var results []data.Document = nil
 	if rows == nil {
-		return make([]common.Document, 0), nil
+		return make([]data.Document, 0), nil
 	}
 
-	data, err = ReadRows(s.logger, payload.Schema, rows) // readRows requires schema and with joins this means multiple schemas
-	return data, err
+	results, err = ReadRows(s.logger, payload.Schema, rows) // readRows requires schema and with joins this means multiple schemas
+	return results, err
 }
 
-func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) (<-chan common.Document, <-chan error, error) {
+func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) (<-chan data.Document, <-chan error, error) {
 	payload := compiled.Raw()
 	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
 
@@ -69,7 +69,7 @@ func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.Native
 		return nil,nil, fmt.Errorf("failed to execute %s query: %w", compiled.StatementType(), err)
 	}
 
-	docChan := make(chan common.Document)
+	docChan := make(chan data.Document)
 	errChan := make(chan error, 1)
 
 	go func() {

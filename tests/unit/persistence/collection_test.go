@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	persistence "github.com/asaidimu/go-anansi/v6/core/persistence/base"
@@ -71,7 +71,7 @@ func TestCollection_Create(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
 	t.Run("single document success", func(t *testing.T) {
-		expected := common.Document{"id": "1", "name": "Test1"}
+		expected := data.Document{"id": "1", "name": "Test1"}
 
 		result, err := collection.CreateOne(ctx, expected)
 
@@ -86,11 +86,11 @@ func TestCollection_Create(t *testing.T) {
 		readResult, err := collection.Read(ctx, &readQuery)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, readResult.Count)
-		assert.Equal(t, expected, readResult.Data.(common.Document))
+		assert.Equal(t, expected, readResult.Data.(data.Document))
 	})
 
 	t.Run("multiple documents success", func(t *testing.T) {
-		docs := []common.Document{{"id": "2", "name": "Test2"}, {"id": "3", "name": "Test3"}}
+		docs := []data.Document{{"id": "2", "name": "Test2"}, {"id": "3", "name": "Test3"}}
 
 		result, err := collection.CreateMany(ctx, docs)
 
@@ -105,13 +105,13 @@ func TestCollection_Create(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 2, readResult.Count)
 		// Note: Order might not be guaranteed, so we'll just check for presence
-		assert.Contains(t, readResult.Data.([]common.Document), docs[0])
-		assert.Contains(t, readResult.Data.([]common.Document), docs[1])
+		assert.Contains(t, readResult.Data.([]data.Document), docs[0])
+		assert.Contains(t, readResult.Data.([]data.Document), docs[1])
 	})
 
 	t.Run("insert documents error - duplicate ID", func(t *testing.T) {
 		// ID "1" already exists from previous test
-		doc := common.Document{"id": "1", "name": "DuplicateTest"}
+		doc := data.Document{"id": "1", "name": "DuplicateTest"}
 		results, err := collection.CreateOne(ctx, doc)
 		t.Logf("Results %v", results)
 		assert.Error(t, err)
@@ -123,22 +123,22 @@ func TestCollection_Read(t *testing.T) {
 	c, _, _, _, _, ctx := setupCollection(t)
 
 	// Insert some data for reading
-	_, err := c.CreateOne(ctx, common.Document{"id": "1", "name": "Test1"})
+	_, err := c.CreateOne(ctx, data.Document{"id": "1", "name": "Test1"})
 	assert.NoError(t, err)
-	_, err = c.CreateOne(ctx, common.Document{"id": "2", "name": "Test2"})
+	_, err = c.CreateOne(ctx, data.Document{"id": "2", "name": "Test2"})
 	assert.NoError(t, err)
 
 	q := query.NewQueryBuilder().Where("name").Eq("Test1").Build()
 
 	t.Run("read documents success", func(t *testing.T) {
-		expected := common.Document{"id": "1", "name": "Test1"}
+		expected := data.Document{"id": "1", "name": "Test1"}
 
 		result, err := c.Read(ctx, &q)
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
 		assert.Equal(t, 1, result.Count)
 
-		final := result.Data.(common.Document)
+		final := result.Data.(data.Document)
 		final.StripMetadata()
 		assert.Equal(t, expected["name"], final["name"])
 	})
@@ -165,7 +165,7 @@ func TestCollection_Update(t *testing.T) {
 	c, _, _, _, _, ctx := setupCollection(t)
 
 	// Insert some data for updating
-	_, err := c.CreateOne(ctx, common.Document{"id": "1", "name": "OriginalName"})
+	_, err := c.CreateOne(ctx, data.Document{"id": "1", "name": "OriginalName"})
 	assert.NoError(t, err)
 
 	q := query.NewQueryBuilder().Where("id").Eq("1").Build()
@@ -173,12 +173,12 @@ func TestCollection_Update(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, result.Count)
 
-	data := result.Data.(common.Document)
-	updates := common.Document{
+	d := result.Data.(data.Document)
+	updates := data.Document{
 		"name": "UpdatedName",
 	}
 
-	metadata, ok := data.Metadata()
+	metadata, ok := d.Metadata()
 	assert.Equal(t, ok, true)
 	updates.SetMetadata(metadata)
 
@@ -193,7 +193,7 @@ func TestCollection_Update(t *testing.T) {
 		readQuery := query.NewQueryBuilder().Where("id").Eq("1").Build()
 		readResult, err := c.Read(ctx, &readQuery)
 		assert.NoError(t, err)
-		assert.Equal(t, "UpdatedName", readResult.Data.(common.Document)["name"])
+		assert.Equal(t, "UpdatedName", readResult.Data.(data.Document)["name"])
 	})
 
 	t.Run("update documents error - non-existent collection", func(t *testing.T) {
@@ -212,9 +212,9 @@ func TestCollection_Delete(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
 	// Insert some data for deleting
-	_, err := collection.CreateOne(ctx, common.Document{"id": "1", "name": "ToDelete"})
+	_, err := collection.CreateOne(ctx, data.Document{"id": "1", "name": "ToDelete"})
 	assert.NoError(t, err)
-	_, err = collection.CreateOne(ctx, common.Document{"id": "2", "name": "ToKeep"})
+	_, err = collection.CreateOne(ctx, data.Document{"id": "2", "name": "ToKeep"})
 	assert.NoError(t, err)
 
 	filters := query.NewQueryBuilder().Where("id").Eq("1").Build().Filters
@@ -246,8 +246,8 @@ func TestCollection_Delete(t *testing.T) {
 	t.Run("delete all documents with unsafe flag", func(t *testing.T) {
 		// Re-create collection and add data for this specific test case
 		collection, _, _, _, _, ctx = setupCollection(t)
-		collection.CreateOne(ctx, common.Document{"id": "3", "name": "Doc3"})
-		collection.CreateOne(ctx, common.Document{"id": "4", "name": "Doc4"})
+		collection.CreateOne(ctx, data.Document{"id": "3", "name": "Doc3"})
+		collection.CreateOne(ctx, data.Document{"id": "4", "name": "Doc4"})
 
 		// Debug: Read documents before deletion
 		q := query.NewQueryBuilder().Build()
@@ -270,7 +270,7 @@ func TestCollection_Delete(t *testing.T) {
 	t.Run("delete all documents without unsafe flag should fail", func(t *testing.T) {
 		// Re-create collection and add data for this specific test case
 		collection, _, _, _, _, ctx = setupCollection(t)
-		collection.CreateOne(ctx, common.Document{"id": "5", "name": "Doc5"})
+		collection.CreateOne(ctx, data.Document{"id": "5", "name": "Doc5"})
 
 		// Attempt to delete all documents by passing nil filter and unsafe=false
 		rowsAffected, err := collection.Delete(ctx, nil, false)
@@ -300,7 +300,7 @@ func TestCollection_Validate(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
 	t.Run("valid document", func(t *testing.T) {
-		doc := common.Document{"id": "1", "name": "Valid Name"}
+		doc := data.Document{"id": "1", "name": "Valid Name"}
 		result, err := collection.Validate(ctx, doc, false)
 		assert.NoError(t, err)
 		assert.True(t, result.Valid)
@@ -308,7 +308,7 @@ func TestCollection_Validate(t *testing.T) {
 	})
 
 	t.Run("invalid document - missing required field", func(t *testing.T) {
-		doc := common.Document{"id": "1"} // Missing 'name'
+		doc := data.Document{"id": "1"} // Missing 'name'
 		result, err := collection.Validate(ctx, doc, false)
 		assert.NoError(t, err) // Validation itself should not return an error, but a result with issues
 		assert.False(t, result.Valid)
@@ -317,7 +317,7 @@ func TestCollection_Validate(t *testing.T) {
 	})
 
 	t.Run("invalid document - wrong type", func(t *testing.T) {
-		doc := common.Document{"id": "1", "name": 123} // Name should be string
+		doc := data.Document{"id": "1", "name": 123} // Name should be string
 		result, err := collection.Validate(ctx, doc, false)
 		assert.NoError(t, err)
 		assert.False(t, result.Valid)
@@ -326,7 +326,7 @@ func TestCollection_Validate(t *testing.T) {
 	})
 
 	t.Run("loose validation - missing required field allowed", func(t *testing.T) {
-		doc := common.Document{"id": "1"}             // Missing 'name'
+		doc := data.Document{"id": "1"}             // Missing 'name'
 		result, err := collection.Validate(ctx, doc, true) // Loose validation
 		assert.NoError(t, err)
 		assert.True(t, result.Valid) // Should be valid in loose mode for missing required

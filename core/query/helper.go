@@ -11,7 +11,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"go.uber.org/zap"
 )
@@ -449,7 +449,7 @@ func (h *QueryHelper) validateAggregationConfiguration(aggregations []Aggregatio
 
 // Match evaluates a single record against the provided filters.
 // If no filters are provided, it returns true.
-func (h *QueryHelper) Match(record common.Document, filters ...*QueryFilter) (bool, error) {
+func (h *QueryHelper) Match(record data.Document, filters ...*QueryFilter) (bool, error) {
 	// If specific filters are provided, use them. Otherwise, use the helper's default query filters.
 	var filtersToApply *QueryFilter
 	if len(filters) > 0 && filters[0] != nil {
@@ -468,7 +468,7 @@ func (h *QueryHelper) Match(record common.Document, filters ...*QueryFilter) (bo
 // Filter applies the provided filters to a collection of records.
 // Returns a new slice containing only the records that match the filters.
 // If no filters are provided, the helper's default query filters are used.
-func (h *QueryHelper) Filter(records []common.Document, filters ...*QueryFilter) ([]common.Document, error) {
+func (h *QueryHelper) Filter(records []data.Document, filters ...*QueryFilter) ([]data.Document, error) {
 	// If specific filters are provided, use them. Otherwise, use the helper's default query filters.
 	var filtersToApply *QueryFilter
 	if len(filters) > 0 && filters[0] != nil {
@@ -481,7 +481,7 @@ func (h *QueryHelper) Filter(records []common.Document, filters ...*QueryFilter)
 		return records, nil
 	}
 
-	var filtered []common.Document
+	var filtered []data.Document
 	for _, record := range records {
 		matches, err := h.Match(record, filtersToApply) // Pass the resolved filters
 		if err != nil {
@@ -529,7 +529,7 @@ func (h *QueryHelper) ApplyDistinct(records []map[string]any) ([]map[string]any,
 		for _, record := range records {
 			keyValues := make(distinctKey, len(h.query.Distinct.Fields))
 			for i, field := range h.query.Distinct.Fields {
-				doc := common.Document(record)
+				doc := data.Document(record)
 				keyValues[i], _ = utils.GetValueByPath(doc, field)
 			}
 			// Create a string representation of the key values for map lookup
@@ -550,19 +550,19 @@ func (h *QueryHelper) ApplyDistinct(records []map[string]any) ([]map[string]any,
 
 // Sort applies the sorting configuration to a collection of records.
 // Returns a new slice with records sorted according to the configuration.
-func (h *QueryHelper) Sort(records []common.Document) ([]common.Document, error) {
+func (h *QueryHelper) Sort(records []data.Document) ([]data.Document, error) {
 	if len(h.query.Sort) == 0 {
 		return records, nil
 	}
 
 	// Create a copy to avoid modifying the original slice
-	sorted := make([]common.Document, len(records))
+	sorted := make([]data.Document, len(records))
 	copy(sorted, records)
 
 	sort.Slice(sorted, func(i, j int) bool {
 		for _, sortConfig := range h.query.Sort {
-			doci := common.Document(sorted[i])
-			docj := common.Document(sorted[j])
+			doci := data.Document(sorted[i])
+			docj := data.Document(sorted[j])
 			valueI, _ := utils.GetValueByPath(doci, sortConfig.Field)
 			valueJ, _ := utils.GetValueByPath(docj, sortConfig.Field)
 
@@ -584,7 +584,7 @@ func (h *QueryHelper) Sort(records []common.Document) ([]common.Document, error)
 
 // Paginate applies pagination to a collection of records.
 // Returns a new slice with the paginated records and pagination result information.
-func (h *QueryHelper) Paginate(records []common.Document) ([]common.Document, *PaginationResult, error) {
+func (h *QueryHelper) Paginate(records []data.Document) ([]data.Document, *PaginationResult, error) {
 	if h.query.Pagination == nil {
 		return records, nil, nil
 	}
@@ -600,7 +600,7 @@ func (h *QueryHelper) Paginate(records []common.Document) ([]common.Document, *P
 		}
 
 		if offset >= totalCount {
-			return []common.Document{}, &PaginationResult{
+			return []data.Document{}, &PaginationResult{
 				Total: &totalCount,
 			}, nil
 		}
@@ -618,12 +618,12 @@ func (h *QueryHelper) Paginate(records []common.Document) ([]common.Document, *P
 
 // Project applies field projection to a collection of records.
 // Returns a new slice with records containing only the projected fields.
-func (h *QueryHelper) Project(records []common.Document) ([]common.Document, error) {
+func (h *QueryHelper) Project(records []data.Document) ([]data.Document, error) {
 	if h.query.Projection == nil {
 		return records, nil
 	}
 
-	projected := make([]common.Document, len(records))
+	projected := make([]data.Document, len(records))
 	for i, record := range records {
 		projectedRecord, err := h.projectRecord(record, h.query.Projection)
 		if err != nil {
@@ -637,7 +637,7 @@ func (h *QueryHelper) Project(records []common.Document) ([]common.Document, err
 
 // Project applies field projection to a collection of records.
 // Returns a new slice with records containing only the projected fields.
-func (h *QueryHelper) ProjectSingle(record common.Document) (common.Document, error) {
+func (h *QueryHelper) ProjectSingle(record data.Document) (data.Document, error) {
 	if h.query.Projection == nil {
 		return record, nil
 	}
@@ -668,7 +668,7 @@ func (h *QueryHelper) projectRecord(record map[string]any, projectionConfig *Pro
 					if field.Nested != nil {
 						nestedMap, ok := value.(map[string]any)
 						if !ok {
-							nestedMap, ok = value.(common.Document)
+							nestedMap, ok = value.(data.Document)
 						}
 						if ok {
 							nestedResult, err := h.projectRecord(nestedMap, field.Nested)
@@ -686,11 +686,11 @@ func (h *QueryHelper) projectRecord(record map[string]any, projectionConfig *Pro
 				} else {
 					nestedMap, ok := value.(map[string]any)
 					if !ok {
-						nestedMap, ok = value.(common.Document)
+						nestedMap, ok = value.(data.Document)
 					}
 					// Not the last part, traverse into nested map
 					if ok {
-						_, isDoc := currentResult[part].(common.Document)
+						_, isDoc := currentResult[part].(data.Document)
 						if _, ok := currentResult[part].(map[string]any); !ok && !isDoc {
 							currentResult[part] = make(map[string]any)
 						}
@@ -717,7 +717,7 @@ func (h *QueryHelper) projectRecord(record map[string]any, projectionConfig *Pro
 					// If nested exclude is defined, recursively exclude within the target field
 					targetMap, ok := currentResult[part].(map[string]any)
 					if !ok {
-						targetMap, ok = currentResult[part].(common.Document)
+						targetMap, ok = currentResult[part].(data.Document)
 					}
 					if ok {
 						nestedResult, err := h.projectRecord(targetMap, &ProjectionConfiguration{Exclude: field.Nested.Exclude})
@@ -733,7 +733,7 @@ func (h *QueryHelper) projectRecord(record map[string]any, projectionConfig *Pro
 				// Not the last part, traverse into nested map in the result
 				nestedMap, ok := currentResult[part].(map[string]any)
 				if !ok {
-					nestedMap, ok = currentResult[part].(common.Document)
+					nestedMap, ok = currentResult[part].(data.Document)
 				}
 				if ok {
 					currentResult = nestedMap
@@ -768,12 +768,12 @@ func (h *QueryHelper) projectRecord(record map[string]any, projectionConfig *Pro
 
 // ApplyAggregations applies the aggregation configurations to a collection of records.
 // Returns a map where keys are aggregation aliases and values are the aggregated results.
-func (h *QueryHelper) ApplyAggregations(records []common.Document) (common.Document, error) {
+func (h *QueryHelper) ApplyAggregations(records []data.Document) (data.Document, error) {
 	if h.query.Aggregations == nil {
 		return nil, nil // No aggregations defined
 	}
 
-	results := make(common.Document)
+	results := make(data.Document)
 
 	for _, aggConfig := range h.query.Aggregations {
 		// Step 1: Apply filtering for this specific aggregation
@@ -815,17 +815,17 @@ func (h *QueryHelper) ApplyAggregations(records []common.Document) (common.Docum
 }
 
 // processGroupedAggregation handles aggregations with a 'groups' clause.
-func (h *QueryHelper) processGroupedAggregation(records []common.Document, aggConfig AggregationConfiguration, aggFunc AggregateFunction) ([]common.Document, error) {
-	groupedData := make(map[string][]common.Document)
-	groupKeyMap := make(map[string]common.Document) // To store the actual group key values for output
+func (h *QueryHelper) processGroupedAggregation(records []data.Document, aggConfig AggregationConfiguration, aggFunc AggregateFunction) ([]data.Document, error) {
+	groupedData := make(map[string][]data.Document)
+	groupKeyMap := make(map[string]data.Document) // To store the actual group key values for output
 
 	for _, record := range records {
 		// Create a composite key for grouping
 		groupKeyParts := make([]string, len(aggConfig.Groups))
-		currentGroupKeyValues := make(common.Document)
+		currentGroupKeyValues := make(data.Document)
 
 		for i, groupField := range aggConfig.Groups {
-			doc := common.Document(record)
+			doc := data.Document(record)
 			val, _ := utils.GetValueByPath(doc, groupField)
 			groupKeyParts[i] = fmt.Sprintf("%v", val) // Convert to string for map key
 			currentGroupKeyValues[groupField] = val   // Store actual values for later
@@ -838,7 +838,7 @@ func (h *QueryHelper) processGroupedAggregation(records []common.Document, aggCo
 		}
 	}
 
-	var finalGroupedResults []common.Document
+	var finalGroupedResults []data.Document
 
 	for groupKey, groupRecords := range groupedData {
 		aggregatedValue, err := aggFunc(groupRecords, aggConfig.Field)
@@ -847,7 +847,7 @@ func (h *QueryHelper) processGroupedAggregation(records []common.Document, aggCo
 		}
 
 		// Construct the result object for this group
-		groupResult := make(common.Document)
+		groupResult := make(data.Document)
 		// Add the group by fields
 		maps.Copy(groupResult, groupKeyMap[groupKey])
 		// Add the aggregated value with its alias
@@ -871,7 +871,7 @@ func (ac *AggregationConfiguration) AliasOrDefault() string {
 }
 
 // evaluateQueryFilter evaluates a QueryFilter against a record.
-func (h *QueryHelper) evaluateQueryFilter(record common.Document, filter *QueryFilter) (bool, error) {
+func (h *QueryHelper) evaluateQueryFilter(record data.Document, filter *QueryFilter) (bool, error) {
 	if filter.Condition != nil {
 		return h.evaluateCondition(record, filter.Condition)
 	}
@@ -889,13 +889,13 @@ func (h *QueryHelper) evaluateQueryFilter(record common.Document, filter *QueryF
 }
 
 // evaluateCondition evaluates a FilterCondition against a record.
-func (h *QueryHelper) evaluateCondition(record common.Document, condition *FilterCondition) (bool, error) {
+func (h *QueryHelper) evaluateCondition(record data.Document, condition *FilterCondition) (bool, error) {
 	// Use rich filter function if available
 	if fn, ok := h.goFilterFunctions[condition.Operator]; ok {
 		return fn(record, condition.Field, condition.Value)
 	}
 
-	doc := common.Document(record)
+	doc := data.Document(record)
 	fieldValue, _ := utils.GetValueByPath(doc, condition.Field)
 	conditionVal, err := h.resolveFilterValue(record, &condition.Value)
 	if err != nil {
@@ -974,7 +974,7 @@ func (h *QueryHelper) resolveFilterValue(record map[string]any, fv *FilterValue)
 	}
 
 	if fv.FieldRefVal != nil {
-		doc := common.Document(record)
+		doc := data.Document(record)
 		result, _ := utils.GetValueByPath(doc, fv.FieldRefVal.Field)
 		return result, nil
 	}
@@ -1087,8 +1087,8 @@ func (h *QueryHelper) compareValues(a, b any) int {
 	return utils.CompareValues(a, b)
 }
 
-func (h *QueryHelper) combineDocs(leftName string, leftDoc common.Document, rightName string, rightDoc common.Document) common.Document {
-	combinedDoc := make(common.Document)
+func (h *QueryHelper) combineDocs(leftName string, leftDoc data.Document, rightName string, rightDoc data.Document) data.Document {
+	combinedDoc := make(data.Document)
 
 	// Always create a consistent nested structure
 	combinedDoc[leftName] = leftDoc
@@ -1105,7 +1105,7 @@ func (h *QueryHelper) combineDocs(leftName string, leftDoc common.Document, righ
 // Join performs a join operation between left and right document collections.
 // The target parameter specifies the logical name and alias for the right-side collection.
 // The config parameter defines the join type, conditions, and optional projections.
-func (h *QueryHelper) Join(left, right []common.Document, config *JoinConfiguration) ([]common.Document, error) {
+func (h *QueryHelper) Join(left, right []data.Document, config *JoinConfiguration) ([]data.Document, error) {
 	// Validate inputs
 	if config == nil {
 		return nil, errors.New("join configuration cannot be nil")
@@ -1120,7 +1120,7 @@ func (h *QueryHelper) Join(left, right []common.Document, config *JoinConfigurat
 	// Determine left-side collection name
 	leftName := h.getLeftCollectionName()
 
-	var result []common.Document
+	var result []data.Document
 	switch config.Type {
 	case JoinTypeInner:
 		result = h.performInnerJoin(leftName, left, rightName, right, config.On)
@@ -1136,7 +1136,7 @@ func (h *QueryHelper) Join(left, right []common.Document, config *JoinConfigurat
 
 	// Apply projection if specified in the join configuration
 	if config.Projection != nil {
-		var projectedResult []common.Document
+		var projectedResult []data.Document
 		for _, doc := range result {
 			projected, err := h.projectRecord(doc, config.Projection)
 			if err != nil {
@@ -1153,8 +1153,8 @@ func (h *QueryHelper) Join(left, right []common.Document, config *JoinConfigurat
 // JoinStreams performs streaming joins between left and right document channels.
 // The target parameter specifies the logical name and alias for the right-side collection.
 // Returns channels for the joined results and any errors that occur during processing.
-func (h *QueryHelper) JoinStreams(left, right <-chan common.Document, target *QueryTarget, config *JoinConfiguration) (<-chan common.Document, <-chan error) {
-	resultChan := make(chan common.Document)
+func (h *QueryHelper) JoinStreams(left, right <-chan data.Document, target *QueryTarget, config *JoinConfiguration) (<-chan data.Document, <-chan error) {
+	resultChan := make(chan data.Document)
 	errorChan := make(chan error, 1)
 
 	go func() {
@@ -1250,10 +1250,10 @@ func (h *QueryHelper) GetTargetAlias() string {
 }
 
 // performStreamingInnerJoin implements streaming inner join logic.
-func (h *QueryHelper) performStreamingInnerJoin(leftName string, left <-chan common.Document, rightName string, right <-chan common.Document, config *JoinConfiguration, resultChan chan<- common.Document, errorChan chan<- error) {
+func (h *QueryHelper) performStreamingInnerJoin(leftName string, left <-chan data.Document, rightName string, right <-chan data.Document, config *JoinConfiguration, resultChan chan<- data.Document, errorChan chan<- error) {
 	// For streaming inner joins, we need to buffer one side (typically the smaller one)
 	// This is a simplified implementation - in practice, you might want more sophisticated buffering
-	var rightDocs []common.Document
+	var rightDocs []data.Document
 
 	// Buffer all right documents
 	for rightDoc := range right {
@@ -1288,9 +1288,9 @@ func (h *QueryHelper) performStreamingInnerJoin(leftName string, left <-chan com
 }
 
 // performStreamingLeftJoin implements streaming left join logic.
-func (h *QueryHelper) performStreamingLeftJoin(leftName string, left <-chan common.Document, rightName string, right <-chan common.Document, config *JoinConfiguration, resultChan chan<- common.Document, errorChan chan<- error) {
+func (h *QueryHelper) performStreamingLeftJoin(leftName string, left <-chan data.Document, rightName string, right <-chan data.Document, config *JoinConfiguration, resultChan chan<- data.Document, errorChan chan<- error) {
 	// Buffer all right documents
-	var rightDocs []common.Document
+	var rightDocs []data.Document
 	for rightDoc := range right {
 		rightDocs = append(rightDocs, rightDoc)
 	}
@@ -1339,9 +1339,9 @@ func (h *QueryHelper) performStreamingLeftJoin(leftName string, left <-chan comm
 }
 
 // performStreamingRightJoin implements streaming right join logic.
-func (h *QueryHelper) performStreamingRightJoin(leftName string, left <-chan common.Document, rightName string, right <-chan common.Document, config *JoinConfiguration, resultChan chan<- common.Document, errorChan chan<- error) {
+func (h *QueryHelper) performStreamingRightJoin(leftName string, left <-chan data.Document, rightName string, right <-chan data.Document, config *JoinConfiguration, resultChan chan<- data.Document, errorChan chan<- error) {
 	// Buffer all left documents
-	var leftDocs []common.Document
+	var leftDocs []data.Document
 	for leftDoc := range left {
 		leftDocs = append(leftDocs, leftDoc)
 	}
@@ -1390,10 +1390,10 @@ func (h *QueryHelper) performStreamingRightJoin(leftName string, left <-chan com
 }
 
 // performStreamingFullJoin implements streaming full outer join logic.
-func (h *QueryHelper) performStreamingFullJoin(leftName string, left <-chan common.Document, rightName string, right <-chan common.Document, config *JoinConfiguration, resultChan chan<- common.Document, errorChan chan<- error) {
+func (h *QueryHelper) performStreamingFullJoin(leftName string, left <-chan data.Document, rightName string, right <-chan data.Document, config *JoinConfiguration, resultChan chan<- data.Document, errorChan chan<- error) {
 	// Buffer both sides for full outer join
-	var leftDocs []common.Document
-	var rightDocs []common.Document
+	var leftDocs []data.Document
+	var rightDocs []data.Document
 
 	for leftDoc := range left {
 		leftDocs = append(leftDocs, leftDoc)
@@ -1467,8 +1467,8 @@ func (h *QueryHelper) performStreamingFullJoin(leftName string, left <-chan comm
 	}
 }
 
-func (h *QueryHelper) performInnerJoin(leftName string, leftDocs []common.Document, rightName string, rightDocs []common.Document, condition *QueryFilter) []common.Document {
-	var result []common.Document
+func (h *QueryHelper) performInnerJoin(leftName string, leftDocs []data.Document, rightName string, rightDocs []data.Document, condition *QueryFilter) []data.Document {
+	var result []data.Document
 
 	for _, leftDoc := range leftDocs {
 		for _, rightDoc := range rightDocs {
@@ -1488,8 +1488,8 @@ func (h *QueryHelper) performInnerJoin(leftName string, leftDocs []common.Docume
 	return result
 }
 
-func (h *QueryHelper) performLeftJoin(leftName string, leftDocs []common.Document, rightName string, rightDocs []common.Document, condition *QueryFilter) []common.Document {
-	var result []common.Document
+func (h *QueryHelper) performLeftJoin(leftName string, leftDocs []data.Document, rightName string, rightDocs []data.Document, condition *QueryFilter) []data.Document {
+	var result []data.Document
 
 	for _, leftDoc := range leftDocs {
 		hasMatch := false
@@ -1515,8 +1515,8 @@ func (h *QueryHelper) performLeftJoin(leftName string, leftDocs []common.Documen
 	return result
 }
 
-func (h *QueryHelper) performRightJoin(leftName string, leftDocs []common.Document, rightName string, rightDocs []common.Document, condition *QueryFilter) []common.Document {
-	var result []common.Document
+func (h *QueryHelper) performRightJoin(leftName string, leftDocs []data.Document, rightName string, rightDocs []data.Document, condition *QueryFilter) []data.Document {
+	var result []data.Document
 	matchedLeftIndices := make(map[int]bool)
 
 	for _, rightDoc := range rightDocs {
@@ -1543,8 +1543,8 @@ func (h *QueryHelper) performRightJoin(leftName string, leftDocs []common.Docume
 	return result
 }
 
-func (h *QueryHelper) performFullJoin(leftName string, leftDocs []common.Document, rightName string, rightDocs []common.Document, condition *QueryFilter) []common.Document {
-	var result []common.Document
+func (h *QueryHelper) performFullJoin(leftName string, leftDocs []data.Document, rightName string, rightDocs []data.Document, condition *QueryFilter) []data.Document {
+	var result []data.Document
 	matchedLeftIndices := make(map[int]bool)
 	matchedRightIndices := make(map[int]bool)
 

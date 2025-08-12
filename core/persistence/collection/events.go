@@ -7,7 +7,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
@@ -114,7 +114,7 @@ func (e *eventsCollection) withEventEmission(
 }
 
 // CreateOne wraps the underlying collection's CreateOne method, adding event emission.
-func (e *eventsCollection) CreateOne(ctx context.Context, doc common.Document) (*base.CreateResult, error) {
+func (e *eventsCollection) CreateOne(ctx context.Context, doc data.Document) (*base.CreateResult, error) {
 	result, err := e.withEventEmission(
 		"createOne",
 		base.DocumentCreateStart,
@@ -135,7 +135,7 @@ func (e *eventsCollection) CreateOne(ctx context.Context, doc common.Document) (
 }
 
 // CreateMany wraps the underlying collection's CreateMany method, adding event emission.
-func (e *eventsCollection) CreateMany(ctx context.Context, docs []common.Document) ([]base.CreateResult, error) {
+func (e *eventsCollection) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) {
 	result, err := e.withEventEmission(
 		"createMany",
 		base.DocumentCreateStart,
@@ -223,7 +223,7 @@ func (e *eventsCollection) Delete(ctx context.Context, filter *query.QueryFilter
 
 // Validate delegates the call to the underlying collection's Validate method.
 // No events are emitted for validation as it is a read-only operation.
-func (e *eventsCollection) Validate(ctx context.Context, data common.Document, loose bool) (*schema.ValidationResult, error) {
+func (e *eventsCollection) Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error) {
 	return e.collection.Validate(ctx, data, loose)
 }
 

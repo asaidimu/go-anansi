@@ -5,11 +5,11 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query" // Assuming this is your module path
 )
 
-var testRecords = []common.Document{
+var testRecords = []data.Document{
 	{"id": 1, "name": "Alice", "age": 30, "active": true, "address": map[string]any{"city": "New York"}},
 	{"id": 2, "name": "Bob", "age": 25, "active": false, "address": map[string]any{"city": "Los Angeles"}},
 	{"id": 3, "name": "Charlie", "age": 35, "active": true, "address": map[string]any{"city": "New York"}},
@@ -262,7 +262,7 @@ func TestProject(t *testing.T) {
 	testCases := []struct {
 		name            string
 		query           *query.Query
-		expectedRecords []common.Document
+		expectedRecords []data.Document
 	}{
 		{
 			name: "include fields",
@@ -271,7 +271,7 @@ func TestProject(t *testing.T) {
 					Include: []query.ProjectionField{{Name: "name"}, {Name: "age"}},
 				},
 			},
-			expectedRecords: []common.Document{
+			expectedRecords: []data.Document{
 				{"name": "Alice", "age": 30},
 				{"name": "Bob", "age": 25},
 				{"name": "Charlie", "age": 35},
@@ -286,7 +286,7 @@ func TestProject(t *testing.T) {
 					Exclude: []query.ProjectionField{{Name: "active"}, {Name: "address"}},
 				},
 			},
-			expectedRecords: []common.Document{
+			expectedRecords: []data.Document{
 				{"id": 1, "name": "Alice", "age": 30},
 				{"id": 2, "name": "Bob", "age": 25},
 				{"id": 3, "name": "Charlie", "age": 35},
@@ -301,7 +301,7 @@ func TestProject(t *testing.T) {
 					Include: []query.ProjectionField{{Name: "address.city"}},
 				},
 			},
-			expectedRecords: []common.Document{
+			expectedRecords: []data.Document{
 				{"address": map[string]any{"city": "New York"}},
 				{"address": map[string]any{"city": "Los Angeles"}},
 				{"address": map[string]any{"city": "New York"}},
@@ -332,7 +332,7 @@ func TestProject(t *testing.T) {
 
 func TestJoin(t *testing.T) {
 	// Sample data for joins
-	users := []common.Document{
+	users := []data.Document{
 		{"id": 1, "name": "Alice", "city_id": 101},
 		{"id": 2, "name": "Bob", "city_id": 102},
 		{"id": 3, "name": "Charlie", "city_id": 101},
@@ -340,7 +340,7 @@ func TestJoin(t *testing.T) {
 		{"id": 5, "name": "Eve", "city_id": 999}, // No matching city
 	}
 
-	cities := []common.Document{
+	cities := []data.Document{
 		{"id": 101, "name": "New York", "country": "USA"},
 		{"id": 102, "name": "Los Angeles", "country": "USA"},
 		{"id": 103, "name": "London", "country": "UK"},
@@ -348,10 +348,10 @@ func TestJoin(t *testing.T) {
 
 	testCases := []struct {
 		name            string
-		leftRecords     []common.Document
-		rightRecords    []common.Document
+		leftRecords     []data.Document
+		rightRecords    []data.Document
 		joinConfig      *query.JoinConfiguration
-		expectedRecords []common.Document
+		expectedRecords []data.Document
 		expectError     bool
 	}{
 		{
@@ -371,11 +371,11 @@ func TestJoin(t *testing.T) {
 					},
 				},
 			},
-			expectedRecords: []common.Document{
-				{"user": common.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": common.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": common.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": common.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": common.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": common.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
-				{"user": common.Document{"id": 4, "name": "David", "city_id": 103}, "city": common.Document{"id": 103, "name": "London", "country": "UK"}},
+			expectedRecords: []data.Document{
+				{"user": data.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": data.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": data.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": data.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
+				{"user": data.Document{"id": 4, "name": "David", "city_id": 103}, "city": data.Document{"id": 103, "name": "London", "country": "UK"}},
 			},
 		},
 		{
@@ -395,12 +395,12 @@ func TestJoin(t *testing.T) {
 					},
 				},
 			},
-			expectedRecords: []common.Document{
-				{"user": common.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": common.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": common.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": common.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": common.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": common.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
-				{"user": common.Document{"id": 4, "name": "David", "city_id": 103}, "city": common.Document{"id": 103, "name": "London", "country": "UK"}},
-				{"user": common.Document{"id": 5, "name": "Eve", "city_id": 999}, "city": nil},
+			expectedRecords: []data.Document{
+				{"user": data.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": data.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": data.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": data.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
+				{"user": data.Document{"id": 4, "name": "David", "city_id": 103}, "city": data.Document{"id": 103, "name": "London", "country": "UK"}},
+				{"user": data.Document{"id": 5, "name": "Eve", "city_id": 999}, "city": nil},
 			},
 		},
 		{
@@ -420,11 +420,11 @@ func TestJoin(t *testing.T) {
 					},
 				},
 			},
-			expectedRecords: []common.Document{
-				{"user": common.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": common.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": common.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": common.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": common.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": common.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
-				{"user": common.Document{"id": 4, "name": "David", "city_id": 103}, "city": common.Document{"id": 103, "name": "London", "country": "UK"}},
+			expectedRecords: []data.Document{
+				{"user": data.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": data.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": data.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": data.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
+				{"user": data.Document{"id": 4, "name": "David", "city_id": 103}, "city": data.Document{"id": 103, "name": "London", "country": "UK"}},
 			},
 		},
 		{
@@ -444,12 +444,12 @@ func TestJoin(t *testing.T) {
 					},
 				},
 			},
-			expectedRecords: []common.Document{
-				{"user": common.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": common.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": common.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": common.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": common.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": common.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
-				{"user": common.Document{"id": 4, "name": "David", "city_id": 103}, "city": common.Document{"id": 103, "name": "London", "country": "UK"}},
-				{"user": common.Document{"id": 5, "name": "Eve", "city_id": 999}, "city": nil},
+			expectedRecords: []data.Document{
+				{"user": data.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": data.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": data.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": data.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
+				{"user": data.Document{"id": 4, "name": "David", "city_id": 103}, "city": data.Document{"id": 103, "name": "London", "country": "UK"}},
+				{"user": data.Document{"id": 5, "name": "Eve", "city_id": 999}, "city": nil},
 			},
 		},
 		/* {
@@ -474,11 +474,11 @@ func TestJoin(t *testing.T) {
 					},
 				},
 			},
-			expectedRecords: []common.Document{
-				{"user": common.Document{"id": 1, "name": "Alice"}, "city": common.Document{"country": "USA"}},
-				{"user": common.Document{"id": 3, "name": "Charlie"}, "city": common.Document{"country": "USA"}},
-				{"user": common.Document{"id": 2, "name": "Bob"}, "city": common.Document{"country": "USA"}},
-				{"user": common.Document{"id": 4, "name": "David"}, "city": common.Document{"country": "UK"}},
+			expectedRecords: []data.Document{
+				{"user": data.Document{"id": 1, "name": "Alice"}, "city": data.Document{"country": "USA"}},
+				{"user": data.Document{"id": 3, "name": "Charlie"}, "city": data.Document{"country": "USA"}},
+				{"user": data.Document{"id": 2, "name": "Bob"}, "city": data.Document{"country": "USA"}},
+				{"user": data.Document{"id": 4, "name": "David"}, "city": data.Document{"country": "UK"}},
 			},
 		},
 		{
@@ -565,12 +565,12 @@ func TestJoin(t *testing.T) {
 
 // --- utils ---
 
-func sortDocumentsByUserID(docs []common.Document) []common.Document {
-	sorted := make([]common.Document, len(docs))
+func sortDocumentsByUserID(docs []data.Document) []data.Document {
+	sorted := make([]data.Document, len(docs))
 	copy(sorted, docs)
 	sort.Slice(sorted, func(i, j int) bool {
-		userI, okI := sorted[i]["user"].(common.Document)
-		userJ, okJ := sorted[j]["user"].(common.Document)
+		userI, okI := sorted[i]["user"].(data.Document)
+		userJ, okJ := sorted[j]["user"].(data.Document)
 		if okI && okJ {
 			idI, _ := userI["id"].(int)
 			idJ, _ := userJ["id"].(int)

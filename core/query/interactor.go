@@ -3,7 +3,7 @@ package query
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
@@ -67,19 +67,21 @@ type BaseDatabaseInteractor interface {
 	SchemaManager
 
 	// SelectDocuments retrieves documents from the database based on a QueryDSL
-	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *Query) ([]common.Document, error)
+	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *Query) ([]data.Document, error)
 
 	// SelectStream executes a SELECT query and returns a channel of documents.
-	SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *Query) (<-chan common.Document, <-chan error, error)
+	SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *Query) (<-chan data.Document, <-chan error, error)
 
 	// UpdateDocuments modifies documents in the database that match the provided filters.
 	UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *QueryFilter) (int64, error)
 
 	// InsertDocuments adds new documents to the database.
-	InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []common.Document) ([]common.Document, error)
+	InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []data.Document) ([]data.Document, error)
 
 	// DeleteDocuments removes documents from the database that match the provided filters.
 	DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *QueryFilter, unsafeDelete bool) (int64, error)
+
+	HasTransaction(ctx context.Context) bool
 
 	// Capabilities returns a list of capabilities provided by the underlying
 	// database

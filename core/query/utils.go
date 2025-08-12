@@ -1,9 +1,10 @@
 package query
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
+
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // From creates a new Query instance from JSON data.
@@ -55,7 +56,7 @@ func From(data any) (*Query, error) {
 	var query Query
 
 	// Unmarshal the JSON data using the custom UnmarshalJSON methods
-	if err = json.Unmarshal(jsonBytes, &query); err != nil {
+	if err = utils.FromJSON(jsonBytes, &query); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal JSON into Query: %w", err)
 	}
 
@@ -127,13 +128,11 @@ func (q *Query) Validate() error {
 // Clone creates a deep copy of the Query struct.
 // This is useful when you want to modify a query without affecting the original.
 func (q *Query) Clone() (*Query, error) {
-	// Serialize to JSON and then deserialize to create a deep copy
-	jsonBytes, err := json.Marshal(q)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal query for cloning: %w", err)
+	var newQuery Query
+	if err := utils.Clone(*q, &newQuery); err != nil {
+		return nil, fmt.Errorf("failed to clone query: %w", err)
 	}
-
-	return FromBytes(jsonBytes)
+	return &newQuery, nil
 }
 
 // MustClone is like Clone but panics if there's an error.
@@ -148,20 +147,12 @@ func (q *Query) MustClone() *Query {
 // ToJSON serializes the Query to a JSON string.
 // This is the inverse operation of From().
 func (q *Query) ToJSON() (string, error) {
-	jsonBytes, err := json.Marshal(q)
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal query to JSON: %w", err)
-	}
-	return string(jsonBytes), nil
+	return utils.ToJSON(q)
 }
 
 // ToJSONBytes serializes the Query to JSON bytes.
 func (q *Query) ToJSONBytes() ([]byte, error) {
-	jsonBytes, err := json.Marshal(q)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal query to JSON bytes: %w", err)
-	}
-	return jsonBytes, nil
+	return utils.ToJSONBytes(q)
 }
 
 // MustToJSON is like ToJSON but panics if there's an error.

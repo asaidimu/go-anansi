@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -261,7 +262,7 @@ type CreateResult struct {
 	// Data is the document that was processed.
 	// - On success, this is the final, enriched document as it was persisted.
 	// - On failure, this is the original document that was submitted.
-	Data common.Document `json:"data"`
+	Data data.Document `json:"data"`
 
 	// Issues contains detailed validation errors if the status is FAILED_VALIDATION.
 	Issues []common.Issue `json:"issues,omitempty"`
@@ -384,7 +385,7 @@ type Persistence interface {
 // CollectionUpdate defines the parameters for an update operation on a collection.
 // It specifies the data to be updated and a filter to select which documents to update.
 type CollectionUpdate struct {
-	Data    common.Document    `json:"data,omitempty"` // Data contains the fields and values to be updated.
+	Data    data.Document    `json:"data,omitempty"` // Data contains the fields and values to be updated.
 	Filter  *query.QueryFilter `json:"filter"`         // Filter is a query that selects the documents to be updated.
 	Version *int               `json:"version"`        // Version is the document version for optimistic concurrency control.
 	// WARNING: Setting Recover to true will generate new metadata for the document,
@@ -399,10 +400,10 @@ type CollectionUpdate struct {
 // observability (metadata and subscriptions).
 type Collection interface {
 	// CreateOne creates a single document, returning a rich result object.
-	CreateOne(ctx context.Context, doc common.Document) (*CreateResult, error)
+	CreateOne(ctx context.Context, doc data.Document) (*CreateResult, error)
 
 	// CreateMany creates multiple documents, returning a rich result for each.
-	CreateMany(ctx context.Context, docs []common.Document) ([]CreateResult, error)
+	CreateMany(ctx context.Context, docs []data.Document) ([]CreateResult, error)
 
 	// Read retrieves documents from the collection that match the given QueryDSL.
 	Read(ctx context.Context, query *query.Query) (*ReadResult, error)
@@ -416,7 +417,7 @@ type Collection interface {
 
 	// Validate checks if the given data conforms to the collection's schema.
 	// The 'loose' flag allows for partial validation.
-	Validate(ctx context.Context, data common.Document, loose bool) (*schema.ValidationResult, error)
+	Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error)
 
 	// Metadata retrieves metadata specifically for this collection, with an option to
 	// force a refresh of the data.

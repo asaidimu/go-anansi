@@ -3,7 +3,7 @@ package registry
 import (
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
@@ -79,12 +79,12 @@ func RegistrySchema() *schema.SchemaDefinition {
 	var def schema.SchemaDefinition
 	def.From([]byte(RegistryCollectionSchemaJson))
 
-	def.Fields[common.MetadataFieldName] = &schema.FieldDefinition{
-		Name:   common.MetadataFieldName,
+	def.Fields[data.MetadataFieldName] = &schema.FieldDefinition{
+		Name:   data.MetadataFieldName,
 		Type: schema.FieldTypeObject,
-		Schema: schema.NestedSchemaReference{ID: common.MetadataFieldName},
+		Schema: schema.NestedSchemaReference{ID: data.MetadataFieldName},
 	}
 
-	def.NestedSchemas[common.MetadataFieldName] = collection.DefaultMetadataSchema()
+	def.NestedSchemas[data.MetadataFieldName] = collection.DefaultMetadataSchema()
 	return &def
 }

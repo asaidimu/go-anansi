@@ -1,9 +1,8 @@
-package collection
+package data
 
-import (
+/* import (
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 )
 
 // DefaultMetadataSchema returns the base schema definition for the _metadata block.
@@ -38,4 +37,4 @@ func DefaultMetadataSchema() *schema.NestedSchemaDefinition {
 			},
 		},
 	}
-}
+} */
