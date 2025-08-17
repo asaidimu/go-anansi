@@ -47,10 +47,10 @@ func newSQLiteExecutor(db *sql.DB, logger *zap.Logger, tx *sql.Tx) (native.Query
 func (s *sqliteExecutor) Query(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) ([]data.Document, error) {
 	payload := compiled.Raw()
 	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
-
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute %s query: %w", compiled.StatementType(), err)
 	}
+	defer rows.Close()
 
 	var results []data.Document = nil
 	if rows == nil {
@@ -116,7 +116,7 @@ func (s *sqliteExecutor) Exec(ctx context.Context, compiled native.NativeQuery[t
 
 func (s *sqliteExecutor) BeginTransaction(ctx context.Context) (native.QueryExecutor[types.SQLitePayload], error) {
 	if s.tx != nil {
-		return s, nil
+		return nil, fmt.Errorf("cannot begin a new transaction: already in a transaction")
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -136,7 +136,6 @@ func (i *sqliteExecutor) Commit(ctx context.Context) error {
 	if i.tx == nil {
 		return fmt.Errorf("commit not applicable: not in a transactional context")
 	}
-	i.logger.Debug("Committing transaction")
 	return i.tx.Commit()
 }
 

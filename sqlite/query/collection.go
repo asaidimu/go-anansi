@@ -130,13 +130,13 @@ func (s *createTableTree) getColumnType(fieldType schema.FieldType) string {
 
 
 func (f *sqliteFactory) buildDropTableTree(q *query.Query) (SQLNode, error) {
-	return &dropTableTree{schema: q.Target.Schema}, nil
+	return &dropTableTree{name: q.Target.Name}, nil
 }
 
 func (t *dropTableTree) Value() (string, []any, error) {
-	if t.schema == nil {
+	if len(t.name) ==0 {
 		return "", nil, fmt.Errorf("schema is not defined for drop table tree")
 	}
 
-	return fmt.Sprintf("DROP TABLE IF EXISTS %s;", t.schema.Name), nil, nil
+	return fmt.Sprintf("DROP TABLE IF EXISTS %s;", t.name), nil, nil
 }

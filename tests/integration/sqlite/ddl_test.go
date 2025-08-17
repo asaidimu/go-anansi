@@ -2,6 +2,7 @@ package sqlite_test
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
@@ -10,16 +11,30 @@ import (
 	sqlite "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "github.com/mattn/go-sqlite3"
 )
 
-func setupTestDB(t *testing.T) *sql.DB {
-	db, err := sql.Open("sqlite3", ":memory:")
+// setupTestDB creates a unique, in-memory SQLite database for each test.
+// The database is automatically cleaned up when the returned function is called.
+func setupDDLTestDB(t *testing.T) (*sql.DB, func()) {
+	// The DSN `file:%s?mode=memory&cache=shared` creates a unique, named in-memory
+	// database. The `cache=shared` part allows multiple connections within the
+	// same test to access the same in-memory database. The database is destroyed
+	// when the last connection to it is closed.
+	dsn := fmt.Sprintf("file:ddl%s?mode=memory&cache=shared", t.Name())
+
+	db, err := sql.Open("sqlite3", dsn)
 	require.NoError(t, err)
-	return db
+
+	cleanup := func() {
+		db.Close()
+	}
+
+	return db, cleanup
 }
 
 func TestCreateCollectionIntegration(t *testing.T) {
-	db := setupTestDB(t)
+	db, _ := setupDDLTestDB(t)
 	defer db.Close()
 
 	userSchema := schema.SchemaDefinition{
@@ -59,7 +74,7 @@ func TestCreateCollectionIntegration(t *testing.T) {
 }
 
 func TestDropCollectionIntegration(t *testing.T) {
-	db := setupTestDB(t)
+	db, _ := setupDDLTestDB(t)
 	defer db.Close()
 
 	userSchema := schema.SchemaDefinition{
@@ -88,8 +103,8 @@ func TestDropCollectionIntegration(t *testing.T) {
 	// Verify table exists before dropping
 	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
 	require.NoError(t, err)
-	defer rows.Close()
 	assert.True(t, rows.Next(), "Table 'users' should exist before dropping")
+	rows.Close()
 
 	// Drop the collection
 	nqDrop, err := builder.Build(&q, native.StmtDropCollection, nil)
@@ -100,12 +115,12 @@ func TestDropCollectionIntegration(t *testing.T) {
 	// Verify table does not exist after dropping
 	rows, err = db.Query("SELECT name FROM sqlite_master WHERE type='table' AND name='users';")
 	require.NoError(t, err)
-	defer rows.Close()
 	assert.False(t, rows.Next(), "Table 'users' should not exist after dropping")
+	rows.Close()
 }
 
 func TestCreateIndexIntegration(t *testing.T) {
-	db := setupTestDB(t)
+	db, _ := setupDDLTestDB(t)
 	defer db.Close()
 
 	userSchema := schema.SchemaDefinition{
@@ -156,7 +171,7 @@ func TestCreateIndexIntegration(t *testing.T) {
 }
 
 func TestDropIndexIntegration(t *testing.T) {
-	db := setupTestDB(t)
+	db,_ := setupDDLTestDB(t)
 	defer db.Close()
 
 	userSchema := schema.SchemaDefinition{
@@ -195,8 +210,8 @@ func TestDropIndexIntegration(t *testing.T) {
 	// Verify index exists before dropping
 	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_users_name';")
 	require.NoError(t, err)
-	defer rows.Close()
 	assert.True(t, rows.Next(), "Index 'idx_users_name' should exist before dropping")
+	rows.Close()
 
 	// Drop the index
 	nqDropIndex, err := builder.Build(&q, native.StmtDropIndex, indexDef)
@@ -207,6 +222,6 @@ func TestDropIndexIntegration(t *testing.T) {
 	// Verify index does not exist after dropping
 	rows, err = db.Query("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_users_name';")
 	require.NoError(t, err)
-	defer rows.Close()
 	assert.False(t, rows.Next(), "Index 'idx_users_name' should not exist after dropping")
+	rows.Close()
 }

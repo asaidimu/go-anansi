@@ -144,7 +144,6 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) (
 
 // Read retrieves documents from the collection that match the given QueryDSL.
 func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
-	fmt.Printf("Query %s \n", q.MustToJSON())
 	docs, err := c.engine.Query(ctx, c.schema, q)
 	if err != nil {
 		return nil, base.NewPersistenceError(fmt.Sprintf("failed to read documents: %v", err), base.ErrReadDocuments)

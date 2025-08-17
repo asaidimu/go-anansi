@@ -472,7 +472,7 @@ func (i *EphemeralDatabaseInteractor) Capabilities() query.Capabilities {
 }
 
 // CreateCollection creates a new collection in the in-memory store.
-func (m *EphemeralDatabaseInteractor) CreateCollection(schemaDef schema.SchemaDefinition) error {
+func (m *EphemeralDatabaseInteractor) CreateCollection(ctx context.Context, schemaDef schema.SchemaDefinition) error {
 	m.store.mu.Lock()
 	defer m.store.mu.Unlock()
 
@@ -507,8 +507,8 @@ func (m *EphemeralDatabaseInteractor) CreateCollection(schemaDef schema.SchemaDe
 }
 
 // CreateIndex creates an index in the in-memory store.
-func (m *EphemeralDatabaseInteractor) CreateIndex(name string, index schema.IndexDefinition) error {
-	c, err := m.store.getCollection(name)
+func (m *EphemeralDatabaseInteractor) CreateIndex(ctx context.Context, collection string, index schema.IndexDefinition) error {
+	c, err := m.store.getCollection(collection)
 	if err != nil {
 		return err
 	}
@@ -516,8 +516,17 @@ func (m *EphemeralDatabaseInteractor) CreateIndex(name string, index schema.Inde
 	return c.data.CreateIndex(index.Name, index.Fields)
 }
 
+func (m *EphemeralDatabaseInteractor) DropIndex(ctx context.Context, collection string, index schema.IndexDefinition) error {
+	c, err := m.store.getCollection(collection)
+	if err != nil {
+		return err
+	}
+
+	return c.data.DropIndex(index.Name)
+}
+
 // DropCollection removes a collection from the in-memory store.
-func (m *EphemeralDatabaseInteractor) DropCollection(name string) error {
+func (m *EphemeralDatabaseInteractor) DropCollection(ctx context.Context,name string) error {
 	m.store.mu.Lock()
 	defer m.store.mu.Unlock()
 
@@ -532,7 +541,7 @@ func (m *EphemeralDatabaseInteractor) DropCollection(name string) error {
 }
 
 // CollectionExists checks if a collection exists in the in-memory store.
-func (m *EphemeralDatabaseInteractor) CollectionExists(name string) (bool, error) {
+func (m *EphemeralDatabaseInteractor) CollectionExists(ctx context.Context,name string) (bool, error) {
 	m.store.mu.RLock()
 	defer m.store.mu.RUnlock()
 

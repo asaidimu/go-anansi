@@ -14,18 +14,18 @@ func (f *sqliteFactory) buildCreateIndexTree(q *query.Query, extra any) (SQLNode
 	if !ok {
 		return nil, fmt.Errorf("extra is not an IndexDefinition")
 	}
-	return &createIndexTree{schema: q.Target.Schema, index: &index}, nil
+	return &createIndexTree{collection: q.Target.Name, index: &index}, nil
 }
 
 func (t *createIndexTree) Value() (string, []any, error) {
-	if t.schema == nil {
+	if len(t.collection) == 0 {
 		return "", nil, fmt.Errorf("schema is not defined for create index tree")
 	}
 	if t.index == nil {
 		return "", nil, fmt.Errorf("index is not defined for create index tree")
 	}
 
-	collection := t.schema.Name
+	collection := t.collection
 	index := t.index
 
 	var sb strings.Builder

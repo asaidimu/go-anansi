@@ -48,7 +48,7 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 	logger := zap.NewNop()
 	testSchema := testSchema()
 
-	err := manager.CreateCollection(*testSchema)
+	err := manager.CreateCollection(context.Background(),*testSchema)
 	assert.NoError(t, err)
 
 	engine := query.NewQueryEngine(ephemeralInteractor, logger)

@@ -72,7 +72,7 @@ func TestEphemeralDatabaseInteractor_InsertAndSelectDocuments(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
-	err := manager.CreateCollection(schemaDef)
+	err := manager.CreateCollection(context.Background(),schemaDef)
 	assert.NoError(t, err)
 
 	docsToInsert := []data.Document{
@@ -94,7 +94,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithFilter(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
-	err := manager.CreateCollection(schemaDef)
+	err := manager.CreateCollection(context.Background(),schemaDef)
 	assert.NoError(t, err)
 
 	docsToInsert := []data.Document{
@@ -115,7 +115,7 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
-	err := manager.CreateCollection(schemaDef)
+	err := manager.CreateCollection(context.Background(),schemaDef)
 	assert.NoError(t, err)
 
 	docsToInsert := []data.Document{
@@ -143,7 +143,7 @@ func TestEphemeralDatabaseInteractor_DeleteDocuments(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
-	err := manager.CreateCollection(schemaDef)
+	err := manager.CreateCollection(context.Background(),schemaDef)
 	assert.NoError(t, err)
 
 	docsToInsert := []data.Document{
@@ -168,7 +168,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedProjection(t *tes
 	interactor := ephemeral.NewEphemeral()
 	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
-	err := manager.CreateCollection(schemaDef)
+	err := manager.CreateCollection(context.Background(),schemaDef)
 	assert.NoError(t, err)
 
 	docsToInsert := []data.Document{
@@ -193,7 +193,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedFilter(t *testing
 	interactor := ephemeral.NewEphemeral()
 	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
-	err := manager.CreateCollection(schemaDef)
+	err := manager.CreateCollection(context.Background(),schemaDef)
 	assert.NoError(t, err)
 
 	docsToInsert := []data.Document{
@@ -214,7 +214,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_EmptyResult(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
-	err := manager.CreateCollection(schemaDef)
+	err := manager.CreateCollection(context.Background(),schemaDef)
 	assert.NoError(t, err)
 
 	dsl := query.NewQueryBuilder().Where("name").Eq("non-existent").Build()
@@ -227,7 +227,7 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments_NoMatch(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
-	err := manager.CreateCollection(schemaDef)
+	err := manager.CreateCollection(context.Background(),schemaDef)
 	assert.NoError(t, err)
 
 	filters := query.NewQueryBuilder().Where("name").Eq("non-existent").Build().Filters
@@ -242,7 +242,7 @@ func TestEphemeralDatabaseInteractor_DeleteDocuments_NoMatch(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	manager := interactor.SchemaManager()
 	schemaDef := getUserSchema(t)
-	err := manager.CreateCollection(schemaDef)
+	err := manager.CreateCollection(context.Background(),schemaDef)
 	assert.NoError(t, err)
 
 	filters := query.NewQueryBuilder().Where("name").Eq("non-existent").Build().Filters
@@ -257,7 +257,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithJoin(t *testing.T) {
 
 	// Create users collection
 	userSchema := getUserSchema(t)
-	err := manager.CreateCollection(userSchema)
+	err := manager.CreateCollection(context.Background(),userSchema)
 	assert.NoError(t, err)
 
 	// Create orders collection
@@ -272,7 +272,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithJoin(t *testing.T) {
 	var orderSchema schema.SchemaDefinition
 	err = json.Unmarshal([]byte(orderSchemaJSON), &orderSchema)
 	assert.NoError(t, err)
-	err = manager.CreateCollection(orderSchema)
+	err = manager.CreateCollection(context.Background(),orderSchema)
 	assert.NoError(t, err)
 
 	// Insert data

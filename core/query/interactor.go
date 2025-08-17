@@ -42,19 +42,19 @@ type InteractorOptions struct {
 type SchemaManager interface {
 	// CreateCollection generates and executes the necessary DDL statements to create a
 	// table based on a schema definition.
-	CreateCollection(schema schema.SchemaDefinition) error
+	CreateCollection(ctx context.Context,schema schema.SchemaDefinition) error
 
 	// CreateIndex generates and executes the DDL statements to create an index on a table.
-	CreateIndex(name string, index schema.IndexDefinition) error
+	CreateIndex(ctx context.Context, collection string, index schema.IndexDefinition) error
 
 	// DropCollection removes a table from the database.
-	DropCollection(name string) error
+	DropCollection(ctx context.Context, name string) error
 
 	// DropIndex removes an index from the database.
-	// DropIndex(name string, indexName string) error
+	DropIndex(ctx context.Context, collection string, index schema.IndexDefinition) error
 
 	// CollectionExists checks if a table with the given name exists in the database.
-	CollectionExists(name string) (bool, error)
+	CollectionExists(ctx context.Context,name string) (bool, error)
 }
 
 // DatabaseInteractor defines the contract for low-level database operations.

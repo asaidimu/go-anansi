@@ -50,16 +50,17 @@ type createTableTree struct {
 
 
 type dropTableTree struct {
-	schema *schema.SchemaDefinition
+	name string
 }
 
 type createIndexTree struct {
-	schema *schema.SchemaDefinition
+	collection string
 	index  *schema.IndexDefinition
 }
 
 
 
 type dropIndexTree struct {
+	collection string
 	index *schema.IndexDefinition
 }

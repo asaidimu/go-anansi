@@ -91,7 +91,20 @@ func TestInsert_Integration(t *testing.T) {
 
 	builder := sqlite.NewSQLiteFactory()
 
-	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users")
+	usersSchema := &schema.SchemaDefinition{
+		Name: "users_1_0_0",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":         {Name: "id", Type: schema.FieldTypeString},
+			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
+			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
+			"email":      {Name: "email", Type: schema.FieldTypeString},
+			"age":        {Name: "age", Type: schema.FieldTypeInteger},
+			"status":     {Name: "status", Type: schema.FieldTypeString},
+			"region":     {Name: "region", Type: schema.FieldTypeString},
+		},
+	}
+
+	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Schema(usersSchema)
 	q := qb.Build()
 
 	data := data.Document{
@@ -119,7 +132,19 @@ func TestUpdate_Integration(t *testing.T) {
 	defer db.Close()
 
 	builder := sqlite.NewSQLiteFactory()
-	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Where("id").Eq("user-1")
+	usersSchema := &schema.SchemaDefinition{
+		Name: "users_1_0_0",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":         {Name: "id", Type: schema.FieldTypeString},
+			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
+			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
+			"email":      {Name: "email", Type: schema.FieldTypeString},
+			"age":        {Name: "age", Type: schema.FieldTypeInteger},
+			"status":     {Name: "status", Type: schema.FieldTypeString},
+			"region":     {Name: "region", Type: schema.FieldTypeString},
+		},
+	}
+	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Schema(usersSchema).Where("id").Eq("user-1")
 	q := qb.Build()
 
 	data := data.Document{"age": 31}
@@ -146,7 +171,19 @@ func TestDelete_Integration(t *testing.T) {
 	defer db.Close()
 
 	builder := sqlite.NewSQLiteFactory()
-	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Where("id").Eq("user-2")
+	usersSchema := &schema.SchemaDefinition{
+		Name: "users_1_0_0",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":         {Name: "id", Type: schema.FieldTypeString},
+			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
+			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
+			"email":      {Name: "email", Type: schema.FieldTypeString},
+			"age":        {Name: "age", Type: schema.FieldTypeInteger},
+			"status":     {Name: "status", Type: schema.FieldTypeString},
+			"region":     {Name: "region", Type: schema.FieldTypeString},
+		},
+	}
+	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Schema(usersSchema).Where("id").Eq("user-2")
 	q := qb.Build()
 
 	nq, err := builder.Build(&q, native.StmtDelete, nil)
@@ -180,10 +217,20 @@ func TestComplexTypes_Integration(t *testing.T) {
 	require.NoError(t, err)
 
 	builder := sqlite.NewSQLiteFactory()
-	qb := query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs")
-	q := qb.Build()
+
+	complexDocsSchema := &schema.SchemaDefinition{
+		Name: "complex_docs_01",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":       {Name: "id", Type: schema.FieldTypeString},
+			"tags":     {Name: "tags", Type: schema.FieldTypeArray},
+			"metadata": {Name: "metadata", Type: schema.FieldTypeObject},
+		},
+	}
 
 	// Insert
+	qb := query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Schema(complexDocsSchema)
+	q := qb.Build()
+
 	tags := []string{"go", "sqlite", "testing"}
 	metadata := data.Document{"author": "Augustine", "version": 2}
 	insertData := data.Document{"id": "doc-1", "tags": tags, "metadata": metadata}
@@ -205,7 +252,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 	// Update
 	updatedTags := []string{"go", "testing", "updated"}
 	updateData := data.Document{"tags": updatedTags}
-	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Where("id").Eq("doc-1").Build()
+	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Schema(complexDocsSchema).Where("id").Eq("doc-1").Build()
 
 	nq, err = builder.Build(&q, native.StmtUpdate, updateData)
 	require.NoError(t, err)
@@ -219,21 +266,12 @@ func TestComplexTypes_Integration(t *testing.T) {
 	assert.JSONEq(t, `["go", "testing", "updated"]`, rawTags)
 
 	// Select with nested field
-	schema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"metadata": {
-				Name: "metadata",
-				Type: schema.FieldTypeObject,
-			},
-		},
-	}
-	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Where("complex_docs.metadata.version").Eq(2).Build()
-	q.Target.Schema = schema
+	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Schema(complexDocsSchema).Where("complex_docs.metadata.version").Eq(2).Build()
 	nq, err = builder.Build(&q, native.StmtSelect, nil)
 	require.NoError(t, err)
 
 	rows, err := db.Query(nq.Raw().SQL, nq.Raw().Params...)
-	require.NoError(t, err)
+	require.NoError(t, err, "SQL query failed: %s", nq.Raw().SQL)
 	defer rows.Close()
 
 	var count int
@@ -248,12 +286,35 @@ func TestSelectComplex_Integration(t *testing.T) {
 	defer db.Close()
 
 	builder := sqlite.NewSQLiteFactory()
-	qb := query.NewQueryBuilder()
-	qb.From("orders_1_0_0").Alias("orders").
+
+	ordersSchema := &schema.SchemaDefinition{
+		Name: "orders_1_0_0",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":           {Name: "id", Type: schema.FieldTypeString},
+			"customer_id":  {Name: "customer_id", Type: schema.FieldTypeString},
+			"order_date":   {Name: "order_date", Type: schema.FieldTypeString},
+			"total_amount": {Name: "total_amount", Type: schema.FieldTypeNumber},
+		},
+	}
+
+	usersSchema := &schema.SchemaDefinition{
+		Name: "users_1_0_0",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":         {Name: "id", Type: schema.FieldTypeString},
+			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
+			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
+			"email":      {Name: "email", Type: schema.FieldTypeString},
+			"age":        {Name: "age", Type: schema.FieldTypeInteger},
+			"status":     {Name: "status", Type: schema.FieldTypeString},
+			"region":     {Name: "region", Type: schema.FieldTypeString},
+		},
+	}
+
+	qb := query.NewQueryBuilder().From("orders_1_0_0").Alias("orders").Schema(ordersSchema).
 		Select().
 		Include("orders.id", "total_amount").
 		End().
-		InnerJoin("users_1_0_0").Alias("users").
+		InnerJoin("users_1_0_0").Alias("users").Schema(usersSchema).
 		On(query.QueryFilter{
 			Condition: &query.FilterCondition{
 				Field:    "orders.customer_id",
@@ -428,8 +489,17 @@ func TestSelectWithAggregations_Integration(t *testing.T) {
 
 	builder := sqlite.NewSQLiteFactory()
 
+	salesSchema := &schema.SchemaDefinition{
+		Name: "sales",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":     {Name: "id", Type: schema.FieldTypeInteger},
+			"region": {Name: "region", Type: schema.FieldTypeString},
+			"amount": {Name: "amount", Type: schema.FieldTypeNumber},
+		},
+	}
+
 	qb := query.NewQueryBuilder().
-		From("sales").
+		From("sales").Schema(salesSchema).
 		Select().Include("region").End().
 		Count("*", "sale_count").
 		Sum("amount", "total_revenue").

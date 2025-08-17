@@ -3,6 +3,7 @@ package query
 import (
 	"fmt"
 
+	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/sqlite/types"
@@ -83,10 +84,13 @@ func (f *sqliteFactory) Build(
 		return nil, err
 	}
 
-	resultSchema, _ := query.SchemaFromQuery(q, nil)
+	resultSchema,  err := query.SchemaFromQuery(q, nil)
+	if (stmtType == native.StmtInsert || stmtType == native.StmtSelect) && (err != nil || resultSchema == nil)  {
+		return nil, fmt.Errorf("failed to get schema from query: %w", err)
+	}
 
 	nativeQuery := &sqliteQuery{
-		payload:  types.SQLitePayload{SQL: sql, Params: params, Schema: resultSchema},
+		payload:  types.SQLitePayload{SQL: sql, Params: params, Schema: registry.EnrichSchema(resultSchema)},
 		stmtType: stmtType,
 	}
 

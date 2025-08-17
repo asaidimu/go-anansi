@@ -167,14 +167,13 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 	fq.Target = &query.QueryTarget{
 		Name:  c.physicalName,
 		Alias: &c.logicalName,
-	}
-
-	if fq.Target == nil {
-		fmt.Printf("dsl.Target is NIL !!!\n")
+		Schema: c.schema,
 	}
 
 	// Pass the call to the wrapped collection first
 	result, err := c.wrapped.Read(ctx, fq)
+
+	fmt.Printf("Query: \n %s \n Results: \n %v \n",fq.MustToJSON(), result)
 
 	if err != nil {
 		return nil, err
@@ -192,7 +191,6 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 	}
 
 	var err error
-
 	if params.Recover {
 		meta, err = c.createEntryMetadata(meta) // recalculates the hash
 		if err != nil {

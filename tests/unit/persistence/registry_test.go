@@ -101,7 +101,7 @@ func TestNewCollectionRegistry(t *testing.T) {
 		_, schemaManager, _ := setupTestEnv(t)
 
 		// Verify using the public API of the SchemaManager
-		exists, err := schemaManager.CollectionExists(registry.REGISTRY_COLLECTION_NAME)
+		exists, err := schemaManager.CollectionExists(context.Background(), registry.REGISTRY_COLLECTION_NAME)
 		require.NoError(t, err)
 		assert.True(t, exists, "The physical '_schemas_' collection should have been created")
 	})
@@ -125,7 +125,7 @@ func TestCreateCollection(t *testing.T) {
 
 		// Verify physical collection was created via public API
 		entry, err = cr.GetRegistryEntry(context.Background(), sampleSchema.Name)
-		exists, err := schemaManager.CollectionExists(physicalName)
+		exists, err := schemaManager.CollectionExists(context.Background(),physicalName)
 		require.NoError(t, err)
 		assert.True(t, exists, "The physical collection should have been created")
 
@@ -163,7 +163,7 @@ func TestDropCollection(t *testing.T) {
 		physicalName := entry.Versions[entry.ActiveVersion].Physical
 
 		// Verify physical collection exists before dropping
-		exists, err := schemaManager.CollectionExists(physicalName)
+		exists, err := schemaManager.CollectionExists(context.Background(),physicalName)
 		require.NoError(t, err)
 		assert.True(t, exists, "Physical collection should exist before drop")
 
@@ -176,7 +176,7 @@ func TestDropCollection(t *testing.T) {
 		assert.ErrorIs(t, err, registry.ErrCollectionNotFound, "Registry entry should be gone")
 
 		// Verify physical collection is gone
-		exists, err = schemaManager.CollectionExists(physicalName)
+		exists, err = schemaManager.CollectionExists(context.Background(),physicalName)
 		require.NoError(t, err)
 		assert.False(t, exists, "Physical collection should be dropped")
 	})
@@ -192,7 +192,7 @@ func TestDropCollection(t *testing.T) {
 		physicalName := entry.Versions[entry.ActiveVersion].Physical
 
 		// Verify physical collection exists before dropping
-		exists, err := schemaManager.CollectionExists(physicalName)
+		exists, err := schemaManager.CollectionExists(context.Background(),physicalName)
 		require.NoError(t, err)
 		assert.True(t, exists, "Physical collection should exist before drop")
 
@@ -205,7 +205,7 @@ func TestDropCollection(t *testing.T) {
 		assert.ErrorIs(t, err, registry.ErrCollectionNotFound, "Registry entry should be gone")
 
 		// Verify physical collection still exists
-		exists, err = schemaManager.CollectionExists(physicalName)
+		exists, err = schemaManager.CollectionExists(context.Background(),physicalName)
 		require.NoError(t, err)
 		assert.True(t, exists, "Physical collection should NOT be dropped")
 	})
@@ -246,11 +246,11 @@ func TestPruneVersion(t *testing.T) {
 		oldPhysicalName := entry.Versions["1.0.0"].Physical
 		newPhysicalName := finalEntry.Versions["1.1.0"].Physical
 
-		oldPhysicalExists, err := schemaManager.CollectionExists(oldPhysicalName)
+		oldPhysicalExists, err := schemaManager.CollectionExists(context.Background(),oldPhysicalName)
 		require.NoError(t, err)
 		assert.True(t, oldPhysicalExists, "Old physical collection should exist")
 
-		newPhysicalExists, err := schemaManager.CollectionExists(newPhysicalName)
+		newPhysicalExists, err := schemaManager.CollectionExists(context.Background(),newPhysicalName)
 		require.NoError(t, err)
 		assert.True(t, newPhysicalExists, "New physical collection should exist")
 
@@ -264,12 +264,12 @@ func TestPruneVersion(t *testing.T) {
 		assert.False(t, ok, "Old version should be removed from registry entry")
 
 		// Verify old physical collection is gone
-		exists, err := schemaManager.CollectionExists(oldPhysicalName)
+		exists, err := schemaManager.CollectionExists(context.Background(),oldPhysicalName)
 		require.NoError(t, err)
 		assert.False(t, exists, "Old physical collection should be pruned")
 
 		// Verify new physical collection still exists
-		exists, err = schemaManager.CollectionExists(newPhysicalName)
+		exists, err = schemaManager.CollectionExists(context.Background(),newPhysicalName)
 		require.NoError(t, err)
 		assert.True(t, exists, "New physical collection should still exist")
 	})
@@ -363,7 +363,7 @@ func TestAddSchemaVersion(t *testing.T) {
 
 		// Verify the physical collection for the new version was created
 		newPhysicalName := updatedEntry.Versions["1.1.0"].Physical
-		exists, err := schemaManager.CollectionExists(newPhysicalName)
+		exists, err := schemaManager.CollectionExists(context.Background(),newPhysicalName)
 		require.NoError(t, err)
 		assert.True(t, exists, "Physical collection for new version should be created")
 	})

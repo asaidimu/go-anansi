@@ -95,7 +95,11 @@ func unmarshalEntry(doc data.Document) (*base.RegistryEntry, error) {
 	return utils.MapToStruct[*RegistryEntry](doc)
 }
 
-func enrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
+func EnrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
+	if sc == nil {
+		return nil
+	}
+
 	tempSchema := *sc
 	// how is it that this sticks
 	tempSchema.Fields[data.MetadataFieldName] = &schema.FieldDefinition{
