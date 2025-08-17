@@ -2,8 +2,6 @@ package utils
 
 import (
 	"strings"
-
-	"github.com/asaidimu/go-anansi/v6/core/data"
 )
 
 func ConvertMaps(m map[string]any) {
@@ -58,10 +56,7 @@ func GetValueByPath(value any, path string) (any, bool) {
 	for _, key := range keys {
 		m, ok := current.(map[string]any)
 		if !ok {
-			m, ok = current.(data.Document)
-			if !ok {
-				return nil, false
-			}
+			return nil, false
 		}
 		current, ok = m[key]
 		if !ok {

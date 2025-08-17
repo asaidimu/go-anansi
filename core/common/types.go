@@ -28,6 +28,9 @@ const (
 	LogicalXnor LogicalOperator = "xnor" // Represents a logical XNOR.
 )
 
+// FunctionMap is a map of function names to generic functions.
+type FunctionMap map[string]any
+
 
 func (ve Issue) Error() string {
 	if ve.Path != "" {

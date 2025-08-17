@@ -1,10 +1,10 @@
 package data
 
 import (
-	"maps"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"maps"
+	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -15,21 +15,7 @@ import (
 // Document represents a flexible, schema-aware data structure with comprehensive utilities.
 type Document map[string]any
 
-// DocumentError represents errors specific to document operations.
-type DocumentError struct {
-	Operation string
-	Key       string
-	Message   string
-	Cause     error
-}
 
-func (e *DocumentError) Error() string {
-	if e.Cause != nil {
-		return fmt.Sprintf("%s operation failed for key '%s': %s (caused by: %v)",
-			e.Operation, e.Key, e.Message, e.Cause)
-	}
-	return fmt.Sprintf("%s operation failed for key '%s': %s", e.Operation, e.Key, e.Message)
-}
 
 // QueryBuilder provides a fluent interface for document queries.
 type QueryBuilder struct {
@@ -50,46 +36,47 @@ const (
 	TimestampFormat   = time.RFC3339
 )
 
-// Common errors
-var (
-	ErrKeyNotFound     = errors.New("key not found")
-	ErrTypeMismatch    = errors.New("type mismatch")
-	ErrInvalidPath     = errors.New("invalid path")
-	ErrSchemaViolation = errors.New("schema violation")
-	ErrInvalidQuery    = errors.New("invalid query")
-)
+
 
 // Constructor functions
 
 // NewDocument creates a new Document from a map[string]any.
-func NewDocument(data map[string]any) Document {
+func NewDocument(data map[string]any) (Document, error) {
 	if data == nil {
-		return make(Document)
+		data = make(map[string]any)
 	}
-	return Document(data)
+	return getFactory().newDocument(data)
 }
 
 // MustNewDocument creates a new Document from various map forms, panics on failure.
 func MustNewDocument(data any) Document {
+	var doc map[string]any
 	if data == nil {
-		return make(Document)
-	}
-	switch v := data.(type) {
-	case map[string]any:
-		return Document(v)
-	case Document:
-		return v
-	default:
-		rv := reflect.ValueOf(data)
-		if rv.Kind() == reflect.Map && rv.Type().Key().Kind() == reflect.String {
-			doc := make(Document, rv.Len())
-			for _, key := range rv.MapKeys() {
-				doc[key.String()] = rv.MapIndex(key).Interface()
+		doc = make(map[string]any)
+	} else {
+		switch v := data.(type) {
+		case map[string]any:
+			doc = v
+		case Document:
+			doc = v
+		default:
+			rv := reflect.ValueOf(data)
+			if rv.Kind() == reflect.Map && rv.Type().Key().Kind() == reflect.String {
+				doc = make(Document, rv.Len())
+				for _, key := range rv.MapKeys() {
+					doc[key.String()] = rv.MapIndex(key).Interface()
+				}
+			} else {
+				panic(fmt.Sprintf("invalid type for document: %T", data))
 			}
-			return doc
 		}
 	}
-	panic(fmt.Sprintf("invalid type for document: %T", data))
+
+	d, err := getFactory().newDocument(doc)
+	if err != nil {
+		panic(err)
+	}
+	return d
 }
 
 func (d Document) Normalize() Document {
@@ -105,6 +92,10 @@ func (d Document) Normalize() Document {
     return clean
 }
 
+// stripNestedMetadata recursively removes the _metadata_ field from nested documents,
+// maps, and slices of documents or interfaces. It ensures that only the top-level
+// document retains its metadata, providing a clean data structure for operations
+// that do not require metadata on nested elements.
 func stripNestedMetadata(value any) any {
     switch v := value.(type) {
     case Document:
@@ -136,18 +127,18 @@ func stripNestedMetadata(value any) any {
 // FromJSON creates a Document from JSON bytes with enhanced error handling.
 func FromJSON(data []byte) (Document, error) {
 	if len(data) == 0 {
-		return make(Document), nil
+		return getFactory().newDocument(make(map[string]any))
 	}
 
 	var doc map[string]any
 	if err := json.Unmarshal(data, &doc); err != nil {
 		return nil, &DocumentError{
 			Operation: "FromJSON",
-			Message:   "failed to unmarshal JSON",
-			Cause:     err,
+			Message:   ErrFailedToUnmarshalJSON.Error(),
+			Cause:     fmt.Errorf("%w: %w", ErrFailedToUnmarshalJSON, err),
 		}
 	}
-	return Document(doc), nil
+	return getFactory().newDocument(doc)
 }
 
 // FromStruct creates a Document from any struct using JSON marshaling.
@@ -160,8 +151,8 @@ func FromStruct(s any) (Document, error) {
 	if err != nil {
 		return nil, &DocumentError{
 			Operation: "FromStruct",
-			Message:   "failed to marshal struct",
-			Cause:     err,
+			Message:   ErrFailedToMarshalStruct.Error(),
+			Cause:     fmt.Errorf("%w: %w", ErrFailedToMarshalStruct, err),
 		}
 	}
 
@@ -207,7 +198,8 @@ func (d Document) Set(key string, value any) error {
 		return &DocumentError{
 			Operation: "Set",
 			Key:       key,
-			Message:   "key cannot be empty",
+			Message:   ErrKeyEmpty.Error(),
+			Cause:     ErrKeyEmpty,
 		}
 	}
 	d[key] = value
@@ -237,8 +229,8 @@ func (d Document) GetString(key string) (string, error) {
 		return "", &DocumentError{
 			Operation: "GetString",
 			Key:       key,
-			Message:   fmt.Sprintf("cannot convert %T to string", val),
-			Cause:     ErrTypeMismatch,
+			Message:   fmt.Sprintf("%s: cannot convert %T to string", ErrTypeConversion.Error(), val),
+			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
 	}
 	return str, nil
@@ -256,8 +248,8 @@ func (d Document) GetInt(key string) (int, error) {
 		return 0, &DocumentError{
 			Operation: "GetInt",
 			Key:       key,
-			Message:   fmt.Sprintf("cannot convert %T to int", val),
-			Cause:     ErrTypeMismatch,
+			Message:   fmt.Sprintf("%s: cannot convert %T to int", ErrTypeConversion.Error(), val),
+			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
 	}
 	return num, nil
@@ -275,8 +267,8 @@ func (d Document) GetFloat64(key string) (float64, error) {
 		return 0, &DocumentError{
 			Operation: "GetFloat64",
 			Key:       key,
-			Message:   fmt.Sprintf("cannot convert %T to float64", val),
-			Cause:     ErrTypeMismatch,
+			Message:   fmt.Sprintf("%s: cannot convert %T to float64", ErrTypeConversion.Error(), val),
+			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
 	}
 	return num, nil
@@ -294,8 +286,8 @@ func (d Document) GetBool(key string) (bool, error) {
 		return false, &DocumentError{
 			Operation: "GetBool",
 			Key:       key,
-			Message:   fmt.Sprintf("cannot convert %T to bool", val),
-			Cause:     ErrTypeMismatch,
+			Message:   fmt.Sprintf("%s: cannot convert %T to bool", ErrTypeConversion.Error(), val),
+			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
 	}
 	return b, nil
@@ -313,8 +305,8 @@ func (d Document) GetTime(key string) (time.Time, error) {
 		return time.Time{}, &DocumentError{
 			Operation: "GetTime",
 			Key:       key,
-			Message:   fmt.Sprintf("cannot convert %T to time.Time", val),
-			Cause:     ErrTypeMismatch,
+			Message:   fmt.Sprintf("%s: cannot convert %T to time.Time", ErrTypeConversion.Error(), val),
+			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
 	}
 	return t, nil
@@ -332,8 +324,8 @@ func (d Document) GetDocument(key string) (Document, error) {
 		return nil, &DocumentError{
 			Operation: "GetDocument",
 			Key:       key,
-			Message:   fmt.Sprintf("cannot convert %T to Document", val),
-			Cause:     ErrTypeMismatch,
+			Message:   fmt.Sprintf("%s: cannot convert %T to Document", ErrTypeConversion.Error(), val),
+			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
 	}
 	return doc, nil
@@ -351,8 +343,8 @@ func (d Document) GetDocumentArray(key string) ([]Document, error) {
 		return nil, &DocumentError{
 			Operation: "GetDocumentArray",
 			Key:       key,
-			Message:   fmt.Sprintf("cannot convert %T to []Document", val),
-			Cause:     ErrTypeMismatch,
+			Message:   fmt.Sprintf("%s: cannot convert %T to []Document", ErrTypeConversion.Error(), val),
+			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
 	}
 	return docs, nil
@@ -366,8 +358,8 @@ func (d Document) GetNested(path string) (any, error) {
 		return nil, &DocumentError{
 			Operation: "GetNested",
 			Key:       path,
-			Message:   "path cannot be empty",
-			Cause:     ErrInvalidPath,
+			Message:   ErrKeyEmpty.Error(),
+			Cause:     ErrKeyEmpty,
 		}
 	}
 
@@ -382,8 +374,8 @@ func (d Document) GetNested(path string) (any, error) {
 				return nil, &DocumentError{
 					Operation: "GetNested",
 					Key:       strings.Join(parts[:i+1], "."),
-					Message:   "path segment not found",
-					Cause:     err,
+					Message:   ErrPathSegmentNotFound.Error(),
+					Cause:     fmt.Errorf("%w: %w", ErrPathSegmentNotFound, err),
 				}
 			}
 			current = val
@@ -393,8 +385,8 @@ func (d Document) GetNested(path string) (any, error) {
 				return nil, &DocumentError{
 					Operation: "GetNested",
 					Key:       strings.Join(parts[:i+1], "."),
-					Message:   "path segment not found",
-					Cause:     ErrKeyNotFound,
+					Message:   ErrPathSegmentNotFound.Error(),
+					Cause:     ErrPathSegmentNotFound,
 				}
 			}
 			current = val
@@ -402,8 +394,8 @@ func (d Document) GetNested(path string) (any, error) {
 			return nil, &DocumentError{
 				Operation: "GetNested",
 				Key:       strings.Join(parts[:i+1], "."),
-				Message:   fmt.Sprintf("cannot traverse into %T", v),
-				Cause:     ErrInvalidPath,
+				Message:   fmt.Sprintf("%s: cannot traverse into %T", ErrCannotTraverse.Error(), v),
+				Cause:     fmt.Errorf("%w: %w", ErrCannotTraverse, ErrInvalidPath),
 			}
 		}
 	}
@@ -417,8 +409,8 @@ func (d Document) SetNested(path string, value any) error {
 		return &DocumentError{
 			Operation: "SetNested",
 			Key:       path,
-			Message:   "path cannot be empty",
-			Cause:     ErrInvalidPath,
+			Message:   ErrKeyEmpty.Error(),
+			Cause:     ErrKeyEmpty,
 		}
 	}
 
@@ -445,8 +437,8 @@ func (d Document) SetNested(path string, value any) error {
 			return &DocumentError{
 				Operation: "SetNested",
 				Key:       strings.Join(parts[:i+1], "."),
-				Message:   fmt.Sprintf("cannot traverse into %T", next),
-				Cause:     ErrInvalidPath,
+				Message:   fmt.Sprintf("%s: cannot traverse into %T", ErrCannotTraverse.Error(), next),
+				Cause:     fmt.Errorf("%w: %w", ErrCannotTraverse, ErrInvalidPath),
 			}
 		}
 	}
@@ -460,8 +452,8 @@ func (d Document) DeleteNested(path string) error {
 		return &DocumentError{
 			Operation: "DeleteNested",
 			Key:       path,
-			Message:   "path cannot be empty",
-			Cause:     ErrInvalidPath,
+			Message:   ErrKeyEmpty.Error(),
+			Cause:     ErrKeyEmpty,
 		}
 	}
 
@@ -473,6 +465,7 @@ func (d Document) DeleteNested(path string) error {
 
 	parentPath := strings.Join(parts[:len(parts)-1], ".")
 	parent, err := d.GetNested(parentPath)
+
 	if err != nil {
 		return err
 	}
@@ -486,8 +479,8 @@ func (d Document) DeleteNested(path string) error {
 		return &DocumentError{
 			Operation: "DeleteNested",
 			Key:       path,
-			Message:   fmt.Sprintf("parent is not a map: %T", p),
-			Cause:     ErrInvalidPath,
+			Message:   fmt.Sprintf("%s: parent is not a map: %T", ErrParentNotMap.Error(), p),
+			Cause:     fmt.Errorf("%w: %w", ErrParentNotMap, ErrInvalidPath),
 		}
 	}
 
@@ -588,6 +581,9 @@ func (d Document) Clone() Document {
 }
 
 func (d Document) deepClone() any {
+	// deepClone recursively clones the Document and its nested structures (maps, slices, and other Documents).
+// It ensures that modifications to the cloned document do not affect the original, providing
+// a truly independent copy.
 	result := make(Document)
 	for k, v := range d {
 		result[k] = deepCloneValue(v)
@@ -595,6 +591,9 @@ func (d Document) deepClone() any {
 	return result
 }
 
+// deepCloneValue recursively clones a value, handling nested Documents, maps (map[string]any),
+// and slices ([]any, []Document). Primitive types are returned as is. This function is
+// crucial for creating deep copies of document structures to prevent unintended side effects.
 func deepCloneValue(v any) any {
 	switch val := v.(type) {
 	case Document:
@@ -640,6 +639,10 @@ func (d Document) DeepMerge(others ...Document) Document {
 	return result
 }
 
+// deepMergeInto recursively merges the content of 'other' Document into 'd'.
+// Existing keys in 'd' are overwritten by 'other', except for nested Documents
+// and map[string]any types, which are recursively merged. This provides a way
+// to combine documents while preserving the structure of nested objects.
 func (d Document) deepMergeInto(other Document) {
 	for k, v := range other {
 		if existing, ok := d[k]; ok {
@@ -675,16 +678,17 @@ func (d Document) ToStruct(target any) error {
 	if err != nil {
 		return &DocumentError{
 			Operation: "ToStruct",
-			Message:   "failed to marshal to JSON",
-			Cause:     err,
+			Message:   ErrFailedToMarshalJSON.Error(),
+			Cause:     fmt.Errorf("%w: %w", ErrFailedToMarshalJSON, err),
 		}
 	}
 
 	if err := json.Unmarshal(data, target); err != nil {
 		return &DocumentError{
+
 			Operation: "ToStruct",
-			Message:   "failed to unmarshal to struct",
-			Cause:     err,
+			Message:   ErrFailedToUnmarshalStruct.Error(),
+			Cause:     fmt.Errorf("%w: %w", ErrFailedToUnmarshalStruct, err),
 		}
 	}
 
@@ -844,9 +848,9 @@ func CoerceToTime(v any) (time.Time, bool) {
 		}
 		return time.Time{}, false
 	case int64:
-		return time.Unix(val, 0), true
+		return time.Unix(val, 0).UTC(), true
 	case float64:
-		return time.Unix(int64(val), 0), true
+		return time.Unix(int64(val), 0).UTC(), true
 	default:
 		return time.Time{}, false
 	}
@@ -1058,7 +1062,7 @@ func (ds DocumentSet) Aggregate(key string) AggregationResult {
 			diff := val - result.Average
 			variance += diff * diff
 		}
-		result.StdDev = variance / float64(count)
+		result.StdDev = math.Sqrt(variance / float64(count))
 	}
 
 	return result
@@ -1127,19 +1131,26 @@ func (d Document) JSONPathQuery(path string) ([]any, error) {
 	return d.executeJSONPath(path)
 }
 
+// executeJSONPath is a recursive helper for JSONPathQuery. It traverses the document
+// based on the provided path segments, supporting wildcard '*' and array indexing '[]'.
+// It returns a slice of all values found at the specified path.
 func (d Document) executeJSONPath(path string) ([]any, error) {
 	parts := strings.Split(path, ".")
 	results := []any{d}
 
 	for _, part := range parts {
-		var newResults []any
+		            var newResults = make([]any, 0)
 
 		for _, result := range results {
 			if part == "*" {
 				// Wildcard - get all values
 				if doc, ok := AsDocument(result); ok {
 					for _, val := range doc.Values() {
-						newResults = append(newResults, val)
+						if arrVal, isArray := val.([]any); isArray {
+							newResults = append(newResults, arrVal...)
+						} else {
+							newResults = append(newResults, val)
+						}
 					}
 				} else if arr, ok := result.([]any); ok {
 					newResults = append(newResults, arr...)
@@ -1158,7 +1169,11 @@ func (d Document) executeJSONPath(path string) ([]any, error) {
 				// Regular key access
 				if doc, ok := AsDocument(result); ok {
 					if val, err := doc.Get(part); err == nil {
-						newResults = append(newResults, val)
+						if arrVal, isArray := val.([]any); isArray {
+							newResults = append(newResults, arrVal...)
+						} else {
+							newResults = append(newResults, val)
+						}
 					}
 				}
 			}
@@ -1191,8 +1206,8 @@ func (d Document) GetCreatedAt() (time.Time, error) {
 	if !ok {
 		return time.Time{}, &DocumentError{
 			Operation: "GetCreatedAt",
-			Message:   "no metadata found",
-			Cause:     ErrKeyNotFound,
+			Message:   ErrNoMetadata.Error(),
+			Cause:     ErrNoMetadata,
 		}
 	}
 
@@ -1203,8 +1218,8 @@ func (d Document) GetCreatedAt() (time.Time, error) {
 			return time.Time{}, &DocumentError{
 				Operation: "GetCreatedAt",
 				Key:       "created_at",
-				Message:   "created_at value cannot be coerced into time",
-				Cause:     ErrKeyNotFound,
+				Message:   fmt.Sprintf("%s: created_at value cannot be coerced into time", ErrMetadataValueCoercion.Error()),
+				Cause:     fmt.Errorf("%w: %w", ErrMetadataValueCoercion, ErrTypeMismatch),
 			}
 		}
 		return result, nil
@@ -1214,8 +1229,8 @@ func (d Document) GetCreatedAt() (time.Time, error) {
 		&DocumentError{
 			Operation: "GetCreatedAt",
 			Key:       "created_at",
-			Message:   "created_at not found in metadata",
-			Cause:     ErrKeyNotFound,
+			Message:   ErrMetadataKeyNotFound.Error(),
+			Cause:     ErrMetadataKeyNotFound,
 		}
 }
 
@@ -1235,8 +1250,8 @@ func (d Document) GetVersion() (int, error) {
 	if !ok {
 		return 0, &DocumentError{
 			Operation: "GetVersion",
-			Message:   "no metadata found",
-			Cause:     ErrKeyNotFound,
+			Message:   ErrNoMetadata.Error(),
+			Cause:     ErrNoMetadata,
 		}
 	}
 
@@ -1249,8 +1264,8 @@ func (d Document) GetVersion() (int, error) {
 	return 0, &DocumentError{
 		Operation: "GetVersion",
 		Key:       "version",
-		Message:   "version not found or invalid in metadata",
-		Cause:     ErrKeyNotFound,
+		Message:   ErrMetadataKeyNotFound.Error(),
+		Cause:     ErrMetadataKeyNotFound,
 	}
 }
 
@@ -1274,12 +1289,8 @@ func (d Document) SetMetadata(metadata map[string]any) {
 
 // StripMetadata removes metadata and returns a clean copy.
 func (d Document) StripMetadata() Document {
-	result := make(Document)
-	for k, v := range d {
-		if k != MetadataFieldName {
-			result[k] = v
-		}
-	}
+	doc := stripNestedMetadata(d)
+	result := doc.(Document)
 	return result
 }
 
@@ -1434,6 +1445,9 @@ func (d Document) Flatten(separator string) map[string]any {
 	return result
 }
 
+// flattenInto recursively flattens a Document into a single-level map,
+// using the specified separator for nested keys. It handles nested Documents
+// and slices, creating unique keys for each element.
 func (d Document) flattenInto(result map[string]any, prefix, separator string) {
 	for k, v := range d {
 		key := k
@@ -1569,7 +1583,11 @@ func (d Document) String() string {
 
 // Len returns the number of key-value pairs.
 func (d Document) Len() int {
-	return len(d)
+	l := len(d)
+	if _, ok := d[MetadataFieldName]; ok {
+		l--
+	}
+	return l
 }
 
 // IsEmpty checks if the document is empty.
@@ -1600,4 +1618,45 @@ func (d Document) Equals(other Document) bool {
 	}
 
 	return true
+}
+
+// AsMap returns a deep map[string]any representation of the document.
+// Nested Documents and slices are recursively converted.
+func (d Document) AsMap() map[string]any {
+    out := make(map[string]any, len(d))
+    for k, v := range d {
+        out[k] = asMapValue(v)
+    }
+    return out
+}
+
+// asMapValue recursively converts a value to its map[string]any representation.
+// It handles Document, map[string]any, and slices of these types, ensuring that
+// the returned map is a standard Go map, not a Document type.
+func asMapValue(v any) any {
+    switch val := v.(type) {
+    case Document:
+        return val.AsMap()
+    case map[string]any:
+        // Convert arbitrary map[string]any (not typed as Document)
+        nested := make(map[string]any, len(val))
+        for nk, nv := range val {
+            nested[nk] = asMapValue(nv)
+        }
+        return nested
+    case []Document:
+        arr := make([]any, len(val))
+        for i, doc := range val {
+            arr[i] = doc.AsMap()
+        }
+        return arr
+    case []any:
+        arr := make([]any, len(val))
+        for i, item := range val {
+            arr[i] = asMapValue(item)
+        }
+        return arr
+    default:
+        return val // primitive type (string, int, etc.)
+    }
 }

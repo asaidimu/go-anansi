@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
@@ -208,7 +207,12 @@ func (fieldDef *FieldDefinition) ValidateType(value any) bool {
 	case FieldTypeArray, FieldTypeSet:
 		_, ok = value.([]any)
 	case FieldTypeObject, FieldTypeRecord:
-		_, ok = data.AsDocument(value)
+		rv := reflect.ValueOf(value)
+		if rv.Kind() == reflect.Map {
+			if rv.Type().Key().Kind() == reflect.String {
+				ok = true
+			}
+		}
 	case FieldTypeUnion, FieldTypeEnum, FieldTypeUnknown:
 		return true
 	}
@@ -232,15 +236,9 @@ func (condition *FieldInclusionCondition) Evaluate(data map[string]any) bool {
 }
 
 func (s *SchemaDefinition) FieldNames() []string {
-	doc := data.MustNewDocument(s.Fields)
-	values := doc.Values()
-	names := make([]string, 0, len(values))
-	for _, v := range values {
-		fieldDef, ok := v.(*FieldDefinition)
-		if !ok {
-			continue
-		}
-		names = append(names, fieldDef.Name)
+	names := make([]string, 0, len(s.Fields))
+	for _, field := range s.Fields {
+		names = append(names, field.Name)
 	}
 	return names
 }

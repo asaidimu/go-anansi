@@ -1,6 +1,6 @@
 package data
 
-/* import (
+import (
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
@@ -12,7 +12,7 @@ package data
 func DefaultMetadataSchema() *schema.NestedSchemaDefinition {
 	IsStructured := true
 	return &schema.NestedSchemaDefinition{
-		Name: data.MetadataFieldName,
+		Name: MetadataFieldName,
 		IsStructured: &IsStructured,
 		StructuredFieldsMap: map[string]*schema.FieldDefinition{
 			"version": {
@@ -37,4 +37,4 @@ func DefaultMetadataSchema() *schema.NestedSchemaDefinition {
 			},
 		},
 	}
-} */
+}

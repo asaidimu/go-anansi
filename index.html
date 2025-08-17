@@ -1,0 +1,1024 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dependency Graph</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f8f9fa;
+            overflow: hidden;
+            transition: background-color 0.3s ease;
+        }
+        #graph-container {
+            width: 100%;
+            height: 100%;
+            background-image:
+                    radial-gradient(#e9ecef 1px, transparent 1px),
+                    radial-gradient(#e9ecef 1px, transparent 1px);
+            background-size: 20px 20px;
+            background-position: 0 0, 10px 10px;
+            transition: background-image 0.3s ease;
+        }
+        .node {
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .link {
+            stroke: #6c757d;
+            stroke-opacity: 0.8;
+            fill: none;
+            transition: stroke 0.3s, stroke-width 0.3s;
+        }
+        .node text {
+            fill: #495057;
+            text-anchor: middle;
+            dominant-baseline: middle;
+            font-weight: 500;
+            font-size: 12px;
+            transition: fill 0.3s ease;
+        }
+        .tooltip {
+            position: absolute;
+            background-color: rgba(255, 255, 255, 0.98);
+            color: #333;
+            border: none;
+            padding: 12px 16px;
+            border-radius: 8px;
+            pointer-events: none;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            font-size: 14px;
+            line-height: 1.4;
+            transition: all 0.3s ease;
+            max-width: 300px;
+            word-wrap: break-word;
+            z-index: 1000;
+        }
+        .tooltip strong {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 16px;
+            color: #1a73e8;
+        }
+        .highlighted {
+            stroke: #228be6;
+            stroke-width: 2px;
+        }
+        .node-highlighted rect {
+            stroke: #228be6;
+            stroke-width: 2px;
+        }
+        .link-highlighted {
+            stroke: #228be6;
+            stroke-width: 4px;
+            filter: drop-shadow(0 0 3px #228be6);
+        }
+        .link-unpicked-highlighted {
+            stroke: #ffa94d;
+            stroke-width: 4px;
+            filter: drop-shadow(0 0 3px #ffa94d);
+        }
+        .node-highlighted-text {
+            font-weight: bold;
+            fill: #228be6;
+        }
+        .node-highlighted-bg {
+            fill: #e7f5ff;
+        }
+        .node-picked-highlight rect {
+            stroke: #1c7ed6;
+            stroke-width: 2px;
+            filter: drop-shadow(0 0 5px rgba(28, 126, 214, 0.5));
+        }
+        .node-unpicked-highlight rect {
+            stroke: #ffa94d;
+            stroke-width: 1.5px;
+        }
+        .node-hover rect {
+            stroke: #228be6;
+            stroke-width: 2px;
+            filter: drop-shadow(0 0 5px rgba(34, 139, 230, 0.5));
+        }
+        .node-unpicked-hover rect {
+            stroke: #ffa94d;
+            stroke-width: 2px;
+            filter: drop-shadow(0 0 5px rgba(255, 169, 77, 0.5));
+        }
+        #repo-info {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            font-size: 14px;
+            color: #333;
+            z-index: 1000;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        #legend {
+            position: fixed;
+            top: 70px;
+            left: 20px;
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            font-size: 14px;
+            margin-bottom: 10px;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .legend-color {
+            width: 24px;
+            height: 24px;
+            margin-right: 12px;
+            border-radius: 4px;
+            border: 2px solid rgba(0,0,0,0.1);
+        }
+        #search-container {
+            position: fixed;
+            top: 190px;
+            left: 20px;
+            display: flex;
+            align-items: center;
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transition: background-color 0.3s ease;
+        }
+        #search-input {
+            padding: 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 14px;
+            width: 200px;
+            transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+        }
+        #search-icon {
+            margin-left: 10px;
+            color: #6c757d;
+            font-size: 20px;
+            cursor: pointer;
+            transition: color 0.3s ease;
+        }
+        #search-results {
+            position: fixed;
+            top: 230px;
+            left: 20px;
+            background-color: rgba(255, 255, 255, 0.95);
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            font-size: 14px;
+            color: #333;
+            display: none;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        #zoom-controls {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            display: flex;
+            background-color: rgba(255, 255, 255, 0.95);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+            transition: background-color 0.3s ease;
+        }
+        .zoom-button {
+            padding: 10px 15px;
+            font-size: 18px;
+            background-color: #f8f9fa;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .zoom-button:hover {
+            background-color: #e9ecef;
+        }
+        .zoom-button:active {
+            background-color: #dee2e6;
+        }
+        #zoom-in {
+            border-right: 1px solid #dee2e6;
+        }
+        .notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: rgba(0, 0, 139, 0);
+            color: #42A5F5;
+            padding: 15px 25px;
+            border-radius: 8px;
+            border: 2px solid #42A5F5;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            font-size: 16px;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.5s ease, transform 0.5s ease, background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+            z-index: 1000;
+        }
+        .notification.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        #dark-mode-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background-color: #f8f9fa;
+            color: #333;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
+        body.dark-mode {
+            background-color: #1a1a1a;
+            color: #f8f9fa;
+        }
+        body.dark-mode #graph-container {
+            background-image:
+                radial-gradient(#333 1px, transparent 1px),
+                radial-gradient(#333 1px, transparent 1px);
+        }
+        body.dark-mode .node text {
+            fill: #e9ecef;
+        }
+        body.dark-mode .tooltip {
+            background-color: rgba(33, 33, 33, 0.98);
+            color: #f0f0f0;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        body.dark-mode .tooltip strong {
+            color: #64b5f6;
+        }
+        body.dark-mode #repo-info,
+        body.dark-mode #legend,
+        body.dark-mode #search-container,
+        body.dark-mode #search-results,
+        body.dark-mode #zoom-controls {
+            background-color: rgba(40, 40, 40, 0.95);
+            color: #f8f9fa;
+        }
+        body.dark-mode #search-input {
+            background-color: #333;
+            color: #f8f9fa;
+            border-color: #4a4a4a;
+        }
+        body.dark-mode #search-icon {
+            color: #adb5bd;
+        }
+        body.dark-mode .zoom-button {
+            background-color: #333;
+            color: #f8f9fa;
+        }
+        body.dark-mode .zoom-button:hover {
+            background-color: #4a4a4a;
+        }
+        body.dark-mode .zoom-button:active {
+            background-color: #5a5a5a;
+        }
+        body.dark-mode #dark-mode-toggle {
+            background-color: #333;
+            color: #f8f9fa;
+        }
+        body.dark-mode .node rect {
+            fill: #2c2c2c;
+        }
+        body.dark-mode .node.picked rect {
+            fill: #3e3e3e;
+        }
+        body.dark-mode .node.unpicked rect {
+            fill: #4a4a4a;
+        }
+        body.dark-mode .link {
+            stroke: #adb5bd;
+        }
+        .unpicked-toggle-container {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        .unpicked-toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 48px;
+            height: 24px;
+            margin-right: 10px;
+        }
+        
+        .unpicked-toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .unpicked-toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #e9ecef;
+            transition: .3s;
+            border-radius: 24px;
+            border: 2px solid #ced4da;
+        }
+        
+        .unpicked-toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 2px;
+            bottom: 2px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        input:checked + .unpicked-toggle-slider {
+            background-color: #228be6;
+            border-color: #1c7ed6;
+        }
+        
+        input:checked + .unpicked-toggle-slider:before {
+            transform: translateX(24px);
+        }
+        
+        .unpicked-toggle-label {
+            user-select: none;
+            font-size: 14px;
+            color: #495057;
+        }
+
+        body.dark-mode .unpicked-toggle-slider {
+            background-color: #4a4a4a;
+            border-color: #666;
+        }
+        
+        body.dark-mode .unpicked-toggle-slider:before {
+            background-color: #888;
+        }
+        
+        body.dark-mode input:checked + .unpicked-toggle-slider {
+            background-color: #1864ab;
+            border-color: #1971c2;
+        }
+        
+        body.dark-mode input:checked + .unpicked-toggle-slider:before {
+            background-color: #dee2e6;
+        }
+        
+        body.dark-mode .unpicked-toggle-label {
+            color: #dee2e6;
+        }
+
+        .toggle-container,
+        .toggle-container input[type="checkbox"],
+        .toggle-label,
+        body.dark-mode .toggle-container {
+            display: none;
+        }
+        
+        .node.hidden {
+            display: none;
+        }
+        
+        .link.hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<div id="repo-info">
+    <a href="https://github.com/bayraktugrul/modview" target="_blank" style="text-decoration: none; color: #007bff;">Repository: bayraktugrul/modview</a>
+</div>
+<div id="legend">
+    <div class="legend-item">
+        <div class="legend-color" style="background-color: #e7f5ff; border-color: #1c7ed6;"></div>
+        <span>Picked dependency by MVS algorithm</span>
+    </div>
+    <div class="legend-item">
+        <div class="legend-color" style="background-color: #fff4e6; border-color: #ffa94d;"></div>
+        <span>Unpicked dependency</span>
+    </div>
+    <div class="legend-item" style="margin-top: 15px;">
+        <label class="unpicked-toggle-container">
+            <div class="unpicked-toggle-switch">
+                <input type="checkbox" id="unpicked-toggle" checked>
+                <span class="unpicked-toggle-slider"></span>
+            </div>
+            <span class="unpicked-toggle-label">Show Unpicked Dependencies</span>
+        </label>
+    </div>
+</div>
+<div id="search-container">
+    <input type="text" id="search-input" placeholder="Search dependency...">
+    <span id="search-icon">⏎</span>
+</div>
+<div id="search-results"></div>
+<div id="graph-container"></div>
+<div id="zoom-controls">
+    <button id="zoom-in" class="zoom-button">+</button>
+    <button id="zoom-out" class="zoom-button">-</button>
+</div>
+<div class="notification" id="notification">Copied!</div>
+<button id="dark-mode-toggle">Dark Mode</button>
+<script>
+    const data = {
+        nodes: [
+    { id: "go.uber.org\/zap@v1.27.0", picked: true },
+    { id: "github.com\/stretchr\/objx@v0.1.0", picked: false },
+    { id: "github.com\/stretchr\/testify@v1.8.1", picked: true },
+    { id: "go@1.24.4", picked: true },
+    { id: "go.uber.org\/multierr@v1.10.0", picked: true },
+    { id: "go.uber.org\/zap\/exp@v0.3.0", picked: true },
+    { id: "github.com\/stretchr\/testify@v1.7.1", picked: false },
+    { id: "github.com\/google\/btree@v1.1.3", picked: true },
+    { id: "github.com\/stretchr\/testify@v1.7.0", picked: false },
+    { id: "go.uber.org\/zap@v1.26.0", picked: false },
+    { id: "github.com\/stretchr\/testify@v1.8.0", picked: false },
+    { id: "github.com\/asaidimu\/go-anansi\/v6", picked: null },
+    { id: "github.com\/asaidimu\/go-events@v1.1.0", picked: true },
+    { id: "github.com\/google\/uuid@v1.6.0", picked: true },
+    { id: "go@1.24.3", picked: false },
+    { id: "gopkg.in\/check.v1@v0.0.0-20161208181325-20d25e280405", picked: true },
+    { id: "github.com\/asaidimu\/go-store\/v3@v3.3.0", picked: true },
+    { id: "github.com\/davecgh\/go-spew@v1.1.1", picked: true },
+    { id: "github.com\/hashicorp\/golang-lru\/v2@v2.0.7", picked: true },
+    { id: "gopkg.in\/yaml.v3@v3.0.1", picked: true },
+    { id: "github.com\/kr\/text@v0.2.0", picked: true },
+    { id: "github.com\/davecgh\/go-spew@v1.1.0", picked: false },
+    { id: "github.com\/stretchr\/objx@v0.5.0", picked: true },
+    { id: "github.com\/stretchr\/objx@v0.4.0", picked: false },
+    { id: "github.com\/mattn\/go-sqlite3@v1.14.30", picked: true },
+    { id: "github.com\/pmezard\/go-difflib@v1.0.0", picked: true },
+    { id: "toolchain@go1.24.4", picked: true },
+    { id: "go.uber.org\/goleak@v1.3.0", picked: true },
+    { id: "gopkg.in\/yaml.v3@v3.0.0-20200313102051-9f266ea9e77c", picked: false },
+    ],
+    links: [
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "github.com\/asaidimu\/go-events@v1.1.0" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "github.com\/asaidimu\/go-store\/v3@v3.3.0" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "github.com\/davecgh\/go-spew@v1.1.1" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "github.com\/google\/btree@v1.1.3" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "github.com\/google\/uuid@v1.6.0" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "github.com\/hashicorp\/golang-lru\/v2@v2.0.7" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "github.com\/mattn\/go-sqlite3@v1.14.30" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "github.com\/pmezard\/go-difflib@v1.0.0" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "github.com\/stretchr\/testify@v1.8.1" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "go@1.24.4" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "go.uber.org\/multierr@v1.10.0" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "go.uber.org\/zap@v1.27.0" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "go.uber.org\/zap\/exp@v0.3.0" },
+    { source: "github.com\/asaidimu\/go-anansi\/v6", target: "gopkg.in\/yaml.v3@v3.0.1" },
+    { source: "github.com\/asaidimu\/go-events@v1.1.0", target: "go@1.24.3" },
+    { source: "github.com\/asaidimu\/go-store\/v3@v3.3.0", target: "github.com\/google\/btree@v1.1.3" },
+    { source: "github.com\/asaidimu\/go-store\/v3@v3.3.0", target: "github.com\/google\/uuid@v1.6.0" },
+    { source: "github.com\/asaidimu\/go-store\/v3@v3.3.0", target: "go@1.24.4" },
+    { source: "github.com\/stretchr\/testify@v1.8.1", target: "github.com\/davecgh\/go-spew@v1.1.1" },
+    { source: "github.com\/stretchr\/testify@v1.8.1", target: "github.com\/pmezard\/go-difflib@v1.0.0" },
+    { source: "github.com\/stretchr\/testify@v1.8.1", target: "github.com\/stretchr\/objx@v0.5.0" },
+    { source: "github.com\/stretchr\/testify@v1.8.1", target: "gopkg.in\/yaml.v3@v3.0.1" },
+    { source: "go@1.24.4", target: "toolchain@go1.24.4" },
+    { source: "go.uber.org\/multierr@v1.10.0", target: "github.com\/stretchr\/testify@v1.7.0" },
+    { source: "go.uber.org\/multierr@v1.10.0", target: "github.com\/davecgh\/go-spew@v1.1.1" },
+    { source: "go.uber.org\/multierr@v1.10.0", target: "github.com\/pmezard\/go-difflib@v1.0.0" },
+    { source: "go.uber.org\/multierr@v1.10.0", target: "gopkg.in\/yaml.v3@v3.0.1" },
+    { source: "go.uber.org\/zap@v1.27.0", target: "github.com\/stretchr\/testify@v1.8.1" },
+    { source: "go.uber.org\/zap@v1.27.0", target: "go.uber.org\/goleak@v1.3.0" },
+    { source: "go.uber.org\/zap@v1.27.0", target: "go.uber.org\/multierr@v1.10.0" },
+    { source: "go.uber.org\/zap@v1.27.0", target: "gopkg.in\/yaml.v3@v3.0.1" },
+    { source: "go.uber.org\/zap@v1.27.0", target: "github.com\/davecgh\/go-spew@v1.1.1" },
+    { source: "go.uber.org\/zap@v1.27.0", target: "github.com\/kr\/text@v0.2.0" },
+    { source: "go.uber.org\/zap@v1.27.0", target: "github.com\/pmezard\/go-difflib@v1.0.0" },
+    { source: "go.uber.org\/zap\/exp@v0.3.0", target: "github.com\/stretchr\/testify@v1.8.1" },
+    { source: "go.uber.org\/zap\/exp@v0.3.0", target: "go.uber.org\/zap@v1.26.0" },
+    { source: "go.uber.org\/zap\/exp@v0.3.0", target: "github.com\/davecgh\/go-spew@v1.1.1" },
+    { source: "go.uber.org\/zap\/exp@v0.3.0", target: "github.com\/pmezard\/go-difflib@v1.0.0" },
+    { source: "go.uber.org\/zap\/exp@v0.3.0", target: "go.uber.org\/multierr@v1.10.0" },
+    { source: "go.uber.org\/zap\/exp@v0.3.0", target: "gopkg.in\/yaml.v3@v3.0.1" },
+    { source: "gopkg.in\/yaml.v3@v3.0.1", target: "gopkg.in\/check.v1@v0.0.0-20161208181325-20d25e280405" },
+    { source: "github.com\/stretchr\/objx@v0.5.0", target: "github.com\/stretchr\/testify@v1.8.0" },
+    { source: "github.com\/stretchr\/testify@v1.8.0", target: "github.com\/davecgh\/go-spew@v1.1.1" },
+    { source: "github.com\/stretchr\/testify@v1.8.0", target: "github.com\/pmezard\/go-difflib@v1.0.0" },
+    { source: "github.com\/stretchr\/testify@v1.8.0", target: "github.com\/stretchr\/objx@v0.4.0" },
+    { source: "github.com\/stretchr\/testify@v1.8.0", target: "gopkg.in\/yaml.v3@v3.0.1" },
+    { source: "github.com\/stretchr\/objx@v0.4.0", target: "github.com\/davecgh\/go-spew@v1.1.1" },
+    { source: "github.com\/stretchr\/objx@v0.4.0", target: "github.com\/stretchr\/testify@v1.7.1" },
+    { source: "github.com\/stretchr\/testify@v1.7.1", target: "github.com\/davecgh\/go-spew@v1.1.0" },
+    { source: "github.com\/stretchr\/testify@v1.7.1", target: "github.com\/pmezard\/go-difflib@v1.0.0" },
+    { source: "github.com\/stretchr\/testify@v1.7.1", target: "github.com\/stretchr\/objx@v0.1.0" },
+    { source: "github.com\/stretchr\/testify@v1.7.1", target: "gopkg.in\/yaml.v3@v3.0.0-20200313102051-9f266ea9e77c" },
+    { source: "gopkg.in\/yaml.v3@v3.0.0-20200313102051-9f266ea9e77c", target: "gopkg.in\/check.v1@v0.0.0-20161208181325-20d25e280405" },
+    ],
+    root: "github.com\/asaidimu\/go-anansi\/v6"
+    };
+
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+
+    const svg = d3.select("#graph-container")
+        .append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+    const g = svg.append("g");
+
+    const hierarchy = d3.stratify()
+        .id(d => d.id)
+        .parentId(d => {
+            const parent = data.links.find(link => link.target === d.id);
+            return parent ? parent.source : null;
+        })(data.nodes);
+
+    const nodeCount = data.nodes.length;
+    const dynamicWidth = Math.max(width, nodeCount * 80);
+    const dynamicHeight = Math.max(height, nodeCount * 40);
+
+    const treeLayout = d3.tree()
+        .size([dynamicWidth - 200, dynamicHeight - 200])
+        .separation((a, b) => (a.parent == b.parent ? 1 : 2) / (nodeCount > 50 ? 2 : 1));
+
+    const treeData = treeLayout(hierarchy);
+
+    const minVerticalSpacing = nodeCount > 50 ? 30 : 50;
+    treeData.each(d => {
+        d.y = height / 6 + d.depth * Math.max(80, minVerticalSpacing);
+    });
+
+    const zoom = d3.zoom()
+        .scaleExtent([0.1, 4])
+        .on("zoom", (event) => {
+            g.attr("transform", event.transform);
+        });
+
+    svg.call(zoom);
+
+    d3.select("#zoom-in").on("click", () => {
+        svg.transition().duration(200).call(zoom.scaleBy, 1.5);
+    });
+
+    d3.select("#zoom-out").on("click", () => {
+        svg.transition().duration(200).call(zoom.scaleBy, 0.5);
+    });
+
+    const link = g.selectAll(".link")
+        .data(treeData.links())
+        .enter().append("path")
+        .attr("class", "link")
+        .attr("d", d3.linkHorizontal()
+            .x(d => d.y)
+            .y(d => d.x))
+        .style("stroke-width", nodeCount > 50 ? "0.5px" : (nodeCount > 20 ? "1px" : "2px"));
+
+    const node = g.selectAll(".node")
+        .data(treeData.descendants())
+        .enter().append("g")
+        .attr("class", "node")
+        .attr("transform", d => "translate(" + d.y + "," + d.x + ")");
+
+    const fontSize = nodeCount <= 15 ? 12 : (nodeCount > 50 ? 6 : (nodeCount > 20 ? 8 : 10));
+    const nodeWidth = d => {
+        if (nodeCount <= 15) {
+            return Math.max(...treeData.descendants().map(n => n.data.id.length * (fontSize * 0.6) + 20));
+        }
+        return Math.max(Math.min(d.data.id.length * (fontSize * 0.6) + 20, 150), 80);
+    };
+    const nodeHeight = nodeCount <= 15 ? fontSize * 4 : fontSize * 3;
+
+    node.append("rect")
+        .attr("width", d => nodeWidth(d))
+        .attr("height", nodeHeight)
+        .attr("x", d => -nodeWidth(d) / 2)
+        .attr("y", -nodeHeight / 2)
+        .attr("rx", 6)
+        .attr("ry", 6)
+        .attr("fill", d => {
+            if (d.data.id === data.root) return "#bbdefb";
+            if (d.data.picked === true) return "#e7f5ff";
+            if (d.data.picked === false) return "#fff4e6";
+            return "#f5f5f5";
+        })
+        .attr("stroke", d => {
+            if (d.data.id === data.root) return "#1e88e5";
+            if (d.data.picked === true) return "#1c7ed6";
+            if (d.data.picked === false) return "#ffa94d";
+            return "#bdbdbd";
+        })
+        .attr("stroke-width", d => {
+            if (d.data.picked === true) return 2;
+            if (d.data.picked === false) return 1.5;
+            return 2;
+        });
+
+    const nodeText = node.append("text")
+        .attr("dy", "0.35em")
+        .style("font-size", fontSize + "px")
+        .attr("text-anchor", "middle")
+        .attr("dominant-baseline", "middle");
+
+    function truncateText(text, maxLength) {
+        return text.length > maxLength ? text.slice(0, maxLength - 3) + "..." : text;
+    }
+
+    const tooltip = d3.select("body").append("div")
+        .attr("class", "tooltip")
+        .style("opacity", 0);
+
+    nodeText.each(function(d) {
+        const text = d3.select(this);
+        const words = d.data.id.split(/(?=[A-Z@])/g);
+        const lineHeight = 1.1;
+        const y = text.attr("y");
+        const dy = parseFloat(text.attr("dy"));
+        let tspan = text.text(null).append("tspan").attr("x", 0).attr("y", y).attr("dy", dy + "em");
+        let lineNumber = 0;
+        let line = [];
+        let isTruncated = false;
+
+        words.forEach((word, i) => {
+            line.push(word);
+            tspan.text(line.join(""));
+            if (tspan.node().getComputedTextLength() > nodeWidth(d) - 4) {
+                if (lineNumber === 1) {
+                    line.pop();
+                    tspan.text(truncateText(line.join(""), line.join("").length - 3));
+                    isTruncated = true;
+                    return;
+                }
+                line.pop();
+                tspan.text(line.join(""));
+                line = [word];
+                tspan = text.append("tspan").attr("x", 0).attr("y", y).attr("dy", ++lineNumber * lineHeight + dy + "em").text(word);
+            }
+        });
+
+        if (isTruncated) {
+            d3.select(this.parentNode)
+                .on("mouseover", function(event, d) {
+                    tooltip.transition()
+                        .duration(200)
+                        .style("opacity", .9);
+                    tooltip.html(d.data.id)
+                        .style("left", (event.pageX + 10) + "px")
+                        .style("top", (event.pageY - 28) + "px");
+                })
+                .on("mouseout", function(d) {
+                    tooltip.transition()
+                        .duration(500)
+                        .style("opacity", 0);
+                });
+        }
+    });
+
+    node.filter(d => d.data.id === data.root)
+        .select("text")
+        .attr("text-anchor", "middle")
+        .attr("dominant-baseline", "middle")
+        .selectAll("tspan")
+        .attr("x", 0)
+        .attr("dy", (d, i) => i ? "1.1em" : 0);
+
+    const simulation = d3.forceSimulation(treeData.descendants())
+        .force("collide", d3.forceCollide().radius(d => nodeWidth(d) / 2 + 10))
+        .force("x", d3.forceX(d => d.y).strength(1))
+        .force("y", d3.forceY(d => d.x).strength(1))
+        .stop();
+
+    for (let i = 0; i < 100; i++) {
+        simulation.tick();
+    }
+
+    node.attr("transform", d => "translate(" + d.y + "," + d.x + ")");
+
+    link.attr("d", d3.linkHorizontal()
+        .x(d => d.y)
+        .y(d => d.x));
+
+    const rootNode = treeData.descendants()[0];
+    const scale = nodeCount <= 15 ? 0.9 : 0.8;
+    const initialX = width / 2 - rootNode.y * scale;
+    const initialY = height / 6;
+    svg.call(zoom.transform, d3.zoomIdentity.translate(initialX, initialY).scale(scale));
+
+    const repoCache = new Map();
+    let debounceTimer;
+
+    function debounce(func, delay) {
+        return function() {
+            const context = this;
+            const args = arguments;
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => func.apply(context, args), delay);
+        };
+    }
+
+    async function fetchRepoInfo(repo) {
+        if (repoCache.has(repo)) {
+            return repoCache.get(repo);
+        }
+
+        const [owner, name] = repo.split('/');
+        const url = `https://api.github.com/repos/${owner}/${name}`;
+        try {
+            const response = await fetch(url);
+            if (response.status === 403) {
+                throw new Error('GitHub API rate limit exceeded or forbidden');
+            }
+            if (!response.ok) {
+                throw new Error(`GitHub API error: ${response.status}`);
+            }
+            const data = await response.json();
+            const repoInfo = {
+                description: data.description || "No description available.",
+                stars: data.stargazers_count,
+                license: data.license ? data.license.spdx_id : "No license information"
+            };
+            repoCache.set(repo, repoInfo);
+            return repoInfo;
+        } catch (error) {
+            console.error("Error fetching repo info:", error);
+            return {
+                error: error.message
+            };
+        }
+    }
+
+    const debouncedFetchRepoInfo = debounce(async (repo, event, d) => {
+        const repoInfo = await fetchRepoInfo(repo);
+        updateTooltip(repoInfo, event, d);
+    }, 300);
+
+    function updateTooltip(repoInfo, event, d) {
+        if (repoInfo.error) {
+            tooltip.transition().duration(100).style("opacity", 0);
+        } else if (repoInfo.stars !== undefined) {
+            const starsInfo = `<br>⭐ ${repoInfo.stars.toLocaleString()} stars`;
+            const licenseInfo = `<br>📜 License: ${repoInfo.license}`;
+            tooltip.html(`<strong>${d.data.id}</strong><br>${repoInfo.description}${starsInfo}${licenseInfo}`)
+                .style("left", (event.pageX + 15) + "px")
+                .style("top", (event.pageY - 28) + "px");
+            tooltip.transition().duration(200).style("opacity", 1);
+        } else {
+            tooltip.transition().duration(100).style("opacity", 0);
+        }
+    }
+
+    node.on("mouseover", function(event, d) {
+        const nodeId = d.data.id;
+        if (nodeId.startsWith("github.com/")) {
+            const repo = nodeId.replace("github.com/", "").split("@")[0];
+            
+            tooltip.transition().duration(200).style("opacity", 1);
+            tooltip.html("<strong>Loading...</strong>")
+                .style("left", (event.pageX + 15) + "px")
+                .style("top", (event.pageY - 28) + "px");
+            debouncedFetchRepoInfo(repo, event, d);
+        }
+
+        highlightPathToRoot(d);
+        highlightNodeAndRoot(d);
+        if (d.data.picked === false) {
+            d3.select(this).classed("node-unpicked-hover", true);
+        } else {
+            d3.select(this).classed("node-hover", true);
+        }
+    }).on("mouseout", function() {
+        tooltip.transition().duration(200).style("opacity", 0);
+
+        clearTimeout(debounceTimer);
+        clearHighlight();
+        clearNodeAndRootHighlight();
+        d3.select(this).classed("node-hover", false);
+        d3.select(this).classed("node-unpicked-hover", false);
+    }).on("click", function(event, d) {
+        const textToCopy = d.data.id;
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            const notification = document.getElementById("notification");
+            notification.classList.add("show");
+            setTimeout(() => {
+                notification.classList.remove("show");
+            }, 1000);
+        });
+        focusOnParentNode(d);
+    });
+
+    link.on("mouseover", function(event, d) {
+        if (d.target.data.picked === false) {
+            d3.select(this).classed("link-unpicked-highlighted", true);
+        } else {
+            d3.select(this).classed("link-highlighted", true);
+        }
+        highlightConnectedNodes(d);
+    }).on("mouseout", function() {
+        d3.select(this).classed("link-highlighted", false);
+        d3.select(this).classed("link-unpicked-highlighted", false);
+        clearNodeHighlight();
+    });
+
+    function highlightPathToRoot(node) {
+        let current = node;
+        while (current) {
+            d3.select(current.node).select("rect").classed("highlighted", true);
+            if (current.parent) {
+                const linkToParent = link.filter(l => l.target === current && l.source === current.parent);
+                linkToParent.classed("highlighted", true).style("stroke-width", "4px");
+            }
+            current = current.parent;
+        }
+    }
+
+    function clearHighlight() {
+        node.select("rect").classed("highlighted", false);
+        link.classed("highlighted", false).style("stroke-width", null);
+    }
+
+    function highlightConnectedNodes(d) {
+        d3.select(d.source.node).classed("node-highlighted", true);
+        d3.select(d.target.node).classed("node-highlighted", true);
+        d3.select(d.source.node).select("rect").classed("node-highlighted-bg", true);
+        d3.select(d.target.node).select("rect").classed("node-highlighted-bg", true);
+        d3.select(d.source.node).select("text").classed("node-highlighted-text", true);
+        d3.select(d.target.node).select("text").classed("node-highlighted-text", true);
+    }
+
+    function clearNodeHighlight() {
+        node.classed("node-highlighted", false);
+        node.select("rect").classed("node-highlighted-bg", false);
+        node.select("text").classed("node-highlighted-text", false);
+    }
+
+    function focusOnParentNode(d) {
+        if (d.parent) {
+            const scale = 2;
+            const x = width / 2 - d.parent.y * scale;
+            const y = height / 2 - d.parent.x * scale;
+
+            svg.transition()
+                .duration(200)
+                .call(
+                    zoom.transform,
+                    d3.zoomIdentity.translate(x, y).scale(scale)
+                );
+        }
+    }
+
+    function highlightNodeAndRoot(d) {
+        const rootNode = treeData.descendants().find(node => node.data.id === data.root);
+        const highlightClass = d.data.picked ? "node-picked-highlight" : "node-unpicked-highlight";
+
+        d3.select(d.node).classed(highlightClass, true);
+        d3.select(rootNode.node).classed(highlightClass, true);
+    }
+
+    function clearNodeAndRootHighlight() {
+        node.classed("node-picked-highlight", false);
+        node.classed("node-unpicked-highlight", false);
+    }
+
+    let searchResults = [];
+    let currentSearchIndex = 0;
+    let lastSearchTerm = '';
+
+    function searchNodes(searchTerm) {
+        lastSearchTerm = searchTerm.toLowerCase();
+        const visibleNodes = new Set();
+        
+        node.each(function(d) {
+            if (!d3.select(this).classed("hidden")) {
+                visibleNodes.add(d.data.id);
+            }
+        });
+
+        searchResults = treeData.descendants().filter(node => {
+            if (!visibleNodes.has(node.data.id)) return false;
+            return node.data.id.toLowerCase().includes(lastSearchTerm);
+        });
+        
+        currentSearchIndex = 0;
+        if (searchResults.length > 0) {
+            focusOnSearchResult();
+            displaySearchResultsCount(searchResults.length);
+        } else {
+            hideSearchResultsCount();
+        }
+    }
+
+    function focusOnSearchResult() {
+        const matchedNode = searchResults[currentSearchIndex];
+        if (matchedNode) {
+            node.classed("node-highlighted", false);
+            
+            const scale = 2;
+            const x = width / 2 - matchedNode.y * scale;
+            const y = height / 2 - matchedNode.x * scale;
+
+            svg.transition()
+                .duration(200)
+                .call(
+                    zoom.transform,
+                    d3.zoomIdentity.translate(x, y).scale(scale)
+                );
+
+            
+            d3.select(matchedNode.node).classed("node-highlighted", true);
+        }
+    }
+
+    function displaySearchResultsCount(count) {
+        const searchResultsDiv = d3.select("#search-results");
+        searchResultsDiv.style("display", "block");
+        searchResultsDiv.html("Found " + count + " node" + (count > 1 ? "s" : ""));
+    }
+
+    function hideSearchResultsCount() {
+        const searchResultsDiv = d3.select("#search-results");
+        searchResultsDiv.style("display", "none");
+    }
+
+    d3.select("#search-icon").on("click", () => {
+        const searchTerm = d3.select("#search-input").property("value").trim();
+        if (searchTerm) {
+            searchNodes(searchTerm);
+        } else {
+            hideSearchResultsCount();
+            node.classed("node-highlighted", false);
+        }
+    });
+
+    d3.select("#search-input").on("keypress", (event) => {
+        if (event.key === "Enter") {
+            const searchTerm = d3.select("#search-input").property("value").trim();
+
+            if (searchResults.length > 0 && searchTerm.toLowerCase() === lastSearchTerm) {
+                currentSearchIndex = (currentSearchIndex + 1) % searchResults.length;
+                focusOnSearchResult();
+            } else {
+                searchNodes(searchTerm);
+            }
+        }
+    });
+
+    let isDarkMode = false;
+
+    function toggleDarkMode() {
+        isDarkMode = !isDarkMode;
+        document.body.classList.toggle("dark-mode", isDarkMode);
+    }
+
+    d3.select("#dark-mode-toggle").on("click", () => {
+        toggleDarkMode();
+        const buttonText = isDarkMode ? "Light Mode" : "Dark Mode";
+        d3.select("#dark-mode-toggle").text(buttonText);
+    });
+
+    function updateUnpickedVisibility() {
+        const showUnpicked = d3.select("#unpicked-toggle").property("checked");
+
+        node.classed("hidden", d => !showUnpicked && d.data.picked === false);
+        link.classed("hidden", d => !showUnpicked && (d.target.data.picked === false || d.source.data.picked === false));
+        
+        if (!showUnpicked) {
+            const visibleLinks = link.filter(function() {
+                return !d3.select(this).classed("hidden");
+            }).data();
+            const nodesWithConnections = new Set();
+            visibleLinks.forEach(l => {
+                nodesWithConnections.add(l.source.id);
+                nodesWithConnections.add(l.target.id);
+            });
+            
+            nodesWithConnections.add(data.root);
+            
+            node.classed("hidden", d => {
+                if (d.data.picked === false) return true;
+                return !nodesWithConnections.has(d.data.id);
+            });
+        }
+    }
+
+    d3.select("#unpicked-toggle").on("change", updateUnpickedVisibility);
+</script>
+</body>
+</html>
