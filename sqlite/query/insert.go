@@ -28,24 +28,23 @@ func (i *SQLiteInsertValues) Value() (string, []any, error) {
 		return "", nil, fmt.Errorf("cannot specify both single document and batch")
 	}
 
+	// Determine fields to use for insert
+	if i.schema != nil {
+		i.fields = i.schema.FieldNames()
+	}
+
+	if len(i.schema.FieldNames()) == 0 {
+		return "", nil, fmt.Errorf("provided schema has no fields defined for insert")
+	}
+
 	// Handle single document case
 	if i.data != nil {
-		if i.schema == nil {
-			i.fields = i.data.Keys()
-		}
 		return i.buildSingleInsert(i.data)
 	}
 
 	// Handle batch case
 	if len(i.batch) == 0 {
-		if i.schema == nil {
-			i.fields = i.batch[0].Keys()
-		}
 		return "", nil, fmt.Errorf("empty batch provided for insert")
-	}
-
-	if i.schema != nil {
-		i.fields = i.schema.FieldNames()
 	}
 
 	return i.buildBatchInsert(i.batch)

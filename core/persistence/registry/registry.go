@@ -143,6 +143,7 @@ func (r *collectionRegistry) refreshCache() error {
 // CreateCollection creates the initial entry for a new collection in the registry.
 func (r *collectionRegistry) CreateCollection(ctx context.Context, schema *schema.SchemaDefinition) (*RegistryEntry, error) {
 	enrichedSchema := EnrichSchema(schema)
+
 	entry, err := r.withSchemaValidationAndNotExists(ctx, enrichedSchema, func() (*RegistryEntry, error) {
 		// Define initial version and physical name
 		initialVersion := schema.Version
@@ -549,12 +550,12 @@ func (r *collectionRegistry) createPhysicalCollection(ctx context.Context, manag
 func (r *collectionRegistry) entryToDocument(entry *RegistryEntry) (data.Document, error) {
 	entryBytes, err := json.Marshal(entry)
 	if err != nil {
-		return data.Document{}, fmt.Errorf("failed to marshal registry entry: %w", err)
+		return data.MustNewDocument(nil), fmt.Errorf("failed to marshal registry entry: %w", err)
 	}
 
 	var docData map[string]any
 	if err := json.Unmarshal(entryBytes, &docData); err != nil {
-		return data.Document{}, fmt.Errorf("failed to unmarshal registry entry to document: %w", err)
+		return data.MustNewDocument(nil), fmt.Errorf("failed to unmarshal registry entry to document: %w", err)
 	}
 
 	return data.MustNewDocument(docData), nil

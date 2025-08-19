@@ -26,7 +26,6 @@ type eventsCollection struct {
 	schema     *schema.SchemaDefinition
 }
 
-
 var _ base.Collection = (*eventsCollection)(nil)
 
 // newEventEmittingCollection creates a new event-emitting collection wrapper.
@@ -93,7 +92,7 @@ func (e *eventsCollection) withEventEmission(
 			startTime,
 		)
 		e.emitEvent(failEvent)
-		return nil, err
+		return result, err
 	}
 
 	// Emit success event
@@ -114,7 +113,7 @@ func (e *eventsCollection) withEventEmission(
 }
 
 // CreateOne wraps the underlying collection's CreateOne method, adding event emission.
-func (e *eventsCollection) CreateOne(ctx context.Context, doc data.Document) (*base.CreateResult, error) {
+func (e *eventsCollection) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
 	result, err := e.withEventEmission(
 		"createOne",
 		base.DocumentCreateStart,
@@ -127,11 +126,17 @@ func (e *eventsCollection) CreateOne(ctx context.Context, doc data.Document) (*b
 		},
 	)
 
-	if err != nil {
-		return nil, err
+	r, ok := result.(base.CreateResult)
+
+	if !ok {
+		r = base.CreateResult{}
 	}
 
-	return result.(*base.CreateResult), nil
+	if err != nil {
+		return r, err
+	}
+
+	return r, nil
 }
 
 // CreateMany wraps the underlying collection's CreateMany method, adding event emission.
@@ -149,7 +154,7 @@ func (e *eventsCollection) CreateMany(ctx context.Context, docs []data.Document)
 	)
 
 	if err != nil {
-		return nil, err
+		return result.([]base.CreateResult), err
 	}
 
 	return result.([]base.CreateResult), nil

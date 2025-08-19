@@ -107,6 +107,7 @@ func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *schema.Schem
 func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
 	compiled, err := i.b.Build(&query.Query{
 		Target: &query.QueryTarget{
+			Alias: &schema.Name,
 			Name:   schema.Name,
 			Schema: schema,
 		},
@@ -584,5 +585,5 @@ func (ti *NativeTransactionInteractor[T]) DropCollection(ctx context.Context, na
 
 // Capabilities returns the capabilities of the Native database.
 func (i *NativeInteractor[T]) Capabilities() query.Capabilities {
-	return query.Capabilities{}
+	return i.qf.Capabilities()
 }

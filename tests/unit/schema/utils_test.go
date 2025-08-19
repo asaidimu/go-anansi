@@ -105,3 +105,21 @@ func TestSchemaDefinition_From(t *testing.T) {
 		assert.Error(t, err)
 	})
 }
+
+func TestSchemaDefinition_FieldNamesStability(t *testing.T) {
+	s := &schema.SchemaDefinition{
+		Fields: map[string]*schema.FieldDefinition{
+			"fieldC": {Name: "fieldC", Type: schema.FieldTypeString},
+			"fieldA": {Name: "fieldA", Type: schema.FieldTypeString},
+			"fieldB": {Name: "fieldB", Type: schema.FieldTypeString},
+		},
+	}
+
+	// Call FieldNames multiple times and ensure the order is stable (sorted)
+	expectedOrder := []string{"fieldA", "fieldB", "fieldC"}
+
+	for range 10 { // Run multiple times to catch non-determinism
+		actualOrder := s.FieldNames()
+		assert.Equal(t, expectedOrder, actualOrder, "FieldNames should return a stable, sorted order")
+	}
+}

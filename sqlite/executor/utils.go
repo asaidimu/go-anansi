@@ -29,8 +29,8 @@ func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 				tableName = col[:dotIndex]
 				fieldName = col[dotIndex+1:]
 			} else {
-				// No table prefix, use empty string as table name
-				tableName = ""
+				// No table prefix, use schema name as table name
+				tableName = sc.Name // Use schema name as default table name
 				fieldName = col
 			}
 
@@ -45,9 +45,8 @@ func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 
 			// Find field definition using clean field name
 			fieldDef := sc.FindField(fieldName)
-			convertedValue, err := fromSQLiteValue(fieldDef, value)
+			convertedValue, err := fromSQLiteValue(fieldDef, value) // Pass logger
 			if err != nil {
-				logger.Warn("Failed to convert value from SQLite", zap.String("column", col), zap.Error(err))
 				tableObj[fieldName] = value
 			} else {
 				tableObj[fieldName] = convertedValue
@@ -162,13 +161,18 @@ func fromSQLiteValue(fieldDef *schema.FieldDefinition, value any) (any, error) {
 		return value, nil
 	}
 
+	var convertedValue any
+	var err error
+
 	switch fieldDef.Type {
 	case schema.FieldTypeBoolean:
-		return convertBooleanFromSQLite(value)
+		convertedValue, err = convertBooleanFromSQLite(value)
 	default:
 		if fieldDef.Type.IsComplex() {
-			return unmarshalJSON(value)
+			convertedValue, err = unmarshalJSON(value)
+		} else {
+			convertedValue = value
 		}
-		return value, nil
 	}
+	return convertedValue, err
 }

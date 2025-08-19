@@ -530,7 +530,7 @@ func (h *QueryHelper) ApplyDistinct(records []map[string]any) ([]map[string]any,
 			keyValues := make(distinctKey, len(h.query.Distinct.Fields))
 			for i, field := range h.query.Distinct.Fields {
 				doc := data.Document(record)
-				keyValues[i], _ = utils.GetValueByPath(doc, field)
+				keyValues[i], _ = h.getValueByPath(doc, field)
 			}
 			// Create a string representation of the key values for map lookup
 			keyBytes, err := json.Marshal(keyValues)
@@ -563,8 +563,8 @@ func (h *QueryHelper) Sort(records []data.Document) ([]data.Document, error) {
 		for _, sortConfig := range h.query.Sort {
 			doci := data.Document(sorted[i])
 			docj := data.Document(sorted[j])
-			valueI, _ := utils.GetValueByPath(doci, sortConfig.Field)
-			valueJ, _ := utils.GetValueByPath(docj, sortConfig.Field)
+			valueI, _ := h.getValueByPath(doci, sortConfig.Field)
+			valueJ, _ := h.getValueByPath(docj, sortConfig.Field)
 
 			comparison := h.compareValues(valueI, valueJ)
 			if comparison == 0 {
@@ -826,7 +826,7 @@ func (h *QueryHelper) processGroupedAggregation(records []data.Document, aggConf
 
 		for i, groupField := range aggConfig.Groups {
 			doc := data.Document(record)
-			val, _ := utils.GetValueByPath(doc, groupField)
+			val, _ := h.getValueByPath(doc, groupField)
 			groupKeyParts[i] = fmt.Sprintf("%v", val) // Convert to string for map key
 			currentGroupKeyValues[groupField] = val   // Store actual values for later
 		}
@@ -896,7 +896,7 @@ func (h *QueryHelper) evaluateCondition(record data.Document, condition *FilterC
 	}
 
 	doc := data.Document(record)
-	fieldValue, _ := utils.GetValueByPath(doc, condition.Field)
+	fieldValue, _ := h.getValueByPath(doc, condition.Field)
 	conditionVal, err := h.resolveFilterValue(record, &condition.Value)
 	if err != nil {
 		return false, err
@@ -975,7 +975,7 @@ func (h *QueryHelper) resolveFilterValue(record map[string]any, fv *FilterValue)
 
 	if fv.FieldRefVal != nil {
 		doc := data.Document(record)
-		result, _ := utils.GetValueByPath(doc, fv.FieldRefVal.Field)
+		result, _ := h.getValueByPath(doc, fv.FieldRefVal.Field)
 		return result, nil
 	}
 
@@ -1082,11 +1082,55 @@ func (h *QueryHelper) evaluateFunctionCall(record map[string]any, fc *FunctionCa
 	return nil, fmt.Errorf("function '%s' is not implemented or registered in this helper", fc.Function)
 }
 
-// compareValues compares two values and returns -1, 0, or 1.
-func (h *QueryHelper) compareValues(a, b any) int {
-	return utils.CompareValues(a, b)
+func getFloat(v any) (float64, bool) {
+	val := reflect.ValueOf(v)
+	switch val.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return float64(val.Int()), true
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return float64(val.Uint()), true
+	case reflect.Float32, reflect.Float64:
+		return val.Float(), true
+	default:
+		return 0, false
+	}
 }
 
+// compareValues compares two values and returns -1, 0, or 1.
+func (h *QueryHelper) compareValues(a, b any) int {
+	if a == nil && b == nil {
+		return 0
+	}
+	if a == nil || b == nil {
+		return -1 // Consider nil less than any non-nil value
+	}
+
+	aFloat, aIsNum := getFloat(a)
+	bFloat, bIsNum := getFloat(b)
+
+	if aIsNum && bIsNum {
+		if aFloat < bFloat {
+			return -1
+		}
+		if aFloat > bFloat {
+			return 1
+		}
+		return 0
+	}
+
+	aStr, aIsStr := a.(string)
+	bStr, bIsStr := b.(string)
+
+	if aIsStr && bIsStr {
+		return strings.Compare(aStr, bStr)
+	}
+	// Fallback to reflect.DeepEqual for other types like booleans, maps, etc.
+	if reflect.DeepEqual(a, b) {
+		return 0
+	}
+
+	return -1 // Default to not equal
+}
 func (h *QueryHelper) combineDocs(leftName string, leftDoc data.Document, rightName string, rightDoc data.Document) data.Document {
 	combinedDoc := make(data.Document)
 
@@ -1517,11 +1561,10 @@ func (h *QueryHelper) performLeftJoin(leftName string, leftDocs []data.Document,
 
 func (h *QueryHelper) performRightJoin(leftName string, leftDocs []data.Document, rightName string, rightDocs []data.Document, condition *QueryFilter) []data.Document {
 	var result []data.Document
-	matchedLeftIndices := make(map[int]bool)
+	matchedRightIndices := make(map[int]bool)
 
-	for _, rightDoc := range rightDocs {
-		hasMatch := false
-		for leftIndex, leftDoc := range leftDocs {
+	for _, leftDoc := range leftDocs {
+		for rightIndex, rightDoc := range rightDocs {
 			combinedDoc := h.combineDocs(leftName, leftDoc, rightName, rightDoc)
 			matches, err := h.Match(combinedDoc, condition)
 			if err != nil {
@@ -1530,16 +1573,16 @@ func (h *QueryHelper) performRightJoin(leftName string, leftDocs []data.Document
 
 			if matches {
 				result = append(result, combinedDoc)
-				hasMatch = true
-				matchedLeftIndices[leftIndex] = true
+				matchedRightIndices[rightIndex] = true
 			}
-		}
-
-		if !hasMatch {
-			result = append(result, h.combineDocs(leftName, nil, rightName, rightDoc))
 		}
 	}
 
+	for rightIndex, rightDoc := range rightDocs {
+		if !matchedRightIndices[rightIndex] {
+			result = append(result, h.combineDocs(leftName, nil, rightName, rightDoc))
+		}
+	}
 	return result
 }
 
@@ -1577,4 +1620,8 @@ func (h *QueryHelper) performFullJoin(leftName string, leftDocs []data.Document,
 	}
 
 	return result
+}
+
+func (h *QueryHelper) getValueByPath(doc data.Document, path string) (any, bool) {
+	return utils.GetValueByPath(doc, path)
 }

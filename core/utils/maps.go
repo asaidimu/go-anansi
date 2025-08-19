@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"reflect"
 	"strings"
 )
 
@@ -53,15 +54,30 @@ func GetValueByPath(value any, path string) (any, bool) {
 
 	keys := strings.Split(path, ".")
 	current := value
-	for _, key := range keys {
-		m, ok := current.(map[string]any)
-		if !ok {
+
+	for _, part := range keys {
+		currentVal := reflect.ValueOf(current)
+		if currentVal.Kind() == reflect.Ptr {
+			currentVal = currentVal.Elem()
+		}
+
+		if currentVal.Kind() != reflect.Map {
 			return nil, false
 		}
-		current, ok = m[key]
-		if !ok {
+		keyFound := false
+		// Check if key exists
+		for _, key := range currentVal.MapKeys() {
+			if key.String() == part {
+				value := currentVal.MapIndex(key).Interface()
+				current = value
+				keyFound = true
+			}
+		}
+
+		if !keyFound {
 			return nil, false
 		}
 	}
+
 	return current, true
 }

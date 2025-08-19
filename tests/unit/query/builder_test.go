@@ -2,14 +2,21 @@ package query_test
 
 import (
 	"encoding/json"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 )
 
+
+func TestMain(m *testing.M) {
+	testutils.ConfigureDocumentFactory()
+	os.Exit(m.Run())
+}
 
 func TestNewQueryBuilder(t *testing.T) {
 	qb := query.NewQueryBuilder()

@@ -7,7 +7,6 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
@@ -100,21 +99,15 @@ func EnrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
 		return nil
 	}
 
-	tempSchema := *sc
-	// how is it that this sticks
-	tempSchema.Fields[data.MetadataFieldName] = &schema.FieldDefinition{
+	metadataField := &schema.FieldDefinition{
 		Name:   data.MetadataFieldName,
 		Type:   schema.FieldTypeObject,
 		Schema: schema.NestedSchemaReference{ID: data.MetadataFieldName},
 	}
 
-	metadata := collection.DefaultMetadataSchema()
-
-	// and this one does not
-	if tempSchema.NestedSchemas == nil {
-		tempSchema.NestedSchemas = make(map[string]*schema.NestedSchemaDefinition)
+	provider := func(sc *schema.SchemaDefinition) (*schema.NestedSchemaDefinition, []*schema.NestedSchemaDefinition) {
+		return data.GetMetadataSchema()
 	}
 
-	tempSchema.NestedSchemas[data.MetadataFieldName] = metadata
-	return &tempSchema
+	return sc.MustAddField(metadataField, provider)
 }

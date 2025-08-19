@@ -2,6 +2,7 @@ package persistence_test
 
 import (
 	"context"
+	"os"
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
@@ -9,15 +10,22 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	persistence "github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 	"github.com/asaidimu/go-events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.uber.org/zap"
 )
+
+func TestMain(m *testing.M) {
+	testutils.ConfigureDocumentFactory()
+	os.Exit(m.Run())
+}
 
 // Helper to create a basic schema definition
 func testSchema(name ...string) *schema.SchemaDefinition {
@@ -46,20 +54,42 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 	ephemeralInteractor := ephemeral.NewEphemeral()
 	manager := ephemeralInteractor.SchemaManager()
 	logger := zap.NewNop()
-	testSchema := testSchema()
+	testSchemaDef := registry.EnrichSchema(testSchema())
 
-	err := manager.CreateCollection(context.Background(),*testSchema)
+	validator, err := schema.NewDocumentValidator(testSchemaDef, nil)
+	assert.NoError(t, err)
+	expected := data.MustNewDocument(map[string]any{"id": "1", "name": "Test1"})
+	_, ok := validator.Validate(expected.AsMap(), false)
+	assert.True(t, ok)
+
+
+	err = manager.CreateCollection(context.Background(), *testSchemaDef)
 	assert.NoError(t, err)
 
 	engine := query.NewQueryEngine(ephemeralInteractor, logger)
 	opts := &persistence.MetadataOptions{
 		HmacSecretKey: []byte("test-secret"),
 	}
-	c, err := collection.NewCollection(bus, testSchema.Name, testSchema, engine, logger, opts, resolveSchema)
+	c, err := collection.NewCollection(bus, testSchemaDef.Name, testSchemaDef, engine, logger, opts, resolveSchema)
 	assert.NoError(t, err)
 
 	ctx := context.Background()
-	return c, ephemeralInteractor, logger, testSchema, bus, ctx
+	return c, ephemeralInteractor, logger, testSchemaDef, bus, ctx
+}
+
+// setupNonExistentCollection is a helper function to set up a collection with a non-existent schema for testing error cases.
+func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *zap.Logger, *schema.SchemaDefinition, *events.TypedEventBus[persistence.PersistenceEvent], context.Context) {
+	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())
+	nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent"}
+	ephemeralInteractor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+	engine := query.NewQueryEngine(ephemeralInteractor, logger)
+	opts := &persistence.MetadataOptions{
+		HmacSecretKey: []byte("test-secret"),
+	}
+	c, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, opts, resolveSchema)
+	ctx := context.Background()
+	return c, ephemeralInteractor, logger, nonExistentSchema, bus, ctx
 }
 
 func TestNewCollection(t *testing.T) {
@@ -74,10 +104,9 @@ func TestCollection_Create(t *testing.T) {
 		expected := data.Document{"id": "1", "name": "Test1"}
 
 		result, err := collection.CreateOne(ctx, expected)
-
-		assert.NoError(t, err)
 		assert.NotNil(t, result)
-		assert.IsType(t, &persistence.CreateResult{}, result)
+		assert.NoError(t, err)
+		assert.IsType(t, persistence.CreateResult{}, result)
 		actual := result.Data.StripMetadata()
 		assert.Equal(t, actual["name"], expected["name"])
 
@@ -179,7 +208,7 @@ func TestCollection_Update(t *testing.T) {
 	}
 
 	metadata, ok := d.Metadata()
-	assert.Equal(t, ok, true)
+	assert.Equal(t, true, ok)
 	updates.SetMetadata(metadata)
 
 	updateParams := &persistence.CollectionUpdate{Data: updates, Filter: q.Filters}
@@ -281,21 +310,6 @@ func TestCollection_Delete(t *testing.T) {
 	})
 }
 
-// setupNonExistentCollection is a helper function to set up a collection with a non-existent schema for testing error cases.
-func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *zap.Logger, *schema.SchemaDefinition, *events.TypedEventBus[persistence.PersistenceEvent], context.Context) {
-	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())
-	nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent"}
-	ephemeralInteractor := ephemeral.NewEphemeral()
-	logger := zap.NewNop()
-	engine := query.NewQueryEngine(ephemeralInteractor, logger)
-	opts := &persistence.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
-	c, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, opts, resolveSchema)
-	ctx := context.Background()
-	return c, ephemeralInteractor, logger, nonExistentSchema, bus, ctx
-}
-
 func TestCollection_Validate(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
@@ -326,7 +340,7 @@ func TestCollection_Validate(t *testing.T) {
 	})
 
 	t.Run("loose validation - missing required field allowed", func(t *testing.T) {
-		doc := data.Document{"id": "1"}             // Missing 'name'
+		doc := data.Document{"id": "1"}                    // Missing 'name'
 		result, err := collection.Validate(ctx, doc, true) // Loose validation
 		assert.NoError(t, err)
 		assert.True(t, result.Valid) // Should be valid in loose mode for missing required
@@ -356,7 +370,7 @@ func TestCollection_RegisterSubscription(t *testing.T) {
 		},
 	}
 
-	id := collection.RegisterSubscription(ctx,options)
+	id := collection.RegisterSubscription(ctx, options)
 	assert.NotEmpty(t, id)
 
 	subs, _ := collection.Subscriptions(ctx)

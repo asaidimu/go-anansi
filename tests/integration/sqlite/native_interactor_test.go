@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 )
 
 
@@ -106,6 +107,7 @@ func TestNativeInteractor_CreateCollection(t *testing.T) {
 }
 
 func TestNativeInteractor_InsertDocuments(t *testing.T) {
+	testutils.ConfigureDocumentFactory()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -129,8 +131,8 @@ func TestNativeInteractor_InsertDocuments(t *testing.T) {
 	require.NoError(t, err)
 
 	docsToInsert := []data.Document{
-		data.NewDocument(map[string]any{"product_id": "p1", "name": "Laptop", "price": 1200.50}),
-		data.NewDocument(map[string]any{"product_id": "p2", "name": "Mouse", "price": 25.00}),
+		data.MustNewDocument(map[string]any{"product_id": "p1", "name": "Laptop", "price": 1200.50}),
+		data.MustNewDocument(map[string]any{"product_id": "p2", "name": "Mouse", "price": 25.00}),
 	}
 
 	insertedDocs, err := interactor.InsertDocuments(ctx, testSchema, docsToInsert)
@@ -162,6 +164,7 @@ func TestNativeInteractor_InsertDocuments(t *testing.T) {
 }
 
 func TestNativeInteractor_SelectDocuments(t *testing.T) {
+	testutils.ConfigureDocumentFactory()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -186,9 +189,9 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 	require.NoError(t, err)
 
 	docsToInsert := []data.Document{
-		data.NewDocument(map[string]any{"order_id": "o1", "customer_id": "c1", "amount": 100.0, "status": "pending"}),
-		data.NewDocument(map[string]any{"order_id": "o2", "customer_id": "c2", "amount": 250.50, "status": "completed"}),
-		data.NewDocument(map[string]any{"order_id": "o3", "customer_id": "c1", "amount": 50.0, "status": "completed"}),
+		data.MustNewDocument(map[string]any{"order_id": "o1", "customer_id": "c1", "amount": 100.0, "status": "pending"}),
+		data.MustNewDocument(map[string]any{"order_id": "o2", "customer_id": "c2", "amount": 250.50, "status": "completed"}),
+		data.MustNewDocument(map[string]any{"order_id": "o3", "customer_id": "c1", "amount": 50.0, "status": "completed"}),
 	}
 	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
 	require.NoError(t, err)
@@ -254,6 +257,7 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 }
 
 func TestNativeInteractor_UpdateDocuments(t *testing.T) {
+	testutils.ConfigureDocumentFactory()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -277,9 +281,9 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 	require.NoError(t, err)
 
 	docsToInsert := []data.Document{
-		data.NewDocument(map[string]any{"task_id": "t1", "description": "Buy groceries", "completed": false}),
-		data.NewDocument(map[string]any{"task_id": "t2", "description": "Walk the dog", "completed": false}),
-		data.NewDocument(map[string]any{"task_id": "t3", "description": "Pay bills", "completed": true}),
+		data.MustNewDocument(map[string]any{"task_id": "t1", "description": "Buy groceries", "completed": false}),
+		data.MustNewDocument(map[string]any{"task_id": "t2", "description": "Walk the dog", "completed": false}),
+		data.MustNewDocument(map[string]any{"task_id": "t3", "description": "Pay bills", "completed": true}),
 	}
 	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
 	require.NoError(t, err)
@@ -335,6 +339,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 }
 
 func TestNativeInteractor_DeleteDocuments(t *testing.T) {
+	testutils.ConfigureDocumentFactory()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -357,9 +362,9 @@ func TestNativeInteractor_DeleteDocuments(t *testing.T) {
 	require.NoError(t, err)
 
 	docsToInsert := []data.Document{
-		data.NewDocument(map[string]any{"item_id": "i1", "name": "Apple"}),
-		data.NewDocument(map[string]any{"item_id": "i2", "name": "Banana"}),
-		data.NewDocument(map[string]any{"item_id": "i3", "name": "Orange"}),
+		data.MustNewDocument(map[string]any{"item_id": "i1", "name": "Apple"}),
+		data.MustNewDocument(map[string]any{"item_id": "i2", "name": "Banana"}),
+		data.MustNewDocument(map[string]any{"item_id": "i3", "name": "Orange"}),
 	}
 	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
 	require.NoError(t, err)
@@ -439,6 +444,7 @@ func TestNativeInteractor_DropCollection(t *testing.T) {
 }
 
 func TestNativeInteractor_CreateIndex(t *testing.T) {
+	testutils.ConfigureDocumentFactory()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -470,13 +476,13 @@ func TestNativeInteractor_CreateIndex(t *testing.T) {
 
 	// Test inserting duplicate value for unique index
 	docsToInsert := []data.Document{
-		data.NewDocument(map[string]any{"id": "d1", "value": "unique_val"}),
+		data.MustNewDocument(map[string]any{"id": "d1", "value": "unique_val"}),
 	}
 	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
 	require.NoError(t, err)
 
 	duplicateDoc := []data.Document{
-		data.NewDocument(map[string]any{"id": "d2", "value": "unique_val"}),
+		data.MustNewDocument(map[string]any{"id": "d2", "value": "unique_val"}),
 	}
 	_, err = interactor.InsertDocuments(ctx, testSchema, duplicateDoc)
 	assert.Error(t, err) // Expect an error due to unique constraint
@@ -525,6 +531,7 @@ func TestNativeInteractor_DropIndex(t *testing.T) {
 }
 
 func TestNativeInteractor_Transactions(t *testing.T) {
+	testutils.ConfigureDocumentFactory()
 	db, cleanup := setupTestDB(t)
 	defer cleanup()
 
@@ -548,8 +555,8 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 
 	// Initial insert
 	_, err = interactor.InsertDocuments(ctx, testSchema, []data.Document{
-		data.NewDocument(map[string]any{"account_id": "acc1", "balance": 100.0}),
-		data.NewDocument(map[string]any{"account_id": "acc2", "balance": 50.0}),
+		data.MustNewDocument(map[string]any{"account_id": "acc1", "balance": 100.0}),
+		data.MustNewDocument(map[string]any{"account_id": "acc2", "balance": 50.0}),
 	})
 	require.NoError(t, err)
 
@@ -573,7 +580,7 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 
 	// Insert within transaction
 	_, err = txInteractor.InsertDocuments(ctx, testSchema, []data.Document{
-		data.NewDocument(map[string]any{"account_id": "acc3", "balance": 200.0}),
+		data.MustNewDocument(map[string]any{"account_id": "acc3", "balance": 200.0}),
 	})
 
 	require.NoError(t, err)
@@ -620,7 +627,7 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	_, err = txInteractor2.UpdateDocuments(ctx, testSchema, updates2, filterAcc1_2)
 	require.NoError(t, err)
 	_, err = txInteractor2.InsertDocuments(ctx, testSchema, []data.Document{
-		data.NewDocument(map[string]any{"account_id": "acc4", "balance": 300.0}),
+		data.MustNewDocument(map[string]any{"account_id": "acc4", "balance": 300.0}),
 	})
 	require.NoError(t, err)
 

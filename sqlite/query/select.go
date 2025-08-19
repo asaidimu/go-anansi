@@ -2,6 +2,7 @@ package query
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
@@ -163,10 +164,20 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 	if len(parts) == 0 {
 		if len(p.schemas) > 0 {
 			var aliasedFields []string
-			for alias, schemaDef := range p.schemas {
+
+			// Create a slice to hold the map keys (aliases)
+			aliases := make([]string, 0, len(p.schemas))
+			for alias := range p.schemas {
+				aliases = append(aliases, alias)
+			}
+
+			sort.Strings(aliases)
+
+			for _, alias := range aliases {
+				schemaDef := p.schemas[alias]
 				// Ensure the schema definition and its fields are available
 				if schemaDef != nil && len(schemaDef.Fields) > 0 {
-					for _, field := range schemaDef.Fields {
+					for _, field := range schemaDef.GetFields() {
 						// Qualify the field with the table alias (e.g., "u.id")
 						resolvedField := fmt.Sprintf("%s.%s", alias, field.Name)
 						// Create a unique alias for the column (e.g., "u_id")
@@ -887,4 +898,3 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
 
 	return &SQLiteSelectStatement{tree: tree}, nil
 }
-

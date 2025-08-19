@@ -3,12 +3,14 @@ package ephemeral_test
 import (
 	"context"
 	"encoding/json"
+	"os"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v6/core/data"
+	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -61,11 +63,17 @@ const userSchemaJSON = `{
 	]
 }`
 
+
 func getUserSchema(t *testing.T) schema.SchemaDefinition {
 	var schemaDef schema.SchemaDefinition
 	err := json.Unmarshal([]byte(userSchemaJSON), &schemaDef)
 	assert.NoError(t, err)
 	return schemaDef
+}
+
+func TestMain(m *testing.M) {
+	testutils.ConfigureDocumentFactory()
+	os.Exit(m.Run())
 }
 
 func TestEphemeralDatabaseInteractor_InsertAndSelectDocuments(t *testing.T) {

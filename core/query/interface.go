@@ -189,6 +189,7 @@ type CaseExpressionBuilderInterface interface {
 type JoinBuilderInterface interface {
 	On(filter QueryFilter) *JoinBuilder
 	Alias(alias string) *JoinBuilder
+	Schema(schema *schema.SchemaDefinition) *JoinBuilder
 	WithProjection(projection *ProjectionConfiguration) *JoinBuilder
 	End() *QueryBuilder
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	persistence "github.com/asaidimu/go-anansi/v6/core/persistence/base"
@@ -40,6 +41,14 @@ func newTestSchema(name ...string) *schema.SchemaDefinition {
 // registry to be tested and the schema manager for verifying physical state.
 func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, persistence.Collection) {
 	logger := zap.NewNop()
+
+	// Configure the document factory
+	config := data.DocumentFactoryConfig{
+		HmacSecret: []byte("test-secret"),
+	}
+	err := data.ConfigureDocumentFactory(config)
+	require.NoError(t, err)
+
 	interactor := ephemeral.NewEphemeral()
 	schemaManager := interactor.SchemaManager()
 	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())

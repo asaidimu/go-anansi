@@ -400,7 +400,7 @@ type CollectionUpdate struct {
 // observability (metadata and subscriptions).
 type Collection interface {
 	// CreateOne creates a single document, returning a rich result object.
-	CreateOne(ctx context.Context, doc data.Document) (*CreateResult, error)
+	CreateOne(ctx context.Context, doc data.Document) (CreateResult, error)
 
 	// CreateMany creates multiple documents, returning a rich result for each.
 	CreateMany(ctx context.Context, docs []data.Document) ([]CreateResult, error)

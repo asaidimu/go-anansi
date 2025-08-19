@@ -2,14 +2,7 @@ package collection
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"fmt"
-	"maps"
-	"sort"
-	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
@@ -38,11 +31,9 @@ func newManagedCollection(
 	resolveSchema func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error),
 	opts *base.MetadataOptions,
 ) (*managedCollection, error) {
+
 	if opts == nil || opts.HmacSecretKey == nil || len(opts.HmacSecretKey) == 0 {
 		return nil, fmt.Errorf("HMAC secret key must be provided for managed collection")
-	}
-	if opts.MetadataSchema == nil {
-		opts.MetadataSchema = DefaultMetadataSchema()
 	}
 
 	return &managedCollection{
@@ -58,78 +49,54 @@ func newManagedCollection(
 // --- Core Method Overrides ---
 
 // CreateOne handles the creation of a single document.
-func (c *managedCollection) CreateOne(ctx context.Context, doc data.Document) (*base.CreateResult, error) {
+func (c *managedCollection) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
 	results, err := c.CreateMany(ctx, []data.Document{doc})
-	if err != nil {
-		return nil, err
+	result := base.CreateResult{}
+
+	if len(results) > 0 {
+		result = results[0]
 	}
-	return &results[0], nil
+
+	if err != nil {
+		return result, err
+	}
+
+	return result, nil
 }
 
 // CreateMany handles the creation of multiple documents, providing a rich result for each.
 func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) {
-	results := make([]base.CreateResult, len(docs))
-	valid := 0
-	metadata, err := c.createEntryMetadata()
+	results := make([]base.CreateResult, 0)
+	validCount := 0
 
-	if err != nil {
-		return nil, fmt.Errorf("failed to get custom metadata from provider: %w", err)
-	}
-
-	for i, doc := range docs {
-		result, err := c.Validate(ctx, doc, false)
+	for _, d := range docs {
+		doc := data.MustNewDocument(d)
+		doc.MustVerifyHash()
+		validationResult, err := c.Validate(ctx, doc, false)
 
 		if err != nil {
-			return nil, fmt.Errorf("Failed to create document in collection: %w", err)
+			// If Validate itself returns an error, it's a system error, not a validation failure.
+			// We should return this error immediately.
+			return nil, fmt.Errorf("system error during document validation: %w", err)
 		}
 
-		if !result.Valid {
-			results[i] = base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: result.Issues}
-			continue
+		if !validationResult.Valid {
+			// Document is invalid, append the result with issues
+			results = append(results, base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: validationResult.Issues})
+		} else {
+			// Document is valid
+			results = append(results, base.CreateResult{Status: base.StatusCreated, Data: doc}) // Assuming it will be created
+			validCount++
 		}
-		doc.SetMetadata(metadata)
-		valid++
 	}
 
-	if valid != len(docs) {
-		return results, fmt.Errorf("validation failed for %d documents", len(docs)-valid)
+	if validCount != len(docs) {
+		// Some documents failed validation, return the results with details
+		return results, fmt.Errorf("validation failed for %d documents", len(docs)-validCount)
 	}
 
+	// All documents are valid, proceed with actual creation
 	return c.wrapped.CreateMany(ctx, docs)
-}
-
-func (c *managedCollection) createEntryMetadata(existing ...map[string]any) (map[string]any, error) {
-	var meta map[string]any
-
-	if existing != nil {
-		meta = existing[0]
-	} else {
-		now := time.Now().Unix()
-		meta = map[string]any{
-			"version": 1,
-			"created": now,
-			"updated": now,
-		}
-
-		customMeta := make(map[string]any)
-		var err error
-		if c.options.DefaultProvider != nil {
-			customMeta, err = c.options.DefaultProvider()
-			if err != nil {
-				return nil, fmt.Errorf("failed to get custom metadata from provider: %w", err)
-			}
-		}
-
-		maps.Copy(meta, customMeta)
-	}
-
-	hash, err := c.calculateHash(meta)
-	if err != nil {
-		return nil, err
-	}
-
-	meta["hash"] = hash
-	return meta, nil
 }
 
 // Read fetches documents and enriches them with the metadata block for transport.
@@ -165,15 +132,14 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 	}
 
 	fq.Target = &query.QueryTarget{
-		Name:  c.physicalName,
-		Alias: &c.logicalName,
+		Name:   c.physicalName,
+		Alias:  &c.logicalName,
 		Schema: c.schema,
 	}
 
-	// Pass the call to the wrapped collection first
-	result, err := c.wrapped.Read(ctx, fq)
+	fq = ensureMetadataProjection(fq)
 
-	fmt.Printf("Query: \n %s \n Results: \n %v \n",fq.MustToJSON(), result)
+	result, err := c.wrapped.Read(ctx, fq)
 
 	if err != nil {
 		return nil, err
@@ -192,13 +158,10 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 
 	var err error
 	if params.Recover {
-		meta, err = c.createEntryMetadata(meta) // recalculates the hash
-		if err != nil {
-			return 0, fmt.Errorf("failed to create new metadata for recovery: %w", err)
-		}
+		params.Data.HashMetadata()
 	}
 
-	if !c.verifyHash(meta) {
+	if !params.Data.VerifyHash() {
 		return 0, fmt.Errorf("metadata hash verification failed: data may be tampered")
 	}
 
@@ -240,25 +203,10 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 	combined := qb.Build().Filters
 	params.Filter = combined
 
-	// 3. Prepare the new metadata for the update
-	newVersion := int(version) + 1
-	newMeta := make(map[string]any)
-	for k, v := range meta {
-		if k != "hash" {
-			newMeta[k] = v
-		}
-	}
-
-	newMeta["version"] = newVersion
-	newMeta["updated"] = time.Now().Unix()
-
-	newHash, err := c.calculateHash(newMeta)
+	err = params.Data.TouchMetadata()
 	if err != nil {
 		return 0, err
 	}
-	newMeta["hash"] = newHash
-
-	params.Data.SetMetadata(newMeta)
 
 	return c.wrapped.Update(ctx, params)
 }
@@ -292,44 +240,24 @@ func (c *managedCollection) Capabilities(ctx context.Context) *query.Capabilitie
 	return c.wrapped.Capabilities(ctx)
 }
 
-// --- Helper Functions ---
-
-// calculateHash generates a stable HMAC-SHA256 hash for a given metadata map.
-func (c *managedCollection) calculateHash(meta map[string]any) (string, error) {
-	keys := make([]string, 0, len(meta))
-	for k := range meta {
-		if k != "hash" {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-
-	var toSign []byte
-	for _, k := range keys {
-		jsonVal, err := json.Marshal(meta[k])
-		if err != nil {
-			return "", fmt.Errorf("failed to marshal metadata value for key %s: %w", k, err)
-		}
-		toSign = append(toSign, []byte(k)...)
-		toSign = append(toSign, jsonVal...)
+func ensureMetadataProjection(q *query.Query) *query.Query {
+	if q.Projection == nil {
+		return q
 	}
 
-	h := hmac.New(sha256.New, c.options.HmacSecretKey)
-	h.Write(toSign)
-	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-// verifyHash recalculates the hash of the metadata and compares it to the provided hash.
-func (c *managedCollection) verifyHash(meta map[string]any) bool {
-	providedHash, ok := meta["hash"].(string)
-	if !ok {
-		return false
+	// Users must not manually include metadata
+	if q.Projection.HasField(data.MetadataFieldName) {
+		// defensive: prevent overriding system metadata
+		panic("users must not explicitly include _metadata_ in projection")
 	}
 
-	calculatedHash, err := c.calculateHash(meta)
-	if err != nil {
-		return false
+	// Always remove metadata from exclusions
+	if q.Projection.IsExcluded(data.MetadataFieldName) {
+		q.Projection.RemoveExcludedField(data.MetadataFieldName)
 	}
 
-	return hmac.Equal([]byte(providedHash), []byte(calculatedHash))
+	// Ensure metadata is added to Include
+	q.Projection.IncludeField(data.MetadataFieldName, nil, nil)
+
+	return q
 }

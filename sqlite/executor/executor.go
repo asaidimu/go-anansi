@@ -38,9 +38,9 @@ func NewSQLiteInteractor(db *sql.DB, logger *zap.Logger) (native.QueryExecutor[t
 
 func newSQLiteExecutor(db *sql.DB, logger *zap.Logger, tx *sql.Tx) (native.QueryExecutor[types.SQLitePayload], error) {
 	return &sqliteExecutor{
-		db: db,
+		db:     db,
 		logger: logger,
-		tx :tx,
+		tx:     tx,
 	}, nil
 }
 
@@ -66,7 +66,7 @@ func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.Native
 	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
 
 	if err != nil {
-		return nil,nil, fmt.Errorf("failed to execute %s query: %w", compiled.StatementType(), err)
+		return nil, nil, fmt.Errorf("failed to execute %s query: %w", compiled.StatementType(), err)
 	}
 
 	docChan := make(chan data.Document)
@@ -107,6 +107,11 @@ func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.Native
 
 func (s *sqliteExecutor) Exec(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) (int64, error) {
 	payload := compiled.Raw()
+	s.logger.Debug("Executing SQL Query",
+		zap.String("sql", payload.SQL),
+		zap.Any("params", payload.Params),
+		zap.String("statementType", string(compiled.StatementType())),
+	)
 	result, err := s.runner().ExecContext(ctx, payload.SQL, payload.Params...)
 	if err != nil {
 		return 0, fmt.Errorf("failed to execute %s query: %w", compiled.StatementType(), err)

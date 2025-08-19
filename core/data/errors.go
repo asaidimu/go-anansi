@@ -51,4 +51,5 @@ var (
 	ErrRequiredFieldNotFound   = errors.New("required field not found")
 	ErrFailedToSetField        = errors.New("failed to set field")
 	ErrTypeConversionFailed    = errors.New("type conversion failed") // More specific than ErrTypeConversion
+	ErrHmacSecretNotConfigured = errors.New("HMAC secret key has not been configured")
 )

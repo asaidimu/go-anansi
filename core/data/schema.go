@@ -22,12 +22,12 @@ func DefaultMetadataSchema() *schema.NestedSchemaDefinition {
 			},
 			"created": {
 				Name:     "created",
-				Type:     schema.FieldTypeInteger,
+				Type:     schema.FieldTypeString,
 				Required: utils.BoolPtr(true),
 			},
 			"updated": {
 				Name:     "updated",
-				Type:     schema.FieldTypeInteger,
+				Type:     schema.FieldTypeString,
 				Required: utils.BoolPtr(true),
 			},
 			"hash": {

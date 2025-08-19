@@ -31,7 +31,7 @@ const (
 	FieldTypeObject  FieldType = "object"
 	FieldTypeRecord  FieldType = "record"
 	FieldTypeUnion   FieldType = "union"
-	FieldTypeUnknown  FieldType = "unknown"
+	FieldTypeUnknown FieldType = "unknown"
 )
 
 // IndexType represents the type of an index, which is used to optimize database queries.
@@ -224,7 +224,7 @@ type FieldInclusionCondition struct {
 
 // NestedSchemaDefinition represents a reusable, nested schema structure.
 type NestedSchemaDefinition struct {
-	Name        string            `json:"name"`
+	Name        string            `json:"name"` // NOTE: This should always be used as the name for a nested schema definition, not it's key in any map
 	Description *string           `json:"description,omitempty"`
 	Indexes     []IndexDefinition `json:"indexes,omitempty"`
 	Metadata    map[string]any    `json:"metadata,omitempty"`
@@ -371,10 +371,16 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 
 // SchemaDefinition defines a complete schema for a collection.
 type SchemaDefinition struct {
-	Name          string                             `json:"name"`
-	Version       string                             `json:"version"`
-	Description   string                             `json:"description,omitempty"`
-	Fields        map[string]*FieldDefinition        `json:"fields"`
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	Description string `json:"description,omitempty"`
+	// NOTE. When looking up a field from this map, DO NOT USE THE KEY OF THE
+	// MAP AS THE FIELDS NAME. THE NAME OF THE FIELD IS AT FieldDefinition.Name.
+	// i.e schema.Fields[fieldUUID].Name
+	Fields map[string]*FieldDefinition `json:"fields"`
+	// NOTE. When looking up a field from this map, DO NOT USE THE KEY OF THE
+	// MAP AS THE NESTED SCHEMA NAME. THE NAME OF THE FIELD IS AT
+	// NestedSchemaDefinition.Name . i.e schema.NestedSchemas[nestedUUID].Name
 	NestedSchemas map[string]*NestedSchemaDefinition `json:"nestedSchemas,omitempty"`
 	Indexes       []IndexDefinition                  `json:"indexes,omitempty"`
 	Constraints   SchemaConstraint[FieldType]        `json:"constraints,omitempty"`

@@ -197,3 +197,113 @@ func (q *Query) Merge(other *Query) *Query {
 
 	return merged
 }
+
+// HasField checks if a field is present in a projection.
+func (p *ProjectionConfiguration) HasField(name string) bool {
+	for _, f := range p.Include {
+		if f.Name == name {
+			return true
+		}
+	}
+	for _, f := range p.Exclude {
+		if f.Name == name {
+			return true
+		}
+	}
+	for _, c := range p.Computed {
+		if c.ComputedFieldExpression != nil && c.ComputedFieldExpression.Alias == name {
+			return true
+		}
+		if c.CaseExpression != nil && c.CaseExpression.Alias == name {
+			return true
+		}
+	}
+	return false
+}
+
+// AddInclude adds a field to the Include list if not already present.
+func (p *ProjectionConfiguration) IncludeField(name string, alias *string, nested *ProjectionConfiguration) {
+	if p == nil {
+		return
+	}
+	for _, f := range p.Include {
+		if f.Name == name {
+			return // already included
+		}
+	}
+	p.Include = append(p.Include, ProjectionField{Name: name, Alias: alias, Nested: nested})
+}
+
+// RemoveExclude removes a field from the Exclude list if present.
+func (p *ProjectionConfiguration) RemoveExcludedField(name string) {
+	if p == nil {
+		return
+	}
+	newExcl := make([]ProjectionField, 0, len(p.Exclude))
+	for _, f := range p.Exclude {
+		if f.Name != name {
+			newExcl = append(newExcl, f)
+		}
+	}
+	p.Exclude = newExcl
+}
+
+// IsExcluded checks if a field is explicitly excluded.
+func (p *ProjectionConfiguration) IsExcluded(name string) bool {
+	for _, f := range p.Exclude {
+		if f.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// IsIncluded checks if a field is explicitly included.
+func (p *ProjectionConfiguration) IsIncluded(name string) bool {
+	for _, f := range p.Include {
+		if f.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+// AddComputedField adds a computed field expression if not already present (by alias).
+func (p *ProjectionConfiguration) AddComputedField(alias string, expr *FunctionCall) {
+	if p == nil {
+		return
+	}
+	// Prevent duplicates by alias
+	for _, c := range p.Computed {
+		if c.ComputedFieldExpression != nil && c.ComputedFieldExpression.Alias == alias {
+			return
+		}
+	}
+	p.Computed = append(p.Computed, ProjectionComputedItem{
+		ComputedFieldExpression: &ComputedFieldExpression{
+			Type:       "computed",
+			Expression: expr,
+			Alias:      alias,
+		},
+	})
+}
+
+// AddCaseExpression adds a case expression if not already present (by alias).
+func (p *ProjectionConfiguration) AddCaseExpression(alias string, conditions []CaseCondition, elseVal FilterValue) {
+	if p == nil {
+		return
+	}
+	for _, c := range p.Computed {
+		if c.CaseExpression != nil && c.CaseExpression.Alias == alias {
+			return
+		}
+	}
+	p.Computed = append(p.Computed, ProjectionComputedItem{
+		CaseExpression: &CaseExpression{
+			Type:       "case",
+			Conditions: conditions,
+			Else:       elseVal,
+			Alias:      alias,
+		},
+	})
+}

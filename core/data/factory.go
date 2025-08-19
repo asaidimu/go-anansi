@@ -1,12 +1,17 @@
 package data
 
 import (
-	"maps"
+	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"maps"
+	"reflect"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -14,32 +19,79 @@ import (
 )
 
 // MetadataProvider is a function that returns metadata to be merged into a document.
-type MetadataProvider func(doc Document) (map[string]any, error)
+type MetadataProvider func(ctx context.Context, doc Document) (map[string]any, error)
+
+// MetadataProviderConfig holds a  nested schema, its dependencies and its corresponding provider.
+type MetadataProviderConfig struct {
+	Name         string
+	Schema       *schema.NestedSchemaDefinition
+	Dependencies []*schema.NestedSchemaDefinition
+	Provider     MetadataProvider
+}
+
+// DocumentFactoryConfig holds the complete configuration for the document factory.
+type DocumentFactoryConfig struct {
+	HmacSecret []byte
+	Providers  []MetadataProviderConfig
+}
 
 // documentFactory is a singleton responsible for creating and managing documents.
 type documentFactory struct {
 	mu         sync.RWMutex
-	providers  map[string]MetadataProvider
-	schemas    map[string]*schema.NestedSchemaDefinition
+	config     DocumentFactoryConfig
+	configured bool
 }
 
 var (
-	factoryOnce sync.Once
-	factory     *documentFactory
+	factoryOnce   sync.Once
+	configureOnce sync.Once
+	factory       *documentFactory
 )
 
 func getFactory() *documentFactory {
 	factoryOnce.Do(func() {
-		factory = &documentFactory{
-			providers: make(map[string]MetadataProvider),
-			schemas:   make(map[string]*schema.NestedSchemaDefinition),
-		}
+		factory = &documentFactory{}
 	})
 	return factory
 }
 
+// ConfigureDocumentFactory sets up the document factory singleton.
+// It must be called once at application startup.
+func ConfigureDocumentFactory(config DocumentFactoryConfig) error {
+	var err error
+
+	configureOnce.Do(func() {
+		f := getFactory()
+		if f.configured {
+			err = errors.New("document factory already configured")
+			return
+		}
+		if len(config.HmacSecret) == 0 {
+			err = errors.New("HMAC secret key cannot be empty in config")
+			return
+		}
+		f.config = config
+		f.configured = true
+	})
+
+	if err != nil {
+		return err
+	}
+
+	// If called multiple times, configureOnce ensures the block doesn't run again,
+	// but we should still signal that the factory is already configured.
+	if !getFactory().configured {
+		return errors.New("configuration was not applied")
+	}
+
+	return nil
+}
+
 // newDocument creates a new document with injected metadata.
-func (f *documentFactory) newDocument(data map[string]any) (Document, error) {
+func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) (Document, error) {
+	if !f.configured {
+		return nil, errors.New("document factory not configured")
+	}
 	doc := Document(data)
 
 	// Ensure metadata field exists
@@ -49,7 +101,7 @@ func (f *documentFactory) newDocument(data map[string]any) (Document, error) {
 	}
 
 	// Inject system metadata
-	now := time.Now().UnixNano()
+	now := strconv.FormatInt(time.Now().UnixNano(), 10)
 	if _, ok := meta["created"]; !ok {
 		meta["created"] = now
 	}
@@ -60,12 +112,12 @@ func (f *documentFactory) newDocument(data map[string]any) (Document, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	for name, provider := range f.providers {
-		providerMeta, err := provider(doc)
+	for _, providerConfig := range f.config.Providers {
+		providerMeta, err := providerConfig.Provider(ctx, doc)
 		if err != nil {
 			return nil, &DocumentError{
 				Operation: "newDocument",
-				Message:   fmt.Sprintf("%s: %s", ErrMetadataProviderFailed.Error(), name),
+				Message:   fmt.Sprintf("%s: %s", ErrMetadataProviderFailed.Error(), providerConfig.Name),
 				Cause:     fmt.Errorf("%w: %w", ErrMetadataProviderFailed, err),
 			}
 		}
@@ -88,6 +140,11 @@ func (f *documentFactory) newDocument(data map[string]any) (Document, error) {
 
 // TouchMetadata updates the 'updated' timestamp and recalculates the hash.
 func (d Document) TouchMetadata() error {
+	f := getFactory()
+	if !f.configured {
+		return errors.New("document factory not configured")
+	}
+
 	meta, ok := d.Metadata()
 	if !ok {
 		return &DocumentError{
@@ -98,7 +155,10 @@ func (d Document) TouchMetadata() error {
 	}
 
 	// Update timestamp and version
-	meta["updated"] = time.Now().UnixNano()
+
+	// Inject system metadata
+	now := strconv.FormatInt(time.Now().UnixNano(), 10)
+	meta["updated"] = now
 	if version, ok := CoerceToInt(meta["version"]); ok {
 		meta["version"] = version + 1
 	} else {
@@ -106,7 +166,7 @@ func (d Document) TouchMetadata() error {
 	}
 
 	// Recalculate hash
-	hash, err := getFactory().calculateHash(d)
+	hash, err := f.calculateHash(d)
 	if err != nil {
 		return err
 	}
@@ -116,67 +176,77 @@ func (d Document) TouchMetadata() error {
 	return nil
 }
 
-
-// RegisterMetadata allows users to extend the document metadata.
-func RegisterMetadata(name string, schema *schema.NestedSchemaDefinition, provider MetadataProvider) error {
-	f := getFactory()
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	defaultSchema := DefaultMetadataSchema()
-	for fieldName := range schema.StructuredFieldsMap {
-		if _, exists := defaultSchema.StructuredFieldsMap[fieldName]; exists {
-			return fmt.Errorf("%w: %s", ErrConflictingMetadataField, fieldName)
-		}
-	}
-
-	f.providers[name] = provider
-	f.schemas[name] = schema
-	return nil
-}
-
-func GetMetadataSchema() *schema.NestedSchemaDefinition {
+// GetMetadataSchema merges all provider schemas into a single metadata schema
+// Conflicts are already handled during configuration, so simple merging is safe here
+func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchemaDefinition) {
 	f := getFactory()
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
 	mergedSchema := DefaultMetadataSchema()
+	dependencies := make([]*schema.NestedSchemaDefinition, 0)
+	dependencyNames := make(map[string]bool)
 
-	for _, customSchema := range f.schemas {
-		maps.Copy(mergedSchema.StructuredFieldsMap, customSchema.StructuredFieldsMap)
+	// Initialize the StructuredFieldsMap if it's nil
+	if mergedSchema.StructuredFieldsMap == nil {
+		mergedSchema.StructuredFieldsMap = make(map[string]*schema.FieldDefinition)
 	}
 
-	return mergedSchema
+	for _, providerConfig := range f.config.Providers {
+		// Add dependencies to the list of unique dependencies
+		for _, dep := range providerConfig.Dependencies {
+			if _, ok := dependencyNames[dep.Name]; !ok {
+				dependencyNames[dep.Name] = true
+				dependencies = append(dependencies, dep)
+			}
+		}
+
+		// Merge the provider's schema fields into the top-level metadata schema
+		if providerConfig.Schema != nil && providerConfig.Schema.StructuredFieldsMap != nil {
+			maps.Copy(mergedSchema.StructuredFieldsMap, providerConfig.Schema.StructuredFieldsMap)
+		}
+	}
+
+	return mergedSchema, dependencies
 }
 
 // calculateHash computes the SHA256 hash of the document's _metadata_ block,
 // excluding the 'hash' field itself, to ensure a consistent and verifiable identifier.
 func (f *documentFactory) calculateHash(doc Document) (string, error) {
-	meta, ok := doc.Metadata()
-	if !ok {
-		return "", nil
+	if len(f.config.HmacSecret) == 0 {
+		return "", ErrHmacSecretNotConfigured
 	}
 
-	// Create a copy of the metadata and remove the hash field itself
-	hashableMeta := make(map[string]any)
-	for k, v := range meta {
-		if k != "hash" {
-			hashableMeta[k] = v
+	meta, ok := doc.Metadata()
+	if !ok {
+		return "", &DocumentError{
+			Operation: "CalculateHash",
+			Message:   ErrNoMetadata.Error(),
+			Cause:     ErrNoMetadata,
 		}
 	}
 
-	// Marshal to a canonical JSON format (sorted keys)
-	jsonBytes, err := canonicalMarshal(hashableMeta)
+	// Create a copy of the metadata and remove the hash field itself
+	dataToSign := make(map[string]any, len(meta))
+	for k, v := range meta {
+		if k != "hash" {
+			dataToSign[k] = v
+		}
+	}
+
+	// Use canonicalMarshal to ensure consistent key ordering for hashing.
+	toSign, err := canonicalMarshal(dataToSign)
 	if err != nil {
 		return "", &DocumentError{
-			Operation: "calculateHash",
+			Operation: "CalculateHash",
 			Message:   ErrFailedToMarshalMetadata.Error(),
 			Cause:     fmt.Errorf("%w: %w", ErrFailedToMarshalMetadata, err),
 		}
 	}
 
-	hash := sha256.Sum256(jsonBytes)
-	return hex.EncodeToString(hash[:]), nil
+	h := hmac.New(sha256.New, f.config.HmacSecret)
+	h.Write(toSign)
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // canonicalize recursively sorts slices and maps to ensure a consistent hash.
@@ -199,6 +269,24 @@ func canonicalize(v any) any {
 			newSlice[i] = canonicalize(item)
 		}
 		return newSlice
+	case float64:
+		// If a float64 represents a whole number, convert it to int64
+		if val == float64(int64(val)) {
+			return int64(val)
+		}
+		return val
+	case float32:
+		// If a float32 represents a whole number, convert it to int64
+		if val == float32(int64(val)) {
+			return int64(val)
+		}
+		return val
+	case int, int8, int16, int32, int64:
+		// Convert all integer types to int64 for consistency
+		return reflect.ValueOf(val).Int()
+	case uint, uint8, uint16, uint32, uint64:
+		// Convert all unsigned integer types to uint64 for consistency
+		return reflect.ValueOf(val).Uint()
 	default:
 		return v
 	}
@@ -209,3 +297,67 @@ func canonicalize(v any) any {
 func canonicalMarshal(v any) ([]byte, error) {
 	return json.Marshal(canonicalize(v))
 }
+
+func (d Document) HashMetadata() error {
+	meta, ok := d.Metadata()
+
+	if !ok {
+		return &DocumentError{
+			Operation: "HashMetadata",
+			Message:   ErrNoMetadata.Error(),
+			Cause:     ErrNoMetadata,
+		}
+	}
+
+	hash, err := getFactory().calculateHash(d)
+	if err != nil {
+		return err
+	}
+
+	meta["hash"] = hash
+	d.SetMetadata(meta)
+	return nil
+}
+
+// VerifyHash checks the intergrity of the metadata field.
+func (d Document) VerifyHash() bool {
+	meta, ok := d.Metadata()
+	if !ok {
+		return false
+	}
+
+	providedHash, ok := meta["hash"].(string)
+
+	if !ok {
+		return false
+	}
+
+	calculatedHash, err := getFactory().calculateHash(d)
+	if err != nil {
+		return false
+	}
+
+	return hmac.Equal([]byte(providedHash), []byte(calculatedHash))
+}
+
+func (d Document) MustVerifyHash() {
+	meta, ok := d.Metadata()
+	if !ok {
+		panic("document is missing metadata")
+	}
+
+	providedHash, ok := meta["hash"].(string)
+	if !ok {
+		panic("document metadata missing hash")
+	}
+
+	calculatedHash, err := getFactory().calculateHash(d)
+	if err != nil {
+		panic(fmt.Sprintf("failed to calculate hash: %v", err))
+	}
+
+	if !hmac.Equal([]byte(providedHash), []byte(calculatedHash)) {
+		panic(fmt.Sprintf("hash mismatch: expected %s, got %s", providedHash, calculatedHash))
+	}
+}
+

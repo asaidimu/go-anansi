@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/query" // Assuming this is your module path
+	"github.com/asaidimu/go-anansi/v6/core/query"
 )
 
 var testRecords = []data.Document{

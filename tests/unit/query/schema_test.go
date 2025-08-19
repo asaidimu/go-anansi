@@ -285,8 +285,8 @@ func TestSchemaFromQuery(t *testing.T) {
 
 		validator, err := schema.NewDocumentValidator(resultSchema, nil)
 		require.NoError(t, err)
-
-		issues, ok := validator.Validate(doc, false)
+		docMap := doc.AsMap()
+		issues, ok := validator.Validate(docMap, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})

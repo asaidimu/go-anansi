@@ -3,6 +3,7 @@ package schema
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -177,6 +178,7 @@ func (expectedType FieldType) Coerce(value any) (any, bool) {
 			return floatVal, true
 		}
 	}
+
 	return value, false
 }
 
@@ -240,7 +242,22 @@ func (s *SchemaDefinition) FieldNames() []string {
 	for _, field := range s.Fields {
 		names = append(names, field.Name)
 	}
+	sort.Strings(names)
 	return names
+}
+
+func (s *SchemaDefinition) GetFields() []*FieldDefinition {
+	fields := make([]*FieldDefinition, 0, len(s.Fields))
+	for _, field := range s.Fields {
+		fields = append(fields, field)
+	}
+
+	// Sort fields by Name
+	sort.Slice(fields, func(i, j int) bool {
+		return fields[i].Name < fields[j].Name
+	})
+
+	return fields
 }
 
 func (s *SchemaDefinition) ToJSON() (string, error) {
@@ -273,4 +290,65 @@ func (s *SchemaDefinition) MustClone() *SchemaDefinition {
 		panic(fmt.Sprintf("MustClone failed: %v", err))
 	}
 	return clone
+}
+
+// AddField adds a field to the schema along with any required nested schemas.
+// Returns an error if a field with the same name already exists.
+// The provider function receives the current schema state and supplies the primary nested schema and its dependencies.
+// This allows the provider to be intelligent about reusing existing nested schemas.
+func (s *SchemaDefinition) AddField(field *FieldDefinition, provider func(*SchemaDefinition) (*NestedSchemaDefinition, []*NestedSchemaDefinition)) (*SchemaDefinition, error) {
+	if s == nil || field == nil {
+		return s, nil
+	}
+
+	clone := s.MustClone()
+
+	// Ensure Fields map is initialized
+	if clone.Fields == nil {
+		clone.Fields = make(map[string]*FieldDefinition)
+	}
+
+	// Check if field already exists
+	if _, exists := clone.Fields[field.Name]; exists {
+		return nil, fmt.Errorf("field '%s' already exists in schema", field.Name)
+	}
+
+	// Add the field
+	clone.Fields[field.Name] = field
+
+	// If a provider is given, add the nested schemas
+	if provider != nil {
+		primary, dependencies := provider(clone)
+
+		// Ensure NestedSchemas map is initialized
+		if clone.NestedSchemas == nil {
+			clone.NestedSchemas = make(map[string]*NestedSchemaDefinition)
+		}
+
+		// Add primary nested schema if provided and not already present
+		if primary != nil {
+			clone.NestedSchemas[primary.Name] = primary
+		}
+
+		// Add dependencies if not already present
+		for _, dep := range dependencies {
+			if dep != nil {
+				clone.NestedSchemas[dep.Name] = dep
+			}
+		}
+	}
+
+	return clone, nil
+}
+
+// MustAddField adds a field to the schema along with any required nested schemas.
+// Panics if a field with the same name already exists.
+// The provider function receives the current schema state and supplies the primary nested schema and its dependencies.
+// This allows the provider to be intelligent about reusing existing nested schemas.
+func (s *SchemaDefinition) MustAddField(field *FieldDefinition, provider func(*SchemaDefinition) (*NestedSchemaDefinition, []*NestedSchemaDefinition)) *SchemaDefinition {
+	result, err := s.AddField(field, provider)
+	if err != nil {
+		panic(err)
+	}
+	return result
 }

@@ -109,12 +109,19 @@ func (c *baseCollection) withTransaction(
 }
 
 // CreateOne creates a single document.
-func (c *baseCollection) CreateOne(ctx context.Context, doc data.Document) (*base.CreateResult, error) {
+func (c *baseCollection) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
 	results, err := c.CreateMany(ctx, []data.Document{doc})
-	if err != nil {
-		return nil, err
+	result := base.CreateResult{}
+
+	if len(results) > 0 {
+		result = results[0]
 	}
-	return &results[0], nil
+
+	if err != nil {
+		return result, err
+	}
+
+	return result, nil
 }
 
 // CreateMany creates multiple documents.
@@ -136,6 +143,7 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) (
 	insertedDocs := inserted.([]data.Document)
 
 	for i, doc := range insertedDocs {
+		doc.MustVerifyHash()
 		results[i] = base.CreateResult{Status: base.StatusCreated, Data: doc}
 	}
 
