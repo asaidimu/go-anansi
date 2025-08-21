@@ -318,8 +318,8 @@ type BasePersistence interface {
 	// to be performed on that collection.
 	Collection(ctx context.Context, name string) (Collection, error)
 
-	// Collections returns a list of names of all available collections.
-	Collections(ctx context.Context) ([]string, error)
+	// ListCollections returns a list of names of all available collections.
+	ListCollections(ctx context.Context) ([]string, error)
 
 	// Delete removes a collection entirely, specified by its ID.
 	Delete(ctx context.Context, id string) (bool, error)
@@ -341,8 +341,12 @@ type BasePersistence interface {
 type Persistence interface {
 	BasePersistence
 
-	// Create creates a new collection based on the provided schema definition.
-	Create(ctx context.Context, sc schema.SchemaDefinition) (Collection, error)
+	// CreateCollection creates a new collection based on the provided schema definition.
+	CreateCollection(ctx context.Context, sc schema.SchemaDefinition) (Collection, error)
+
+	// CreateCollections creates multiple new collections based on the provided schema definitions.
+	// It returns a slice of Collection interfaces for the successfully created collections.
+	CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) (error)
 
 	// HasCollection checks if a collection with the given name exists.
 	HasCollection(ctx context.Context, name string) (bool, error)

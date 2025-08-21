@@ -82,23 +82,22 @@ func (d Document) Get(key string) (any, error) {
 
 // getValueByPath handles both direct key lookup and dot-notation paths
 func (d Document) getValueByPath(keyOrPath string) (any, error) {
-	// Try direct key lookup first for performance
-	if val, ok := d[keyOrPath]; ok {
-		return val, nil
-	}
-
-	// If not found and contains dots, try as path
+	// If contains dots, treat as path
 	if strings.Contains(keyOrPath, ".") {
 		return d.getNestedValue(keyOrPath)
 	}
 
-	// Not found as direct key and no dots - genuine key not found
-	return nil, &DocumentError{
-		Operation: "getValueByPath",
-		Key:       keyOrPath,
-		Message:   "key not found",
-		Cause:     ErrKeyNotFound,
+	// Direct key lookup
+	val, ok := d[keyOrPath]
+	if !ok {
+		return nil, &DocumentError{
+			Operation: "getValueByPath",
+			Key:       keyOrPath,
+			Message:   "key not found",
+			Cause:     ErrKeyNotFound,
+		}
 	}
+	return val, nil
 }
 
 // getNestedValue traverses a dot-separated path

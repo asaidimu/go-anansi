@@ -91,7 +91,7 @@ func TestAnansiSetupAndBasicOperation(t *testing.T) {
 
 	// 6. Perform a basic operation to verify persistence is functional
 	testSchema := newTestSchema("e2e_collection")
-	collection, err := p.Create(context.Background(), *testSchema)
+	collection, err := p.CreateCollection(context.Background(), *testSchema)
 	require.NoError(t, err)
 	assert.NotNil(t, collection)
 

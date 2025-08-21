@@ -1,5 +1,4 @@
 package persistence
-
 import (
 	"context"
 	"time"
@@ -108,8 +107,8 @@ func (e *eventsPersistence) withEventEmission(
 	return result, nil
 }
 
-// Create wraps the underlying persistence's Create method, adding event emission.
-func (e *eventsPersistence) Create(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
+// CreateCollection wraps the underlying persistence's CreateCollection method, adding event emission.
+func (e *eventsPersistence) CreateCollection(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
 	result, err := e.withEventEmission(
 		ctx,
 		"createCollection",
@@ -119,7 +118,7 @@ func (e *eventsPersistence) Create(ctx context.Context, sc schema.SchemaDefiniti
 		sc, // Input is the schema definition
 		nil, // Output will be set after the operation
 		func() (any, error) {
-			return e.persistence.Create(ctx, sc)
+			return e.persistence.CreateCollection(ctx, sc)
 		},
 	)
 
@@ -128,6 +127,27 @@ func (e *eventsPersistence) Create(ctx context.Context, sc schema.SchemaDefiniti
 	}
 
 	return result.(base.Collection), nil
+}
+
+func (e *eventsPersistence) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) (error) {
+	_, err := e.withEventEmission(
+		ctx,
+		"createManyCollections",
+		base.CollectionCreateStart, // Assuming a similar event type for multiple creations
+		base.CollectionCreateSuccess,
+		base.CollectionCreateFailed,
+		schemas, // Input is the slice of schema definitions
+		nil,     // Output will be set after the operation
+		func() (any, error) {
+			return nil, e.persistence.CreateCollections(ctx, schemas)
+		},
+	)
+
+	if err != nil {
+		return  err
+	}
+
+	return nil
 }
 
 // Delete wraps the underlying persistence's Delete method, adding event emission.
@@ -162,8 +182,8 @@ func (e *eventsPersistence) Collection(ctx context.Context, name string) (base.C
 	return e.persistence.Collection(ctx, name)
 }
 
-func (e *eventsPersistence) Collections(ctx context.Context) ([]string, error) {
-	return e.persistence.Collections(ctx)
+func (e *eventsPersistence) ListCollections(ctx context.Context) ([]string, error) {
+	return e.persistence.ListCollections(ctx)
 }
 
 func (e *eventsPersistence) Metadata(ctx context.Context, filter *base.MetadataFilter) (base.Metadata, error) {

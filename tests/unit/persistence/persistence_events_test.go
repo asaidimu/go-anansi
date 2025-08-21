@@ -23,7 +23,7 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	sc := newTestSchema("test_collection")
-	collection, err := p.Create(context.Background(), *sc)
+	collection, err := p.CreateCollection(context.Background(), *sc)
 	require.NoError(t, err)
 
 	var mu sync.Mutex
@@ -132,7 +132,7 @@ func TestPersistence_CollectionEvents(t *testing.T) {
 
 	// Test Collection Create
 	sc := newTestSchema("new_test_collection")
-	_, err = p.Create(context.Background(), *sc)
+	_, err = p.CreateCollection(context.Background(), *sc)
 	require.NoError(t, err)
 
 	// Test Collection Delete

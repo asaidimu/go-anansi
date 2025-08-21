@@ -131,44 +131,124 @@ func (r *collectionRegistry) refreshCache() error {
 }
 
 // CreateCollection creates the initial entry for a new collection in the registry.
-func (r *collectionRegistry) CreateCollection(ctx context.Context, schema *schema.SchemaDefinition) (*RegistryEntry, error) {
-	enrichedSchema := EnrichSchema(schema)
+func (r *collectionRegistry) CreateCollection(ctx context.Context, sc *schema.SchemaDefinition) (*RegistryEntry, error) {
+	results, err := r.CreateCollections(ctx, []schema.SchemaDefinition{*sc})
+	if err != nil {
+		return nil, err
+	}
+	return results[0], nil
+}
 
-	entry, err := r.withSchemaValidationAndNotExists(ctx, enrichedSchema, func() (*RegistryEntry, error) {
-		// Define initial version and physical name
-		initialVersion := schema.Version
-		physicalName, err := generatePhysicalName(schema)
-		if err != nil {
-			return nil, fmt.Errorf("could not generate physical name for '%s v%s': %w", schema.Name, schema.Version, err)
-		}
+// CreateCollections creates multiple collections atomically in a single transaction.
+// All validations are performed upfront - if any collection fails validation,
+// the entire operation fails without creating any collections.
+func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) ([]*RegistryEntry, error) {
+	if len(schemas) == 0 {
+		return []*RegistryEntry{}, nil
+	}
 
-		// Create the registry entry
-		entry, sc := r.buildRegistryEntry(enrichedSchema, initialVersion, physicalName)
+	// Phase 1: Validate all schemas and prepare data upfront
+	collectionsToCreate, err := r.prepareCollectionData(ctx, schemas)
+	if err != nil {
+		return nil, err
+	}
 
-		// Provision the physical collection and persist the registry entry
-		return execute(ctx, r.executor, true, func(collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
-			// Create physical collection
-			if err := r.createPhysicalCollection(ctx, manager, sc, physicalName); err != nil {
-				return nil, err
-			}
-
-			// Persist registry entry
-			result, err := r.persistRegistryEntry(ctx, collection, entry)
-			if err != nil {
-				return nil, err
-			}
-
-			return result, nil
-		})
+	// Phase 2: Execute all operations in a single transaction
+	results, err := execute(ctx, r.executor, true, func(collection base.Collection, manager query.SchemaManager) ([]*RegistryEntry, error) {
+		return r.createCollectionsInTransaction(ctx, collection, manager, collectionsToCreate)
 	})
 
 	if err != nil {
 		return nil, err
 	}
 
-	// Update cache after successful write
-	r.cache.set(entry.Name, entry)
-	return entry, nil
+	// Phase 3: Update cache after successful completion
+	for _, entry := range results {
+		r.cache.set(entry.Name, entry)
+	}
+
+	return results, nil
+}
+
+// collectionData holds all the prepared data needed to create a collection
+type collectionData struct {
+	enrichedSchema *schema.SchemaDefinition
+	physicalName   string
+	entry          *RegistryEntry
+	schemaConfig   *schema.SchemaDefinition
+}
+
+// prepareCollectionData validates all schemas and prepares the data needed for creation
+func (r *collectionRegistry) prepareCollectionData(ctx context.Context, schemas []schema.SchemaDefinition) ([]collectionData, error) {
+	collectionsToCreate := make([]collectionData, 0, len(schemas))
+	physicalNames := make(map[string]bool)
+	schemaNames := make(map[string]bool)
+
+	for _, schema := range schemas {
+		// Check for duplicates within the batch
+		schemaKey := fmt.Sprintf("%s@%s", schema.Name, schema.Version)
+		if schemaNames[schemaKey] {
+			return nil, fmt.Errorf("duplicate schema in batch: '%s' version '%s'", schema.Name, schema.Version)
+		}
+		schemaNames[schemaKey] = true
+
+		// Enrich and validate schema, check it doesn't already exist
+		enrichedSchema := EnrichSchema(&schema)
+		_, err := r.withSchemaValidationAndNotExists(ctx, enrichedSchema, func() (*RegistryEntry, error) {
+			return nil, nil // Just validate, don't create anything yet
+		})
+		if err != nil {
+			return nil, fmt.Errorf("validation failed for schema '%s' v%s: %w", schema.Name, schema.Version, err)
+		}
+
+		// Generate physical name
+		physicalName, err := generatePhysicalName(&schema)
+		if err != nil {
+			return nil, fmt.Errorf("could not generate physical name for '%s' v%s: %w", schema.Name, schema.Version, err)
+		}
+
+		// Check for physical name conflicts within the batch
+		if physicalNames[physicalName] {
+			return nil, fmt.Errorf("physical name conflict in batch: '%s' (generated for '%s' v%s)", physicalName, schema.Name, schema.Version)
+		}
+
+		physicalNames[physicalName] = true
+
+		// Build registry entry
+		entry, sc := r.buildRegistryEntry(enrichedSchema, schema.Version, physicalName)
+
+		collectionsToCreate = append(collectionsToCreate, collectionData{
+			enrichedSchema: enrichedSchema,
+			physicalName:   physicalName,
+			entry:          entry,
+			schemaConfig:   sc,
+		})
+	}
+
+	return collectionsToCreate, nil
+}
+
+// createCollectionsInTransaction creates all physical collections and persists registry entries within a transaction
+func (r *collectionRegistry) createCollectionsInTransaction(ctx context.Context, collection base.Collection, manager query.SchemaManager, collectionsToCreate []collectionData) ([]*RegistryEntry, error) {
+	createdEntries := make([]*RegistryEntry, 0, len(collectionsToCreate))
+
+	// Create all physical collections
+	for _, data := range collectionsToCreate {
+		if err := r.createPhysicalCollection(ctx, manager, data.schemaConfig, data.physicalName); err != nil {
+			return nil, fmt.Errorf("failed to create physical collection '%s': %w", data.physicalName, err)
+		}
+	}
+
+	// Persist all registry entries
+	for _, data := range collectionsToCreate {
+		result, err := r.persistRegistryEntry(ctx, collection, data.entry)
+		if err != nil {
+			return nil, fmt.Errorf("failed to persist registry entry for '%s': %w", data.entry.Name, err)
+		}
+		createdEntries = append(createdEntries, result)
+	}
+
+	return createdEntries, nil
 }
 
 // DropCollection removes a collection's entire schema history from the registry.

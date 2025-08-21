@@ -87,7 +87,7 @@ func main() {
 
 	// 7. Create "products" collection
 	productSchema := getProductSchema()
-	productsCollection, err := p.Create(ctx, *productSchema)
+	productsCollection, err := p.CreateCollection(ctx, *productSchema)
 	if err != nil {
 		log.Fatalf("Failed to create products collection: %v", err)
 	}

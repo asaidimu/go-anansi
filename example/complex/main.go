@@ -279,9 +279,9 @@ func main() {
 		Logger:        logger,
 		FactoryConfig: factoryConfig,
 		Decorators:    decorators,
-		Schemas: []*schema.SchemaDefinition{
-			&userSchemaDef,
-			&documentSchemaDef,
+		Schemas: []schema.SchemaDefinition{
+			userSchemaDef,
+			documentSchemaDef,
 		},
 	}
 	p, err := anansi.Setup(cfg)

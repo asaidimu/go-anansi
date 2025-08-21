@@ -40,6 +40,13 @@ type CollectionRegistry interface {
 	// the underlying physical collection in the database.
 	CreateCollection(ctx context.Context, schema *schema.SchemaDefinition) (*RegistryEntry, error)
 
+	// CreateCollections creates multiple collections atomically in a single transaction.
+	// All collections are validated upfront - if any collection fails validation,
+	// the entire operation fails without creating any collections. Each collection
+	// gets its first version ("1.0.0"), is marked as active, and has its underlying
+	// physical collection provisioned in the database.
+	CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) ([]*RegistryEntry, error)
+
 	// DropCollection removes a collection's entire schema history from the registry.
 	// The options force the caller to be explicit about deleting the underlying physical data.
 	DropCollection(ctx context.Context, name string, opts DropCollectionOptions) error
@@ -71,7 +78,6 @@ type CollectionRegistry interface {
 
 	// List retrieves the registry entries for all registered collections.
 	List(ctx context.Context) ([]*RegistryEntry, error)
-
 
 	// ResolveName returns the physical name of a schema
 	// If no version is provided, it returns the currently active schema version.

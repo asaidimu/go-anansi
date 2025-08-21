@@ -22,7 +22,7 @@ func setupCollectionTest(t *testing.T) (base.Collection, func()) {
 	require.NoError(t, err)
 
 	schema := newTestSchema("crud_collection")
-	collection, err := p.Create(context.Background(), *schema)
+	collection, err := p.CreateCollection(context.Background(), *schema)
 	require.NoError(t, err)
 
 	return collection, cleanup

@@ -48,19 +48,26 @@ func (m *managedPersistence) Collection(ctx context.Context, name string) (base.
 	return m.wrapped.Collection(ctx, name)
 }
 
-// Collections delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) Collections(ctx context.Context) ([]string, error) {
+// ListCollections delegates the call to the wrapped persistence after checking the closed state.
+func (m *managedPersistence) ListCollections(ctx context.Context) ([]string, error) {
 	if err := m.checkClosed(); err != nil {
 		return nil, err
 	}
-	return m.wrapped.Collections(ctx)
+	return m.wrapped.ListCollections(ctx)
 }
 
-// Create delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) Create(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
+// CreateCollection delegates the call to the wrapped persistence after checking the closed state.
+func (m *managedPersistence) CreateCollection(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
 	if err := m.checkClosed(); err != nil {
 		return nil, err	}
-	return m.wrapped.Create(ctx, sc)
+	return m.wrapped.CreateCollection(ctx, sc)
+}
+
+func (m *managedPersistence) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) (error) {
+	if err := m.checkClosed(); err != nil {
+		return err
+	}
+	return m.wrapped.CreateCollections(ctx, schemas)
 }
 
 func (m *managedPersistence) HasCollection(ctx context.Context, name string) (bool, error) {

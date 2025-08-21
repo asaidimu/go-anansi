@@ -34,7 +34,7 @@ type SetupConfig struct {
 	Decorators *utils.Decorators
 
 	// Schemas allows consumers to easily set up schemas
-	Schemas []*schema.SchemaDefinition
+	Schemas []schema.SchemaDefinition
 }
 
 // Setup initializes and configures the Anansi persistence layer and document factory.
@@ -61,23 +61,11 @@ func Setup(config SetupConfig) (base.Persistence, error) {
 			return
 		}
 
-		for _, schema := range config.Schemas {
-			ok, err := p.HasCollection(context.Background(), schema.Name)
-			if err != nil {
-				setupError = err
-				return
-			}
-
-			if ok {
-				continue
-			}
-
-			_, err = p.Create(context.Background(), *schema)
-
-			if err != nil {
-				setupError = err
-				return
-			}
+		// Create all collections in a single transaction
+		err = p.CreateCollections(context.Background(), config.Schemas)
+		if err != nil {
+			setupError = err
+			return
 		}
 
 	})

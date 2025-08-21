@@ -123,7 +123,7 @@ func (p *basePersistence) Collection(ctx context.Context, name string) (base.Col
 	return decorated, nil
 }
 
-func (p *basePersistence) Collections(ctx context.Context) ([]string, error) {
+func (p *basePersistence) ListCollections(ctx context.Context) ([]string, error) {
 	entries, err := (*p.registry).List(ctx)
 	if err != nil {
 		return nil, err
@@ -137,13 +137,21 @@ func (p *basePersistence) Collections(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-func (p *basePersistence) Create(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
+func (p *basePersistence) CreateCollection(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
 	_, err := (*p.registry).CreateCollection(ctx, &sc)
 	if err != nil {
 		return nil, err
 	}
 
 	return p.Collection(ctx, sc.Name)
+}
+
+func (p *basePersistence) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) (error) {
+	_, err := (*p.registry).CreateCollections(ctx, schemas)
+	if err != nil {
+		return nil
+	}
+	return nil
 }
 
 func (p *basePersistence) HasCollection(ctx context.Context, name string) (bool, error) {
