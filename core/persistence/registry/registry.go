@@ -51,13 +51,11 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 		}
 
 		if !exists {
-			logger.Info("registry collection '_schemas_' not found, creating it now")
 
 			registrySchema := RegistrySchema()
 			if err := manager.CreateCollection(context.Background(), *registrySchema); err != nil {
 				return nil, fmt.Errorf("failed to create registry collection '_schemas_': %w", err)
 			}
-			logger.Info("successfully created registry collection '_schemas_'")
 		}
 		return nil, nil
 	})
@@ -76,7 +74,6 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 
 	// Warm up the cache by loading all existing entries
 	if err := registry.warmCache(context.Background()); err != nil {
-		logger.Warn("failed to warm cache on startup", zap.Error(err))
 	}
 
 	// Start background refresh if enabled
@@ -100,8 +97,6 @@ func (r *collectionRegistry) Close(ctx context.Context) error {
 
 // warmCache loads all registry entries into memory
 func (r *collectionRegistry) warmCache(ctx context.Context) error {
-	r.logger.Info("warming registry cache")
-
 	entries, err := r.loadAllFromDatabase(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to load entries for cache warming: %w", err)
@@ -111,7 +106,6 @@ func (r *collectionRegistry) warmCache(ctx context.Context) error {
 		r.cache.set(entry.Name, entry)
 	}
 
-	r.logger.Info("cache warmed", zap.Int("entries", len(entries)))
 	return nil
 }
 
@@ -122,15 +116,11 @@ func (r *collectionRegistry) startBackgroundRefresh(interval time.Duration) {
 		for {
 			select {
 			case <-r.refreshTicker.C:
-				if err := r.refreshCache(); err != nil {
-					r.logger.Warn("cache refresh failed", zap.Error(err))
-				}
 			case <-r.stopRefresh:
 				return
 			}
 		}
 	}()
-	r.logger.Info("started background cache refresh", zap.Duration("interval", interval))
 }
 
 // refreshCache reloads data from database for potentially stale entries
@@ -264,11 +254,8 @@ func (r *collectionRegistry) ResolvePhysicalName(ctx context.Context, name strin
 func (r *collectionRegistry) GetRegistryEntry(ctx context.Context, name string) (*RegistryEntry, error) {
 	// Try cache first
 	if cached := r.cache.get(name); cached != nil {
-		r.logger.Debug("cache hit for registry entry", zap.String("collection", name))
 		return cached, nil
 	}
-
-	r.logger.Debug("cache miss for registry entry", zap.String("collection", name))
 
 	// Cache miss - load from database
 	entry, err := r.loadFromDatabase(ctx, name)
@@ -387,7 +374,6 @@ func (r *collectionRegistry) List(ctx context.Context) ([]*RegistryEntry, error)
 	if err != nil {
 		// If database query fails but we have cached entries, return those
 		if len(entries) > 0 {
-			r.logger.Warn("database query failed, returning cached entries only", zap.Error(err))
 			return entries, nil
 		}
 		return nil, fmt.Errorf("failed to query registry for collections: %w", err)
@@ -667,10 +653,8 @@ func (r *collectionRegistry) CacheStats() map[string]any {
 func (r *collectionRegistry) InvalidateCache(name string) {
 	if name == "" {
 		r.cache.clear()
-		r.logger.Info("cleared entire registry cache")
 	} else {
 		r.cache.delete(name)
-		r.logger.Info("invalidated cache entry", zap.String("collection", name))
 	}
 }
 

@@ -19,11 +19,8 @@ import (
 func TestNewPersistence(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 
 	require.NoError(t, err)
 	assert.NotNil(t, p)
@@ -32,11 +29,8 @@ func TestNewPersistence(t *testing.T) {
 func TestPersistence_CreateAndGetCollection(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	schema := newTestSchema("my_collection")
@@ -58,11 +52,8 @@ func TestPersistence_CreateAndGetCollection(t *testing.T) {
 func TestPersistence_DeleteCollection(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	schema := newTestSchema("my_collection")
@@ -84,11 +75,8 @@ func TestPersistence_DeleteCollection(t *testing.T) {
 func TestPersistence_Subscriptions(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	var receivedEvent base.PersistenceEvent
@@ -124,11 +112,8 @@ func TestPersistence_Subscriptions(t *testing.T) {
 func TestPersistence_Transact(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	sc := newTestSchema("accounts")
@@ -265,11 +250,8 @@ func TestPersistence_Transact(t *testing.T) {
 func TestPersistence_Schema(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Create a schema and a collection based on it
@@ -306,11 +288,8 @@ func TestPersistence_Schema(t *testing.T) {
 func TestPersistence_DeleteNonExistentCollection(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Try to delete a collection that doesn't exist
@@ -322,11 +301,8 @@ func TestPersistence_DeleteNonExistentCollection(t *testing.T) {
 func TestPersistence_Close(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Close the persistence instance
@@ -341,11 +317,8 @@ func TestPersistence_Close(t *testing.T) {
 func TestPersistence_CollectionNonExistent(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Try to get a collection that doesn't exist
@@ -356,11 +329,8 @@ func TestPersistence_CollectionNonExistent(t *testing.T) {
 func TestPersistence_CreateWithInvalidSchema(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Create an invalid schema (e.g., missing name)
@@ -372,11 +342,8 @@ func TestPersistence_CreateWithInvalidSchema(t *testing.T) {
 func TestPersistence_MetadataOnEmptyDB(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Get metadata from an empty database
@@ -391,11 +358,8 @@ func TestPersistence_MetadataOnEmptyDB(t *testing.T) {
 func TestPersistence_TransactWithPanic(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	sc := newTestSchema("accounts")
@@ -455,11 +419,8 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 func TestPersistence_Metadata(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Create some collections
@@ -480,11 +441,8 @@ func TestPersistence_Metadata(t *testing.T) {
 func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// 1. Define Schemas

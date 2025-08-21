@@ -25,15 +25,44 @@ func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[strin
 	}
 
 	parts := strings.Split(fieldRef, ".")
+
+	// Case 1: Single field (e.g., "id", "name")
+	if len(parts) == 1 {
+		return quoteIdentifier(parts[0]), nil
+	}
+
+	// Case 2: Multi-part field reference (e.g., "table.field", "_metadata_.version")
 	if len(parts) > 1 {
-		if schema, ok := schemas[parts[0]]; ok {
-			if fieldDef := schema.FindField(parts[1]); fieldDef != nil && fieldDef.Type.IsComplex() {
-				jsonPath := "$." + strings.Join(parts[2:], ".")
-				return fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(parts[0])+"."+quoteIdentifier(parts[1]), jsonPath), nil
+		// First, check if the first part is a table/alias in our schemas
+		if schemaDef, ok := schemas[parts[0]]; ok {
+			// This is a table.field reference
+			if fieldDef := schemaDef.FindField(parts[1]); fieldDef != nil && fieldDef.Type.IsComplex() {
+				// This is a JSON field - use json_extract for nested access
+				if len(parts) > 2 {
+					jsonPath := "$." + strings.Join(parts[2:], ".")
+					return fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(parts[0])+"."+quoteIdentifier(parts[1]), jsonPath), nil
+				}
+			}
+			// Regular table.field reference
+			quotedParts := make([]string, len(parts))
+			for i, part := range parts {
+				quotedParts[i] = quoteIdentifier(part)
+			}
+			return strings.Join(quotedParts, "."), nil
+		}
+
+		// Case 3: Check if the first part is a field in any of our schemas (for single table contexts)
+		// This handles cases like "_metadata_.version" when there's only one table
+		for _, schemaDef := range schemas {
+			if fieldDef := schemaDef.FindField(parts[0]); fieldDef != nil && fieldDef.Type.IsComplex() {
+				// This is a JSON field - use json_extract for nested access
+				jsonPath := "$." + strings.Join(parts[1:], ".")
+				return fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(parts[0]), jsonPath), nil
 			}
 		}
 	}
 
+	// Default: quote all parts and join with dots
 	quotedParts := make([]string, len(parts))
 	for i, part := range parts {
 		quotedParts[i] = quoteIdentifier(part)

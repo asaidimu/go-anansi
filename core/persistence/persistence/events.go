@@ -152,6 +152,10 @@ func (e *eventsPersistence) Delete(ctx context.Context, id string) (bool, error)
 	return result.(bool), nil
 }
 
+func (e *eventsPersistence) HasCollection(ctx context.Context, name string) (bool, error) {
+	return e.persistence.HasCollection(ctx, name)
+}
+
 // All other methods simply delegate to the wrapped persistence.
 
 func (e *eventsPersistence) Collection(ctx context.Context, name string) (base.Collection, error) {

@@ -9,7 +9,6 @@ import (
 
 func NewPersistence(
 	interactor query.DatabaseInteractor,
-	options base.MetadataOptions,
 	logger *zap.Logger,
 	decorators *utils.Decorators,
 ) (base.Persistence, error) {
@@ -28,7 +27,7 @@ func NewPersistence(
 		collectionDecorators = decorators.CollectionDecorators
 	}
 
-	base, err := newBasePersistence(interactor, bus, options, logger, collectionDecorators)
+	base, err := newBasePersistence(interactor, bus, logger, collectionDecorators)
 	if err != nil {
 		return nil, err
 	}

@@ -6,6 +6,7 @@ import (
 	"maps"
 	"reflect"
 	"sort"
+	"strings"
 	"time"
 )
 
@@ -17,7 +18,6 @@ const (
 	MetadataFieldName = "_metadata_"
 	SchemaFieldName   = "_schema_"
 )
-
 
 // convertToDocumentMap converts various input types to map[string]any for Must* functions
 func convertToDocumentMap(data any) (map[string]any, error) {
@@ -66,7 +66,7 @@ func MustNewDocument(data any) Document {
 	return d
 }
 
-// Get retrieves a value with detailed error information.
+// Get retrieves a value with detailed error information (direct key lookup only).
 func (d Document) Get(key string) (any, error) {
 	val, ok := d[key]
 	if !ok {
@@ -80,9 +80,72 @@ func (d Document) Get(key string) (any, error) {
 	return val, nil
 }
 
+// getValueByPath handles both direct key lookup and dot-notation paths
+func (d Document) getValueByPath(keyOrPath string) (any, error) {
+	// Try direct key lookup first for performance
+	if val, ok := d[keyOrPath]; ok {
+		return val, nil
+	}
+
+	// If not found and contains dots, try as path
+	if strings.Contains(keyOrPath, ".") {
+		return d.getNestedValue(keyOrPath)
+	}
+
+	// Not found as direct key and no dots - genuine key not found
+	return nil, &DocumentError{
+		Operation: "getValueByPath",
+		Key:       keyOrPath,
+		Message:   "key not found",
+		Cause:     ErrKeyNotFound,
+	}
+}
+
+// getNestedValue traverses a dot-separated path
+func (d Document) getNestedValue(path string) (any, error) {
+	parts := strings.Split(path, ".")
+	var current any = d
+
+	for i, part := range parts {
+		switch curr := current.(type) {
+		case Document:
+			val, err := curr.Get(part)
+			if err != nil {
+				return nil, &DocumentError{
+					Operation: "getNestedValue",
+					Key:       path,
+					Message:   fmt.Sprintf("failed at path segment '%s' (position %d)", part, i),
+					Cause:     err,
+				}
+			}
+			current = val
+		case map[string]any:
+			val, ok := curr[part]
+			if !ok {
+				return nil, &DocumentError{
+					Operation: "getNestedValue",
+					Key:       path,
+					Message:   fmt.Sprintf("key '%s' not found at path segment %d", part, i),
+					Cause:     ErrKeyNotFound,
+				}
+			}
+			current = val
+		default:
+			return nil, &DocumentError{
+				Operation: "getNestedValue",
+				Key:       path,
+				Message:   fmt.Sprintf("cannot traverse non-object at path segment '%s' (position %d): %T", part, i, current),
+				Cause:     ErrTypeMismatch,
+			}
+		}
+	}
+
+	return current, nil
+}
+
 // GetOr retrieves a value or returns a default if not found.
 func (d Document) GetOr(key string, defaultValue any) any {
-	if val, err := d.Get(key); err == nil {
+	if val, err := d.getValueByPath(key); err == nil {
 		return val
 	}
 	return defaultValue
@@ -90,7 +153,7 @@ func (d Document) GetOr(key string, defaultValue any) any {
 
 // MustGet retrieves a value, panics if not found.
 func (d Document) MustGet(key string) any {
-	val, err := d.Get(key)
+	val, err := d.getValueByPath(key)
 	if err != nil {
 		panic(err)
 	}
@@ -120,9 +183,9 @@ func (d Document) SetIfNotExists(key string, value any) bool {
 	return false
 }
 
-// GetString with comprehensive type coercion.
-func (d Document) GetString(key string) (string, error) {
-	val, err := d.Get(key)
+// GetString with comprehensive type coercion and path support.
+func (d Document) GetString(keyOrPath string) (string, error) {
+	val, err := d.getValueByPath(keyOrPath)
 	if err != nil {
 		return "", err
 	}
@@ -131,7 +194,7 @@ func (d Document) GetString(key string) (string, error) {
 	if !ok {
 		return "", &DocumentError{
 			Operation: "GetString",
-			Key:       key,
+			Key:       keyOrPath,
 			Message:   fmt.Sprintf("%s: cannot convert %T to string", ErrTypeConversion.Error(), val),
 			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
@@ -139,9 +202,9 @@ func (d Document) GetString(key string) (string, error) {
 	return str, nil
 }
 
-// GetInt with comprehensive numeric coercion.
-func (d Document) GetInt(key string) (int, error) {
-	val, err := d.Get(key)
+// GetInt with comprehensive numeric coercion and path support.
+func (d Document) GetInt(keyOrPath string) (int, error) {
+	val, err := d.getValueByPath(keyOrPath)
 	if err != nil {
 		return 0, err
 	}
@@ -150,7 +213,7 @@ func (d Document) GetInt(key string) (int, error) {
 	if !ok {
 		return 0, &DocumentError{
 			Operation: "GetInt",
-			Key:       key,
+			Key:       keyOrPath,
 			Message:   fmt.Sprintf("%s: cannot convert %T to int", ErrTypeConversion.Error(), val),
 			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
@@ -158,9 +221,9 @@ func (d Document) GetInt(key string) (int, error) {
 	return num, nil
 }
 
-// GetFloat64 with numeric coercion.
-func (d Document) GetFloat64(key string) (float64, error) {
-	val, err := d.Get(key)
+// GetFloat64 with numeric coercion and path support.
+func (d Document) GetFloat64(keyOrPath string) (float64, error) {
+	val, err := d.getValueByPath(keyOrPath)
 	if err != nil {
 		return 0, err
 	}
@@ -169,7 +232,7 @@ func (d Document) GetFloat64(key string) (float64, error) {
 	if !ok {
 		return 0, &DocumentError{
 			Operation: "GetFloat64",
-			Key:       key,
+			Key:       keyOrPath,
 			Message:   fmt.Sprintf("%s: cannot convert %T to float64", ErrTypeConversion.Error(), val),
 			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
@@ -177,9 +240,9 @@ func (d Document) GetFloat64(key string) (float64, error) {
 	return num, nil
 }
 
-// GetBool with string parsing support.
-func (d Document) GetBool(key string) (bool, error) {
-	val, err := d.Get(key)
+// GetBool with string parsing support and path support.
+func (d Document) GetBool(keyOrPath string) (bool, error) {
+	val, err := d.getValueByPath(keyOrPath)
 	if err != nil {
 		return false, err
 	}
@@ -188,7 +251,7 @@ func (d Document) GetBool(key string) (bool, error) {
 	if !ok {
 		return false, &DocumentError{
 			Operation: "GetBool",
-			Key:       key,
+			Key:       keyOrPath,
 			Message:   fmt.Sprintf("%s: cannot convert %T to bool", ErrTypeConversion.Error(), val),
 			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
@@ -196,9 +259,9 @@ func (d Document) GetBool(key string) (bool, error) {
 	return b, nil
 }
 
-// GetTime parses time from various formats.
-func (d Document) GetTime(key string) (time.Time, error) {
-	val, err := d.Get(key)
+// GetTime parses time from various formats with path support.
+func (d Document) GetTime(keyOrPath string) (time.Time, error) {
+	val, err := d.getValueByPath(keyOrPath)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -207,7 +270,7 @@ func (d Document) GetTime(key string) (time.Time, error) {
 	if !ok {
 		return time.Time{}, &DocumentError{
 			Operation: "GetTime",
-			Key:       key,
+			Key:       keyOrPath,
 			Message:   fmt.Sprintf("%s: cannot convert %T to time.Time", ErrTypeConversion.Error(), val),
 			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
@@ -215,9 +278,9 @@ func (d Document) GetTime(key string) (time.Time, error) {
 	return t, nil
 }
 
-// GetDocument retrieves a nested document.
-func (d Document) GetDocument(key string) (Document, error) {
-	val, err := d.Get(key)
+// GetDocument retrieves a nested document with path support.
+func (d Document) GetDocument(keyOrPath string) (Document, error) {
+	val, err := d.getValueByPath(keyOrPath)
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +289,7 @@ func (d Document) GetDocument(key string) (Document, error) {
 	if !ok {
 		return nil, &DocumentError{
 			Operation: "GetDocument",
-			Key:       key,
+			Key:       keyOrPath,
 			Message:   fmt.Sprintf("%s: cannot convert %T to Document", ErrTypeConversion.Error(), val),
 			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
@@ -234,9 +297,9 @@ func (d Document) GetDocument(key string) (Document, error) {
 	return doc, nil
 }
 
-// GetDocumentArray retrieves an array of documents.
-func (d Document) GetDocumentArray(key string) ([]Document, error) {
-	val, err := d.Get(key)
+// GetDocumentArray retrieves an array of documents with path support.
+func (d Document) GetDocumentArray(keyOrPath string) ([]Document, error) {
+	val, err := d.getValueByPath(keyOrPath)
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +308,7 @@ func (d Document) GetDocumentArray(key string) ([]Document, error) {
 	if !ok {
 		return nil, &DocumentError{
 			Operation: "GetDocumentArray",
-			Key:       key,
+			Key:       keyOrPath,
 			Message:   fmt.Sprintf("%s: cannot convert %T to []Document", ErrTypeConversion.Error(), val),
 			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
@@ -280,8 +343,8 @@ func (d Document) Clone() Document {
 
 func (d Document) deepClone() any {
 	// deepClone recursively clones the Document and its nested structures (maps, slices, and other Documents).
-// It ensures that modifications to the cloned document do not affect the original, providing
-// a truly independent copy.
+	// It ensures that modifications to the cloned document do not affect the original, providing
+	// a truly independent copy.
 	result := make(Document)
 	for k, v := range d {
 		result[k] = deepCloneValue(v)
@@ -383,10 +446,16 @@ func (d Document) IsEmpty() bool {
 	return len(d) == 0
 }
 
-// HasKey checks if a key exists.
+// HasKey checks if a key exists (direct key only, not path).
 func (d Document) HasKey(key string) bool {
 	_, ok := d[key]
 	return ok
+}
+
+// HasPath checks if a path exists (supports dot notation).
+func (d Document) HasPath(keyOrPath string) bool {
+	_, err := d.getValueByPath(keyOrPath)
+	return err == nil
 }
 
 // Equals performs deep equality comparison.
@@ -411,42 +480,42 @@ func (d Document) Equals(other Document) bool {
 // AsMap returns a deep map[string]any representation of the document.
 // Nested Documents and slices are recursively converted.
 func (d Document) AsMap() map[string]any {
-    out := make(map[string]any, len(d))
-    for k, v := range d {
-        out[k] = asMapValue(v)
-    }
-    return out
+	out := make(map[string]any, len(d))
+	for k, v := range d {
+		out[k] = asMapValue(v)
+	}
+	return out
 }
 
 // asMapValue recursively converts a value to its map[string]any representation.
 // It handles Document, map[string]any, and slices of these types, ensuring that
 // the returned map is a standard Go map, not a Document type.
 func asMapValue(v any) any {
-    switch val := v.(type) {
-    case Document:
-        return val.AsMap()
-    case map[string]any:
-        // Convert arbitrary map[string]any (not typed as Document)
-        nested := make(map[string]any, len(val))
-        for nk, nv := range val {
-            nested[nk] = asMapValue(nv)
-        }
-        return nested
-    case []Document:
-        arr := make([]any, len(val))
-        for i, doc := range val {
-            arr[i] = doc.AsMap()
-        }
-        return arr
-    case []any:
-        arr := make([]any, len(val))
-        for i, item := range val {
-            arr[i] = asMapValue(item)
-        }
-        return arr
-    default:
-        return val // primitive type (string, int, etc.)
-    }
+	switch val := v.(type) {
+	case Document:
+		return val.AsMap()
+	case map[string]any:
+		// Convert arbitrary map[string]any (not typed as Document)
+		nested := make(map[string]any, len(val))
+		for nk, nv := range val {
+			nested[nk] = asMapValue(nv)
+		}
+		return nested
+	case []Document:
+		arr := make([]any, len(val))
+		for i, doc := range val {
+			arr[i] = doc.AsMap()
+		}
+		return arr
+	case []any:
+		arr := make([]any, len(val))
+		for i, item := range val {
+			arr[i] = asMapValue(item)
+		}
+		return arr
+	default:
+		return val // primitive type (string, int, etc.)
+	}
 }
 
 // Metadata access with enhanced functionality

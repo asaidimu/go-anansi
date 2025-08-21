@@ -13,6 +13,6 @@ type queryBuilder[T any] struct {
 	factory QueryFactory[T]
 }
 
-func (b *queryBuilder[T]) Build(q *query.Query, stmtType StatementType, extra any) (NativeQuery[T], error) {
+func (b *queryBuilder[T]) Build(q *query.Query, stmtType StatementType, extra any) (Query[T], error) {
 	return b.factory.Build(q, stmtType, extra)
 }

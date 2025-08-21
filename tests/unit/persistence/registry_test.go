@@ -57,9 +57,7 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 	registrySchemaDef := registry.RegistrySchema()
 
 	registryCollection, err := collection.NewCollection(
-		bus, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, engine, logger, &base.MetadataOptions{
-			HmacSecretKey: []byte("test-secret"),
-		}, nil,
+		bus, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, engine, logger, nil,
 	)
 
 	require.NoError(t, err)
@@ -76,10 +74,7 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 			engine := query.NewQueryEngine(ix, logger)
 
 			collection, err := collection.NewCollection(
-				bus, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, engine, logger, &base.MetadataOptions{
-					HmacSecretKey: []byte("test-secret"),
-				},
-				nil,
+				bus, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, engine, logger, nil,
 			)
 
 			if err != nil {

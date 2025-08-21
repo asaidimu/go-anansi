@@ -63,6 +63,13 @@ func (m *managedPersistence) Create(ctx context.Context, sc schema.SchemaDefinit
 	return m.wrapped.Create(ctx, sc)
 }
 
+func (m *managedPersistence) HasCollection(ctx context.Context, name string) (bool, error) {
+	if err := m.checkClosed(); err != nil {
+		return false, err
+	}
+	return m.wrapped.HasCollection(ctx, name)
+}
+
 // Delete delegates the call to the wrapped persistence after checking the closed state.
 func (m *managedPersistence) Delete(ctx context.Context, id string) (bool, error) {
 	if err := m.checkClosed(); err != nil {

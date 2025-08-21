@@ -12,6 +12,7 @@ func (d Document) Must() *MustHelper {
 	return &MustHelper{doc: d}
 }
 
+// Get retrieves a value (direct key only), panics if not found
 func (m *MustHelper) Get(key string) any {
 	val, err := m.doc.Get(key)
 	if err != nil {
@@ -20,63 +21,70 @@ func (m *MustHelper) Get(key string) any {
 	return val
 }
 
-func (m *MustHelper) GetString(key string) string {
-	val, err := m.doc.GetString(key)
+// GetString retrieves a string value with path support, panics if not found or not convertible
+func (m *MustHelper) GetString(keyOrPath string) string {
+	val, err := m.doc.GetString(keyOrPath)
 	if err != nil {
 		panic(err)
 	}
 	return val
 }
 
-func (m *MustHelper) GetInt(key string) int {
-	val, err := m.doc.GetInt(key)
+// GetInt retrieves an int value with path support, panics if not found or not convertible
+func (m *MustHelper) GetInt(keyOrPath string) int {
+	val, err := m.doc.GetInt(keyOrPath)
 	if err != nil {
 		panic(err)
 	}
 	return val
 }
 
-func (m *MustHelper) GetFloat64(key string) float64 {
-	val, err := m.doc.GetFloat64(key)
+// GetFloat64 retrieves a float64 value with path support, panics if not found or not convertible
+func (m *MustHelper) GetFloat64(keyOrPath string) float64 {
+	val, err := m.doc.GetFloat64(keyOrPath)
 	if err != nil {
 		panic(err)
 	}
 	return val
 }
 
-func (m *MustHelper) GetBool(key string) bool {
-	val, err := m.doc.GetBool(key)
+// GetBool retrieves a bool value with path support, panics if not found or not convertible
+func (m *MustHelper) GetBool(keyOrPath string) bool {
+	val, err := m.doc.GetBool(keyOrPath)
 	if err != nil {
 		panic(err)
 	}
 	return val
 }
 
-func (m *MustHelper) GetTime(key string) time.Time {
-	val, err := m.doc.GetTime(key)
+// GetTime retrieves a time.Time value with path support, panics if not found or not convertible
+func (m *MustHelper) GetTime(keyOrPath string) time.Time {
+	val, err := m.doc.GetTime(keyOrPath)
 	if err != nil {
 		panic(err)
 	}
 	return val
 }
 
-func (m *MustHelper) GetDocument(key string) Document {
-	val, err := m.doc.GetDocument(key)
+// GetDocument retrieves a Document with path support, panics if not found or not convertible
+func (m *MustHelper) GetDocument(keyOrPath string) Document {
+	val, err := m.doc.GetDocument(keyOrPath)
 	if err != nil {
 		panic(err)
 	}
 	return val
 }
 
-func (m *MustHelper) GetNested(path string) any {
-	val, err := m.doc.GetNested(path)
+// GetDocumentArray retrieves a []Document with path support, panics if not found or not convertible
+func (m *MustHelper) GetDocumentArray(keyOrPath string) []Document {
+	val, err := m.doc.GetDocumentArray(keyOrPath)
 	if err != nil {
 		panic(err)
 	}
 	return val
 }
 
-// Generic Must getter
+// Generic Must getter with type parameter
 func MustGet[T any](doc Document, key string) T {
 	val, err := Get[T](doc, key)
 	if err != nil {

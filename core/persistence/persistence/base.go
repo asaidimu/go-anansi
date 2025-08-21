@@ -28,7 +28,6 @@ type basePersistence struct {
 	collections        map[string]base.Collection
 	collectionsMu      sync.RWMutex
 	logger             *zap.Logger
-	metadataOptions    *base.MetadataOptions
 	decorators         []utils.DecoratorFunc[base.Collection]
 	txmu               sync.Mutex
 }
@@ -38,7 +37,6 @@ var _ base.Persistence = (*basePersistence)(nil)
 func newBasePersistence(
 	interactor query.DatabaseInteractor,
 	bus *events.TypedEventBus[base.PersistenceEvent],
-	options base.MetadataOptions,
 	logger *zap.Logger,
 	decorators []utils.DecoratorFunc[base.Collection],
 ) (base.Persistence, error) {
@@ -50,7 +48,6 @@ func newBasePersistence(
 		registrySchema,
 		engine,
 		logger,
-		&options,
 		nil,
 	)
 	if err != nil {
@@ -65,11 +62,10 @@ func newBasePersistence(
 		collections:        make(map[string]base.Collection),
 		logger:             logger,
 		registryCollection: &registryCollection,
-		metadataOptions:    &options,
 		decorators:         decorators,
 	}
 
-	registry, err := registry.NewCollectionRegistry(p.createRegistryExecutor(registrySchema, &options), logger)
+	registry, err := registry.NewCollectionRegistry(p.createRegistryExecutor(registrySchema), logger)
 
 	if err != nil {
 		return nil, err
@@ -109,7 +105,6 @@ func (p *basePersistence) Collection(ctx context.Context, name string) (base.Col
 		sc,
 		p.engine,
 		p.logger,
-		p.metadataOptions,
 		func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error) {
 			sc, err := (*p.registry).GetSchema(ctx, name)
 			if err != nil {
@@ -149,6 +144,17 @@ func (p *basePersistence) Create(ctx context.Context, sc schema.SchemaDefinition
 	}
 
 	return p.Collection(ctx, sc.Name)
+}
+
+func (p *basePersistence) HasCollection(ctx context.Context, name string) (bool, error) {
+	_, err := (*p.registry).GetRegistryEntry(ctx, name)
+	if err != nil {
+		if errors.Is(err, registry.ErrCollectionNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (p *basePersistence) Delete(ctx context.Context, id string) (bool, error) {
@@ -269,7 +275,6 @@ func (p *basePersistence) Transact(ctx context.Context, callback func(tx base.Ba
 		registrySchema,
 		engine,
 		p.logger,
-		p.metadataOptions,
 		nil,
 	)
 
@@ -285,10 +290,9 @@ func (p *basePersistence) Transact(ctx context.Context, callback func(tx base.Ba
 		collections:        make(map[string]base.Collection),
 		logger:             p.logger,
 		registryCollection: &registryCollection,
-		metadataOptions:    p.metadataOptions,
 	}
 
-	registry, err := registry.NewCollectionRegistry(p.createRegistryExecutor(registrySchema, p.metadataOptions), p.logger)
+	registry, err := registry.NewCollectionRegistry(p.createRegistryExecutor(registrySchema), p.logger)
 
 	if err != nil {
 		return nil, err
@@ -316,7 +320,7 @@ func (p *basePersistence) UnregisterSubscription(ctx context.Context, id string)
 	}
 }
 
-func (p *basePersistence) createRegistryExecutor(schema *schema.SchemaDefinition, options *base.MetadataOptions) registry.RegistryExecutor {
+func (p *basePersistence) createRegistryExecutor(schema *schema.SchemaDefinition) registry.RegistryExecutor {
 	executor := func(ctx context.Context, transaction bool, fn func(collection base.Collection, manager query.SchemaManager) (any, error)) (any, error) {
 		if transaction {
 			tx, err := (*p.interactor).StartTransaction(ctx)
@@ -327,7 +331,7 @@ func (p *basePersistence) createRegistryExecutor(schema *schema.SchemaDefinition
 			ix := tx.(query.BaseDatabaseInteractor)
 			engine := query.NewQueryEngine(ix, p.logger)
 
-			collection, err := collection.NewCollection(p.bus, registry.REGISTRY_COLLECTION_NAME, schema, engine, p.logger, options, nil)
+			collection, err := collection.NewCollection(p.bus, registry.REGISTRY_COLLECTION_NAME, schema, engine, p.logger, nil)
 
 			if err != nil {
 				return nil, err

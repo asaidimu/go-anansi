@@ -72,10 +72,18 @@ func TestInsertAndSelectIntegration(t *testing.T) {
 			Schema: userSchema,
 		},
 	}
+
 	nqInsert, err := builder.Build(&insertQuery, native.StmtInsert, records)
 	require.NoError(t, err)
 
-	insertedDocs, err := executor.Query(context.Background(), nqInsert)
+	resultSchema, err := query.SchemaFromQuery(&insertQuery, nil)
+	require.NoError(t, err)
+
+	insertedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
+		Query: nqInsert,
+		Schema: resultSchema,
+	})
+
 	require.NoError(t, err)
 	assert.Len(t, insertedDocs, 2)
 
@@ -86,10 +94,17 @@ func TestInsertAndSelectIntegration(t *testing.T) {
 			Schema: userSchema,
 		},
 	}
+
+	resultSchema, err = query.SchemaFromQuery(&selectQuery, nil)
+	require.NoError(t, err)
+
 	nqSelect, err := builder.Build(&selectQuery, native.StmtSelect, nil)
 	require.NoError(t, err)
 
-	selectedDocs, err := executor.Query(context.Background(), nqSelect)
+	selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
+		Query: nqSelect,
+		Schema: resultSchema,
+	})
 	require.NoError(t, err)
 	assert.Len(t, selectedDocs, 2)
 
@@ -108,14 +123,23 @@ func TestUpdateIntegration(t *testing.T) {
 	records := []data.Document{
 		{"id": "1", "name": "Alice", "age": 30, "email": "alice@example.com"},
 	}
-	nqInsert, err := builder.Build(&query.Query{
+
+	insertQuery := &query.Query{
 		Target: &query.QueryTarget{
 			Name:   userSchema.Name,
 			Schema: userSchema,
 		},
-	}, native.StmtInsert, records)
+	}
+	nqInsert, err := builder.Build(insertQuery, native.StmtInsert, records)
 	require.NoError(t, err)
-	_, err = executor.Query(context.Background(), nqInsert)
+
+	resultSchema, err := query.SchemaFromQuery(insertQuery, nil)
+	require.NoError(t, err)
+
+	_, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
+		Query: nqInsert,
+		Schema: resultSchema,
+	})
 	require.NoError(t, err)
 
 	// Update data
@@ -134,10 +158,14 @@ func TestUpdateIntegration(t *testing.T) {
 		},
 		Filters: filters,
 	}
+
 	nqUpdate, err := builder.Build(&updateQuery, native.StmtUpdate, updates)
 	require.NoError(t, err)
 
-	rowsAffected, err := executor.Exec(context.Background(), nqUpdate)
+	rowsAffected, err := executor.Exec(context.Background(), native.NativeQuery[types.SQLitePayload]{
+		Query: nqUpdate,
+	})
+
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), rowsAffected)
 
@@ -149,10 +177,18 @@ func TestUpdateIntegration(t *testing.T) {
 		},
 		Filters: filters,
 	}
+
+	resultSchema, err = query.SchemaFromQuery(&selectQuery, nil)
+	require.NoError(t, err)
+
 	nqSelect, err := builder.Build(&selectQuery, native.StmtSelect, nil)
 	require.NoError(t, err)
 
-	selectedDocs, err := executor.Query(context.Background(), nqSelect)
+	selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
+		Query: nqSelect,
+		Schema: resultSchema,
+	})
+
 	require.NoError(t, err)
 	assert.Len(t, selectedDocs, 1)
 	assert.Contains(t, selectedDocs, data.Document{"id": "1", "name": "Alice", "age": int64(31), "email": "alice.updated@example.com"})
@@ -169,14 +205,27 @@ func TestDeleteIntegration(t *testing.T) {
 		{"id": "1", "name": "Alice", "age": 30, "email": "alice@example.com"},
 		{"id": "2", "name": "Bob", "age": 25, "email": "bob@example.com"},
 	}
-	nqInsert, err := builder.Build(&query.Query{
+
+
+	insertQuery := query.Query{
 		Target: &query.QueryTarget{
 			Name:   userSchema.Name,
 			Schema: userSchema,
 		},
-	}, native.StmtInsert, records)
+	}
+
+	nqInsert, err := builder.Build(&insertQuery, native.StmtInsert, records)
 	require.NoError(t, err)
-	_, err = executor.Query(context.Background(), nqInsert)
+
+
+	resultSchema, err := query.SchemaFromQuery(&insertQuery, nil)
+	require.NoError(t, err)
+
+	_, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
+		Query: nqInsert,
+		Schema: resultSchema,
+	})
+
 	require.NoError(t, err)
 
 	// Delete data
@@ -198,7 +247,10 @@ func TestDeleteIntegration(t *testing.T) {
 	nqDelete, err := builder.Build(&deleteQuery, native.StmtDelete, nil)
 	require.NoError(t, err)
 
-	rowsAffected, err := executor.Exec(context.Background(), nqDelete)
+	rowsAffected, err := executor.Exec(context.Background(), native.NativeQuery[types.SQLitePayload]{
+		Query: nqDelete,
+	})
+
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), rowsAffected)
 
@@ -209,10 +261,17 @@ func TestDeleteIntegration(t *testing.T) {
 			Schema: userSchema,
 		},
 	}
+
 	nqSelect, err := builder.Build(&selectQuery, native.StmtSelect, nil)
 	require.NoError(t, err)
 
-	selectedDocs, err := executor.Query(context.Background(), nqSelect)
+	resultSchema, err = query.SchemaFromQuery(&selectQuery, nil)
+	require.NoError(t, err)
+
+	selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
+		Query: nqSelect,
+		Schema: resultSchema,
+	})
 	require.NoError(t, err)
 	assert.Len(t, selectedDocs, 1)
 	assert.Contains(t, selectedDocs, data.Document{"id": "2", "name": "Bob", "age": int64(25), "email": "bob@example.com"})

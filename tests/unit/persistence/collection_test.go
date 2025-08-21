@@ -67,10 +67,7 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 	assert.NoError(t, err)
 
 	engine := query.NewQueryEngine(ephemeralInteractor, logger)
-	opts := &persistence.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
-	c, err := collection.NewCollection(bus, testSchemaDef.Name, testSchemaDef, engine, logger, opts, resolveSchema)
+	c, err := collection.NewCollection(bus, testSchemaDef.Name, testSchemaDef, engine, logger, resolveSchema)
 	assert.NoError(t, err)
 
 	ctx := context.Background()
@@ -84,10 +81,7 @@ func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *z
 	ephemeralInteractor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 	engine := query.NewQueryEngine(ephemeralInteractor, logger)
-	opts := &persistence.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
-	c, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, opts, resolveSchema)
+	c, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, resolveSchema)
 	ctx := context.Background()
 	return c, ephemeralInteractor, logger, nonExistentSchema, bus, ctx
 }
@@ -141,8 +135,7 @@ func TestCollection_Create(t *testing.T) {
 	t.Run("insert documents error - duplicate ID", func(t *testing.T) {
 		// ID "1" already exists from previous test
 		doc := data.Document{"id": "1", "name": "DuplicateTest"}
-		results, err := collection.CreateOne(ctx, doc)
-		t.Logf("Results %v", results)
+		_, err := collection.CreateOne(ctx, doc)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unique constraint violation")
 	})
@@ -177,10 +170,7 @@ func TestCollection_Read(t *testing.T) {
 		_, ephemeralInteractor, logger, _, bus, ctx := setupCollection(t)
 		nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent"}
 		engine := query.NewQueryEngine(ephemeralInteractor, logger)
-		opts := &persistence.MetadataOptions{
-			HmacSecretKey: []byte("test-secret"),
-		}
-		nonExistentCollection, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, opts, resolveSchema)
+		nonExistentCollection, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, resolveSchema)
 
 		result, err := nonExistentCollection.Read(ctx, &q)
 

@@ -64,7 +64,9 @@ func TestDocument_TouchMetadata_UpdatesTimestampAndHash(t *testing.T) {
 	meta2, _ := doc.Metadata()
 	require.Equal(t, created, meta2["created"], "created timestamp should not change")
 	require.NotEqual(t, originalHash, meta2["hash"], "hash should be recalculated")
-	require.True(t, meta2["updated"].(int64) > created.(int64), "updated should move forward")
+	createdT, _ := data.CoerceToFloat64(meta2["created"])
+	updatedT, _ := data.CoerceToFloat64(meta2["updated"])
+	require.True(t, updatedT > createdT, "updated should move forward")
 }
 
 func TestNormalize_RemovesNestedMetadata(t *testing.T) {

@@ -19,11 +19,7 @@ import (
 func TestPersistence_DocumentEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
-
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	sc := newTestSchema("test_collection")
@@ -103,11 +99,7 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 func TestPersistence_CollectionEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
-
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	var mu sync.Mutex
@@ -167,11 +159,8 @@ func TestPersistence_CollectionEvents(t *testing.T) {
 func TestPersistence_TransactionEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	var mu sync.Mutex

@@ -17,11 +17,8 @@ func setupCollectionTest(t *testing.T) (base.Collection, func()) {
 	interactor, cleanup := createNativeInteractor(t)
 
 	logger, _ := zap.NewDevelopment()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	schema := newTestSchema("crud_collection")

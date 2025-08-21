@@ -17,7 +17,6 @@ type managedCollection struct {
 	physicalName  string
 	logicalName   string
 	wrapped       base.Collection
-	options       *base.MetadataOptions
 	schema        *schema.SchemaDefinition
 	resolveSchema func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error)
 }
@@ -29,19 +28,13 @@ func newManagedCollection(
 	physicalName string,
 	wrapped base.Collection,
 	resolveSchema func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error),
-	opts *base.MetadataOptions,
 ) (*managedCollection, error) {
-
-	if opts == nil || opts.HmacSecretKey == nil || len(opts.HmacSecretKey) == 0 {
-		return nil, fmt.Errorf("HMAC secret key must be provided for managed collection")
-	}
 
 	return &managedCollection{
 		schema:        schema,
 		physicalName:  physicalName,
 		logicalName:   logicalName,
 		wrapped:       wrapped,
-		options:       opts,
 		resolveSchema: resolveSchema,
 	}, nil
 }

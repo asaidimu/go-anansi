@@ -344,6 +344,9 @@ type Persistence interface {
 	// Create creates a new collection based on the provided schema definition.
 	Create(ctx context.Context, sc schema.SchemaDefinition) (Collection, error)
 
+	// HasCollection checks if a collection with the given name exists.
+	HasCollection(ctx context.Context, name string) (bool, error)
+
 	// Transact executes a series of operations within a single atomic transaction.
 	// The provided callback function receives a transaction object, and if the callback
 	// returns an error, the transaction is rolled back.

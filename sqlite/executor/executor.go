@@ -44,11 +44,12 @@ func newSQLiteExecutor(db *sql.DB, logger *zap.Logger, tx *sql.Tx) (native.Query
 	}, nil
 }
 
-func (s *sqliteExecutor) Query(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) ([]data.Document, error) {
-	payload := compiled.Raw()
+func (s *sqliteExecutor) Query(ctx context.Context, query native.NativeQuery[types.SQLitePayload]) ([]data.Document, error) {
+	q := query.Query
+	payload := q.Raw()
 	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute %s query: %w", compiled.StatementType(), err)
+		return nil, fmt.Errorf("failed to execute %s query: %w", q.StatementType(), err)
 	}
 	defer rows.Close()
 
@@ -57,16 +58,17 @@ func (s *sqliteExecutor) Query(ctx context.Context, compiled native.NativeQuery[
 		return make([]data.Document, 0), nil
 	}
 
-	results, err = ReadRows(s.logger, payload.Schema, rows) // readRows requires schema and with joins this means multiple schemas
+	results, err = ReadRows(s.logger, query.Schema, rows)
 	return results, err
 }
 
 func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) (<-chan data.Document, <-chan error, error) {
-	payload := compiled.Raw()
+	q := compiled.Query
+	payload := q.Raw()
 	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to execute %s query: %w", compiled.StatementType(), err)
+		return nil, nil, fmt.Errorf("failed to execute %s query: %w", q.StatementType(), err)
 	}
 
 	docChan := make(chan data.Document)
@@ -106,15 +108,11 @@ func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.Native
 }
 
 func (s *sqliteExecutor) Exec(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) (int64, error) {
-	payload := compiled.Raw()
-	s.logger.Debug("Executing SQL Query",
-		zap.String("sql", payload.SQL),
-		zap.Any("params", payload.Params),
-		zap.String("statementType", string(compiled.StatementType())),
-	)
+	q := compiled.Query
+	payload := q.Raw()
 	result, err := s.runner().ExecContext(ctx, payload.SQL, payload.Params...)
 	if err != nil {
-		return 0, fmt.Errorf("failed to execute %s query: %w", compiled.StatementType(), err)
+		return 0, fmt.Errorf("failed to execute %s query: %w", q.StatementType(), err)
 	}
 	return result.RowsAffected()
 }

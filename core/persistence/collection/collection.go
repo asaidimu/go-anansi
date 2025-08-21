@@ -17,7 +17,6 @@ func NewCollection(
 	sc *schema.SchemaDefinition,
 	engine *query.QueryEngine,
 	logger *zap.Logger,
-	opts *base.MetadataOptions,
 	resolveSchema func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error),
 ) (base.Collection, error) {
 	base, err := newBaseCollection(bus, name, sc, engine, logger)
@@ -28,8 +27,7 @@ func NewCollection(
 		name,
 		sc.Name,
 		base,
-		resolveSchema,
-		opts)
+		resolveSchema)
 	if err != nil {
 		return nil, err
 	}

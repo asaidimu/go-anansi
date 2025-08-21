@@ -43,7 +43,7 @@ func (f *sqliteFactory) Build(
 	q *query.Query,
 	stmtType native.StatementType,
 	extra any,
-) (native.NativeQuery[types.SQLitePayload], error) {
+) (native.Query[types.SQLitePayload], error) {
 	// Reset internal state for each build.
 	f.paramCounter = 0
 	f.aliases = make(map[string]string)
@@ -83,14 +83,8 @@ func (f *sqliteFactory) Build(
 		return nil, err
 	}
 
-	resultSchema,  err := query.SchemaFromQuery(q, nil)
-
-	if (stmtType == native.StmtInsert || stmtType == native.StmtSelect) && (err != nil || resultSchema == nil)  {
-		return nil, fmt.Errorf("failed to get schema from query: %w", err)
-	}
-
 	nativeQuery := &sqliteQuery{
-		payload:  types.SQLitePayload{SQL: sql, Params: params, Schema: resultSchema},
+		payload:  types.SQLitePayload{SQL: sql, Params: params},
 		stmtType: stmtType,
 	}
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v6/core/query"
@@ -83,11 +84,8 @@ func TestNewPersistence(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 
 	require.NoError(t, err)
 	assert.NotNil(t, p)
@@ -98,11 +96,8 @@ func TestPersistence_CreateAndGetCollection(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	schema := newTestSchema("my_collection")
@@ -126,11 +121,8 @@ func TestPersistence_DeleteCollection(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	schema := newTestSchema("my_collection")
@@ -154,11 +146,8 @@ func TestPersistence_Subscriptions(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	var receivedEvent base.PersistenceEvent
@@ -191,16 +180,13 @@ func TestPersistence_Subscriptions(t *testing.T) {
 	assert.Len(t, subs, 0)
 }
 
-/* func TestPersistence_Transact(t *testing.T) {
+func TestPersistence_Transact(t *testing.T) {
 	interactor, cleanup := createNativeInteractor(t)
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	sc := newTestSchema("accounts")
@@ -226,7 +212,6 @@ func TestPersistence_Subscriptions(t *testing.T) {
 		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
 		aliceResult, err := acc.Read(context.Background(), &aliceQuery)
 
-		fmt.Printf("aliceDoc \n %v \n", aliceResult.Data)
 		if err != nil {
 			return nil, err
 		}
@@ -342,11 +327,8 @@ func TestPersistence_Schema(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Create a schema and a collection based on it
@@ -385,11 +367,8 @@ func TestPersistence_DeleteNonExistentCollection(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Try to delete a collection that doesn't exist
@@ -403,11 +382,8 @@ func TestPersistence_Close(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Close the persistence instance
@@ -424,11 +400,8 @@ func TestPersistence_CollectionNonExistent(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Try to get a collection that doesn't exist
@@ -441,11 +414,8 @@ func TestPersistence_CreateWithInvalidSchema(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Create an invalid schema (e.g., missing name)
@@ -459,11 +429,8 @@ func TestPersistence_MetadataOnEmptyDB(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Get metadata from an empty database
@@ -480,11 +447,8 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	sc := newTestSchema("accounts")
@@ -526,7 +490,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 		updateBob := data.Document{"non_existent_field": "error"}
 
 		// We still need metadata for the update to pass the initial check
-		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
+		bobQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
 		bobResult, err := acc.Read(context.Background(), &bobQuery)
 		if err != nil {
 			return nil, err
@@ -541,6 +505,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 
 		return nil, err // Propagate the error to trigger rollback
 	})
+
 	require.Error(t, err)
 
 	// Verify that the balance was rolled back
@@ -554,7 +519,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	balances[doc["id"].(string)] = doc["balance"]
 
 	assert.Equal(t, 100.0, balances["A"])
-} */
+}
 
 func TestPersistence_Metadata(t *testing.T) {
 
@@ -562,11 +527,8 @@ func TestPersistence_Metadata(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// Create some collections
@@ -594,7 +556,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 		HmacSecretKey: []byte("test-secret"),
 	}
 
-	p, err := persistence.NewPersistence(interactor, options, logger, nil)
+	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	// 1. Define Schemas
