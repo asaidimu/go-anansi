@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"strconv"
@@ -42,7 +41,7 @@ func StructToMap[T any](record T) (map[string]any, error) {
 	// Marshal the input struct into JSON bytes.
 	// This respects `json:"tag"` annotations, `omitempty`, etc.,
 	// and correctly serializes all nested structs into their JSON object forms.
-	jsonBytes, err := json.Marshal(record)
+	jsonBytes, err := ToJSONBytes(record)
 	if err != nil {
 		return nil, fmt.Errorf("StructToMap: failed to marshal input record to JSON: %w", err)
 	}
@@ -51,7 +50,7 @@ func StructToMap[T any](record T) (map[string]any, error) {
 	// Nested JSON objects will automatically be unmarshaled into nested
 	// map[string]any values by the `encoding/json` package.
 	var resultMap map[string]any
-	if err := json.Unmarshal(jsonBytes, &resultMap); err != nil {
+	if err := FromJSON(jsonBytes, &resultMap); err != nil {
 		return nil, fmt.Errorf("StructToMap: failed to unmarshal JSON to map[string]any: %w", err)
 	}
 
@@ -92,14 +91,14 @@ func MapToStruct[T any](input map[string]any) (T, error) {
 	// Marshal the input `map[string]any` into JSON bytes.
 	// When nested maps exist, `json.Marshal` will correctly convert them
 	// into nested JSON objects.
-	jsonBytes, err := json.Marshal(input)
+	jsonBytes, err := ToJSONBytes(input)
 	if err != nil {
 		return zero, fmt.Errorf("MapToStruct: failed to marshal input map to JSON: %w", err)
 	}
 
 	// Unmarshal these JSON bytes into a new instance of `T`.
 	var result T
-	if err := json.Unmarshal(jsonBytes, &result); err != nil {
+	if err := FromJSON(jsonBytes, &result); err != nil {
 		return zero, fmt.Errorf("MapToStruct: failed to unmarshal JSON to target struct: %w", err)
 	}
 

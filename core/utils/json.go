@@ -1,4 +1,3 @@
-
 package utils
 
 import (
@@ -25,6 +24,15 @@ func FromJSON[T any](data []byte, target *T) error {
 	return nil
 }
 
+// Unmarshal parses a JSON byte slice and returns a new object of type T.
+func Unmarshal[T any](data []byte) (T, error) {
+	var target T
+	if err := json.Unmarshal(data, &target); err != nil {
+		return target, fmt.Errorf("error unmarshaling JSON: %w", err)
+	}
+	return target, nil
+}
+
 // ToJSON marshals an object to a JSON string.
 func ToJSON(v any) (string, error) {
 	bytes, err := json.Marshal(v)
@@ -39,6 +47,15 @@ func ToJSONBytes(v any) ([]byte, error) {
 	bytes, err := json.Marshal(v)
 	if err != nil {
 		return nil, fmt.Errorf("error marshaling to JSON bytes: %w", err)
+	}
+	return bytes, nil
+}
+
+// ToJSONIndent marshals an object to a pretty-printed JSON byte slice.
+func ToJSONIndent(v any) ([]byte, error) {
+	bytes, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("error marshaling to indented JSON: %w", err)
 	}
 	return bytes, nil
 }

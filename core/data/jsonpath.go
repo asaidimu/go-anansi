@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	
 )
 
 // JSONPathQuery executes a JSONPath-like query on the document.
@@ -46,7 +48,7 @@ func (d Document) parseJSONPath(path string) ([]string, error) {
 			current.WriteRune(char)
 		case ']':
 			if !inBrackets {
-				return nil, fmt.Errorf("unexpected ']' at position %d", i)
+				return nil, fmt.Errorf("%w: unexpected ']' at position %d", ErrInvalidJSONPathSyntax, i)
 			}
 			current.WriteRune(char)
 			segments = append(segments, current.String())
@@ -67,7 +69,7 @@ func (d Document) parseJSONPath(path string) ([]string, error) {
 	}
 
 	if inBrackets {
-		return nil, fmt.Errorf("unclosed bracket in path")
+		return nil, fmt.Errorf("%w: unclosed bracket in path", ErrInvalidJSONPathSyntax)
 	}
 
 	if current.Len() > 0 {
@@ -144,7 +146,7 @@ func (d Document) processBracketSegment(item any, segment string) ([]any, error)
 		return []any{}, nil
 	}
 
-	return nil, fmt.Errorf("invalid bracket expression: %s", segment)
+	return nil, fmt.Errorf("%w: invalid bracket expression: %s", ErrInvalidJSONPathSyntax, segment)
 }
 
 // processWildcard handles wildcard operations on arrays and objects

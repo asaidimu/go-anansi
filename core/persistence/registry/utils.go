@@ -16,22 +16,22 @@ import (
 func generatePhysicalName(s *schema.SchemaDefinition) (string, error) {
 	// Validate inputs
 	if s.Name == "" {
-		return "", fmt.Errorf("schema name cannot be empty")
+		return "", ErrSchemaNameEmpty
 	}
 	if s.Version == "" {
-		return "", fmt.Errorf("schema version cannot be empty")
+		return "", ErrSchemaVersionEmpty
 	}
 
 	// Validate semantic version format (basic check)
 	semVerPattern := regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 	if !semVerPattern.MatchString(s.Version) {
-		return "", fmt.Errorf("version must follow semantic versioning format (x.y.z)")
+		return "", ErrInvalidSemanticVersionFormat
 	}
 
 	// Sanitize name: keep only alphanumeric and convert to lowercase
 	sanitizedName := sanitizeForDatabase(s.Name)
 	if sanitizedName == "" {
-		return "", fmt.Errorf("schema name contains no valid characters")
+		return "", ErrSchemaNameInvalidCharacters
 	}
 
 	// Sanitize version: replace dots with underscores
@@ -52,7 +52,7 @@ func generatePhysicalName(s *schema.SchemaDefinition) (string, error) {
 	maxNameLength := maxLength - versionLength - separatorLength
 
 	if maxNameLength < 1 {
-		return "", fmt.Errorf("version too long to fit in %d character limit", maxLength)
+		return "", fmt.Errorf("%w: to fit in %d character limit", ErrVersionTooLong, maxLength)
 	}
 
 	// Truncate name if necessary
@@ -65,7 +65,7 @@ func generatePhysicalName(s *schema.SchemaDefinition) (string, error) {
 
 	// Final validation
 	if len(physicalName) > maxLength {
-		return "", fmt.Errorf("generated name exceeds %d character limit", maxLength)
+		return "", fmt.Errorf("%w: %d character limit", ErrGeneratedNameExceedsLimit, maxLength)
 	}
 
 	return physicalName, nil

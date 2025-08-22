@@ -6,6 +6,8 @@ import (
 	"reflect"
 	"strings"
 	"time"
+
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // StructBinder handles automatic struct binding
@@ -126,33 +128,33 @@ func setFieldValue(field reflect.Value, value any) error {
 	// Type coercion for common cases
 	switch fieldType.Kind() {
 	case reflect.String:
-		if str, ok := CoerceToString(value); ok {
+		if str, ok := utils.CoerceToPrimitiveValue[string](value); ok {
 			field.SetString(str)
 			return nil
 		}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		if num, ok := CoerceToInt(value); ok {
+		if num, ok := utils.CoerceToPrimitiveValue[int](value); ok {
 			field.SetInt(int64(num))
 			return nil
 		}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		if num, ok := CoerceToInt(value); ok {
+		if num, ok := utils.CoerceToPrimitiveValue[uint](value); ok {
 			field.SetUint(uint64(num))
 			return nil
 		}
 	case reflect.Float32, reflect.Float64:
-		if num, ok := CoerceToFloat64(value); ok {
+		if num, ok := utils.CoerceToPrimitiveValue[float64](value); ok {
 			field.SetFloat(num)
 			return nil
 		}
 	case reflect.Bool:
-		if b, ok := CoerceToBool(value); ok {
+		if b, ok := utils.CoerceToPrimitiveValue[bool](value); ok {
 			field.SetBool(b)
 			return nil
 		}
 	case reflect.Struct:
 		if fieldType == reflect.TypeOf(time.Time{}) {
-			if t, ok := CoerceToTime(value); ok {
+			if t, ok := utils.CoerceTime(value); ok {
 				field.Set(reflect.ValueOf(t))
 				return nil
 			}
@@ -184,7 +186,11 @@ func setFieldValue(field reflect.Value, value any) error {
 		return setFieldValue(field.Elem(), value)
 	}
 
-	return fmt.Errorf("%w: cannot convert %T to %v", ErrTypeConversionFailed, value, fieldType)
+	return &DocumentError{
+		Operation: "setFieldValue",
+		Message:   fmt.Sprintf("%s: cannot convert %T to %v", ErrTypeConversionFailed.Error(), value, fieldType),
+		Cause:     fmt.Errorf("%w", ErrTypeConversionFailed),
+	}
 }
 
 // setSliceField handles assigning a slice of 'any' values to a reflect.Value

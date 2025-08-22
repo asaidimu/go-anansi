@@ -182,7 +182,7 @@ func (p *basePersistence) Delete(ctx context.Context, id string) (bool, error) {
 
 func (p *basePersistence) Metadata(ctx context.Context, filter *base.MetadataFilter) (base.Metadata, error) {
 	if p.registry == nil {
-		return base.Metadata{}, errors.New("registry is not initialized")
+		return base.Metadata{}, registry.ErrRegistryNotInitialized
 	}
 
 	entries, err := (*p.registry).List(ctx)
@@ -191,7 +191,7 @@ func (p *basePersistence) Metadata(ctx context.Context, filter *base.MetadataFil
 		if errors.Is(err, registry.ErrCollectionNotFound) {
 			return base.Metadata{}, nil
 		}
-		return base.Metadata{}, fmt.Errorf("failed to list collections from registry: %w", err)
+		return base.Metadata{}, fmt.Errorf("%w: %w", registry.ErrFailedToListCollections, err)
 	}
 
 	collections := make([]*base.CollectionMetadata, len(entries))

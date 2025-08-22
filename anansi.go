@@ -42,6 +42,7 @@ type SetupConfig struct {
 // This function ensures that the setup process runs only once, even if called multiple times.
 func Setup(config SetupConfig) (base.Persistence, error) {
 	setupOnce.Do(func() {
+		ctx := context.Background()
 		// Configure the document factory
 		if err := data.ConfigureDocumentFactory(config.FactoryConfig); err != nil {
 			setupError = err
@@ -61,8 +62,21 @@ func Setup(config SetupConfig) (base.Persistence, error) {
 			return
 		}
 
+		newSchemas := make([]schema.SchemaDefinition, 0)
+		for _, schema := range config.Schemas {
+			ok, err := p.HasCollection(ctx, schema.Name);
+			if err != nil {
+				setupError = err
+				return
+			}
+
+			if !ok {
+				newSchemas = append(newSchemas, schema)
+			}
+		}
+
 		// Create all collections in a single transaction
-		err = p.CreateCollections(context.Background(), config.Schemas)
+		err = p.CreateCollections(ctx, newSchemas)
 		if err != nil {
 			setupError = err
 			return

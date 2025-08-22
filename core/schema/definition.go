@@ -146,7 +146,7 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 	}
 
 	temp.Alias = (*Alias)(fd) // Point Alias to the actual FieldDefinition
-	if err := json.Unmarshal(data, &temp); err != nil {
+	if err := utils.FromJSON(data, &temp); err != nil {
 		return err
 	}
 
@@ -160,7 +160,7 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 		switch temp.Type {
 		case FieldTypeObject, FieldTypeArray, FieldTypeRecord:
 			var singleSchema NestedSchemaReference
-			if err := json.Unmarshal(temp.Schema, &singleSchema); err == nil {
+			if err := utils.FromJSON(temp.Schema, &singleSchema); err == nil {
 				// Check if the unmarshalled schema is valid
 				if singleSchema.ID != "" {
 					fd.Schema = singleSchema
@@ -169,7 +169,7 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 			}
 		case FieldTypeUnion:
 			var multiSchema []NestedSchemaReference
-			if err := json.Unmarshal(temp.Schema, &multiSchema); err == nil {
+			if err := utils.FromJSON(temp.Schema, &multiSchema); err == nil {
 				fd.Schema = multiSchema
 				handled = true
 			}
@@ -184,7 +184,7 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 			// For any other types or if specific unmarshaling failed,
 			// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
 			var genericSchema any
-			if err := json.Unmarshal(temp.Schema, &genericSchema); err != nil {
+			if err := utils.FromJSON(temp.Schema, &genericSchema); err != nil {
 				return fmt.Errorf("failed to unmarshal FieldDefinition.Schema into expected types or generic any: %w", err)
 			}
 			fd.Schema = genericSchema
@@ -245,7 +245,7 @@ type NestedSchemaDefinition struct {
 	IsStructured *bool
 }
 
-// UnmarshalJSON implements the json.Unmarshaler interface for NestedSchemaDefinition.
+// UnmarshalJSON implements the utils.FromJSONer interface for NestedSchemaDefinition.
 func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 	var temp struct {
 		Name        string            `json:"name"`
@@ -263,7 +263,7 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 		Fields json.RawMessage `json:"fields"`
 	}
 
-	if err := json.Unmarshal(data, &temp); err != nil {
+	if err := utils.FromJSON(data, &temp); err != nil {
 		return err
 	}
 
@@ -284,14 +284,14 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 	if hasFields {
 		nsd.IsStructured = utils.BoolPtr(true)
 		var fieldsMap map[string]*FieldDefinition
-		if err := json.Unmarshal(temp.Fields, &fieldsMap); err == nil {
+		if err := utils.FromJSON(temp.Fields, &fieldsMap); err == nil {
 			nsd.StructuredFieldsMap = fieldsMap
 		} else {
 			var fieldsArray []struct {
 				Fields map[string]*FieldDefinition `json:"fields"`
 				When   *FieldInclusionCondition    `json:"when,omitempty"`
 			}
-			if err := json.Unmarshal(temp.Fields, &fieldsArray); err == nil {
+			if err := utils.FromJSON(temp.Fields, &fieldsArray); err == nil {
 				nsd.StructuredFieldsArray = fieldsArray
 			} else {
 				return fmt.Errorf("failed to unmarshal NestedSchemaDefinition.fields")
@@ -305,11 +305,11 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 
 		if temp.Schema != nil {
 			var singleSchema NestedSchemaReference
-			if err := json.Unmarshal(temp.Schema, &singleSchema); err == nil {
+			if err := utils.FromJSON(temp.Schema, &singleSchema); err == nil {
 				nsd.Schema = singleSchema
 			} else {
 				var multiSchema []NestedSchemaReference
-				if err := json.Unmarshal(temp.Schema, &multiSchema); err == nil {
+				if err := utils.FromJSON(temp.Schema, &multiSchema); err == nil {
 					nsd.Schema = multiSchema
 				} else {
 					return fmt.Errorf("failed to unmarshal NestedSchemaDefinition.Schema")
@@ -496,13 +496,13 @@ type SchemaChange struct {
 	*SchemaChangeModifyNestedSchemaPayload
 }
 
-// UnmarshalJSON implements the json.Unmarshaler interface for SchemaChange.
+// UnmarshalJSON implements the utils.FromJSONer interface for SchemaChange.
 func (sc *SchemaChange) UnmarshalJSON(data []byte) error {
 	var common struct {
 		Type SchemaChangeType `json:"type"`
 		ID   *string          `json:"id"`
 	}
-	if err := json.Unmarshal(data, &common); err != nil {
+	if err := utils.FromJSON(data, &common); err != nil {
 		return err
 	}
 
@@ -512,39 +512,39 @@ func (sc *SchemaChange) UnmarshalJSON(data []byte) error {
 	switch sc.Type {
 	case SchemaChangeTypeModifyProperty:
 		sc.SchemaChangeModifyPropertyPayload = &SchemaChangeModifyPropertyPayload{}
-		return json.Unmarshal(data, sc.SchemaChangeModifyPropertyPayload)
+		return utils.FromJSON(data, sc.SchemaChangeModifyPropertyPayload)
 	case SchemaChangeTypeAddField:
 		sc.SchemaChangeAddFieldPayload = &SchemaChangeAddFieldPayload{}
-		return json.Unmarshal(data, sc.SchemaChangeAddFieldPayload)
+		return utils.FromJSON(data, sc.SchemaChangeAddFieldPayload)
 	case SchemaChangeTypeRemoveField:
 		return nil
 	case SchemaChangeTypeModifyField:
 		sc.SchemaChangeModifyFieldPayload = &SchemaChangeModifyFieldPayload{}
-		return json.Unmarshal(data, sc.SchemaChangeModifyFieldPayload)
+		return utils.FromJSON(data, sc.SchemaChangeModifyFieldPayload)
 	case SchemaChangeTypeAddIndex:
 		sc.SchemaChangeAddIndexPayload = &SchemaChangeAddIndexPayload{}
-		return json.Unmarshal(data, sc.SchemaChangeAddIndexPayload)
+		return utils.FromJSON(data, sc.SchemaChangeAddIndexPayload)
 	case SchemaChangeTypeRemoveIndex:
 		return nil
 	case SchemaChangeTypeModifyIndex:
 		sc.SchemaChangeModifyIndexPayload = &SchemaChangeModifyIndexPayload{}
-		return json.Unmarshal(data, sc.SchemaChangeModifyIndexPayload)
+		return utils.FromJSON(data, sc.SchemaChangeModifyIndexPayload)
 	case SchemaChangeTypeAddConstraint:
 		sc.SchemaChangeAddConstraintPayload = &SchemaChangeAddConstraintPayload{}
-		return json.Unmarshal(data, sc.SchemaChangeAddConstraintPayload)
+		return utils.FromJSON(data, sc.SchemaChangeAddConstraintPayload)
 	case SchemaChangeTypeRemoveConstraint:
 		return nil
 	case SchemaChangeTypeModifyConstraint:
 		sc.SchemaChangeModifyConstraintPayload = &SchemaChangeModifyConstraintPayload{}
-		return json.Unmarshal(data, sc.SchemaChangeModifyConstraintPayload)
+		return utils.FromJSON(data, sc.SchemaChangeModifyConstraintPayload)
 	case SchemaChangeTypeAddNestedSchema:
 		sc.SchemaChangeAddNestedSchemaPayload = &SchemaChangeAddNestedSchemaPayload{}
-		return json.Unmarshal(data, sc.SchemaChangeAddNestedSchemaPayload)
+		return utils.FromJSON(data, sc.SchemaChangeAddNestedSchemaPayload)
 	case SchemaChangeTypeRemoveNestedSchema:
 		return nil
 	case SchemaChangeTypeModifyNestedSchema:
 		sc.SchemaChangeModifyNestedSchemaPayload = &SchemaChangeModifyNestedSchemaPayload{}
-		return json.Unmarshal(data, sc.SchemaChangeModifyNestedSchemaPayload)
+		return utils.FromJSON(data, sc.SchemaChangeModifyNestedSchemaPayload)
 	default:
 		return fmt.Errorf("unknown schema change type: %s", sc.Type)
 	}
@@ -610,7 +610,7 @@ func (sc SchemaChange) MarshalJSON() ([]byte, error) {
 
 	if payloadBytes != nil {
 		var payloadMap map[string]any
-		if err := json.Unmarshal(payloadBytes, &payloadMap); err != nil {
+		if err := utils.FromJSON(payloadBytes, &payloadMap); err != nil {
 			return nil, err
 		}
 		maps.Copy(m, payloadMap)
@@ -648,7 +648,7 @@ func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
 	}
 
 	temp.Alias = (*Alias)(fd) // Point Alias to the actual FieldDefinition
-	if err := json.Unmarshal(data, &temp); err != nil {
+	if err := utils.FromJSON(data, &temp); err != nil {
 		return err
 	}
 
@@ -660,12 +660,12 @@ func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
 		switch temp.Type {
 		case FieldTypeObject, FieldTypeUnion, FieldTypeRecord, FieldTypeArray:
 			var singleSchema NestedSchemaReference
-			if err := json.Unmarshal(temp.Schema, &singleSchema); err == nil {
+			if err := utils.FromJSON(temp.Schema, &singleSchema); err == nil {
 				fd.Schema = singleSchema
 				return nil
 			}
 			var multiSchema []NestedSchemaReference
-			if err := json.Unmarshal(temp.Schema, &multiSchema); err == nil {
+			if err := utils.FromJSON(temp.Schema, &multiSchema); err == nil {
 				fd.Schema = multiSchema
 				return nil
 			}
@@ -678,7 +678,7 @@ func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
 		// For any other types or if specific unmarshaling failed,
 		// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
 		var genericSchema any
-		if err := json.Unmarshal(temp.Schema, &genericSchema); err != nil {
+		if err := utils.FromJSON(temp.Schema, &genericSchema); err != nil {
 			return fmt.Errorf("failed to unmarshal FieldDefinition.Schema into expected types or generic any: %w", err)
 		}
 		fd.Schema = genericSchema

@@ -2,12 +2,12 @@ package executor
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"go.uber.org/zap"
 )
 
@@ -134,7 +134,7 @@ func unmarshalJSON(value any) (any, error) {
 		return value, nil
 	}
 
-	if err = json.Unmarshal(bytes, &data); err != nil {
+	if data, err = utils.Unmarshal[any](bytes); err != nil {
 		// Return original value as string to avoid breaking clients
 		if str, ok := value.(string); ok {
 			return str, nil

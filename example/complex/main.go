@@ -225,7 +225,7 @@ func main() {
 	defer logger.Sync()
 
 	// 2. Setup In-Memory SQLite Database
-	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	db, err := sql.Open("sqlite3", "database.db")
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
@@ -306,18 +306,19 @@ func main() {
 	}
 	logger.Info("Documents collection created.")
 
-	// 9. Populate some initial data (e.g., an admin user)
+	/* // 9. Populate some initial data (e.g., an admin user)
 	adminUser := data.MustNewDocument(map[string]any{
 		"id":           "admin123",
 		"username":     "admin",
 		"passwordHash": "hashed_admin_password", // In real app, hash this
 		"role":         "admin",
 	})
+
 	_, err = usersCollection.CreateOne(ctx, adminUser)
 	if err != nil {
 		log.Fatalf("Failed to create admin user: %v", err)
 	}
-	logger.Info("Admin user created.")
+	logger.Info("Admin user created.") */
 
 	// 10. Set up HTTP Handlers
 	mux := http.NewServeMux()

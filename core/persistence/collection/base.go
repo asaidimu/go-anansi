@@ -7,6 +7,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-events"
@@ -88,7 +89,7 @@ func (c *baseCollection) withTransaction(
 		interactor := c.interactor.(query.DatabaseInteractor)
 		tx, err := interactor.StartTransaction(ctx)
 		if err != nil {
-			return nil, base.NewPersistenceError("failed to start transaction", err)
+			return nil, base.NewPersistenceError(base.ErrFailedToStartTransaction.Error(), err)
 		}
 
 		result, err := operation(tx)
@@ -99,7 +100,7 @@ func (c *baseCollection) withTransaction(
 
 		if err := tx.Commit(ctx); err != nil {
 			tx.Rollback(ctx)
-			return nil, base.NewPersistenceError("failed to commit transaction", err)
+			return nil, base.NewPersistenceError(base.ErrFailedToCommitTransaction.Error(), err)
 		}
 
 		return result, nil
@@ -137,7 +138,7 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) (
 		for i, doc := range docs {
 			results[i] = base.CreateResult{Status: base.StatusFailedPersistence, Data: doc, Error: err.Error()}
 		}
-		return results, base.NewPersistenceError("Failed to insert documents", err)
+		return results, base.NewPersistenceError(base.ErrInsertDocuments.Error(), err)
 	}
 
 	insertedDocs := inserted.([]data.Document)
@@ -154,7 +155,7 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) (
 func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
 	docs, err := c.engine.Query(ctx, c.schema, q)
 	if err != nil {
-		return nil, base.NewPersistenceError(fmt.Sprintf("failed to read documents: %v", err), base.ErrReadDocuments)
+		return nil, base.NewPersistenceError(fmt.Sprintf("%s: %v", base.ErrReadDocuments.Error(), err), base.ErrReadDocuments)
 	}
 
 	count := len(docs)
@@ -177,7 +178,7 @@ func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadRe
 // Update modifies documents in the collection that match the filter in CollectionUpdate.
 func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
 	if params == nil || params.Filter == nil {
-		return 0, base.NewPersistenceError("update operation requires filter parameters", base.ErrInvalidUpdateParams)
+		return 0, base.NewPersistenceError(base.ErrInvalidUpdateParams.Error(), base.ErrInvalidUpdateParams)
 	}
 
 	result, err := c.withTransaction(ctx, func(interactor query.BaseDatabaseInteractor) (any, error) {
@@ -185,7 +186,7 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 	})
 
 	if err != nil {
-		return 0, base.NewPersistenceError(fmt.Sprintf("failed to update documents: %v", err), base.ErrUpdateDocuments)
+		return 0, base.NewPersistenceError(fmt.Sprintf("%s: %v", base.ErrUpdateDocuments.Error(), err), base.ErrUpdateDocuments)
 	}
 
 	rowsAffected := result.(int64)
@@ -196,7 +197,7 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 // The 'unsafe' flag can be used to bypass safety checks.
 func (c *baseCollection) Delete(ctx context.Context, q *query.QueryFilter, unsafe bool) (int, error) {
 	if q == nil && !unsafe {
-		return 0, base.NewPersistenceError("delete operation requires a filter or the unsafe flag set to true", base.ErrDeleteRequiresFilter)
+		return 0, base.NewPersistenceError(base.ErrDeleteRequiresFilter.Error(), base.ErrDeleteRequiresFilter)
 	}
 
 	result, err := c.withTransaction(ctx, func(interactor query.BaseDatabaseInteractor) (any, error) {
@@ -204,7 +205,7 @@ func (c *baseCollection) Delete(ctx context.Context, q *query.QueryFilter, unsaf
 	})
 
 	if err != nil {
-		return 0, base.NewPersistenceError(fmt.Sprintf("failed to delete documents: %v", err), base.ErrDeleteDocuments)
+		return 0, base.NewPersistenceError(fmt.Sprintf("%s: %v", base.ErrDeleteDocuments.Error(), err), base.ErrDeleteDocuments)
 	}
 
 	rowsAffected := result.(int64)

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 	"github.com/stretchr/testify/require"
 )
@@ -64,8 +65,8 @@ func TestDocument_TouchMetadata_UpdatesTimestampAndHash(t *testing.T) {
 	meta2, _ := doc.Metadata()
 	require.Equal(t, created, meta2["created"], "created timestamp should not change")
 	require.NotEqual(t, originalHash, meta2["hash"], "hash should be recalculated")
-	createdT, _ := data.CoerceToFloat64(meta2["created"])
-	updatedT, _ := data.CoerceToFloat64(meta2["updated"])
+	createdT, _ := utils.CoerceToPrimitiveValue[float64](meta2["created"])
+	updatedT, _ := utils.CoerceToPrimitiveValue[float64](meta2["updated"])
 	require.True(t, updatedT > createdT, "updated should move forward")
 }
 

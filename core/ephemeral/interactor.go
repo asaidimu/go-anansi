@@ -9,6 +9,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
@@ -274,11 +275,11 @@ func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schem
 								break
 							}
 							stream.Close()
-							return nil, fmt.Errorf("failed to read existing documents for unique check: %w", err)
+							return nil, fmt.Errorf("%w for unique check: %w", registry.ErrFailedToReadDocuments, err)
 						}
 						if existingDocResult.Data[field.Name] == val {
 							stream.Close()
-							return nil, fmt.Errorf("unique constraint violation: field '%s' with value '%v' already exists", field.Name, val)
+							return nil, fmt.Errorf("%w: field '%s' with value '%v' already exists", registry.ErrUniqueConstraintViolation, field.Name, val)
 						}
 					}
 					stream.Close()
@@ -477,7 +478,7 @@ func (m *EphemeralDatabaseInteractor) CreateCollection(ctx context.Context, sche
 	defer m.store.mu.Unlock()
 
 	if _, exists := m.store.collections[schemaDef.Name]; exists {
-		return fmt.Errorf("collection '%s' already exists", schemaDef.Name)
+		return fmt.Errorf("%w: '%s'", registry.ErrCollectionAlreadyExists, schemaDef.Name)
 	}
 
 	newStore := store.NewStore()
@@ -486,13 +487,13 @@ func (m *EphemeralDatabaseInteractor) CreateCollection(ctx context.Context, sche
 	for _, field := range schemaDef.Fields {
 		if field.Unique != nil && *field.Unique {
 			if err := newStore.CreateIndex(field.Name, []string{field.Name}); err != nil {
-				return fmt.Errorf("failed to create unique index for field %s: %w", field.Name, err)
+				return fmt.Errorf("%w for field %s: %w", registry.ErrFailedToCreateIndex, field.Name, err)
 			}
 		}
 	}
 	for _, index := range schemaDef.Indexes {
 		if err := newStore.CreateIndex(index.Name, index.Fields); err != nil {
-			return fmt.Errorf("failed to create index %s: %w", index.Name, err)
+			return fmt.Errorf("%w '%s': %w", registry.ErrFailedToCreateIndex, index.Name, err)
 		}
 	}
 

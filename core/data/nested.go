@@ -3,6 +3,8 @@ package data
 import (
 	"fmt"
 	"strings"
+
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // GetNested with enhanced path parsing and error handling.
@@ -16,44 +18,16 @@ func (d Document) GetNested(path string) (any, error) {
 		}
 	}
 
-	parts := strings.Split(path, ".")
-	current := any(d)
-
-	for i, part := range parts {
-		switch v := current.(type) {
-		case Document:
-			val, err := v.Get(part)
-			if err != nil {
-				return nil, &DocumentError{
-					Operation: "GetNested",
-					Key:       strings.Join(parts[:i+1], "."),
-					Message:   ErrPathSegmentNotFound.Error(),
-					Cause:     fmt.Errorf("%w: %w", ErrPathSegmentNotFound, err),
-				}
-			}
-			current = val
-		case map[string]any:
-			val, ok := v[part]
-			if !ok {
-				return nil, &DocumentError{
-					Operation: "GetNested",
-					Key:       strings.Join(parts[:i+1], "."),
-					Message:   ErrPathSegmentNotFound.Error(),
-					Cause:     ErrPathSegmentNotFound,
-				}
-			}
-			current = val
-		default:
-			return nil, &DocumentError{
-				Operation: "GetNested",
-				Key:       strings.Join(parts[:i+1], "."),
-				Message:   fmt.Sprintf("%s: cannot traverse into %T", ErrCannotTraverse.Error(), v),
-				Cause:     fmt.Errorf("%w: %w", ErrCannotTraverse, ErrInvalidPath),
-			}
+	val, ok := utils.GetValueByPath(d, path)
+	if !ok {
+		return nil, &DocumentError{
+			Operation: "GetNested",
+			Key:       path,
+			Message:   ErrPathSegmentNotFound.Error(),
+			Cause:     ErrPathSegmentNotFound,
 		}
 	}
-
-	return current, nil
+	return val, nil
 }
 
 // SetNested with path validation and intermediate map creation.
@@ -117,17 +91,23 @@ func (d Document) DeleteNested(path string) error {
 	}
 
 	parentPath := strings.Join(parts[:len(parts)-1], ".")
-	parent, err := d.GetNested(parentPath)
+	keyToDelete := parts[len(parts)-1]
 
-	if err != nil {
-		return err
+	parent, ok := utils.GetValueByPath(d, parentPath)
+	if !ok {
+		return &DocumentError{
+			Operation: "DeleteNested",
+			Key:       parentPath,
+			Message:   "parent path not found",
+			Cause:     ErrPathSegmentNotFound,
+		}
 	}
 
 	switch p := parent.(type) {
 	case Document:
-		delete(p, parts[len(parts)-1])
+		delete(p, keyToDelete)
 	case map[string]any:
-		delete(p, parts[len(parts)-1])
+		delete(p, keyToDelete)
 	default:
 		return &DocumentError{
 			Operation: "DeleteNested",

@@ -47,36 +47,50 @@ func GetScopedPath(path string) string {
 	return strings.Join(parts[:len(parts)-1], ".")
 }
 
-func GetValueByPath(value any, path string) (any, bool) {
+// GetValueByPath retrieves a value from a nested structure using a dot-separated path.
+// It provides an efficient path for map[string]any and handles other map types via reflection.
+func GetValueByPath(data any, path string) (any, bool) {
 	if path == "" {
-		return value, true
+		return data, true
 	}
 
-	keys := strings.Split(path, ".")
-	current := value
+	parts := strings.Split(path, ".")
+	current := data
 
-	for _, part := range keys {
-		currentVal := reflect.ValueOf(current)
-		if currentVal.Kind() == reflect.Ptr {
-			currentVal = currentVal.Elem()
-		}
-
-		if currentVal.Kind() != reflect.Map {
+	for _, part := range parts {
+		if current == nil {
 			return nil, false
 		}
-		keyFound := false
-		// Check if key exists
-		for _, key := range currentVal.MapKeys() {
-			if key.String() == part {
-				value := currentVal.MapIndex(key).Interface()
-				current = value
-				keyFound = true
+
+		// Fast path for map[string]any, which is common.
+		// This also covers data.Document without creating an import cycle.
+		if m, ok := current.(map[string]any); ok {
+			if val, exists := m[part]; exists {
+				current = val
+				continue
 			}
-		}
-
-		if !keyFound {
 			return nil, false
 		}
+
+		// Fallback to reflection for other map types (e.g., map[any]any)
+		val := reflect.ValueOf(current)
+		if val.Kind() == reflect.Ptr {
+			val = val.Elem()
+		}
+
+		if val.Kind() != reflect.Map {
+			return nil, false // Not a map, cannot traverse further
+		}
+
+		// Use reflection to get the map value
+		keyValue := reflect.ValueOf(part)
+		mapValue := val.MapIndex(keyValue)
+
+		if !mapValue.IsValid() {
+			return nil, false // Key does not exist
+		}
+
+		current = mapValue.Interface()
 	}
 
 	return current, true

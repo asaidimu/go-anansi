@@ -6,6 +6,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
@@ -70,7 +71,7 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Document
 		if err != nil {
 			// If Validate itself returns an error, it's a system error, not a validation failure.
 			// We should return this error immediately.
-			return nil, fmt.Errorf("system error during document validation: %w", err)
+			return nil, fmt.Errorf("%w: %w", data.ErrSystemErrorDuringValidation, err)
 		}
 
 		if !validationResult.Valid {
@@ -85,7 +86,7 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Document
 
 	if validCount != len(docs) {
 		// Some documents failed validation, return the results with details
-		return results, fmt.Errorf("validation failed for %d documents", len(docs)-validCount)
+		return results, fmt.Errorf("%w for %d documents", base.ErrValidationFailed, len(docs)-validCount)
 	}
 
 	// All documents are valid, proceed with actual creation
@@ -105,12 +106,12 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 		for i, join := range modifiedQuery.Joins {
 			name := join.Target
 			if c.resolveSchema == nil {
-				return nil, base.NewPersistenceError("physical name resolver function is not set", nil)
+				return nil, base.NewPersistenceError(data.ErrPhysicalNameResolverNotSet.Error(), nil)
 			}
 			physicalName, schema, err := c.resolveSchema(ctx, name.Name)
 
 			if err != nil {
-				return nil, base.NewPersistenceError(fmt.Sprintf("failed to resolve physical name for join target '%s': %v", join.Target.Name, err), err)
+				return nil, base.NewPersistenceError(fmt.Sprintf("%s for join target '%s': %v", data.ErrFailedToResolvePhysicalName.Error(), join.Target.Name, err), err)
 			}
 
 			modifiedQuery.Joins[i].Target.Name = physicalName
@@ -146,7 +147,7 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 func (c *managedCollection) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
 	meta, ok := params.Data.Metadata()
 	if !ok {
-		return 0, fmt.Errorf("update operation requires a valid metadata block, found")
+		return 0, fmt.Errorf("%w: update operation requires a valid metadata block", data.ErrNoMetadata)
 	}
 
 	var err error
@@ -155,25 +156,25 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 	}
 
 	if !params.Data.VerifyHash() {
-		return 0, fmt.Errorf("metadata hash verification failed: data may be tampered")
+		return 0, fmt.Errorf("%w: data may be tampered", data.ErrHashMismatch)
 	}
 
 	d := params.Data.StripMetadata()
 	result, err := c.Validate(ctx, d, true)
 
 	if err != nil {
-		return 0, fmt.Errorf("Failed to update document in collection: %w", err)
+		return 0, fmt.Errorf("%w: %w", base.ErrUpdateDocuments, err)
 	}
 
 	if !result.Valid {
-		return 0, fmt.Errorf("Update failed validation: %v", result.Issues)
+		return 0, fmt.Errorf("%w: %v", base.ErrValidationFailed, result.Issues)
 	}
 
 	// 2. Prepare for optimistic locking
-	version, ok := utils.CoercePrimitiveValue[float64](meta["version"])
+	version, ok := utils.CoerceToPrimitiveValue[float64](meta["version"])
 
 	if !ok {
-		return 0, fmt.Errorf("invalid or missing version in metadata, %v", meta)
+		return 0, fmt.Errorf("%w: %v", data.ErrInvalidOrMissingMetadataVersion, meta)
 	}
 
 	// Modify the filter to include the version check
@@ -241,7 +242,7 @@ func ensureMetadataProjection(q *query.Query) *query.Query {
 	// Users must not manually include metadata
 	if q.Projection.HasField(data.MetadataFieldName) {
 		// defensive: prevent overriding system metadata
-		panic("users must not explicitly include _metadata_ in projection")
+		panic(data.ErrExplicitMetadataProjectionForbidden.Error())
 	}
 
 	// Always remove metadata from exclusions

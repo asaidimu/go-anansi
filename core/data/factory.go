@@ -6,7 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
+	
 	"fmt"
 	"maps"
 	"reflect"
@@ -15,7 +15,9 @@ import (
 	"sync"
 	"time"
 
+	
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // MetadataProvider is a function that returns metadata to be merged into a document.
@@ -63,11 +65,11 @@ func ConfigureDocumentFactory(config DocumentFactoryConfig) error {
 	configureOnce.Do(func() {
 		f := getFactory()
 		if f.configured {
-			err = errors.New("document factory already configured")
+			err = ErrFactoryAlreadyConfigured
 			return
 		}
 		if len(config.HmacSecret) == 0 {
-			err = errors.New("HMAC secret key cannot be empty in config")
+			err = ErrHmacSecretNotConfigured
 			return
 		}
 		f.config = config
@@ -81,7 +83,7 @@ func ConfigureDocumentFactory(config DocumentFactoryConfig) error {
 	// If called multiple times, configureOnce ensures the block doesn't run again,
 	// but we should still signal that the factory is already configured.
 	if !getFactory().configured {
-		return errors.New("configuration was not applied")
+		return ErrConfigurationNotApplied
 	}
 
 	return nil
@@ -90,7 +92,7 @@ func ConfigureDocumentFactory(config DocumentFactoryConfig) error {
 // newDocument creates a new document with injected metadata.
 func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) (Document, error) {
 	if !f.configured {
-		return nil, errors.New("document factory not configured")
+		return nil, ErrFactoryNotConfigured
 	}
 	doc := Document(data)
 
@@ -142,7 +144,7 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 func (d Document) TouchMetadata() error {
 	f := getFactory()
 	if !f.configured {
-		return errors.New("document factory not configured")
+		return ErrFactoryNotConfigured
 	}
 
 	meta, ok := d.Metadata()
@@ -159,7 +161,7 @@ func (d Document) TouchMetadata() error {
 	// Inject system metadata
 	now := strconv.FormatInt(time.Now().UnixNano(), 10)
 	meta["updated"] = now
-	if version, ok := CoerceToInt(meta["version"]); ok {
+	if version, ok := utils.CoerceToPrimitiveValue[int](meta["version"]); ok {
 		meta["version"] = version + 1
 	} else {
 		meta["version"] = 1
@@ -343,21 +345,21 @@ func (d Document) VerifyHash() bool {
 func (d Document) MustVerifyHash() {
 	meta, ok := d.Metadata()
 	if !ok {
-		panic("document is missing metadata")
+		panic(ErrNoMetadata.Error())
 	}
 
 	providedHash, ok := meta["hash"].(string)
 	if !ok {
-		panic("document metadata missing hash")
+		panic(ErrMetadataKeyNotFound.Error())
 	}
 
 	calculatedHash, err := getFactory().calculateHash(d)
 	if err != nil {
-		panic(fmt.Sprintf("failed to calculate hash: %v", err))
+		panic(fmt.Sprintf("%s: %v", ErrFailedToCalculateHash.Error(), err))
 	}
 
 	if !hmac.Equal([]byte(providedHash), []byte(calculatedHash)) {
-		panic(fmt.Sprintf("hash mismatch: expected %s, got %s", providedHash, calculatedHash))
+		panic(fmt.Sprintf("%s: expected %s, got %s", ErrHashMismatch.Error(), providedHash, calculatedHash))
 	}
 }
 

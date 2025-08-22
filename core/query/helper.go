@@ -530,7 +530,7 @@ func (h *QueryHelper) ApplyDistinct(records []map[string]any) ([]map[string]any,
 			keyValues := make(distinctKey, len(h.query.Distinct.Fields))
 			for i, field := range h.query.Distinct.Fields {
 				doc := data.Document(record)
-				keyValues[i], _ = h.getValueByPath(doc, field)
+				keyValues[i], _ = utils.GetValueByPath(doc, field)
 			}
 			// Create a string representation of the key values for map lookup
 			keyBytes, err := json.Marshal(keyValues)
@@ -563,8 +563,8 @@ func (h *QueryHelper) Sort(records []data.Document) ([]data.Document, error) {
 		for _, sortConfig := range h.query.Sort {
 			doci := data.Document(sorted[i])
 			docj := data.Document(sorted[j])
-			valueI, _ := h.getValueByPath(doci, sortConfig.Field)
-			valueJ, _ := h.getValueByPath(docj, sortConfig.Field)
+			valueI, _ := utils.GetValueByPath(doci, sortConfig.Field)
+			valueJ, _ := utils.GetValueByPath(docj, sortConfig.Field)
 
 			comparison := h.compareValues(valueI, valueJ)
 			if comparison == 0 {
@@ -826,7 +826,7 @@ func (h *QueryHelper) processGroupedAggregation(records []data.Document, aggConf
 
 		for i, groupField := range aggConfig.Groups {
 			doc := data.Document(record)
-			val, _ := h.getValueByPath(doc, groupField)
+			val, _ := utils.GetValueByPath(doc, groupField)
 			groupKeyParts[i] = fmt.Sprintf("%v", val) // Convert to string for map key
 			currentGroupKeyValues[groupField] = val   // Store actual values for later
 		}
@@ -896,7 +896,7 @@ func (h *QueryHelper) evaluateCondition(record data.Document, condition *FilterC
 	}
 
 	doc := data.Document(record)
-	fieldValue, _ := h.getValueByPath(doc, condition.Field)
+	fieldValue, _ := utils.GetValueByPath(doc, condition.Field)
 	conditionVal, err := h.resolveFilterValue(record, &condition.Value)
 	if err != nil {
 		return false, err
@@ -975,7 +975,7 @@ func (h *QueryHelper) resolveFilterValue(record map[string]any, fv *FilterValue)
 
 	if fv.FieldRefVal != nil {
 		doc := data.Document(record)
-		result, _ := h.getValueByPath(doc, fv.FieldRefVal.Field)
+		result, _ := utils.GetValueByPath(doc, fv.FieldRefVal.Field)
 		return result, nil
 	}
 
@@ -1622,6 +1622,4 @@ func (h *QueryHelper) performFullJoin(leftName string, leftDocs []data.Document,
 	return result
 }
 
-func (h *QueryHelper) getValueByPath(doc data.Document, path string) (any, bool) {
-	return utils.GetValueByPath(doc, path)
-}
+

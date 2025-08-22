@@ -296,7 +296,7 @@ func TestCollection_Delete(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Equal(t, 0, rowsAffected)
-		assert.Contains(t, err.Error(), "delete operation requires a filter or the unsafe flag set to true")
+		assert.Contains(t, err.Error(), "Delete operation requires a filter or unsafe flag")
 	})
 }
 

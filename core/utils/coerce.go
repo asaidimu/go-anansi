@@ -1,8 +1,10 @@
 package utils
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Primitive constrains T to sensible primitive types
@@ -13,7 +15,7 @@ type Primitive interface {
 		~float32 | ~float64
 }
 
-func CoercePrimitiveValue[T Primitive](value any) (T, bool) {
+func CoerceToPrimitiveValue[T Primitive](value any) (T, bool) {
 	var zero T
 
 	// Handle nil input
@@ -29,39 +31,256 @@ func CoercePrimitiveValue[T Primitive](value any) (T, bool) {
 	// Determine target type and convert
 	switch any(zero).(type) {
 	case bool:
-		return coerceToBool[T](value)
+		return CoerceBool[T](value)
 	case string:
-		return coerceToString[T](value)
+		return CoerceString[T](value)
 	case int:
-		return coerceToInt[T](value)
+		return CoerceInt[T](value)
 	case int8:
-		return coerceToInt8[T](value)
+		return CoerceInt8[T](value)
 	case int16:
-		return coerceToInt16[T](value)
+		return CoerceInt16[T](value)
 	case int32:
-		return coerceToInt32[T](value)
+		return CoerceInt32[T](value)
 	case int64:
-		return coerceToInt64[T](value)
+		return CoerceInt64[T](value)
 	case uint:
-		return coerceToUint[T](value)
+		return CoerceUint[T](value)
 	case uint8:
-		return coerceToUint8[T](value)
+		return CoerceUint8[T](value)
 	case uint16:
-		return coerceToUint16[T](value)
+		return CoerceUint16[T](value)
 	case uint32:
-		return coerceToUint32[T](value)
+		return CoerceUint32[T](value)
 	case uint64:
-		return coerceToUint64[T](value)
+		return CoerceUint64[T](value)
 	case float32:
-		return coerceToFloat32[T](value)
+		return CoerceFloat32[T](value)
 	case float64:
-		return coerceToFloat64[T](value)
+		return CoerceFloat64[T](value)
 	}
 
 	return zero, false
 }
 
-func coerceToBool[T Primitive](value any) (T, bool) {
+// Public convenience functions that tests expect
+func CoerceToString(value any) (string, bool) {
+	if value == nil {
+		return "", true
+	}
+
+	switch v := value.(type) {
+	case string:
+		return v, true
+	case bool:
+		if v {
+			return "true", true
+		}
+		return "false", true
+	case int:
+		return strconv.Itoa(v), true
+	case int8:
+		return strconv.FormatInt(int64(v), 10), true
+	case int16:
+		return strconv.FormatInt(int64(v), 10), true
+	case int32:
+		return strconv.FormatInt(int64(v), 10), true
+	case int64:
+		return strconv.FormatInt(v, 10), true
+	case uint:
+		return strconv.FormatUint(uint64(v), 10), true
+	case uint8:
+		return strconv.FormatUint(uint64(v), 10), true
+	case uint16:
+		return strconv.FormatUint(uint64(v), 10), true
+	case uint32:
+		return strconv.FormatUint(uint64(v), 10), true
+	case uint64:
+		return strconv.FormatUint(v, 10), true
+	case float32:
+		return strconv.FormatFloat(float64(v), 'g', -1, 32), true
+	case float64:
+		return strconv.FormatFloat(v, 'g', -1, 64), true
+	case time.Time:
+		return v.String(), true
+	default:
+		// For structs and other types, use fmt.Sprintf
+		return fmt.Sprintf("%+v", v), true
+	}
+}
+
+func CoerceToInt(value any) (int, bool) {
+	if value == nil {
+		return 0, false
+	}
+
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int8:
+		return int(v), true
+	case int16:
+		return int(v), true
+	case int32:
+		return int(v), true
+	case int64:
+		return int(v), true
+	case uint:
+		return int(v), true
+	case uint8:
+		return int(v), true
+	case uint16:
+		return int(v), true
+	case uint32:
+		return int(v), true
+	case uint64:
+		return int(v), true
+	case float32:
+		// Check if it represents a whole number
+		intVal := int(v)
+		if float32(intVal) == v {
+			return intVal, true
+		}
+		return int(v), true  // Still convert even if not exact
+	case float64:
+		// Check if it represents a whole number
+		intVal := int(v)
+		if float64(intVal) == v {
+			return intVal, true
+		}
+		return int(v), true  // Still convert even if not exact
+	case bool:
+		if v {
+			return 1, true
+		}
+		return 0, true
+	case string:
+		v = strings.TrimSpace(v)
+		if intVal, err := strconv.Atoi(v); err == nil {
+			return intVal, true
+		}
+		if floatVal, err := strconv.ParseFloat(v, 64); err == nil {
+			return int(floatVal), true
+		}
+		return 0, false
+	default:
+		return 0, false
+	}
+}
+
+func CoerceToFloat64(value any) (float64, bool) {
+	if value == nil {
+		return 0.0, false
+	}
+
+	switch v := value.(type) {
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int8:
+		return float64(v), true
+	case int16:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case uint:
+		return float64(v), true
+	case uint8:
+		return float64(v), true
+	case uint16:
+		return float64(v), true
+	case uint32:
+		return float64(v), true
+	case uint64:
+		return float64(v), true
+	case bool:
+		if v {
+			return 1.0, true
+		}
+		return 0.0, true
+	case string:
+		v = strings.TrimSpace(v)
+		if floatVal, err := strconv.ParseFloat(v, 64); err == nil {
+			return floatVal, true
+		}
+		return 0.0, false
+	default:
+		return 0.0, false
+	}
+}
+
+func CoerceToBool(value any) (bool, bool) {
+	if value == nil {
+		return false, true
+	}
+
+	switch v := value.(type) {
+	case bool:
+		return v, true
+	case string:
+		v = strings.ToLower(strings.TrimSpace(v))
+		switch v {
+		case "true", "1", "yes", "on":
+			return true, true
+		case "false", "0", "no", "off", "":
+			return false, true
+		default:
+			return false, false
+		}
+	case int, int8, int16, int32, int64:
+		var intVal int64
+		switch iv := v.(type) {
+		case int:
+			intVal = int64(iv)
+		case int8:
+			intVal = int64(iv)
+		case int16:
+			intVal = int64(iv)
+		case int32:
+			intVal = int64(iv)
+		case int64:
+			intVal = iv
+		}
+		return intVal != 0, true
+	case uint, uint8, uint16, uint32, uint64:
+		var uintVal uint64
+		switch uv := v.(type) {
+		case uint:
+			uintVal = uint64(uv)
+		case uint8:
+			uintVal = uint64(uv)
+		case uint16:
+			uintVal = uint64(uv)
+		case uint32:
+			uintVal = uint64(uv)
+		case uint64:
+			uintVal = uv
+		}
+		return uintVal != 0, true
+	case float32, float64:
+		var floatVal float64
+		switch fv := v.(type) {
+		case float32:
+			floatVal = float64(fv)
+		case float64:
+			floatVal = fv
+		}
+		return floatVal != 0.0, true
+	default:
+		return false, false
+	}
+}
+
+func CoerceToTime(value any) (time.Time, bool) {
+	return CoerceTime(value)
+}
+
+func CoerceBool[T Primitive](value any) (T, bool) {
 	var zero T
 	var result any
 
@@ -127,7 +346,7 @@ func coerceToBool[T Primitive](value any) (T, bool) {
 	return zero, false
 }
 
-func coerceToString[T Primitive](value any) (T, bool) {
+func CoerceString[T Primitive](value any) (T, bool) {
 	var zero T
 	var result string
 
@@ -174,27 +393,27 @@ func coerceToString[T Primitive](value any) (T, bool) {
 	return zero, false
 }
 
-func coerceToInt[T Primitive](value any) (T, bool) {
-	return coerceToSignedInt[T](value, -9223372036854775808, 9223372036854775807)
+func CoerceInt[T Primitive](value any) (T, bool) {
+	return CoerceSignedInt[T](value, -9223372036854775808, 9223372036854775807)
 }
 
-func coerceToInt8[T Primitive](value any) (T, bool) {
-	return coerceToSignedInt[T](value, -128, 127)
+func CoerceInt8[T Primitive](value any) (T, bool) {
+	return CoerceSignedInt[T](value, -128, 127)
 }
 
-func coerceToInt16[T Primitive](value any) (T, bool) {
-	return coerceToSignedInt[T](value, -32768, 32767)
+func CoerceInt16[T Primitive](value any) (T, bool) {
+	return CoerceSignedInt[T](value, -32768, 32767)
 }
 
-func coerceToInt32[T Primitive](value any) (T, bool) {
-	return coerceToSignedInt[T](value, -2147483648, 2147483647)
+func CoerceInt32[T Primitive](value any) (T, bool) {
+	return CoerceSignedInt[T](value, -2147483648, 2147483647)
 }
 
-func coerceToInt64[T Primitive](value any) (T, bool) {
-	return coerceToSignedInt[T](value, -9223372036854775808, 9223372036854775807)
+func CoerceInt64[T Primitive](value any) (T, bool) {
+	return CoerceSignedInt[T](value, -9223372036854775808, 9223372036854775807)
 }
 
-func coerceToSignedInt[T Primitive](value any, min, max int64) (T, bool) {
+func CoerceSignedInt[T Primitive](value any, min, max int64) (T, bool) {
 	var zero T
 	var result int64
 	var valid bool
@@ -203,6 +422,12 @@ func coerceToSignedInt[T Primitive](value any, min, max int64) (T, bool) {
 	case string:
 		if intVal, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
 			if intVal >= min && intVal <= max {
+				result = intVal
+				valid = true
+			}
+		} else if floatVal, err := strconv.ParseFloat(strings.TrimSpace(v), 64); err == nil {
+			intVal := int64(floatVal)
+			if float64(intVal) == floatVal && intVal >= min && intVal <= max {
 				result = intVal
 				valid = true
 			}
@@ -263,7 +488,11 @@ func coerceToSignedInt[T Primitive](value any, min, max int64) (T, bool) {
 			floatVal = fv
 		}
 		intVal := int64(floatVal)
+		// Allow conversion even if not exact whole number, but prefer exact matches
 		if float64(intVal) == floatVal && intVal >= min && intVal <= max {
+			result = intVal
+			valid = true
+		} else if intVal >= min && intVal <= max {
 			result = intVal
 			valid = true
 		}
@@ -304,27 +533,27 @@ func coerceToSignedInt[T Primitive](value any, min, max int64) (T, bool) {
 	return zero, false
 }
 
-func coerceToUint[T Primitive](value any) (T, bool) {
-	return coerceToUnsignedInt[T](value, 18446744073709551615)
+func CoerceUint[T Primitive](value any) (T, bool) {
+	return CoerceUnsignedInt[T](value, 18446744073709551615)
 }
 
-func coerceToUint8[T Primitive](value any) (T, bool) {
-	return coerceToUnsignedInt[T](value, 255)
+func CoerceUint8[T Primitive](value any) (T, bool) {
+	return CoerceUnsignedInt[T](value, 255)
 }
 
-func coerceToUint16[T Primitive](value any) (T, bool) {
-	return coerceToUnsignedInt[T](value, 65535)
+func CoerceUint16[T Primitive](value any) (T, bool) {
+	return CoerceUnsignedInt[T](value, 65535)
 }
 
-func coerceToUint32[T Primitive](value any) (T, bool) {
-	return coerceToUnsignedInt[T](value, 4294967295)
+func CoerceUint32[T Primitive](value any) (T, bool) {
+	return CoerceUnsignedInt[T](value, 4294967295)
 }
 
-func coerceToUint64[T Primitive](value any) (T, bool) {
-	return coerceToUnsignedInt[T](value, 18446744073709551615)
+func CoerceUint64[T Primitive](value any) (T, bool) {
+	return CoerceUnsignedInt[T](value, 18446744073709551615)
 }
 
-func coerceToUnsignedInt[T Primitive](value any, max uint64) (T, bool) {
+func CoerceUnsignedInt[T Primitive](value any, max uint64) (T, bool) {
 	var zero T
 	var result uint64
 	var valid bool
@@ -428,15 +657,15 @@ func coerceToUnsignedInt[T Primitive](value any, max uint64) (T, bool) {
 	return zero, false
 }
 
-func coerceToFloat32[T Primitive](value any) (T, bool) {
-	return coerceToFloat[T](value, true)
+func CoerceFloat32[T Primitive](value any) (T, bool) {
+	return CoerceFloat[T](value, true)
 }
 
-func coerceToFloat64[T Primitive](value any) (T, bool) {
-	return coerceToFloat[T](value, false)
+func CoerceFloat64[T Primitive](value any) (T, bool) {
+	return CoerceFloat[T](value, false)
 }
 
-func coerceToFloat[T Primitive](value any, isFloat32 bool) (T, bool) {
+func CoerceFloat[T Primitive](value any, isFloat32 bool) (T, bool) {
 	var zero T
 	var result float64
 	var valid bool
@@ -509,4 +738,40 @@ func coerceToFloat[T Primitive](value any, isFloat32 bool) (T, bool) {
 	}
 
 	return zero, false
+}
+
+// CoerceTime attempts to convert any value to time.Time.
+func CoerceTime(v any) (time.Time, bool) {
+	switch val := v.(type) {
+	case time.Time:
+		return val, true
+	case string:
+		// Try common time formats
+		formats := []string{
+			time.RFC3339,
+			time.RFC3339Nano,
+			time.RFC822,
+			time.RFC822Z,
+			time.RFC1123,
+			time.RFC1123Z,
+			"2006-01-02 15:04:05",
+			"2006-01-02T15:04:05",
+			"2006-01-02 15:04:05.000000000",
+			"2006-01-02",
+			"15:04:05",
+		}
+
+		for _, format := range formats {
+			if t, err := time.Parse(format, val); err == nil {
+				return t, true
+			}
+		}
+		return time.Time{}, false
+	case int64:
+		return time.Unix(val, 0).UTC(), true
+	case float64:
+		return time.Unix(int64(val), 0).UTC(), true
+	default:
+		return time.Time{}, false
+	}
 }

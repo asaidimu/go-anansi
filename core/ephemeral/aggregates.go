@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
+	
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
@@ -43,7 +44,7 @@ func sumAggregate(records []data.Document, field string) (any, error) {
 	}
 
 	if !foundNumeric && len(records) > 0 {
-		return nil, fmt.Errorf("no numeric values found for sum aggregation on field '%s'", field)
+		return nil, fmt.Errorf("%w on field '%s'", data.ErrNoNumericValuesForAggregation, field)
 	}
 	return sum, nil
 }

@@ -6,8 +6,9 @@ import (
 	"maps"
 	"reflect"
 	"sort"
-	"strings"
 	"time"
+
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // Document represents a flexible, schema-aware data structure with comprehensive utilities.
@@ -39,7 +40,11 @@ func convertToDocumentMap(data any) (map[string]any, error) {
 			}
 			return doc, nil
 		}
-		return nil, fmt.Errorf("invalid type for document: %T", data)
+		return nil, &DocumentError{
+		Operation: "convertToDocumentMap",
+		Message:   fmt.Sprintf("%s: %T", ErrInvalidTargetType.Error(), data),
+		Cause:     ErrInvalidTargetType,
+	}
 	}
 }
 
@@ -68,7 +73,7 @@ func MustNewDocument(data any) Document {
 
 // Get retrieves a value with detailed error information (direct key lookup only).
 func (d Document) Get(key string) (any, error) {
-	val, ok := d[key]
+	val, ok := utils.GetValueByPath(d, key);
 	if !ok {
 		return nil, &DocumentError{
 			Operation: "Get",
@@ -80,71 +85,9 @@ func (d Document) Get(key string) (any, error) {
 	return val, nil
 }
 
-// getValueByPath handles both direct key lookup and dot-notation paths
-func (d Document) getValueByPath(keyOrPath string) (any, error) {
-	// If contains dots, treat as path
-	if strings.Contains(keyOrPath, ".") {
-		return d.getNestedValue(keyOrPath)
-	}
-
-	// Direct key lookup
-	val, ok := d[keyOrPath]
-	if !ok {
-		return nil, &DocumentError{
-			Operation: "getValueByPath",
-			Key:       keyOrPath,
-			Message:   "key not found",
-			Cause:     ErrKeyNotFound,
-		}
-	}
-	return val, nil
-}
-
-// getNestedValue traverses a dot-separated path
-func (d Document) getNestedValue(path string) (any, error) {
-	parts := strings.Split(path, ".")
-	var current any = d
-
-	for i, part := range parts {
-		switch curr := current.(type) {
-		case Document:
-			val, err := curr.Get(part)
-			if err != nil {
-				return nil, &DocumentError{
-					Operation: "getNestedValue",
-					Key:       path,
-					Message:   fmt.Sprintf("failed at path segment '%s' (position %d)", part, i),
-					Cause:     err,
-				}
-			}
-			current = val
-		case map[string]any:
-			val, ok := curr[part]
-			if !ok {
-				return nil, &DocumentError{
-					Operation: "getNestedValue",
-					Key:       path,
-					Message:   fmt.Sprintf("key '%s' not found at path segment %d", part, i),
-					Cause:     ErrKeyNotFound,
-				}
-			}
-			current = val
-		default:
-			return nil, &DocumentError{
-				Operation: "getNestedValue",
-				Key:       path,
-				Message:   fmt.Sprintf("cannot traverse non-object at path segment '%s' (position %d): %T", part, i, current),
-				Cause:     ErrTypeMismatch,
-			}
-		}
-	}
-
-	return current, nil
-}
-
 // GetOr retrieves a value or returns a default if not found.
 func (d Document) GetOr(key string, defaultValue any) any {
-	if val, err := d.getValueByPath(key); err == nil {
+	if val, ok := utils.GetValueByPath(d, key); ok {
 		return val
 	}
 	return defaultValue
@@ -152,9 +95,14 @@ func (d Document) GetOr(key string, defaultValue any) any {
 
 // MustGet retrieves a value, panics if not found.
 func (d Document) MustGet(key string) any {
-	val, err := d.getValueByPath(key)
-	if err != nil {
-		panic(err)
+	val, ok := utils.GetValueByPath(d, key)
+	if !ok {
+		panic(&DocumentError{
+			Operation: "MustGet",
+			Key:       key,
+			Message:   "key not found",
+			Cause:     ErrKeyNotFound,
+		})
 	}
 	return val
 }
@@ -184,135 +132,116 @@ func (d Document) SetIfNotExists(key string, value any) bool {
 
 // GetString with comprehensive type coercion and path support.
 func (d Document) GetString(keyOrPath string) (string, error) {
-	val, err := d.getValueByPath(keyOrPath)
+	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(""), "GetString")
 	if err != nil {
 		return "", err
 	}
-
-	str, ok := CoerceToString(val)
-	if !ok {
-		return "", &DocumentError{
-			Operation: "GetString",
-			Key:       keyOrPath,
-			Message:   fmt.Sprintf("%s: cannot convert %T to string", ErrTypeConversion.Error(), val),
-			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
-		}
-	}
-	return str, nil
+	return val.(string), nil
 }
 
 // GetInt with comprehensive numeric coercion and path support.
 func (d Document) GetInt(keyOrPath string) (int, error) {
-	val, err := d.getValueByPath(keyOrPath)
+	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(0), "GetInt")
 	if err != nil {
 		return 0, err
 	}
-
-	num, ok := CoerceToInt(val)
-	if !ok {
-		return 0, &DocumentError{
-			Operation: "GetInt",
-			Key:       keyOrPath,
-			Message:   fmt.Sprintf("%s: cannot convert %T to int", ErrTypeConversion.Error(), val),
-			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
-		}
-	}
-	return num, nil
+	return val.(int), nil
 }
 
 // GetFloat64 with numeric coercion and path support.
 func (d Document) GetFloat64(keyOrPath string) (float64, error) {
-	val, err := d.getValueByPath(keyOrPath)
+	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(0.0), "GetFloat64")
 	if err != nil {
-		return 0, err
+		return 0.0, err
 	}
-
-	num, ok := CoerceToFloat64(val)
-	if !ok {
-		return 0, &DocumentError{
-			Operation: "GetFloat64",
-			Key:       keyOrPath,
-			Message:   fmt.Sprintf("%s: cannot convert %T to float64", ErrTypeConversion.Error(), val),
-			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
-		}
-	}
-	return num, nil
+	return val.(float64), nil
 }
 
 // GetBool with string parsing support and path support.
 func (d Document) GetBool(keyOrPath string) (bool, error) {
-	val, err := d.getValueByPath(keyOrPath)
+	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(false), "GetBool")
 	if err != nil {
 		return false, err
 	}
-
-	b, ok := CoerceToBool(val)
-	if !ok {
-		return false, &DocumentError{
-			Operation: "GetBool",
-			Key:       keyOrPath,
-			Message:   fmt.Sprintf("%s: cannot convert %T to bool", ErrTypeConversion.Error(), val),
-			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
-		}
-	}
-	return b, nil
+	return val.(bool), nil
 }
 
 // GetTime parses time from various formats with path support.
 func (d Document) GetTime(keyOrPath string) (time.Time, error) {
-	val, err := d.getValueByPath(keyOrPath)
+	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(time.Time{}), "GetTime")
 	if err != nil {
 		return time.Time{}, err
 	}
-
-	t, ok := CoerceToTime(val)
-	if !ok {
-		return time.Time{}, &DocumentError{
-			Operation: "GetTime",
-			Key:       keyOrPath,
-			Message:   fmt.Sprintf("%s: cannot convert %T to time.Time", ErrTypeConversion.Error(), val),
-			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
-		}
-	}
-	return t, nil
+	return val.(time.Time), nil
 }
 
 // GetDocument retrieves a nested document with path support.
 func (d Document) GetDocument(keyOrPath string) (Document, error) {
-	val, err := d.getValueByPath(keyOrPath)
+	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(Document{}), "GetDocument")
 	if err != nil {
 		return nil, err
 	}
-
-	doc, ok := AsDocument(val)
-	if !ok {
-		return nil, &DocumentError{
-			Operation: "GetDocument",
-			Key:       keyOrPath,
-			Message:   fmt.Sprintf("%s: cannot convert %T to Document", ErrTypeConversion.Error(), val),
-			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
-		}
-	}
-	return doc, nil
+	return val.(Document), nil
 }
 
 // GetDocumentArray retrieves an array of documents with path support.
 func (d Document) GetDocumentArray(keyOrPath string) ([]Document, error) {
-	val, err := d.getValueByPath(keyOrPath)
+	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]Document{}), "GetDocumentArray")
 	if err != nil {
 		return nil, err
 	}
+	return val.([]Document), nil
+}
 
-	docs, ok := AsDocumentArray(val)
+// getAndCoerce is a private helper function to retrieve a value by path and coerce it to a target type.
+func (d Document) getAndCoerce(keyOrPath string, targetType reflect.Type, operation string) (any, error) {
+	val, ok := utils.GetValueByPath(d, keyOrPath)
 	if !ok {
 		return nil, &DocumentError{
-			Operation: "GetDocumentArray",
+			Operation: operation,
 			Key:       keyOrPath,
-			Message:   fmt.Sprintf("%s: cannot convert %T to []Document", ErrTypeConversion.Error(), val),
+			Message:   "key not found",
+			Cause:     ErrKeyNotFound,
+		}
+	}
+
+	var coercedVal any
+	var conversionOk bool
+
+	switch targetType {
+	case reflect.TypeOf(""):
+		coercedVal, conversionOk = utils.CoerceToPrimitiveValue[string](val)
+	case reflect.TypeOf(0):
+		coercedVal, conversionOk = utils.CoerceToPrimitiveValue[int](val)
+	case reflect.TypeOf(0.0):
+		coercedVal, conversionOk = utils.CoerceToPrimitiveValue[float64](val)
+	case reflect.TypeOf(false):
+		coercedVal, conversionOk = utils.CoerceToPrimitiveValue[bool](val)
+	case reflect.TypeOf(time.Time{}):
+		coercedVal, conversionOk = utils.CoerceTime(val)
+	case reflect.TypeOf(Document{}):
+		coercedVal, conversionOk = AsDocument(val)
+	case reflect.TypeOf([]Document{}):
+		coercedVal, conversionOk = AsDocumentArray(val)
+	default:
+		return nil, &DocumentError{
+			Operation: operation,
+			Key:       keyOrPath,
+			Message:   fmt.Sprintf("unsupported target type for coercion: %s", targetType.String()),
+			Cause:     fmt.Errorf("%w: unsupported type", ErrTypeConversion),
+		}
+	}
+
+	if !conversionOk {
+		return nil, &DocumentError{
+			Operation: operation,
+			Key:       keyOrPath,
+			Message:   fmt.Sprintf("%s: cannot convert %T to %s", ErrTypeConversion.Error(), val, targetType.String()),
 			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
 		}
 	}
-	return docs, nil
+
+	return coercedVal, nil
 }
 
 // Keys returns all keys sorted alphabetically.
@@ -453,8 +382,8 @@ func (d Document) HasKey(key string) bool {
 
 // HasPath checks if a path exists (supports dot notation).
 func (d Document) HasPath(keyOrPath string) bool {
-	_, err := d.getValueByPath(keyOrPath)
-	return err == nil
+	_, ok := utils.GetValueByPath(d, keyOrPath)
+	return ok
 }
 
 // Equals performs deep equality comparison.
@@ -556,8 +485,8 @@ func compareValues(a, b any) int {
 	}
 
 	// Try numeric comparison first
-	if numA, okA := CoerceToFloat64(a); okA {
-		if numB, okB := CoerceToFloat64(b); okB {
+	if numA, okA := utils.CoerceToPrimitiveValue[float64](a); okA {
+		if numB, okB := utils.CoerceToPrimitiveValue[float64](b); okB {
 			if numA < numB {
 				return -1
 			}
@@ -569,8 +498,8 @@ func compareValues(a, b any) int {
 	}
 
 	// String comparison
-	strA, _ := CoerceToString(a)
-	strB, _ := CoerceToString(b)
+	strA, _ := utils.CoerceToPrimitiveValue[string](a)
+	strB, _ := utils.CoerceToPrimitiveValue[string](b)
 
 	if strA < strB {
 		return -1

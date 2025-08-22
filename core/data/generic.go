@@ -3,6 +3,8 @@ package data
 import (
 	"fmt"
 	"time"
+
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // Get with generic type support
@@ -41,31 +43,31 @@ func GetWithCoercion[T any](doc Document, key string) (T, error) {
 	// Try coercion for common types
 	switch any(zero).(type) {
 	case string:
-		if str, ok := CoerceToString(val); ok {
+		if str, ok := utils.CoerceToPrimitiveValue[string](val); ok {
 			if result, ok := any(str).(T); ok {
 				return result, nil
 			}
 		}
 	case int:
-		if num, ok := CoerceToInt(val); ok {
+		if num, ok := utils.CoerceToPrimitiveValue[int](val); ok {
 			if result, ok := any(num).(T); ok {
 				return result, nil
 			}
 		}
 	case float64:
-		if num, ok := CoerceToFloat64(val); ok {
+		if num, ok := utils.CoerceToPrimitiveValue[float64](val); ok {
 			if result, ok := any(num).(T); ok {
 				return result, nil
 			}
 		}
 	case bool:
-		if b, ok := CoerceToBool(val); ok {
+		if b, ok := utils.CoerceToPrimitiveValue[bool](val); ok {
 			if result, ok := any(b).(T); ok {
 				return result, nil
 			}
 		}
 	case time.Time:
-		if t, ok := CoerceToTime(val); ok {
+		if t, ok := utils.CoerceTime(val); ok {
 			if result, ok := any(t).(T); ok {
 				return result, nil
 			}
