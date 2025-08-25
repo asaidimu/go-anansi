@@ -122,7 +122,11 @@ func (l *QDSLLexer) getNextTokenInternal() Token {
 			l.readChar() // Advance past the second '='
 		} else {
 			tok = newToken(TOKEN_ILLEGAL, l.ch, tokenLine, tokenColumn, tokenPosition)
-			l.addError(fmt.Errorf("unexpected character '!' at line %d, column %d", tokenLine, tokenColumn))
+			l.addError(&LexerError{
+				Operation: "NextToken",
+				Message:   fmt.Sprintf("unexpected character '%c' at line %d, column %d", l.ch, tokenLine, tokenColumn),
+				Cause:     ErrUnexpectedCharacter,
+			})
 			l.readChar()
 		}
 	case '<':
@@ -238,7 +242,11 @@ func (l *QDSLLexer) getNextTokenInternal() Token {
 			// readNumber() already advanced position
 		} else {
 			tok = newToken(TOKEN_ILLEGAL, l.ch, tokenLine, tokenColumn, tokenPosition)
-			l.addError(fmt.Errorf("unexpected character '%c' at line %d, column %d", l.ch, tokenLine, tokenColumn))
+			l.addError(&LexerError{
+				Operation: "NextToken",
+				Message:   fmt.Sprintf("unexpected character '%c' at line %d, column %d", l.ch, tokenLine, tokenColumn),
+				Cause:     ErrUnexpectedCharacter,
+			})
 			l.readChar()
 		}
 	}
@@ -357,7 +365,11 @@ func (l *QDSLLexer) readString() string {
 	}
 
 	if l.ch == 0 {
-		l.addError(fmt.Errorf("unterminated string literal at line %d", l.line))
+		l.addError(&LexerError{
+			Operation: "readString",
+			Message:   fmt.Sprintf("unterminated string literal at line %d", l.line),
+			Cause:     ErrUnterminatedString,
+		})
 		return l.input[position:l.position]
 	}
 

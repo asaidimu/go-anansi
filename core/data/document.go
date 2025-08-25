@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"reflect"
@@ -228,7 +229,7 @@ func (d Document) getAndCoerce(keyOrPath string, targetType reflect.Type, operat
 			Operation: operation,
 			Key:       keyOrPath,
 			Message:   fmt.Sprintf("unsupported target type for coercion: %s", targetType.String()),
-			Cause:     fmt.Errorf("%w: unsupported type", ErrTypeConversion),
+			Cause:     ErrTypeConversion,
 		}
 	}
 
@@ -237,7 +238,7 @@ func (d Document) getAndCoerce(keyOrPath string, targetType reflect.Type, operat
 			Operation: operation,
 			Key:       keyOrPath,
 			Message:   fmt.Sprintf("%s: cannot convert %T to %s", ErrTypeConversion.Error(), val, targetType.String()),
-			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
+			Cause:     errors.Join(ErrTypeConversion, ErrTypeMismatch),
 		}
 	}
 

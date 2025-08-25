@@ -48,7 +48,11 @@ func (d Document) parseJSONPath(path string) ([]string, error) {
 			current.WriteRune(char)
 		case ']':
 			if !inBrackets {
-				return nil, fmt.Errorf("%w: unexpected ']' at position %d", ErrInvalidJSONPathSyntax, i)
+				return nil, &DocumentError{
+					Operation: "parseJSONPath",
+					Message:   fmt.Sprintf("unexpected ']' at position %d", i),
+					Cause:     ErrInvalidJSONPathSyntax,
+				}
 			}
 			current.WriteRune(char)
 			segments = append(segments, current.String())
@@ -69,7 +73,11 @@ func (d Document) parseJSONPath(path string) ([]string, error) {
 	}
 
 	if inBrackets {
-		return nil, fmt.Errorf("%w: unclosed bracket in path", ErrInvalidJSONPathSyntax)
+		return nil, &DocumentError{
+			Operation: "parseJSONPath",
+			Message:   "unclosed bracket in path",
+			Cause:     ErrInvalidJSONPathSyntax,
+		}
 	}
 
 	if current.Len() > 0 {
@@ -146,7 +154,11 @@ func (d Document) processBracketSegment(item any, segment string) ([]any, error)
 		return []any{}, nil
 	}
 
-	return nil, fmt.Errorf("%w: invalid bracket expression: %s", ErrInvalidJSONPathSyntax, segment)
+	return nil, &DocumentError{
+		Operation: "processBracketSegment",
+		Message:   fmt.Sprintf("invalid bracket expression: %s", segment),
+		Cause:     ErrInvalidJSONPathSyntax,
+	}
 }
 
 // processWildcard handles wildcard operations on arrays and objects

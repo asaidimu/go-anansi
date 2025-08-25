@@ -1,6 +1,7 @@
 package query
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 
@@ -25,7 +26,11 @@ import (
 //   }
 func From(data any) (*Query, error) {
 	if data == nil {
-		return nil, fmt.Errorf("input data cannot be nil")
+		return nil, &QueryError{
+			Operation: "From",
+			Message:   "input data cannot be nil",
+			Cause:     errors.New("input data cannot be nil"), // No specific error variable for this
+		}
 	}
 
 	var jsonBytes []byte
@@ -44,7 +49,11 @@ func From(data any) (*Query, error) {
 		}
 		jsonBytes = v
 	default:
-		return nil, fmt.Errorf("unsupported input type: %T, expected string or []byte", data)
+		return nil, &QueryError{
+			Operation: "From",
+			Message:   fmt.Sprintf("unsupported input type: %T, expected string or []byte", data),
+			Cause:     errors.New("unsupported input type"), // No specific error variable for this
+		}
 	}
 
 	// Check for null JSON
@@ -57,7 +66,11 @@ func From(data any) (*Query, error) {
 
 	// Unmarshal the JSON data using the custom UnmarshalJSON methods
 	if err = utils.FromJSON(jsonBytes, &query); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal JSON into Query: %w", err)
+		return nil, &QueryError{
+			Operation: "From",
+			Message:   "failed to unmarshal JSON into Query",
+			Cause:     err,
+		}
 	}
 
 	return &query, nil
@@ -91,34 +104,58 @@ func (q *Query) Validate() error {
 	// Validate pagination if present
 	if q.Pagination != nil {
 		if q.Pagination.Limit < 0 {
-			return fmt.Errorf("pagination limit cannot be negative: %d", q.Pagination.Limit)
+			return &QueryError{
+				Operation: "Validate",
+				Message:   fmt.Sprintf("pagination limit cannot be negative: %d", q.Pagination.Limit),
+				Cause:     ErrPaginationLimitNotPositive, // Reusing this error
+			}
 		}
 		if q.Pagination.Offset != nil && *q.Pagination.Offset < 0 {
-			return fmt.Errorf("pagination offset cannot be negative: %d", *q.Pagination.Offset)
+			return &QueryError{
+				Operation: "Validate",
+				Message:   fmt.Sprintf("pagination offset cannot be negative: %d", *q.Pagination.Offset),
+				Cause:     ErrPaginationOffsetNegative, // Reusing this error
+			}
 		}
 	}
 
 	// Validate aggregations if present
 	for i, agg := range q.Aggregations {
 		if agg.Field == "" && agg.Type != AggregationTypeCount {
-			return fmt.Errorf("aggregation at index %d: field is required for %s aggregation", i, agg.Type)
+			return &QueryError{
+				Operation: "Validate",
+				Message:   fmt.Sprintf("aggregation at index %d: field is required for %s aggregation", i, agg.Type),
+				Cause:     errors.New("aggregation field is required"), // No specific error variable for this
+			}
 		}
 	}
 
 	// Validate joins if present
 	for i, join := range q.Joins {
 		if join.Target.Name == "" {
-			return fmt.Errorf("join at index %d: target name is required", i)
+			return &QueryError{
+				Operation: "Validate",
+				Message:   fmt.Sprintf("join at index %d: target name is required", i),
+				Cause:     errors.New("join target name is required"), // No specific error variable for this
+			}
 		}
 	}
 
 	// Validate sort configurations if present
 	for i, sort := range q.Sort {
 		if sort.Field == "" {
-			return fmt.Errorf("sort at index %d: field is required", i)
+			return &QueryError{
+				Operation: "Validate",
+				Message:   fmt.Sprintf("sort at index %d: field is required", i),
+				Cause:     errors.New("sort field is required"), // No specific error variable for this
+			}
 		}
 		if sort.Direction != SortDirectionAsc && sort.Direction != SortDirectionDesc {
-			return fmt.Errorf("sort at index %d: invalid direction '%s', must be 'asc' or 'desc'", i, sort.Direction)
+			return &QueryError{
+				Operation: "Validate",
+				Message:   fmt.Sprintf("sort at index %d: invalid direction '%s', must be 'asc' or 'desc'", i, sort.Direction),
+				Cause:     ErrInvalidSortDirection, // Reusing this error
+			}
 		}
 	}
 
@@ -130,7 +167,11 @@ func (q *Query) Validate() error {
 func (q *Query) Clone() (*Query, error) {
 	var newQuery Query
 	if err := utils.Clone(*q, &newQuery); err != nil {
-		return nil, fmt.Errorf("failed to clone query: %w", err)
+		return nil, &QueryError{
+			Operation: "Clone",
+			Message:   "failed to clone query",
+			Cause:     err,
+		}
 	}
 	return &newQuery, nil
 }

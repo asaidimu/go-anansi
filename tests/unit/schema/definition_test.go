@@ -33,6 +33,123 @@ func TestNestedSchemaDefinition_UnmarshalJSON(t *testing.T) {
 
 	t.Run("should unmarshal structured nested schema with array of fields", func(t *testing.T) {
 		jsonData := `{
+			"name": "OrganisationalUnit",
+  "version": "1.0.0",
+  "description": "Represents a unit within an organizational structure, supporting hierarchical and peer-to-peer groupings.",
+  "fields": {
+    "id": {
+      "name": "id",
+      "type": "string",
+      "description": "Unique identifier for the organizational unit.",
+      "required": true,
+      "unique": true,
+      "hint": {
+        "input": {
+          "type": "text",
+          "placeholder": "e.g., ENT-12345"
+        }
+      }
+    },
+    "name": {
+      "name": "name",
+      "type": "string",
+      "description": "Name of the organizational unit.",
+      "required": true
+    },
+    "parent": {
+      "name": "parent",
+      "type": "union",
+      "description": "Optional parent unit for hierarchy, identified by ID or full OrganisationalUnit object.",
+      "required": false,
+      "schema": [
+        {
+          "id": "GenericString"
+        },
+        {
+          "id": "OrganisationalUnit"
+        }
+      ]
+    },
+    "members": {
+      "name": "members",
+      "type": "array",
+      "description": "Array of memberships within this organizational unit.",
+      "required": true,
+      "itemsType": "object",
+      "schema": {
+        "id": "Membership"
+      }
+    },
+    "data": {
+      "name": "data",
+      "type": "record",
+      "description": "Unit-specific data for the organizational unit.",
+      "required": true
+    },
+    "metadata": {
+      "name": "metadata",
+      "type": "record",
+      "description": "Optional metadata for the organizational unit.",
+      "required": false
+    }
+  },
+  "nestedSchemas": {
+    "GenericStringSchema": {
+      "name": "GenericString",
+      "description": "A generic string type used for union memberships.",
+      "type": "string",
+      "concrete": false
+    },
+    "MembershipSchema": {
+        "name": "Membership",
+        "description": "Represents a membership within an organizational unit, linking a person to specific membership-related data.",
+        "type": "record"
+      },
+    "PersonSchema": {
+      "name": "Person",
+      "description": "Represents a person or entity, such as an employee or firm.",
+      "concrete": true,
+      "fields": {
+        "id": {
+          "name": "id",
+          "type": "string",
+          "description": "Unique identifier (e.g., 'EMP123' for employees, 'FRM456' for firms). Supports alphanumeric IDs or UUIDs.",
+          "required": true,
+          "unique": true,
+          "hint": {
+            "input": {
+              "type": "text",
+              "placeholder": "e.g., EMP123"
+            }
+          }
+        },
+        "data": {
+          "name": "data",
+          "type": "record",
+          "description": "Core data specific to the entity, including its type (natural or artificial person).",
+          "required": true
+        },
+        "metadata": {
+          "name": "metadata",
+          "type": "record",
+          "description": "Metadata for additional context (e.g., { hireDate: ISOStringDate }). Must include 'data-role'.",
+          "required": true
+        }
+      }
+    }
+  }
+		}`
+
+		var nsd schema.SchemaDefinition
+		nsd.From([]byte(jsonData))
+
+		t.Logf("%s\n", nsd.MustToJSON())
+		nsd.MustClone()
+		assert.Equal(t, "OrganisationalUnit", nsd.Name)
+	})
+
+	t.Run("should unmarshal structured nested schema with array of fields", func(t *testing.T) {
+		jsonData := `{
 			"name": "contact_schema",
 			"fields": [
 				{

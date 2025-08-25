@@ -38,7 +38,11 @@ func (s *ephemeralStore) getCollection(name string) (*collection, error) {
 	defer s.mu.RUnlock()
 	c, ok := s.collections[name]
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrCollectionNotFound, name)
+		return nil, &EphemeralError{
+			Operation: "getCollection",
+			Message:   fmt.Sprintf("'%s'", name),
+			Cause:     ErrCollectionNotFound,
+		}
 	}
 	return c, nil
 }

@@ -2,7 +2,6 @@ package utils
 
 import (
 	"encoding/json"
-	"fmt"
 )
 
 // Clonable is an interface for objects that can be cloned.
@@ -19,7 +18,11 @@ type ToJSONer interface {
 // FromJSON populates an object from a JSON byte slice.
 func FromJSON[T any](data []byte, target *T) error {
 	if err := json.Unmarshal(data, target); err != nil {
-		return fmt.Errorf("error unmarshaling JSON: %w", err)
+		return &UtilityError{
+			Operation: "FromJSON",
+			Message:   ErrUnmarshalJSON.Error(),
+			Cause:     err,
+		}
 	}
 	return nil
 }
@@ -28,7 +31,11 @@ func FromJSON[T any](data []byte, target *T) error {
 func Unmarshal[T any](data []byte) (T, error) {
 	var target T
 	if err := json.Unmarshal(data, &target); err != nil {
-		return target, fmt.Errorf("error unmarshaling JSON: %w", err)
+		return target, &UtilityError{
+			Operation: "Unmarshal",
+			Message:   ErrUnmarshalJSON.Error(),
+			Cause:     err,
+		}
 	}
 	return target, nil
 }
@@ -37,7 +44,11 @@ func Unmarshal[T any](data []byte) (T, error) {
 func ToJSON(v any) (string, error) {
 	bytes, err := json.Marshal(v)
 	if err != nil {
-		return "", fmt.Errorf("error marshaling to JSON: %w", err)
+		return "", &UtilityError{
+			Operation: "ToJSON",
+			Message:   ErrMarshalJSON.Error(),
+			Cause:     err,
+		}
 	}
 	return string(bytes), nil
 }
@@ -46,7 +57,11 @@ func ToJSON(v any) (string, error) {
 func ToJSONBytes(v any) ([]byte, error) {
 	bytes, err := json.Marshal(v)
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling to JSON bytes: %w", err)
+		return nil, &UtilityError{
+			Operation: "ToJSONBytes",
+			Message:   ErrMarshalJSON.Error(),
+			Cause:     err,
+		}
 	}
 	return bytes, nil
 }
@@ -55,7 +70,11 @@ func ToJSONBytes(v any) ([]byte, error) {
 func ToJSONIndent(v any) ([]byte, error) {
 	bytes, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return nil, fmt.Errorf("error marshaling to indented JSON: %w", err)
+		return nil, &UtilityError{
+			Operation: "ToJSONIndent",
+			Message:   ErrMarshalJSON.Error(),
+			Cause:     err,
+		}
 	}
 	return bytes, nil
 }
@@ -64,7 +83,11 @@ func ToJSONIndent(v any) ([]byte, error) {
 func Clone[T any](from T, to *T) error {
 	bytes, err := json.Marshal(from)
 	if err != nil {
-		return fmt.Errorf("failed to marshal for cloning: %w", err)
+		return &UtilityError{
+			Operation: "Clone",
+			Message:   ErrMarshalJSON.Error(),
+			Cause:     err,
+		}
 	}
 	return json.Unmarshal(bytes, to)
 }

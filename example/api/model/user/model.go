@@ -2,67 +2,86 @@ package user
 
 import (
 	"context"
+	"sync"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/example/api/model"
+	"go.uber.org/zap"
 )
 
 var (
 	modelSchema *schema.SchemaDefinition
+
+	// userModelInstance is the single instance of our UserModel.
+	userModelInstance *UserModel
+
+	// once ensures that the initialization logic runs only once.
+	once sync.Once
+
+	// initError stores any error that occurred during the initialization.
+	initError error
 )
 
+const ModelName = "user"
 
-type Model struct {
-	collection base.Collection
-	name string
+// UserModel represents the user collection and its operations.
+type UserModel struct {
+	base.Collection
+	Name   string
+	logger *zap.Logger
 }
 
-func NewUserModel(ctx context.Context, p base.Persistence) (*Model, error) {
-	model := &Model{}
-	schema, err := model.Schema()
-	if err != nil {
-		return nil, err
-	}
+var _ base.Collection = (*UserModel)(nil)
 
-	model.name = schema.Name
-	collection, err := p.Collection(ctx, schema.Name)
+// GetUserModel is the function to retrieve the singleton instance of UserModel.
+// It will initialize the instance the first time it's called and return
+// the same instance on subsequent calls. It is thread-safe.
+func GetUserModel(ctx context.Context, p base.Persistence, logger *zap.Logger) (*UserModel, error) {
+	// once.Do ensures the function literal is executed exactly once.
+	once.Do(func() {
+		// This is the initialization logic, which is run only once.
+		var schemaDef *schema.SchemaDefinition
+		schemaDef, initError = model.GetSchema(ModelName)
+		if initError != nil {
+			return // Stop here if we can't get the schema.
+		}
 
-	if err != nil {
-		// ideally we should check if error is `not exist` in which case we create
-		// the collection
-		return nil, err
-	}
+		var collection base.Collection
+		collection, initError = p.Collection(ctx, schemaDef.Name)
+		if initError != nil {
+			return // Stop here if we can't get the collection.
+		}
 
-	model.collection = collection
-	return  model, nil
+		// If initialization was successful, create the instance.
+		userModelInstance = &UserModel{
+			Collection: collection,
+			Name:       schemaDef.Name,
+			logger:     logger,
+		}
+	})
+
+	// Return the singleton instance and any error that occurred during initialization.
+	return userModelInstance, initError
 }
 
-func (m *Model) Schema() (*schema.SchemaDefinition, error) {
-	if modelSchema != nil {
-		return modelSchema, nil
-	}
-
-	modelSchema, err := model.GetSchema("user")
-	if err != nil {
-		return nil, err
-	}
-
-	return modelSchema, nil
+func (m *UserModel) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
+	m.logger.Debug("Creating a user")
+	return m.Collection.CreateOne(ctx, doc)
 }
 
-func (m *Model) CreateAdminUser() (error) {
+func (m *UserModel) CreateAdminUser() error {
 	ctx := context.Background()
 
 	adminUser := data.MustNewDocument(map[string]any{
-		"id":           "admin123",
-		"username":     "admin",
-		"passwordHash": "hashed_admin_password", // In real app, hash this
-		"role":         "admin",
+		"id":       "admin123",
+		"username": "admin",
+		"password": "hashed_admin_password", // In a real app, hash this
+		"role":     "admin",
 	})
 
-	_, err := m.collection.CreateOne(ctx, adminUser)
+	_, err := m.CreateOne(ctx, adminUser)
 	if err != nil {
 		return err
 	}

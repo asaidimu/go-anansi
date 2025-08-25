@@ -17,7 +17,6 @@ import (
 )
 
 var (
-	ErrCollectionNotFound = errors.New("collection not found")
 	ErrNotTransaction     = errors.New("not a transaction")
 )
 
@@ -275,11 +274,19 @@ func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schem
 								break
 							}
 							stream.Close()
-							return nil, fmt.Errorf("%w for unique check: %w", registry.ErrFailedToReadDocuments, err)
+							return nil, &EphemeralError{
+								Operation: "InsertDocuments",
+								Message:   fmt.Sprintf("for unique check: %v", registry.ErrFailedToReadDocuments),
+								Cause:     errors.Join(registry.ErrFailedToReadDocuments, err),
+							}
 						}
 						if existingDocResult.Data[field.Name] == val {
 							stream.Close()
-							return nil, fmt.Errorf("%w: field '%s' with value '%v' already exists", registry.ErrUniqueConstraintViolation, field.Name, val)
+															return nil, &EphemeralError{
+									Operation: "InsertDocuments",
+									Message:   fmt.Sprintf("field '%s' with value '%v' already exists", field.Name, val),
+									Cause:     registry.ErrUniqueConstraintViolation,
+								}
 						}
 					}
 					stream.Close()
@@ -478,7 +485,11 @@ func (m *EphemeralDatabaseInteractor) CreateCollection(ctx context.Context, sche
 	defer m.store.mu.Unlock()
 
 	if _, exists := m.store.collections[schemaDef.Name]; exists {
-		return fmt.Errorf("%w: '%s'", registry.ErrCollectionAlreadyExists, schemaDef.Name)
+		return &EphemeralError{
+			Operation: "CreateCollection",
+			Message:   fmt.Sprintf("'%s'", schemaDef.Name),
+			Cause:     registry.ErrCollectionAlreadyExists,
+		}
 	}
 
 	newStore := store.NewStore()
@@ -487,13 +498,21 @@ func (m *EphemeralDatabaseInteractor) CreateCollection(ctx context.Context, sche
 	for _, field := range schemaDef.Fields {
 		if field.Unique != nil && *field.Unique {
 			if err := newStore.CreateIndex(field.Name, []string{field.Name}); err != nil {
-				return fmt.Errorf("%w for field %s: %w", registry.ErrFailedToCreateIndex, field.Name, err)
+				return &EphemeralError{
+					Operation: "CreateCollection",
+					Message:   fmt.Sprintf("for field %s", field.Name),
+					Cause:     errors.Join(registry.ErrFailedToCreateIndex, err),
+				}
 			}
 		}
 	}
 	for _, index := range schemaDef.Indexes {
 		if err := newStore.CreateIndex(index.Name, index.Fields); err != nil {
-			return fmt.Errorf("%w '%s': %w", registry.ErrFailedToCreateIndex, index.Name, err)
+			return &EphemeralError{
+				Operation: "CreateCollection",
+				Message:   fmt.Sprintf("'%s'", index.Name),
+				Cause:     errors.Join(registry.ErrFailedToCreateIndex, err),
+			}
 		}
 	}
 
@@ -533,7 +552,11 @@ func (m *EphemeralDatabaseInteractor) DropCollection(ctx context.Context,name st
 
 	c, ok := m.store.collections[name]
 	if !ok {
-		return fmt.Errorf("%w: %s", ErrCollectionNotFound, name)
+		return &EphemeralError{
+			Operation: "DropCollection",
+			Message:   fmt.Sprintf("'%s'", name),
+			Cause:     ErrCollectionNotFound,
+		}
 	}
 
 	c.data.Close()

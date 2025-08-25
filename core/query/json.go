@@ -2,6 +2,7 @@ package query
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 )
 
@@ -58,7 +59,11 @@ func (qdc *QueryDistinctConfig) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	return fmt.Errorf("invalid QueryDistinctConfig: expected boolean or object with 'fields' array, got %s", string(data))
+	return &QueryError{
+		Operation: "UnmarshalJSON",
+		Message:   fmt.Sprintf("invalid QueryDistinctConfig: expected boolean or object with 'fields' array, got %s", string(data)),
+		Cause:     errors.New("invalid QueryDistinctConfig"), // No specific error variable for this
+	}
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface for QueryFilter.
@@ -74,7 +79,11 @@ func (qf *QueryFilter) UnmarshalJSON(data []byte) error {
 	// Use an anonymous map to peek at the raw JSON data to identify the type
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return fmt.Errorf("invalid QueryFilter: failed to unmarshal into raw map: %w", err)
+		return &QueryError{
+			Operation: "UnmarshalJSON",
+			Message:   "invalid QueryFilter: failed to unmarshal into raw map",
+			Cause:     err,
+		}
 	}
 
 	// Priority 1: Check for "condition" wrapper, which indicates a FilterCondition
@@ -85,7 +94,11 @@ func (qf *QueryFilter) UnmarshalJSON(data []byte) error {
 			return nil
 		}
 		// If there's a "condition" key but it failed to unmarshal, it's an error.
-		return fmt.Errorf("invalid QueryFilter: failed to unmarshal nested FilterCondition")
+		return &QueryError{
+		Operation: "UnmarshalJSON",
+		Message:   "invalid QueryFilter: failed to unmarshal nested FilterCondition",
+		Cause:     errors.New("failed to unmarshal nested FilterCondition"), // No specific error variable for this
+	}
 	}
 
 	// Priority 2: Attempt to unmarshal as FilterGroup (has "conditions" field)
@@ -123,7 +136,11 @@ func (qf *QueryFilter) UnmarshalJSON(data []byte) error {
 	}
 
 	// If none of the above types matched, then it's an invalid structure.
-	return fmt.Errorf("invalid QueryFilter: data does not match FilterCondition, FilterGroup, TextSearchQuery, or wrapped condition: %s", string(data))
+	return &QueryError{
+		Operation: "UnmarshalJSON",
+		Message:   fmt.Sprintf("invalid QueryFilter: data does not match FilterCondition, FilterGroup, TextSearchQuery, or wrapped condition: %s", string(data)),
+		Cause:     errors.New("invalid QueryFilter structure"), // No specific error variable for this
+	}
 }
 
 // MarshalJSON implements the json.Marshaler interface for QueryFilter.
@@ -221,7 +238,11 @@ func (fv *FilterValue) UnmarshalJSON(data []byte) error {
 	}
 
 	// If none of the above succeeded, the data is not a recognized FilterValue type.
-	return fmt.Errorf("unsupported FilterValue type or invalid JSON: %s", string(data))
+	return &QueryError{
+		Operation: "UnmarshalJSON",
+		Message:   fmt.Sprintf("unsupported FilterValue type or invalid JSON: %s", string(data)),
+		Cause:     errors.New("unsupported FilterValue type or invalid JSON"), // No specific error variable for this
+	}
 }
 
 // MarshalJSON implements the json.Marshaler interface for FilterValue.
@@ -277,28 +298,48 @@ func (p *ProjectionComputedItem) UnmarshalJSON(b []byte) error {
 	var itemType string
 	if typeVal, ok := raw["type"]; ok {
 		if err := json.Unmarshal(typeVal, &itemType); err != nil {
-			return fmt.Errorf("failed to unmarshal 'type' field in ProjectionComputedItem: %w", err)
+			return &QueryError{
+				Operation: "UnmarshalJSON",
+				Message:   "failed to unmarshal 'type' field in ProjectionComputedItem",
+				Cause:     err,
+			}
 		}
 	} else {
 		// If 'type' field is missing, it's an invalid ProjectionComputedItem
-		return fmt.Errorf("missing 'type' field for ProjectionComputedItem")
+		return &QueryError{
+			Operation: "UnmarshalJSON",
+			Message:   "missing 'type' field for ProjectionComputedItem",
+			Cause:     errors.New("missing 'type' field"), // No specific error variable for this
+		}
 	}
 
 	switch itemType {
 	case "computed":
 		var cfe ComputedFieldExpression
 		if err := json.Unmarshal(b, &cfe); err != nil {
-			return fmt.Errorf("failed to unmarshal as ComputedFieldExpression: %w", err)
+			return &QueryError{
+				Operation: "UnmarshalJSON",
+				Message:   "failed to unmarshal as ComputedFieldExpression",
+				Cause:     err,
+			}
 		}
 		p.ComputedFieldExpression = &cfe
 	case "case":
 		var ce CaseExpression
 		if err := json.Unmarshal(b, &ce); err != nil {
-			return fmt.Errorf("failed to unmarshal as CaseExpression: %w", err)
+			return &QueryError{
+				Operation: "UnmarshalJSON",
+				Message:   "failed to unmarshal as CaseExpression",
+				Cause:     err,
+			}
 		}
 		p.CaseExpression = &ce
 	default:
-		return fmt.Errorf("unknown 'type' field for ProjectionComputedItem: %s", itemType)
+		return &QueryError{
+			Operation: "UnmarshalJSON",
+			Message:   fmt.Sprintf("unknown 'type' field for ProjectionComputedItem: %s", itemType),
+			Cause:     errors.New("unknown 'type' field"), // No specific error variable for this
+		}
 	}
 
 	return nil
@@ -323,7 +364,11 @@ func (p PaginationOptions) MarshalJSON() ([]byte, error) {
 		return json.Marshal(aux)
 	default:
 		// Handle unknown or unsupported pagination types.
-		return nil, fmt.Errorf("unknown pagination type: %s", p.Type)
+		return nil, &QueryError{
+			Operation: "MarshalJSON",
+			Message:   fmt.Sprintf("unknown pagination type: %s", p.Type),
+			Cause:     errors.New("unknown pagination type"), // No specific error variable for this
+		}
 	}
 }
 
@@ -347,12 +392,20 @@ func (p *PaginationOptions) UnmarshalJSON(b []byte) error {
 			Offset *int `json:"offset,omitempty"`
 		}
 		if err := json.Unmarshal(b, &aux); err != nil {
-			return fmt.Errorf("failed to unmarshal offset pagination options: %w", err)
+			return &QueryError{
+				Operation: "UnmarshalJSON",
+				Message:   "failed to unmarshal offset pagination options",
+				Cause:     err,
+			}
 		}
 		p.Limit = aux.Limit
 		p.Offset = aux.Offset
 	default:
-		return fmt.Errorf("unknown or missing pagination type '%s' in JSON", p.Type)
+		return &QueryError{
+			Operation: "UnmarshalJSON",
+			Message:   fmt.Sprintf("unknown or missing pagination type '%s' in JSON", p.Type),
+			Cause:     errors.New("unknown or missing pagination type"), // No specific error variable for this
+		}
 	}
 
 	return nil

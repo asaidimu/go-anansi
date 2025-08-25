@@ -20,10 +20,11 @@ func main() {
 	persistence, cleanup := setup()
 	defer cleanup()
 
-	// 9. Populate some initial data (e.g., an admin user)
-	users, err := user.NewUserModel(context.Background(), persistence)
-	if err != nil {
-		log.Fatal("Failed to create users model:", err)
+	usersCollection, err := persistence.Collection(context.Background(), user.ModelName)
+	// cast users to UserModel below
+	users, ok := usersCollection.(*user.UserModel)
+	if !ok {
+		log.Fatal("That's fishy:", err)
 	}
 
 	_ = users.CreateAdminUser()

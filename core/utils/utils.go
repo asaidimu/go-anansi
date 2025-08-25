@@ -21,21 +21,21 @@ func StructToMap[T any](record T) (map[string]any, error) {
 
 	// Handle nil interface input directly (e.g., if `record` is `nil any`)
 	if !val.IsValid() {
-		return nil, fmt.Errorf("input record cannot be nil")
+		return nil, &UtilityError{Operation: "StructToMap", Message: ErrInputNil.Error()}
 	}
 
 	// If the input is a pointer, dereference it to get the underlying value
 	if val.Kind() == reflect.Ptr {
 		// If it's a nil pointer, return an error
 		if val.IsNil() {
-			return nil, fmt.Errorf("input record cannot be a nil pointer to a struct")
+			return nil, &UtilityError{Operation: "StructToMap", Message: ErrInputNilPointer.Error()}
 		}
 		val = val.Elem()
 	}
 
 	// Validate that the underlying value is a struct
 	if val.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("input record must be a struct or a pointer to a struct, got %s", val.Kind())
+		return nil, &UtilityError{Operation: "StructToMap", Message: fmt.Sprintf("%s, got %s", ErrInputNotStruct.Error(), val.Kind())}
 	}
 
 	// Marshal the input struct into JSON bytes.
@@ -43,7 +43,7 @@ func StructToMap[T any](record T) (map[string]any, error) {
 	// and correctly serializes all nested structs into their JSON object forms.
 	jsonBytes, err := ToJSONBytes(record)
 	if err != nil {
-		return nil, fmt.Errorf("StructToMap: failed to marshal input record to JSON: %w", err)
+		return nil, &UtilityError{Operation: "StructToMap", Message: ErrMarshalJSON.Error(), Cause: err}
 	}
 
 	// Unmarshal these JSON bytes into a map[string]any directly.
@@ -51,7 +51,7 @@ func StructToMap[T any](record T) (map[string]any, error) {
 	// map[string]any values by the `encoding/json` package.
 	var resultMap map[string]any
 	if err := FromJSON(jsonBytes, &resultMap); err != nil {
-		return nil, fmt.Errorf("StructToMap: failed to unmarshal JSON to map[string]any: %w", err)
+		return nil, &UtilityError{Operation: "StructToMap", Message: ErrUnmarshalJSON.Error(), Cause: err}
 	}
 
 	return resultMap, nil
@@ -76,7 +76,7 @@ func MapToStruct[T any](input map[string]any) (T, error) {
 	var zero T // Represents the zero value of type T, used for error returns
 
 	if input == nil {
-		return zero, fmt.Errorf("MapToStruct: input map cannot be nil")
+		return zero, &UtilityError{Operation: "MapToStruct", Message: ErrMapToStructInputNil.Error()}
 	}
 
 	// Validate that `T` is a struct type (or a pointer to a struct).
@@ -85,7 +85,7 @@ func MapToStruct[T any](input map[string]any) (T, error) {
 		typ = typ.Elem()
 	}
 	if typ.Kind() != reflect.Struct {
-		return zero, fmt.Errorf("MapToStruct: generic type T must be a struct type (or pointer to struct), got %s", typ.Kind())
+		return zero, &UtilityError{Operation: "MapToStruct", Message: fmt.Sprintf("%s, got %s", ErrMapToStructTargetNotStruct.Error(), typ.Kind())}
 	}
 
 	// Marshal the input `map[string]any` into JSON bytes.
@@ -93,13 +93,13 @@ func MapToStruct[T any](input map[string]any) (T, error) {
 	// into nested JSON objects.
 	jsonBytes, err := ToJSONBytes(input)
 	if err != nil {
-		return zero, fmt.Errorf("MapToStruct: failed to marshal input map to JSON: %w", err)
+		return zero, &UtilityError{Operation: "MapToStruct", Message: ErrMarshalJSON.Error(), Cause: err}
 	}
 
 	// Unmarshal these JSON bytes into a new instance of `T`.
 	var result T
 	if err := FromJSON(jsonBytes, &result); err != nil {
-		return zero, fmt.Errorf("MapToStruct: failed to unmarshal JSON to target struct: %w", err)
+		return zero, &UtilityError{Operation: "MapToStruct", Message: ErrUnmarshalJSON.Error(), Cause: err}
 	}
 
 	return result, nil

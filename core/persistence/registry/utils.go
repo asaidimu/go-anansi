@@ -52,7 +52,11 @@ func generatePhysicalName(s *schema.SchemaDefinition) (string, error) {
 	maxNameLength := maxLength - versionLength - separatorLength
 
 	if maxNameLength < 1 {
-		return "", fmt.Errorf("%w: to fit in %d character limit", ErrVersionTooLong, maxLength)
+		return "", &RegistryError{
+			Operation: "generatePhysicalName",
+			Message:   fmt.Sprintf("to fit in %d character limit", maxLength),
+			Cause:     ErrVersionTooLong,
+		}
 	}
 
 	// Truncate name if necessary
@@ -65,7 +69,11 @@ func generatePhysicalName(s *schema.SchemaDefinition) (string, error) {
 
 	// Final validation
 	if len(physicalName) > maxLength {
-		return "", fmt.Errorf("%w: %d character limit", ErrGeneratedNameExceedsLimit, maxLength)
+		return "", &RegistryError{
+			Operation: "generatePhysicalName",
+			Message:   fmt.Sprintf("%d character limit", maxLength),
+			Cause:     ErrGeneratedNameExceedsLimit,
+		}
 	}
 
 	return physicalName, nil

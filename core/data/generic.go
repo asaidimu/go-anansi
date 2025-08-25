@@ -1,6 +1,7 @@
 package data
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -21,7 +22,7 @@ func Get[T any](doc Document, key string) (T, error) {
 			Operation: "Get[T]",
 			Key:       key,
 			Message:   fmt.Sprintf("%s: cannot convert %T to %T", ErrTypeConversion.Error(), val, zero),
-			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
+			Cause:     errors.Join(ErrTypeConversion, ErrTypeMismatch),
 		}
 	}
 	return result, nil
@@ -78,7 +79,7 @@ func GetWithCoercion[T any](doc Document, key string) (T, error) {
 		Operation: "GetWithCoercion[T]",
 		Key:       key,
 		Message:   fmt.Sprintf("%s: cannot convert %T to %T", ErrTypeConversion.Error(), val, zero),
-		Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
+		Cause:     errors.Join(ErrTypeConversion, ErrTypeMismatch),
 	}
 }
 
@@ -96,7 +97,7 @@ func GetNested[T any](doc Document, path string) (T, error) {
 			Operation: "GetNested[T]",
 			Key:       path,
 			Message:   fmt.Sprintf("%s: cannot convert %T to %T", ErrTypeConversion.Error(), val, zero),
-			Cause:     fmt.Errorf("%w: %w", ErrTypeConversion, ErrTypeMismatch),
+			Cause:     errors.Join(ErrTypeConversion, ErrTypeMismatch),
 		}
 	}
 	return result, nil

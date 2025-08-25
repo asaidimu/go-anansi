@@ -3,7 +3,6 @@ package persistence
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
@@ -191,7 +190,11 @@ func (p *basePersistence) Metadata(ctx context.Context, filter *base.MetadataFil
 		if errors.Is(err, registry.ErrCollectionNotFound) {
 			return base.Metadata{}, nil
 		}
-		return base.Metadata{}, fmt.Errorf("%w: %w", registry.ErrFailedToListCollections, err)
+		return base.Metadata{}, &PersistenceError{
+			Operation: "Metadata",
+			Message:   registry.ErrFailedToListCollections.Error(),
+			Cause:     errors.Join(registry.ErrFailedToListCollections, err),
+		}
 	}
 
 	collections := make([]*base.CollectionMetadata, len(entries))

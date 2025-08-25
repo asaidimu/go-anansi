@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -279,7 +280,11 @@ func (s *SchemaDefinition) MustToJSON() string {
 func (s *SchemaDefinition) Clone() (*SchemaDefinition, error) {
 	var newSchema SchemaDefinition
 	if err := utils.Clone(*s, &newSchema); err != nil {
-		return nil, fmt.Errorf("failed to clone schema: %w", err)
+		return nil, &SchemaError{
+			Operation: "Clone",
+			Message:   "failed to clone schema",
+			Cause:     err,
+		}
 	}
 	return &newSchema, nil
 }
@@ -310,7 +315,11 @@ func (s *SchemaDefinition) AddField(field *FieldDefinition, provider func(*Schem
 
 	// Check if field already exists
 	if _, exists := clone.Fields[field.Name]; exists {
-		return nil, fmt.Errorf("field '%s' already exists in schema", field.Name)
+		return nil, &SchemaError{
+			Operation: "AddField",
+			Message:   fmt.Sprintf("field '%s' already exists in schema", field.Name),
+			Cause:     errors.New("field already exists in schema"), // No specific error variable for this
+		}
 	}
 
 	// Add the field

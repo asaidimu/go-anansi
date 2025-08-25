@@ -2,7 +2,42 @@ package registry
 
 import (
 	"errors"
+	"strings"
 )
+
+// RegistryError represents errors specific to registry operations.
+type RegistryError struct {
+	Operation string
+	Key       string
+	Message   string
+	Cause     error
+}
+
+func (e *RegistryError) Error() string {
+	var b strings.Builder
+	b.WriteString(e.Operation)
+	b.WriteString(" operation failed")
+
+	if e.Key != "" {
+		b.WriteString(" for key '")
+		b.WriteString(e.Key)
+		b.WriteString("': ")
+	} else {
+		b.WriteString(": ")
+	}
+	b.WriteString(e.Message)
+
+	if e.Cause != nil {
+		b.WriteString(" (caused by: ")
+		b.WriteString(e.Cause.Error())
+		b.WriteString(")")
+	}
+	return b.String()
+}
+
+func (e *RegistryError) Unwrap() error {
+	return e.Cause
+}
 
 // Pre-defined errors for the registry package.
 var (
@@ -34,12 +69,13 @@ var (
 	ErrVersionTooLong                    = errors.New("version too long")
 	ErrGeneratedNameExceedsLimit         = errors.New("generated name exceeds character limit")
 	ErrFailedToDropPhysicalCollection = errors.New("failed to drop physical collection")
-		ErrFailedToQueryRegistryCollection = errors.New("failed to query registry for collection")
+	ErrFailedToQueryRegistryCollection = errors.New("failed to query registry for collection")
 	ErrMultipleRegistryEntriesFound = errors.New("multiple entries found for collection")
 	ErrFailedToUnmarshalRegistryEntry = errors.New("failed to unmarshal registry entry")
 	ErrFailedToMarshalRegistryEntry = errors.New("failed to marshal registry entry")
 	ErrFailedToCreateRegistryEntry = errors.New("failed to create registry entry")
 	ErrFailedToCreateRegistryEntryWithIssues = errors.New("failed to create registry entry with issues")
+	ErrVersionNotFoundForCollection          = errors.New("version not found for collection")
 )
 
 // Errors related to physical name generation

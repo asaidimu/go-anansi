@@ -134,12 +134,20 @@ func (qb *QueryBuilder) validateQueryFilter(filter QueryFilter) error {
 
     // Must have at least one field
     if !hasCondition && !hasGroup && !hasTextSearch {
-        return fmt.Errorf("QueryFilter must have at least one field populated")
+        		return &QueryError{
+			Operation: "validateQueryFilter",
+			Message:   ErrQueryFilterMustHaveOneFieldPopulated.Error(),
+			Cause:     ErrQueryFilterMustHaveOneFieldPopulated,
+		}
     }
 
     // Condition and Group are mutually exclusive
     if hasCondition && hasGroup {
-        return fmt.Errorf("QueryFilter cannot have both condition and group populated - they are mutually exclusive")
+        		return &QueryError{
+			Operation: "validateQueryFilter",
+			Message:   ErrQueryFilterMutuallyExclusive.Error(),
+			Cause:     ErrQueryFilterMutuallyExclusive,
+		}
     }
 
     // TextSearch can be combined with either Condition or Group, so no additional constraint needed
@@ -147,10 +155,18 @@ func (qb *QueryBuilder) validateQueryFilter(filter QueryFilter) error {
     // Existing field-specific validation...
     if filter.Condition != nil {
         if filter.Condition.Field == "" {
-            return fmt.Errorf("filter condition field cannot be empty")
+            			return &QueryError{
+				Operation: "validateQueryFilter",
+				Message:   ErrFilterConditionFieldEmpty.Error(),
+				Cause:     ErrFilterConditionFieldEmpty,
+			}
         }
         if !filter.Condition.Operator.IsStandard() {
-            return fmt.Errorf("unknown comparison operator: %s", filter.Condition.Operator)
+            return &QueryError{
+                Operation: "validateQueryFilter",
+                Message:   fmt.Sprintf("unknown comparison operator: %s", filter.Condition.Operator),
+                Cause:     ErrUnknownComparisonOperator,
+            }
         }
     }
 
@@ -164,10 +180,18 @@ func (qb *QueryBuilder) validateQueryFilter(filter QueryFilter) error {
 
     if filter.TextSearchQuery != nil {
         if filter.TextSearchQuery.Query == "" {
-            return fmt.Errorf("text search query cannot be empty")
+            return &QueryError{
+                Operation: "validateQueryFilter",
+                Message:   ErrTextSearchQueryEmpty.Error(),
+                Cause:     ErrTextSearchQueryEmpty,
+            }
         }
         if len(filter.TextSearchQuery.Fields) == 0 {
-            return fmt.Errorf("text search must specify at least one field")
+            return &QueryError{
+                Operation: "validateQueryFilter",
+                Message:   ErrTextSearchFieldsEmpty.Error(),
+                Cause:     ErrTextSearchFieldsEmpty,
+            }
         }
     }
 

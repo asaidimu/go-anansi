@@ -2,6 +2,7 @@ package collection
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
@@ -71,7 +72,11 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Document
 		if err != nil {
 			// If Validate itself returns an error, it's a system error, not a validation failure.
 			// We should return this error immediately.
-			return nil, fmt.Errorf("%w: %w", data.ErrSystemErrorDuringValidation, err)
+			return nil, &CollectionError{
+				Operation: "CreateMany",
+				Message:   "system error during validation",
+				Cause:     errors.Join(data.ErrSystemErrorDuringValidation, err),
+			}
 		}
 
 		if !validationResult.Valid {
@@ -86,7 +91,11 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Document
 
 	if validCount != len(docs) {
 		// Some documents failed validation, return the results with details
-		return results, fmt.Errorf("%w for %d documents", base.ErrValidationFailed, len(docs)-validCount)
+		return results, &CollectionError{
+			Operation: "CreateMany",
+			Message:   fmt.Sprintf("for %d documents", len(docs)-validCount),
+			Cause:     base.ErrValidationFailed,
+		}
 	}
 
 	// All documents are valid, proceed with actual creation
@@ -147,7 +156,11 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 func (c *managedCollection) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
 	meta, ok := params.Data.Metadata()
 	if !ok {
-		return 0, fmt.Errorf("%w: update operation requires a valid metadata block", data.ErrNoMetadata)
+		return 0, &CollectionError{
+			Operation: "Update",
+			Message:   "update operation requires a valid metadata block",
+			Cause:     data.ErrNoMetadata,
+		}
 	}
 
 	var err error
@@ -156,25 +169,41 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 	}
 
 	if !params.Data.VerifyHash() {
-		return 0, fmt.Errorf("%w: data may be tampered", data.ErrHashMismatch)
+		return 0, &CollectionError{
+			Operation: "Update",
+			Message:   "data may be tampered",
+			Cause:     data.ErrHashMismatch,
+		}
 	}
 
 	d := params.Data.StripMetadata()
 	result, err := c.Validate(ctx, d, true)
 
 	if err != nil {
-		return 0, fmt.Errorf("%w: %w", base.ErrUpdateDocuments, err)
+		return 0, &CollectionError{
+			Operation: "Update",
+			Message:   base.ErrUpdateDocuments.Error(),
+			Cause:     errors.Join(base.ErrUpdateDocuments, err),
+		}
 	}
 
 	if !result.Valid {
-		return 0, fmt.Errorf("%w: %v", base.ErrValidationFailed, result.Issues)
+		return 0, &CollectionError{
+			Operation: "Update",
+			Message:   fmt.Sprintf("%v", result.Issues),
+			Cause:     base.ErrValidationFailed,
+		}
 	}
 
 	// 2. Prepare for optimistic locking
 	version, ok := utils.CoerceToPrimitiveValue[float64](meta["version"])
 
 	if !ok {
-		return 0, fmt.Errorf("%w: %v", data.ErrInvalidOrMissingMetadataVersion, meta)
+		return 0, &CollectionError{
+			Operation: "Update",
+			Message:   fmt.Sprintf("%v", meta),
+			Cause:     data.ErrInvalidOrMissingMetadataVersion,
+		}
 	}
 
 	// Modify the filter to include the version check

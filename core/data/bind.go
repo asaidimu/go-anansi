@@ -81,7 +81,7 @@ func (sb *StructBinder) ToWithContext(ctx context.Context, target any) error {
 				Operation: "BindTo",
 				Key:       fieldName,
 				Message:   fmt.Sprintf("%s for struct field %s", ErrRequiredFieldNotFound.Error(), field.Name),
-				Cause:     fmt.Errorf("%w: %w", ErrRequiredFieldNotFound, err),
+				Cause:     ErrRequiredFieldNotFound,
 			}
 		}
 
@@ -91,7 +91,7 @@ func (sb *StructBinder) ToWithContext(ctx context.Context, target any) error {
 				Operation: "BindTo",
 				Key:       fieldName,
 				Message:   fmt.Sprintf("%s for field %s", ErrFailedToSetField.Error(), field.Name),
-				Cause:     fmt.Errorf("%w: %w", ErrFailedToSetField, err),
+				Cause:     ErrFailedToSetField,
 			}
 		}
 	}
@@ -189,7 +189,7 @@ func setFieldValue(field reflect.Value, value any) error {
 	return &DocumentError{
 		Operation: "setFieldValue",
 		Message:   fmt.Sprintf("%s: cannot convert %T to %v", ErrTypeConversionFailed.Error(), value, fieldType),
-		Cause:     fmt.Errorf("%w", ErrTypeConversionFailed),
+		Cause:     ErrTypeConversionFailed,
 	}
 }
 

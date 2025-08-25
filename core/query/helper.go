@@ -60,7 +60,11 @@ func NewQueryHelper(query *Query, operators *ComparisonMap, aggregateFunctions *
 
 	// Validate the query structure
 	if err := helper.validateQuery(); err != nil {
-		return nil, fmt.Errorf("invalid query: %w", err)
+		return nil, &QueryError{
+			Operation: "NewQueryHelper",
+			Message:   "invalid query",
+			Cause:     err,
+		}
 	}
 
 	return helper, nil
@@ -112,50 +116,74 @@ func (h *QueryHelper) validateQuery() error {
 	// Validate filters
 	if h.query.Filters != nil {
 		if err := h.validateQueryFilter(h.query.Filters); err != nil {
-			return fmt.Errorf("invalid filters: %w", err)
+			return &QueryError{
+				Operation: "validateQuery",
+				Message:   "invalid filters",
+				Cause:     err,
+			}
 		}
 	}
 
 	// Validate sort configurations
 	for _, sortConfig := range h.query.Sort {
 		if sortConfig.Field == "" {
-			return errors.New("sort field cannot be empty")
+			return ErrSortFieldEmpty
 		}
 		if sortConfig.Direction != SortDirectionAsc && sortConfig.Direction != SortDirectionDesc {
-			return fmt.Errorf("invalid sort direction: %s", sortConfig.Direction)
+			return &QueryError{
+				Operation: "validateQuery",
+				Message:   fmt.Sprintf("invalid sort direction: %s", sortConfig.Direction),
+				Cause:     ErrInvalidSortDirection,
+			}
 		}
 	}
 
 	// Validate pagination
 	if h.query.Pagination != nil {
 		if h.query.Pagination.Type != "offset" {
-			return fmt.Errorf("invalid pagination type: %s", h.query.Pagination.Type)
+			return &QueryError{
+				Operation: "validateQuery",
+				Message:   fmt.Sprintf("invalid pagination type: %s", h.query.Pagination.Type),
+				Cause:     errors.New("invalid pagination type"),
+			}
 		}
 		if h.query.Pagination.Limit <= 0 {
 			return errors.New("pagination limit must be greater than 0")
 		}
 		if h.query.Pagination.Offset != nil && *h.query.Pagination.Offset < 0 {
-			return errors.New("pagination offset cannot be negative")
+			return &QueryError{Operation: "validateQuery", Message: "pagination offset cannot be negative"}
 		}
 	}
 
 	// Validate projection
 	if h.query.Projection != nil {
 		if err := h.validateProjectionConfiguration(h.query.Projection); err != nil {
-			return fmt.Errorf("invalid projection: %w", err)
+			return &QueryError{
+				Operation: "validateQuery",
+				Message:   "invalid projection",
+				Cause:     err,
+			}
 		}
 	}
 
 	// Validate aggregations
 	if h.query.Aggregations != nil {
 		if err := h.validateAggregationConfiguration(h.query.Aggregations); err != nil {
-			return fmt.Errorf("invalid aggregation configuration: %w", err)
+			return &QueryError{
+				Operation: "validateQuery",
+				Message:   "invalid aggregation configuration",
+				Cause:     err,
+			}
 		}
 	}
 
 	if h.query.Distinct != nil {
 		if err := h.validateDistinctConfiguration(h.query.Distinct); err != nil {
-			return fmt.Errorf("invalid distinct configuration: %w", err)
+			return &QueryError{
+				Operation: "validateQuery",
+				Message:   "invalid distinct configuration",
+				Cause:     err,
+			}
 		}
 	}
 
@@ -165,7 +193,7 @@ func (h *QueryHelper) validateQuery() error {
 // validateQueryFilter validates a QueryFilter structure recursively.
 func (h *QueryHelper) validateQueryFilter(filter *QueryFilter) error {
 	if filter == nil {
-		return errors.New("filter cannot be nil")
+		return &QueryError{Operation: "validateQueryFilter", Message: "filter cannot be nil"}
 	}
 
 	// Check that exactly one of the union fields is set
@@ -201,13 +229,21 @@ func (h *QueryHelper) validateQueryFilter(filter *QueryFilter) error {
 		}
 
 		if !isCustom && !filter.Condition.Operator.IsStandard() {
-			return fmt.Errorf("unsupported comparison operator: %s", filter.Condition.Operator)
+			return &QueryError{
+			Operation: "validateQueryFilter",
+			Message:   fmt.Sprintf("unsupported comparison operator: %s", filter.Condition.Operator),
+			Cause:     ErrUnknownComparisonOperator, // Reusing this error
+		}
 		}
 		// End of MODIFIED LOGIC
 
 		// Basic validation for FilterValue - can be extended if needed
 		if err := h.validateFilterValue(&filter.Condition.Value); err != nil {
-			return fmt.Errorf("invalid condition value: %w", err)
+			return &QueryError{
+				Operation: "validateQueryFilter",
+				Message:   "invalid condition value",
+				Cause:     err,
+			}
 		}
 	}
 
@@ -219,14 +255,18 @@ func (h *QueryHelper) validateQueryFilter(filter *QueryFilter) error {
 		for i, condition := range filter.Group.Conditions {
 			// Pass a pointer to the condition to allow recursive validation
 			if err := h.validateQueryFilter(&condition); err != nil {
-				return fmt.Errorf("invalid condition at index %d: %w", i, err)
+				return &QueryError{
+					Operation: "validateQueryFilter",
+					Message:   fmt.Sprintf("invalid condition at index %d", i),
+					Cause:     err,
+				}
 			}
 		}
 	}
 
 	// TextMatch validation - return error since it's not implemented yet but allowed in DSL
 	if filter.TextSearchQuery != nil {
-		return errors.New("text search is an advanced feature and not implemented in this version of the helper")
+		return &QueryError{Operation: "validateQueryFilter", Message: "text search is an advanced feature and not implemented in this version of the helper"}
 	}
 
 	return nil
@@ -251,7 +291,11 @@ func (h *QueryHelper) validateFilterValue(fv *FilterValue) error {
 		setFields++
 		for i, val := range fv.ArrayVal {
 			if err := h.validateFilterValue(&val); err != nil {
-				return fmt.Errorf("invalid array value at index %d: %w", i, err)
+				return &QueryError{
+				Operation: "validateFilterValue",
+				Message:   fmt.Sprintf("invalid array value at index %d", i),
+				Cause:     err,
+			}
 			}
 		}
 	}
@@ -281,13 +325,13 @@ func (h *QueryHelper) validateFilterValue(fv *FilterValue) error {
 		}
 		for i, arg := range fv.FunctionCallVal.Arguments {
 			if err := h.validateFilterValue(&arg); err != nil {
-				return fmt.Errorf("invalid function argument at index %d: %w", i, err)
+				return &QueryError{Operation: "validateFilterValue", Message: fmt.Sprintf("%s at index %d", ErrInvalidFunctionArgument.Error(), i), Cause: err}
 			}
 		}
 	}
 
 	if setFields > 1 {
-		return errors.New("FilterValue can only have one type of value set")
+		return &QueryError{Operation: "validateFilterValue", Message: "FilterValue can only have one type of value set"}
 	}
 	return nil
 }
@@ -295,11 +339,11 @@ func (h *QueryHelper) validateFilterValue(fv *FilterValue) error {
 // validateProjectionConfiguration validates the projection settings.
 func (h *QueryHelper) validateProjectionConfiguration(proj *ProjectionConfiguration) error {
 	if proj == nil {
-		return errors.New("projection configuration cannot be nil")
+		return &QueryError{Operation: "validateProjectionConfiguration", Message: "projection configuration cannot be nil"}
 	}
 
 	if len(proj.Include) > 0 && len(proj.Exclude) > 0 {
-		return errors.New("cannot use both include and exclude in the same projection")
+		return &QueryError{Operation: "validateProjectionConfiguration", Message: "cannot use both include and exclude in the same projection"}
 	}
 
 	for _, field := range proj.Include {
@@ -308,7 +352,11 @@ func (h *QueryHelper) validateProjectionConfiguration(proj *ProjectionConfigurat
 		}
 		if field.Nested != nil {
 			if err := h.validateProjectionConfiguration(field.Nested); err != nil {
-				return fmt.Errorf("invalid nested projection for field %s: %w", field.Name, err)
+				return &QueryError{
+					Operation: "validateProjectionConfiguration",
+					Message:   fmt.Sprintf("invalid nested projection for field '%s'", field.Name),
+					Cause:     err,
+				}
 			}
 		}
 	}
@@ -320,7 +368,11 @@ func (h *QueryHelper) validateProjectionConfiguration(proj *ProjectionConfigurat
 		if field.Nested != nil {
 			// For exclude, nested means exclude nested fields. It's conceptually simpler than include.
 			if err := h.validateProjectionConfiguration(field.Nested); err != nil {
-				return fmt.Errorf("invalid nested projection for excluded field %s: %w", field.Name, err)
+				return &QueryError{
+					Operation: "validateProjectionConfiguration",
+					Message:   fmt.Sprintf("invalid nested projection for field '%s'", field.Name),
+					Cause:     err,
+				}
 			}
 		}
 	}
@@ -340,7 +392,11 @@ func (h *QueryHelper) validateProjectionConfiguration(proj *ProjectionConfigurat
 			}
 			// Validate arguments of the function call within computed field
 			if err := h.validateFunctionCall(computed.ComputedFieldExpression.Expression); err != nil {
-				return fmt.Errorf("invalid function call in computed field '%s': %w", computed.ComputedFieldExpression.Alias, err)
+				return &QueryError{
+					Operation: "validateProjectionConfiguration",
+					Message:   fmt.Sprintf("invalid function call in computed field '%s'", computed.ComputedFieldExpression.Alias),
+					Cause:     err,
+				}
 			}
 		}
 		if computed.CaseExpression != nil {
@@ -356,14 +412,26 @@ func (h *QueryHelper) validateProjectionConfiguration(proj *ProjectionConfigurat
 			}
 			for i, cond := range computed.CaseExpression.Conditions {
 				if err := h.validateQueryFilter(&cond.When); err != nil {
-					return fmt.Errorf("invalid 'when' condition in case expression at index %d: %w", i, err)
+					return &QueryError{
+						Operation: "validateProjectionConfiguration",
+						Message:   fmt.Sprintf("invalid 'when' condition in case expression at index %d", i),
+						Cause:     err,
+					}
 				}
 				if err := h.validateFilterValue(&cond.Then); err != nil {
-					return fmt.Errorf("invalid 'then' value in case expression at index %d: %w", i, err)
+					return &QueryError{
+						Operation: "validateProjectionConfiguration",
+						Message:   fmt.Sprintf("invalid 'then' value in case expression at index %d", i),
+						Cause:     err,
+					}
 				}
 			}
 			if err := h.validateFilterValue(&computed.CaseExpression.Else); err != nil {
-				return fmt.Errorf("invalid 'else' value in case expression: %w", err)
+				return &QueryError{
+			Operation: "validateProjectionConfiguration",
+			Message:   "invalid 'else' value in case expression",
+			Cause:     err,
+		}
 			}
 		}
 		if setFields != 1 {
@@ -376,11 +444,15 @@ func (h *QueryHelper) validateProjectionConfiguration(proj *ProjectionConfigurat
 // validateFunctionCall validates a FunctionCall structure.
 func (h *QueryHelper) validateFunctionCall(fc *FunctionCall) error {
 	if fc.Function == "" {
-		return errors.New("function call name cannot be empty")
+		return &QueryError{Operation: "validateFunctionCall", Message: "function call name cannot be empty"}
 	}
 	for i, arg := range fc.Arguments {
 		if err := h.validateFilterValue(&arg); err != nil {
-			return fmt.Errorf("invalid argument %d for function '%s': %w", i, fc.Function, err)
+			return &QueryError{
+				Operation: "validateFunctionCall",
+				Message:   fmt.Sprintf("invalid argument %d for function '%s'", i, fc.Function),
+				Cause:     err,
+			}
 		}
 	}
 	return nil
@@ -389,7 +461,7 @@ func (h *QueryHelper) validateFunctionCall(fc *FunctionCall) error {
 // validateDistinctConfiguration validates the distinct settings.
 func (h *QueryHelper) validateDistinctConfiguration(distinct *QueryDistinctConfig) error {
 	if distinct == nil {
-		return errors.New("distinct configuration cannot be nil")
+		return &QueryError{Operation: "validateDistinctConfiguration", Message: "distinct configuration cannot be nil"}
 	}
 	setFields := 0
 	if distinct.IsDistinct != nil {
@@ -400,14 +472,14 @@ func (h *QueryHelper) validateDistinctConfiguration(distinct *QueryDistinctConfi
 	}
 
 	if setFields == 0 {
-		return errors.New("distinct configuration must specify 'is_distinct' or 'fields'")
+		return &QueryError{Operation: "validateDistinctConfiguration", Message: "distinct configuration must specify 'is_distinct' or 'fields'"}
 	}
 	if setFields > 1 {
-		return errors.New("distinct configuration cannot specify both 'is_distinct' and 'fields'")
+		return &QueryError{Operation: "validateDistinctConfiguration", Message: "distinct configuration cannot specify both 'is_distinct' and 'fields'"}
 	}
 	if distinct.Fields != nil {
 		if slices.Contains(distinct.Fields, "") {
-			return errors.New("distinct field name cannot be empty")
+			return &QueryError{Operation: "validateDistinctConfiguration", Message: "distinct field name cannot be empty"}
 		}
 	}
 	return nil
@@ -416,29 +488,37 @@ func (h *QueryHelper) validateDistinctConfiguration(distinct *QueryDistinctConfi
 // validateAggregationConfiguration validates the aggregation settings.
 func (h *QueryHelper) validateAggregationConfiguration(aggregations []AggregationConfiguration) error {
 	if len(aggregations) == 0 {
-		return errors.New("aggregation configuration cannot be empty if specified")
+		return &QueryError{Operation: "validateAggregationConfiguration", Message: "aggregation configuration cannot be empty if specified"}
 	}
 
 	for _, agg := range aggregations {
 		if agg.Field == "" && agg.Type != AggregationTypeCount { // Count can be on no specific field
-			return errors.New("aggregation field cannot be empty for non-count aggregations")
+			return &QueryError{Operation: "validateAggregationConfiguration", Message: "aggregation field cannot be empty for non-count aggregations"}
 		}
 
 		// Check if the aggregation type is supported
 		if h.aggregates != nil {
 			if _, ok := (*h.aggregates)[agg.Type]; !ok {
-				return fmt.Errorf("unsupported aggregation type: %s", agg.Type)
+				return &QueryError{
+					Operation: "validateAggregationConfiguration",
+					Message:   fmt.Sprintf("unsupported aggregation type: %s", agg.Type),
+					Cause:     ErrUnsupportedAggregationType,
+				}
 			}
 		}
 
 		if agg.Filter != nil {
 			if err := h.validateQueryFilter(agg.Filter); err != nil {
-				return fmt.Errorf("invalid filter for aggregation on field '%s': %w", agg.Field, err)
+				return &QueryError{
+					Operation: "validateAggregationConfiguration",
+					Message:   fmt.Sprintf("invalid filter for aggregation on field '%s'", agg.Field),
+					Cause:     err,
+				}
 			}
 		}
 
 		if slices.Contains(agg.Groups, "") {
-			return errors.New("aggregation group field cannot be empty")
+			return &QueryError{Operation: "validateAggregationConfiguration", Message: "aggregation group field cannot be empty"}
 		}
 	}
 	return nil
@@ -511,7 +591,7 @@ func (h *QueryHelper) ApplyDistinct(records []map[string]any) ([]map[string]any,
 			// This is a simplistic approach and might not work for complex nested objects
 			recordBytes, err := json.Marshal(record)
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal record for distinct check: %w", err)
+				return nil, &QueryError{Operation: "ApplyDistinct", Message: ErrFailedToMarshalRecordForDistinct.Error(), Cause: err}
 			}
 			recordStr := string(recordBytes)
 			if _, ok := seen[recordStr]; !ok {
@@ -535,7 +615,7 @@ func (h *QueryHelper) ApplyDistinct(records []map[string]any) ([]map[string]any,
 			// Create a string representation of the key values for map lookup
 			keyBytes, err := json.Marshal(keyValues)
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal distinct key: %w", err)
+				return nil, &QueryError{Operation: "ApplyDistinct", Message: ErrFailedToMarshalDistinctKey.Error(), Cause: err}
 			}
 			keyStr := string(keyBytes)
 			if _, ok := seen[keyStr]; !ok {
@@ -612,7 +692,11 @@ func (h *QueryHelper) Paginate(records []data.Document) ([]data.Document, *Pagin
 		}, nil
 
 	default:
-		return nil, nil, fmt.Errorf("unsupported pagination type: %s", pagination.Type)
+		return nil, nil, &QueryError{
+			Operation: "Paginate",
+			Message:   fmt.Sprintf("unsupported pagination type: %s", pagination.Type),
+			Cause:     ErrInvalidPaginationType,
+		}
 	}
 }
 
@@ -783,7 +867,11 @@ func (h *QueryHelper) ApplyAggregations(records []data.Document) (data.Document,
 			// Use the modified Filter method to apply the specific aggregation filter
 			filteredRecords, err := h.Filter(currentRecords, aggConfig.Filter)
 			if err != nil {
-				return nil, fmt.Errorf("error applying filter for aggregation '%s': %w", aggConfig.AliasOrDefault(), err)
+				return nil, &QueryError{
+					Operation: "ApplyAggregations",
+					Message:   fmt.Sprintf("error applying filter for aggregation '%s'", aggConfig.AliasOrDefault()),
+					Cause:     err,
+				}
 			}
 			currentRecords = filteredRecords
 		}
@@ -791,7 +879,11 @@ func (h *QueryHelper) ApplyAggregations(records []data.Document) (data.Document,
 		// Resolve the aggregation function
 		aggFunc, ok := (*h.aggregates)[aggConfig.Type]
 		if !ok {
-			return nil, fmt.Errorf("unsupported aggregation type: %s", aggConfig.Type)
+			return nil, &QueryError{
+					Operation: "ApplyAggregations",
+					Message:   fmt.Sprintf("unsupported aggregation type: %s", aggConfig.Type),
+					Cause:     ErrUnsupportedAggregationType,
+				}
 		}
 
 		// Step 2: Handle Grouping
@@ -805,7 +897,11 @@ func (h *QueryHelper) ApplyAggregations(records []data.Document) (data.Document,
 			// Step 3: Perform simple (non-grouped) aggregation
 			aggregatedValue, err := aggFunc(currentRecords, aggConfig.Field)
 			if err != nil {
-				return nil, fmt.Errorf("error performing aggregation for field '%s': %w", aggConfig.Field, err)
+				return nil, &QueryError{
+					Operation: "ApplyAggregations",
+					Message:   fmt.Sprintf("error performing aggregation for field '%s'", aggConfig.Field),
+					Cause:     err,
+				}
 			}
 			results[aggConfig.AliasOrDefault()] = aggregatedValue
 		}
@@ -843,7 +939,11 @@ func (h *QueryHelper) processGroupedAggregation(records []data.Document, aggConf
 	for groupKey, groupRecords := range groupedData {
 		aggregatedValue, err := aggFunc(groupRecords, aggConfig.Field)
 		if err != nil {
-			return nil, fmt.Errorf("error performing grouped aggregation for key '%s', field '%s': %w", groupKey, aggConfig.Field, err)
+			return nil, &QueryError{
+				Operation: "processGroupedAggregation",
+				Message:   fmt.Sprintf("error performing grouped aggregation for key '%s', field '%s'", groupKey, aggConfig.Field),
+				Cause:     err,
+			}
 		}
 
 		// Construct the result object for this group
@@ -882,10 +982,10 @@ func (h *QueryHelper) evaluateQueryFilter(record data.Document, filter *QueryFil
 
 	if filter.TextSearchQuery != nil {
 		// Text search is not implemented for this helper
-		return false, errors.New("text search is not implemented for this in-memory helper")
+		return false, &QueryError{Operation: "evaluateQueryFilter", Message: "text search is not implemented for this in-memory helper"}
 	}
 
-	return false, errors.New("invalid filter: no condition, group, or text match specified")
+	return false, &QueryError{Operation: "evaluateQueryFilter", Message: "invalid filter: no condition, group, or text match specified"}
 }
 
 // evaluateCondition evaluates a FilterCondition against a record.
@@ -938,7 +1038,11 @@ func (h *QueryHelper) evaluateCondition(record data.Document, condition *FilterC
 	case ComparisonOperatorNotExists:
 		return fieldValue == nil, nil
 	default:
-		return false, fmt.Errorf("unsupported operator: %s", condition.Operator)
+		return false, &QueryError{
+			Operation: "evaluateCondition",
+			Message:   fmt.Sprintf("unsupported operator: %s", condition.Operator),
+			Cause:     ErrUnknownComparisonOperator, // Reusing this error
+		}
 	}
 }
 
@@ -981,7 +1085,7 @@ func (h *QueryHelper) resolveFilterValue(record map[string]any, fv *FilterValue)
 
 	if fv.SubqueryVal != nil {
 		// Subqueries are not supported by this helper for evaluation in filters
-		return nil, errors.New("subqueries are not supported by this in-memory query helper")
+		return nil, &QueryError{Operation: "resolveFilterValue", Message: "subqueries are not supported by this in-memory query helper"}
 	}
 
 	if fv.FunctionCallVal != nil {
@@ -997,7 +1101,11 @@ func (h *QueryHelper) evaluateGroup(record map[string]any, group *FilterGroup) (
 	for i, condition := range group.Conditions {
 		result, err := h.evaluateQueryFilter(record, &condition)
 		if err != nil {
-			return false, fmt.Errorf("evaluating condition %d: %w", i, err)
+			return false, &QueryError{
+				Operation: "evaluateGroup",
+				Message:   fmt.Sprintf("evaluating condition %d", i),
+				Cause:     err,
+			}
 		}
 		results[i] = result
 	}
@@ -1008,7 +1116,7 @@ func (h *QueryHelper) evaluateGroup(record map[string]any, group *FilterGroup) (
 func (h *QueryHelper) evaluateInOperator(fieldValue, conditionValue any) (bool, error) {
 	conditionSlice := reflect.ValueOf(conditionValue)
 	if conditionSlice.Kind() != reflect.Slice && conditionSlice.Kind() != reflect.Array {
-		return false, errors.New("IN operator requires a slice or array value as the comparison target")
+		return false, &QueryError{Operation: "evaluateInOperator", Message: "IN operator requires a slice or array value as the comparison target"}
 	}
 
 	for i := 0; i < conditionSlice.Len(); i++ {
@@ -1028,7 +1136,7 @@ func (h *QueryHelper) evaluateContains(fieldValue, conditionValue any) (bool, er
 	}
 	conditionStr, ok := conditionValue.(string)
 	if !ok {
-		return false, errors.New("CONTAINS operator requires string values for comparison target")
+		return false, &QueryError{Operation: "evaluateContains", Message: "CONTAINS operator requires string values for comparison target"}
 	}
 	return strings.Contains(fieldStr, conditionStr), nil
 }
@@ -1036,7 +1144,7 @@ func (h *QueryHelper) evaluateContains(fieldValue, conditionValue any) (bool, er
 // evaluateComputedField evaluates a computed field expression.
 func (h *QueryHelper) evaluateComputedField(record map[string]any, expr *ComputedFieldExpression) (any, error) {
 	if expr.Expression == nil {
-		return nil, errors.New("computed field expression cannot be nil")
+		return nil, &QueryError{Operation: "evaluateComputedField", Message: "computed field expression cannot be nil"}
 	}
 
 	return h.evaluateFunctionCall(record, expr.Expression)
@@ -1079,7 +1187,11 @@ func (h *QueryHelper) evaluateFunctionCall(record map[string]any, fc *FunctionCa
 		}
 	}
 
-	return nil, fmt.Errorf("function '%s' is not implemented or registered in this helper", fc.Function)
+	return nil, &QueryError{
+		Operation: "evaluateFunctionCall",
+		Message:   fmt.Sprintf("function '%s' is not implemented or registered in this helper", fc.Function),
+		Cause:     ErrFunctionNotImplementedOrRegistered,
+	}
 }
 
 func getFloat(v any) (float64, bool) {
@@ -1152,7 +1264,7 @@ func (h *QueryHelper) combineDocs(leftName string, leftDoc data.Document, rightN
 func (h *QueryHelper) Join(left, right []data.Document, config *JoinConfiguration) ([]data.Document, error) {
 	// Validate inputs
 	if config == nil {
-		return nil, errors.New("join configuration cannot be nil")
+		return nil, &QueryError{Operation: "Join", Message: "join configuration cannot be nil"}
 	}
 
 	// Determine the right-side collection name to use in the combined document
@@ -1175,7 +1287,11 @@ func (h *QueryHelper) Join(left, right []data.Document, config *JoinConfiguratio
 	case JoinTypeFull:
 		result = h.performFullJoin(leftName, left, rightName, right, config.On)
 	default:
-		return nil, fmt.Errorf("unsupported join type: %s", config.Type)
+		return nil, &QueryError{
+			Operation: "Join",
+			Message:   fmt.Sprintf("unsupported join type: %s", config.Type),
+			Cause:     ErrUnsupportedJoinType,
+		}
 	}
 
 	// Apply projection if specified in the join configuration
@@ -1184,7 +1300,11 @@ func (h *QueryHelper) Join(left, right []data.Document, config *JoinConfiguratio
 		for _, doc := range result {
 			projected, err := h.projectRecord(doc, config.Projection)
 			if err != nil {
-				return nil, fmt.Errorf("projection error during join: %w", err)
+				return nil, &QueryError{
+					Operation: "Join",
+					Message:   "projection error during join",
+					Cause:     err,
+				}
 			}
 			projectedResult = append(projectedResult, projected)
 		}
@@ -1207,22 +1327,22 @@ func (h *QueryHelper) JoinStreams(left, right <-chan data.Document, target *Quer
 
 		// Validate inputs
 		if config == nil {
-			errorChan <- errors.New("join configuration cannot be nil")
+			errorChan <- &QueryError{Operation: "JoinStreams", Message: "join configuration cannot be nil"}
 			return
 		}
 
 		if target == nil {
-			errorChan <- errors.New("target cannot be nil")
+			errorChan <- &QueryError{Operation: "JoinStreams", Message: "target cannot be nil"}
 			return
 		}
 
 		if target.Name == "" {
-			errorChan <- errors.New("target name cannot be empty")
+			errorChan <- &QueryError{Operation: "JoinStreams", Message: "target name cannot be empty"}
 			return
 		}
 
 		if config.On == nil {
-			errorChan <- errors.New("join condition ('on') cannot be nil")
+			errorChan <- &QueryError{Operation: "JoinStreams", Message: "join condition ('on') cannot be nil"}
 			return
 		}
 
@@ -1246,7 +1366,11 @@ func (h *QueryHelper) JoinStreams(left, right <-chan data.Document, target *Quer
 		case JoinTypeFull:
 			h.performStreamingFullJoin(leftName, left, rightName, right, config, resultChan, errorChan)
 		default:
-			errorChan <- fmt.Errorf("unsupported join type: %s", config.Type)
+			errorChan <- &QueryError{
+				Operation: "JoinStreams",
+				Message:   fmt.Sprintf("unsupported join type: %s", config.Type),
+				Cause:     ErrUnsupportedJoinType,
+			}
 			return
 		}
 	}()
@@ -1311,7 +1435,11 @@ func (h *QueryHelper) performStreamingInnerJoin(leftName string, left <-chan dat
 
 			matches, err := h.Match(combinedDoc, config.On)
 			if err != nil {
-				errorChan <- fmt.Errorf("error evaluating join condition: %w", err)
+				errorChan <- &QueryError{
+					Operation: "performStreamingJoin",
+					Message:   "error evaluating join condition",
+					Cause:     err,
+				}
 				return
 			}
 
@@ -1320,7 +1448,11 @@ func (h *QueryHelper) performStreamingInnerJoin(leftName string, left <-chan dat
 				if config.Projection != nil {
 					projected, err := h.projectRecord(combinedDoc, config.Projection)
 					if err != nil {
-						errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+						errorChan <- &QueryError{
+							Operation: "performStreamingJoin",
+							Message:   "projection error during streaming join",
+							Cause:     err,
+						}
 						return
 					}
 					combinedDoc = projected
@@ -1347,7 +1479,11 @@ func (h *QueryHelper) performStreamingLeftJoin(leftName string, left <-chan data
 
 			matches, err := h.Match(combinedDoc, config.On)
 			if err != nil {
-				errorChan <- fmt.Errorf("error evaluating join condition: %w", err)
+				errorChan <- &QueryError{
+					Operation: "performStreamingJoin",
+					Message:   "error evaluating join condition",
+					Cause:     err,
+				}
 				return
 			}
 
@@ -1356,7 +1492,11 @@ func (h *QueryHelper) performStreamingLeftJoin(leftName string, left <-chan data
 				if config.Projection != nil {
 					projected, err := h.projectRecord(combinedDoc, config.Projection)
 					if err != nil {
-						errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+						errorChan <- &QueryError{
+							Operation: "performStreamingJoin",
+							Message:   "projection error during streaming join",
+							Cause:     err,
+						}
 						return
 					}
 					combinedDoc = projected
@@ -1372,7 +1512,7 @@ func (h *QueryHelper) performStreamingLeftJoin(leftName string, left <-chan data
 			if config.Projection != nil {
 				projected, err := h.projectRecord(combinedDoc, config.Projection)
 				if err != nil {
-					errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+					errorChan <- &QueryError{Operation: "performStreamingJoin", Message: ErrStreamingJoinProjection.Error(), Cause: err}
 					return
 				}
 				combinedDoc = projected
@@ -1398,7 +1538,11 @@ func (h *QueryHelper) performStreamingRightJoin(leftName string, left <-chan dat
 
 			matches, err := h.Match(combinedDoc, config.On)
 			if err != nil {
-				errorChan <- fmt.Errorf("error evaluating join condition: %w", err)
+				errorChan <- &QueryError{
+					Operation: "performStreamingJoin",
+					Message:   "error evaluating join condition",
+					Cause:     err,
+				}
 				return
 			}
 
@@ -1407,7 +1551,11 @@ func (h *QueryHelper) performStreamingRightJoin(leftName string, left <-chan dat
 				if config.Projection != nil {
 					projected, err := h.projectRecord(combinedDoc, config.Projection)
 					if err != nil {
-						errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+						errorChan <- &QueryError{
+							Operation: "performStreamingJoin",
+							Message:   "projection error during streaming join",
+							Cause:     err,
+						}
 						return
 					}
 					combinedDoc = projected
@@ -1423,7 +1571,7 @@ func (h *QueryHelper) performStreamingRightJoin(leftName string, left <-chan dat
 			if config.Projection != nil {
 				projected, err := h.projectRecord(combinedDoc, config.Projection)
 				if err != nil {
-					errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+					errorChan <- &QueryError{Operation: "performStreamingJoin", Message: ErrStreamingJoinProjection.Error(), Cause: err}
 					return
 				}
 				combinedDoc = projected
@@ -1457,7 +1605,11 @@ func (h *QueryHelper) performStreamingFullJoin(leftName string, left <-chan data
 
 			matches, err := h.Match(combinedDoc, config.On)
 			if err != nil {
-				errorChan <- fmt.Errorf("error evaluating join condition: %w", err)
+				errorChan <- &QueryError{
+					Operation: "performStreamingJoin",
+					Message:   "error evaluating join condition",
+					Cause:     err,
+				}
 				return
 			}
 
@@ -1466,7 +1618,11 @@ func (h *QueryHelper) performStreamingFullJoin(leftName string, left <-chan data
 				if config.Projection != nil {
 					projected, err := h.projectRecord(combinedDoc, config.Projection)
 					if err != nil {
-						errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+						errorChan <- &QueryError{
+							Operation: "performStreamingJoin",
+							Message:   "projection error during streaming join",
+							Cause:     err,
+						}
 						return
 					}
 					combinedDoc = projected
@@ -1485,7 +1641,7 @@ func (h *QueryHelper) performStreamingFullJoin(leftName string, left <-chan data
 			if config.Projection != nil {
 				projected, err := h.projectRecord(combinedDoc, config.Projection)
 				if err != nil {
-					errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+					errorChan <- &QueryError{Operation: "performStreamingJoin", Message: ErrStreamingJoinProjection.Error(), Cause: err}
 					return
 				}
 				combinedDoc = projected
@@ -1501,7 +1657,7 @@ func (h *QueryHelper) performStreamingFullJoin(leftName string, left <-chan data
 			if config.Projection != nil {
 				projected, err := h.projectRecord(combinedDoc, config.Projection)
 				if err != nil {
-					errorChan <- fmt.Errorf("projection error during streaming join: %w", err)
+					errorChan <- &QueryError{Operation: "performStreamingJoin", Message: ErrStreamingJoinProjection.Error(), Cause: err}
 					return
 				}
 				combinedDoc = projected

@@ -82,5 +82,12 @@ func setup() (base.Persistence, func()) {
 	}
 	logger.Info("Anansi persistence layer initialized successfully.")
 
-	return p, func() { db.Close()}
+
+	wrapped, err := NewDecoratedPersistence(p, logger)
+
+	if err != nil {
+		log.Fatal("Failed to create users model:", err)
+	}
+
+	return wrapped, func() { db.Close()}
 }

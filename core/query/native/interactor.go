@@ -33,12 +33,20 @@ func NewSharedInteractorLogic[T any](qf QueryFactory[T]) *SharedInteractorLogic[
 func (s *SharedInteractorLogic[T]) SelectDocuments(ctx context.Context, strategy ExecutorStrategy[T], schema *schema.SchemaDefinition, dsl *query.Query) ([]data.Document, error) {
 	compiled, err := s.b.Build(dsl, StmtSelect, nil)
 	if err != nil {
-		return nil, fmt.Errorf("could not get a query: %w", err)
+		return nil, &NativeError{
+			Operation: "SelectDocuments", // This operation name will be used for both SelectDocuments and SelectStream
+			Message:   ErrCouldNotGetQuery.Error(),
+			Cause:     err,
+		}
 	}
 
 	resultSchema, err := query.SchemaFromQuery(dsl, nil)
 	if err != nil {
-		return nil, fmt.Errorf("could not get result schema: %w", err)
+		return nil, &NativeError{
+			Operation: "SchemaFromQuery", // This operation name will be used for both SelectDocuments and SelectStream
+			Message:   ErrCouldNotGetResultSchema.Error(),
+			Cause:     err,
+		}
 	}
 
 	executor := strategy.GetExecutor()
@@ -53,12 +61,12 @@ func (s *SharedInteractorLogic[T]) SelectDocuments(ctx context.Context, strategy
 func (s *SharedInteractorLogic[T]) SelectStream(ctx context.Context, strategy ExecutorStrategy[T], sc *schema.SchemaDefinition, dsl *query.Query) (<-chan data.Document, <-chan error, error) {
 	compiled, err := s.b.Build(dsl, StmtSelect, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("could not get a query: %w", err)
+		return nil, nil, &NativeError{Operation: "SelectStream", Message: ErrCouldNotGetQuery.Error(), Cause: err}
 	}
 
 	resultSchema, err := query.SchemaFromQuery(dsl, nil)
 	if err != nil {
-		return nil, nil, fmt.Errorf("could not get result schema: %w", err)
+		return nil, nil, &NativeError{Operation: "SelectStream", Message: ErrCouldNotGetResultSchema.Error(), Cause: err}
 	}
 
 	executor := strategy.GetExecutor()
@@ -77,7 +85,11 @@ func (s *SharedInteractorLogic[T]) UpdateDocuments(ctx context.Context, strategy
 	}, StmtUpdate, updates)
 
 	if err != nil {
-		return 0, fmt.Errorf("could not get a query: %w", err)
+		return 0, &NativeError{
+			Operation: "UpdateDocuments", // This operation name will be used for both UpdateDocuments and DeleteDocuments
+			Message:   ErrCouldNotGetQuery.Error(),
+			Cause:     err,
+		}
 	}
 
 	executor := strategy.GetExecutor()
@@ -98,12 +110,20 @@ func (s *SharedInteractorLogic[T]) InsertDocuments(ctx context.Context, strategy
 
 	resultSchema, err := query.SchemaFromQuery(q, nil)
 	if err != nil {
-		return nil, fmt.Errorf("could not get result schema: %w", err)
+		return nil, &NativeError{
+			Operation: "SchemaFromQuery", // This operation name will be used for both SelectDocuments and SelectStream
+			Message:   ErrCouldNotGetResultSchema.Error(),
+			Cause:     err,
+		}
 	}
 
 	compiled, err := s.b.Build(q, StmtInsert, records)
 	if err != nil {
-		return nil, fmt.Errorf("could not get a query: %w", err)
+		return nil, &NativeError{
+			Operation: "SelectDocuments", // This operation name will be used for both SelectDocuments and SelectStream
+			Message:   ErrCouldNotGetQuery.Error(),
+			Cause:     err,
+		}
 	}
 
 	executor := strategy.GetExecutor()
@@ -113,7 +133,11 @@ func (s *SharedInteractorLogic[T]) InsertDocuments(ctx context.Context, strategy
 // DeleteDocuments shared implementation
 func (s *SharedInteractorLogic[T]) DeleteDocuments(ctx context.Context, strategy ExecutorStrategy[T], schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
 	if filters == nil && !unsafeDelete {
-		return 0, fmt.Errorf("could not delete without filters")
+		return 0, &NativeError{
+			Operation: "DeleteDocuments",
+			Message:   ErrCouldNotDeleteWithoutFilters.Error(),
+			Cause:     ErrCouldNotDeleteWithoutFilters,
+		}
 	}
 
 	compiled, err := s.b.Build(&query.Query{
@@ -125,7 +149,11 @@ func (s *SharedInteractorLogic[T]) DeleteDocuments(ctx context.Context, strategy
 	}, StmtDelete, nil)
 
 	if err != nil {
-		return 0, fmt.Errorf("could not get a query: %w", err)
+		return 0, &NativeError{
+			Operation: "UpdateDocuments", // This operation name will be used for both UpdateDocuments and DeleteDocuments
+			Message:   ErrCouldNotGetQuery.Error(),
+			Cause:     err,
+		}
 	}
 
 	executor := strategy.GetExecutor()
@@ -143,13 +171,21 @@ func (s *SharedInteractorLogic[T]) CreateCollection(ctx context.Context, strateg
 	}, StmtCreateCollection, nil)
 
 	if err != nil {
-		return fmt.Errorf("could not build create collection query: %w", err)
+		return &NativeError{
+			Operation: "CreateCollection",
+			Message:   ErrCouldNotBuildCreateCollectionQuery.Error(),
+			Cause:     err,
+		}
 	}
 
 	executor := strategy.GetExecutor()
 	_, err = executor.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: &sc})
 	if err != nil {
-		return fmt.Errorf("could not create collection: %w", err)
+		return &NativeError{
+			Operation: "CreateCollection",
+			Message:   ErrCouldNotCreateCollection.Error(),
+			Cause:     err,
+		}
 	}
 
 	// Create indexes if they exist
@@ -168,12 +204,20 @@ func (s *SharedInteractorLogic[T]) CreateCollection(ctx context.Context, strateg
 			}, StmtCreateIndex, index)
 
 			if err != nil {
-				return fmt.Errorf("could not build create index query for %s: %w", index.Name, err)
+				return &NativeError{
+					Operation: "CreateCollection", // Still part of CreateCollection
+					Message:   fmt.Sprintf("could not build create index query for %s", index.Name),
+					Cause:     err,
+				}
 			}
 
 			_, err = executor.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: &sc})
 			if err != nil {
-				return fmt.Errorf("could not create index %s: %w", index.Name, err)
+				return &NativeError{
+					Operation: "CreateCollection", // Still part of CreateCollection
+					Message:   fmt.Sprintf("could not create index %s", index.Name),
+					Cause:     err,
+				}
 			}
 		}
 	}
@@ -189,7 +233,11 @@ func (s *SharedInteractorLogic[T]) CreateIndex(ctx context.Context, strategy Exe
 		},
 	}, StmtCreateIndex, index)
 	if err != nil {
-		return fmt.Errorf("could not get a query: %w", err)
+		return &NativeError{
+			Operation: "CreateIndex", // This operation name will be used for CreateIndex, DropIndex, DropCollection
+			Message:   ErrCouldNotGetQuery.Error(),
+			Cause:     err,
+		}
 	}
 
 	executor := strategy.GetExecutor()
@@ -205,7 +253,11 @@ func (s *SharedInteractorLogic[T]) DropIndex(ctx context.Context, strategy Execu
 		},
 	}, StmtDropIndex, index)
 	if err != nil {
-		return fmt.Errorf("could not get a query: %w", err)
+		return &NativeError{
+			Operation: "CreateIndex", // This operation name will be used for CreateIndex, DropIndex, DropCollection
+			Message:   ErrCouldNotGetQuery.Error(),
+			Cause:     err,
+		}
 	}
 
 	executor := strategy.GetExecutor()
@@ -221,7 +273,11 @@ func (s *SharedInteractorLogic[T]) DropCollection(ctx context.Context, strategy 
 		},
 	}, StmtDropCollection, nil)
 	if err != nil {
-		return fmt.Errorf("could not get a query: %w", err)
+		return &NativeError{
+			Operation: "CreateIndex", // This operation name will be used for CreateIndex, DropIndex, DropCollection
+			Message:   ErrCouldNotGetQuery.Error(),
+			Cause:     err,
+		}
 	}
 
 	executor := strategy.GetExecutor()
@@ -348,12 +404,20 @@ func (i *NativeInteractor[T]) StartTransaction(ctx context.Context) (query.Trans
 	defer i.txMu.Unlock()
 
 	if i.activeTx != nil {
-		return nil, fmt.Errorf("cannot nest transactions: transaction already active")
+		return nil, &NativeError{
+			Operation: "StartTransaction",
+			Message:   ErrCannotNestTransactions.Error(),
+			Cause:     ErrCannotNestTransactions,
+		}
 	}
 
 	tx, err := i.ix.BeginTransaction(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		return nil, &NativeError{
+			Operation: "StartTransaction",
+			Message:   ErrFailedToBeginTransaction.Error(),
+			Cause:     err,
+		}
 	}
 
 	// Create transaction context
@@ -395,21 +459,33 @@ func (i *NativeInteractor[T]) executeInTransaction(ctx context.Context, fn func(
 	// Start a new transaction
 	tx, err := i.ix.BeginTransaction(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return &NativeError{
+			Operation: "executeInTransaction",
+			Message:   ErrFailedToBeginTransaction.Error(),
+			Cause:     err,
+		}
 	}
 
 	// Execute the function
 	err = fn(tx)
 	if err != nil {
 		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
-			return fmt.Errorf("operation failed: %w, rollback failed: %v", err, rollbackErr)
+			return &NativeError{
+				Operation: "executeInTransaction",
+				Message:   fmt.Sprintf("%s, %s: %v", ErrOperationFailed.Error(), ErrRollbackFailed.Error(), rollbackErr),
+				Cause:     err,
+			}
 		}
 		return err
 	}
 
 	// Commit the transaction
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("failed to commit transaction: %w", err)
+		return &NativeError{
+			Operation: "executeInTransaction",
+			Message:   ErrFailedToCommitTransaction.Error(),
+			Cause:     err,
+		}
 	}
 
 	return nil
@@ -496,7 +572,11 @@ func (ti *NativeTransactionInteractor[T]) Commit(ctx context.Context) error {
 	ti.base.txMu.RUnlock()
 
 	if !isValid {
-		return fmt.Errorf("commit not applicable: transaction context invalid")
+		return &NativeError{
+			Operation: "Commit",
+			Message:   ErrCommitNotApplicable.Error(),
+			Cause:     ErrCommitNotApplicable,
+		}
 	}
 
 	err := ti.ctx.executor.Commit(ctx)
@@ -512,7 +592,11 @@ func (ti *NativeTransactionInteractor[T]) Rollback(ctx context.Context) error {
 	ti.base.txMu.RUnlock()
 
 	if !isValid {
-		return fmt.Errorf("rollback not applicable: transaction context invalid")
+		return &NativeError{
+			Operation: "Rollback",
+			Message:   ErrRollbackNotApplicable.Error(),
+			Cause:     ErrRollbackNotApplicable,
+		}
 	}
 
 	err := ti.ctx.executor.Rollback(ctx)
@@ -527,7 +611,11 @@ func (ti *NativeTransactionInteractor[T]) HasTransaction(ctx context.Context) bo
 
 // StartTransaction for transaction interactor (should return error for nested transactions)
 func (ti *NativeTransactionInteractor[T]) StartTransaction(ctx context.Context) (query.TransactionalDatabaseInteractor, error) {
-	return nil, fmt.Errorf("cannot nest transactions: already in a transaction")
+	return nil, &NativeError{
+		Operation: "StartTransaction",
+		Message:   ErrCannotNestTransactions.Error(),
+		Cause:     ErrCannotNestTransactions,
+	}
 }
 
 // SchemaManager for transaction interactor

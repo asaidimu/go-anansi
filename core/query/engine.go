@@ -3,7 +3,6 @@ package query
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"hash/fnv"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
@@ -69,7 +68,11 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 	if dbQuery == nil { // Cache miss or no cache
 		dbQuery, postProcessingQuery, err = e.partitioner.Partition(dsl)
 		if err != nil {
-			return nil, fmt.Errorf("error partitioning query: %w", err)
+			return nil, &QueryError{
+				Operation: "Query",
+				Message:   "error partitioning query",
+				Cause:     err,
+			}
 		}
 
 		if e.cache != nil {
@@ -81,7 +84,11 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 	// 2. Execute the database part of the query.
 	docs, err := e.Interactor.SelectDocuments(ctx, schemaDef, dbQuery)
 	if err != nil {
-		return nil, fmt.Errorf("database query execution failed: %w", err)
+		return nil, &QueryError{
+			Operation: "Query",
+			Message:   "database query execution failed",
+			Cause:     err,
+		}
 	}
 
 	// 3. If there's no post-processing, we can return the results directly.
@@ -92,7 +99,11 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 	// 4. Execute the in-memory part of the query.
 	queryHelper, err := NewQueryHelper(postProcessingQuery, nil, nil, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create query helper for post-processing: %w", err)
+		return nil, &QueryError{
+			Operation: "Query",
+			Message:   "failed to create query helper for post-processing",
+			Cause:     err,
+		}
 	}
 
 	// Register the custom functions with the helper.
@@ -109,7 +120,11 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 	queryHelper.query.Projection = dsl.Projection
 	finalDocs, err := queryHelper.Project(processedDocs)
 	if err != nil {
-		return nil, fmt.Errorf("final projection failed: %w", err)
+		return nil, &QueryError{
+			Operation: "Query",
+			Message:   "final projection failed",
+			Cause:     err,
+		}
 	}
 
 
@@ -136,7 +151,11 @@ func (e *QueryEngine) runPostProcessing(helper *QueryHelper, docs []data.Documen
 	if helper.query.Filters != nil {
 		processedDocs, err = helper.Filter(processedDocs)
 		if err != nil {
-			return nil, fmt.Errorf("post-processing filter failed: %w", err)
+			return nil, &QueryError{
+				Operation: "runPostProcessing",
+				Message:   "post-processing filter failed",
+				Cause:     err,
+			}
 		}
 	}
 
@@ -146,19 +165,31 @@ func (e *QueryEngine) runPostProcessing(helper *QueryHelper, docs []data.Documen
 		// Aggregation returns a single result document, so we return it immediately.
 		aggResult, err := helper.ApplyAggregations(processedDocs)
 		if err != nil {
-			return nil, fmt.Errorf("post-processing aggregation failed: %w", err)
+			return nil, &QueryError{
+				Operation: "runPostProcessing",
+				Message:   "post-processing aggregation failed",
+				Cause:     err,
+			}
 		}
 		return []data.Document{aggResult}, nil
 	}
 
 	processedDocs, err = helper.Sort(processedDocs)
 	if err != nil {
-		return nil, fmt.Errorf("post-processing sort failed: %w", err)
+		return nil, &QueryError{
+			Operation: "runPostProcessing",
+			Message:   "post-processing sort failed",
+			Cause:     err,
+		}
 	}
 
 	processedDocs, _, err = helper.Paginate(processedDocs)
 	if err != nil {
-		return nil, fmt.Errorf("post-processing pagination failed: %w", err)
+		return nil, &QueryError{
+			Operation: "runPostProcessing",
+			Message:   "post-processing pagination failed",
+			Cause:     err,
+		}
 	}
 
 	return processedDocs, nil

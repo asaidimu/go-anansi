@@ -6,7 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	
+	"errors"
 	"fmt"
 	"maps"
 	"reflect"
@@ -15,7 +15,6 @@ import (
 	"sync"
 	"time"
 
-	
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
@@ -120,7 +119,7 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 			return nil, &DocumentError{
 				Operation: "newDocument",
 				Message:   fmt.Sprintf("%s: %s", ErrMetadataProviderFailed.Error(), providerConfig.Name),
-				Cause:     fmt.Errorf("%w: %w", ErrMetadataProviderFailed, err),
+				Cause:     errors.Join(ErrMetadataProviderFailed, err),
 			}
 		}
 		maps.Copy(meta, providerMeta)
@@ -242,7 +241,7 @@ func (f *documentFactory) calculateHash(doc Document) (string, error) {
 		return "", &DocumentError{
 			Operation: "CalculateHash",
 			Message:   ErrFailedToMarshalMetadata.Error(),
-			Cause:     fmt.Errorf("%w: %w", ErrFailedToMarshalMetadata, err),
+			Cause:     errors.Join(ErrFailedToMarshalMetadata, err),
 		}
 	}
 

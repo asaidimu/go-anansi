@@ -1,7 +1,7 @@
 package query
 
 import (
-	"fmt"
+	"errors"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 )
@@ -122,7 +122,11 @@ func (p *QueryPartitioner) partitionFilters(filter *QueryFilter) (*QueryFilter, 
 		}
 	}
 
-	return nil, nil, fmt.Errorf("invalid filter structure")
+	return nil, nil, &QueryError{
+		Operation: "partitionFilters",
+		Message:   "invalid filter structure",
+		Cause:     errors.New("invalid filter structure"), // No specific error variable for this
+	}
 }
 
 func (p *QueryPartitioner) isConditionSupported(cond *FilterCondition) bool {
@@ -197,7 +201,11 @@ func (p *QueryPartitioner) augmentProjection(originalQuery, dbQuery, postQuery *
 
 	// Ensure we don't have conflicting include/exclude
 	if len(dbQuery.Projection.Exclude) > 0 {
-		return fmt.Errorf("cannot augment projection with dependencies when an exclude projection is already present")
+		return &QueryError{
+			Operation: "augmentProjection",
+			Message:   "cannot augment projection with dependencies when an exclude projection is already present",
+			Cause:     errors.New("conflicting projection"), // No specific error variable for this
+		}
 	}
 
 	// Add dependencies to the projection

@@ -3,7 +3,7 @@ package data
 import (
 	"context"
 	"encoding/json"
-	"fmt"
+	"errors"
 )
 
 // FromJSON creates a Document from JSON bytes with enhanced error handling.
@@ -17,7 +17,7 @@ func FromJSON(data []byte) (Document, error) {
 		return nil, &DocumentError{
 			Operation: "FromJSON",
 			Message:   ErrFailedToUnmarshalJSON.Error(),
-			Cause:     fmt.Errorf("%w: %w", ErrFailedToUnmarshalJSON, err),
+			Cause:     errors.Join(ErrFailedToUnmarshalJSON, err),
 		}
 	}
 	return getFactory().newDocument(context.Background(), doc)
@@ -34,7 +34,7 @@ func FromStruct(s any) (Document, error) {
 		return nil, &DocumentError{
 			Operation: "FromStruct",
 			Message:   ErrFailedToMarshalStruct.Error(),
-			Cause:     fmt.Errorf("%w: %w", ErrFailedToMarshalStruct, err),
+			Cause:     errors.Join(ErrFailedToMarshalStruct, err),
 		}
 	}
 
@@ -56,7 +56,7 @@ func (d Document) ToStruct(target any) error {
 		return &DocumentError{
 			Operation: "ToStruct",
 			Message:   ErrFailedToMarshalJSON.Error(),
-			Cause:     fmt.Errorf("%w: %w", ErrFailedToMarshalJSON, err),
+			Cause:     errors.Join(ErrFailedToMarshalJSON, err),
 		}
 	}
 
@@ -65,7 +65,7 @@ func (d Document) ToStruct(target any) error {
 
 			Operation: "ToStruct",
 			Message:   ErrFailedToUnmarshalStruct.Error(),
-			Cause:     fmt.Errorf("%w: %w", ErrFailedToUnmarshalStruct, err),
+			Cause:     errors.Join(ErrFailedToUnmarshalStruct, err),
 		}
 	}
 

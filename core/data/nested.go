@@ -1,6 +1,7 @@
 package data
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -65,7 +66,7 @@ func (d Document) SetNested(path string, value any) error {
 				Operation: "SetNested",
 				Key:       strings.Join(parts[:i+1], "."),
 				Message:   fmt.Sprintf("%s: cannot traverse into %T", ErrCannotTraverse.Error(), next),
-				Cause:     fmt.Errorf("%w: %w", ErrCannotTraverse, ErrInvalidPath),
+				Cause:     errors.Join(ErrCannotTraverse, ErrInvalidPath),
 			}
 		}
 	}
@@ -113,7 +114,7 @@ func (d Document) DeleteNested(path string) error {
 			Operation: "DeleteNested",
 			Key:       path,
 			Message:   fmt.Sprintf("%s: parent is not a map: %T", ErrParentNotMap.Error(), p),
-			Cause:     fmt.Errorf("%w: %w", ErrParentNotMap, ErrInvalidPath),
+			Cause:     errors.Join(ErrParentNotMap, ErrInvalidPath),
 		}
 	}
 
