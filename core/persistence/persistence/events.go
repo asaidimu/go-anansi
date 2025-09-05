@@ -202,7 +202,7 @@ func (e *eventsPersistence) Subscriptions(ctx context.Context) ([]base.Subscript
 	return e.persistence.Subscriptions(ctx)
 }
 
-func (e *eventsPersistence) Transact(ctx context.Context, callback func(tx base.BasePersistence) (any, error)) (any, error) {
+func (e *eventsPersistence) Transact(ctx context.Context, callback func(ctx context.Context, tx base.BasePersistence) (any, error)) (any, error) {
 	result, err := e.withEventEmission(
 		ctx,
 		"transact",

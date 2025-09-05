@@ -368,7 +368,7 @@ func (i *EphemeralDatabaseInteractor) HasTransaction(ctx context.Context) bool {
 }
 
 // StartTransaction begins a new in-memory transaction.
-func (i *EphemeralDatabaseInteractor) StartTransaction(ctx context.Context) (query.TransactionalDatabaseInteractor, error) {
+func (i *EphemeralDatabaseInteractor) StartTransaction(ctx context.Context) (query.DatabaseInteractor, error) {
 	i.store.mu.Lock()
 	defer i.store.mu.Unlock()
 

@@ -188,14 +188,14 @@ func TestPersistence_TransactionEvents(t *testing.T) {
 	}
 
 	// Test successful transaction
-	_, err = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
+	_, err = p.Transact(context.Background(), func(ctx context.Context, tx base.BasePersistence) (any, error) {
 		// Perform some operation within the transaction
 		return "success", nil
 	})
 	require.NoError(t, err)
 
 	// Test failed transaction
-	_, err = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
+	_, err = p.Transact(context.Background(), func(ctx context.Context, tx base.BasePersistence) (any, error) {
 		// Simulate an error within the transaction
 		return nil, assert.AnError
 	})

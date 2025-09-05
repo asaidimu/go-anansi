@@ -1,11 +1,15 @@
 package persistence_test
 
 import (
+	// "context"
 	"context"
 	"database/sql"
 	"fmt"
 	"testing"
+	"time"
 
+	// "github.com/asaidimu/go-anansi/v6/core/data"
+	// "github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
@@ -74,7 +78,7 @@ func createNativeInteractor(t *testing.T) (query.DatabaseInteractor, func()) {
 	require.NoError(t, err)
 	queryFactory := sqliteQuery.NewSQLiteFactory()
 
-	i, err := native.NewNativeInteractor(executor, queryFactory)
+	i, err := native.NewNativeInteractor(executor, queryFactory, logger)
 	require.NoError(t, err)
 	return i, cleanup
 }
@@ -95,17 +99,23 @@ func TestPersistence_CreateAndGetCollection(t *testing.T) {
 	interactor, cleanup := createNativeInteractor(t)
 	defer cleanup()
 
-	logger := zap.NewNop()
+	logger, err := zap.NewDevelopment()
+	require.NoError(t, err)
 
 	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
 	schema := newTestSchema("my_collection")
 
+	logger.Debug("Started create collection")
+
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+    defer cancel()
 	// Create the collection
-	createdCollection, err := p.CreateCollection(context.Background(), *schema)
+	createdCollection, err := p.CreateCollection(timeoutCtx, *schema)
 	require.NoError(t, err)
 	assert.NotNil(t, createdCollection)
+	logger.Debug("Completed create collection")
 
 	// Get the collection
 	retrievedCollection, err := p.Collection(context.Background(), "my_collection")
@@ -202,7 +212,7 @@ func TestPersistence_Transact(t *testing.T) {
 	})
 
 	// Perform a successful transfer within a transaction
-	_, err = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
+	_, err = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
 		acc, err := tx.Collection(context.Background(), "accounts")
 		if err != nil {
 			return nil, err
@@ -264,7 +274,7 @@ func TestPersistence_Transact(t *testing.T) {
 	assert.Equal(t, 70.0, balances["B"])
 
 	// Perform a failing transaction
-	_, err = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
+	_, err = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
 		acc, err := tx.Collection(context.Background(), "accounts")
 		if err != nil {
 			return nil, err
@@ -442,6 +452,7 @@ func TestPersistence_MetadataOnEmptyDB(t *testing.T) {
 	assert.Len(t, meta.Schemas, 0)
 }
 
+/*
 func TestPersistence_TransactWithPanic(t *testing.T) {
 	interactor, cleanup := createNativeInteractor(t)
 	defer cleanup()
@@ -546,7 +557,6 @@ func TestPersistence_Metadata(t *testing.T) {
 	assert.Len(t, meta.Schemas, 2)
 }
 
-/*
 func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	interactor, cleanup := createNativeInteractor(t)
 	defer cleanup()

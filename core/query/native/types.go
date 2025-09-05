@@ -32,6 +32,9 @@ const (
 	// StmtCreateCollection represents collection/table creation (CREATE TABLE in SQL, createCollection in MongoDB)
 	StmtCreateCollection StatementType = "CREATE_COLLECTION"
 
+	// StmtCheckCollection represents as check for a collection/table
+	StmtCheckCollection StatementType = "CHECK_COLLECTION"
+
 	// StmtDropCollection represents collection/table deletion (DROP TABLE in SQL, drop in MongoDB)
 	StmtDropCollection StatementType = "DROP_COLLECTION"
 

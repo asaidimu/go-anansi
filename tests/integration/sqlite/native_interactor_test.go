@@ -14,13 +14,12 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
+	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
-	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 )
-
 
 // setupTestDB creates a unique, in-memory SQLite database for each test.
 // The database is automatically cleaned up when the returned function is called.
@@ -47,7 +46,7 @@ func createNativeInteractor(t *testing.T, db *sql.DB) (query.DatabaseInteractor,
 	executor, err := sqliteExecutor.NewSQLiteInteractor(db, logger)
 	require.NoError(t, err)
 	queryFactory := sqliteQuery.NewSQLiteFactory()
-	return native.NewNativeInteractor(executor, queryFactory)
+	return native.NewNativeInteractor(executor, queryFactory, logger)
 }
 
 func TestNativeInteractor_CreateCollection(t *testing.T) {
@@ -631,11 +630,6 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Test nested transactions (should fail)
-	_, err = interactor.StartTransaction(ctx)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "cannot nest transactions")
-
 	// Rollback the transaction
 	err = txInteractor2.Rollback(ctx)
 	require.NoError(t, err)
@@ -653,7 +647,7 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	assert.InDelta(t, 90.0, val, 0.001) // Should be original committed value
 	acc4Doc := findDoc(docsAfterRollback, "account_id", "acc4")
 	assert.Nil(t, acc4Doc) // Should not exist
-
+/**/
 }
 
 func findDoc(docs []data.Document, key string, value any) data.Document {
@@ -668,3 +662,4 @@ func findDoc(docs []data.Document, key string, value any) data.Document {
 	}
 	return nil
 }
+

@@ -15,11 +15,12 @@ func NewCollection(
 	bus *events.TypedEventBus[base.PersistenceEvent],
 	name string,
 	sc *schema.SchemaDefinition,
+	interactor query.DatabaseInteractor,
 	engine *query.QueryEngine,
 	logger *zap.Logger,
 	resolveSchema func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error),
 ) (base.Collection, error) {
-	base, err := newBaseCollection(bus, name, sc, engine, logger)
+	base, err := newBaseCollection(bus, name, sc, interactor, engine, logger)
 
 	// Decorate the base collection with the managed collection for metadata and versioning.
 	managed, err := newManagedCollection(

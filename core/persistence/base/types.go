@@ -354,7 +354,7 @@ type Persistence interface {
 	// Transact executes a series of operations within a single atomic transaction.
 	// The provided callback function receives a transaction object, and if the callback
 	// returns an error, the transaction is rolled back.
-	Transact(ctx context.Context, callback func(tx BasePersistence) (any, error)) (any, error)
+	Transact(ctx context.Context, callback func(ctx context.Context, p BasePersistence) (any, error)) (any, error)
 
 	// RegisterSubscription registers a callback function to be executed when a specific
 	// persistence event occurs. It returns a unique ID for the subscription.
@@ -451,5 +451,35 @@ type Collection interface {
 type ReadResult struct {
 	Data  any `json:"data"`
 	Count int `json:"count,omitempty"`
+}
+
+const TxKey string = "__transaction__"
+// Transaction defines the interface for a database transaction.
+// Implementations of this interface should manage the state and coordination
+// of a single database transaction, including its lifecycle, operations,
+// and concurrency control.
+type Transaction interface {
+	// AddOperation increments the operation counter and returns a cleanup function.
+	// The cleanup function must be called when the operation completes,
+	// passing any error that occurred.
+	AddOperation() func(error)
+
+	// WaitForOperations waits for all operations added via AddOperation to complete.
+	// It returns any error encountered by an operation or a context timeout error.
+	WaitForOperations(ctx context.Context) error
+
+	// Commit commits the transaction and marks it as completed.
+	// It returns an error if the commit fails.
+	Commit(ctx context.Context) error
+
+	// Rollback rolls back the transaction and marks it as completed.
+	// It returns an error if the rollback fails.
+	Rollback(ctx context.Context) error
+
+	// IsActive returns true if the transaction has not yet been committed or rolled back.
+	IsActive() bool
+
+	// GetInteractor returns the transactional database interactor associated with this transaction.
+	GetInteractor() query.DatabaseInteractor
 }
 

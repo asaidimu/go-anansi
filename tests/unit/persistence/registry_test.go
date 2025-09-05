@@ -52,12 +52,12 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 	interactor := ephemeral.NewEphemeral()
 	schemaManager := interactor.SchemaManager()
 	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())
-	engine := query.NewQueryEngine(interactor, logger)
+	engine := query.NewQueryEngine(interactor.Capabilities(), logger)
 
 	registrySchemaDef := registry.RegistrySchema()
 
 	registryCollection, err := collection.NewCollection(
-		bus, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, engine, logger, nil,
+		bus, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, interactor, engine, logger, nil,
 	)
 
 	require.NoError(t, err)
@@ -70,11 +70,10 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 				return nil, err
 			}
 
-			ix := tx.(query.BaseDatabaseInteractor)
-			engine := query.NewQueryEngine(ix, logger)
+			engine := query.NewQueryEngine(interactor.Capabilities(), logger)
 
 			collection, err := collection.NewCollection(
-				bus, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, engine, logger, nil,
+				bus, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, interactor, engine, logger, nil,
 			)
 
 			if err != nil {

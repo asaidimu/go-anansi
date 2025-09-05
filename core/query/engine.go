@@ -13,7 +13,6 @@ import (
 // QueryEngine is the central orchestrator for executing queries. It implements the new
 // capabilities-based partitioning architecture.
 type QueryEngine struct {
-	Interactor       BaseDatabaseInteractor
 	partitioner      *QueryPartitioner
 	computeFunctions map[string]ComputeFunction
 	filterFunctions  map[ComparisonOperator]PredicateFunction
@@ -22,15 +21,14 @@ type QueryEngine struct {
 }
 
 // NewQueryEngine creates a new query executor.
-func NewQueryEngine(interactor BaseDatabaseInteractor, logger *zap.Logger) *QueryEngine {
+func NewQueryEngine(capabilities Capabilities, logger *zap.Logger) *QueryEngine {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 	cache, _ := NewLRUCache(100)
 
 	return &QueryEngine{
-		Interactor:       interactor,
-		partitioner:      NewQueryPartitioner(interactor.Capabilities()),
+		partitioner:      NewQueryPartitioner(capabilities),
 		computeFunctions: make(map[string]ComputeFunction),
 		filterFunctions:  make(map[ComparisonOperator]PredicateFunction),
 		logger:           logger,
@@ -50,17 +48,23 @@ func (e *QueryEngine) RegisterFilterFunction(operator ComparisonOperator, fn Pre
 
 // Query orchestrates the entire query execution process, from partitioning to final result.
 func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *Query) ([]data.Document, error) {
+	interactor, ok := GetInteractor(ctx)
+	if !ok {
+		return nil, &QueryError{
+			Operation: "Query",
+			Message:   "could not get interactor",
+			Cause:     nil,
+		}
+	}
 	var dbQuery, postProcessingQuery *Query
 	var err error
 
 	if e.cache != nil {
 		key, err := e.generateCacheKey(dsl)
-		if err != nil {
-		} else {
+		if err == nil {
 			if cached, found := e.cache.Get(key); found {
 				dbQuery = cached.DbQuery
 				postProcessingQuery = cached.PostProcessingQuery
-			} else {
 			}
 		}
 	}
@@ -82,7 +86,7 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 	}
 
 	// 2. Execute the database part of the query.
-	docs, err := e.Interactor.SelectDocuments(ctx, schemaDef, dbQuery)
+	docs, err := interactor.SelectDocuments(ctx, schemaDef, dbQuery)
 	if err != nil {
 		return nil, &QueryError{
 			Operation: "Query",
@@ -126,7 +130,6 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 			Cause:     err,
 		}
 	}
-
 
 	return finalDocs, nil
 }

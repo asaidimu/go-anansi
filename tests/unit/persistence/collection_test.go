@@ -66,8 +66,8 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 	err = manager.CreateCollection(context.Background(), *testSchemaDef)
 	assert.NoError(t, err)
 
-	engine := query.NewQueryEngine(ephemeralInteractor, logger)
-	c, err := collection.NewCollection(bus, testSchemaDef.Name, testSchemaDef, engine, logger, resolveSchema)
+	engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
+	c, err := collection.NewCollection(bus, testSchemaDef.Name, testSchemaDef, ephemeralInteractor, engine, logger, resolveSchema)
 	assert.NoError(t, err)
 
 	ctx := context.Background()
@@ -80,8 +80,8 @@ func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *z
 	nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent"}
 	ephemeralInteractor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	engine := query.NewQueryEngine(ephemeralInteractor, logger)
-	c, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, resolveSchema)
+	engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
+	c, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, ephemeralInteractor, engine, logger, resolveSchema)
 	ctx := context.Background()
 	return c, ephemeralInteractor, logger, nonExistentSchema, bus, ctx
 }
@@ -169,8 +169,8 @@ func TestCollection_Read(t *testing.T) {
 		// Create a new collection instance with a non-existent schema name
 		_, ephemeralInteractor, logger, _, bus, ctx := setupCollection(t)
 		nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent"}
-		engine := query.NewQueryEngine(ephemeralInteractor, logger)
-		nonExistentCollection, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, engine, logger, resolveSchema)
+		engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
+		nonExistentCollection, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, ephemeralInteractor, engine, logger, resolveSchema)
 
 		result, err := nonExistentCollection.Read(ctx, &q)
 

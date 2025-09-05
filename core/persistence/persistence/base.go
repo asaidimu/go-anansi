@@ -8,6 +8,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -41,10 +42,11 @@ func newBasePersistence(
 ) (base.Persistence, error) {
 
 	registrySchema := registry.RegistrySchema()
-	engine := query.NewQueryEngine(interactor, logger)
+	engine := query.NewQueryEngine(interactor.Capabilities(), logger)
 	registryCollection, err := collection.NewCollection(bus,
 		registry.REGISTRY_COLLECTION_NAME,
 		registrySchema,
+		interactor,
 		engine,
 		logger,
 		nil,
@@ -102,6 +104,7 @@ func (p *basePersistence) Collection(ctx context.Context, name string) (base.Col
 		p.bus,
 		name,
 		sc,
+		*p.interactor,
 		p.engine,
 		p.logger,
 		func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error) {
@@ -145,7 +148,7 @@ func (p *basePersistence) CreateCollection(ctx context.Context, sc schema.Schema
 	return p.Collection(ctx, sc.Name)
 }
 
-func (p *basePersistence) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) (error) {
+func (p *basePersistence) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) error {
 	_, err := (*p.registry).CreateCollections(ctx, schemas)
 	if err != nil {
 		return nil
@@ -269,56 +272,45 @@ func (p *basePersistence) Subscriptions(ctx context.Context) ([]base.Subscriptio
 	return subs, nil
 }
 
-func (p *basePersistence) Transact(ctx context.Context, callback func(tx base.BasePersistence) (any, error)) (any, error) {
+func (p *basePersistence) Transact(ctx context.Context, callback func(ctx context.Context, tx base.BasePersistence) (any, error)) (any, error) {
 	p.txmu.Lock()
 	defer p.txmu.Unlock()
 
-	tx, err := (*p.interactor).StartTransaction(ctx)
-	if err != nil {
-		return nil, err
-	}
+	return transaction.Execute(ctx, *p.interactor, p.logger, func(tctx context.Context, tx query.DatabaseInteractor) (any, error) {
+		registrySchema := registry.RegistrySchema()
+		registryCollection, err := collection.NewCollection(p.bus,
+			registry.REGISTRY_COLLECTION_NAME,
+			registrySchema,
+			*p.interactor,
+			p.engine,
+			p.logger,
+			nil,
+		)
 
-	engine := query.NewQueryEngine(tx, p.logger)
+		if err != nil {
+			return nil, err
+		}
 
-	registrySchema := registry.RegistrySchema()
-	registryCollection, err := collection.NewCollection(p.bus,
-		registry.REGISTRY_COLLECTION_NAME,
-		registrySchema,
-		engine,
-		p.logger,
-		nil,
-	)
+		tp := &basePersistence{
+			bus:                p.bus,
+			engine:             p.engine,
+			interactor:         nil,
+			subscriptions:      make(map[string]*base.SubscriptionInfo),
+			collections:        make(map[string]base.Collection),
+			logger:             p.logger,
+			registryCollection: &registryCollection,
+		}
 
-	if err != nil {
-		return nil, err
-	}
+		registry, err := registry.NewCollectionRegistry(p.createRegistryExecutor(registrySchema), p.logger)
 
-	tp := &basePersistence{
-		bus:                p.bus,
-		engine:             engine,
-		interactor:         nil,
-		subscriptions:      make(map[string]*base.SubscriptionInfo),
-		collections:        make(map[string]base.Collection),
-		logger:             p.logger,
-		registryCollection: &registryCollection,
-	}
+		if err != nil {
+			return nil, err
+		}
 
-	registry, err := registry.NewCollectionRegistry(p.createRegistryExecutor(registrySchema), p.logger)
+		tp.registry = &registry
 
-	if err != nil {
-		return nil, err
-	}
-
-	tp.registry = &registry
-
-	result, err := callback(tp)
-	if err != nil {
-		tx.Rollback(ctx)
-		return result, err
-	}
-
-	tx.Commit(ctx)
-	return result, nil
+		return callback(tctx, tp)
+	})
 }
 
 func (p *basePersistence) UnregisterSubscription(ctx context.Context, id string) {
@@ -339,10 +331,9 @@ func (p *basePersistence) createRegistryExecutor(schema *schema.SchemaDefinition
 				return nil, err
 			}
 
-			ix := tx.(query.BaseDatabaseInteractor)
-			engine := query.NewQueryEngine(ix, p.logger)
+			engine := query.NewQueryEngine((*p.interactor).Capabilities(), p.logger)
 
-			collection, err := collection.NewCollection(p.bus, registry.REGISTRY_COLLECTION_NAME, schema, engine, p.logger, nil)
+			collection, err := collection.NewCollection(p.bus, registry.REGISTRY_COLLECTION_NAME, schema, *p.interactor, engine, p.logger, nil)
 
 			if err != nil {
 				return nil, err

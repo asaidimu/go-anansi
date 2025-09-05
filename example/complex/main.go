@@ -237,7 +237,7 @@ func main() {
 		log.Fatalf("Failed to create SQLite interactor: %v", err)
 	}
 	queryFactory := sqliteQuery.NewSQLiteFactory()
-	interactor, err := native.NewNativeInteractor(executor, queryFactory)
+	interactor, err := native.NewNativeInteractor(executor, queryFactory, logger)
 	if err != nil {
 		log.Fatalf("Failed to create native interactor: %v", err)
 	}

@@ -2,7 +2,7 @@ package persistence
 
 import (
 	"context"
-	
+
 
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
@@ -119,7 +119,7 @@ func (m *managedPersistence) Subscriptions(ctx context.Context) ([]base.Subscrip
 }
 
 // Transact delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) Transact(ctx context.Context, callback func(tx base.BasePersistence) (any, error)) (any, error) {
+func (m *managedPersistence) Transact(ctx context.Context, callback func(ctx context.Context, tx base.BasePersistence) (any, error)) (any, error) {
 	if err := m.checkClosed(); err != nil {
 		return nil, err
 	}

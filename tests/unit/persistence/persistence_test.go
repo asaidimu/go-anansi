@@ -129,15 +129,15 @@ func TestPersistence_Transact(t *testing.T) {
 	})
 
 	// Perform a successful transfer within a transaction
-	_, err = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
-		acc, err := tx.Collection(context.Background(), "accounts")
+	_, err = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
+		acc, err := tx.Collection(tctx, "accounts")
 		if err != nil {
 			return nil, err
 		}
 
 		// Read Alice's document to get metadata
 		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
-		aliceResult, err := acc.Read(context.Background(), &aliceQuery)
+		aliceResult, err := acc.Read(tctx, &aliceQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -155,7 +155,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 		// Read Bob's document to get metadata
 		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
-		bobResult, err := acc.Read(context.Background(), &bobQuery)
+		bobResult, err := acc.Read(tctx, &bobQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -165,7 +165,7 @@ func TestPersistence_Transact(t *testing.T) {
 		// Add 20 to Bob
 		bobDoc["balance"] = 70.0
 		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: bobDoc, Filter: filterBob})
+		_, err = acc.Update(tctx, &base.CollectionUpdate{Data: bobDoc, Filter: filterBob})
 		if err != nil {
 			return nil, err
 		}
@@ -189,15 +189,15 @@ func TestPersistence_Transact(t *testing.T) {
 	assert.Equal(t, 70.0, balances["B"])
 
 	// Perform a failing transaction
-	_, err = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
-		acc, err := tx.Collection(context.Background(), "accounts")
+	_, err = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
+		acc, err := tx.Collection(tctx, "accounts")
 		if err != nil {
 			return nil, err
 		}
 
 		// Read Alice's document to get metadata
 		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
-		aliceResult, err := acc.Read(context.Background(), &aliceQuery)
+		aliceResult, err := acc.Read(tctx, &aliceQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -207,7 +207,7 @@ func TestPersistence_Transact(t *testing.T) {
 		// Subtract 10 from Alice
 		aliceDoc["balance"] = 70.0
 		filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+		_, err = acc.Update(tctx, &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +217,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 		// We still need metadata for the update to pass the initial check
 		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
-		bobResult, err := acc.Read(context.Background(), &bobQuery)
+		bobResult, err := acc.Read(tctx, &bobQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -227,7 +227,7 @@ func TestPersistence_Transact(t *testing.T) {
 		updateBob.SetMetadata(meta)
 
 		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: updateBob, Filter: filterBob})
+		_, err = acc.Update(tctx, &base.CollectionUpdate{Data: updateBob, Filter: filterBob})
 
 		return nil, err // Propagate the error to trigger rollback
 	})
@@ -375,8 +375,8 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 
 	// Perform a transaction that panics
 	assert.Panics(t, func() {
-		_, _ = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
-			acc, err := tx.Collection(context.Background(), "accounts")
+		_, _ = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
+			acc, err := tx.Collection(tctx, "accounts")
 			if err != nil {
 				return nil, err
 			}
@@ -393,7 +393,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 			// Update Alice's balance
 			aliceDoc["balance"] = 50.0
 			filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
-			_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+			_, err = acc.Update(tctx, &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
 			if err != nil {
 				return nil, err
 			}

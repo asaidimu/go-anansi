@@ -7,7 +7,8 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	
+	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
+
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-events"
@@ -21,7 +22,7 @@ type baseCollection struct {
 	name          string
 	schema        *schema.SchemaDefinition
 	engine        *query.QueryEngine
-	interactor    query.BaseDatabaseInteractor
+	interactor    query.DatabaseInteractor
 	logger        *zap.Logger
 	subscriptions map[string]*base.SubscriptionInfo // To store unsubscribe functions
 	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
@@ -36,6 +37,7 @@ func newBaseCollection(
 	bus *events.TypedEventBus[base.PersistenceEvent],
 	name string,
 	sc *schema.SchemaDefinition,
+	interactor query.DatabaseInteractor,
 	engine *query.QueryEngine,
 	logger *zap.Logger,
 ) (base.Collection, error) {
@@ -53,7 +55,7 @@ func newBaseCollection(
 		name:          name,
 		schema:        sc,
 		engine:        engine,
-		interactor:    engine.Interactor,
+		interactor:    interactor,
 		logger:        logger,
 		subscriptions: make(map[string]*base.SubscriptionInfo),
 		validator:     validator,
@@ -82,31 +84,12 @@ func newBaseCollection(
 // starts a new transaction, executes the operation, and then commits or rolls back.
 func (c *baseCollection) withTransaction(
 	ctx context.Context,
-	operation func(interactor query.BaseDatabaseInteractor) (any, error),
+	operation func(interactor query.DatabaseInteractor) (any, error),
 ) (any, error) {
 
-	if !c.interactor.HasTransaction(ctx) {
-		interactor := c.interactor.(query.DatabaseInteractor)
-		tx, err := interactor.StartTransaction(ctx)
-		if err != nil {
-			return nil, base.NewPersistenceError(base.ErrFailedToStartTransaction.Error(), err)
-		}
-
-		result, err := operation(tx)
-		if err != nil {
-			tx.Rollback(ctx)
-			return nil, err
-		}
-
-		if err := tx.Commit(ctx); err != nil {
-			tx.Rollback(ctx)
-			return nil, base.NewPersistenceError(base.ErrFailedToCommitTransaction.Error(), err)
-		}
-
-		return result, nil
-	}
-
-	return operation(c.interactor)
+	return transaction.Execute(ctx, c.getCurrentInteractor(ctx), c.logger, func(ctx context.Context, interactor query.DatabaseInteractor) (any, error) {
+		return operation(interactor)
+	})
 }
 
 // CreateOne creates a single document.
@@ -130,7 +113,7 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) (
 	results := make([]base.CreateResult, len(docs))
 
 	// Insert the documents
-	inserted, err := c.withTransaction(ctx, func(interactor query.BaseDatabaseInteractor) (any, error) {
+	inserted, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
 		return interactor.InsertDocuments(ctx, c.schema, docs)
 	})
 
@@ -153,7 +136,8 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) (
 
 // Read retrieves documents from the collection that match the given QueryDSL.
 func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
-	docs, err := c.engine.Query(ctx, c.schema, q)
+	rctx := query.WithInteractor(ctx, c.interactor)
+	docs, err := c.engine.Query(rctx, c.schema, q)
 	if err != nil {
 		return nil, base.NewPersistenceError(fmt.Sprintf("%s: %v", base.ErrReadDocuments.Error(), err), base.ErrReadDocuments)
 	}
@@ -181,7 +165,7 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 		return 0, base.NewPersistenceError(base.ErrInvalidUpdateParams.Error(), base.ErrInvalidUpdateParams)
 	}
 
-	result, err := c.withTransaction(ctx, func(interactor query.BaseDatabaseInteractor) (any, error) {
+	result, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
 		return interactor.UpdateDocuments(ctx, c.schema, params.Data, params.Filter)
 	})
 
@@ -200,7 +184,7 @@ func (c *baseCollection) Delete(ctx context.Context, q *query.QueryFilter, unsaf
 		return 0, base.NewPersistenceError(base.ErrDeleteRequiresFilter.Error(), base.ErrDeleteRequiresFilter)
 	}
 
-	result, err := c.withTransaction(ctx, func(interactor query.BaseDatabaseInteractor) (any, error) {
+	result, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
 		return interactor.DeleteDocuments(ctx, c.schema, q, unsafe)
 	})
 
@@ -286,6 +270,16 @@ func (c *baseCollection) Subscriptions(ctx context.Context) ([]base.Subscription
 
 // Capabilities returns the features and limitations of the underlying database backend.
 func (c *baseCollection) Capabilities(ctx context.Context) *query.Capabilities {
-	capabilities := c.interactor.Capabilities()
+	capabilities := c.getCurrentInteractor(ctx).Capabilities()
 	return &capabilities
 }
+
+func (c *baseCollection) getCurrentInteractor(ctx context.Context) (query.DatabaseInteractor) {
+	if result, ok := query.GetInteractor(ctx); ok {
+		return result
+	}
+
+	// Not in a transaction - use base interactor with no-op cleanup
+	return c.interactor
+}
+

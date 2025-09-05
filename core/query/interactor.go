@@ -63,7 +63,7 @@ type SchemaManager interface {
 // Implementations of this interface are responsible for managing both non-transactional
 // and transactional operations.
 
-type BaseDatabaseInteractor interface {
+type DatabaseInteractor interface {
 	SchemaManager
 
 	// SelectDocuments retrieves documents from the database based on a QueryDSL
@@ -89,10 +89,11 @@ type BaseDatabaseInteractor interface {
 
 	// SchemaManager returns only the methods available to the schema manager
 	SchemaManager() SchemaManager
-}
 
-type TransactionalDatabaseInteractor interface {
-	BaseDatabaseInteractor
+	// StartTransaction begins a new database transaction and returns a new instance of
+	// the DatabaseInteractor that is scoped to that transaction. All operations on the
+	// returned interactor will be part of the transaction.
+	StartTransaction(ctx context.Context) (DatabaseInteractor, error)
 
 	// Commit finalizes the transaction, making all changes permanent. This should only
 	// be called on a transactional DatabaseInteractor.
@@ -101,13 +102,5 @@ type TransactionalDatabaseInteractor interface {
 	// Rollback aborts the transaction, discarding all changes made within it. This
 	// should only be called on a transactional DatabaseInteractor.
 	Rollback(ctx context.Context) error
-}
 
-type DatabaseInteractor interface {
-	BaseDatabaseInteractor
-
-	// StartTransaction begins a new database transaction and returns a new instance of
-	// the DatabaseInteractor that is scoped to that transaction. All operations on the
-	// returned interactor will be part of the transaction.
-	StartTransaction(ctx context.Context) (TransactionalDatabaseInteractor, error)
 }

@@ -1,663 +1,336 @@
+// Package native provides a database interactor that uses a generic query executor.
 package native
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sync"
+	"sync/atomic"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"go.uber.org/zap"
 )
 
-// ExecutorStrategy defines how an interactor selects its executor
-type ExecutorStrategy[T any] interface {
-	GetExecutor() QueryExecutor[T]
-}
+// NativeInteractor implements the core database interaction logic.
+// It directly manages the query executor and transaction state, providing a unified
+// implementation for all database operations.
+type NativeInteractor[T any] struct {
+	// ix is the active query executor. It can be a base database connection
+	// or a specific transactional executor.
+	ix QueryExecutor[T]
 
-// SharedInteractorLogic contains all the shared business logic
-type SharedInteractorLogic[T any] struct {
-	b  NativeQueryBuilder[T]
+	// b is the query builder used to compile DSLs into native queries.
+	b NativeQueryBuilder[T]
+
+	// qf provides dialect-specific capabilities and query factory methods.
 	qf QueryFactory[T]
+
+	logger *zap.Logger
+
+	// isTx is a flag indicating whether this interactor instance represents an
+	// active transaction.
+	txMu sync.Mutex // Each interactor has its own mutex
+	isTx bool
+
+	// tracks whether the transaction has already finished
+	done atomic.Bool
 }
 
-// NewSharedInteractorLogic creates a new shared logic instance
-func NewSharedInteractorLogic[T any](qf QueryFactory[T]) *SharedInteractorLogic[T] {
-	return &SharedInteractorLogic[T]{
-		b:  NewNativeQueryBuilder(qf),
-		qf: qf,
+// ensure NativeInteractor conforms to the required interfaces
+var _ query.DatabaseInteractor = (*NativeInteractor[any])(nil)
+var _ query.SchemaManager = (*NativeInteractor[any])(nil)
+
+// NewNativeInteractor is the single constructor for creating a new database interactor.
+// It initializes a base-level interactor that is not yet in a transaction.
+func NewNativeInteractor[T any](ix QueryExecutor[T], qf QueryFactory[T], logger *zap.Logger) (query.DatabaseInteractor, error) {
+	if ix == nil {
+		return nil, errors.New("query executor cannot be nil")
 	}
+	if qf == nil {
+		return nil, errors.New("query factory cannot be nil")
+	}
+
+	return &NativeInteractor[T]{
+		ix:     ix,
+		b:      NewNativeQueryBuilder(qf),
+		qf:     qf,
+		isTx:   false,
+		logger: logger,
+	}, nil
 }
 
-// SelectDocuments shared implementation
-func (s *SharedInteractorLogic[T]) SelectDocuments(ctx context.Context, strategy ExecutorStrategy[T], schema *schema.SchemaDefinition, dsl *query.Query) ([]data.Document, error) {
-	compiled, err := s.b.Build(dsl, StmtSelect, nil)
+// Close closes the underlying database connection.
+func (i *NativeInteractor[T]) Close() error {
+	// If this is a transaction, attempting a rollback is a safe cleanup.
+	if i.isTx {
+		i.ix.Rollback(context.Background())
+	}
+	return i.ix.Close()
+}
+
+// SelectDocuments retrieves multiple documents matching the query.
+func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.Query) ([]data.Document, error) {
+	compiled, err := i.b.Build(dsl, StmtSelect, nil)
 	if err != nil {
-		return nil, &NativeError{
-			Operation: "SelectDocuments", // This operation name will be used for both SelectDocuments and SelectStream
-			Message:   ErrCouldNotGetQuery.Error(),
-			Cause:     err,
-		}
+		return nil, newNativeError("SelectDocuments", "could not build query", err)
 	}
 
 	resultSchema, err := query.SchemaFromQuery(dsl, nil)
 	if err != nil {
-		return nil, &NativeError{
-			Operation: "SchemaFromQuery", // This operation name will be used for both SelectDocuments and SelectStream
-			Message:   ErrCouldNotGetResultSchema.Error(),
-			Cause:     err,
-		}
+		return nil, newNativeError("SelectDocuments", "could not determine result schema", err)
 	}
 
-	executor := strategy.GetExecutor()
-	data, err := executor.Query(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
-	if err != nil {
-		return nil, err
-	}
-	return data, nil
+	return i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
 }
 
-// SelectStream shared implementation
-func (s *SharedInteractorLogic[T]) SelectStream(ctx context.Context, strategy ExecutorStrategy[T], sc *schema.SchemaDefinition, dsl *query.Query) (<-chan data.Document, <-chan error, error) {
-	compiled, err := s.b.Build(dsl, StmtSelect, nil)
+// SelectStream retrieves a stream of documents matching the query.
+func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan data.Document, <-chan error, error) {
+	compiled, err := i.b.Build(dsl, StmtSelect, nil)
 	if err != nil {
-		return nil, nil, &NativeError{Operation: "SelectStream", Message: ErrCouldNotGetQuery.Error(), Cause: err}
+		return nil, nil, newNativeError("SelectStream", "could not build query", err)
 	}
 
 	resultSchema, err := query.SchemaFromQuery(dsl, nil)
 	if err != nil {
-		return nil, nil, &NativeError{Operation: "SelectStream", Message: ErrCouldNotGetResultSchema.Error(), Cause: err}
+		return nil, nil, newNativeError("SelectStream", "could not determine result schema", err)
 	}
 
-	executor := strategy.GetExecutor()
-	return executor.QueryStream(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
+	return i.ix.QueryStream(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
 }
 
-// UpdateDocuments shared implementation
-func (s *SharedInteractorLogic[T]) UpdateDocuments(ctx context.Context, strategy ExecutorStrategy[T], schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
-	compiled, err := s.b.Build(&query.Query{
-		Target: &query.QueryTarget{
-			Alias:  &schema.Name,
-			Name:   schema.Name,
-			Schema: schema,
-		},
+// UpdateDocuments updates documents matching the filter.
+func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
+	dsl := &query.Query{
+		Target:  &query.QueryTarget{Name: schema.Name, Schema: schema},
 		Filters: filters,
-	}, StmtUpdate, updates)
-
-	if err != nil {
-		return 0, &NativeError{
-			Operation: "UpdateDocuments", // This operation name will be used for both UpdateDocuments and DeleteDocuments
-			Message:   ErrCouldNotGetQuery.Error(),
-			Cause:     err,
-		}
 	}
 
-	executor := strategy.GetExecutor()
-	return executor.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: schema})
+	compiled, err := i.b.Build(dsl, StmtUpdate, updates)
+	if err != nil {
+		return 0, newNativeError("UpdateDocuments", "could not build query", err)
+	}
+
+	return i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: schema})
 }
 
-// InsertDocuments shared implementation
-func (s *SharedInteractorLogic[T]) InsertDocuments(ctx context.Context, strategy ExecutorStrategy[T], sc *schema.SchemaDefinition, records []data.Document) ([]data.Document, error) {
+// InsertDocuments inserts new documents.
+func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *schema.SchemaDefinition, records []data.Document) ([]data.Document, error) {
 	if len(records) == 0 {
 		return []data.Document{}, nil
 	}
 
-	q := &query.Query{
-		Target: &query.QueryTarget{
-			Name:   sc.Name,
-			Schema: sc,
-		}}
-
-	resultSchema, err := query.SchemaFromQuery(q, nil)
+	dsl := &query.Query{
+		Target: &query.QueryTarget{Name: sc.Name, Schema: sc},
+	}
+	compiled, err := i.b.Build(dsl, StmtInsert, records)
 	if err != nil {
-		return nil, &NativeError{
-			Operation: "SchemaFromQuery", // This operation name will be used for both SelectDocuments and SelectStream
-			Message:   ErrCouldNotGetResultSchema.Error(),
-			Cause:     err,
-		}
+		return nil, newNativeError("InsertDocuments", "could not build query", err)
 	}
 
-	compiled, err := s.b.Build(q, StmtInsert, records)
+	resultSchema, err := query.SchemaFromQuery(dsl, nil)
 	if err != nil {
-		return nil, &NativeError{
-			Operation: "SelectDocuments", // This operation name will be used for both SelectDocuments and SelectStream
-			Message:   ErrCouldNotGetQuery.Error(),
-			Cause:     err,
-		}
+		return nil, newNativeError("InsertDocuments", "could not determine result schema", err)
 	}
 
-	executor := strategy.GetExecutor()
-	return executor.Query(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
+	return i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
 }
 
-// DeleteDocuments shared implementation
-func (s *SharedInteractorLogic[T]) DeleteDocuments(ctx context.Context, strategy ExecutorStrategy[T], schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
-	if filters == nil && !unsafeDelete {
-		return 0, &NativeError{
-			Operation: "DeleteDocuments",
-			Message:   ErrCouldNotDeleteWithoutFilters.Error(),
-			Cause:     ErrCouldNotDeleteWithoutFilters,
-		}
-	}
-
-	compiled, err := s.b.Build(&query.Query{
-		Target: &query.QueryTarget{
-			Name:   schema.Name,
-			Schema: schema,
-		},
-		Filters: filters,
-	}, StmtDelete, nil)
-
-	if err != nil {
-		return 0, &NativeError{
-			Operation: "UpdateDocuments", // This operation name will be used for both UpdateDocuments and DeleteDocuments
-			Message:   ErrCouldNotGetQuery.Error(),
-			Cause:     err,
-		}
-	}
-
-	executor := strategy.GetExecutor()
-	return executor.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: schema})
-}
-
-// CreateCollection shared implementation
-func (s *SharedInteractorLogic[T]) CreateCollection(ctx context.Context, strategy ExecutorStrategy[T], sc schema.SchemaDefinition) error {
-	// Create the collection
-	compiled, err := s.b.Build(&query.Query{
-		Target: &query.QueryTarget{
-			Name:   sc.Name,
-			Schema: &sc,
-		},
-	}, StmtCreateCollection, nil)
-
-	if err != nil {
-		return &NativeError{
-			Operation: "CreateCollection",
-			Message:   ErrCouldNotBuildCreateCollectionQuery.Error(),
-			Cause:     err,
-		}
-	}
-
-	executor := strategy.GetExecutor()
-	_, err = executor.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: &sc})
-	if err != nil {
-		return &NativeError{
-			Operation: "CreateCollection",
-			Message:   ErrCouldNotCreateCollection.Error(),
-			Cause:     err,
-		}
-	}
-
-	// Create indexes if they exist
-	if sc.Indexes != nil {
-		for _, index := range sc.Indexes {
-			// Skip primary key indexes as they're typically created automatically
-			if index.Type == schema.IndexTypePrimary {
-				continue
-			}
-
-			compiled, err := s.b.Build(&query.Query{
-				Target: &query.QueryTarget{
-					Name:   sc.Name,
-					Schema: &sc,
-				},
-			}, StmtCreateIndex, index)
-
-			if err != nil {
-				return &NativeError{
-					Operation: "CreateCollection", // Still part of CreateCollection
-					Message:   fmt.Sprintf("could not build create index query for %s", index.Name),
-					Cause:     err,
-				}
-			}
-
-			_, err = executor.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: &sc})
-			if err != nil {
-				return &NativeError{
-					Operation: "CreateCollection", // Still part of CreateCollection
-					Message:   fmt.Sprintf("could not create index %s", index.Name),
-					Cause:     err,
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-// CreateIndex shared implementation
-func (s *SharedInteractorLogic[T]) CreateIndex(ctx context.Context, strategy ExecutorStrategy[T], collection string, index schema.IndexDefinition) error {
-	compiled, err := s.b.Build(&query.Query{
-		Target: &query.QueryTarget{
-			Name: collection,
-		},
-	}, StmtCreateIndex, index)
-	if err != nil {
-		return &NativeError{
-			Operation: "CreateIndex", // This operation name will be used for CreateIndex, DropIndex, DropCollection
-			Message:   ErrCouldNotGetQuery.Error(),
-			Cause:     err,
-		}
-	}
-
-	executor := strategy.GetExecutor()
-	_, err = executor.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
-	return err
-}
-
-// DropIndex shared implementation
-func (s *SharedInteractorLogic[T]) DropIndex(ctx context.Context, strategy ExecutorStrategy[T], collection string, index schema.IndexDefinition) error {
-	compiled, err := s.b.Build(&query.Query{
-		Target: &query.QueryTarget{
-			Name: collection,
-		},
-	}, StmtDropIndex, index)
-	if err != nil {
-		return &NativeError{
-			Operation: "CreateIndex", // This operation name will be used for CreateIndex, DropIndex, DropCollection
-			Message:   ErrCouldNotGetQuery.Error(),
-			Cause:     err,
-		}
-	}
-
-	executor := strategy.GetExecutor()
-	_, err = executor.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
-	return err
-}
-
-// DropCollection shared implementation
-func (s *SharedInteractorLogic[T]) DropCollection(ctx context.Context, strategy ExecutorStrategy[T], name string) error {
-	compiled, err := s.b.Build(&query.Query{
-		Target: &query.QueryTarget{
-			Name: name,
-		},
-	}, StmtDropCollection, nil)
-	if err != nil {
-		return &NativeError{
-			Operation: "CreateIndex", // This operation name will be used for CreateIndex, DropIndex, DropCollection
-			Message:   ErrCouldNotGetQuery.Error(),
-			Cause:     err,
-		}
-	}
-
-	executor := strategy.GetExecutor()
-	_, err = executor.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
-	return err
-}
-
-// NativeInteractor with strategy pattern
-type NativeInteractor[T any] struct {
-	ix     QueryExecutor[T]
-	shared *SharedInteractorLogic[T]
-
-	// Transaction management
-	txMu     sync.RWMutex
-	activeTx *transactionContext[T]
-}
-
-type transactionContext[T any] struct {
-	executor QueryExecutor[T]
-	cleanup  func()
-}
-
-var _ query.BaseDatabaseInteractor = (*NativeInteractor[any])(nil)
-var _ query.DatabaseInteractor = (*NativeInteractor[any])(nil)
-
-// BaseExecutorStrategy always returns the base executor (never transaction)
-type BaseExecutorStrategy[T any] struct {
-	interactor *NativeInteractor[T]
-}
-
-func (s *BaseExecutorStrategy[T]) GetExecutor() QueryExecutor[T] {
-	return s.interactor.ix
-}
-
-// TransactionExecutorStrategy returns the transaction executor if available, otherwise base executor
-type TransactionExecutorStrategy[T any] struct {
-	interactor *NativeInteractor[T]
-}
-
-func (s *TransactionExecutorStrategy[T]) GetExecutor() QueryExecutor[T] {
-	s.interactor.txMu.RLock()
-	defer s.interactor.txMu.RUnlock()
-
-	if s.interactor.activeTx != nil {
-		return s.interactor.activeTx.executor
-	}
-	return s.interactor.ix
-}
-
-// NativeTransactionInteractor with strategy pattern
-type NativeTransactionInteractor[T any] struct {
-	base   *NativeInteractor[T]
-	ctx    *transactionContext[T]
-	shared *SharedInteractorLogic[T]
-}
-
-var _ query.TransactionalDatabaseInteractor = (*NativeTransactionInteractor[any])(nil)
-
-// TransactionOnlyExecutorStrategy always returns the transaction executor
-type TransactionOnlyExecutorStrategy[T any] struct {
-	ctx *transactionContext[T]
-}
-
-func (s *TransactionOnlyExecutorStrategy[T]) GetExecutor() QueryExecutor[T] {
-	return s.ctx.executor
-}
-
-func NewNativeInteractor[T any](ix QueryExecutor[T], qf QueryFactory[T]) (query.DatabaseInteractor, error) {
-	shared := NewSharedInteractorLogic(qf)
-	return &NativeInteractor[T]{
-		ix:     ix,
-		shared: shared,
-	}, nil
-}
-
-// Close closes the database connection.
-func (i *NativeInteractor[T]) Close() error {
-	i.txMu.Lock()
-	defer i.txMu.Unlock()
-
-	// Clean up any active transaction
-	if i.activeTx != nil {
-		i.activeTx.executor.Rollback(context.Background())
-		i.activeTx.cleanup()
-		i.activeTx = nil
-	}
-
-	return i.ix.Close()
-}
-
-// SelectDocuments retrieves documents from the Native database.
-func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.Query) ([]data.Document, error) {
-	strategy := &BaseExecutorStrategy[T]{interactor: i}
-	return i.shared.SelectDocuments(ctx, strategy, schema, dsl)
-}
-
-// SelectStream streams documents from the Native database.
-func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan data.Document, <-chan error, error) {
-	strategy := &BaseExecutorStrategy[T]{interactor: i}
-	return i.shared.SelectStream(ctx, strategy, sc, dsl)
-}
-
-// UpdateDocuments updates documents in the Native database.
-func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
-	strategy := &BaseExecutorStrategy[T]{interactor: i}
-	return i.shared.UpdateDocuments(ctx, strategy, schema, updates, filters)
-}
-
-// InsertDocuments inserts documents into the Native database.
-func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *schema.SchemaDefinition, records []data.Document) ([]data.Document, error) {
-	strategy := &BaseExecutorStrategy[T]{interactor: i}
-	return i.shared.InsertDocuments(ctx, strategy, sc, records)
-}
-
-// DeleteDocuments deletes documents from the Native database.
+// DeleteDocuments deletes documents matching the filter.
 func (i *NativeInteractor[T]) DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
-	strategy := &BaseExecutorStrategy[T]{interactor: i}
-	return i.shared.DeleteDocuments(ctx, strategy, schema, filters, unsafeDelete)
+	if filters == nil && !unsafeDelete {
+		return 0, newNativeError("DeleteDocuments", ErrCouldNotDeleteWithoutFilters.Error(), nil)
+	}
+
+	dsl := &query.Query{
+		Target:  &query.QueryTarget{Name: schema.Name, Schema: schema},
+		Filters: filters,
+	}
+	compiled, err := i.b.Build(dsl, StmtDelete, nil)
+	if err != nil {
+		return 0, newNativeError("DeleteDocuments", "could not build query", err)
+	}
+
+	return i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: schema})
 }
 
-// StartTransaction begins a new database transaction.
-func (i *NativeInteractor[T]) StartTransaction(ctx context.Context) (query.TransactionalDatabaseInteractor, error) {
+// StartTransaction begins a new transaction and returns a new interactor for it.
+func (i *NativeInteractor[T]) StartTransaction(ctx context.Context) (query.DatabaseInteractor, error) {
 	i.txMu.Lock()
 	defer i.txMu.Unlock()
 
-	if i.activeTx != nil {
-		return nil, &NativeError{
-			Operation: "StartTransaction",
-			Message:   ErrCannotNestTransactions.Error(),
-			Cause:     ErrCannotNestTransactions,
-		}
+	if i.isTx {
+		return nil, newNativeError("StartTransaction", ErrCannotNestTransactions.Error(), ErrCannotNestTransactions)
 	}
 
-	tx, err := i.ix.BeginTransaction(ctx)
+	txExecutor, err := i.ix.BeginTransaction(ctx)
 	if err != nil {
-		return nil, &NativeError{
-			Operation: "StartTransaction",
-			Message:   ErrFailedToBeginTransaction.Error(),
-			Cause:     err,
+		return nil, newNativeError("StartTransaction", ErrFailedToBeginTransaction.Error(), err)
+	}
+
+	tx := &NativeInteractor[T]{
+		ix:     txExecutor,
+		b:      i.b,
+		qf:     i.qf,
+		isTx:   true,
+		logger: i.logger,
+	}
+
+	// Watch for ctx cancellation: rollback if still active.
+	go func() {
+		<-ctx.Done()
+		if !tx.done.Load() {
+			_ = tx.Rollback(context.Background())
 		}
-	}
+	}()
 
-	// Create transaction context
-	txCtx := &transactionContext[T]{
-		executor: tx,
-		cleanup: func() {
-			i.txMu.Lock()
-			i.activeTx = nil
-			i.txMu.Unlock()
-		},
-	}
-
-	i.activeTx = txCtx
-
-	return &NativeTransactionInteractor[T]{
-		base:   i,
-		ctx:    txCtx,
-		shared: i.shared,
-	}, nil
+	// Return a new interactor instance specifically for this transaction.
+	return tx, nil
 }
 
-// HasTransaction checks if there's an active transaction
+// Commit commits the current transaction.
+func (i *NativeInteractor[T]) Commit(ctx context.Context) error {
+	if !i.isTx {
+		return newNativeError("Commit", "interactor is not a transaction", nil)
+	}
+	if !i.done.CompareAndSwap(false, true) {
+		return newNativeError("Commit", "transaction already finished", nil)
+	}
+	return i.ix.Commit(ctx)
+}
+
+// Rollback rolls back the current transaction.
+func (i *NativeInteractor[T]) Rollback(ctx context.Context) error {
+	if !i.isTx {
+		return newNativeError("Rollback", "interactor is not a transaction", nil)
+	}
+	if !i.done.CompareAndSwap(false, true) {
+		return newNativeError("Rollback", "transaction already finished", nil)
+	}
+	return i.ix.Rollback(ctx)
+}
+
+// HasTransaction returns true if the interactor is in a transaction.
 func (i *NativeInteractor[T]) HasTransaction(ctx context.Context) bool {
-	i.txMu.RLock()
-	defer i.txMu.RUnlock()
-	return i.activeTx != nil
+	return i.isTx
 }
 
-// executeInTransaction executes a function within a transaction context.
-// If already in a transaction, reuses it; otherwise creates a new one.
-func (i *NativeInteractor[T]) executeInTransaction(ctx context.Context, fn func(QueryExecutor[T]) error) error {
-	// Check if we're already in a transaction
-	if i.HasTransaction(ctx) {
-		strategy := &TransactionExecutorStrategy[T]{interactor: i}
-		executor := strategy.GetExecutor()
-		return fn(executor)
-	}
-
-	// Start a new transaction
-	tx, err := i.ix.BeginTransaction(ctx)
-	if err != nil {
-		return &NativeError{
-			Operation: "executeInTransaction",
-			Message:   ErrFailedToBeginTransaction.Error(),
-			Cause:     err,
-		}
-	}
-
-	// Execute the function
-	err = fn(tx)
-	if err != nil {
-		if rollbackErr := tx.Rollback(ctx); rollbackErr != nil {
-			return &NativeError{
-				Operation: "executeInTransaction",
-				Message:   fmt.Sprintf("%s, %s: %v", ErrOperationFailed.Error(), ErrRollbackFailed.Error(), rollbackErr),
-				Cause:     err,
-			}
-		}
-		return err
-	}
-
-	// Commit the transaction
-	if err := tx.Commit(ctx); err != nil {
-		return &NativeError{
-			Operation: "executeInTransaction",
-			Message:   ErrFailedToCommitTransaction.Error(),
-			Cause:     err,
-		}
-	}
-
-	return nil
-}
-
-// SchemaManager returns the SchemaManager interface for Native.
+// SchemaManager returns the schema management interface.
 func (i *NativeInteractor[T]) SchemaManager() query.SchemaManager {
 	return i
 }
 
-// CollectionExists checks if a collection exists in the Native database.
+// CollectionExists checks if a collection exists. (Placeholder)
 func (i *NativeInteractor[T]) CollectionExists(ctx context.Context, name string) (bool, error) {
+
+	// This implementation would be specific to the database dialect.
+	// errors.New("not implemented")
 	return false, nil
 }
 
-// CreateCollection creates a new collection in the Native database.
+// CreateCollection creates a new collection and its indexes within a single transaction.
 func (i *NativeInteractor[T]) CreateCollection(ctx context.Context, sc schema.SchemaDefinition) error {
-	return i.executeInTransaction(ctx, func(executor QueryExecutor[T]) error {
-		strategy := &TransactionExecutorStrategy[T]{interactor: i}
-		return i.shared.CreateCollection(ctx, strategy, sc)
-	})
+	// This operation must be atomic, so we wrap it in a transaction.
+	// If already in a transaction, it will use the existing one.
+	tx, err := i.StartTransaction(ctx)
+	if err != nil {
+		// If we are already in a transaction, StartTransaction will fail,
+		// which is not what we want. We want to *reuse* it.
+		// So we check the error type. If it's a nesting error, we proceed with `i`.
+		var nativeErr *NativeError
+		if errors.As(err, &nativeErr) && errors.Is(nativeErr.Cause, ErrCannotNestTransactions) {
+			tx = i
+		} else {
+			return err
+		}
+	}
+	txInteractor := tx.(*NativeInteractor[T])
+
+	// The core logic for creating the collection.
+	err = txInteractor.createCollectionLogic(ctx, sc)
+	if err != nil {
+		txInteractor.Rollback(context.Background()) // Attempt rollback
+		return err
+	}
+
+	// Only the top-level transaction manager should commit.
+	if !i.isTx {
+		return txInteractor.Commit(ctx)
+	}
+
+	return nil
 }
 
-// CreateIndex creates a new index in the Native database.
+// createCollectionLogic contains the core implementation for collection and index creation.
+func (i *NativeInteractor[T]) createCollectionLogic(ctx context.Context, sc schema.SchemaDefinition) error {
+	// 1. Create the collection
+	dsl := &query.Query{Target: &query.QueryTarget{Name: sc.Name, Schema: &sc}}
+	compiled, err := i.b.Build(dsl, StmtCreateCollection, nil)
+	if err != nil {
+		return newNativeError("CreateCollection", "could not build create collection query", err)
+	}
+	if _, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: &sc}); err != nil {
+		return newNativeError("CreateCollection", "could not create collection", err)
+	}
+
+	// 2. Create associated indexes
+	for _, index := range sc.Indexes {
+		if index.Type == schema.IndexTypePrimary {
+			continue // Primary indexes are usually created automatically
+		}
+		if err := i.CreateIndex(ctx, sc.Name, index); err != nil {
+			return err // CreateIndex already returns a detailed NativeError
+		}
+	}
+	return nil
+}
+
+// CreateIndex creates a new index.
 func (i *NativeInteractor[T]) CreateIndex(ctx context.Context, collection string, index schema.IndexDefinition) error {
-	strategy := &BaseExecutorStrategy[T]{interactor: i}
-	return i.shared.CreateIndex(ctx, strategy, collection, index)
+	dsl := &query.Query{Target: &query.QueryTarget{Name: collection}}
+	compiled, err := i.b.Build(dsl, StmtCreateIndex, index)
+	if err != nil {
+		return newNativeError("CreateIndex", "could not build query", err)
+	}
+	_, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
+	return err
 }
 
-// DropIndex drops an index from the Native database.
+// DropIndex drops an existing index.
 func (i *NativeInteractor[T]) DropIndex(ctx context.Context, collection string, index schema.IndexDefinition) error {
-	strategy := &BaseExecutorStrategy[T]{interactor: i}
-	return i.shared.DropIndex(ctx, strategy, collection, index)
+	dsl := &query.Query{Target: &query.QueryTarget{Name: collection}}
+	compiled, err := i.b.Build(dsl, StmtDropIndex, index)
+	if err != nil {
+		return newNativeError("DropIndex", "could not build query", err)
+	}
+	_, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
+	return err
 }
 
-// DropCollection deletes a collection from the Native database.
+// DropCollection drops an entire collection.
 func (i *NativeInteractor[T]) DropCollection(ctx context.Context, name string) error {
-	strategy := &TransactionExecutorStrategy[T]{interactor: i}
-	return i.shared.DropCollection(ctx, strategy, name)
+	dsl := &query.Query{Target: &query.QueryTarget{Name: name}}
+	compiled, err := i.b.Build(dsl, StmtDropCollection, nil)
+	if err != nil {
+		return newNativeError("DropCollection", "could not build query", err)
+	}
+	_, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
+	return err
 }
 
-// Capabilities returns the capabilities of the Native database.
+// Capabilities returns the capabilities of the underlying database dialect.
 func (i *NativeInteractor[T]) Capabilities() query.Capabilities {
-	return i.shared.qf.Capabilities()
+	return i.qf.Capabilities()
 }
 
-// Transaction-specific methods for NativeTransactionInteractor
-
-// SelectDocuments for transaction interactor
-func (ti *NativeTransactionInteractor[T]) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.Query) ([]data.Document, error) {
-	strategy := &TransactionOnlyExecutorStrategy[T]{ctx: ti.ctx}
-	return ti.shared.SelectDocuments(ctx, strategy, schema, dsl)
-}
-
-// SelectStream for transaction interactor
-func (ti *NativeTransactionInteractor[T]) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan data.Document, <-chan error, error) {
-	strategy := &TransactionOnlyExecutorStrategy[T]{ctx: ti.ctx}
-	return ti.shared.SelectStream(ctx, strategy, sc, dsl)
-}
-
-// UpdateDocuments for transaction interactor
-func (ti *NativeTransactionInteractor[T]) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
-	strategy := &TransactionOnlyExecutorStrategy[T]{ctx: ti.ctx}
-	return ti.shared.UpdateDocuments(ctx, strategy, schema, updates, filters)
-}
-
-// InsertDocuments for transaction interactor
-func (ti *NativeTransactionInteractor[T]) InsertDocuments(ctx context.Context, sc *schema.SchemaDefinition, records []data.Document) ([]data.Document, error) {
-	strategy := &TransactionOnlyExecutorStrategy[T]{ctx: ti.ctx}
-	return ti.shared.InsertDocuments(ctx, strategy, sc, records)
-}
-
-// DeleteDocuments for transaction interactor
-func (ti *NativeTransactionInteractor[T]) DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
-	strategy := &TransactionOnlyExecutorStrategy[T]{ctx: ti.ctx}
-	return ti.shared.DeleteDocuments(ctx, strategy, schema, filters, unsafeDelete)
-}
-
-// Commit commits the current transaction.
-func (ti *NativeTransactionInteractor[T]) Commit(ctx context.Context) error {
-	// Validate that this transaction context is still valid
-	ti.base.txMu.RLock()
-	isValid := ti.base.activeTx == ti.ctx
-	ti.base.txMu.RUnlock()
-
-	if !isValid {
-		return &NativeError{
-			Operation: "Commit",
-			Message:   ErrCommitNotApplicable.Error(),
-			Cause:     ErrCommitNotApplicable,
-		}
-	}
-
-	err := ti.ctx.executor.Commit(ctx)
-	ti.ctx.cleanup()
-	return err
-}
-
-// Rollback rolls back the current transaction.
-func (ti *NativeTransactionInteractor[T]) Rollback(ctx context.Context) error {
-	// Validate that this transaction context is still valid
-	ti.base.txMu.RLock()
-	isValid := ti.base.activeTx == ti.ctx
-	ti.base.txMu.RUnlock()
-
-	if !isValid {
-		return &NativeError{
-			Operation: "Rollback",
-			Message:   ErrRollbackNotApplicable.Error(),
-			Cause:     ErrRollbackNotApplicable,
-		}
-	}
-
-	err := ti.ctx.executor.Rollback(ctx)
-	ti.ctx.cleanup()
-	return err
-}
-
-// HasTransaction for transaction interactor
-func (ti *NativeTransactionInteractor[T]) HasTransaction(ctx context.Context) bool {
-	return true
-}
-
-// StartTransaction for transaction interactor (should return error for nested transactions)
-func (ti *NativeTransactionInteractor[T]) StartTransaction(ctx context.Context) (query.TransactionalDatabaseInteractor, error) {
-	return nil, &NativeError{
-		Operation: "StartTransaction",
-		Message:   ErrCannotNestTransactions.Error(),
-		Cause:     ErrCannotNestTransactions,
+// newNativeError is a helper to standardize error creation.
+func newNativeError(op, msg string, cause error) error {
+	return &NativeError{
+		Operation: op,
+		Message:   msg,
+		Cause:     cause,
 	}
 }
 
-// SchemaManager for transaction interactor
-func (ti *NativeTransactionInteractor[T]) SchemaManager() query.SchemaManager {
-	return ti
-}
 
-// Close for transaction interactor
-func (ti *NativeTransactionInteractor[T]) Close() error {
-	return ti.base.Close()
-}
-
-// Capabilities for transaction interactor
-func (ti *NativeTransactionInteractor[T]) Capabilities() query.Capabilities {
-	return ti.base.Capabilities()
-}
-
-// CollectionExists for transaction interactor
-func (ti *NativeTransactionInteractor[T]) CollectionExists(ctx context.Context, name string) (bool, error) {
-	return false, nil
-}
-
-// CreateCollection for transaction interactor
-func (ti *NativeTransactionInteractor[T]) CreateCollection(ctx context.Context, sc schema.SchemaDefinition) error {
-	strategy := &TransactionOnlyExecutorStrategy[T]{ctx: ti.ctx}
-	return ti.shared.CreateCollection(ctx, strategy, sc)
-}
-
-// CreateIndex for transaction interactor
-func (ti *NativeTransactionInteractor[T]) CreateIndex(ctx context.Context, collection string, index schema.IndexDefinition) error {
-	strategy := &TransactionOnlyExecutorStrategy[T]{ctx: ti.ctx}
-	return ti.shared.CreateIndex(ctx, strategy, collection, index)
-}
-
-// DropIndex for transaction interactor
-func (ti *NativeTransactionInteractor[T]) DropIndex(ctx context.Context, collection string, index schema.IndexDefinition) error {
-	strategy := &TransactionOnlyExecutorStrategy[T]{ctx: ti.ctx}
-	return ti.shared.DropIndex(ctx, strategy, collection, index)
-}
-
-// DropCollection for transaction interactor
-func (ti *NativeTransactionInteractor[T]) DropCollection(ctx context.Context, name string) error {
-	strategy := &TransactionOnlyExecutorStrategy[T]{ctx: ti.ctx}
-	return ti.shared.DropCollection(ctx, strategy, name)
-}
