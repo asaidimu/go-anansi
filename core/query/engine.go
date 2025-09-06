@@ -7,6 +7,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"go.uber.org/zap"
 )
 
@@ -86,7 +87,9 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 	}
 
 	// 2. Execute the database part of the query.
-	docs, err := interactor.SelectDocuments(ctx, schemaDef, dbQuery)
+	docs, err := utils.ExecuteWithContext(ctx, func() ([]data.Document, error) {
+		return interactor.SelectDocuments(ctx, schemaDef, dbQuery)
+	})
 	if err != nil {
 		return nil, &QueryError{
 			Operation: "Query",

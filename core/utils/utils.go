@@ -110,16 +110,19 @@ func PrimitivePtr[T any](t T) *T {
 }
 
 // StringPtr is a helper function that returns a pointer to a string.
+// @deprecated
 func StringPtr(s string) *string {
 	return &s
 }
 
 // Int64Ptr is a helper function that returns a pointer to an int64.
+// @deprecated
 func Int64Ptr(i int64) *int64 {
 	return &i
 }
 
 // BoolPtr is a helper function that returns a pointer to a bool.
+// @deprecated
 func BoolPtr(b bool) *bool {
 	return &b
 }
