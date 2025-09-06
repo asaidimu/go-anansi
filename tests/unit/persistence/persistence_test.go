@@ -111,7 +111,7 @@ func TestPersistence_Subscriptions(t *testing.T) {
 
 func TestPersistence_Transact(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
-	logger := zap.NewNop()
+	logger := zap.Must(zap.NewDevelopment())
 
 	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
@@ -130,14 +130,9 @@ func TestPersistence_Transact(t *testing.T) {
 
 	// Perform a successful transfer within a transaction
 	_, err = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
-		acc, err := tx.Collection(tctx, "accounts")
-		if err != nil {
-			return nil, err
-		}
-
 		// Read Alice's document to get metadata
 		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
-		aliceResult, err := acc.Read(tctx, &aliceQuery)
+		aliceResult, err := accounts.Read(tctx, &aliceQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -148,30 +143,40 @@ func TestPersistence_Transact(t *testing.T) {
 		// Subtract 20 from Alice
 		aliceDoc["balance"] = 80.0
 		filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+
+		// we can nest transactions, but don't
+		_, err = p.Transact(tctx, func(ctx context.Context, p base.BasePersistence) (any, error) {
+			return accounts.Update(tctx, &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+		})
+
 		if err != nil {
 			return nil, err
 		}
 
-		// Read Bob's document to get metadata
-		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
-		bobResult, err := acc.Read(tctx, &bobQuery)
-		if err != nil {
-			return nil, err
-		}
-		require.Equal(t, 1, bobResult.Count)
-		bobDoc := bobResult.Data.(data.Document)
+		// or run methods async
+		tx.Async(tctx, func(ctx context.Context) error { // this runs in a go function
+			// Read Bob's document to get metadata
+			bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
+			bobResult, err := accounts.Read(tctx, &bobQuery)
+			if err != nil {
+				return err
+			}
+			require.Equal(t, 1, bobResult.Count)
+			bobDoc := bobResult.Data.(data.Document)
 
-		// Add 20 to Bob
-		bobDoc["balance"] = 70.0
-		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
-		_, err = acc.Update(tctx, &base.CollectionUpdate{Data: bobDoc, Filter: filterBob})
-		if err != nil {
-			return nil, err
-		}
+			// Add 20 to Bob
+			bobDoc["balance"] = 70.0
+			filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
+			_, err = accounts.Update(tctx, &base.CollectionUpdate{Data: bobDoc, Filter: filterBob})
+			if err != nil {
+				return err
+			}
+			return nil
+		})
 
 		return nil, nil
 	})
+
 	require.NoError(t, err)
 
 	// Verify the balances outside the transaction

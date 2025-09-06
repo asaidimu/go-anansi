@@ -18,7 +18,7 @@ type RegistryEntry = base.RegistryEntry
 type SchemaVersionRecord = base.SchemaVersionRecord
 
 type RegistryExecutor func(ctx context.Context, transaction bool,
-	fn func(collection base.Collection, manager query.SchemaManager) (any, error),
+	fn func(ctx context.Context, collection base.Collection, manager query.SchemaManager) (any, error),
 ) (any, error)
 
 // collectionRegistry implements the CollectionRegistry interface.
@@ -42,8 +42,9 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 	if len(config) > 0 {
 		cacheConfig = config[0]
 	}
-	_, err := executor(context.Background(), false, func(collection base.Collection, manager query.SchemaManager) (any, error) {
-		exists, err := manager.CollectionExists(context.Background(), REGISTRY_COLLECTION_NAME)
+	_, err := executor(context.Background(), false, func(ctx context.Context, collection base.Collection, manager query.SchemaManager) (any, error) {
+
+		exists, err := manager.CollectionExists(ctx, REGISTRY_COLLECTION_NAME)
 		if err != nil {
 			return nil, &RegistryError{
 				Operation: "NewCollectionRegistry",
@@ -55,13 +56,16 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 		if !exists {
 
 			registrySchema := RegistrySchema()
-			if err := manager.CreateCollection(context.Background(), *registrySchema); err != nil {
+			if err := manager.CreateCollection(ctx, *registrySchema); err != nil {
 				return nil, &RegistryError{
 				Operation: "NewCollectionRegistry",
 				Message:   fmt.Sprintf("'_schemas_': %v", ErrFailedToCreateRegistryCollection),
 				Cause:     errors.Join(ErrFailedToCreateRegistryCollection, err),
 			}
 			}
+
+		} else {
+
 		}
 		return nil, nil
 	})
@@ -80,6 +84,8 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 
 	// Warm up the cache by loading all existing entries
 	if err := registry.warmCache(context.Background()); err != nil {
+		logger.Warn("Failed to warm cache during initialization", zap.Error(err))
+		// Don't fail initialization, but log the problem
 	}
 
 	// Start background refresh if enabled
@@ -87,24 +93,29 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 		registry.startBackgroundRefresh(cacheConfig.RefreshInterval)
 	}
 
+
 	return registry, nil
 
 }
 
 // Close stops background processes and cleans up resources
 func (r *collectionRegistry) Close(ctx context.Context) error {
+
 	if r.refreshTicker != nil {
 		r.refreshTicker.Stop()
 		close(r.stopRefresh)
 	}
 	r.cache.clear()
+
 	return nil
 }
 
 // warmCache loads all registry entries into memory
 func (r *collectionRegistry) warmCache(ctx context.Context) error {
+
 	entries, err := r.loadAllFromDatabase(ctx)
 	if err != nil {
+
 		return &RegistryError{
 			Operation: "warmCache",
 			Message:   ErrFailedToWarmCache.Error(),
@@ -116,17 +127,24 @@ func (r *collectionRegistry) warmCache(ctx context.Context) error {
 		r.cache.set(entry.Name, entry)
 	}
 
+
 	return nil
 }
 
 // startBackgroundRefresh starts a goroutine to periodically refresh cache
 func (r *collectionRegistry) startBackgroundRefresh(interval time.Duration) {
+
 	r.refreshTicker = time.NewTicker(interval)
 	go func() {
 		for {
 			select {
 			case <-r.refreshTicker.C:
+
+				if err := r.refreshCache(); err != nil {
+
+				}
 			case <-r.stopRefresh:
+
 				return
 			}
 		}
@@ -135,6 +153,7 @@ func (r *collectionRegistry) startBackgroundRefresh(interval time.Duration) {
 
 // refreshCache reloads data from database for potentially stale entries
 func (r *collectionRegistry) refreshCache() error {
+
 	// For now, we'll do a simple full refresh
 	// In a more sophisticated implementation, we could track modification times
 	return r.warmCache(context.Background())
@@ -142,6 +161,7 @@ func (r *collectionRegistry) refreshCache() error {
 
 // CreateCollection creates the initial entry for a new collection in the registry.
 func (r *collectionRegistry) CreateCollection(ctx context.Context, sc *schema.SchemaDefinition) (*RegistryEntry, error) {
+
 	results, err := r.CreateCollections(ctx, []schema.SchemaDefinition{*sc})
 	if err != nil {
 		return nil, err
@@ -153,29 +173,35 @@ func (r *collectionRegistry) CreateCollection(ctx context.Context, sc *schema.Sc
 // All validations are performed upfront - if any collection fails validation,
 // the entire operation fails without creating any collections.
 func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) ([]*RegistryEntry, error) {
+
 	if len(schemas) == 0 {
 		return []*RegistryEntry{}, nil
 	}
 
 	// Phase 1: Validate all schemas and prepare data upfront
+
 	collectionsToCreate, err := r.prepareCollectionData(ctx, schemas)
 	if err != nil {
 		return nil, err
 	}
 
 	// Phase 2: Execute all operations in a single transaction
-	results, err := execute(ctx, r.executor, true, func(collection base.Collection, manager query.SchemaManager) ([]*RegistryEntry, error) {
-		return r.createCollectionsInTransaction(ctx, collection, manager, collectionsToCreate)
+
+	results, err := execute(ctx, r.executor, true, func(tctx context.Context,collection base.Collection, manager query.SchemaManager) ([]*RegistryEntry, error) {
+		return r.createCollectionsInTransaction(tctx, collection, manager, collectionsToCreate)
 	})
 
 	if err != nil {
+
 		return nil, err
 	}
 
 	// Phase 3: Update cache after successful completion
+
 	for _, entry := range results {
 		r.cache.set(entry.Name, entry)
 	}
+
 
 	return results, nil
 }
@@ -190,11 +216,13 @@ type collectionData struct {
 
 // prepareCollectionData validates all schemas and prepares the data needed for creation
 func (r *collectionRegistry) prepareCollectionData(ctx context.Context, schemas []schema.SchemaDefinition) ([]collectionData, error) {
+
 	collectionsToCreate := make([]collectionData, 0, len(schemas))
 	physicalNames := make(map[string]bool)
 	schemaNames := make(map[string]bool)
 
 	for _, schema := range schemas {
+
 		// Check for duplicates within the batch
 		schemaKey := fmt.Sprintf("%s@%s", schema.Name, schema.Version)
 		if schemaNames[schemaKey] {
@@ -249,6 +277,7 @@ func (r *collectionRegistry) prepareCollectionData(ctx context.Context, schemas 
 			entry:          entry,
 			schemaConfig:   sc,
 		})
+
 	}
 
 	return collectionsToCreate, nil
@@ -256,10 +285,12 @@ func (r *collectionRegistry) prepareCollectionData(ctx context.Context, schemas 
 
 // createCollectionsInTransaction creates all physical collections and persists registry entries within a transaction
 func (r *collectionRegistry) createCollectionsInTransaction(ctx context.Context, collection base.Collection, manager query.SchemaManager, collectionsToCreate []collectionData) ([]*RegistryEntry, error) {
+
 	createdEntries := make([]*RegistryEntry, 0, len(collectionsToCreate))
 
 	// Create all physical collections
 	for _, data := range collectionsToCreate {
+
 		if err := r.createPhysicalCollection(ctx, manager, data.schemaConfig, data.physicalName); err != nil {
 			return nil, &RegistryError{
 				Operation: "createCollectionsInTransaction",
@@ -271,6 +302,7 @@ func (r *collectionRegistry) createCollectionsInTransaction(ctx context.Context,
 
 	// Persist all registry entries
 	for _, data := range collectionsToCreate {
+
 		result, err := r.persistRegistryEntry(ctx, collection, data.entry)
 		if err != nil {
 			return nil, &RegistryError{
@@ -282,20 +314,24 @@ func (r *collectionRegistry) createCollectionsInTransaction(ctx context.Context,
 		createdEntries = append(createdEntries, result)
 	}
 
+
 	return createdEntries, nil
 }
 
 // DropCollection removes a collection's entire schema history from the registry.
 func (r *collectionRegistry) DropCollection(ctx context.Context, name string, opts base.DropCollectionOptions) error {
+
 	entry, err := r.GetRegistryEntry(ctx, name)
 	if err != nil {
 		return err
 	}
 
-	_, err = execute(ctx, r.executor, true, func(collection base.Collection, manager query.SchemaManager) (bool, error) {
+	_, err = execute(ctx, r.executor, true, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (bool, error) {
 		// Drop physical collections if requested
 		if opts.DeletePhysicalData {
+
 			for _, versionRecord := range entry.Versions {
+
 				if err := manager.DropCollection(ctx, versionRecord.Physical); err != nil {
 					return false, &RegistryError{
 					Operation: "DropCollection",
@@ -307,7 +343,8 @@ func (r *collectionRegistry) DropCollection(ctx context.Context, name string, op
 		}
 
 		// Remove registry entry
-		if err := r.deleteRegistryEntry(ctx, collection, name); err != nil {
+
+		if err := r.deleteRegistryEntry(tctx, collection, name); err != nil {
 			return false, err
 		}
 
@@ -315,17 +352,21 @@ func (r *collectionRegistry) DropCollection(ctx context.Context, name string, op
 	})
 
 	if err != nil {
+
 		return err
 	}
 
 	// Remove from cache after successful deletion
+
 	r.cache.delete(name)
+
 	return nil
 
 }
 
 // PruneVersion permanently deletes the physical database collection associated with a non-active schema version.
 func (r *collectionRegistry) PruneVersion(ctx context.Context, name, version string) (*RegistryEntry, error) {
+
 	entry, err := r.withEntryAndVersionValidation(ctx, name, version, func(entry *RegistryEntry, versionRecord SchemaVersionRecord) (*RegistryEntry, error) {
 		if entry.ActiveVersion == version {
 			return nil, &RegistryError{
@@ -337,6 +378,7 @@ func (r *collectionRegistry) PruneVersion(ctx context.Context, name, version str
 
 		return r.executeWithEntryUpdate(ctx, name, entry, func(collection base.Collection, manager query.SchemaManager, entry *RegistryEntry) error {
 			// Drop the physical collection
+
 			if err := manager.DropCollection(ctx, versionRecord.Physical); err != nil {
 				return &RegistryError{
 					Operation: "PruneVersion",
@@ -346,29 +388,40 @@ func (r *collectionRegistry) PruneVersion(ctx context.Context, name, version str
 			}
 
 			// Remove version from entry
+
 			delete(entry.Versions, version)
 			return nil
 		})
 	})
 
 	if err != nil {
+
 		return nil, err
 	}
 
 	// Update cache with modified entry
+
 	r.cache.set(name, entry)
+
 	return entry, nil
 }
 
 // GetSchema retrieves a specific schema definition for a collection.
 func (r *collectionRegistry) GetSchema(ctx context.Context, name string, version ...string) (*schema.SchemaDefinition, error) {
+	logFields := []zap.Field{zap.String("name", name)}
+	if len(version) > 0 {
+		logFields = append(logFields, zap.String("version", version[0]))
+	}
+
 	return r.withEntryAndOptionalVersion(ctx, name, version, func(entry *RegistryEntry, resolvedVersion string, versionRecord SchemaVersionRecord) (*schema.SchemaDefinition, error) {
+
 		return &versionRecord.Schema, nil
 	})
 }
 
 // GetSchema retrieves a specific schema definition for a collection.
 func (r *collectionRegistry) ResolvePhysicalName(ctx context.Context, name string, version ...string) (string, error) {
+
 	schema, err := r.GetSchema(ctx, name, version...)
 	if err != nil {
 		return "", err
@@ -378,10 +431,13 @@ func (r *collectionRegistry) ResolvePhysicalName(ctx context.Context, name strin
 
 // GetRegistryEntry retrieves the complete management record for a collection.
 func (r *collectionRegistry) GetRegistryEntry(ctx context.Context, name string) (*RegistryEntry, error) {
+
 	// Try cache first
 	if cached := r.cache.get(name); cached != nil {
+
 		return cached, nil
 	}
+
 
 	// Cache miss - load from database
 	entry, err := r.loadFromDatabase(ctx, name)
@@ -390,16 +446,18 @@ func (r *collectionRegistry) GetRegistryEntry(ctx context.Context, name string) 
 	}
 
 	// Store in cache for future requests
+
 	r.cache.set(name, entry)
 	return entry, nil
 }
 
 // loadFromDatabase loads a single registry entry from the database
 func (r *collectionRegistry) loadFromDatabase(ctx context.Context, name string) (*RegistryEntry, error) {
+
 	q := r.buildNameQuery(name)
 
-	result, err := execute(ctx, r.executor, false, func(collection base.Collection, manager query.SchemaManager) (*base.ReadResult, error) {
-		return collection.Read(ctx, &q)
+	result, err := execute(ctx, r.executor, false, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (*base.ReadResult, error) {
+		return collection.Read(tctx, &q)
 	})
 
 	if err != nil {
@@ -411,10 +469,12 @@ func (r *collectionRegistry) loadFromDatabase(ctx context.Context, name string) 
 	}
 
 	if result.Count == 0 {
+
 		return nil, ErrCollectionNotFound
 	}
 
 	if result.Count > 1 {
+
 		return nil, &RegistryError{
 			Operation: "loadFromDatabase",
 			Message:   fmt.Sprintf("'%s'", name),
@@ -428,6 +488,7 @@ func (r *collectionRegistry) loadFromDatabase(ctx context.Context, name string) 
 
 // AddSchemaVersion introduces a new version of a schema for an existing collection.
 func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version string, schema *schema.SchemaDefinition, physicalName ...string) (*RegistryEntry, error) {
+
 	enrichedSchema := EnrichSchema(schema)
 	entry, err := r.withSchemaValidationAndEntryExists(ctx, name, enrichedSchema, func(entry *RegistryEntry) (*RegistryEntry, error) {
 		// Check if the version already exists
@@ -447,12 +508,14 @@ func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version
 
 		return r.executeWithEntryUpdate(ctx, name, entry, func(collection base.Collection, manager query.SchemaManager, entry *RegistryEntry) error {
 			// Create physical collection
+
 			if err := r.createPhysicalCollection(ctx, manager, enrichedSchema, actualPhysicalName); err != nil {
 				return err
 			}
 
 			enrichedSchema.Name = actualPhysicalName
 			// Add version to entry
+
 			entry.Versions[version] = SchemaVersionRecord{
 				Physical: actualPhysicalName,
 				Schema:   *enrichedSchema,
@@ -462,16 +525,20 @@ func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version
 	})
 
 	if err != nil {
+
 		return nil, err
 	}
 
 	// Update cache with modified entry
+
 	r.cache.set(name, entry)
+
 	return entry, nil
 }
 
 // SetActiveVersion changes the active schema version for a collection.
 func (r *collectionRegistry) SetActiveVersion(ctx context.Context, name, version string) (*RegistryEntry, error) {
+
 
 	entry, err := r.withEntryAndVersionValidation(ctx, name, version, func(entry *RegistryEntry, versionRecord SchemaVersionRecord) (*RegistryEntry, error) {
 		if entry.ActiveVersion == version {
@@ -483,22 +550,27 @@ func (r *collectionRegistry) SetActiveVersion(ctx context.Context, name, version
 		}
 
 		return r.executeWithEntryUpdate(ctx, name, entry, func(collection base.Collection, manager query.SchemaManager, entry *RegistryEntry) error {
+
 			entry.ActiveVersion = version
 			return nil
 		})
 	})
 
 	if err != nil {
+
 		return nil, err
 	}
 
 	// Update cache with modified entry
+
 	r.cache.set(name, entry)
+
 	return entry, nil
 }
 
 // List retrieves the registry entries for all registered collections.
 func (r *collectionRegistry) List(ctx context.Context) ([]*RegistryEntry, error) {
+
 	// Get cached entries
 	cachedNames := r.cache.list()
 	entries := make([]*RegistryEntry, 0)
@@ -512,12 +584,15 @@ func (r *collectionRegistry) List(ctx context.Context) ([]*RegistryEntry, error)
 
 	// If we have some cached entries but might be missing some,
 	// we need to check the database for a complete list
+
 	allEntries, err := r.loadAllFromDatabase(ctx)
 	if err != nil {
 		// If database query fails but we have cached entries, return those
 		if len(entries) > 0 {
+
 			return entries, nil
 		}
+
 		return nil, &RegistryError{
 			Operation: "List",
 			Message:   ErrFailedToListCollections.Error(),
@@ -526,19 +601,22 @@ func (r *collectionRegistry) List(ctx context.Context) ([]*RegistryEntry, error)
 	}
 
 	// Update cache with any missing entries
+
 	for _, entry := range allEntries {
 		r.cache.set(entry.Name, entry)
 	}
+
 
 	return allEntries, nil
 }
 
 // loadAllFromDatabase loads all registry entries from the database
 func (r *collectionRegistry) loadAllFromDatabase(ctx context.Context) ([]*RegistryEntry, error) {
+
 	q := query.NewQueryBuilder().Build()
 
-	result, err := execute(ctx, r.executor, false, func(collection base.Collection, manager query.SchemaManager) (*base.ReadResult, error) {
-		return collection.Read(ctx, &q)
+	result, err := execute(ctx, r.executor, false, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (*base.ReadResult, error) {
+		return collection.Read(tctx, &q)
 	})
 
 	if err != nil {
@@ -550,6 +628,7 @@ func (r *collectionRegistry) loadAllFromDatabase(ctx context.Context) ([]*Regist
 	}
 
 	if result.Count == 0 {
+
 		return []*RegistryEntry{}, nil
 	}
 
@@ -575,12 +654,14 @@ func (r *collectionRegistry) loadAllFromDatabase(ctx context.Context) ([]*Regist
 		}
 		entries = append(entries, entry)
 	}
+
 	return entries, nil
 }
 
 // Higher-order functions for common patterns
 
 func (r *collectionRegistry) withSchemaValidationAndNotExists(ctx context.Context, schema *schema.SchemaDefinition, fn func() (*RegistryEntry, error)) (*RegistryEntry, error) {
+
 	// Validate the schema
 	if err := schema.Validate(); err != nil {
 		return nil, &RegistryError{
@@ -611,6 +692,7 @@ func (r *collectionRegistry) withSchemaValidationAndNotExists(ctx context.Contex
 }
 
 func (r *collectionRegistry) withSchemaValidationAndEntryExists(ctx context.Context, name string, schema *schema.SchemaDefinition, fn func(entry *RegistryEntry) (*RegistryEntry, error)) (*RegistryEntry, error) {
+
 	// Validate the schema
 	if err := schema.Validate(); err != nil {
 		return nil, &RegistryError{
@@ -630,6 +712,7 @@ func (r *collectionRegistry) withSchemaValidationAndEntryExists(ctx context.Cont
 }
 
 func (r *collectionRegistry) withEntryAndVersionValidation(ctx context.Context, name, version string, fn func(entry *RegistryEntry, versionRecord SchemaVersionRecord) (*RegistryEntry, error)) (*RegistryEntry, error) {
+
 	entry, err := r.GetRegistryEntry(ctx, name)
 	if err != nil {
 		return nil, err
@@ -648,6 +731,7 @@ func (r *collectionRegistry) withEntryAndVersionValidation(ctx context.Context, 
 }
 
 func (r *collectionRegistry) withEntryAndOptionalVersion(ctx context.Context, name string, version []string, fn func(entry *RegistryEntry, resolvedVersion string, versionRecord SchemaVersionRecord) (*schema.SchemaDefinition, error)) (*schema.SchemaDefinition, error) {
+
 	entry, err := r.GetRegistryEntry(ctx, name)
 	if err != nil {
 		return nil, err
@@ -671,12 +755,13 @@ func (r *collectionRegistry) withEntryAndOptionalVersion(ctx context.Context, na
 }
 
 func (r *collectionRegistry) executeWithEntryUpdate(ctx context.Context, name string, entry *RegistryEntry, fn func(collection base.Collection, manager query.SchemaManager, entry *RegistryEntry) error) (*RegistryEntry, error) {
-	return execute(ctx, r.executor, true, func(collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
+
+	return execute(ctx, r.executor, true, func(tctx context.Context,collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
 		if err := fn(collection, manager, entry); err != nil {
 			return nil, err
 		}
 
-		if err := r.updateRegistryEntry(ctx, collection, name, entry); err != nil {
+		if err := r.updateRegistryEntry(tctx, collection, name, entry); err != nil {
 			return nil, err
 		}
 
@@ -685,6 +770,7 @@ func (r *collectionRegistry) executeWithEntryUpdate(ctx context.Context, name st
 }
 
 func (r *collectionRegistry) buildRegistryEntry(sc *schema.SchemaDefinition, version, physicalName string) (*RegistryEntry, *schema.SchemaDefinition) {
+
 	tempSchema := *sc
 	tempSchema.Name = physicalName
 	return &RegistryEntry{
@@ -702,6 +788,7 @@ func (r *collectionRegistry) buildRegistryEntry(sc *schema.SchemaDefinition, ver
 }
 
 func (r *collectionRegistry) createPhysicalCollection(ctx context.Context, manager query.SchemaManager, schema *schema.SchemaDefinition, physicalName string) error {
+
 	tempSchema := *schema
 	tempSchema.Name = physicalName
 
@@ -716,6 +803,7 @@ func (r *collectionRegistry) createPhysicalCollection(ctx context.Context, manag
 }
 
 func (r *collectionRegistry) entryToDocument(entry *RegistryEntry) (data.Document, error) {
+
 	entryBytes, err := json.Marshal(entry)
 	if err != nil {
 		return data.MustNewDocument(nil), &RegistryError{
@@ -738,6 +826,7 @@ func (r *collectionRegistry) entryToDocument(entry *RegistryEntry) (data.Documen
 }
 
 func (r *collectionRegistry) persistRegistryEntry(ctx context.Context, collection base.Collection, entry *RegistryEntry) (*RegistryEntry, error) {
+
 	doc, err := r.entryToDocument(entry)
 	if err != nil {
 		return nil, err
@@ -770,10 +859,12 @@ func (r *collectionRegistry) persistRegistryEntry(ctx context.Context, collectio
 		}
 	}
 
+
 	return rentry, nil
 }
 
 func (r *collectionRegistry) updateRegistryEntry(ctx context.Context, collection base.Collection, name string, entry *RegistryEntry) error {
+
 	doc, err := r.entryToDocument(entry)
 	if err != nil {
 		return err
@@ -793,10 +884,12 @@ func (r *collectionRegistry) updateRegistryEntry(ctx context.Context, collection
 		}
 	}
 
+
 	return nil
 }
 
 func (r *collectionRegistry) deleteRegistryEntry(ctx context.Context, collection base.Collection, name string) error {
+
 	q := r.buildNameQuery(name)
 	_, err := collection.Delete(ctx, q.Filters, false)
 	if err != nil {
@@ -806,6 +899,7 @@ func (r *collectionRegistry) deleteRegistryEntry(ctx context.Context, collection
 			Cause:     errors.Join(ErrFailedToDeleteRegistryEntry, err),
 		}
 	}
+
 	return nil
 }
 
@@ -836,10 +930,10 @@ func execute[T any](
 	ctx context.Context,
 	executor RegistryExecutor,
 	requiresTransaction bool,
-	fn func(collection base.Collection, manager query.SchemaManager) (T, error),
+	fn func(ctx context.Context, collection base.Collection, manager query.SchemaManager) (T, error),
 ) (T, error) {
-	result, err := executor(ctx, requiresTransaction, func(collection base.Collection, manager query.SchemaManager) (any, error) {
-		return fn(collection, manager)
+	result, err := executor(ctx, requiresTransaction, func(ctx context.Context, collection base.Collection, manager query.SchemaManager) (any, error) {
+		return fn(ctx, collection, manager)
 	})
 
 	if err != nil {

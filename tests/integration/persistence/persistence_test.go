@@ -275,14 +275,9 @@ func TestPersistence_Transact(t *testing.T) {
 
 	// Perform a failing transaction
 	_, err = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
-		acc, err := tx.Collection(context.Background(), "accounts")
-		if err != nil {
-			return nil, err
-		}
-
 		// Read Alice's document to get metadata
 		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
-		aliceResult, err := acc.Read(context.Background(), &aliceQuery)
+		aliceResult, err := accounts.Read(tctx, &aliceQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -292,7 +287,7 @@ func TestPersistence_Transact(t *testing.T) {
 		// Subtract 10 from Alice
 		aliceDoc["balance"] = 70.0
 		filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+		_, err = accounts.Update(tctx, &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
 		if err != nil {
 			return nil, err
 		}
@@ -302,7 +297,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 		// We still need metadata for the update to pass the initial check
 		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
-		bobResult, err := acc.Read(context.Background(), &bobQuery)
+		bobResult, err := accounts.Read(tctx, &bobQuery)
 		if err != nil {
 			return nil, err
 		}
@@ -312,7 +307,7 @@ func TestPersistence_Transact(t *testing.T) {
 		updateBob.SetMetadata(meta)
 
 		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: updateBob, Filter: filterBob})
+		_, err = accounts.Update(tctx, &base.CollectionUpdate{Data: updateBob, Filter: filterBob})
 
 		return nil, err // Propagate the error to trigger rollback
 	})

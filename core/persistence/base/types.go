@@ -9,8 +9,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
@@ -333,6 +333,10 @@ type BasePersistence interface {
 		ctx context.Context,
 		filter *MetadataFilter,
 	) (Metadata, error)
+
+	// Async provides a safe way to spawn a goroutine that is part of the transaction.
+	// It ensures that the WaitGroup is correctly incremented before the goroutine starts.
+	Async(ctx context.Context, f func(ctx context.Context) error)
 }
 
 // Persistence defines the core contract for the persistence layer. It provides a
@@ -346,7 +350,7 @@ type Persistence interface {
 
 	// CreateCollections creates multiple new collections based on the provided schema definitions.
 	// It returns a slice of Collection interfaces for the successfully created collections.
-	CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) (error)
+	CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) error
 
 	// HasCollection checks if a collection with the given name exists.
 	HasCollection(ctx context.Context, name string) (bool, error)
@@ -392,7 +396,7 @@ type Persistence interface {
 // CollectionUpdate defines the parameters for an update operation on a collection.
 // It specifies the data to be updated and a filter to select which documents to update.
 type CollectionUpdate struct {
-	Data    data.Document    `json:"data,omitempty"` // Data contains the fields and values to be updated.
+	Data    data.Document      `json:"data,omitempty"` // Data contains the fields and values to be updated.
 	Filter  *query.QueryFilter `json:"filter"`         // Filter is a query that selects the documents to be updated.
 	Version *int               `json:"version"`        // Version is the document version for optimistic concurrency control.
 	// WARNING: Setting Recover to true will generate new metadata for the document,
@@ -454,6 +458,7 @@ type ReadResult struct {
 }
 
 const TxKey string = "__transaction__"
+
 // Transaction defines the interface for a database transaction.
 // Implementations of this interface should manage the state and coordination
 // of a single database transaction, including its lifecycle, operations,
@@ -482,4 +487,3 @@ type Transaction interface {
 	// GetInteractor returns the transactional database interactor associated with this transaction.
 	GetInteractor() query.DatabaseInteractor
 }
-

@@ -104,7 +104,6 @@ func (tx *transaction) WaitForOperations(ctx context.Context) error {
 // Commit commits the transaction.
 func (tx *transaction) Commit(ctx context.Context) error {
 	return tx.finalize(ctx, func(ctx context.Context, ti query.DatabaseInteractor) error {
-		tx.logger.Debug("Committing transaction", zap.String("transactionId", tx.id))
 		return ti.Commit(ctx)
 	})
 }
@@ -112,7 +111,6 @@ func (tx *transaction) Commit(ctx context.Context) error {
 // Rollback rolls back the transaction.
 func (tx *transaction) Rollback(ctx context.Context) error {
 	return tx.finalize(ctx, func(ctx context.Context, ti query.DatabaseInteractor) error {
-		tx.logger.Debug("Rolling back transaction", zap.String("transactionId", tx.id))
 		return ti.Rollback(ctx)
 	})
 }
@@ -198,9 +196,6 @@ func Execute(
 
 	if finalErr != nil {
 		if rollbackErr := tx.Rollback(ictx); rollbackErr != nil {
-			logger.Warn("Failed to rollback transaction after an error",
-				zap.Error(rollbackErr),
-				zap.NamedError("originalError", finalErr))
 		}
 		return result, finalErr
 	}
@@ -208,9 +203,6 @@ func Execute(
 	if commitErr := tx.Commit(ictx); commitErr != nil {
 		// Attempt to rollback on a failed commit.
 		if rollbackErr := tx.Rollback(ictx); rollbackErr != nil {
-			logger.Warn("Failed to rollback transaction after a commit failure",
-				zap.Error(rollbackErr),
-				zap.NamedError("commitError", commitErr))
 		}
 		return result, fmt.Errorf("failed to commit transaction: %w", commitErr)
 	}

@@ -248,3 +248,7 @@ func (e *eventsPersistence) Migrate(
 func (e *eventsPersistence) Close(ctx context.Context) {
 	e.persistence.Close(ctx)
 }
+
+func (e *eventsPersistence) Async(ctx context.Context, f func(ctx context.Context) error) {
+	e.persistence.Async(ctx, f)
+}

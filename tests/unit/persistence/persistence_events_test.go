@@ -18,7 +18,7 @@ import (
 
 func TestPersistence_DocumentEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
-	logger := zap.NewNop()
+	logger := zap.Must(zap.NewDevelopment())
 	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 

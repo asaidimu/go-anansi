@@ -136,7 +136,7 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) (
 
 // Read retrieves documents from the collection that match the given QueryDSL.
 func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
-	rctx := query.WithInteractor(ctx, c.interactor)
+	rctx := query.WithInteractor(ctx, c.getCurrentInteractor(ctx))
 	docs, err := c.engine.Query(rctx, c.schema, q)
 	if err != nil {
 		return nil, base.NewPersistenceError(fmt.Sprintf("%s: %v", base.ErrReadDocuments.Error(), err), base.ErrReadDocuments)

@@ -3,7 +3,6 @@ package persistence
 import (
 	"context"
 
-
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -15,7 +14,6 @@ type managedPersistence struct {
 	wrapped base.Persistence
 	closed  bool
 }
-
 
 var _ base.Persistence = (*managedPersistence)(nil)
 
@@ -41,6 +39,13 @@ func (m *managedPersistence) Close(ctx context.Context) {
 	m.wrapped.Close(ctx)
 }
 
+func (m *managedPersistence) Async(ctx context.Context, f func(ctx context.Context) error) {
+	if err := m.checkClosed(); err != nil {
+		return
+	}
+	m.wrapped.Async(ctx, f)
+}
+
 // Collection delegates the call to the wrapped persistence after checking the closed state.
 func (m *managedPersistence) Collection(ctx context.Context, name string) (base.Collection, error) {
 	if err := m.checkClosed(); err != nil {
@@ -60,11 +65,12 @@ func (m *managedPersistence) ListCollections(ctx context.Context) ([]string, err
 // CreateCollection delegates the call to the wrapped persistence after checking the closed state.
 func (m *managedPersistence) CreateCollection(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
 	if err := m.checkClosed(); err != nil {
-		return nil, err	}
+		return nil, err
+	}
 	return m.wrapped.CreateCollection(ctx, sc)
 }
 
-func (m *managedPersistence) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) (error) {
+func (m *managedPersistence) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) error {
 	if err := m.checkClosed(); err != nil {
 		return err
 	}
