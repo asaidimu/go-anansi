@@ -28,56 +28,93 @@ const (
 	DocumentCreateSuccess PersistenceEventType = "document:create:success"
 	// DocumentCreateFailed is an event triggered when a document creation operation fails.
 	DocumentCreateFailed PersistenceEventType = "document:create:failed"
+
 	// DocumentReadStart is an event triggered just before a document read operation begins.
 	DocumentReadStart PersistenceEventType = "document:read:start"
 	// DocumentReadSuccess is an event triggered after a document has been successfully read.
 	DocumentReadSuccess PersistenceEventType = "document:read:success"
 	// DocumentReadFailed is an event triggered when a document read operation fails.
 	DocumentReadFailed PersistenceEventType = "document:read:failed"
+
 	// DocumentUpdateStart is an event triggered just before a document update operation begins.
 	DocumentUpdateStart PersistenceEventType = "document:update:start"
 	// DocumentUpdateSuccess is an event triggered after a document has been successfully updated.
 	DocumentUpdateSuccess PersistenceEventType = "document:update:success"
 	// DocumentUpdateFailed is an event triggered when a document update operation fails.
 	DocumentUpdateFailed PersistenceEventType = "document:update:failed"
+
 	// DocumentDeleteStart is an event triggered just before a document deletion operation begins.
 	DocumentDeleteStart PersistenceEventType = "document:delete:start"
 	// DocumentDeleteSuccess is an event triggered after a document has been successfully deleted.
 	DocumentDeleteSuccess PersistenceEventType = "document:delete:success"
 	// DocumentDeleteFailed is an event triggered when a document deletion operation fails.
 	DocumentDeleteFailed PersistenceEventType = "document:delete:failed"
-	// MigrateStart is an event triggered before a schema migration is applied.
+
+	// MigrateStart is an event triggered just before a schema migration is applied.
 	MigrateStart PersistenceEventType = "migrate:start"
 	// MigrateSuccess is an event triggered after a schema migration has been successfully applied.
 	MigrateSuccess PersistenceEventType = "migrate:success"
 	// MigrateFailed is an event triggered when a schema migration fails.
 	MigrateFailed PersistenceEventType = "migrate:failed"
-	// RollbackStart is an event triggered before a schema rollback begins.
+
+	// RollbackStart is an event triggered just before a schema rollback begins.
 	RollbackStart PersistenceEventType = "rollback:start"
 	// RollbackSuccess is an event triggered after a schema rollback has been successfully completed.
 	RollbackSuccess PersistenceEventType = "rollback:success"
 	// RollbackFailed is an event triggered when a schema rollback fails.
 	RollbackFailed PersistenceEventType = "rollback:failed"
-	// TransactionStart is an event triggered when a database transaction begins.
+
+	// TransactionStart is an event triggered just before a database transaction begins.
 	TransactionStart PersistenceEventType = "transaction:start"
-	// TransactionSuccess is an event triggered when a database transaction is successfully committed.
+	// TransactionSuccess is an event triggered after a database transaction has been successfully committed.
 	TransactionSuccess PersistenceEventType = "transaction:success"
 	// TransactionFailed is an event triggered when a database transaction fails and is rolled back.
 	TransactionFailed PersistenceEventType = "transaction:failed"
+
 	// Telemetry is a generic event type for publishing telemetry data.
 	Telemetry PersistenceEventType = "telemetry"
-	// CollectionCreateStart is an event triggered before a new collection is created.
+
+	// CollectionCreateStart is an event triggered just before a collection creation attempt.
 	CollectionCreateStart PersistenceEventType = "collection:create:start"
-	// CollectionCreateSuccess is an event triggered after a new collection has been successfully created.
+	// CollectionCreateSuccess is an event triggered after a collection has been successfully created.
 	CollectionCreateSuccess PersistenceEventType = "collection:create:success"
 	// CollectionCreateFailed is an event triggered when a collection creation operation fails.
 	CollectionCreateFailed PersistenceEventType = "collection:create:failed"
-	// CollectionDeleteStart is an event triggered before a collection is deleted.
+
+	// CollectionUpdateStart is an event triggered just before a collection update operation begins.
+	CollectionUpdateStart PersistenceEventType = "collection:update:start"
+	// CollectionUpdateSuccess is an event triggered after a collection has been successfully updated.
+	CollectionUpdateSuccess PersistenceEventType = "collection:update:success"
+	// CollectionUpdateFailed is an event triggered when a collection update operation fails.
+	CollectionUpdateFailed PersistenceEventType = "collection:update:failed"
+
+	// CollectionReadStart is an event triggered just before a collection read operation begins.
+	CollectionReadStart PersistenceEventType = "collection:read:start"
+	// CollectionReadSuccess is an event triggered after a collection has been successfully read.
+	CollectionReadSuccess PersistenceEventType = "collection:read:success"
+	// CollectionReadFailed is an event triggered when a collection read operation fails.
+	CollectionReadFailed PersistenceEventType = "collection:read:failed"
+
+	// CollectionDeleteStart is an event triggered just before a collection deletion operation begins.
 	CollectionDeleteStart PersistenceEventType = "collection:delete:start"
 	// CollectionDeleteSuccess is an event triggered after a collection has been successfully deleted.
 	CollectionDeleteSuccess PersistenceEventType = "collection:delete:success"
 	// CollectionDeleteFailed is an event triggered when a collection deletion operation fails.
 	CollectionDeleteFailed PersistenceEventType = "collection:delete:failed"
+
+	// PersistenceReadStart is an event triggered just before a persistence read operation begins.
+	PersistenceReadStart PersistenceEventType = "persistence:read:start"
+	// PersistenceReadSuccess is an event triggered after a persistence read operation has completed successfully.
+	PersistenceReadSuccess PersistenceEventType = "persistence:read:success"
+	// PersistenceReadFailed is an event triggered when a persistence read operation fails.
+	PersistenceReadFailed PersistenceEventType = "persistence:read:failed"
+
+	// PersistenceLifecycleStart is an event triggered just before a persistence lifecycle operation (e.g., open or close).
+	PersistenceLifecycleStart PersistenceEventType = "persistence:lifecycle:start"
+	// PersistenceLifecycleSuccess is an event triggered after a persistence lifecycle operation has completed successfully.
+	PersistenceLifecycleSuccess PersistenceEventType = "persistence:lifecycle:success"
+	// PersistenceLifecycleFailed is an event triggered when a persistence lifecycle operation fails.
+	PersistenceLifecycleFailed PersistenceEventType = "persistence:lifecycle:failed"
 )
 
 // PersistenceEvent is the base struct for all events emitted by the persistence layer.
@@ -301,8 +338,8 @@ type RollbackOptions struct {
 	ID string `json:"id"` // ID is the unique identifier of the migration to be rolled back.
 }
 
-// RegisterSubscriptionOptions defines the parameters required to register a new event subscription.
-type RegisterSubscriptionOptions struct {
+// SubscriptionOptions defines the parameters required to register a new event subscription.
+type SubscriptionOptions struct {
 	Event       PersistenceEventType  `json:"event"`                 // Event is the type of event to subscribe to.
 	Label       *string               `json:"label,omitempty"`       // Label is an optional, human-readable identifier for the subscription.
 	Description *string               `json:"description,omitempty"` // Description provides more detail about what the subscription does.
@@ -360,12 +397,12 @@ type Persistence interface {
 	// returns an error, the transaction is rolled back.
 	Transact(ctx context.Context, callback func(ctx context.Context, p BasePersistence) (any, error)) (any, error)
 
-	// RegisterSubscription registers a callback function to be executed when a specific
+	// Subscribe registers a callback function to be executed when a specific
 	// persistence event occurs. It returns a unique ID for the subscription.
-	RegisterSubscription(ctx context.Context, options RegisterSubscriptionOptions) string
+	Subscribe(ctx context.Context, options SubscriptionOptions) string
 
-	// UnregisterSubscription removes an active subscription, specified by its ID.
-	UnregisterSubscription(ctx context.Context, id string)
+	// Unsubscribe removes an active subscription, specified by its ID.
+	Unsubscribe(ctx context.Context, id string)
 
 	// Subscriptions returns a list of all currently active subscriptions.
 	Subscriptions(ctx context.Context) ([]SubscriptionInfo, error)
@@ -438,11 +475,11 @@ type Collection interface {
 		forceRefresh bool,
 	) (*CollectionMetadata, error)
 
-	// RegisterSubscription registers a subscription for an event that is specific to this collection.
-	RegisterSubscription(ctx context.Context, options RegisterSubscriptionOptions) string
+	// Subscribe registers a subscription for an event that is specific to this collection.
+	Subscribe(ctx context.Context, options SubscriptionOptions) string
 
-	// UnregisterSubscription removes a collection-specific subscription.
-	UnregisterSubscription(ctx context.Context, id string)
+	// Unsubscribe removes a collection-specific subscription.
+	Unsubscribe(ctx context.Context, id string)
 
 	// Subscriptions returns a list of all active subscriptions for this collection.
 	Subscriptions(ctx context.Context) ([]SubscriptionInfo, error)
@@ -456,8 +493,6 @@ type ReadResult struct {
 	Data  any `json:"data"`
 	Count int `json:"count,omitempty"`
 }
-
-const TxKey string = "__transaction__"
 
 // Transaction defines the interface for a database transaction.
 // Implementations of this interface should manage the state and coordination
@@ -486,4 +521,7 @@ type Transaction interface {
 
 	// GetInteractor returns the transactional database interactor associated with this transaction.
 	GetInteractor() query.DatabaseInteractor
+
+	// ID returns the id of this transaction.
+	ID() string
 }

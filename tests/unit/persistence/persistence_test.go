@@ -86,7 +86,7 @@ func TestPersistence_Subscriptions(t *testing.T) {
 	}
 	assert.NotNil(t, receivedEvent)
 	// Register a subscription
-	subID := p.RegisterSubscription(context.Background(), base.RegisterSubscriptionOptions{
+	subID := p.Subscribe(context.Background(), base.SubscriptionOptions{
 		Event:    base.CollectionCreateSuccess,
 		Callback: callback,
 	})
@@ -101,7 +101,7 @@ func TestPersistence_Subscriptions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Unregister the subscription
-	p.UnregisterSubscription(context.Background(), subID)
+	p.Unsubscribe(context.Background(), subID)
 
 	// Verify the subscription is gone
 	subs, err = p.Subscriptions(context.Background())
@@ -111,7 +111,7 @@ func TestPersistence_Subscriptions(t *testing.T) {
 
 func TestPersistence_Transact(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
-	logger := zap.Must(zap.NewDevelopment())
+	logger := zap.NewNop()
 
 	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
@@ -153,11 +153,11 @@ func TestPersistence_Transact(t *testing.T) {
 			return nil, err
 		}
 
-		// or run methods async
+		// or run methods asynchronously
 		tx.Async(tctx, func(ctx context.Context) error { // this runs in a go function
 			// Read Bob's document to get metadata
 			bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
-			bobResult, err := accounts.Read(tctx, &bobQuery)
+			bobResult, err := accounts.Read(ctx, &bobQuery)
 			if err != nil {
 				return err
 			}
@@ -167,7 +167,7 @@ func TestPersistence_Transact(t *testing.T) {
 			// Add 20 to Bob
 			bobDoc["balance"] = 70.0
 			filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
-			_, err = accounts.Update(tctx, &base.CollectionUpdate{Data: bobDoc, Filter: filterBob})
+			_, err = accounts.Update(ctx, &base.CollectionUpdate{Data: bobDoc, Filter: filterBob})
 			if err != nil {
 				return err
 			}

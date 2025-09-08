@@ -70,6 +70,8 @@ func (f *sqliteFactory) Build(
 		sqlTree, err = f.buildCreateIndexTree(q, extra)
 	case native.StmtDropIndex:
 		sqlTree, err = f.buildDropIndexTree(q, extra)
+	case native.StmtCheckCollection:
+		sqlTree, err = f.buildCheckTableTree(q)
 	default:
 		return nil, fmt.Errorf("unsupported statement type: %s", stmtType)
 	}

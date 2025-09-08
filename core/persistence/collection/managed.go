@@ -7,7 +7,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	
+
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
@@ -247,12 +247,12 @@ func (c *managedCollection) Metadata(ctx context.Context, filter *base.MetadataF
 	return c.wrapped.Metadata(ctx, filter, forceRefresh)
 }
 
-func (c *managedCollection) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
-	return c.wrapped.RegisterSubscription(ctx, options)
+func (c *managedCollection) Subscribe(ctx context.Context, options base.SubscriptionOptions) string {
+	return c.wrapped.Subscribe(ctx, options)
 }
 
-func (c *managedCollection) UnregisterSubscription(ctx context.Context, id string) {
-	c.wrapped.UnregisterSubscription(ctx, id)
+func (c *managedCollection) Unsubscribe(ctx context.Context, id string) {
+	c.wrapped.Unsubscribe(ctx, id)
 }
 
 func (c *managedCollection) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {

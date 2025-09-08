@@ -8,6 +8,7 @@ import (
 // Capabilities returns the capabilities of the SQLite interactor.
 func (i *sqliteFactory) Capabilities() query.Capabilities {
 	return query.Capabilities{
+		RequiresTransactionSerialization: true,
 		SupportedLogicalOperators: map[common.LogicalOperator]struct{}{
 			common.LogicalAnd: {},
 			common.LogicalOr:  {},

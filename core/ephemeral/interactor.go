@@ -434,6 +434,7 @@ func (i *EphemeralDatabaseInteractor) SchemaManager() query.SchemaManager {
 // Capabilities returns the capabilities of the ephemeral database interactor.
 func (i *EphemeralDatabaseInteractor) Capabilities() query.Capabilities {
 	return query.Capabilities{
+		RequiresTransactionSerialization: true,
 		SupportedLogicalOperators: map[common.LogicalOperator]struct{}{
 			common.LogicalAnd: {},
 			common.LogicalOr:  {},

@@ -100,12 +100,12 @@ func (m *managedPersistence) Metadata(ctx context.Context, filter *base.Metadata
 	return m.wrapped.Metadata(ctx, filter)
 }
 
-// RegisterSubscription delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
+// Subscribe delegates the call to the wrapped persistence after checking the closed state.
+func (m *managedPersistence) Subscribe(ctx context.Context, options base.SubscriptionOptions) string {
 	if err := m.checkClosed(); err != nil {
 		return "" // Or handle error appropriately, e.g., panic or log
 	}
-	return m.wrapped.RegisterSubscription(ctx, options)
+	return m.wrapped.Subscribe(ctx, options)
 }
 
 // Schema delegates the call to the wrapped persistence after checking the closed state.
@@ -132,12 +132,12 @@ func (m *managedPersistence) Transact(ctx context.Context, callback func(ctx con
 	return m.wrapped.Transact(ctx, callback)
 }
 
-// UnregisterSubscription delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) UnregisterSubscription(ctx context.Context, id string) {
+// Unsubscribe delegates the call to the wrapped persistence after checking the closed state.
+func (m *managedPersistence) Unsubscribe(ctx context.Context, id string) {
 	if err := m.checkClosed(); err != nil {
 		return
 	}
-	m.wrapped.UnregisterSubscription(ctx, id)
+	m.wrapped.Unsubscribe(ctx, id)
 }
 
 // Rollback delegates the call to the wrapped persistence after checking the closed state.

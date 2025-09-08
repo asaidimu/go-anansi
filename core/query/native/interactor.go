@@ -224,9 +224,21 @@ func (i *NativeInteractor[T]) SchemaManager() query.SchemaManager {
 // CollectionExists checks if a collection exists. (Placeholder)
 func (i *NativeInteractor[T]) CollectionExists(ctx context.Context, name string) (bool, error) {
 
-	// This implementation would be specific to the database dialect.
-	// errors.New("not implemented")
-	return false, nil
+	compiled, err := i.b.Build(&query.Query{ Target: &query.QueryTarget{ Name: name} }, StmtCheckCollection, nil)
+	if err != nil {
+		return false, newNativeError("CollectionExists", "could not build query", err)
+	}
+
+	result, err := i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: &schema.SchemaDefinition{
+		Version:  "1.0.0",
+		Name: name,
+	}})
+
+	if err != nil {
+		return false, newNativeError("CollectionExists", "could not check for collection", err)
+	}
+
+	return len(result) > 0, nil
 }
 
 // CreateCollection creates a new collection and its indexes within a single transaction.

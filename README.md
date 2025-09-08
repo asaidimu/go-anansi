@@ -581,6 +581,18 @@ If you find a bug or have a feature request, please open an issue on the [GitHub
 
 ## 📚 Additional Information
 
+## Performance Considerations
+
+Performance depends heavily on your choice of database backend. 
+
+### Transaction Concurrency
+The abstraction layer provides consistent transaction semantics across all supported databases, but this comes with different performance characteristics:
+
+- **High-concurrency databases** (PostgreSQL, CockroachDB, MongoDB 4.0+): Full concurrent transaction support
+- **Limited-concurrency databases** (SQLite, some NoSQL systems): Transactions are serialized with mutex locks for safety
+
+Choose your database backend based on your concurrency requirements.
+
 ### Troubleshooting
 
 *   **`Persistence instance is closed`**: This error typically occurs if you try to perform operations on the `Persistence` or `Collection` interfaces after `p.Close()` has been called. Ensure `p.Close()` is called only when the application is shutting down.

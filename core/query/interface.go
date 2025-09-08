@@ -73,7 +73,6 @@ type QueryBuilderInterface interface {
 	Limit(limit int) *QueryBuilder
 	Offset(offset int) *QueryBuilder
 
-
 	// Projection
 	Select() ProjectionBuilderInterface
 
@@ -226,6 +225,11 @@ type FunctionCapabilities struct {
 // This struct is used by the QueryPartitioner to split a QueryDSL query
 // into a database query and a post-processing query.
 type Capabilities struct {
+	// RequiresTransactionSerialization forces all transactions to be serialized with a mutex.
+	// Set to true for databases that cannot handle concurrent multi-collection
+	// transactions with nested and async operations.
+	RequiresTransactionSerialization bool
+
 	// SupportedLogicalOperators is a set of logical operators (AND, OR, NOT) that the database can handle in filter expressions.
 	SupportedLogicalOperators map[common.LogicalOperator]struct{}
 	// SupportedComparisonOperators is a set of comparison operators (e.g., Eq, Gt, Lt) that the database can handle natively.
@@ -284,4 +288,3 @@ type QueryCache interface {
 	Get(key uint64) (*PartitionedQuery, bool)
 	Set(key uint64, value *PartitionedQuery)
 }
-

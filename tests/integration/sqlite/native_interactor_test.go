@@ -663,3 +663,33 @@ func findDoc(docs []data.Document, key string, value any) data.Document {
 	return nil
 }
 
+func TestNativeInteractor_CheckCollection(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	interactor, err := createNativeInteractor(t, db)
+	require.NoError(t, err)
+
+	testSchema := &schema.SchemaDefinition{
+		Name: "test_collection",
+		Fields: map[string]*schema.FieldDefinition{
+			"id": {Name: "id", Type: schema.FieldTypeString},
+		},
+	}
+
+	ctx := context.Background()
+
+	// 1. Check for a non-existent collection
+	exists, err := interactor.SchemaManager().CollectionExists(ctx, "non_existent_collection")
+	require.NoError(t, err)
+	require.False(t, exists)
+
+	// 2. Create a collection
+	err = interactor.SchemaManager().CreateCollection(ctx, *testSchema)
+	require.NoError(t, err)
+
+	// 3. Check that the collection now exists
+	exists, err = interactor.SchemaManager().CollectionExists(ctx, "test_collection")
+	require.NoError(t, err)
+	require.True(t, exists)
+}

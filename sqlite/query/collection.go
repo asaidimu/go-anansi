@@ -140,3 +140,20 @@ func (t *dropTableTree) Value() (string, []any, error) {
 
 	return fmt.Sprintf("DROP TABLE IF EXISTS %s;", t.name), nil, nil
 }
+
+func (f *sqliteFactory) buildCheckTableTree(q *query.Query) (SQLNode, error) {
+	return &checkTableTree{name: q.Target.Name}, nil
+}
+
+type checkTableTree struct {
+	name string
+}
+
+func (t *checkTableTree) Value() (string, []any, error) {
+	if len(t.name) == 0 {
+		return "", nil, fmt.Errorf("table name is not defined for check table tree")
+	}
+	sql := "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
+	params := []any{t.name}
+	return sql, params, nil
+}

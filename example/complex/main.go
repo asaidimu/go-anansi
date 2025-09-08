@@ -173,12 +173,12 @@ func (d *securityDecorator) Metadata(ctx context.Context, filter *base.MetadataF
 	return d.next.Metadata(ctx, filter, forceRefresh)
 }
 
-func (d *securityDecorator) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
-	return d.next.RegisterSubscription(ctx, options)
+func (d *securityDecorator) Subscribe(ctx context.Context, options base.SubscriptionOptions) string {
+	return d.next.Subscribe(ctx, options)
 }
 
-func (d *securityDecorator) UnregisterSubscription(ctx context.Context, id string) {
-	d.next.UnregisterSubscription(ctx, id)
+func (d *securityDecorator) Unsubscribe(ctx context.Context, id string) {
+	d.next.Unsubscribe(ctx, id)
 }
 
 func (d *securityDecorator) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {

@@ -14,6 +14,8 @@ import (
 	"go.uber.org/zap"
 )
 
+const TxKey string = "github.com/asaidimu/go-anansi/__transaction__"
+
 // transaction represents a single database transaction, coordinating multiple
 // concurrent operations. It ensures that all operations complete successfully
 // before the transaction is committed.
@@ -201,22 +203,24 @@ func Execute(
 	}
 
 	if commitErr := tx.Commit(ictx); commitErr != nil {
-		// Attempt to rollback on a failed commit.
-		if rollbackErr := tx.Rollback(ictx); rollbackErr != nil {
-		}
-		return result, fmt.Errorf("failed to commit transaction: %w", commitErr)
+		rollbackErr := tx.Rollback(ictx);
+		return result, fmt.Errorf("failed to commit transaction: %w, %w", commitErr, rollbackErr)
 	}
 
 	return result, nil
 }
 
+func (tx *transaction) ID() string  {
+	return tx.id
+}
+
 // withTransaction embeds the transaction into a new context.
 func withTransaction(ctx context.Context, tx base.Transaction) context.Context {
-	return context.WithValue(ctx, base.TxKey, tx)
+	return context.WithValue(ctx, TxKey, tx)
 }
 
 // GetCurrentTransaction retrieves the current transaction from the context, if one exists.
 func GetCurrentTransaction(ctx context.Context) (base.Transaction, bool) {
-	tx, ok := ctx.Value(base.TxKey).(base.Transaction)
+	tx, ok := ctx.Value(TxKey).(base.Transaction)
 	return tx, ok
 }

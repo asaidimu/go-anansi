@@ -7,17 +7,16 @@ import (
 // CollectionError represents errors specific to collection operations.
 type CollectionError struct {
 	Operation string
-	Key       string
 	Message   string
 	Cause     error
 }
 
 func (e *CollectionError) Error() string {
 	if e.Cause != nil {
-		return fmt.Sprintf("%s operation failed for key '%s': %s (caused by: %v)",
-			e.Operation, e.Key, e.Message, e.Cause)
+		return fmt.Sprintf("%s operation failed %s (caused by: %v)",
+			e.Operation, e.Message, e.Cause)
 	}
-	return fmt.Sprintf("%s operation failed for key '%s': %s", e.Operation, e.Key, e.Message)
+	return fmt.Sprintf("%s operation failed %s", e.Operation,  e.Message)
 }
 
 func (e *CollectionError) Unwrap() error {

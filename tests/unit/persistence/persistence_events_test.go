@@ -18,7 +18,7 @@ import (
 
 func TestPersistence_DocumentEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
-	logger := zap.Must(zap.NewDevelopment())
+	logger := zap.NewNop()
 	p, err := persistence.NewPersistence(interactor, logger, nil)
 	require.NoError(t, err)
 
@@ -45,7 +45,7 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	}
 
 	for _, eventType := range eventTypes {
-		p.RegisterSubscription(context.Background(), base.RegisterSubscriptionOptions{
+		p.Subscribe(context.Background(), base.SubscriptionOptions{
 			Event:    eventType,
 			Callback: callback,
 		})
@@ -124,7 +124,7 @@ func TestPersistence_CollectionEvents(t *testing.T) {
 	}
 
 	for _, eventType := range collectionEventTypes {
-		p.RegisterSubscription(context.Background(), base.RegisterSubscriptionOptions{
+		p.Subscribe(context.Background(), base.SubscriptionOptions{
 			Event:    eventType,
 			Callback: callback,
 		})
@@ -181,7 +181,7 @@ func TestPersistence_TransactionEvents(t *testing.T) {
 	}
 
 	for _, eventType := range transactionEventTypes {
-		p.RegisterSubscription(context.Background(), base.RegisterSubscriptionOptions{
+		p.Subscribe(context.Background(), base.SubscriptionOptions{
 			Event:    eventType,
 			Callback: callback,
 		})

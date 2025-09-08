@@ -2,6 +2,9 @@ package common
 
 import "fmt"
 
+// ContextKey is a type for context keys to avoid collisions
+type ContextKey string
+
 // Issue represents a detailed validation or operational issue. It is used to provide
 // structured, machine-readable feedback about problems encountered during an operation,
 // which is particularly useful for form validation or API error responses.

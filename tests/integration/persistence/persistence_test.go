@@ -167,7 +167,7 @@ func TestPersistence_Subscriptions(t *testing.T) {
 	}
 	assert.NotNil(t, receivedEvent)
 	// Register a subscription
-	subID := p.RegisterSubscription(context.Background(), base.RegisterSubscriptionOptions{
+	subID := p.Subscribe(context.Background(), base.SubscriptionOptions{
 		Event:    base.CollectionCreateSuccess,
 		Callback: callback,
 	})
@@ -182,7 +182,7 @@ func TestPersistence_Subscriptions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Unregister the subscription
-	p.UnregisterSubscription(context.Background(), subID)
+	p.Unsubscribe(context.Background(), subID)
 
 	// Verify the subscription is gone
 	subs, err = p.Subscriptions(context.Background())

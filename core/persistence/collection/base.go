@@ -213,8 +213,8 @@ func (c *baseCollection) Metadata(ctx context.Context, filter *base.MetadataFilt
 	return &metadata, nil
 }
 
-// RegisterSubscription registers a subscription for an event that is specific to this collection.
-func (c *baseCollection) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
+// Subscribe registers a subscription for an event that is specific to this collection.
+func (c *baseCollection) Subscribe(ctx context.Context, options base.SubscriptionOptions) string {
 	c.subMu.Lock()
 	defer c.subMu.Unlock()
 
@@ -244,8 +244,8 @@ func (c *baseCollection) RegisterSubscription(ctx context.Context, options base.
 	return id
 }
 
-// UnregisterSubscription removes a collection-specific subscription.
-func (c *baseCollection) UnregisterSubscription(ctx context.Context, id string) {
+// Unsubscribe removes a collection-specific subscription.
+func (c *baseCollection) Unsubscribe(ctx context.Context, id string) {
 	c.subMu.Lock()
 	defer c.subMu.Unlock()
 

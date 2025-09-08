@@ -232,7 +232,7 @@ func (p *basePersistence) Metadata(ctx context.Context, filter *base.MetadataFil
 	}, nil
 }
 
-func (p *basePersistence) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
+func (p *basePersistence) Subscribe(ctx context.Context, options base.SubscriptionOptions) string {
 	p.subMu.Lock()
 	defer p.subMu.Unlock()
 
@@ -271,23 +271,25 @@ func (p *basePersistence) Subscriptions(ctx context.Context) ([]base.Subscriptio
 
 	return subs, nil
 }
+
 func (p *basePersistence) Transact(ctx context.Context, callback func(ctx context.Context, tx base.BasePersistence) (any, error)) (any, error) {
-    if _, ok := transaction.GetCurrentTransaction(ctx); ok {
-        return transaction.Execute(ctx, p.interactor, p.logger, func(tctx context.Context, tx query.DatabaseInteractor) (any, error) {
-            return callback(tctx, p)
-        })
-    }
+	execute := func() (any, error) {
+		return transaction.Execute(ctx, p.interactor, p.logger, func(tctx context.Context, tx query.DatabaseInteractor) (any, error) {
+			return callback(tctx, p)
+		})
+	}
 
-    // We're at the top level - acquire mutex to prevent concurrent top-level transactions
-    p.txMu.Lock()
-    defer p.txMu.Unlock()
+	if _, ok := transaction.GetCurrentTransaction(ctx); ok || !p.interactor.Capabilities().RequiresTransactionSerialization {
+		return execute()
+	}
 
-    return transaction.Execute(ctx, p.interactor, p.logger, func(tctx context.Context, tx query.DatabaseInteractor) (any, error) {
-        return callback(tctx, p)
-    })
+	p.txMu.Lock()
+	defer p.txMu.Unlock()
+
+	return execute()
 }
 
-func (p *basePersistence) UnregisterSubscription(ctx context.Context, id string) {
+func (p *basePersistence) Unsubscribe(ctx context.Context, id string) {
 	p.subMu.Lock()
 	defer p.subMu.Unlock()
 

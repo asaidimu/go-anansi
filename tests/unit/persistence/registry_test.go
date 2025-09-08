@@ -41,14 +41,13 @@ func newTestSchema(name ...string) *schema.SchemaDefinition {
 // setupTestEnv creates a fully functional, in-memory test environment, returning the
 // registry to be tested and the schema manager for verifying physical state.
 func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, persistence.Collection) {
-	logger, err := zap.NewDevelopment()
-	require.NoError(t, err)
+	logger := zap.NewNop()
 
 	// Configure the document factory
 	config := data.DocumentFactoryConfig{
 		HmacSecret: []byte("test-secret"),
 	}
-	err = data.ConfigureDocumentFactory(config)
+	err := data.ConfigureDocumentFactory(config)
 	require.NoError(t, err)
 
 

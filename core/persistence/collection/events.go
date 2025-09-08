@@ -5,14 +5,14 @@ package collection
 
 import (
 	"context"
-	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-events"
+	goevents "github.com/asaidimu/go-events"
+	"go.uber.org/zap"
 )
 
 // eventsCollection is a wrapper around a baseCollection that adds event-emitting capabilities.
@@ -21,9 +21,9 @@ import (
 // This provides a mechanism for observability and for triggering side effects in a
 // decoupled manner.
 type eventsCollection struct {
-	collection base.Collection
-	bus        *events.TypedEventBus[base.PersistenceEvent]
-	schema     *schema.SchemaDefinition
+	collection   base.Collection
+	eventEmitter *events.EventEmitter
+	schema       *schema.SchemaDefinition
 }
 
 var _ base.Collection = (*eventsCollection)(nil)
@@ -31,103 +31,29 @@ var _ base.Collection = (*eventsCollection)(nil)
 // newEventEmittingCollection creates a new event-emitting collection wrapper.
 // It takes a CollectionBase and returns a Collection that will emit events
 // for all of its operations.
-func newEventEmittingCollection(collection base.Collection, bus *events.TypedEventBus[base.PersistenceEvent], schema *schema.SchemaDefinition) *eventsCollection {
+func newEventEmittingCollection(collection base.Collection, bus *goevents.TypedEventBus[base.PersistenceEvent], schema *schema.SchemaDefinition, logger *zap.Logger) *eventsCollection {
 	return &eventsCollection{
-		collection: collection,
-		bus:        bus,
-		schema:     schema,
+		collection:   collection,
+		eventEmitter: events.NewEventEmitter(bus, schema.Name, logger),
+		schema:       schema,
 	}
-}
-
-// emitEvent is a helper method to publish a persistence event to the event bus.
-func (e *eventsCollection) emitEvent(event base.PersistenceEvent) {
-	if e.bus != nil {
-		e.bus.Emit(string(event.Type), event)
-	}
-}
-
-// withEventEmission is a higher-order function that wraps a persistence operation
-// with start, success, and failure events. It handles the timing of the operation
-// and constructs the appropriate event for each stage.
-func (e *eventsCollection) withEventEmission(
-	operation string,
-	startEventType base.PersistenceEventType,
-	successEventType base.PersistenceEventType,
-	failedEventType base.PersistenceEventType,
-	input any,
-	queryParam any,
-	fn func() (any, error),
-) (any, error) {
-	startTime := time.Now()
-
-	// Emit start event
-	startEvent := utils.CreateEvent(
-		startEventType,
-		operation,
-		e.schema.Name,
-		input,
-		nil, // No output yet
-		queryParam,
-		nil, // No error yet
-		nil, // No issues yet
-		startTime,
-	)
-	e.emitEvent(startEvent)
-
-	// Execute the operation
-	result, err := fn()
-
-	if err != nil {
-		// Emit failure event
-		errStr := err.Error()
-		failEvent := utils.CreateEvent(
-			failedEventType,
-			operation,
-			e.schema.Name,
-			input,
-			nil, // No output on failure
-			queryParam,
-			&errStr,
-			nil, // Issues can be added here if available
-			startTime,
-		)
-		e.emitEvent(failEvent)
-		return result, err
-	}
-
-	// Emit success event
-	successEvent := utils.CreateEvent(
-		successEventType,
-		operation,
-		e.schema.Name,
-		input,
-		result,
-		queryParam,
-		nil, // No error on success
-		nil, // No issues on success
-		startTime,
-	)
-	e.emitEvent(successEvent)
-
-	return result, nil
 }
 
 // CreateOne wraps the underlying collection's CreateOne method, adding event emission.
 func (e *eventsCollection) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
-	result, err := e.withEventEmission(
-		"createOne",
-		base.DocumentCreateStart,
-		base.DocumentCreateSuccess,
-		base.DocumentCreateFailed,
-		doc,
-		nil, // No query parameter for create
-		func() (any, error) {
-			return e.collection.CreateOne(ctx, doc)
-		},
-	)
+	config := events.OperationConfig{
+		Operation:        "createOne",
+		StartEventType:   base.DocumentCreateStart,
+		SuccessEventType: base.DocumentCreateSuccess,
+		FailedEventType:  base.DocumentCreateFailed,
+		Input:            doc,
+	}
+
+	result, err := e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {
+		return e.collection.CreateOne(ctx, doc)
+	})
 
 	r, ok := result.(base.CreateResult)
-
 	if !ok {
 		r = base.CreateResult{}
 	}
@@ -141,20 +67,20 @@ func (e *eventsCollection) CreateOne(ctx context.Context, doc data.Document) (ba
 
 // CreateMany wraps the underlying collection's CreateMany method, adding event emission.
 func (e *eventsCollection) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) {
-	result, err := e.withEventEmission(
-		"createMany",
-		base.DocumentCreateStart,
-		base.DocumentCreateSuccess,
-		base.DocumentCreateFailed,
-		docs,
-		nil, // No query parameter for create
-		func() (any, error) {
-			return e.collection.CreateMany(ctx, docs)
-		},
-	)
+	config := events.OperationConfig{
+		Operation:        "createMany",
+		StartEventType:   base.DocumentCreateStart,
+		SuccessEventType: base.DocumentCreateSuccess,
+		FailedEventType:  base.DocumentCreateFailed,
+		Input:            docs,
+	}
+
+	result, err := e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {
+		return e.collection.CreateMany(ctx, docs)
+	})
 
 	if err != nil {
-		return result.([]base.CreateResult), err
+		return nil, err
 	}
 
 	return result.([]base.CreateResult), nil
@@ -163,17 +89,17 @@ func (e *eventsCollection) CreateMany(ctx context.Context, docs []data.Document)
 // Read wraps the underlying collection's Read method, adding event emission
 // for the start, success, and failure of the operation.
 func (e *eventsCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
-	result, err := e.withEventEmission(
-		"read",
-		base.DocumentReadStart,
-		base.DocumentReadSuccess,
-		base.DocumentReadFailed,
-		nil, // No input data for read
-		q,
-		func() (any, error) {
-			return e.collection.Read(ctx, q)
-		},
-	)
+	config := events.OperationConfig{
+		Operation:        "read",
+		StartEventType:   base.DocumentReadStart,
+		SuccessEventType: base.DocumentReadSuccess,
+		FailedEventType:  base.DocumentReadFailed,
+		QueryParam:       q,
+	}
+
+	result, err := e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {
+		return e.collection.Read(ctx, q)
+	})
 
 	if err != nil {
 		return nil, err
@@ -185,17 +111,18 @@ func (e *eventsCollection) Read(ctx context.Context, q *query.Query) (*base.Read
 // Update wraps the underlying collection's Update method, adding event emission
 // for the start, success, and failure of the operation.
 func (e *eventsCollection) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
-	result, err := e.withEventEmission(
-		"update",
-		base.DocumentUpdateStart,
-		base.DocumentUpdateSuccess,
-		base.DocumentUpdateFailed,
-		params.Data,
-		params.Filter,
-		func() (any, error) {
-			return e.collection.Update(ctx, params)
-		},
-	)
+	config := events.OperationConfig{
+		Operation:        "update",
+		StartEventType:   base.DocumentUpdateStart,
+		SuccessEventType: base.DocumentUpdateSuccess,
+		FailedEventType:  base.DocumentUpdateFailed,
+		Input:            params.Data,
+		QueryParam:       params.Filter,
+	}
+
+	result, err := e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {
+		return e.collection.Update(ctx, params)
+	})
 
 	if err != nil {
 		return 0, err
@@ -207,17 +134,17 @@ func (e *eventsCollection) Update(ctx context.Context, params *base.CollectionUp
 // Delete wraps the underlying collection's Delete method, adding event emission
 // for the start, success, and failure of the operation.
 func (e *eventsCollection) Delete(ctx context.Context, filter *query.QueryFilter, unsafe bool) (int, error) {
-	result, err := e.withEventEmission(
-		"delete",
-		base.DocumentDeleteStart,
-		base.DocumentDeleteSuccess,
-		base.DocumentDeleteFailed,
-		nil, // No input data for delete
-		filter,
-		func() (any, error) {
-			return e.collection.Delete(ctx, filter, unsafe)
-		},
-	)
+	config := events.OperationConfig{
+		Operation:        "delete",
+		StartEventType:   base.DocumentDeleteStart,
+		SuccessEventType: base.DocumentDeleteSuccess,
+		FailedEventType:  base.DocumentDeleteFailed,
+		QueryParam:       filter,
+	}
+
+	result, err := e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {
+		return e.collection.Delete(ctx, filter, unsafe)
+	})
 
 	if err != nil {
 		return 0, err
@@ -242,17 +169,17 @@ func (e *eventsCollection) Metadata(
 	return e.collection.Metadata(ctx, filter, forceRefresh)
 }
 
-// RegisterSubscription wraps the underlying collection's RegisterSubscription method,
+// Subscribe wraps the underlying collection's Subscribe method,
 // emitting an event after a new subscription is successfully registered.
-func (e *eventsCollection) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
-	id := e.collection.RegisterSubscription(ctx, options)
+func (e *eventsCollection) Subscribe(ctx context.Context, options base.SubscriptionOptions) string {
+	id := e.collection.Subscribe(ctx, options)
 	return id
 }
 
-// UnregisterSubscription wraps the underlying collection's UnregisterSubscription method,
+// Unsubscribe wraps the underlying collection's Unsubscribe method,
 // emitting an event after a subscription is successfully unregistered.
-func (e *eventsCollection) UnregisterSubscription(ctx context.Context, id string) {
-	e.collection.UnregisterSubscription(ctx, id)
+func (e *eventsCollection) Unsubscribe(ctx context.Context, id string) {
+	e.collection.Unsubscribe(ctx, id)
 }
 
 // Subscriptions delegates the call to the underlying collection's Subscriptions method.

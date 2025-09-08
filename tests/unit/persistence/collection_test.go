@@ -352,7 +352,7 @@ func TestCollection_Metadata(t *testing.T) {
 func TestCollection_RegisterSubscription(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
-	options := persistence.RegisterSubscriptionOptions{
+	options := persistence.SubscriptionOptions{
 		Event: persistence.DocumentCreateSuccess,
 		Label: utils.StringPtr("test_sub"),
 		Callback: func(ctx context.Context, event persistence.PersistenceEvent) error {
@@ -360,7 +360,7 @@ func TestCollection_RegisterSubscription(t *testing.T) {
 		},
 	}
 
-	id := collection.RegisterSubscription(ctx, options)
+	id := collection.Subscribe(ctx, options)
 	assert.NotEmpty(t, id)
 
 	subs, _ := collection.Subscriptions(ctx)
@@ -371,7 +371,7 @@ func TestCollection_RegisterSubscription(t *testing.T) {
 func TestCollection_UnregisterSubscription(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
-	options := persistence.RegisterSubscriptionOptions{
+	options := persistence.SubscriptionOptions{
 		Event: persistence.DocumentCreateSuccess,
 		Label: utils.StringPtr("test_sub"),
 		Callback: func(ctx context.Context, event persistence.PersistenceEvent) error {
@@ -379,10 +379,10 @@ func TestCollection_UnregisterSubscription(t *testing.T) {
 		},
 	}
 
-	id := collection.RegisterSubscription(ctx, options)
+	id := collection.Subscribe(ctx, options)
 	assert.NotEmpty(t, id)
 
-	collection.UnregisterSubscription(ctx, id)
+	collection.Unsubscribe(ctx, id)
 	subs, _ := collection.Subscriptions(ctx)
 	assert.Empty(t, subs)
 }
@@ -390,14 +390,14 @@ func TestCollection_UnregisterSubscription(t *testing.T) {
 func TestCollection_Subscriptions(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
-	options1 := persistence.RegisterSubscriptionOptions{
+	options1 := persistence.SubscriptionOptions{
 		Event: persistence.DocumentCreateSuccess,
 		Label: utils.StringPtr("sub1"),
 		Callback: func(ctx context.Context, event persistence.PersistenceEvent) error {
 			return nil
 		},
 	}
-	options2 := persistence.RegisterSubscriptionOptions{
+	options2 := persistence.SubscriptionOptions{
 		Event: persistence.DocumentUpdateSuccess,
 		Label: utils.StringPtr("sub2"),
 		Callback: func(ctx context.Context, event persistence.PersistenceEvent) error {
@@ -405,8 +405,8 @@ func TestCollection_Subscriptions(t *testing.T) {
 		},
 	}
 
-	collection.RegisterSubscription(ctx, options1)
-	collection.RegisterSubscription(ctx, options2)
+	collection.Subscribe(ctx, options1)
+	collection.Subscribe(ctx, options2)
 
 	subs, _ := collection.Subscriptions(ctx)
 	assert.Len(t, subs, 2)

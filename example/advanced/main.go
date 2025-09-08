@@ -132,12 +132,12 @@ func (d *negativeAmountValidator) Metadata(ctx context.Context, filter *base.Met
 	return d.next.Metadata(ctx, filter, forceRefresh)
 }
 
-func (d *negativeAmountValidator) RegisterSubscription(ctx context.Context, options base.RegisterSubscriptionOptions) string {
-	return d.next.RegisterSubscription(ctx, options)
+func (d *negativeAmountValidator) Subscribe(ctx context.Context, options base.SubscriptionOptions) string {
+	return d.next.Subscribe(ctx, options)
 }
 
-func (d *negativeAmountValidator) UnregisterSubscription(ctx context.Context, id string) {
-	d.next.UnregisterSubscription(ctx, id)
+func (d *negativeAmountValidator) Unsubscribe(ctx context.Context, id string) {
+	d.next.Unsubscribe(ctx, id)
 }
 
 func (d *negativeAmountValidator) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {
