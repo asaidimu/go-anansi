@@ -249,7 +249,7 @@ func (e *eventsPersistence) Close(ctx context.Context) {
 	})
 }
 
-func (e *eventsPersistence) Async(ctx context.Context, f func(ctx context.Context) error) {
+func (e *eventsPersistence) Async(ctx context.Context, f func(ctx context.Context) (any, error)) base.Future {
 	// This is for running background tasks, not directly a persistence operation to be audited.
-	e.persistence.Async(ctx, f)
+	return e.persistence.Async(ctx, f)
 }

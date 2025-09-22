@@ -23,7 +23,7 @@ func createEventBus(z *zap.Logger) (*events.TypedEventBus[base.PersistenceEvent]
 	cfg.AsyncWorkerPoolSize = 3               // Use 3 worker goroutines
 	cfg.ShutdownTimeout = 2 * time.Second     // Allow 2s for graceful shutdown
 	cfg.EventTimeout = 500 * time.Millisecond // Timeout handlers after 500ms
-	cfg.Logger = logger
+	cfg.Logger = nil
 	cfg.ErrorHandler = func(e *events.EventError) {
 		logger.Error("Event processing error",
 			"event", e.EventName,

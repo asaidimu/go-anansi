@@ -346,6 +346,12 @@ type SubscriptionOptions struct {
 	Callback    EventCallbackFunction // Callback is the function that will be executed when the event is triggered.
 }
 
+// Future represents the result of an asynchronous operation.
+type Future interface {
+	// Await blocks until the operation is complete and returns the result and any error that occurred.
+	Await() (any, error)
+}
+
 // BasePersistence defines the set of operations that can be performed
 // within a database transaction. It is a subset of the PersistenceInterface, ensuring
 // that transactional operations are consistent with the main persistence API, but
@@ -372,8 +378,8 @@ type BasePersistence interface {
 	) (Metadata, error)
 
 	// Async provides a safe way to spawn a goroutine that is part of the transaction.
-	// It ensures that the WaitGroup is correctly incremented before the goroutine starts.
-	Async(ctx context.Context, f func(ctx context.Context) error)
+	// It returns a Future that can be used to await the result of the operation.
+	Async(ctx context.Context, f func(ctx context.Context) (any, error)) Future
 }
 
 // Persistence defines the core contract for the persistence layer. It provides a

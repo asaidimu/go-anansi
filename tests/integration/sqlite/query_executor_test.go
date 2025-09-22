@@ -24,7 +24,7 @@ func setupQueryExecutorTest(t *testing.T) (*sql.DB, native.QueryExecutor[types.S
 	db, err := sql.Open("sqlite3", ":memory:")
 	require.NoError(t, err)
 
-	executor, err := sqlite_executor.NewSQLiteInteractor(db, zap.NewNop())
+	executor, err := sqlite_executor.NewSQLiteExecutor(db, zap.NewNop())
 	require.NoError(t, err)
 
 	userSchema := &schema.SchemaDefinition{

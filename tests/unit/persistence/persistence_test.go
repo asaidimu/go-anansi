@@ -154,12 +154,12 @@ func TestPersistence_Transact(t *testing.T) {
 		}
 
 		// or run methods asynchronously
-		tx.Async(tctx, func(ctx context.Context) error { // this runs in a go function
+		tx.Async(tctx, func(ctx context.Context) (any, error) { // this runs in a go function
 			// Read Bob's document to get metadata
 			bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
 			bobResult, err := accounts.Read(ctx, &bobQuery)
 			if err != nil {
-				return err
+				return nil, err
 			}
 			require.Equal(t, 1, bobResult.Count)
 			bobDoc := bobResult.Data.(data.Document)
@@ -169,9 +169,9 @@ func TestPersistence_Transact(t *testing.T) {
 			filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
 			_, err = accounts.Update(ctx, &base.CollectionUpdate{Data: bobDoc, Filter: filterBob})
 			if err != nil {
-				return err
+				return nil, err
 			}
-			return nil
+			return nil, nil
 		})
 
 		return nil, nil

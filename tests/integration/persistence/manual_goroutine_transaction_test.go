@@ -38,9 +38,9 @@ func TestTransactionInManualGoroutine(t *testing.T) {
 
 			_, err := p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
 				// This inner goroutine's operation will be coordinated by the transaction.
-				tx.Async(tctx, func(ctx context.Context) error {
+				tx.Async(tctx, func(ctx context.Context) (any, error) {
 					_, err := collection.CreateOne(ctx, data.Document{"id": "manual-1", "name": "test"})
-					return err
+					return nil, err
 				})
 				return nil, nil
 			})
@@ -69,8 +69,8 @@ func TestTransactionInManualGoroutine(t *testing.T) {
 
 			_, err := p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
 				// This inner goroutine's error will cause the transaction to roll back.
-				tx.Async(tctx, func(ctx context.Context) error {
-					return fmt.Errorf("manual goroutine failed")
+				tx.Async(tctx, func(ctx context.Context) (any, error) {
+					return nil, fmt.Errorf("manual goroutine failed")
 				})
 				return nil, nil
 			})

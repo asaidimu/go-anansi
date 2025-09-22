@@ -51,7 +51,7 @@ func main() {
 	defer db.Close()
 
 	// 3. Create Database Interactor for SQLite
-	executor, err := sqliteExecutor.NewSQLiteInteractor(db, logger)
+	executor, err := sqliteExecutor.NewSQLiteExecutor(db, logger)
 	if err != nil {
 		log.Fatalf("Failed to create SQLite interactor: %v", err)
 	}

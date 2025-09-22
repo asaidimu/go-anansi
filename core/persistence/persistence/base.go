@@ -337,13 +337,44 @@ func (p *basePersistence) Close(ctx context.Context) {
 	p.interactor = nil
 }
 
-func (p *basePersistence) Async(ctx context.Context, f func(ctx context.Context) error) {
+// future is a concrete implementation of the Future interface.
+type future struct {
+	result any
+	err    error
+	done   chan struct{}
+}
+
+// Await waits for the operation to complete and returns the result and the error.
+func (f *future) Await() (any, error) {
+	<-f.done
+	return f.result, f.err
+}
+
+// newFuture creates a new future.
+func newFuture() *future {
+	return &future{
+		done: make(chan struct{}),
+	}
+}
+
+func (p *basePersistence) Async(ctx context.Context, f func(ctx context.Context) (any, error)) base.Future {
+	fut := newFuture()
 	if tx, ok := transaction.GetCurrentTransaction(ctx); ok {
 		cleanup := tx.AddOperation()
 		go func() {
-			defer cleanup(f(ctx))
+			result, err := f(ctx)
+			fut.result = result
+			fut.err = err
+			close(fut.done)
+			cleanup(err)
 		}()
 	} else {
-		go f(ctx)
+		go func() {
+			result, err := f(ctx)
+			fut.result = result
+			fut.err = err
+			close(fut.done)
+		}()
 	}
+	return fut
 }

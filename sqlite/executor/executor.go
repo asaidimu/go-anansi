@@ -30,9 +30,9 @@ type sqliteExecutor struct {
 
 var _ (native.QueryExecutor[types.SQLitePayload]) = (*sqliteExecutor)(nil)
 
-// NewSQLiteInteractor creates a new instance of the SQLiteInteractor. It can be
+// NewSQLiteExecutor creates a new instance of the SQLiteInteractor. It can be
 // configured to operate in transactional mode by providing a non-nil *sql.Tx.
-func NewSQLiteInteractor(db *sql.DB, logger *zap.Logger) (native.QueryExecutor[types.SQLitePayload], error) {
+func NewSQLiteExecutor(db *sql.DB, logger *zap.Logger) (native.QueryExecutor[types.SQLitePayload], error) {
 	return newSQLiteExecutor(db, logger, nil)
 }
 

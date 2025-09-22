@@ -39,11 +39,11 @@ func (m *managedPersistence) Close(ctx context.Context) {
 	m.wrapped.Close(ctx)
 }
 
-func (m *managedPersistence) Async(ctx context.Context, f func(ctx context.Context) error) {
+func (m *managedPersistence) Async(ctx context.Context, f func(ctx context.Context) (any, error)) base.Future {
 	if err := m.checkClosed(); err != nil {
-		return
+		return nil
 	}
-	m.wrapped.Async(ctx, f)
+	return m.wrapped.Async(ctx, f)
 }
 
 // Collection delegates the call to the wrapped persistence after checking the closed state.

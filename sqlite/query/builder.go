@@ -22,7 +22,7 @@ func (q *sqliteQuery) StatementType() native.StatementType {
 }
 
 // sqliteNativeQueryFactory implements NativeQueryFactory[types.SQLitePayload].
-type sqliteFactory struct{
+type sqliteFactory struct {
 	paramCounter int
 	aliases      map[string]string
 }
@@ -39,21 +39,18 @@ func newSQLiteFactory() *sqliteFactory {
 	}
 }
 
-func (f *sqliteFactory) Build(
+func (x *sqliteFactory) Build(
 	q *query.Query,
 	stmtType native.StatementType,
 	extra any,
 ) (native.Query[types.SQLitePayload], error) {
-	// Reset internal state for each build.
-	f.paramCounter = 0
-	f.aliases = make(map[string]string)
 
+	f := newSQLiteFactory()
 
 	var sqlTree SQLNode
 	var err error
 
-
-	 switch stmtType {
+	switch stmtType {
 	case native.StmtSelect:
 		sqlTree, err = f.buildSelectTree(q)
 	case native.StmtUpdate:
@@ -92,3 +89,4 @@ func (f *sqliteFactory) Build(
 
 	return nativeQuery, nil
 }
+

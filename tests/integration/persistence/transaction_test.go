@@ -30,14 +30,14 @@ func TestTransactionWithGoroutine(t *testing.T) {
 
 	t.Run("Successful transaction with goroutine", func(t *testing.T) {
 		_, err := p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
-			tx.Async(tctx, func(ctx context.Context) error {
+			tx.Async(tctx, func(ctx context.Context) (any, error) {
 				coll, err := tx.Collection(ctx, "goroutine_test")
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				_, err = coll.CreateOne(ctx, data.Document{"id": "1", "name": "test"})
-				return err
+				return nil, err
 			})
 
 			return nil, nil
@@ -58,8 +58,8 @@ func TestTransactionWithGoroutine(t *testing.T) {
 		require.NoError(t, err)
 
 		_, err = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
-			tx.Async(tctx, func(ctx context.Context) error {
-				return fmt.Errorf("goroutine failed")
+			tx.Async(tctx, func(ctx context.Context) (any, error) {
+				return nil, fmt.Errorf("goroutine failed")
 			})
 
 			return nil, nil
@@ -99,14 +99,14 @@ func TestTransactionWithNestedGoroutine(t *testing.T) {
 
 		// Nested transaction
 		_, err = p.Transact(tctx, func(tctx2 context.Context, tx2 base.BasePersistence) (any, error) {
-			tx2.Async(tctx2, func(ctx context.Context) error {
+			tx2.Async(tctx2, func(ctx context.Context) (any, error) {
 				coll, err := tx2.Collection(ctx, "nested_goroutine_test")
 				if err != nil {
-					return err
+					return nil, err
 				}
 
 				_, err = coll.CreateOne(ctx, data.Document{"id": "nested", "name": "test"})
-				return err
+				return nil, err
 			})
 
 			return nil, nil
