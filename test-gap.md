@@ -16,60 +16,60 @@ This document outlines potential test gaps across the `go-anansi` codebase, iden
 ## 2. `core/data/document.go` (Document Operations)
 
 *   **`getValueByPath` and `getNestedValue` (Dot-Notation Access):**
-    *   **Complex Paths:** Test with paths involving array indexing (e.g., `array[0].field`, `array[index].nested.field`). The current implementation appears to only handle `map[string]any` and `Document` types for traversal, not array indexing. This is a significant gap if array traversal is expected.
-    *   **Non-existent Paths:** Test with paths that partially exist or don't exist at all (e.g., `a.b.c` where `a` exists, `a.b` exists, but `a.b.c` does not). Verify correct error types (`ErrKeyNotFound`).
-    *   **Invalid Path Segments:** Test with paths where an intermediate segment is not a map/document (e.g., `a.b.c` where `b` is an integer). Verify `ErrTypeMismatch`.
-    *   **Empty Path/Key:** Test `getValueByPath("")` and `getValueByPath(".")`.
-    *   **Paths with Special Characters:** If keys can contain dots, how are they handled? (This is a general JSON path issue, but worth considering if the system allows such keys).
+    *   **Complex Paths (Array Indexing):** Test with paths involving array indexing (e.g., `array[0].field`, `array[index].nested.field`). The current implementation appears to only handle `map[string]any` and `Document` types for traversal, not array indexing. This is a significant gap if array traversal is expected. **[Status: Not Covered]**
+    *   **Invalid Path Segments:** Test with paths where an intermediate segment is not a map/document (e.g., `a.b.c` where `b` is an integer). `document_operations_test.go` tests this for `SetNested`, but not for `GetNested`. **[Status: Partially Covered]**
+    *   **Paths with Special Characters:** If keys can contain dots, how are they handled? This is not tested. **[Status: Not Covered]**
+
 *   **Type Coercion Methods (`GetString`, `GetInt`, `GetFloat64`, `GetBool`, `GetTime`, `GetDocument`, `GetDocumentArray`):**
-    *   **All Coercion Scenarios:** For each `GetX` method, test all possible input types that *can* be coerced and those that *cannot*. This includes various string formats for numbers/booleans/times, `nil` values, and complex types.
-    *   **Error Messages:** Verify that the error messages are informative and correctly indicate the type mismatch or conversion failure.
+    *   **`nil` values:** Test coercion of `nil` values for all `GetX` methods. `type_coercion_test.go` has good coverage, but `nil` values are not explicitly tested. **[Status: Partially Covered]**
+
 *   **`Clone` and `DeepMerge`:**
-    *   **Deep Copy Verification:** Ensure that `Clone` truly creates a deep copy, meaning modifications to the cloned document's nested maps/documents/slices do not affect the original.
-    *   **Complex Merges:** Test `DeepMerge` with documents containing nested arrays, mixed types, and conflicts at various depths.
-    *   **Empty Documents:** Test merging with empty documents.
-*   **`Set` and `SetIfNotExists`:**
-    *   **Empty Key:** Test `Set("", value)`.
-    *   **Overwriting:** Test `Set` overwriting an existing key.
-    *   **`SetIfNotExists` behavior:** Verify it correctly sets only if the key is absent.
+    *   **Deep Copy Verification:** Ensure that `Clone` truly creates a deep copy, meaning modifications to the cloned document's nested maps/documents/slices do not affect the original. `document_operations_test.go` uses `Clone`, but a specific test to verify the deep copy is missing. **[Status: Not Covered]**
+    *   **Complex Merges:** Test `DeepMerge` with documents containing nested arrays, mixed types, and conflicts at various depths. `document_adv_test.go` has a basic test for `DeepMerge`. More complex scenarios are not tested. **[Status: Partially Covered]**
+    *   **Empty Documents:** Test merging with empty documents. **[Status: Not Covered]**
+
 *   **Utility Methods (`Keys`, `Values`, `Len`, `IsEmpty`, `HasKey`, `HasPath`, `Equals`, `AsMap`, `Metadata`, `StripMetadata`):**
-    *   **Edge Cases:** Test with empty documents, documents with only metadata, documents with various data types.
-    *   **`Equals`:** Test with documents having same content but different order of keys (should be equal). Test with documents having different types for same key (should be unequal).
-    *   **`AsMap`:** Ensure recursive conversion of nested `Document` types and `map[string]any` into standard `map[string]any`.
-    *   **`Metadata`:** Test `Metadata()` when `_metadata_` field is present but not a `map[string]any`. Test `StripMetadata()` with nested metadata.
+    *   **`Equals`:** Test with documents having same content but different order of keys (should be equal). Test with documents having different types for same key (should be unequal). There are no explicit tests for `Equals`. **[Status: Not Covered]**
+    *   **`AsMap`:** Ensure recursive conversion of nested `Document` types and `map[string]any` into standard `map[string]any`. There are no specific tests for `AsMap`. **[Status: Not Covered]**
+    *   **Edge Cases:** Test utility methods with empty documents, and documents with only metadata. **[Status: Partially Covered]**
 
 ## 3. `core/persistence/base/types.go` (Interfaces and Eventing)
 
 *   **All Interface Implementations:**
-    *   **Complete Coverage:** For every method in `BasePersistence`, `Persistence`, and `Collection`, ensure there's at least one test case in the concrete implementations that verifies its basic functionality.
-    *   **Error Paths:** For every method that can return an error, ensure tests exist for all possible error conditions (e.g., database connection issues, invalid input, not found errors, permission errors).
-    *   **Edge Cases:** Test methods with empty inputs, null inputs (where applicable), and boundary conditions.
+    *   **Complete Coverage:** While there is good coverage for `Persistence` and `Collection` interfaces, a systematic check against every method is needed. **[Status: Partially Covered]**
+    *   **Error Paths:** Many error paths are tested (e.g., not found, invalid input). However, more tests are needed for errors originating from the database interactor. **[Status: Partially Covered]**
+    *   **Edge Cases:** Some edge cases are tested (e.g., empty database). More tests for empty collections and `nil` inputs are needed. **[Status: Partially Covered]**
+
 *   **Event Emission:**
-    *   **All Event Types:** Ensure that every `PersistenceEventType` defined is actually emitted at the correct time (start, success, failed) by the corresponding operations in the persistence layer.
-    *   **Event Data Accuracy:** Verify that the `PersistenceEvent` struct contains accurate and complete data for each event type.
-    *   **Subscription Functionality:** Test `RegisterSubscription` and `UnregisterSubscription` thoroughly, including multiple subscriptions, unregistering non-existent ones, and correct callback invocation.
+    *   **All Event Types:** `persistence_events_test.go` confirms that events are emitted for document, collection, and transaction operations. **[Status: Covered]**
+    *   **Event Data Accuracy:** The tests confirm that events are received, but they do not deeply inspect the `PersistenceEvent` struct to ensure all its fields are correctly populated. **[Status: Partially Covered]**
+    *   **Subscription Functionality:** `persistence_test.go` and `collection_test.go` cover subscription and unsubscription. **[Status: Covered]**
+
 *   **`Transact` Method:**
-    *   **Commit/Rollback:** Test successful transactions (commit) and transactions that return an error (rollback). Verify that changes are only persisted on commit.
-    *   **Nested Transactions:** If supported, test nested transactions.
-    *   **Concurrency:** Test `Transact` under concurrent access to ensure proper locking and isolation.
-    *   **Panic Handling:** Verify graceful rollback if the `callback` function panics.
+    *   **Commit/Rollback:** `persistence_test.go` and `cart_simulation_test.go` have good tests for commit and rollback. **[Status: Covered]**
+    *   **Nested Transactions:** `transaction_test.go` and `persistence_test.go` cover nested transactions. **[Status: Covered]**
+    *   **Concurrency:** `concurrent_transactions_test.go` covers concurrent transactions. **[Status: Covered]**
+    *   **Panic Handling:** `persistence_test.go` has a test for panic handling. **[Status: Covered]**
+
 *   **Schema Management (`Migrate`, `Rollback`):**
-    *   **Success Paths:** Test applying migrations and rolling back successfully.
-    *   **Failure Paths:** Test migrations that fail (e.g., invalid transformation, database error). Verify rollback behavior.
-    *   **Dry Run:** Test the `dryRun` option for both `Migrate` and `Rollback`.
-    *   **Version Management:** Test migrating to specific versions, rolling back to specific versions, and handling invalid version transitions.
-    *   **Data Transformation:** Ensure data transformations defined in migrations are correctly applied and reversible.
+    *   **Success Paths:** No tests exist for `Migrate` and `Rollback`. **[Status: Not Covered]**
+    *   **Failure Paths:** No tests exist for `Migrate` and `Rollback`. **[Status: Not Covered]**
+    *   **Dry Run:** No tests exist for `Migrate` and `Rollback`. **[Status: Not Covered]**
+    *   **Version Management:** No tests exist for `Migrate` and `Rollback`. **[Status: Not Covered]**
+    *   **Data Transformation:** No tests exist for `Migrate` and `Rollback`. **[Status: Not Covered]**
+
 *   **Metadata (`Metadata`, `CollectionMetadata`):**
-    *   **Filtering:** Test `Metadata` with various `MetadataFilter` combinations.
-    *   **Data Accuracy:** Verify that the returned metadata is accurate and up-to-date.
-    *   **Force Refresh:** Test `Collection.Metadata` with `forceRefresh`.
+    *   **Filtering:** No tests exist for `Metadata` with `MetadataFilter`. **[Status: Not Covered]**
+    *   **Data Accuracy:** `persistence_test.go` has basic tests for metadata accuracy. **[Status: Partially Covered]**
+    *   **Force Refresh:** No tests exist for `Collection.Metadata` with `forceRefresh`. **[Status: Not Covered]**
+
 *   **`Collection` Interface Methods (CRUD, Validate, Capabilities):**
-    *   **`CreateOne`/`CreateMany`:** Test with valid/invalid documents, persistence errors, and `CreateResult` accuracy.
-    *   **`Read`:** Test with various query filters, pagination, and sorting.
-    *   **`Update`:** Test with valid/invalid updates, non-existent documents, `CollectionUpdate.Recover`, and optimistic concurrency.
-    *   **`Delete`:** Test deleting existing/non-existent documents and `unsafe` flag behavior.
-    *   **`Validate`:** Test with conforming/non-conforming documents and `loose` validation.
-    *   **`Capabilities`:** Ensure accurate reflection of underlying database features.
+    *   **`CreateOne`/`CreateMany`:** `collection_crud_test.go` and `collection_test.go` have good coverage. **[Status: Covered]**
+    *   **`Read`:** `collection_crud_test.go` and `collection_test.go` have good coverage. **[Status: Covered]**
+    *   **`Update`:** `collection_crud_test.go` and `collection_test.go` have good coverage, but `CollectionUpdate.Recover` is not tested. **[Status: Partially Covered]**
+    *   **`Delete`:** `collection_crud_test.go` and `collection_test.go` have good coverage, including the `unsafe` flag. **[Status: Covered]**
+    *   **`Validate`:** `collection_test.go` has good coverage, including the `loose` option. **[Status: Covered]**
+    *   **`Capabilities`:** `collection_test.go` has a basic test for `Capabilities`. **[Status: Partially Covered]**
 
 ## 4. `core/persistence/registry/registry.go` (Collection Registry)
 
