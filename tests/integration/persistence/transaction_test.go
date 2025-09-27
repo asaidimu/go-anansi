@@ -21,7 +21,7 @@ func TestTransactionWithGoroutine(t *testing.T) {
 	logger, err := zap.NewDevelopment()
 	require.NoError(t, err)
 
-	p, err := persistence.NewPersistence(interactor, logger, nil)
+	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
 	require.NoError(t, err)
 
 	schema := newTestSchema("goroutine_test")
@@ -83,7 +83,7 @@ func TestTransactionWithNestedGoroutine(t *testing.T) {
 	logger, err := zap.NewDevelopment()
 	require.NoError(t, err)
 
-	p, err := persistence.NewPersistence(interactor, logger, nil)
+	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
 	require.NoError(t, err)
 
 	schema := newTestSchema("nested_goroutine_test")

@@ -9,11 +9,13 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	persistence "github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
+	pevents "github.com/asaidimu/go-anansi/v6/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
+	cevents "github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -60,8 +62,10 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 
 	registrySchemaDef := registry.RegistrySchema()
 
+	factory := pevents.NewPersistenceEventFactory(registry.REGISTRY_COLLECTION_NAME, logger)
+	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
 	registryCollection, err := collection.NewCollection(
-		bus, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, interactor, engine, logger, nil,
+		eventEmitter, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, interactor, engine, logger, nil,
 	)
 
 	require.NoError(t, err)

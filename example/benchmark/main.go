@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	numDocuments = 100000
+	numDocuments = 1000000
 	numWorkers   = 10
 )
 
@@ -44,6 +44,8 @@ func getUserSchema() *schema.SchemaDefinition {
 }
 
 func main() {
+	start := time.Now()
+
 	// 1. Setup Logger
 	logger, err := zap.NewDevelopment()
 	if err != nil {
@@ -52,7 +54,7 @@ func main() {
 	defer logger.Sync()
 
 	// 2. Setup In-Memory SQLite Database
-	db, err := sql.Open("sqlite3", "file::memory:?cache=shared&_mutex=full")
+	db, err := sql.Open("sqlite3", "anansi.db?_mutex=full&_cache_size=10000&_journal_mode=WAL&_synchronous=NORMAL")
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
@@ -88,7 +90,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to setup Anansi: %v", err)
 	}
-	logger.Info("Anansi persistence layer initialized successfully.")
+	elapsed := time.Since(start)
+	logger.Info(fmt.Sprintf("Anansi persistence layer initialized successfully in %s.", elapsed))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -109,16 +112,16 @@ func runBenchmarks(ctx context.Context, collection base.Collection, p base.Persi
 	logger.Info("--- Starting Benchmarks ---", zap.Int("workers", numWorkers))
 
 	// Benchmark Create
-	benchmarkCreate(ctx, collection, logger)
+	benchmarkCreate(ctx, collection, p, logger)
 
 	// Benchmark Read (Single)
-	benchmarkReadSingle(ctx, collection, logger)
+	benchmarkReadSingle(ctx, collection, p, logger)
 
 	// Benchmark Read (Multiple)
-	benchmarkReadMultiple(ctx, collection, logger)
+	benchmarkReadMultiple(ctx, collection, p, logger)
 
 	// Benchmark Update
-	benchmarkUpdate(ctx, collection, logger)
+	benchmarkUpdate(ctx, collection, p, logger)
 
 	// Benchmark Delete
 	benchmarkDelete(ctx, collection, p, logger)
@@ -126,15 +129,12 @@ func runBenchmarks(ctx context.Context, collection base.Collection, p base.Persi
 	logger.Info("--- Benchmarks Finished ---")
 }
 
-func benchmarkCreate(ctx context.Context, collection base.Collection, logger *zap.Logger) {
+func benchmarkCreate(ctx context.Context, collection base.Collection, p base.Persistence, logger *zap.Logger) {
 	start := time.Now()
-	var wg sync.WaitGroup
-	wg.Add(numWorkers)
 
-	for w := range numWorkers {
-		go func(workerID int) {
-			defer wg.Done()
-			for i := workerID; i < numDocuments; i += numWorkers {
+	p.Transact(ctx, func(tctx context.Context, t base.BasePersistence) (any, error) {
+		for i := range numWorkers {
+			t.Async(tctx, func(rctx context.Context) (any, error) {
 				user := data.MustNewDocument(map[string]any{
 					"id":     fmt.Sprintf("user-%d", i),
 					"name":   fmt.Sprintf("User %d", i),
@@ -144,81 +144,80 @@ func benchmarkCreate(ctx context.Context, collection base.Collection, logger *za
 				})
 				_, err := collection.CreateOne(ctx, user)
 				if err != nil {
-					logger.Error("Failed to create user", zap.Error(err))
+					return nil, err
 				}
-			}
-		}(w)
-	}
-
-	wg.Wait()
+				return nil, nil
+			})
+		}
+		return nil, nil
+	})
 	elapsed := time.Since(start)
 	logger.Info(fmt.Sprintf("CREATE: %d documents in %s. (%.2f docs/sec)", numDocuments, elapsed, float64(numDocuments)/elapsed.Seconds()))
 }
 
-func benchmarkReadSingle(ctx context.Context, collection base.Collection, logger *zap.Logger) {
+func benchmarkReadSingle(ctx context.Context, collection base.Collection, p base.Persistence, logger *zap.Logger) {
 	start := time.Now()
 	var wg sync.WaitGroup
 	wg.Add(numWorkers)
 
-	for w := range numWorkers {
-		go func(workerID int) {
-			defer wg.Done()
-			for i := workerID; i < numDocuments; i += numWorkers {
+	p.Transact(ctx, func(tctx context.Context, t base.BasePersistence) (any, error) {
+		for i := range numWorkers {
+			t.Async(tctx, func(rctx context.Context) (any, error) {
 				query := query.NewQueryBuilder().Where("id").Eq(fmt.Sprintf("user-%d", i)).Build()
 				_, err := collection.Read(ctx, &query)
 				if err != nil {
-					logger.Error("Failed to read user", zap.Error(err))
+					return nil, err
 				}
-			}
-		}(w)
-	}
+				return nil, nil
+			})
+		}
+		return nil, nil
+	})
 
-	wg.Wait()
 	elapsed := time.Since(start)
 	logger.Info(fmt.Sprintf("READ (Single): %d documents in %s. (%.2f docs/sec)", numDocuments, elapsed, float64(numDocuments)/elapsed.Seconds()))
 }
 
-func benchmarkReadMultiple(ctx context.Context, collection base.Collection, logger *zap.Logger) {
+func benchmarkReadMultiple(ctx context.Context, collection base.Collection, p base.Persistence, logger *zap.Logger) {
 	start := time.Now()
-	var wg sync.WaitGroup
-	wg.Add(numWorkers)
+	p.Transact(ctx, func(tctx context.Context, t base.BasePersistence) (any, error) {
+		for range numWorkers {
+			t.Async(tctx, func(rctx context.Context) (any, error) {
+				query := query.NewQueryBuilder().Where("age").Gt(30).Build()
+				_, err := collection.Read(ctx, &query)
+				if err != nil {
+					logger.Error("Failed to read users", zap.Error(err))
+				}
+				return nil, nil
+			})
+		}
+		return nil, nil
+	})
 
-	for range numWorkers {
-		go func() {
-			defer wg.Done()
-			query := query.NewQueryBuilder().Where("age").Gt(30).Build()
-			_, err := collection.Read(ctx, &query)
-			if err != nil {
-				logger.Error("Failed to read users", zap.Error(err))
-			}
-		}()
-	}
-
-	wg.Wait()
 	elapsed := time.Since(start)
 	logger.Info(fmt.Sprintf("READ (Multiple): Query 'age > 30' %d times in %s.", numWorkers, elapsed))
 }
 
-func benchmarkUpdate(ctx context.Context, collection base.Collection, logger *zap.Logger) {
+func benchmarkUpdate(ctx context.Context, collection base.Collection, p base.Persistence, logger *zap.Logger) {
 	start := time.Now()
-	var wg sync.WaitGroup
-	wg.Add(numWorkers)
 
-	for w := range numWorkers {
-		go func(workerID int) {
-			defer wg.Done()
-			for i := workerID; i < numDocuments; i += numWorkers {
-				update := data.MustNewDocument(map[string]any{"age": rand.Intn(50) + 20})
-				filter := query.NewQueryBuilder().Where("id").Eq(fmt.Sprintf("user-%d", i)).Build().Filters
-				_, err := collection.Update(ctx, &base.CollectionUpdate{Filter: filter, Data: update})
-				if err != nil {
-					logger.Error("Failed to update user", zap.Error(err))
+	p.Transact(ctx, func(tctx context.Context, t base.BasePersistence) (any, error) {
+		for w := range numWorkers {
+			t.Async(tctx, func(rctx context.Context) (any, error) {
+				for i := w; i < numDocuments; i += numWorkers {
+					update := data.MustNewDocument(map[string]any{"age": rand.Intn(50) + 20})
+					filter := query.NewQueryBuilder().Where("id").Eq(fmt.Sprintf("user-%d", i)).Build().Filters
+					_, err := collection.Update(ctx, &base.CollectionUpdate{Filter: filter, Data: update})
+					if err != nil {
+						return nil, err
+					}
 				}
-			}
-		}(w)
-	}
+				return nil, nil
+			})
+		}
+		return nil, nil
+	})
 
-	wg.Wait()
 	elapsed := time.Since(start)
 	logger.Info(fmt.Sprintf("UPDATE: %d documents in %s. (%.2f docs/sec)", numDocuments, elapsed, float64(numDocuments)/elapsed.Seconds()))
 }

@@ -3,6 +3,7 @@ package events
 import (
 	"context"
 
+	"github.com/asaidimu/go-anansi/v6/core/events"
 	goevents "github.com/asaidimu/go-events"
 )
 
@@ -13,7 +14,7 @@ type goEventsBusAdapter[T any] struct {
 }
 
 // NewGoEventsBusAdapter creates a new adapter for go-events.TypedEventBus.
-func NewGoEventsBusAdapter[T any](bus *goevents.TypedEventBus[T]) EventBus[T] {
+func NewGoEventsBusAdapter[T any](bus *goevents.TypedEventBus[T]) events.EventBus[T] {
 	return &goEventsBusAdapter[T]{bus: bus}
 }
 

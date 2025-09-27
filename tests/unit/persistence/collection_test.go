@@ -10,11 +10,13 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	persistence "github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
+	pevents "github.com/asaidimu/go-anansi/v6/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/asaidimu/go-anansi/v6/tests/testutils"
+	cevents "github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -67,7 +69,9 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 	assert.NoError(t, err)
 
 	engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
-	c, err := collection.NewCollection(bus, testSchemaDef.Name, testSchemaDef, ephemeralInteractor, engine, logger, resolveSchema)
+	factory := pevents.NewPersistenceEventFactory(testSchemaDef.Name, logger)
+	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
+	c, err := collection.NewCollection(eventEmitter, testSchemaDef.Name, testSchemaDef, ephemeralInteractor, engine, logger, resolveSchema)
 	assert.NoError(t, err)
 
 	ctx := context.Background()
@@ -81,7 +85,9 @@ func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *z
 	ephemeralInteractor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 	engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
-	c, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, ephemeralInteractor, engine, logger, resolveSchema)
+	factory := pevents.NewPersistenceEventFactory(nonExistentSchema.Name, logger)
+	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
+	c, _ := collection.NewCollection(eventEmitter, nonExistentSchema.Name, nonExistentSchema, ephemeralInteractor, engine, logger, resolveSchema)
 	ctx := context.Background()
 	return c, ephemeralInteractor, logger, nonExistentSchema, bus, ctx
 }
@@ -170,7 +176,9 @@ func TestCollection_Read(t *testing.T) {
 		_, ephemeralInteractor, logger, _, bus, ctx := setupCollection(t)
 		nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent"}
 		engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
-		nonExistentCollection, _ := collection.NewCollection(bus, nonExistentSchema.Name, nonExistentSchema, ephemeralInteractor, engine, logger, resolveSchema)
+		factory := pevents.NewPersistenceEventFactory(nonExistentSchema.Name, logger)
+		eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
+		nonExistentCollection, _ := collection.NewCollection(eventEmitter, nonExistentSchema.Name, nonExistentSchema, ephemeralInteractor, engine, logger, resolveSchema)
 
 		result, err := nonExistentCollection.Read(ctx, &q)
 

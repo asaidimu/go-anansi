@@ -9,8 +9,10 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	pevents "github.com/asaidimu/go-anansi/v6/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -19,7 +21,9 @@ import (
 func TestPersistence_DocumentEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	p, err := persistence.NewPersistence(interactor, logger, nil)
+	goBus, _ := events.NewTypedEventBus[base.PersistenceEvent](events.DefaultConfig())
+	bus := pevents.NewGoEventsBusAdapter(goBus)
+	p, err := persistence.NewPersistence(interactor, bus, logger, nil)
 	require.NoError(t, err)
 
 	sc := newTestSchema("test_collection")
@@ -80,10 +84,10 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 
-	assert.Len(t, receivedEvents[base.DocumentCreateStart], 2, "Expected 2 DocumentCreateStart event")
-	assert.Len(t, receivedEvents[base.DocumentCreateSuccess], 2, "Expected 2 DocumentCreateSuccess event")
-	assert.Len(t, receivedEvents[base.DocumentReadStart], 3, "Expected 3 DocumentReadStart event")
-	assert.Len(t, receivedEvents[base.DocumentReadSuccess], 3, "Expected 1 DocumentReadSuccess event")
+	assert.Len(t, receivedEvents[base.DocumentCreateStart], 1, "Expected 1 DocumentCreateStart event")
+	assert.Len(t, receivedEvents[base.DocumentCreateSuccess], 1, "Expected 1 DocumentCreateSuccess event")
+	assert.Len(t, receivedEvents[base.DocumentReadStart], 1, "Expected 1 DocumentReadStart event")
+	assert.Len(t, receivedEvents[base.DocumentReadSuccess], 1, "Expected 1 DocumentReadSuccess event")
 	assert.Len(t, receivedEvents[base.DocumentUpdateStart], 1, "Expected 1 DocumentUpdateStart event")
 	assert.Len(t, receivedEvents[base.DocumentUpdateSuccess], 1, "Expected 1 DocumentUpdateSuccess event")
 	assert.Len(t, receivedEvents[base.DocumentDeleteStart], 1, "Expected 1 DocumentDeleteStart event")
@@ -99,7 +103,10 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 func TestPersistence_CollectionEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	p, err := persistence.NewPersistence(interactor, logger, nil)
+
+	goBus, _ := events.NewTypedEventBus[base.PersistenceEvent](events.DefaultConfig())
+	bus := pevents.NewGoEventsBusAdapter(goBus)
+	p, err := persistence.NewPersistence(interactor, bus, logger, nil)
 	require.NoError(t, err)
 
 	var mu sync.Mutex
@@ -129,6 +136,7 @@ func TestPersistence_CollectionEvents(t *testing.T) {
 			Callback: callback,
 		})
 	}
+	time.Sleep(10 * time.Millisecond)
 
 	// Test Collection Create
 	sc := newTestSchema("new_test_collection")
@@ -160,7 +168,9 @@ func TestPersistence_TransactionEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor, logger, nil)
+	goBus, _ := events.NewTypedEventBus[base.PersistenceEvent](events.DefaultConfig())
+	bus := pevents.NewGoEventsBusAdapter(goBus)
+	p, err := persistence.NewPersistence(interactor, bus, logger, nil)
 	require.NoError(t, err)
 
 	var mu sync.Mutex
@@ -186,6 +196,7 @@ func TestPersistence_TransactionEvents(t *testing.T) {
 			Callback: callback,
 		})
 	}
+	time.Sleep(10 * time.Millisecond)
 
 	// Test successful transaction
 	_, err = p.Transact(context.Background(), func(ctx context.Context, tx base.BasePersistence) (any, error) {

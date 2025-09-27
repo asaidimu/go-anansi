@@ -23,8 +23,3 @@ func (e *PersistenceError) Error() string {
 func (e *PersistenceError) Unwrap() error {
 	return e.Cause
 }
-
-// Pre-defined errors for the persistence package.
-var (
-	// Add any specific persistence errors here if needed
-)

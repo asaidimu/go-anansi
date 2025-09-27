@@ -7,7 +7,9 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
+	pevents "github.com/asaidimu/go-anansi/v6/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -18,7 +20,10 @@ func setupCollectionTest(t *testing.T) (base.Collection, func()) {
 
 	logger, _ := zap.NewDevelopment()
 
-	p, err := persistence.NewPersistence(interactor, logger, nil)
+	bus, err := events.NewTypedEventBus[base.PersistenceEvent](events.DefaultConfig())
+	require.NoError(t, err)
+
+	p, err := persistence.NewPersistence(interactor, pevents.NewGoEventsBusAdapter(bus), logger, nil)
 	require.NoError(t, err)
 
 	schema := newTestSchema("crud_collection")

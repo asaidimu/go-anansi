@@ -44,7 +44,7 @@ type RawQuery struct {
     // For SQL, this is the SQL string.
     // For MongoDB, this could be a JSON string representing the filter,
     // an aggregation pipeline, or a command body.
-    // Placeholders like {{collection}} are resolved here using the 'From' map.
+    // Placeholders like {{collection.users}} are resolved here using the 'Collections' map.
     Template string `json:"template,omitempty"`
 
     // Options provides structured, database-specific parameters that modify the query's behavior.
@@ -55,12 +55,12 @@ type RawQuery struct {
 
     // Maps placeholder names in the 'Template' string to specific collection targets.
     // This field is only relevant when 'Template' is used.
-    From map[string]RawQueryTarget `json:"from,omitempty"`
+    Collections map[string]RawQueryTarget `json:"from,omitempty"`
 
-    // Args are parameters for the query. Primarily for SQL.
-    // For MongoDB, if Template is a JSON string, Args could map to custom placeholders
+    // Parameters are parameters for the query. Primarily for SQL.
+    // For MongoDB, if Template is a JSON string, Parameters could map to custom placeholders
     // within that JSON string (e.g., {{arg0}}, {{arg1}}).
-    Args []any `json:"args,omitempty"`
+    Parameters []any `json:"args,omitempty"`
 }
 ```
 
@@ -168,14 +168,14 @@ func (s *SQLiteQueryBuilder) Build(q *query.Query, stmtType StatementType, extra
 }
 
 func (s *SQLiteQueryBuilder) buildRawQuery(raw *RawQuery, stmtType StatementType) (Query[string], error) {
-    // 1. Resolve collection names from raw.From using collectionRegistry
-    resolvedTemplate, err := s.resolveCollectionPlaceholders(raw.Template, raw.From)
+    // 1. Resolve collection names from raw.Collections using collectionRegistry
+    resolvedTemplate, err := s.resolveCollectionPlaceholders(raw.Template, raw.Collections)
     if err != nil {
         return nil, err
     }
     
     // 2. Process argument placeholders in template
-    finalQuery, err := s.processArgumentPlaceholders(resolvedTemplate, raw.Args)
+    finalQuery, err := s.processArgumentPlaceholders(resolvedTemplate, raw.Parameters)
     if err != nil {
         return nil, err
     }
@@ -184,7 +184,7 @@ func (s *SQLiteQueryBuilder) buildRawQuery(raw *RawQuery, stmtType StatementType
     var schema *schema.SchemaDefinition
     if expectRows, ok := raw.Options["expectRows"].(bool); ok && expectRows {
         // Include schema for result mapping when rows are expected
-        schema = s.determineResultSchema(raw.From)
+        schema = s.determineResultSchema(raw.Collections)
     }
     
     // 4. Create native query
@@ -203,7 +203,7 @@ Each `NativeQueryBuilder` implementation will define and handle its own set of o
 ```go
 // SQLite-specific options
 raw := &RawQuery{
-    Template: "SELECT * FROM {{users}} WHERE active = ?",
+    Template: "SELECT * FROM {{collections.users}} WHERE active = ?",
     Options: map[string]any{
         "expectRows": true,           // Include result schema
         "timeout":    "30s",          // Query timeout
@@ -216,7 +216,7 @@ raw := &RawQuery{
 ```go
 // MongoDB-specific options
 raw := &RawQuery{
-    Template: `{"find": "{{users}}", "filter": {"active": true}}`,
+    Template: `{"find": "{{collections.users}}", "filter": {"active": true}}`,
     Options: map[string]any{
         "limit":          100,
         "sort":           bson.M{"_id": -1},
@@ -230,7 +230,7 @@ raw := &RawQuery{
 
 Each `NativeQueryBuilder` implementation will include a template processor capable of:
 
-1. **Collection Name Resolution**: Replacing `{{collection}}` placeholders with physical table/collection names
+1. **Collection Name Resolution**: Replacing `{{collection.*}}` placeholders with physical table/collection names
 2. **Argument Substitution**: Processing parameterized arguments according to database conventions
 3. **Validation**: Ensuring all placeholders are properly resolved
 
@@ -242,11 +242,11 @@ Each `NativeQueryBuilder` implementation will include a template processor capab
 // Using existing Collection.Read() method with raw query
 rawQuery := &query.Query{
     Raw: &query.RawQuery{
-        Template: "SELECT id, name, created_at FROM {{users}} WHERE created_at > ? ORDER BY created_at DESC",
-        From: map[string]query.RawQueryTarget{
+        Template: "SELECT id, name, created_at FROM {{collections.users}} WHERE created_at > ? ORDER BY created_at DESC",
+        Collections: map[string]query.RawQueryTarget{
             "users": {Collection: "users", Version: "v1"},
         },
-        Args: []any{time.Now().AddDate(0, -1, 0)},
+        Parameters: []any{time.Now().AddDate(0, -1, 0)},
         Options: map[string]any{
             "expectRows": true,
             "timeout":    "30s",
@@ -262,8 +262,8 @@ result, err := collection.Read(ctx, rawQuery)
 ```go
 // Using new BasePersistence.Query() method
 rawQuery := &query.RawQuery{
-    Template: "CREATE INDEX idx_user_email ON {{users}} (email)",
-    From: map[string]query.RawQueryTarget{
+    Template: "CREATE INDEX idx_user_email ON {{collections.users}} (email)",
+    Collections: map[string]query.RawQueryTarget{
         "users": {Collection: "users", Version: "v1"},
     },
     Options: map[string]any{
@@ -284,14 +284,14 @@ if result.Success {
 rawQuery := &query.RawQuery{
     Template: `
         SELECT u.name, p.title 
-        FROM {{users}} u 
-        JOIN {{posts}} p ON u.id = p.author_id 
+        FROM {{collections.users}} u 
+        JOIN {{collections.posts}} p ON u.id = p.author_id 
         WHERE u.active = ? AND p.published_at > ?`,
-    From: map[string]query.RawQueryTarget{
+    Collections: map[string]query.RawQueryTarget{
         "users": {Collection: "users", Version: "v1"},
         "posts": {Collection: "posts", Version: "v2"},
     },
-    Args: []any{true, time.Now().AddDate(0, -1, 0)},
+    Parameters: []any{true, time.Now().AddDate(0, -1, 0)},
     Options: map[string]any{
         "expectRows": true,
     },
@@ -308,7 +308,7 @@ result, err := persistence.Query(ctx, rawQuery)
 *   **Optimization:** Allows for hand-tuned queries that can achieve superior performance for critical paths.
 *   **Flexibility:** Supports diverse database paradigms (SQL, NoSQL) through a unified, yet adaptable, `RawQuery` structure.
 *   **Abstraction of Physical Names:** Templating ensures that raw queries remain portable across schema versions by abstracting physical table/collection names.
-*   **Security:** `Args` field promotes parameterized queries, mitigating SQL/NoSQL injection risks.
+*   **Security:** `Parameters` field promotes parameterized queries, mitigating SQL/NoSQL injection risks.
 *   **Seamless Integration:** Raw queries integrate directly into existing query workflows with precedence-based handling.
 *   **Database-Specific Optimization:** Each `NativeQueryBuilder` implementation can optimize raw query processing for its specific database.
 

@@ -9,6 +9,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"go.uber.org/zap"
 )
@@ -25,8 +26,13 @@ type SetupConfig struct {
 	// Interactor is the database interactor responsible for database connectivity.
 	// This should be configured with the desired database implementation (e.g., SQLite, PostgreSQL).
 	Interactor query.DatabaseInteractor
+
 	// Logger is the zap logger instance for logging.
 	Logger *zap.Logger
+
+	// An emplementation of EventBus in order to get events
+	EventBus events.EventBus[base.PersistenceEvent]
+
 	// FactoryConfig is the configuration for the document factory.
 	FactoryConfig data.DocumentFactoryConfig
 
@@ -49,8 +55,7 @@ func Setup(config SetupConfig) (base.Persistence, error) {
 			return
 		}
 
-		// Initialize the persistence layer.
-		p, err := persistence.NewPersistence(config.Interactor, config.Logger, config.Decorators)
+		p, err := persistence.NewPersistence(config.Interactor, config.EventBus, config.Logger, config.Decorators)
 		if err != nil {
 			setupError = err
 			return

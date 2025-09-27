@@ -22,6 +22,10 @@ import (
 type PersistenceEventType string
 
 const (
+
+	// WildCard
+	PersistenceEvents PersistenceEventType = "*"
+
 	// DocumentCreateStart is an event triggered just before a document creation attempt.
 	DocumentCreateStart PersistenceEventType = "document:create:start"
 	// DocumentCreateSuccess is an event triggered after a document has been successfully created.

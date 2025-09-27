@@ -7,11 +7,10 @@ import (
 	"context"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
+	"github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	goevents "github.com/asaidimu/go-events"
 	"go.uber.org/zap"
 )
 
@@ -22,7 +21,7 @@ import (
 // decoupled manner.
 type eventsCollection struct {
 	collection   base.Collection
-	eventEmitter *events.EventEmitter
+	eventEmitter *events.EventEmitter[base.PersistenceEvent]
 	schema       *schema.SchemaDefinition
 }
 
@@ -31,21 +30,20 @@ var _ base.Collection = (*eventsCollection)(nil)
 // newEventEmittingCollection creates a new event-emitting collection wrapper.
 // It takes a CollectionBase and returns a Collection that will emit events
 // for all of its operations.
-func newEventEmittingCollection(collection base.Collection, bus *goevents.TypedEventBus[base.PersistenceEvent], schema *schema.SchemaDefinition, logger *zap.Logger) *eventsCollection {
+func newEventEmittingCollection(collection base.Collection, eventEmitter *events.EventEmitter[base.PersistenceEvent], schema *schema.SchemaDefinition, _ *zap.Logger) *eventsCollection {
 	return &eventsCollection{
 		collection:   collection,
-		eventEmitter: events.NewEventEmitter(bus, schema.Name, logger),
 		schema:       schema,
+		eventEmitter: eventEmitter,
 	}
 }
 
-// CreateOne wraps the underlying collection's CreateOne method, adding event emission.
 func (e *eventsCollection) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
 	config := events.OperationConfig{
 		Operation:        "createOne",
-		StartEventType:   base.DocumentCreateStart,
-		SuccessEventType: base.DocumentCreateSuccess,
-		FailedEventType:  base.DocumentCreateFailed,
+		StartEventTypes:   []string{string(base.DocumentCreateStart)},
+		SuccessEventTypes: []string{string(base.DocumentCreateSuccess)},
+		FailedEventTypes:  []string{string(base.DocumentCreateFailed)},
 		Input:            doc,
 	}
 
@@ -69,9 +67,9 @@ func (e *eventsCollection) CreateOne(ctx context.Context, doc data.Document) (ba
 func (e *eventsCollection) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) {
 	config := events.OperationConfig{
 		Operation:        "createMany",
-		StartEventType:   base.DocumentCreateStart,
-		SuccessEventType: base.DocumentCreateSuccess,
-		FailedEventType:  base.DocumentCreateFailed,
+		StartEventTypes:   []string{string(base.DocumentCreateStart)},
+		SuccessEventTypes: []string{string(base.DocumentCreateSuccess)},
+		FailedEventTypes:  []string{string(base.DocumentCreateFailed)},
 		Input:            docs,
 	}
 
@@ -91,10 +89,10 @@ func (e *eventsCollection) CreateMany(ctx context.Context, docs []data.Document)
 func (e *eventsCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
 	config := events.OperationConfig{
 		Operation:        "read",
-		StartEventType:   base.DocumentReadStart,
-		SuccessEventType: base.DocumentReadSuccess,
-		FailedEventType:  base.DocumentReadFailed,
-		QueryParam:       q,
+		StartEventTypes:   []string{string(base.DocumentReadStart)},
+		SuccessEventTypes: []string{string(base.DocumentReadSuccess)},
+		FailedEventTypes:  []string{string(base.DocumentReadFailed)},
+		Input:            q,
 	}
 
 	result, err := e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {
@@ -113,11 +111,10 @@ func (e *eventsCollection) Read(ctx context.Context, q *query.Query) (*base.Read
 func (e *eventsCollection) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
 	config := events.OperationConfig{
 		Operation:        "update",
-		StartEventType:   base.DocumentUpdateStart,
-		SuccessEventType: base.DocumentUpdateSuccess,
-		FailedEventType:  base.DocumentUpdateFailed,
-		Input:            params.Data,
-		QueryParam:       params.Filter,
+		StartEventTypes:   []string{string(base.DocumentUpdateStart)},
+		SuccessEventTypes: []string{string(base.DocumentUpdateSuccess)},
+		FailedEventTypes:  []string{string(base.DocumentUpdateFailed)},
+		Input:            params,
 	}
 
 	result, err := e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {
@@ -136,10 +133,10 @@ func (e *eventsCollection) Update(ctx context.Context, params *base.CollectionUp
 func (e *eventsCollection) Delete(ctx context.Context, filter *query.QueryFilter, unsafe bool) (int, error) {
 	config := events.OperationConfig{
 		Operation:        "delete",
-		StartEventType:   base.DocumentDeleteStart,
-		SuccessEventType: base.DocumentDeleteSuccess,
-		FailedEventType:  base.DocumentDeleteFailed,
-		QueryParam:       filter,
+		StartEventTypes:   []string{string(base.DocumentDeleteStart)},
+		SuccessEventTypes: []string{string(base.DocumentDeleteSuccess)},
+		FailedEventTypes:  []string{string(base.DocumentDeleteFailed)},
+		Input:            filter,
 	}
 
 	result, err := e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {

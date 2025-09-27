@@ -9,16 +9,16 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 
+	"github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-events"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 // Collection implements the PersistenceCollectionInterface.
 type baseCollection struct {
-	bus           *events.TypedEventBus[base.PersistenceEvent]
+	eventEmitter  *events.EventEmitter[base.PersistenceEvent]
 	name          string
 	schema        *schema.SchemaDefinition
 	engine        *query.QueryEngine
@@ -34,7 +34,7 @@ var _ base.Collection = (*baseCollection)(nil)
 
 // newBaseCollection creates a new baseCollection instance, wrapping it with all necessary decorators.
 func newBaseCollection(
-	bus *events.TypedEventBus[base.PersistenceEvent],
+	eventEmitter *events.EventEmitter[base.PersistenceEvent],
 	name string,
 	sc *schema.SchemaDefinition,
 	interactor query.DatabaseInteractor,
@@ -51,7 +51,7 @@ func newBaseCollection(
 	}
 
 	base := &baseCollection{
-		bus:           bus,
+		eventEmitter:  eventEmitter,
 		name:          name,
 		schema:        sc,
 		engine:        engine,
@@ -218,17 +218,9 @@ func (c *baseCollection) Subscribe(ctx context.Context, options base.Subscriptio
 	c.subMu.Lock()
 	defer c.subMu.Unlock()
 
-	unsubscribe := c.bus.SubscribeWithOptions(string(options.Event), options.Callback,
-		events.SubscribeOptions{
-			Filter: func(event events.Event) bool {
-				payload, ok := event.Payload.(base.PersistenceEvent)
-				if !ok {
-					return false
-				}
-
-				return *payload.Collection == c.name
-			},
-		})
+	unsubscribe := c.eventEmitter.Subscribe(string(options.Event), options.Callback, func(_ context.Context, payload base.PersistenceEvent) bool {
+		return *payload.Collection == c.name
+	})
 
 	id := uuid.New().String()
 
@@ -274,7 +266,7 @@ func (c *baseCollection) Capabilities(ctx context.Context) *query.Capabilities {
 	return &capabilities
 }
 
-func (c *baseCollection) getCurrentInteractor(ctx context.Context) (query.DatabaseInteractor) {
+func (c *baseCollection) getCurrentInteractor(ctx context.Context) query.DatabaseInteractor {
 	if result, ok := query.GetInteractor(ctx); ok {
 		return result
 	}
@@ -282,4 +274,3 @@ func (c *baseCollection) getCurrentInteractor(ctx context.Context) (query.Databa
 	// Not in a transaction - use base interactor with no-op cleanup
 	return c.interactor
 }
-

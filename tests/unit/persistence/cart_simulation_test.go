@@ -38,7 +38,7 @@ func setupCartTest(t *testing.T) (base.Persistence, func()) {
 	logger := zap.NewNop()
 	// require.NoError(t, err)
 
-	p, err := persistence.NewPersistence(interactor, logger, nil)
+	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
 	require.NoError(t, err)
 
 	// Create collections

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	cevents "github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
@@ -12,7 +13,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-events"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -20,7 +20,7 @@ import (
 type basePersistence struct {
 	interactor         query.DatabaseInteractor
 	engine             *query.QueryEngine
-	bus                *events.TypedEventBus[base.PersistenceEvent]
+	eventEmitter       *cevents.EventEmitter[base.PersistenceEvent]
 	registry           base.CollectionRegistry
 	registryCollection base.Collection
 	subscriptions      map[string]*base.SubscriptionInfo
@@ -36,14 +36,14 @@ var _ base.Persistence = (*basePersistence)(nil)
 
 func newBasePersistence(
 	interactor query.DatabaseInteractor,
-	bus *events.TypedEventBus[base.PersistenceEvent],
+	eventEmitter *cevents.EventEmitter[base.PersistenceEvent],
 	logger *zap.Logger,
 	decorators []utils.DecoratorFunc[base.Collection],
 ) (base.Persistence, error) {
 
 	registrySchema := registry.RegistrySchema()
 	engine := query.NewQueryEngine(interactor.Capabilities(), logger)
-	registryCollection, err := collection.NewCollection(bus,
+	registryCollection, err := collection.NewCollection(eventEmitter,
 		registry.REGISTRY_COLLECTION_NAME,
 		registrySchema,
 		interactor,
@@ -56,7 +56,7 @@ func newBasePersistence(
 	}
 
 	p := &basePersistence{
-		bus:                bus,
+		eventEmitter: eventEmitter,
 		engine:             engine,
 		interactor:         interactor,
 		subscriptions:      make(map[string]*base.SubscriptionInfo),
@@ -101,7 +101,7 @@ func (p *basePersistence) Collection(ctx context.Context, name string) (base.Col
 	}
 
 	newCollection, err := collection.NewCollection(
-		p.bus,
+		p.eventEmitter,
 		name,
 		sc,
 		p.interactor,
@@ -236,7 +236,7 @@ func (p *basePersistence) Subscribe(ctx context.Context, options base.Subscripti
 	p.subMu.Lock()
 	defer p.subMu.Unlock()
 
-	unsubscribe := p.bus.Subscribe(string(options.Event), options.Callback)
+	unsubscribe := p.eventEmitter.Subscribe(string(options.Event), options.Callback)
 	id := uuid.New().String()
 
 	data := base.SubscriptionInfo{
@@ -331,8 +331,7 @@ func (p *basePersistence) Migrate(
 }
 
 func (p *basePersistence) Close(ctx context.Context) {
-	p.bus.Close()
-	p.bus = nil
+	p.eventEmitter = nil
 	p.registry = nil
 	p.interactor = nil
 }

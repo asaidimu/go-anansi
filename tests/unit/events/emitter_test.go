@@ -43,7 +43,7 @@ func (m *MockEventBus[T]) Subscribe(eventType string, handler func(ctx context.C
 func TestNewEventEmitter(t *testing.T) {
 	mockBus := &MockEventBus[TestEvent]{}
 	logger := zaptest.NewLogger(t)
-	emitter := anansievents.NewEventEmitter[TestEvent](mockBus, logger)
+	emitter := anansievents.NewEventEmitter(mockBus, nil, logger)
 
 	assert.NotNil(t, emitter)
 }
@@ -56,7 +56,7 @@ func TestEventEmitter_EmitEvent(t *testing.T) {
 		},
 	}
 	logger := zaptest.NewLogger(t)
-	emitter := anansievents.NewEventEmitter[TestEvent](mockBus, logger)
+	emitter := anansievents.NewEventEmitter(mockBus, nil, logger)
 
 	testEvent := TestEvent{ID: "123", Message: "Hello"}
 	emitter.EmitEvent("test.event", testEvent)
@@ -72,7 +72,7 @@ func TestEventEmitter_EmitEvent(t *testing.T) {
 func TestGoEventsBusAdapter_Emit(t *testing.T) {
 	typedBus, err := goevents.NewTypedEventBus[TestEvent](goevents.DefaultConfig())
 	assert.NoError(t, err)
-	adapter := events.NewGoEventsBusAdapter[TestEvent](typedBus)
+	adapter := events.NewGoEventsBusAdapter(typedBus)
 
 	emittedEvent := make(chan TestEvent, 1)
 	typedBus.Subscribe("test.event", func(ctx context.Context, event TestEvent) error {
@@ -94,7 +94,7 @@ func TestGoEventsBusAdapter_Emit(t *testing.T) {
 func TestGoEventsBusAdapter_Subscribe(t *testing.T) {
 	typedBus, err := goevents.NewTypedEventBus[TestEvent](goevents.DefaultConfig())
 	assert.NoError(t, err)
-	adapter := events.NewGoEventsBusAdapter[TestEvent](typedBus)
+	adapter := events.NewGoEventsBusAdapter(typedBus)
 
 	var mu sync.Mutex
 	receivedEvents := []TestEvent{}
@@ -136,7 +136,7 @@ func TestGoEventsBusAdapter_Subscribe(t *testing.T) {
 func TestGoEventsBusAdapter_SubscribeWithFilter(t *testing.T) {
 	typedBus, err := goevents.NewTypedEventBus[TestEvent](goevents.DefaultConfig())
 	assert.NoError(t, err)
-	adapter := events.NewGoEventsBusAdapter[TestEvent](typedBus)
+	adapter := events.NewGoEventsBusAdapter(typedBus)
 
 	var mu sync.Mutex
 	receivedEvents := []TestEvent{}
@@ -171,7 +171,18 @@ func TestGoEventsBusAdapter_SubscribeWithFilter(t *testing.T) {
 func TestEventEmitter_WithEventEmission(t *testing.T) {
 	mockBus := &MockEventBus[TestEvent]{}
 	logger := zaptest.NewLogger(t)
-	emitter := anansievents.NewEventEmitter[TestEvent](mockBus, logger)
+
+	// Mock factory for TestEvent
+	eventFactory := func(ctx context.Context, eventType string, operation string, input any, output any, errorMsg *string, startTime time.Time, duration *int64) TestEvent {
+		contextMap := map[string]any{}
+		return TestEvent{
+			ID:      operation,
+			Message: eventType,
+			Context: contextMap,
+		}
+	}
+
+	emitter := anansievents.NewEventEmitter(mockBus, eventFactory, logger)
 
 	var emittedEvents []TestEvent
 	var emittedEventTypes []string
@@ -180,56 +191,46 @@ func TestEventEmitter_WithEventEmission(t *testing.T) {
 		emittedEvents = append(emittedEvents, event)
 	}
 
-	// Mock factory for TestEvent
-	eventFactory := func(eventType string, operation string, input any, output any, query any, errorMsg *string, transactionID *string, startTime time.Time, duration *int64, contextMap map[string]any) TestEvent {
-		return TestEvent{
-			ID:      operation,
-			Message: eventType,
-			Context: contextMap,
-		}
-	}
-
-	// Mock transaction ID extractor
-	extractTransactionID := func(ctx context.Context) *string {
-		txID := "mock-tx-123"
-		return &txID
-	}
-
-	ctx := anansievents.WithEventContextValue(context.Background(), "userID", "user-abc")
-	ctx = anansievents.WithEventContextValue(ctx, "requestID", "req-xyz")
+	ctx := context.Background()
 
 	config := anansievents.OperationConfig{
-		Operation:        "TestOperation",
-		StartEventType:   "op.start",
-		SuccessEventType: "op.success",
-		FailedEventType:  "op.failed",
-		Input:            map[string]string{"data": "input"},
+		Operation:         "TestOperation",
+		StartEventTypes:   []string{"op.start"},
+		SuccessEventTypes: []string{"op.success"},
+		FailedEventTypes:  []string{"op.failed"},
+		Input:             map[string]string{"data": "input"},
 	}
 
 	// Test successful operation
 	result, err := emitter.WithEventEmission(ctx, config, func() (any, error) {
 		return "operation_output", nil
-	}, eventFactory, extractTransactionID)
+	})
 
 	assert.NoError(t, err)
 	assert.Equal(t, "operation_output", result)
-	assert.Len(t, emittedEvents, 2)
-	assert.Contains(t, emittedEventTypes, "op.start")
-	assert.Contains(t, emittedEventTypes, "op.success")
+	assert.Len(t, emittedEvents, 4, "Expected 4 events for successful operation (op.start, *, op.success, *)")
 
-	// Check start event
-	startEvent := emittedEvents[0]
+	// Find and check start event
+	var startEvent TestEvent
+	for _, ev := range emittedEvents {
+		if ev.Message == "op.start" {
+			startEvent = ev
+			break
+		}
+	}
 	assert.Equal(t, "TestOperation", startEvent.ID)
 	assert.Equal(t, "op.start", startEvent.Message)
-	assert.Contains(t, startEvent.Context, "userID")
-	assert.Contains(t, startEvent.Context, "requestID")
 
-	// Check success event
-	successEvent := emittedEvents[1]
+	// Find and check success event
+	var successEvent TestEvent
+	for _, ev := range emittedEvents {
+		if ev.Message == "op.success" {
+			successEvent = ev
+			break
+		}
+	}
 	assert.Equal(t, "TestOperation", successEvent.ID)
 	assert.Equal(t, "op.success", successEvent.Message)
-	assert.Contains(t, successEvent.Context, "userID")
-	assert.Contains(t, successEvent.Context, "requestID")
 
 	// Test failed operation
 	emittedEvents = []TestEvent{} // Reset
@@ -237,19 +238,30 @@ func TestEventEmitter_WithEventEmission(t *testing.T) {
 	expectedErr := errors.New("something went wrong")
 	result, err = emitter.WithEventEmission(ctx, config, func() (any, error) {
 		return nil, expectedErr
-	}, eventFactory, extractTransactionID)
+	})
 
 	assert.Error(t, err)
 	assert.Equal(t, expectedErr, err)
-	assert.Len(t, emittedEvents, 2)
-	assert.Contains(t, emittedEventTypes, "op.start")
-	assert.Contains(t, emittedEventTypes, "op.failed")
+	assert.Len(t, emittedEvents, 4, "Expected 4 events for failed operation (op.start, *, op.failed, *)")
 
-	// Check failed event
-	failedEvent := emittedEvents[1]
+	// Find and check start event for failed operation
+	for _, ev := range emittedEvents {
+		if ev.Message == "op.start" {
+			startEvent = ev
+			break
+		}
+	}
+	assert.Equal(t, "TestOperation", startEvent.ID)
+	assert.Equal(t, "op.start", startEvent.Message)
+
+	// Find and check failed event
+	var failedEvent TestEvent
+	for _, ev := range emittedEvents {
+		if ev.Message == "op.failed" {
+			failedEvent = ev
+			break
+		}
+	}
 	assert.Equal(t, "TestOperation", failedEvent.ID)
 	assert.Equal(t, "op.failed", failedEvent.Message)
-	assert.Contains(t, failedEvent.Context, "userID")
-	assert.Contains(t, failedEvent.Context, "requestID")
 }
-
