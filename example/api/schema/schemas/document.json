@@ -1,0 +1,21 @@
+{
+  "name": "document",
+  "version": "1.0.0",
+  "fields": {
+    "ownerId": {
+      "name": "ownerId",
+      "type": "string",
+      "required": true
+    },
+    "content": {
+      "name": "content",
+      "type": "string",
+      "required": true
+    },
+    "accessLevel": {
+      "name": "accessLevel",
+      "type": "string",
+      "required": true
+    }
+  }
+}

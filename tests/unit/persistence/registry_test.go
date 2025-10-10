@@ -34,7 +34,6 @@ func newTestSchema(name ...string) *schema.SchemaDefinition {
 		Version:     "1.0.0",
 		Description: "test collection",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: "string", Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
 			"name": {Name: "name", Type: "string", Required: utils.BoolPtr(true)},
 		},
 	}
@@ -46,9 +45,7 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 	logger := zap.NewNop()
 
 	// Configure the document factory
-	config := data.DocumentFactoryConfig{
-		HmacSecret: []byte("test-secret"),
-	}
+	config := data.DocumentFactoryConfig{}
 	err := data.ConfigureDocumentFactory(config)
 	require.NoError(t, err)
 

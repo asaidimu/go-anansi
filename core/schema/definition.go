@@ -436,6 +436,15 @@ func (s *SchemaDefinition) AddVersionField() {
 	}
 }
 
+// MustAddIndex adds a new index to the schema definition and returns the modified schema.
+func (s *SchemaDefinition) MustAddIndex(index IndexDefinition) *SchemaDefinition {
+	if s.Indexes == nil {
+		s.Indexes = make([]IndexDefinition, 0)
+	}
+	s.Indexes = append(s.Indexes, index)
+	return s
+}
+
 // SchemaChangeType defines the type of change in a migration.
 type SchemaChangeType string
 

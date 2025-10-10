@@ -12,7 +12,7 @@ func TestStripMetadata(t *testing.T) {
 	doc := data.Document{
 		"id":   "1",
 		"name": "Test1",
-		data.MetadataFieldName: map[string]any{
+		data.MetadataField: map[string]any{
 			"created": 1754420381,
 			"hash":    "a1ed91f3783c2a4f4de392df95f8d1c245be66bf68f9f098c7a5745d74b4c107",
 			"updated": 1754420381,

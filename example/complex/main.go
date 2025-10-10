@@ -243,9 +243,7 @@ func main() {
 	}
 
 	// 4. Setup Document Factory Config
-	factoryConfig := data.DocumentFactoryConfig{
-		HmacSecret: []byte("complex-example-secret-key"),
-	}
+	factoryConfig := data.DocumentFactoryConfig{}
 
 	// 5. Setup Decorators
 	decorators := &utils.Decorators{

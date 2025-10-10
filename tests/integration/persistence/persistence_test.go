@@ -55,10 +55,9 @@ func newTestSchema(name ...string) *schema.SchemaDefinition {
 	}
 	return &schema.SchemaDefinition{
 		Name:        sname,
-		Version:     "1.0.0",
+		Version:     "8.0.0",
 		Description: "test collection",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":        {Name: "id", Type: "string", Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
 			"name":      {Name: "name", Type: "string", Required: utils.BoolPtr(true)},
 			"age":       {Name: "age", Type: "integer"},
 			"is_active": {Name: "is_active", Type: "boolean"},
@@ -206,8 +205,8 @@ func TestPersistence_Transact(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = accounts.CreateMany(context.Background(), []data.Document{
-		{"id": "A", "name": "Alice", "balance": 100.0},
-		{"id": "B", "name": "Bob", "balance": 50.0},
+		{"name": "Alice", "balance": 100.0},
+		{"name": "Bob", "balance": 50.0},
 	})
 
 	// Perform a successful transfer within a transaction
@@ -218,7 +217,7 @@ func TestPersistence_Transact(t *testing.T) {
 		}
 
 		// Read Alice's document to get metadata
-		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
+		aliceQuery := query.NewQueryBuilder().Where("name").Eq("Alice").Build()
 		aliceResult, err := acc.Read(context.Background(), &aliceQuery)
 
 		if err != nil {
@@ -226,18 +225,17 @@ func TestPersistence_Transact(t *testing.T) {
 		}
 
 		require.Equal(t, 1, aliceResult.Count)
-		aliceDoc := aliceResult.Data.(data.Document)
 
 		// Subtract 20 from Alice
-		aliceDoc["balance"] = 80.0
-		filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+		aliceDoc := data.Document{ "balance": 80 }
+		filterAlice := query.NewQueryBuilder().Where("name").Eq("Alice").Build().Filters
+		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Set: aliceDoc, Filter: filterAlice})
 		if err != nil {
 			return nil, fmt.Errorf("%w, \n %v \n", err, aliceDoc)
 		}
 
 		// Read Bob's document to get metadata
-		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
+		bobQuery := query.NewQueryBuilder().Where("name").Eq("Bob").Build()
 		bobResult, err := acc.Read(context.Background(), &bobQuery)
 		if err != nil {
 			return nil, err
@@ -247,8 +245,8 @@ func TestPersistence_Transact(t *testing.T) {
 
 		// Add 20 to Bob
 		bobDoc["balance"] = 70.0
-		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: bobDoc, Filter: filterBob})
+		filterBob := query.NewQueryBuilder().Where("name").Eq("Bob").Build().Filters
+		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Set: bobDoc, Filter: filterBob})
 		if err != nil {
 			return nil, fmt.Errorf("%w, \n %v \n", err, bobDoc)
 		}
@@ -266,16 +264,17 @@ func TestPersistence_Transact(t *testing.T) {
 
 	balances := make(map[string]any)
 	for _, doc := range result.Data.([]data.Document) {
-		balances[doc["id"].(string)] = doc["balance"]
+		fmt.Printf("Data %v\n", doc)
+		balances[doc["name"].(string)] = doc["balance"]
 	}
 
-	assert.Equal(t, 80.0, balances["A"])
-	assert.Equal(t, 70.0, balances["B"])
+	assert.Equal(t, 80.0, balances["Alice"])
+	assert.Equal(t, 70.0, balances["Bob"])
 
 	// Perform a failing transaction
 	_, err = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
 		// Read Alice's document to get metadata
-		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
+		aliceQuery := query.NewQueryBuilder().Where("name").Eq("Alice").Build()
 		aliceResult, err := accounts.Read(tctx, &aliceQuery)
 		if err != nil {
 			return nil, err
@@ -285,8 +284,8 @@ func TestPersistence_Transact(t *testing.T) {
 
 		// Subtract 10 from Alice
 		aliceDoc["balance"] = 70.0
-		filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
-		_, err = accounts.Update(tctx, &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+		filterAlice := query.NewQueryBuilder().Where("name").Eq("Alice").Build().Filters
+		_, err = accounts.Update(tctx, &base.CollectionUpdate{Set: aliceDoc, Filter: filterAlice})
 		if err != nil {
 			return nil, err
 		}
@@ -295,7 +294,7 @@ func TestPersistence_Transact(t *testing.T) {
 		updateBob := data.Document{"non_existent_field": "error"}
 
 		// We still need metadata for the update to pass the initial check
-		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
+		bobQuery := query.NewQueryBuilder().Where("name").Eq("Bob").Build()
 		bobResult, err := accounts.Read(tctx, &bobQuery)
 		if err != nil {
 			return nil, err
@@ -305,8 +304,8 @@ func TestPersistence_Transact(t *testing.T) {
 		meta, _ := bobDoc.Metadata()
 		updateBob.SetMetadata(meta)
 
-		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
-		_, err = accounts.Update(tctx, &base.CollectionUpdate{Data: updateBob, Filter: filterBob})
+		filterBob := query.NewQueryBuilder().Where("name").Eq("Bob").Build().Filters
+		_, err = accounts.Update(tctx, &base.CollectionUpdate{Set: updateBob, Filter: filterBob})
 
 		return nil, err // Propagate the error to trigger rollback
 	})
@@ -319,11 +318,11 @@ func TestPersistence_Transact(t *testing.T) {
 
 	rollbackBalances := make(map[string]any)
 	for _, doc := range rollbackResult.Data.([]data.Document) {
-		rollbackBalances[doc["id"].(string)] = doc["balance"]
+		rollbackBalances[doc["name"].(string)] = doc["balance"]
 	}
 
-	assert.Equal(t, 80.0, rollbackBalances["A"])
-	assert.Equal(t, 70.0, rollbackBalances["B"])
+	assert.Equal(t, 80.0, rollbackBalances["Alice"])
+	assert.Equal(t, 70.0, rollbackBalances["Bob"])
 }
 
 func TestPersistence_Schema(t *testing.T) {
@@ -556,11 +555,9 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, logger, nil)
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// 1. Define Schemas

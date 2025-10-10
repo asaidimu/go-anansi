@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"crypto/rsa"
 	"errors"
 	"fmt"
 	"maps"
@@ -17,8 +18,7 @@ type Document map[string]any
 
 // Constants
 const (
-	MetadataFieldName = "_metadata_"
-	SchemaFieldName   = "_schema_"
+	SchemaField   = "_schema_"
 )
 
 // convertToDocumentMap converts various input types to map[string]any for Must* functions
@@ -42,10 +42,10 @@ func convertToDocumentMap(data any) (map[string]any, error) {
 			return doc, nil
 		}
 		return nil, &DocumentError{
-		Operation: "convertToDocumentMap",
-		Message:   fmt.Sprintf("%s: %T", ErrInvalidTargetType.Error(), data),
-		Cause:     ErrInvalidTargetType,
-	}
+			Operation: "convertToDocumentMap",
+			Message:   fmt.Sprintf("%s: %T", ErrInvalidTargetType.Error(), data),
+			Cause:     ErrInvalidTargetType,
+		}
 	}
 }
 
@@ -74,7 +74,7 @@ func MustNewDocument(data any) Document {
 
 // Get retrieves a value with detailed error information (direct key lookup only).
 func (d Document) Get(key string) (any, error) {
-	val, ok := utils.GetValueByPath(d, key);
+	val, ok := utils.GetValueByPath(d, key)
 	if !ok {
 		return nil, &DocumentError{
 			Operation: "Get",
@@ -110,6 +110,14 @@ func (d Document) MustGet(key string) any {
 
 // Set with validation support.
 func (d Document) Set(key string, value any) error {
+	if key == DocumentID {
+		return &DocumentError{
+			Operation: "Set",
+			Key:       key,
+			Message:   fmt.Sprintf("the '%s' field is managed by the library and cannot be set manually", DocumentID),
+			Cause:     ErrReadOnlyField,
+		}
+	}
 	if key == "" {
 		return &DocumentError{
 			Operation: "Set",
@@ -124,6 +132,9 @@ func (d Document) Set(key string, value any) error {
 
 // SetIfNotExists sets a value only if the key doesn't exist.
 func (d Document) SetIfNotExists(key string, value any) bool {
+	if key == DocumentID {
+		return false
+	}
 	if _, exists := d[key]; !exists {
 		d[key] = value
 		return true
@@ -364,7 +375,7 @@ func (d Document) String() string {
 // Len returns the number of key-value pairs.
 func (d Document) Len() int {
 	l := len(d)
-	if _, ok := d[MetadataFieldName]; ok {
+	if _, ok := d[MetadataField]; ok {
 		l--
 	}
 	return l
@@ -447,9 +458,14 @@ func asMapValue(v any) any {
 	}
 }
 
+func (d Document) ID() string {
+	val := d[DocumentID]
+	return val.(string)
+}
+
 // Metadata access with enhanced functionality
 func (d Document) Metadata() (map[string]any, bool) {
-	val, ok := d[MetadataFieldName]
+	val, ok := d[MetadataField]
 	if !ok {
 		return nil, false
 	}
@@ -462,7 +478,7 @@ func (d Document) Metadata() (map[string]any, bool) {
 }
 
 func (d Document) SetMetadata(metadata map[string]any) {
-	d[MetadataFieldName] = metadata
+	d[MetadataField] = metadata
 }
 
 // StripMetadata removes metadata and returns a clean copy.
@@ -471,6 +487,253 @@ func (d Document) StripMetadata() Document {
 	result := doc.(Document)
 	return result
 }
+
+// --- Data Integrity ---
+
+// Hash computes and sets the HMAC-SHA256 hash of the metadata block.
+func (d Document) Hash() error {
+	meta, ok := d.Metadata()
+	if !ok {
+		return &DocumentError{
+			Operation: "Hash",
+			Message:   ErrNoMetadata.Error(),
+			Cause:     ErrNoMetadata,
+		}
+	}
+
+	hash, err := getFactory().calculateHash(d)
+	if err != nil {
+		return err
+	}
+
+	meta[MetadataChecksum] = hash
+	d.SetMetadata(meta)
+	return nil
+}
+
+// VerifyHash checks the integrity of the metadata block against its hash.
+func (d Document) VerifyHash() bool {
+	meta, ok := d.Metadata()
+	if !ok {
+		return false
+	}
+
+	providedHash, ok := meta[MetadataChecksum].(string)
+	if !ok {
+		return false
+	}
+
+	calculatedHash, err := getFactory().calculateHash(d)
+	if err != nil {
+		return false
+	}
+
+	return providedHash == calculatedHash
+}
+
+// Sign computes and sets the RSA signature for the entire document.
+func (d Document) Sign(privateKey *rsa.PrivateKey) error {
+	signature, err := getFactory().signDocument(d, privateKey)
+	if err != nil {
+		return err
+	}
+
+	meta, ok := d.Metadata()
+	if !ok {
+		meta = make(map[string]any)
+	}
+
+	meta[MetadataSignature] = signature
+	d.SetMetadata(meta)
+	return nil
+}
+
+// Verify checks the RSA signature of the document.
+func (d Document) Verify(publicKey *rsa.PublicKey) error {
+	meta, ok := d.Metadata()
+	if !ok {
+		return &DocumentError{
+			Operation: "Verify",
+			Message:   ErrNoMetadata.Error(),
+			Cause:     ErrNoMetadata,
+		}
+	}
+
+	signature, ok := meta[MetadataSignature].(string)
+	if !ok {
+		return &DocumentError{
+			Operation: "Verify",
+			Message:   "no signature found in metadata",
+			Cause:     ErrSignatureInvalid,
+		}
+	}
+
+	return getFactory().verifySignature(d, publicKey, signature)
+}
+
+// --- Metadata Accessors ---
+
+// GetMetadataValue retrieves a value from the document's metadata map.
+func (d Document) GetMetadataValue(key string) (any, error) {
+	meta, ok := d.Metadata()
+	if !ok {
+		return nil, &DocumentError{Operation: "GetMetadataValue", Key: key, Cause: ErrNoMetadata}
+	}
+	val, ok := meta[key]
+	if !ok {
+		return nil, &DocumentError{Operation: "GetMetadataValue", Key: key, Cause: ErrKeyNotFound}
+	}
+	return val, nil
+}
+
+// SetMetadataValue sets a value in the document's metadata map.
+// It prevents overwriting internal metadata keys.
+func (d Document) SetMetadataValue(key string, value any) error {
+	switch key {
+	case MetadataChecksum, MetadataSignature, MetadataVersion, MetadataCreated, MetadataUpdated:
+		return &DocumentError{Operation: "SetMetadataValue", Key: key, Message: "cannot overwrite internal metadata field", Cause: ErrReadOnlyField}
+	}
+
+	meta, ok := d.Metadata()
+	if !ok {
+		meta = make(map[string]any)
+	}
+	meta[key] = value
+	d.SetMetadata(meta)
+	return nil
+}
+
+// Version returns the document's version number.
+func (d Document) Version() (int, error) {
+	val, err := d.GetMetadataValue(MetadataVersion)
+	if err != nil {
+		return 0, err
+	}
+	version, ok := utils.CoerceToPrimitiveValue[int](val)
+	if !ok {
+		return 0, &DocumentError{Operation: "Version", Key: MetadataVersion, Cause: ErrTypeConversion}
+	}
+	return version, nil
+}
+
+// Checksum returns the document's checksum string.
+func (d Document) Checksum() (string, error) {
+	val, err := d.GetMetadataValue(MetadataChecksum)
+	if err != nil {
+		return "", err
+	}
+	checksum, ok := val.(string)
+	if !ok {
+		return "", &DocumentError{Operation: "Checksum", Key: MetadataChecksum, Cause: ErrTypeConversion}
+	}
+	return checksum, nil
+}
+
+// Signature returns the document's signature string.
+func (d Document) Signature() (string, error) {
+	val, err := d.GetMetadataValue(MetadataSignature)
+	if err != nil {
+		return "", err
+	}
+	signature, ok := val.(string)
+	if !ok {
+		return "", &DocumentError{Operation: "Signature", Key: MetadataSignature, Cause: ErrTypeConversion}
+	}
+	return signature, nil
+}
+
+// CreatedAt returns the document's creation timestamp.
+func (d Document) CreatedAt() (time.Time, error) {
+	fmt.Printf("%v \n",d)
+	val, err := d.GetMetadataValue(MetadataCreated)
+	if err != nil {
+		return time.Time{}, err
+	}
+	createdAt, ok := utils.CoerceTime(val)
+	if !ok {
+		return time.Time{}, &DocumentError{Operation: "CreatedAt", Key: MetadataCreated, Cause: ErrTypeConversion}
+	}
+	return createdAt, nil
+}
+
+// UpdatedAt returns the document's last update timestamp.
+func (d Document) UpdatedAt() (time.Time, error) {
+	val, err := d.GetMetadataValue(MetadataUpdated)
+	if err != nil {
+		return time.Time{}, err
+	}
+	updatedAt, ok := utils.CoerceTime(val)
+	if !ok {
+		return time.Time{}, &DocumentError{Operation: "UpdatedAt", Key: MetadataUpdated, Cause: ErrTypeConversion}
+	}
+	return updatedAt, nil
+}
+
+// GetMetadataString returns a metadata value as a string.
+func (d Document) GetMetadataString(key string) (string, error) {
+	val, err := d.GetMetadataValue(key)
+	if err != nil {
+		return "", err
+	}
+	str, ok := utils.CoerceToPrimitiveValue[string](val)
+	if !ok {
+		return "", &DocumentError{Operation: "GetMetadataString", Key: key, Cause: ErrTypeConversion}
+	}
+	return str, nil
+}
+
+// GetMetadataInt returns a metadata value as an int.
+func (d Document) GetMetadataInt(key string) (int, error) {
+	val, err := d.GetMetadataValue(key)
+	if err != nil {
+		return 0, err
+	}
+	num, ok := utils.CoerceToPrimitiveValue[int](val)
+	if !ok {
+		return 0, &DocumentError{Operation: "GetMetadataInt", Key: key, Cause: ErrTypeConversion}
+	}
+	return num, nil
+}
+
+// GetMetadataFloat returns a metadata value as a float64.
+func (d Document) GetMetadataFloat(key string) (float64, error) {
+	val, err := d.GetMetadataValue(key)
+	if err != nil {
+		return 0, err
+	}
+	num, ok := utils.CoerceToPrimitiveValue[float64](val)
+	if !ok {
+		return 0, &DocumentError{Operation: "GetMetadataFloat", Key: key, Cause: ErrTypeConversion}
+	}
+	return num, nil
+}
+
+// GetMetadataBool returns a metadata value as a bool.
+func (d Document) GetMetadataBool(key string) (bool, error) {
+	val, err := d.GetMetadataValue(key)
+	if err != nil {
+		return false, err
+	}
+	boolean, ok := utils.CoerceToPrimitiveValue[bool](val)
+	if !ok {
+		return false, &DocumentError{Operation: "GetMetadataBool", Key: key, Cause: ErrTypeConversion}
+	}
+	return boolean, nil
+}
+
+// GetMetadataTime returns a metadata value as a time.Time.
+func (d Document) GetMetadataTime(key string) (time.Time, error) {
+	val, err := d.GetMetadataValue(key)
+	if err != nil {
+		return time.Time{}, err
+	}
+	t, ok := utils.CoerceTime(val)
+	if !ok {
+		return time.Time{}, &DocumentError{Operation: "GetMetadataTime", Key: key, Cause: ErrTypeConversion}
+	}
+	return t, nil
+}
+
 
 // compareValues compares two values for sorting.
 func compareValues(a, b any) int {

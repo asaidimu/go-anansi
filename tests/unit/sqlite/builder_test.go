@@ -91,7 +91,7 @@ func TestUpdate(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
 	qb := query.NewQueryBuilder()
-	qb.From("users").
+	qb.From("users").Schema(&schema.SchemaDefinition{}).
 		Where("id").Eq("user-123")
 
 	q := qb.Build()
@@ -100,11 +100,13 @@ func TestUpdate(t *testing.T) {
 		"email": "john.doe@example.com",
 	}
 
-	nq, err := builder.Build(&q, native.StmtUpdate, data)
+	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{
+		"set": data,
+	})
 	assert.NoError(t, err)
 	assert.NotNil(t, nq)
 
-	expectedSQL := `UPDATE users SET "age" = $1, "email" = $2 WHERE "id" = $3`
+	expectedSQL := `UPDATE "users" SET "age" = $1, "email" = $2 WHERE "id" = $3`
 	assert.Equal(t, expectedSQL, nq.Raw().SQL)
 	assert.Equal(t, 3, len(nq.Raw().Params))
 	assert.Equal(t, 31, nq.Raw().Params[0])
@@ -115,8 +117,18 @@ func TestUpdate(t *testing.T) {
 func TestDelete(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
+	userSchema := &schema.SchemaDefinition{
+		Name: "users",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":    {Name: "id", Type: schema.FieldTypeString},
+			"age":   {Name: "age", Type: schema.FieldTypeInteger},
+			"email": {Name: "email", Type: schema.FieldTypeString},
+		},
+	}
+
 	qb := query.NewQueryBuilder()
 	qb.From("users").
+		Schema(userSchema).
 		Where("id").Eq("user-123")
 
 	q := qb.Build()

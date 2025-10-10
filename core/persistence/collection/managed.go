@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // managedCollection is a decorator that wraps a base.PersistenceCollectionInterface to provide
@@ -66,7 +67,6 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Document
 
 	for _, d := range docs {
 		doc := data.MustNewDocument(d)
-		doc.MustVerifyHash()
 		validationResult, err := c.Validate(ctx, doc, false)
 
 		if err != nil {
@@ -144,8 +144,46 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 
 	result, err := c.wrapped.Read(ctx, fq)
 
-	if err != nil {
-		return nil, err
+	if err != nil || result.Count == 0 {
+		return result, err
+	}
+
+	var docs []data.Document
+	var wasSingle bool
+
+	if result.Count == 1 {
+		// Expect a single document
+		doc, ok := result.Data.(data.Document)
+		if !ok {
+			return nil, base.NewPersistenceError("unexpected type for single document", nil)
+		}
+		docs = []data.Document{doc}
+		wasSingle = true
+	} else {
+		// Expect a slice of documents
+		list, ok := result.Data.([]data.Document)
+		if !ok {
+			return nil, base.NewPersistenceError("unexpected type for multiple documents", nil)
+		}
+		docs = list
+	}
+
+	// Ensure all docs have metadata and are re-hashed
+	for i, doc := range docs {
+		if _, ok := doc.Metadata(); ok {
+			if err := docs[i].Hash(); err != nil {
+				return nil, base.NewPersistenceError("failed to re-hash document on read", err)
+			}
+		} else {
+			docs[i] = data.MustNewDocument(doc)
+		}
+	}
+
+	// Restore original shape
+	if wasSingle {
+		result.Data = docs[0]
+	} else {
+		result.Data = docs
 	}
 
 	return result, nil
@@ -154,83 +192,78 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 // Update verifies the integrity of the metadata block, performs an optimistic lock check,
 // and updates the document and its metadata.
 func (c *managedCollection) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
-	meta, ok := params.Data.Metadata()
-	if !ok {
-		return 0, &CollectionError{
-			Operation: "Update",
-			Message:   "update operation requires a valid metadata block",
-			Cause:     data.ErrNoMetadata,
+	// --- helper for validation & wrapping errors ---
+	validate := func() error {
+		result, err := c.Validate(ctx, params.Set, true)
+		if err != nil {
+			return &CollectionError{
+				Operation: "Update",
+				Message:   base.ErrUpdateDocuments.Error(),
+				Cause:     errors.Join(base.ErrUpdateDocuments, err),
+			}
 		}
-	}
-
-	var err error
-	if params.Recover {
-		params.Data.HashMetadata()
-	}
-
-	if !params.Data.VerifyHash() {
-		return 0, &CollectionError{
-			Operation: "Update",
-			Message:   "data may be tampered",
-			Cause:     data.ErrHashMismatch,
+		if !result.Valid {
+			return &CollectionError{
+				Operation: "Update",
+				Message:   fmt.Sprintf("%v", result.Issues),
+				Cause:     base.ErrValidationFailed,
+			}
 		}
+		return nil
 	}
 
-	d := params.Data.StripMetadata()
-	result, err := c.Validate(ctx, d, true)
-
-	if err != nil {
-		return 0, &CollectionError{
-			Operation: "Update",
-			Message:   base.ErrUpdateDocuments.Error(),
-			Cause:     errors.Join(base.ErrUpdateDocuments, err),
-		}
-	}
-
-	if !result.Valid {
-		return 0, &CollectionError{
-			Operation: "Update",
-			Message:   fmt.Sprintf("%v", result.Issues),
-			Cause:     base.ErrValidationFailed,
-		}
-	}
-
-	// 2. Prepare for optimistic locking
-	version, ok := utils.CoerceToPrimitiveValue[float64](meta["version"])
-
-	if !ok {
-		return 0, &CollectionError{
-			Operation: "Update",
-			Message:   fmt.Sprintf("%v", meta),
-			Cause:     data.ErrInvalidOrMissingMetadataVersion,
-		}
-	}
-
-	// Modify the filter to include the version check
-	if params.Filter == nil {
-		params.Filter = &query.QueryFilter{}
-	}
-
-	versionFilter := query.QueryFilter{
-		Condition: &query.FilterCondition{
-			Field:    fmt.Sprintf("%s.version", data.MetadataFieldName),
-			Operator: query.ComparisonOperatorEq,
-			Value: query.FilterValue{
-				NumberVal: &version,
-			},
-		},
-	}
-
-	qb := query.NewQueryBuilder()
-	qb = qb.AndFilter(*params.Filter).AndFilter(versionFilter)
-	combined := qb.Build().Filters
-	params.Filter = combined
-
-	err = params.Data.TouchMetadata()
-	if err != nil {
+	// --- perform validation once ---
+	if err := validate(); err != nil {
 		return 0, err
 	}
 
+	// --- setup version computation ---
+	if params.Compute == nil {
+		params.Compute = map[string]query.Query{}
+	}
+
+	versionField := data.MetadataFieldPath(data.MetadataVersion)
+	params.Compute[versionField] = query.NewQueryBuilder().
+		Select().
+		AddComputed(versionField, "ADD", &query.FieldReference{Field: versionField}, 1).
+		End().
+		Build()
+
+	// --- optimistic lock: if Version provided, modify filter ---
+	if params.Version != nil {
+		version := float64(*params.Version)
+
+		if params.Filter == nil {
+			return 0, &CollectionError{
+				Operation: "Update",
+				Message:   "Cannot dangerously update documents",
+				Cause:     nil,
+			}
+		}
+
+		versionFilter := query.QueryFilter{
+			Condition: &query.FilterCondition{
+				Field:    versionField,
+				Operator: query.ComparisonOperatorEq,
+				Value: query.FilterValue{
+					NumberVal: &version,
+				},
+			},
+		}
+
+		qb := query.NewQueryBuilder().
+			AndFilter(*params.Filter).
+			AndFilter(versionFilter)
+
+		params.Filter = qb.Build().Filters
+	}
+
+	// update the updated timestamp
+	now := strconv.FormatInt(time.Now().UnixNano(), 10)
+	updatedField := data.MetadataFieldPath(data.MetadataUpdated)
+
+	params.Set[updatedField] = now
+	// --- delegate actual update ---
 	return c.wrapped.Update(ctx, params)
 }
 
@@ -269,18 +302,18 @@ func ensureMetadataProjection(q *query.Query) *query.Query {
 	}
 
 	// Users must not manually include metadata
-	if q.Projection.HasField(data.MetadataFieldName) {
+	if q.Projection.HasField(data.MetadataField) {
 		// defensive: prevent overriding system metadata
 		panic(data.ErrExplicitMetadataProjectionForbidden.Error())
 	}
 
 	// Always remove metadata from exclusions
-	if q.Projection.IsExcluded(data.MetadataFieldName) {
-		q.Projection.RemoveExcludedField(data.MetadataFieldName)
+	if q.Projection.IsExcluded(data.MetadataField) {
+		q.Projection.RemoveExcludedField(data.MetadataField)
 	}
 
 	// Ensure metadata is added to Include
-	q.Projection.IncludeField(data.MetadataFieldName, nil, nil)
+	q.Projection.IncludeField(data.MetadataField, nil, nil)
 
 	return q
 }

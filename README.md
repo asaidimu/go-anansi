@@ -131,9 +131,7 @@ func main() {
 	}
 
 	// 3. Setup Document Factory Config (required for document hashing/metadata)
-	factoryConfig := data.DocumentFactoryConfig{
-		HmacSecret: []byte("your-secret-key-here"),
-	}
+	factoryConfig := data.DocumentFactoryConfig{}
 
 	// 4. Setup Decorators (optional, none for basic setup)
 	decorators := &utils.Decorators{}
@@ -214,7 +212,7 @@ func main() {
 	executor, _ := sqliteExecutor.NewSQLiteInteractor(db, logger)
 	queryFactory := sqliteQuery.NewSQLiteFactory()
 	interactor, _ := native.NewNativeInteractor(executor, queryFactory, logger)
-	factoryConfig := data.DocumentFactoryConfig{HmacSecret: []byte("basic-example-secret-key")}
+	factoryConfig := data.DocumentFactoryConfig{}
 	decorators := &utils.Decorators{}
 	p, _ := anansi.Setup(anansi.SetupConfig{
 		Interactor: interactor, Logger: logger, FactoryConfig: factoryConfig, Decorators: decorators,
@@ -326,7 +324,7 @@ func main() {
 	executor, _ := sqliteExecutor.NewSQLiteInteractor(db, logger)
 	queryFactory := sqliteQuery.NewSQLiteFactory()
 	interactor, _ := native.NewNativeInteractor(executor, queryFactory, logger)
-	factoryConfig := data.DocumentFactoryConfig{HmacSecret: []byte("advanced-example-secret-key")}
+	factoryConfig := data.DocumentFactoryConfig{}
 
 	// Add our custom NegativeAmountValidator to the collection decorators
 	decorators := &utils.Decorators{
@@ -478,7 +476,7 @@ HINT USE INDEX idx_customer_status, MAX_TIME 30
 *   **`QueryEngine` (`core/query/engine.go`)**: Responsible for processing `Query` DSL. It partitions queries into parts that can be executed directly by the `DatabaseInteractor` and parts that require in-memory post-processing by the `QueryHelper`, based on the `DatabaseInteractor`'s `Capabilities`.
 *   **`SchemaManager` (Interface: `core/query.SchemaManager`)**: Part of `DatabaseInteractor`, specifically handles DDL operations (creating/dropping tables/indexes).
 *   **`QueryFactory` (Interface: `core/query/native.QueryFactory`)**: Converts the generic `query.Query` DSL into native SQL statements for a specific database (e.g., `sqlite/query/builder.go`).
-*   **`Document` (`core/data/document.go`)**: A flexible `map[string]any` wrapper with added functionalities for metadata management (creation timestamps, versioning, HMAC hashing for integrity), path-based access, type-safe getters, transformation, and binding to Go structs.
+*   **`Document` (`core/data/document.go`)**: A flexible `map[string]any` wrapper with added functionalities for metadata management (creation timestamps, versioning, SHA256 hashing for integrity), path-based access, type-safe getters, transformation, and binding to Go structs.
 *   **`EventBus` (`github.com/asaidimu/go-events`)**: A central eventing system used throughout the persistence layer to emit lifecycle events for documents, collections, and transactions, enabling decoupled observability and extensions.
 
 ### Data Flow

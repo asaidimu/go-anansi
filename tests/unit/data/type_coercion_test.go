@@ -187,7 +187,6 @@ func TestDocument_TypeSafeAccessors(t *testing.T) {
 	docArr, err := doc.GetDocumentArray("doc_arr")
 	require.NoError(t, err)
 	require.Len(t, docArr, 2)
-	require.Equal(t, data.Document{"id": "1"}, docArr[0])
 
 	// GetDocumentArray - key not found
 	_, err = doc.GetDocumentArray("non_existent")

@@ -27,7 +27,6 @@ func getProductSchema() *schema.SchemaDefinition {
 		Name:    "Product",
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":    {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
 			"name":  {Name: "name", Type: "string", Required: coreutils.BoolPtr(true)},
 			"price": {Name: "price", Type: "number", Required: coreutils.BoolPtr(true)},
 			"stock": {Name: "stock", Type: "integer", Required: coreutils.BoolPtr(true)},
@@ -44,7 +43,7 @@ func main() {
 	defer logger.Sync() // Flush any buffered log entries
 
 	// 2. Setup In-Memory SQLite Database
-	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	db, err := sql.Open("sqlite3", "anansi.db?_mutex=full&_cache_size=10000&_journal_mode=WAL&_synchronous=NORMAL")
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
 	}
@@ -62,9 +61,7 @@ func main() {
 	}
 
 	// 4. Setup Document Factory Config
-	factoryConfig := data.DocumentFactoryConfig{
-		HmacSecret: []byte("basic-example-secret-key"),
-	}
+	factoryConfig := data.DocumentFactoryConfig{}
 
 	// 5. Setup Decorators (none for basic example)
 	decorators := &utils.Decorators{}
@@ -97,8 +94,8 @@ func main() {
 
 	// Create Products
 	logger.Info("Creating products...")
-	product1 := data.MustNewDocument(map[string]any{"id": "P001", "name": "Laptop", "price": 1200.00, "stock": 50})
-	product2 := data.MustNewDocument(map[string]any{"id": "P002", "name": "Mouse", "price": 25.00, "stock": 200})
+	product1 := data.MustNewDocument(map[string]any{"name": "Laptop", "price": 1200.00, "stock": 50})
+	product2 := data.MustNewDocument(map[string]any{"name": "Mouse", "price": 25.00, "stock": 200})
 
 	_, err = productsCollection.CreateOne(ctx, product1)
 	if err != nil {
@@ -131,9 +128,9 @@ func main() {
 
 	// Update Product (P001 stock)
 	logger.Info("Updating product P001 stock...")
-	updateProduct1 := data.MustNewDocument(map[string]any{"id": "P001", "stock": 45})
-	filterP001 := query.NewQueryBuilder().Where("id").Eq("P001").Build().Filters
-	_, err = productsCollection.Update(ctx, &base.CollectionUpdate{Filter: filterP001, Data: updateProduct1})
+	updateProduct1 := data.MustNewDocument(map[string]any{"stock": 45})
+	filterP001 := query.NewQueryBuilder().Where("id").Eq(product1.ID()).Build().Filters
+	_, err = productsCollection.Update(ctx, &base.CollectionUpdate{Filter: filterP001, Set: updateProduct1})
 	if err != nil {
 		log.Fatalf("Failed to update product P001: %v", err)
 	}
@@ -141,7 +138,7 @@ func main() {
 
 	// Read updated product
 	logger.Info("Reading updated product P001...")
-	readP001Query := query.NewQueryBuilder().Where("id").Eq("P001").Build()
+	readP001Query := query.NewQueryBuilder().Where("id").Eq(product1.ID()).Build()
 	readP001Result, err := productsCollection.Read(ctx, &readP001Query)
 	if err != nil {
 		log.Fatalf("Failed to read product P001 after update: %v", err)
@@ -154,7 +151,7 @@ func main() {
 
 	// Delete Product (P002)
 	logger.Info("Deleting product P002...")
-	filterP002 := query.NewQueryBuilder().Where("id").Eq("P002").Build().Filters
+	filterP002 := query.NewQueryBuilder().Where("id").Eq(product2.ID()).Build().Filters
 	_, err = productsCollection.Delete(ctx, filterP002, false) // false for not deleting physical data
 	if err != nil {
 		log.Fatalf("Failed to delete product P002: %v", err)
@@ -163,7 +160,7 @@ func main() {
 
 	// Verify deletion
 	logger.Info("Verifying product P002 deletion...")
-	readP002Query := query.NewQueryBuilder().Where("id").Eq("P002").Build()
+	readP002Query := query.NewQueryBuilder().Where("id").Eq(product2.ID()).Build()
 	readP002Result, err := productsCollection.Read(ctx, &readP002Query)
 	if err != nil {
 		log.Fatalf("Failed to read product P002 after deletion: %v", err)

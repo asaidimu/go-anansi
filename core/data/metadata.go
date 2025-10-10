@@ -1,9 +1,26 @@
 package data
 
 import (
+	"fmt"
+
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
+
+const (
+	DocumentID     = "id"
+	MetadataField     = "_metadata_"
+	MetadataChecksum  = "checksum"
+	MetadataSignature = "signature"
+	MetadataVersion   = "version"
+	MetadataCreated   = "created"
+	MetadataUpdated   = "updated"
+)
+
+
+func MetadataFieldPath(field string) string {
+	return fmt.Sprintf("%s.%s", MetadataField, field)
+}
 
 // DefaultMetadataSchema returns the base schema definition for the _metadata block.
 // This schema includes the fields managed by the framework for versioning and security.
@@ -12,26 +29,26 @@ import (
 func DefaultMetadataSchema() *schema.NestedSchemaDefinition {
 	IsStructured := true
 	return &schema.NestedSchemaDefinition{
-		Name: MetadataFieldName,
+		Name: MetadataField,
 		IsStructured: &IsStructured,
 		StructuredFieldsMap: map[string]*schema.FieldDefinition{
 			"version": {
-				Name:     "version",
-				Type:     schema.FieldTypeInteger,
+				Name:     MetadataVersion,
+				Type:     schema.FieldTypeNumber,
 				Required: utils.BoolPtr(true),
 			},
 			"created": {
-				Name:     "created",
+				Name:     MetadataCreated,
 				Type:     schema.FieldTypeString,
 				Required: utils.BoolPtr(true),
 			},
 			"updated": {
-				Name:     "updated",
+				Name:     MetadataUpdated,
 				Type:     schema.FieldTypeString,
 				Required: utils.BoolPtr(true),
 			},
-			"hash": {
-				Name:     "hash",
+			"checksum": {
+				Name:     MetadataChecksum,
 				Type:     schema.FieldTypeString,
 				Required: utils.BoolPtr(true),
 			},

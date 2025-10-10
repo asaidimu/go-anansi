@@ -44,7 +44,7 @@ func TestTransactionInManualGoroutine(t *testing.T) {
 			_, err := p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
 				// This inner goroutine's operation will be coordinated by the transaction.
 				tx.Async(tctx, func(ctx context.Context) (any, error) {
-					_, err := collection.CreateOne(ctx, data.Document{"id": "manual-1", "name": "test"})
+					_, err := collection.CreateOne(ctx, data.Document{"name": "test3"})
 					return nil, err
 				})
 				return nil, nil
@@ -55,7 +55,7 @@ func TestTransactionInManualGoroutine(t *testing.T) {
 		wg.Wait()
 
 		// Verify the data was created.
-		q := query.NewQueryBuilder().Where("id").Eq("manual-1").Build()
+		q := query.NewQueryBuilder().Where("name").Eq("test3").Build()
 		result, err := collection.Read(context.Background(), &q)
 		require.NoError(t, err)
 		assert.Equal(t, 1, result.Count)
@@ -63,7 +63,7 @@ func TestTransactionInManualGoroutine(t *testing.T) {
 
 	t.Run("Failing transaction in a manual goroutine", func(t *testing.T) {
 		// Clean up data from the previous test
-		_, err := collection.Delete(context.Background(), query.NewQueryBuilder().Where("id").Eq("manual-1").Build().Filters, false)
+		_, err := collection.Delete(context.Background(), query.NewQueryBuilder().Where("name").Eq("test3").Build().Filters, false)
 		require.NoError(t, err)
 
 		var wg sync.WaitGroup
@@ -86,7 +86,7 @@ func TestTransactionInManualGoroutine(t *testing.T) {
 		wg.Wait()
 
 		// Verify the data was not created.
-		q := query.NewQueryBuilder().Where("id").Eq("manual-1").Build()
+		q := query.NewQueryBuilder().Where("name").Eq("test3").Build()
 		result, err := collection.Read(context.Background(), &q)
 		require.NoError(t, err)
 		assert.Equal(t, 0, result.Count)

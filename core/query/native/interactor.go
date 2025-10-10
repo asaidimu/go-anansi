@@ -101,13 +101,18 @@ func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *schema.Schem
 }
 
 // UpdateDocuments updates documents matching the filter.
-func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
+func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, computedUpdates map[string]query.Query, filters *query.QueryFilter) (int64, error) {
 	dsl := &query.Query{
 		Target:  &query.QueryTarget{Name: schema.Name, Schema: schema},
 		Filters: filters,
 	}
 
-	compiled, err := i.b.Build(dsl, StmtUpdate, updates)
+	updatePayload := map[string]any{
+		"set":     updates,
+		"compute": computedUpdates,
+	}
+
+	compiled, err := i.b.Build(dsl, StmtUpdate, updatePayload)
 	if err != nil {
 		return 0, newNativeError("UpdateDocuments", "could not build query", err)
 	}

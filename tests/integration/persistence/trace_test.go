@@ -38,7 +38,7 @@ func TestTraceDocumentInsertion(t *testing.T) {
 	require.True(t, ok, "Hash of document returned by interactor should be valid")
 
 	// Optionally, read it back from the database to see if it changes again
-	readQuery := query.NewQueryBuilder().Alias(schema.Name).From(schema.Name).Schema(schema).Where("id").Eq("1").Build()
+	readQuery := query.NewQueryBuilder().Alias(schema.Name).From(schema.Name).Schema(schema).Where("name").Eq("trace-doc").Build()
 	readDocs, err := interactor.SelectDocuments(context.Background(), schema, &readQuery)
 	require.NoError(t, err)
 	require.Len(t, readDocs, 1)

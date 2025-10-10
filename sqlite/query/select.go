@@ -231,7 +231,36 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 	return sql, params, nil
 }
 
+var expressionOperators = map[string]string{
+	"ADD":      "+",
+	"SUBTRACT": "-",
+	"MULTIPLY": "*",
+	"DIVIDE":   "/",
+}
+
 func (p *SQLiteSelectProjection) buildFunctionCall(fc *query.FunctionCall) (string, []any, error) {
+	// Handle expression operators
+	if sqlOp, ok := expressionOperators[fc.Function]; ok {
+		if len(fc.Arguments) != 2 {
+			return "", nil, fmt.Errorf("binary operator %s expects 2 arguments, got %d", fc.Function, len(fc.Arguments))
+		}
+
+		arg1SQL, arg1Params, err := p.buildProjectionValue(&fc.Arguments[0])
+		if err != nil {
+			return "", nil, err
+		}
+
+		arg2SQL, arg2Params, err := p.buildProjectionValue(&fc.Arguments[1])
+		if err != nil {
+			return "", nil, err
+		}
+
+		sql := fmt.Sprintf("(%s %s %s)", arg1SQL, sqlOp, arg2SQL)
+		params := append(arg1Params, arg2Params...)
+		return sql, params, nil
+	}
+
+	// Default to standard function call
 	var args []string
 	var params []any
 

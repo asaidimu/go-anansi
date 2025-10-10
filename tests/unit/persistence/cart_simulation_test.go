@@ -11,7 +11,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -20,9 +19,8 @@ import (
 func newCartTestSchema(name string) *schema.SchemaDefinition {
 	return &schema.SchemaDefinition{
 		Version: "1.0.0",
-		Name: name,
+		Name:    name,
 		Fields: map[string]*schema.FieldDefinition{
-			"id":       {Name: "id", Type: "string", Required: utils.PrimitivePtr(true)},
 			"name":     {Name: "name", Type: "string"},
 			"quantity": {Name: "quantity", Type: "integer"},
 			"amount":   {Name: "amount", Type: "integer"},
@@ -32,13 +30,13 @@ func newCartTestSchema(name string) *schema.SchemaDefinition {
 	}
 }
 
-func setupCartTest(t *testing.T) (base.Persistence, func()) {
+func setupCartTest(t *testing.T) (base.Persistence, data.Document, func()) {
 	interactor := ephemeral.NewEphemeral()
 
 	logger := zap.NewNop()
 	// require.NoError(t, err)
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// Create collections
@@ -56,16 +54,18 @@ func setupCartTest(t *testing.T) (base.Persistence, func()) {
 	// Seed inventory
 	inventory, err := p.Collection(context.Background(), "inventory")
 	require.NoError(t, err)
-	_, err = inventory.CreateOne(context.Background(), data.Document{"id": "item1", "name": "test item", "quantity": 10})
+	d, err := inventory.CreateOne(context.Background(), data.Document{"name": "test item", "quantity": 10})
 	require.NoError(t, err)
 
-	return p, func() {}
+	return p, d.Data, func() {}
 }
 
 func TestCartSimulation_Success(t *testing.T) {
-	p, cleanup := setupCartTest(t)
+	p, d, cleanup := setupCartTest(t)
 	defer cleanup()
 
+	var sale data.Document
+	var payment data.Document
 	// Simulate a successful cart checkout
 	_, err := p.Transact(context.Background(), func(ctx context.Context, tx base.BasePersistence) (any, error) {
 		inventory, err := tx.Collection(ctx, "inventory")
@@ -78,7 +78,7 @@ func TestCartSimulation_Success(t *testing.T) {
 		require.NoError(t, err)
 
 		// 1. Check inventory
-		q := query.NewQueryBuilder().Where("id").Eq("item1").Build()
+		q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
 		readResult, err := inventory.Read(ctx, &q)
 		require.NoError(t, err)
 		require.Equal(t, 1, readResult.Count)
@@ -91,19 +91,21 @@ func TestCartSimulation_Success(t *testing.T) {
 		item["quantity"] = quantity - 1
 		update := base.CollectionUpdate{
 			Filter: q.Filters,
-			Data:   item,
+			Set:   item,
 		}
 		updatedCount, err := inventory.Update(ctx, &update)
 		require.NoError(t, err)
 		require.Equal(t, 1, updatedCount)
 
 		// 3. Create sales record
-		_, err = sales.CreateOne(ctx, data.Document{"id": "sale1", "itemId": "item1", "quantity": 1})
+		s, err := sales.CreateOne(ctx, data.Document{"itemId": "item1", "quantity": 1})
 		require.NoError(t, err)
+		sale = s.Data
 
 		// 4. Create payment record
-		_, err = payments.CreateOne(ctx, data.Document{"id": "payment1", "saleId": "sale1", "amount": 100})
+		p, err := payments.CreateOne(ctx, data.Document{"saleId": "sale1", "amount": 100})
 		require.NoError(t, err)
+		payment = p.Data
 
 		return nil, nil
 	})
@@ -119,26 +121,26 @@ func TestCartSimulation_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check inventory
-	q := query.NewQueryBuilder().Where("id").Eq("item1").Build()
+	q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
 	readResult, err := inventory.Read(context.Background(), &q)
 	require.NoError(t, err)
 	assert.Equal(t, int(9), readResult.Data.(data.Document)["quantity"])
 
 	// Check sales record
-	q = query.NewQueryBuilder().Where("id").Eq("sale1").Build()
+	q = query.NewQueryBuilder().Where("id").Eq(sale.Must().GetString("id")).Build()
 	readResult, err = sales.Read(context.Background(), &q)
 	require.NoError(t, err)
 	assert.Equal(t, 1, readResult.Count)
 
 	// Check payment record
-	q = query.NewQueryBuilder().Where("id").Eq("payment1").Build()
+	q = query.NewQueryBuilder().Where("id").Eq(payment.Must().GetString("id")).Build()
 	readResult, err = payments.Read(context.Background(), &q)
 	require.NoError(t, err)
 	assert.Equal(t, 1, readResult.Count)
 }
 
 func TestCartSimulation_InsufficientInventory(t *testing.T) {
-	p, cleanup := setupCartTest(t)
+	p, d, cleanup := setupCartTest(t)
 	defer cleanup()
 
 	// Simulate a failed cart checkout due to insufficient inventory
@@ -147,7 +149,7 @@ func TestCartSimulation_InsufficientInventory(t *testing.T) {
 		require.NoError(t, err)
 
 		// Attempt to buy 20 items when only 10 are in stock
-		q := query.NewQueryBuilder().Where("id").Eq("item1").Build()
+		q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
 		readResult, err := inventory.Read(ctx, &q)
 		require.NoError(t, err)
 		item := readResult.Data.(data.Document)
@@ -173,7 +175,7 @@ func TestCartSimulation_InsufficientInventory(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check inventory is unchanged
-	q := query.NewQueryBuilder().Where("id").Eq("item1").Build()
+	q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
 	readResult, err := inventory.Read(context.Background(), &q)
 	require.NoError(t, err)
 
@@ -192,7 +194,7 @@ func TestCartSimulation_InsufficientInventory(t *testing.T) {
 }
 
 func TestCartSimulation_PaymentFailure(t *testing.T) {
-	p, cleanup := setupCartTest(t)
+	p, d, cleanup := setupCartTest(t)
 	defer cleanup()
 
 	// Simulate a failed cart checkout due to payment failure
@@ -204,7 +206,7 @@ func TestCartSimulation_PaymentFailure(t *testing.T) {
 		require.NoError(t, err)
 
 		// 1. Decrement inventory
-		q := query.NewQueryBuilder().Where("id").Eq("item1").Build()
+		q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
 		readResult, err := inventory.Read(ctx, &q)
 		require.NoError(t, err)
 		item := readResult.Data.(data.Document)
@@ -212,7 +214,7 @@ func TestCartSimulation_PaymentFailure(t *testing.T) {
 		item["quantity"] = quantity - 1
 		update := base.CollectionUpdate{
 			Filter: q.Filters,
-			Data:   item,
+			Set:   item,
 		}
 		_, err = inventory.Update(ctx, &update)
 		require.NoError(t, err)
@@ -237,7 +239,7 @@ func TestCartSimulation_PaymentFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check inventory is unchanged
-	q := query.NewQueryBuilder().Where("id").Eq("item1").Build()
+	q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
 
 	readResult, err := inventory.Read(context.Background(), &q)
 	require.NoError(t, err)

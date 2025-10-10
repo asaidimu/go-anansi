@@ -34,6 +34,6 @@ func NewCollection(
 	}
 
 	// Decorate the managed collection with event emission.
-	eventEmitting := newEventEmittingCollection(managed, eventEmitter, sc, logger)
+	eventEmitting := newEventEmittingCollection(name, managed, eventEmitter, sc, logger)
 	return eventEmitting, nil
 }

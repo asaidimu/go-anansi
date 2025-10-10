@@ -165,3 +165,17 @@ func TestDocument_DeleteNested(t *testing.T) {
 		require.ErrorIs(t, err, data.ErrParentNotMap)
 	})
 }
+
+func TestDocument_SetID_ReturnsError(t *testing.T) {
+	doc, err := data.NewDocument(nil)
+	require.NoError(t, err)
+
+	err = doc.Set("id", "some-value")
+	require.Error(t, err)
+
+	var docErr *data.DocumentError
+	require.ErrorAs(t, err, &docErr)
+	require.Equal(t, "Set", docErr.Operation)
+	require.Equal(t, "id", docErr.Key)
+	require.ErrorIs(t, docErr.Cause, data.ErrReadOnlyField)
+}

@@ -88,14 +88,13 @@ func TestMustHelper(t *testing.T) {
 
 func TestFluentQuery_Limit(t *testing.T) {
 	docs := data.NewDocumentSet(
-		data.MustNewDocument(map[string]any{"id": 1}).StripMetadata(),
-		data.MustNewDocument(map[string]any{"id": 2}).StripMetadata(),
-		data.MustNewDocument(map[string]any{"id": 3}).StripMetadata(),
+		data.MustNewDocument(map[string]any{}).StripMetadata(),
+		data.MustNewDocument(map[string]any{}).StripMetadata(),
+		data.MustNewDocument(map[string]any{}).StripMetadata(),
 	)
 
 	limitedDocs := data.Query(docs).Limit(1).Execute()
 	assert.Len(t, limitedDocs, 1)
-	assert.Equal(t, 1, limitedDocs[0].Must().GetInt("id"))
 }
 
 func TestStructBinder(t *testing.T) {

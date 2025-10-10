@@ -945,10 +945,16 @@ func convertToFilterValue(value any) FilterValue {
 		return FilterValue{ObjectVal: v}
 	case *FieldReference:
 		return FilterValue{FieldRefVal: v}
+	case FieldReference:
+		return FilterValue{FieldRefVal: &v}
 	case *SubqueryValue:
 		return FilterValue{SubqueryVal: v}
+	case SubqueryValue:
+		return FilterValue{SubqueryVal: &v}
 	case *FunctionCall:
 		return FilterValue{FunctionCallVal: v}
+	case FunctionCall:
+		return FilterValue{FunctionCallVal: &v}
 	default:
 		// Try to convert to string as fallback
 		str := fmt.Sprintf("%v", v)

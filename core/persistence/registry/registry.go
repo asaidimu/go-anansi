@@ -721,7 +721,7 @@ func (r *collectionRegistry) updateRegistryEntry(ctx context.Context, collection
 	q := r.buildNameQuery(name)
 	_, err = collection.Update(ctx, &base.CollectionUpdate{
 		Filter: q.Filters,
-		Data:   doc,
+		Set:    doc,
 	})
 
 	if err != nil {

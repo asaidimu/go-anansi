@@ -46,7 +46,7 @@ func TestTransactionWithGoroutine(t *testing.T) {
 		require.NoError(t, err)
 
 		// Verify the data was created.
-		q := query.NewQueryBuilder().Where("id").Eq("1").Build()
+		q := query.NewQueryBuilder().Where("name").Eq("test").Build()
 		result, err := collection.Read(context.Background(), &q)
 		require.NoError(t, err)
 		assert.Equal(t, 1, result.Count)
@@ -54,7 +54,7 @@ func TestTransactionWithGoroutine(t *testing.T) {
 
 	t.Run("Failing transaction with goroutine", func(t *testing.T) {
 		// Clean up any data from the previous test
-		_, err := collection.Delete(context.Background(), query.NewQueryBuilder().Where("id").Eq("1").Build().Filters, false)
+		_, err := collection.Delete(context.Background(), query.NewQueryBuilder().Where("name").Eq("test").Build().Filters, false)
 		require.NoError(t, err)
 
 		_, err = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
@@ -69,7 +69,7 @@ func TestTransactionWithGoroutine(t *testing.T) {
 		assert.Contains(t, err.Error(), "goroutine failed")
 
 		// Verify the data was not created.
-		q := query.NewQueryBuilder().Where("id").Eq("1").Build()
+		q := query.NewQueryBuilder().Where("name").Eq("test").Build()
 		result, err := collection.Read(context.Background(), &q)
 		require.NoError(t, err)
 		assert.Equal(t, 0, result.Count)
@@ -105,7 +105,7 @@ func TestTransactionWithNestedGoroutine(t *testing.T) {
 					return nil, err
 				}
 
-				_, err = coll.CreateOne(ctx, data.Document{"id": "nested", "name": "test"})
+				_, err = coll.CreateOne(ctx, data.Document{"id": "nested", "name": "testa"})
 				return nil, err
 			})
 
@@ -120,7 +120,7 @@ func TestTransactionWithNestedGoroutine(t *testing.T) {
 	// Verify the data was created.
 	collection, err := p.Collection(context.Background(), "nested_goroutine_test")
 	require.NoError(t, err)
-	q := query.NewQueryBuilder().Where("id").Eq("nested").Build()
+	q := query.NewQueryBuilder().Where("name").Eq("testa").Build()
 	result, err := collection.Read(context.Background(), &q)
 	require.NoError(t, err)
 	assert.Equal(t, 1, result.Count)

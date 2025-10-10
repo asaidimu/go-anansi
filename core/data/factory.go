@@ -2,21 +2,27 @@ package data
 
 import (
 	"context"
-	"crypto/hmac"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
+	"crypto/x509"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"maps"
 	"reflect"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/google/uuid"
 )
 
 // MetadataProvider is a function that returns metadata to be merged into a document.
@@ -32,8 +38,7 @@ type MetadataProviderConfig struct {
 
 // DocumentFactoryConfig holds the complete configuration for the document factory.
 type DocumentFactoryConfig struct {
-	HmacSecret []byte
-	Providers  []MetadataProviderConfig
+	Providers []MetadataProviderConfig
 }
 
 // documentFactory is a singleton responsible for creating and managing documents.
@@ -67,10 +72,6 @@ func ConfigureDocumentFactory(config DocumentFactoryConfig) error {
 			err = ErrFactoryAlreadyConfigured
 			return
 		}
-		if len(config.HmacSecret) == 0 {
-			err = ErrHmacSecretNotConfigured
-			return
-		}
 		f.config = config
 		f.configured = true
 	})
@@ -94,6 +95,7 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 		return nil, ErrFactoryNotConfigured
 	}
 	doc := Document(data)
+	doc[DocumentID] = strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
 
 	// Ensure metadata field exists
 	meta, ok := doc.Metadata()
@@ -103,11 +105,11 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 
 	// Inject system metadata
 	now := strconv.FormatInt(time.Now().UnixNano(), 10)
-	if _, ok := meta["created"]; !ok {
-		meta["created"] = now
+	if _, ok := meta[MetadataCreated]; !ok {
+		meta[MetadataCreated] = now
 	}
-	meta["updated"] = now
-	meta["version"] = 1
+	meta[MetadataUpdated] = now
+	meta[MetadataVersion] = 1
 
 	// Apply user-defined metadata providers
 	f.mu.RLock()
@@ -133,48 +135,10 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 	if err != nil {
 		return nil, err
 	}
-	meta["hash"] = hash
+	meta[MetadataChecksum] = hash
 	doc.SetMetadata(meta)
 
 	return doc.Normalize(), nil
-}
-
-// TouchMetadata updates the 'updated' timestamp and recalculates the hash.
-func (d Document) TouchMetadata() error {
-	f := getFactory()
-	if !f.configured {
-		return ErrFactoryNotConfigured
-	}
-
-	meta, ok := d.Metadata()
-	if !ok {
-		return &DocumentError{
-			Operation: "TouchMetadata",
-			Message:   "no metadata found",
-			Cause:     ErrKeyNotFound,
-		}
-	}
-
-	// Update timestamp and version
-
-	// Inject system metadata
-	now := strconv.FormatInt(time.Now().UnixNano(), 10)
-	meta["updated"] = now
-	if version, ok := utils.CoerceToPrimitiveValue[int](meta["version"]); ok {
-		meta["version"] = version + 1
-	} else {
-		meta["version"] = 1
-	}
-
-	// Recalculate hash
-	hash, err := f.calculateHash(d)
-	if err != nil {
-		return err
-	}
-	meta["hash"] = hash
-	d.SetMetadata(meta)
-
-	return nil
 }
 
 // GetMetadataSchema merges all provider schemas into a single metadata schema
@@ -211,14 +175,12 @@ func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchema
 	return mergedSchema, dependencies
 }
 
-// calculateHash computes the SHA256 hash of the document's _metadata_ block,
-// excluding the 'hash' field itself, to ensure a consistent and verifiable identifier.
+// calculateHash computes the SHA256 hash of the document,
+// excluding the 'checksum' field itself, to ensure a consistent and verifiable identifier.
 func (f *documentFactory) calculateHash(doc Document) (string, error) {
-	if len(f.config.HmacSecret) == 0 {
-		return "", ErrHmacSecretNotConfigured
-	}
+	dataToSign := doc.Clone()
+	meta, ok := dataToSign.Metadata()
 
-	meta, ok := doc.Metadata()
 	if !ok {
 		return "", &DocumentError{
 			Operation: "CalculateHash",
@@ -228,13 +190,8 @@ func (f *documentFactory) calculateHash(doc Document) (string, error) {
 	}
 
 	// Create a copy of the metadata and remove the hash field itself
-	dataToSign := make(map[string]any, len(meta))
-	for k, v := range meta {
-		if k != "hash" {
-			dataToSign[k] = v
-		}
-	}
-
+	delete(meta, MetadataChecksum)
+	dataToSign.SetMetadata(meta)
 	// Use canonicalMarshal to ensure consistent key ordering for hashing.
 	toSign, err := canonicalMarshal(dataToSign)
 	if err != nil {
@@ -245,9 +202,95 @@ func (f *documentFactory) calculateHash(doc Document) (string, error) {
 		}
 	}
 
-	h := hmac.New(sha256.New, f.config.HmacSecret)
+	h := sha256.New()
 	h.Write(toSign)
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// signDocument signs the entire document (excluding the signature itself) using a private key.
+func (f *documentFactory) signDocument(doc Document, privateKey *rsa.PrivateKey) (string, error) {
+	// Create a copy of the document and remove the signature field
+	docToSign := doc.Clone()
+	meta, ok := docToSign.Metadata()
+	if ok {
+		delete(meta, MetadataSignature)
+		docToSign.SetMetadata(meta)
+	}
+
+	// Marshal the document to a canonical byte slice
+	canonicalBytes, err := canonicalMarshal(docToSign)
+	if err != nil {
+		return "", &DocumentError{
+			Operation: "signDocument",
+			Message:   "failed to marshal document for signing",
+			Cause:     err,
+		}
+	}
+
+	// Hash the canonical bytes
+	hasher := sha256.New()
+	hasher.Write(canonicalBytes)
+	hashed := hasher.Sum(nil)
+
+	// Sign the hash
+	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hashed)
+	if err != nil {
+		return "", &DocumentError{
+			Operation: "signDocument",
+			Message:   "failed to sign document hash",
+			Cause:     err,
+		}
+	}
+
+	return base64.StdEncoding.EncodeToString(signature), nil
+}
+
+// verifySignature verifies the signature of a document against a public key.
+func (f *documentFactory) verifySignature(doc Document, publicKey *rsa.PublicKey, signature string) error {
+	// Decode the signature
+	sigBytes, err := base64.StdEncoding.DecodeString(signature)
+	if err != nil {
+		return &DocumentError{
+			Operation: "verifySignature",
+			Message:   "failed to decode base64 signature",
+			Cause:     err,
+		}
+	}
+
+	// Create a copy of the document and remove the signature field
+	docToVerify := doc.Clone()
+	meta, ok := docToVerify.Metadata()
+	if ok {
+		delete(meta, MetadataSignature)
+		docToVerify.SetMetadata(meta)
+	}
+
+	// Marshal the document to a canonical byte slice
+	canonicalBytes, err := canonicalMarshal(docToVerify)
+	if err != nil {
+		return &DocumentError{
+			Operation: "verifySignature",
+			Message:   "failed to marshal document for verification",
+			Cause:     err,
+		}
+	}
+
+	// Hash the canonical bytes
+	hasher := sha256.New()
+	hasher.Write(canonicalBytes)
+	hashed := hasher.Sum(nil)
+
+	// Verify the signature
+	err = rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, hashed, sigBytes)
+	if err != nil {
+		return &DocumentError{
+			Operation: "verifySignature",
+			Message:   "signature verification failed",
+			Cause:     errors.Join(ErrSignatureInvalid, err),
+		}
+	}
+
+	return nil
 }
 
 // canonicalize recursively sorts slices and maps to ensure a consistent hash.
@@ -299,66 +342,45 @@ func canonicalMarshal(v any) ([]byte, error) {
 	return json.Marshal(canonicalize(v))
 }
 
-func (d Document) HashMetadata() error {
-	meta, ok := d.Metadata()
+// --- Key Loading Helpers ---
 
-	if !ok {
-		return &DocumentError{
-			Operation: "HashMetadata",
-			Message:   ErrNoMetadata.Error(),
-			Cause:     ErrNoMetadata,
+// LoadPrivateKey loads a PEM-encoded RSA private key.
+func LoadPrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, errors.New("failed to decode PEM block containing private key")
+	}
+
+	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		// Try parsing as PKCS8
+		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if err != nil {
+			return nil, errors.New("failed to parse private key: not in PKCS1 or PKCS8 format")
 		}
+		if rsaKey, ok := key.(*rsa.PrivateKey); ok {
+			return rsaKey, nil
+		}
+		return nil, errors.New("key is not an RSA private key")
 	}
-
-	hash, err := getFactory().calculateHash(d)
-	if err != nil {
-		return err
-	}
-
-	meta["hash"] = hash
-	d.SetMetadata(meta)
-	return nil
+	return key, nil
 }
 
-// VerifyHash checks the intergrity of the metadata field.
-func (d Document) VerifyHash() bool {
-	meta, ok := d.Metadata()
-	if !ok {
-		return false
+// LoadPublicKey loads a PEM-encoded RSA public key.
+func LoadPublicKey(pemBytes []byte) (*rsa.PublicKey, error) {
+	block, _ := pem.Decode(pemBytes)
+	if block == nil {
+		return nil, errors.New("failed to decode PEM block containing public key")
 	}
 
-	providedHash, ok := meta["hash"].(string)
-
-	if !ok {
-		return false
-	}
-
-	calculatedHash, err := getFactory().calculateHash(d)
+	key, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return false
+		return nil, errors.New("failed to parse public key")
 	}
 
-	return hmac.Equal([]byte(providedHash), []byte(calculatedHash))
+	if rsaKey, ok := key.(*rsa.PublicKey); ok {
+		return rsaKey, nil
+	}
+
+	return nil, errors.New("key is not an RSA public key")
 }
-
-func (d Document) MustVerifyHash() {
-	meta, ok := d.Metadata()
-	if !ok {
-		panic(ErrNoMetadata.Error())
-	}
-
-	providedHash, ok := meta["hash"].(string)
-	if !ok {
-		panic(ErrMetadataKeyNotFound.Error())
-	}
-
-	calculatedHash, err := getFactory().calculateHash(d)
-	if err != nil {
-		panic(fmt.Sprintf("%s: %v", ErrFailedToCalculateHash.Error(), err))
-	}
-
-	if !hmac.Equal([]byte(providedHash), []byte(calculatedHash)) {
-		panic(fmt.Sprintf("%s: expected %s, got %s", ErrHashMismatch.Error(), providedHash, calculatedHash))
-	}
-}
-

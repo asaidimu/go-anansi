@@ -312,13 +312,6 @@ type CreateResult struct {
 	Error string `json:"error,omitempty"`
 }
 
-// UpdateResult defines the structure of the response for a successful update operation.
-type UpdateResult struct {
-	ID      string `json:"id"`      // ID is the unique identifier of the updated document.
-	Data    any    `json:"data"`    // Data is the content of the document after the update.
-	Changed bool   `json:"changed"` // Changed is a boolean flag indicating whether the operation resulted in a change to the document.
-}
-
 // DeleteResult defines the structure of the response for a successful delete operation.
 type DeleteResult struct {
 	Count int64 `json:"count"` // Count is the number of documents that were deleted.
@@ -443,14 +436,17 @@ type Persistence interface {
 // CollectionUpdate defines the parameters for an update operation on a collection.
 // It specifies the data to be updated and a filter to select which documents to update.
 type CollectionUpdate struct {
-	Data    data.Document      `json:"data,omitempty"` // Data contains the fields and values to be updated.
-	Filter  *query.QueryFilter `json:"filter"`         // Filter is a query that selects the documents to be updated.
-	Version *int               `json:"version"`        // Version is the document version for optimistic concurrency control.
-	// WARNING: Setting Recover to true will generate new metadata for the document,
-	// including a new hash, effectively re-keying it with the current HMAC secret.
-	// This is for disaster recovery only and should not be used in normal operations.
-	Recover bool `json:"recover"`
+	// For simple SET operations, mapping a field path to its new literal value.
+	Set data.Document `json:"set,omitempty"`
+
+	// For advanced updates where a field's value is computed by an expression or subquery.
+	Compute map[string]query.Query `json:"compute,omitempty"`
+
+	Filter  *query.QueryFilter `json:"filter"`
+	Version *int               `json:"version,omitempty"`
 }
+
+const CollectionNameContextKey common.ContextKey = "__collection_name__"
 
 // Collection defines the contract for operations on a specific collection.
 // This includes standard CRUD (Create, Read, Update, Delete) operations, as well as methods

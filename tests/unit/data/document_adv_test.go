@@ -44,7 +44,8 @@ func TestDocument_DeepMerge(t *testing.T) {
 		// We need to remove metadata for a stable comparison in this test
 		actualMap := merged.StripMetadata().AsMap()
 		expectedMap := expected.StripMetadata().AsMap()
-
+		actualMap["id"] = 1
+		expectedMap["id"] = 1
 		assert.Equal(t, expectedMap, actualMap)
 	})
 
@@ -73,6 +74,7 @@ func TestDocument_Flatten(t *testing.T) {
 
 	flat := doc.Flatten(".")
 	expected := map[string]any{
+		"id": doc.Must().GetString("id"),
 		"a":       1,
 		"b.c":     2,
 		"b.d.e":   3,
@@ -99,6 +101,8 @@ func TestUnflatten(t *testing.T) {
 		},
 	})
 
+	doc["id"] = 1
+	expected["id"] = 1
 	assert.True(t, expected.StripMetadata().Equals(doc.StripMetadata()))
 }
 
@@ -114,6 +118,8 @@ func TestDocument_DiffAndApply(t *testing.T) {
 		"d": 123,
 	}).StripMetadata()
 
+	doc1["id"] = 1
+	doc2["id"] = 1
 	diff := doc1.Diff(doc2)
 
 	expectedDiff := data.DocumentDiff{

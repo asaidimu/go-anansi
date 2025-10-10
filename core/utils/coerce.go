@@ -741,15 +741,28 @@ func CoerceFloat[T Primitive](value any, isFloat32 bool) (T, bool) {
 }
 
 // CoerceTime attempts to convert any value to time.Time.
+// CoerceTime attempts to convert any value to time.Time.
 func CoerceTime(v any) (time.Time, bool) {
 	switch val := v.(type) {
 	case time.Time:
 		return val, true
+
 	case string:
-		// Try common time formats
+		// First, try to parse the string as a Unix timestamp (integer).
+		if i, err := strconv.ParseInt(val, 10, 64); err == nil {
+			// Heuristic to determine if it's seconds or nanoseconds based on magnitude.
+			// A 10-digit number is seconds-level precision (up to year 2286).
+			// Anything larger is likely milliseconds, microseconds, or nanoseconds.
+			if len(val) > 10 {
+				return time.Unix(0, i), true // Treat as nanoseconds
+			}
+			return time.Unix(i, 0), true // Treat as seconds
+		}
+
+		// If it's not a numeric timestamp, try common layout formats.
 		formats := []string{
-			time.RFC3339,
 			time.RFC3339Nano,
+			time.RFC3339,
 			time.RFC822,
 			time.RFC822Z,
 			time.RFC1123,
@@ -766,11 +779,16 @@ func CoerceTime(v any) (time.Time, bool) {
 				return t, true
 			}
 		}
-		return time.Time{}, false
+		return time.Time{}, false // Failed all parsing attempts
+
 	case int64:
+		// Assume value is in seconds for broad compatibility.
 		return time.Unix(val, 0).UTC(), true
+
 	case float64:
+		// Assume value is in seconds.
 		return time.Unix(int64(val), 0).UTC(), true
+
 	default:
 		return time.Time{}, false
 	}

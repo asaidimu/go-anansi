@@ -89,4 +89,3 @@ func (x *sqliteFactory) Build(
 
 	return nativeQuery, nil
 }
-

@@ -73,7 +73,7 @@ type DatabaseInteractor interface {
 	SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *Query) (<-chan data.Document, <-chan error, error)
 
 	// UpdateDocuments modifies documents in the database that match the provided filters.
-	UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *QueryFilter) (int64, error)
+	UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, computedUpdates map[string]Query, filters *QueryFilter) (int64, error)
 
 	// InsertDocuments adds new documents to the database.
 	InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []data.Document) ([]data.Document, error)

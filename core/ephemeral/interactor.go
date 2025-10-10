@@ -190,7 +190,7 @@ func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *sche
 }
 
 // UpdateDocuments updates documents in the in-memory store.
-func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
+func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, updates map[string]any, computedUpdates map[string]query.Query,  filters *query.QueryFilter) (int64, error) {
 	c, err := i.store.getCollection(schemaDef.Name)
 	if err != nil {
 		return 0, err
