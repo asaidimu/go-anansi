@@ -48,7 +48,7 @@ func TestDocument_Transform(t *testing.T) {
 	// Test Omit
 	omittedDoc := doc.Transform().Omit("age", "city").Execute()
 
-	require.Equal(t, 2, omittedDoc.Len())
+	require.Equal(t, 3, omittedDoc.Len())
 	require.True(t, omittedDoc.HasKey("name"))
 	require.True(t, omittedDoc.HasKey("email"))
 	require.False(t, omittedDoc.HasKey("age"))

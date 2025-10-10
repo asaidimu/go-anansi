@@ -114,7 +114,7 @@ func (d *negativeAmountValidator) Read(ctx context.Context, query *query.Query) 
 }
 
 func (d *negativeAmountValidator) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
-	if err := d.validateAmount(params.Data); err != nil {
+	if err := d.validateAmount(params.Set); err != nil {
 		return 0, err
 	}
 	return d.next.Update(ctx, params)
@@ -175,9 +175,7 @@ func main() {
 	}
 
 	// 4. Setup Document Factory Config
-	factoryConfig := data.DocumentFactoryConfig{
-		HmacSecret: []byte("advanced-example-secret-key"),
-	}
+	factoryConfig := data.DocumentFactoryConfig{}
 
 	// 5. Setup Decorators
 	// Add our custom NegativeAmountValidator to the collection decorators

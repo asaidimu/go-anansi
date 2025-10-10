@@ -149,7 +149,7 @@ func TestUpdate_Integration(t *testing.T) {
 
 	data := data.Document{"age": 31}
 
-	nq, err := builder.Build(&q, native.StmtUpdate, data)
+	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{ "set": data })
 	require.NoError(t, err)
 
 	res, err := db.Exec(nq.Raw().SQL, nq.Raw().Params...)
@@ -254,7 +254,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 	updateData := data.Document{"tags": updatedTags}
 	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Schema(complexDocsSchema).Where("id").Eq("doc-1").Build()
 
-	nq, err = builder.Build(&q, native.StmtUpdate, updateData)
+	nq, err = builder.Build(&q, native.StmtUpdate,  map[string]any{ "set": updateData })
 	require.NoError(t, err)
 
 	_, err = db.Exec(nq.Raw().SQL, nq.Raw().Params...)
@@ -460,7 +460,7 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 	q.Target.Schema = docSchema
 	updateData := data.Document{"status": "approved"}
 
-	nq, err := builder.Build(&q, native.StmtUpdate, updateData)
+	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{ "set": updateData })
 	require.NoError(t, err)
 
 	// Execute the query
@@ -530,7 +530,7 @@ func TestSelectWithAggregations_Integration(t *testing.T) {
 		var region string
 		var saleCount int
 		var totalRevenue, avgSale, minSale, maxSale float64
-		err := rows.Scan(&saleCount, &totalRevenue, &avgSale, &minSale, &maxSale, &region,)
+		err := rows.Scan(&saleCount, &totalRevenue, &avgSale, &minSale, &maxSale, &region)
 		require.NoError(t, err)
 		results = append(results, data.Document{
 			"region":        region,
@@ -550,5 +550,41 @@ func TestSelectWithAggregations_Integration(t *testing.T) {
 	assert.Equal(t, 225.0, results[0]["avg_sale"])
 	assert.Equal(t, 200.0, results[0]["min_sale"])
 	assert.Equal(t, 250.0, results[0]["max_sale"])
+}
+
+func TestComputedFieldTranslation(t *testing.T) {
+	builder := sqlite.NewSQLiteFactory()
+
+	docSchema := &schema.SchemaDefinition{
+		Name: "docs",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":       {Name: "id", Type: schema.FieldTypeString},
+			"metadata": {Name: "metadata", Type: schema.FieldTypeObject},
+		},
+	}
+
+	t.Run("demonstrate computed field translation for arithmetic", func(t *testing.T) {
+		dsl := query.NewQueryBuilder().Select().
+		AddComputed("next_version", "ADD",
+		&query.FieldReference{
+			Field: "metadata.version",
+		}, 1).End().
+		Build()
+
+		dsl.Target = &query.QueryTarget{
+			Name: docSchema.Name,
+			Schema: docSchema,
+		}
+
+		nq, err := builder.Build(&dsl, native.StmtSelect, nil)
+		require.NoError(t, err)
+
+		// This assertion demonstrates the desired SQL output.
+		// It is expected to fail with the current implementation, and the failure
+		// will show the actual generated SQL, guiding the necessary changes.
+		expectedSQL := `SELECT (json_extract("metadata", '$.version') + $1) AS next_version FROM docs`
+		assert.Equal(t, expectedSQL, nq.Raw().SQL)
+		assert.Equal(t, []any{float64(1)}, nq.Raw().Params)
+	})
 }
 

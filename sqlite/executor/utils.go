@@ -13,63 +13,69 @@ import (
 
 // ReadRows reads all rows from a *sql.Rows object and converts them into a slice
 // of data.Document maps. It also handles type conversions for different field types.
+// ReadRows reads all rows from a *sql.Rows object and converts them into a slice
+// of data.Document maps. If no schema is provided, it returns raw row data without conversions.
 func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) ([]data.Document, error) {
 	utilDocChan, utilErrChan := readRowsToDocs(rows)
 
 	var results []data.Document
-	for row := range utilDocChan {
-		// Create global result object
-		globalResult := make(map[string]any)
 
-		for col, value := range row {
-			var tableName, fieldName string
+	// Define the transformation operation dynamically
+	var processRow func(map[string]any) data.Document
 
-			// Check if column has table prefix
-			if dotIndex := strings.Index(col, "."); dotIndex != -1 {
-				tableName = col[:dotIndex]
-				fieldName = col[dotIndex+1:]
-			} else {
-				// No table prefix, use schema name as table name
-				tableName = sc.Name // Use schema name as default table name
-				fieldName = col
-			}
-
-			// Get or create table entry in global result
-			var tableObj map[string]any
-			if existing, exists := globalResult[tableName]; exists {
-				tableObj = existing.(map[string]any)
-			} else {
-				tableObj = make(map[string]any)
-				globalResult[tableName] = tableObj
-			}
-
-			// Find field definition using clean field name
-			fieldDef := sc.FindField(fieldName)
-			convertedValue, err := fromSQLiteValue(fieldDef, value) // Pass logger
-			if err != nil {
-				tableObj[fieldName] = value
-			} else {
-				tableObj[fieldName] = convertedValue
-			}
+	if sc == nil {
+		// Fast path: schema is nil → no transformation
+		processRow = func(row map[string]any) data.Document {
+			return row
 		}
+	} else {
+		// Schema-aware transformation
+		processRow = func(row map[string]any) data.Document {
+			globalResult := make(map[string]any)
 
-		// Determine what to return based on number of tables
-		var finalResult data.Document
-		if len(globalResult) == 1 {
-			// Single table - return the unwrapped table object
-			for _, tableObj := range globalResult {
-				finalResult = tableObj.(map[string]any)
-				break
+			for col, value := range row {
+				var tableName, fieldName string
+
+				if dotIndex := strings.Index(col, "."); dotIndex != -1 {
+					tableName = col[:dotIndex]
+					fieldName = col[dotIndex+1:]
+				} else {
+					tableName = sc.Name
+					fieldName = col
+				}
+
+				tableObj, ok := globalResult[tableName].(map[string]any)
+				if !ok {
+					tableObj = make(map[string]any)
+					globalResult[tableName] = tableObj
+				}
+
+				fieldDef := sc.FindField(fieldName)
+				cv, err := fromSQLiteValue(fieldDef, value)
+				if err != nil {
+					logger.Warn("failed to convert value", zap.String("field", fieldName), zap.Error(err))
+					tableObj[fieldName] = value
+				} else {
+					tableObj[fieldName] = cv
+				}
 			}
-		} else {
-			// Multiple tables (joins) - return the nested structure
-			finalResult = globalResult
-		}
 
-		results = append(results, finalResult)
+			// Flatten if there’s only one table
+			if len(globalResult) == 1 {
+				for _, tableObj := range globalResult {
+					return tableObj.(map[string]any)
+				}
+			}
+			return globalResult
+		}
 	}
 
-	// Check for any error that might have occurred during row reading
+	// Generic iteration — operation applied uniformly
+	for row := range utilDocChan {
+		results = append(results, processRow(row))
+	}
+
+	// Check for errors from reader
 	if err := <-utilErrChan; err != nil {
 		return nil, fmt.Errorf("error after scanning rows: %w", err)
 	}

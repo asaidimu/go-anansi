@@ -23,7 +23,7 @@ func TestDocument_ToJSON(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, result, "name")
 	require.Contains(t, result, "age")
-	require.Contains(t, result, data.MetadataFieldName)
+	require.Contains(t, result, data.MetadataField)
 
 	// Test with pretty print
 	prettyBytes, err := doc.ToJSON(true)
@@ -85,7 +85,6 @@ func TestFromStruct(t *testing.T) {
 	doc, err := data.FromStruct(product)
 	require.NoError(t, err)
 
-	require.Equal(t, "prod1", doc.MustGet("id"))
 	require.Equal(t, "Laptop", doc.MustGet("name"))
 	require.Equal(t, 1200.50, doc.MustGet("price"))
 

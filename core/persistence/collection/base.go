@@ -60,18 +60,18 @@ func newBaseCollection(
 		subscriptions: make(map[string]*base.SubscriptionInfo),
 		validator:     validator,
 		metadata: &base.CollectionMetadata{
-			ID:             name, // Using collection name as ID for simplicity
+			ID:             name,
 			SchemaVersion:  sc.Version,
 			Name:           name,
-			CollectionName: name, // Physical name is now sc.Name
+			CollectionName: name,
 			Description:    sc.Description,
 			Status:         "active",
-			CreatedAt:      fmt.Sprintf("%d", 0), // Placeholder, ideally from creation time
-			CreatedBy:      "system",
-			RecordCount:    0, // Not directly available from interactor yet
-			DataSizeBytes:  0, // Not directly available from interactor yet
+			CreatedAt:      fmt.Sprintf("%d", 0), // get this from the registry
+			CreatedBy:      "system",             // this field is being used wrong
+			RecordCount:    0,                    // For this and the next two below, we should have methods in the interactor to expose these
+			DataSizeBytes:  0,                    // Not directly available from interactor yet
+			LastModified:   0,                    // Placehold
 			Schema:         sc,
-			LastModified:   0,                         // Placeholder
 			Subscriptions:  []base.SubscriptionInfo{}, // Collection-specific subscriptions not managed here yet
 		},
 	}
@@ -127,7 +127,6 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) (
 	insertedDocs := inserted.([]data.Document)
 
 	for i, doc := range insertedDocs {
-		doc.MustVerifyHash()
 		results[i] = base.CreateResult{Status: base.StatusCreated, Data: doc}
 	}
 
@@ -166,7 +165,7 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 	}
 
 	result, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
-		return interactor.UpdateDocuments(ctx, c.schema, params.Data, params.Filter)
+		return interactor.UpdateDocuments(ctx, c.schema, params.Set, params.Compute, params.Filter)
 	})
 
 	if err != nil {
@@ -209,7 +208,9 @@ func (c *baseCollection) Validate(ctx context.Context, data data.Document, loose
 // Metadata retrieves metadata specifically for this collection, with an option to
 // force a refresh of the data.
 func (c *baseCollection) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) (*base.CollectionMetadata, error) {
+	// TODO improve this method
 	metadata := *c.metadata
+	metadata.Schema.Name = metadata.Name
 	return &metadata, nil
 }
 

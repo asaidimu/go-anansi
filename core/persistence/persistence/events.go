@@ -5,6 +5,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"go.uber.org/zap"
 )
@@ -263,4 +264,24 @@ func (e *eventsPersistence) Close(ctx context.Context) {
 
 func (e *eventsPersistence) Async(ctx context.Context, f func(ctx context.Context) (any, error)) base.Future {
 	return e.persistence.Async(ctx, f)
+}
+
+func (e *eventsPersistence) Query(ctx context.Context, rawQuery *query.RawQuery) (*query.RawQueryResult, error) {
+	config := events.OperationConfig{
+		Operation:         "query",
+		StartEventTypes:   []string{string(base.PersistenceReadStart)},
+		SuccessEventTypes: []string{string(base.PersistenceReadSuccess)},
+		FailedEventTypes:  []string{string(base.PersistenceReadFailed)},
+		Input:             rawQuery,
+	}
+
+	result, err := e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {
+		return e.persistence.Query(ctx, rawQuery)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return result.(*query.RawQueryResult), nil
 }

@@ -261,19 +261,56 @@ type QueryDistinctConfig struct {
 	Fields []string `json:"fields,omitempty"`
 }
 
-// Query is the top-level structure that represents a complete database query.
-// It combines all the different parts of a query, such as filters, sorting, and pagination.
+// RawQueryTarget specifies a collection and its schema version
+// to be used in a raw query.
+type RawQueryTarget struct {
+	Collection string `json:"collection"`
+	Version    string `json:"version,omitempty"` // If omitted, resolves to the active version
+}
+
+// RawQuery represents a raw query payload for execution.
+// It combines a string-based query template with structured options.
+type RawQuery struct {
+	// Template is a string-based query.
+	// For SQL, this is the SQL string.
+	// For MongoDB, this could be a JSON string representing the filter,
+	// an aggregation pipeline, or a command body.
+	// Placeholders like {{collection.users}} are resolved here using the 'Collections' map.
+	Template string `json:"template,omitempty"`
+
+	// Options provides structured, database-specific parameters that modify the query's behavior.
+	// For SQL, this might be hints, expectRows boolean for schema inclusion.
+	// For MongoDB, this could be limit, sort, projection, includeSchema, etc.
+	// This is a map to allow flexible, database-specific key-value pairs.
+	Options map[string]any `json:"options,omitempty"`
+
+	// Maps placeholder names in the 'Template' string to specific collection targets.
+	// This field is only relevant when 'Template' is used.
+	Collections map[string]RawQueryTarget `json:"from,omitempty"`
+
+	// Parameters are parameters for the query. Primarily for SQL.
+	// For MongoDB, if Template is a JSON string, Parameters could map to custom placeholders
+	// within that JSON string (e.g., {{arg0}}, {{arg1}}).
+	Parameters []any `json:"args,omitempty"`
+}
+
+// Query represents a query to be executed against a collection.
+// It contains fields for filtering, projecting, sorting, and limiting results.
 type Query struct {
-	Target       *QueryTarget               `json:"target,omitempty"`
-	Filters      *QueryFilter               `json:"filters,omitempty"`
-	Sort         []SortConfiguration        `json:"sort,omitempty"`
-	Pagination   *PaginationOptions         `json:"pagination,omitempty"`
-	Projection   *ProjectionConfiguration   `json:"projection,omitempty"`
-	Joins        []JoinConfiguration        `json:"joins,omitempty"`
-	Distinct     *QueryDistinctConfig       `json:"distinct,omitempty"`
+	Target     *QueryTarget             `json:"target,omitempty"`
+	Filters    *QueryFilter             `json:"filters,omitempty"`
+	Projection *ProjectionConfiguration `json:"projection,omitempty"`
+	Sort       []SortConfiguration      `json:"sort,omitempty"`
+	Limit      *int                     `json:"limit,omitempty"`
+	Pagination *PaginationOptions       `json:"pagination,omitempty"`
+	Joins      []JoinConfiguration      `json:"joins,omitempty"`
+	Distinct   *QueryDistinctConfig     `json:"distinct,omitempty"`
 	Aggregations []AggregationConfiguration `json:"aggregations,omitempty"`
-	Union        *QueryUnion                `json:"union,omitempty"`
-	Hints        []QueryHint                `json:"hints,omitempty"`
+	Union      *QueryUnion              `json:"union,omitempty"`
+	Hints      []QueryHint              `json:"hints,omitempty"`
+
+	// New raw query field - takes precedence over DSL fields when present
+	Raw *RawQuery `json:"raw,omitempty"`
 }
 
 // IsEmpty checks if the query is empty (has no operations defined).

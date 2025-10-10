@@ -34,7 +34,6 @@ func newTestSchema(name ...string) *schema.SchemaDefinition {
 		Version:     "1.0.0",
 		Description: "test collection",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: "string", Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
 			"name": {Name: "name", Type: "string", Required: utils.BoolPtr(true)},
 		},
 	}
@@ -46,9 +45,7 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 	logger := zap.NewNop()
 
 	// Configure the document factory
-	config := data.DocumentFactoryConfig{
-		HmacSecret: []byte("test-secret"),
-	}
+	config := data.DocumentFactoryConfig{}
 	err := data.ConfigureDocumentFactory(config)
 	require.NoError(t, err)
 
@@ -65,7 +62,7 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 	factory := pevents.NewPersistenceEventFactory(registry.REGISTRY_COLLECTION_NAME, logger)
 	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
 	registryCollection, err := collection.NewCollection(
-		eventEmitter, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, interactor, engine, logger, nil,
+		eventEmitter, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, interactor, engine, logger, nil, nil,
 	)
 
 	require.NoError(t, err)

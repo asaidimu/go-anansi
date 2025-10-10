@@ -34,7 +34,6 @@ func NewPersistence(
 		return nil, err
 	}
 
-
 	managed := newManagedPersistence(base)
 	eventEmitting := newEventEmittingPersistence(managed, eventEmitter, logger)
 

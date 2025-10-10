@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
+	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/sqlite/types"
 	"go.uber.org/zap"
@@ -115,6 +117,43 @@ func (s *sqliteExecutor) Exec(ctx context.Context, compiled native.NativeQuery[t
 		return 0, fmt.Errorf("failed to execute %s query: %w", q.StatementType(), err)
 	}
 	return result.RowsAffected()
+}
+
+func (s *sqliteExecutor) ExecuteQuery(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) (*query.RawQueryResult, error) {
+	q := compiled.Query
+	payload := q.Raw()
+	template := strings.TrimSpace(strings.ToUpper(payload.SQL))
+
+	if strings.HasPrefix(template, "SELECT") {
+		rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
+		if err != nil {
+			return &query.RawQueryResult{Success: false, Message: fmt.Sprintf("failed to execute raw SELECT query: %v", err)}, err
+		}
+		defer rows.Close()
+
+		results, err := ReadRows(s.logger, compiled.Schema, rows)
+		if err != nil {
+			return &query.RawQueryResult{Success: false, Message: fmt.Sprintf("failed to read raw SELECT query results: %v", err)}, err
+		}
+
+		return &query.RawQueryResult{
+			Data:    results,
+			Count:   len(results),
+			Success: true,
+			Message: "Raw SELECT query executed successfully",
+		}, nil
+	} else {
+		result, err := s.runner().ExecContext(ctx, payload.SQL, payload.Params...)
+		if err != nil {
+			return &query.RawQueryResult{Success: false, Message: fmt.Sprintf("failed to execute raw EXEC query: %v", err)}, err
+		}
+		affectedRows, _ := result.RowsAffected()
+		return &query.RawQueryResult{
+			AffectedRows: affectedRows,
+			Success:      true,
+			Message:      "Raw EXEC query executed successfully",
+		}, nil
+	}
 }
 
 func (s *sqliteExecutor) BeginTransaction(ctx context.Context) (native.QueryExecutor[types.SQLitePayload], error) {

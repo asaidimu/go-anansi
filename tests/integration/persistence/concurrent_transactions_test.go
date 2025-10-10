@@ -44,7 +44,7 @@ func TestConcurrentTransactions(t *testing.T) {
 
 			_, err := p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
 				docID := fmt.Sprintf("concurrent-%d", id)
-				_, err := collection.CreateOne(tctx, data.Document{"id": docID, "name": "test"})
+				_, err := collection.CreateOne(tctx, data.Document{"name": fmt.Sprintf("test-%s",docID)})
 				return nil, err
 			})
 
@@ -56,8 +56,8 @@ func TestConcurrentTransactions(t *testing.T) {
 
 	// Verify all data was created
 	for i := range numConcurrent {
-		docID := fmt.Sprintf("concurrent-%d", i)
-		q := query.NewQueryBuilder().Where("id").Eq(docID).Build()
+		docID := fmt.Sprintf("test-concurrent-%d", i)
+		q := query.NewQueryBuilder().Where("name").Eq(docID).Build()
 		result, err := collection.Read(context.Background(), &q)
 		require.NoError(t, err)
 		assert.Equal(t, 1, result.Count, "document %s should exist", docID)

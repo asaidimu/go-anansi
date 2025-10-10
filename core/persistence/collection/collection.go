@@ -19,6 +19,7 @@ func NewCollection(
 	engine *query.QueryEngine,
 	logger *zap.Logger,
 	resolveSchema func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error),
+	processor base.RawQueryProcessor,
 ) (base.Collection, error) {
 	base, err := newBaseCollection(eventEmitter, name, sc, interactor, engine, logger)
 
@@ -28,12 +29,14 @@ func NewCollection(
 		name,
 		sc.Name,
 		base,
-		resolveSchema)
+		resolveSchema,
+		processor,
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	// Decorate the managed collection with event emission.
-	eventEmitting := newEventEmittingCollection(managed, eventEmitter, sc, logger)
+	eventEmitting := newEventEmittingCollection(name, managed, eventEmitter, sc, logger)
 	return eventEmitting, nil
 }

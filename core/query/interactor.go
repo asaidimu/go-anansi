@@ -57,12 +57,33 @@ type SchemaManager interface {
 	CollectionExists(ctx context.Context,name string) (bool, error)
 }
 
+// RawQueryResult represents the outcome of executing a raw database query.
+// It provides a flexible container for various types of query results.
+// Developers using raw queries are expected to understand their specific
+// database and query type, and interpret results accordingly.
+type RawQueryResult struct {
+	// Data for SELECT queries. Can be a slice of data.Document or a more generic type.
+	// The specific type depends on the database implementation and query type.
+	Data        any `json:"data,omitempty"`
+
+	// Count of rows returned for SELECT queries.
+	Count       int `json:"count,omitempty"`
+
+	// AffectedRows for INSERT, UPDATE, DELETE queries.
+	AffectedRows int64 `json:"affectedRows,omitempty"`
+
+	// Message provides additional status or information for any query type.
+	Message     string `json:"message,omitempty"`
+
+	// Success indicates if the query executed without error.
+	Success     bool   `json:"success"`
+}
+
 // DatabaseInteractor defines the contract for low-level database operations.
 // It abstracts the specific SQL dialect and database-dependent logic, providing a
 // consistent interface for the persistence layer to interact with the database.
 // Implementations of this interface are responsible for managing both non-transactional
 // and transactional operations.
-
 type DatabaseInteractor interface {
 	SchemaManager
 
@@ -73,13 +94,18 @@ type DatabaseInteractor interface {
 	SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *Query) (<-chan data.Document, <-chan error, error)
 
 	// UpdateDocuments modifies documents in the database that match the provided filters.
-	UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, filters *QueryFilter) (int64, error)
+	UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, computedUpdates map[string]Query, filters *QueryFilter) (int64, error)
 
 	// InsertDocuments adds new documents to the database.
 	InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []data.Document) ([]data.Document, error)
 
 	// DeleteDocuments removes documents from the database that match the provided filters.
 	DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *QueryFilter, unsafeDelete bool) (int64, error)
+
+	// Query executes a raw, templated query directly against the database.
+	// This allows for operations that are not tied to a specific collection,
+	// or for highly optimized, custom queries.
+	Query(ctx context.Context, query *Query) (*RawQueryResult, error)
 
 	HasTransaction(ctx context.Context) bool
 

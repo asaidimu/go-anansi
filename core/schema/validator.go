@@ -11,10 +11,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
-// =============================================================================
-// CORE INTERFACES AND TYPES
-// =============================================================================
-
 type DocumentValidator struct {
 	fmap  *FunctionMap
 	graph *ValidationGraph

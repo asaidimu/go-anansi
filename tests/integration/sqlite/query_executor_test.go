@@ -159,7 +159,7 @@ func TestUpdateIntegration(t *testing.T) {
 		Filters: filters,
 	}
 
-	nqUpdate, err := builder.Build(&updateQuery, native.StmtUpdate, updates)
+	nqUpdate, err := builder.Build(&updateQuery, native.StmtUpdate, map[string]any{ "set": updates })
 	require.NoError(t, err)
 
 	rowsAffected, err := executor.Exec(context.Background(), native.NativeQuery[types.SQLitePayload]{

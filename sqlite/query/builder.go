@@ -5,6 +5,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/sqlite/types"
 )
 
@@ -46,6 +47,11 @@ func (x *sqliteFactory) Build(
 ) (native.Query[types.SQLitePayload], error) {
 
 	f := newSQLiteFactory()
+
+	// Check for raw query first - raw takes precedence
+	if q.Raw != nil {
+		return f.buildRawQuery(q, stmtType)
+	}
 
 	var sqlTree SQLNode
 	var err error
@@ -90,3 +96,19 @@ func (x *sqliteFactory) Build(
 	return nativeQuery, nil
 }
 
+func (f *sqliteFactory) buildRawQuery(q *query.Query, stmtType native.StatementType) (native.Query[types.SQLitePayload], error) {
+	raw := q.Raw
+	finalSQL := raw.Template
+
+	var sc *schema.SchemaDefinition
+	if q.Target != nil {
+		sc = q.Target.Schema
+	}
+
+	nativeQuery := &sqliteQuery{
+		payload:  types.SQLitePayload{SQL: finalSQL, Params: raw.Parameters, Schema: sc},
+		stmtType: stmtType,
+	}
+
+	return nativeQuery, nil
+}

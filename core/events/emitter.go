@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"fmt"
 	"regexp"
 	"slices"
 	"strings"
@@ -31,6 +32,7 @@ type EventFactory[T any] func(
 	errorMsg *string,
 	startTime time.Time,
 	duration *int64,
+	extra map[string]any,
 ) T
 
 // NewEventEmitter creates a new generic event emitter with the specified
@@ -44,10 +46,15 @@ func NewEventEmitter[T any](bus EventBus[T], factory EventFactory[T], logger *za
 }
 
 // EmitEvent publishes an event to the underlying event bus.
-// This is a low-level method for direct event emission.
+// Events are published to both the specific event type topic and the wildcard "*" topic
+// to support both exact and pattern-based subscriptions.
 func (e *EventEmitter[T]) EmitEvent(eventType string, event T) {
 	if e.bus != nil {
+		// Publish to specific topic for exact subscribers
 		e.bus.Emit(eventType, event)
+
+		// Publish to wildcard topic for pattern subscribers
+		e.bus.Emit("*", event)
 	}
 }
 
@@ -98,8 +105,8 @@ func matchesWildcard(eventType, pattern string) bool {
 	}
 
 	// Handle suffix wildcard (e.g., "*:success")
-	if strings.HasPrefix(pattern, "*") {
-		suffix := strings.TrimPrefix(pattern, "*")
+	if after, ok := strings.CutPrefix(pattern, "*"); ok {
+		suffix := after
 		return strings.HasSuffix(eventType, suffix)
 	}
 
@@ -189,14 +196,15 @@ func isRegexPattern(pattern string) bool {
 // Returns an unsubscribe function that removes the subscription when called.
 //
 // Examples:
-//   // Listen to all document events
-//   unsubscribe := emitter.Subscribe("document:*", handler)
 //
-//   // Listen to all success events with custom filtering
-//   unsubscribe := emitter.Subscribe("*:success", handler, customFilter)
+//	// Listen to all document events
+//	unsubscribe := emitter.Subscribe("document:*", handler)
 //
-//   // Listen to specific event (no filtering overhead)
-//   unsubscribe := emitter.Subscribe("document:create:success", handler)
+//	// Listen to all success events with custom filtering
+//	unsubscribe := emitter.Subscribe("*:success", handler, customFilter)
+//
+//	// Listen to specific event (no filtering overhead)
+//	unsubscribe := emitter.Subscribe("document:create:success", handler)
 func (e *EventEmitter[T]) Subscribe(eventType string, handler func(ctx context.Context, event T) error, filters ...func(ctx context.Context, event T) bool) func() {
 	if e.bus == nil {
 		return func() {} // Return no-op unsubscribe for nil bus
@@ -218,6 +226,8 @@ func (e *EventEmitter[T]) Subscribe(eventType string, handler func(ctx context.C
 		// Pattern detected: subscribe to wildcard and filter
 		subscriptionEventType = "*"
 	}
+
+	e.logger.Info(fmt.Sprintf("Subscribed to %s", subscriptionEventType))
 	// Exact match: subscribe directly (no filtering overhead)
 
 	return e.bus.Subscribe(subscriptionEventType, handler, allFilters...)
@@ -249,6 +259,9 @@ type OperationConfig struct {
 
 	// Output data to include in success events (optional, overridden by actual result)
 	Output any
+
+	//
+	Extra map[string]any
 }
 
 // ensureWildcard adds the "*" wildcard event type to a slice if it doesn't
@@ -281,17 +294,18 @@ func ensureWildcard(eventTypes []string) []string {
 // The original operation result and error are returned unchanged.
 //
 // Example:
-//   config := OperationConfig{
-//       Operation: "user:create",
-//       StartEventTypes: []string{"user:create:start"},
-//       SuccessEventTypes: []string{"user:create:success"},
-//       FailedEventTypes: []string{"user:create:failed"},
-//       Input: createUserRequest,
-//   }
 //
-//   result, err := emitter.WithEventEmission(ctx, config, func() (any, error) {
-//       return userService.CreateUser(createUserRequest)
-//   })
+//	config := OperationConfig{
+//	    Operation: "user:create",
+//	    StartEventTypes: []string{"user:create:start"},
+//	    SuccessEventTypes: []string{"user:create:success"},
+//	    FailedEventTypes: []string{"user:create:failed"},
+//	    Input: createUserRequest,
+//	}
+//
+//	result, err := emitter.WithEventEmission(ctx, config, func() (any, error) {
+//	    return userService.CreateUser(createUserRequest)
+//	})
 func (e *EventEmitter[T]) WithEventEmission(
 	ctx context.Context,
 	config OperationConfig,
@@ -323,6 +337,7 @@ func (e *EventEmitter[T]) WithEventEmission(
 			nil, // No error yet
 			startTime,
 			nil, // No duration for start events
+			config.Extra,
 		)
 		e.EmitEvent(eventType, startEvent)
 	}
@@ -348,6 +363,7 @@ func (e *EventEmitter[T]) WithEventEmission(
 				&errStr,
 				startTime,
 				&duration,
+				config.Extra,
 			)
 			e.EmitEvent(eventType, failEvent)
 		}
@@ -367,6 +383,7 @@ func (e *EventEmitter[T]) WithEventEmission(
 			nil,    // No error on success
 			startTime,
 			&duration,
+			config.Extra,
 		)
 		e.EmitEvent(eventType, successEvent)
 	}

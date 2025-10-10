@@ -29,6 +29,7 @@ type basePersistence struct {
 	collectionsMu      sync.RWMutex
 	logger             *zap.Logger
 	decorators         []utils.DecoratorFunc[base.Collection]
+	rawQueryProcessor  base.RawQueryProcessor
 	txMu               sync.RWMutex
 }
 
@@ -50,7 +51,9 @@ func newBasePersistence(
 		engine,
 		logger,
 		nil,
+		nil,
 	)
+
 	if err != nil {
 		return nil, err
 	}
@@ -73,6 +76,8 @@ func newBasePersistence(
 	}
 
 	p.registry = registry
+	p.rawQueryProcessor = newRawQueryProcessor(registry)
+
 	return p, nil
 }
 
@@ -114,6 +119,7 @@ func (p *basePersistence) Collection(ctx context.Context, name string) (base.Col
 			}
 			return sc.Name, sc, nil
 		},
+		p.rawQueryProcessor,
 	)
 
 	if err != nil {
@@ -377,3 +383,23 @@ func (p *basePersistence) Async(ctx context.Context, f func(ctx context.Context)
 	}
 	return fut
 }
+
+
+func (p *basePersistence) Query(ctx context.Context, rawQuery *query.RawQuery) (*query.RawQueryResult, error) {
+	// Resolve collection placeholders in the template
+	resolvedTemplate, err := p.rawQueryProcessor.ProcessRawQueryTemplate(ctx, rawQuery.Template, rawQuery.Collections)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a new RawQuery with the resolved template
+	processedRawQuery := &query.RawQuery{
+		Template:   resolvedTemplate,
+		Options:    rawQuery.Options,
+		Collections: rawQuery.Collections,
+		Parameters: rawQuery.Parameters,
+	}
+
+	return p.interactor.Query(ctx, &query.Query{Raw: processedRawQuery})
+}
+

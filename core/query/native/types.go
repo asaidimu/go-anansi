@@ -17,6 +17,9 @@ import (
 type StatementType string
 
 const (
+	// StmtRaw represents a raw native query
+	StmtRaw StatementType = "RAW"
+
 	// StmtSelect represents a data retrieval operation (SELECT in SQL, find in MongoDB)
 	StmtSelect StatementType = "SELECT"
 
@@ -113,6 +116,11 @@ type QueryExecutor[T any] interface {
 	//
 	// Returns a slice of documents or an error if execution fails.
 	Query(ctx context.Context, query NativeQuery[T]) ([]data.Document, error)
+
+	// ExecuteRawQuery executes a raw, templated query directly against the database.
+	// This allows for operations that are not tied to a specific collection,
+	// or for highly optimized, custom queries.
+	ExecuteQuery(ctx context.Context, query NativeQuery[T]) (*query.RawQueryResult, error)
 
 	// Exec executes a non-query statement (INSERT, UPDATE, DELETE).
 	// Returns the number of affected rows/documents, or an error if execution fails.

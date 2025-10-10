@@ -137,22 +137,22 @@ func TestSQLiteCapabilities_ExpressionOperators(t *testing.T) {
 	// Test ADD
 	qAdd := query.NewQueryBuilder().From("users").Schema(schema).Select().AddComputed("total_income", "ADD", &query.FieldReference{Field: "salary"}, &query.FieldReference{Field: "bonus"}).End().Build()
 	nqAdd, _ := builder.Build(&qAdd, native.StmtSelect, nil)
-	assert.Equal(t, `SELECT ADD("salary", "bonus") AS total_income FROM users`, nqAdd.Raw().SQL)
+	assert.Equal(t, `SELECT ("salary" + "bonus") AS total_income FROM users`, nqAdd.Raw().SQL)
 
 	// Test SUBTRACT
 	qSubtract := query.NewQueryBuilder().From("users").Schema(schema).Select().AddComputed("net_income", "SUBTRACT", &query.FieldReference{Field: "salary"}, &query.FieldReference{Field: "expenses"}).End().Build()
 	nqSubtract, _ := builder.Build(&qSubtract, native.StmtSelect, nil)
-	assert.Equal(t, `SELECT SUBTRACT("salary", "expenses") AS net_income FROM users`, nqSubtract.Raw().SQL)
+	assert.Equal(t, `SELECT ("salary" - "expenses") AS net_income FROM users`, nqSubtract.Raw().SQL)
 
 	// Test MULTIPLY
 	qMultiply := query.NewQueryBuilder().From("users").Schema(schema).Select().AddComputed("gross_salary", "MULTIPLY", &query.FieldReference{Field: "salary"}, 1.2).End().Build()
 	nqMultiply, _ := builder.Build(&qMultiply, native.StmtSelect, nil)
-	assert.Equal(t, `SELECT MULTIPLY("salary", $1) AS gross_salary FROM users`, nqMultiply.Raw().SQL)
+	assert.Equal(t, `SELECT ("salary" * $1) AS gross_salary FROM users`, nqMultiply.Raw().SQL)
 
 	// Test DIVIDE
 	qDivide := query.NewQueryBuilder().From("users").Schema(schema).Select().AddComputed("monthly_salary", "DIVIDE", &query.FieldReference{Field: "salary"}, 12).End().Build()
 	nqDivide, _ := builder.Build(&qDivide, native.StmtSelect, nil)
-	assert.Equal(t, `SELECT DIVIDE("salary", $1) AS monthly_salary FROM users`, nqDivide.Raw().SQL)
+	assert.Equal(t, `SELECT ("salary" / $1) AS monthly_salary FROM users`, nqDivide.Raw().SQL)
 }
 
 func TestSQLiteCapabilities_Functions(t *testing.T) {

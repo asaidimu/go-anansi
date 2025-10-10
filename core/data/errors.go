@@ -34,6 +34,7 @@ var (
 	ErrInvalidQuery            = errors.New("invalid query")
 	ErrFailedToUnmarshalJSON   = errors.New("failed to unmarshal JSON")
 	ErrKeyEmpty                = errors.New("key cannot be empty")
+	ErrReadOnlyField           = errors.New("field is read-only")
 	ErrTypeConversion          = errors.New("type conversion failed") // General for type coercion issues
 	ErrPathSegmentNotFound     = errors.New("path segment not found")
 	ErrCannotTraverse          = errors.New("cannot traverse into non-document type")
@@ -51,13 +52,13 @@ var (
 	ErrRequiredFieldNotFound   = errors.New("required field not found")
 	ErrFailedToSetField        = errors.New("failed to set field")
 	ErrTypeConversionFailed    = errors.New("type conversion failed") // More specific than ErrTypeConversion
-	ErrHmacSecretNotConfigured = errors.New("HMAC secret key has not been configured")
 
 	ErrFactoryAlreadyConfigured          = errors.New("document factory already configured")
 	ErrConfigurationNotApplied           = errors.New("configuration was not applied")
 	ErrFactoryNotConfigured              = errors.New("document factory not configured")
 	ErrFailedToCalculateHash             = errors.New("failed to calculate hash")
 	ErrHashMismatch                      = errors.New("hash mismatch")
+	ErrSignatureInvalid 				 = errors.New("Invalid signature")
 	ErrInvalidJSONPathSyntax             = errors.New("invalid JSONPath syntax")
 	ErrNoNumericValuesForAggregation     = errors.New("no numeric values found for aggregation")
 	ErrSystemErrorDuringValidation       = errors.New("system error during document validation")

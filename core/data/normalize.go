@@ -4,7 +4,7 @@ func (d Document) Normalize() Document {
     // Copy the document
     clean := make(Document, len(d))
     for k, v := range d {
-        if k == MetadataFieldName {
+        if k == MetadataField {
             clean[k] = v // keep top-level metadata
             continue
         }
@@ -23,7 +23,7 @@ func stripNestedMetadata(value any) any {
         // strip metadata completely for nested docs
         clean := make(Document, len(v))
         for k2, v2 := range v {
-            if k2 != MetadataFieldName {
+            if k2 != MetadataField {
                 clean[k2] = stripNestedMetadata(v2)
             }
         }

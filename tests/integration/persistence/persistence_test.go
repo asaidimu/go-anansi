@@ -55,10 +55,9 @@ func newTestSchema(name ...string) *schema.SchemaDefinition {
 	}
 	return &schema.SchemaDefinition{
 		Name:        sname,
-		Version:     "1.0.0",
+		Version:     "8.0.0",
 		Description: "test collection",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":        {Name: "id", Type: "string", Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
 			"name":      {Name: "name", Type: "string", Required: utils.BoolPtr(true)},
 			"age":       {Name: "age", Type: "integer"},
 			"is_active": {Name: "is_active", Type: "boolean"},
@@ -206,8 +205,8 @@ func TestPersistence_Transact(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = accounts.CreateMany(context.Background(), []data.Document{
-		{"id": "A", "name": "Alice", "balance": 100.0},
-		{"id": "B", "name": "Bob", "balance": 50.0},
+		{"name": "Alice", "balance": 100.0},
+		{"name": "Bob", "balance": 50.0},
 	})
 
 	// Perform a successful transfer within a transaction
@@ -218,7 +217,7 @@ func TestPersistence_Transact(t *testing.T) {
 		}
 
 		// Read Alice's document to get metadata
-		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
+		aliceQuery := query.NewQueryBuilder().Where("name").Eq("Alice").Build()
 		aliceResult, err := acc.Read(context.Background(), &aliceQuery)
 
 		if err != nil {
@@ -226,18 +225,17 @@ func TestPersistence_Transact(t *testing.T) {
 		}
 
 		require.Equal(t, 1, aliceResult.Count)
-		aliceDoc := aliceResult.Data.(data.Document)
 
 		// Subtract 20 from Alice
-		aliceDoc["balance"] = 80.0
-		filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+		aliceDoc := data.Document{ "balance": 80 }
+		filterAlice := query.NewQueryBuilder().Where("name").Eq("Alice").Build().Filters
+		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Set: aliceDoc, Filter: filterAlice})
 		if err != nil {
 			return nil, fmt.Errorf("%w, \n %v \n", err, aliceDoc)
 		}
 
 		// Read Bob's document to get metadata
-		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
+		bobQuery := query.NewQueryBuilder().Where("name").Eq("Bob").Build()
 		bobResult, err := acc.Read(context.Background(), &bobQuery)
 		if err != nil {
 			return nil, err
@@ -247,8 +245,8 @@ func TestPersistence_Transact(t *testing.T) {
 
 		// Add 20 to Bob
 		bobDoc["balance"] = 70.0
-		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: bobDoc, Filter: filterBob})
+		filterBob := query.NewQueryBuilder().Where("name").Eq("Bob").Build().Filters
+		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Set: bobDoc, Filter: filterBob})
 		if err != nil {
 			return nil, fmt.Errorf("%w, \n %v \n", err, bobDoc)
 		}
@@ -266,16 +264,16 @@ func TestPersistence_Transact(t *testing.T) {
 
 	balances := make(map[string]any)
 	for _, doc := range result.Data.([]data.Document) {
-		balances[doc["id"].(string)] = doc["balance"]
+		balances[doc["name"].(string)] = doc["balance"]
 	}
 
-	assert.Equal(t, 80.0, balances["A"])
-	assert.Equal(t, 70.0, balances["B"])
+	assert.Equal(t, 80.0, balances["Alice"])
+	assert.Equal(t, 70.0, balances["Bob"])
 
 	// Perform a failing transaction
 	_, err = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
 		// Read Alice's document to get metadata
-		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
+		aliceQuery := query.NewQueryBuilder().Where("name").Eq("Alice").Build()
 		aliceResult, err := accounts.Read(tctx, &aliceQuery)
 		if err != nil {
 			return nil, err
@@ -285,8 +283,8 @@ func TestPersistence_Transact(t *testing.T) {
 
 		// Subtract 10 from Alice
 		aliceDoc["balance"] = 70.0
-		filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
-		_, err = accounts.Update(tctx, &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
+		filterAlice := query.NewQueryBuilder().Where("name").Eq("Alice").Build().Filters
+		_, err = accounts.Update(tctx, &base.CollectionUpdate{Set: aliceDoc, Filter: filterAlice})
 		if err != nil {
 			return nil, err
 		}
@@ -295,7 +293,7 @@ func TestPersistence_Transact(t *testing.T) {
 		updateBob := data.Document{"non_existent_field": "error"}
 
 		// We still need metadata for the update to pass the initial check
-		bobQuery := query.NewQueryBuilder().Where("id").Eq("B").Build()
+		bobQuery := query.NewQueryBuilder().Where("name").Eq("Bob").Build()
 		bobResult, err := accounts.Read(tctx, &bobQuery)
 		if err != nil {
 			return nil, err
@@ -305,8 +303,8 @@ func TestPersistence_Transact(t *testing.T) {
 		meta, _ := bobDoc.Metadata()
 		updateBob.SetMetadata(meta)
 
-		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
-		_, err = accounts.Update(tctx, &base.CollectionUpdate{Data: updateBob, Filter: filterBob})
+		filterBob := query.NewQueryBuilder().Where("name").Eq("Bob").Build().Filters
+		_, err = accounts.Update(tctx, &base.CollectionUpdate{Set: updateBob, Filter: filterBob})
 
 		return nil, err // Propagate the error to trigger rollback
 	})
@@ -319,11 +317,11 @@ func TestPersistence_Transact(t *testing.T) {
 
 	rollbackBalances := make(map[string]any)
 	for _, doc := range rollbackResult.Data.([]data.Document) {
-		rollbackBalances[doc["id"].(string)] = doc["balance"]
+		rollbackBalances[doc["name"].(string)] = doc["balance"]
 	}
 
-	assert.Equal(t, 80.0, rollbackBalances["A"])
-	assert.Equal(t, 70.0, rollbackBalances["B"])
+	assert.Equal(t, 80.0, rollbackBalances["Alice"])
+	assert.Equal(t, 70.0, rollbackBalances["Bob"])
 }
 
 func TestPersistence_Schema(t *testing.T) {
@@ -556,11 +554,9 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	defer cleanup()
 
 	logger := zap.NewNop()
-	options := base.MetadataOptions{
-		HmacSecretKey: []byte("test-secret"),
-	}
 
-	p, err := persistence.NewPersistence(interactor, logger, nil)
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// 1. Define Schemas
@@ -656,3 +652,179 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 		}
 	}
 } */
+
+func TestPersistence_RawQueryWithJoin(t *testing.T) {
+	testutils.ConfigureDocumentFactory()
+	interactor, cleanup := createNativeInteractor(t)
+	defer cleanup()
+
+	logger := zap.NewNop()
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	// 1. Define Schemas
+	userSchema := schema.SchemaDefinition{
+		Name:    "users",
+		Version: "1.0.0",
+		Fields: map[string]*schema.FieldDefinition{
+			"uid":   {Name: "uid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
+			"name": {Name: "name", Type: schema.FieldTypeString},
+		},
+		Indexes: []schema.IndexDefinition{
+			{Name: "ix_uid", Fields: []string{"uid"}, Type: schema.IndexTypeNormal},
+		},
+	}
+
+	orderSchema := schema.SchemaDefinition{
+		Name:    "orders",
+		Version: "1.0.0",
+		Fields: map[string]*schema.FieldDefinition{
+			"order_id": {Name: "order_id", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
+			"user_id":  {Name: "user_id", Type: schema.FieldTypeString},
+			"amount":   {Name: "amount", Type: schema.FieldTypeNumber},
+		},
+		Indexes: []schema.IndexDefinition{
+			{Name: "order_id_pk", Fields: []string{"order_id"}, Type: schema.IndexTypePrimary},
+		},
+	}
+
+	ctx := context.Background()
+
+	// 2. Create Collections
+	_, err = p.CreateCollection(ctx, userSchema)
+	require.NoError(t, err)
+	_, err = p.CreateCollection(ctx, orderSchema)
+	require.NoError(t, err)
+
+	// 3. Insert Data
+	usersCollection, err := p.Collection(ctx, "users")
+	require.NoError(t, err)
+	_, err = usersCollection.CreateMany(ctx, []data.Document{
+		data.MustNewDocument(map[string]any{"uid": "user1", "name": "Alice"}),
+		data.MustNewDocument(map[string]any{"uid": "user2", "name": "Bob"}),
+	})
+	require.NoError(t, err)
+
+	ordersCollection, err := p.Collection(ctx, "orders")
+	require.NoError(t, err)
+	_, err = ordersCollection.CreateMany(ctx, []data.Document{
+		data.MustNewDocument(map[string]any{"order_id": "orderA", "user_id": "user1", "amount": 100.0}),
+		data.MustNewDocument(map[string]any{"order_id": "orderB", "user_id": "user2", "amount": 200.0}),
+		data.MustNewDocument(map[string]any{"order_id": "orderC", "user_id": "user1", "amount": 150.0}),
+	})
+	require.NoError(t, err)
+
+	// 4. Construct and execute a raw JOIN query
+	rawJoinQuery := &query.RawQuery{
+		Template: `
+            SELECT u.uid AS user_id, u.name AS user_name, o.order_id, o.amount
+            FROM {{collections.users}} u
+            JOIN {{collections.orders}} o ON u.uid = o.user_id
+            WHERE u.name = ?
+            ORDER BY o.amount DESC
+        `,
+		Parameters: []any{"Alice"},
+		Collections: map[string]query.RawQueryTarget{
+			"users":  {Collection: "users"},
+			"orders": {Collection: "orders"},
+		},
+		Options: map[string]any{
+			"expectRows": true,
+		},
+	}
+
+	result, err := p.Query(ctx, rawJoinQuery)
+	require.NoError(t, err)
+	assert.True(t, result.Success)
+	assert.Equal(t, 2, result.Count)
+	assert.Len(t, result.Data.([]data.Document), 2)
+
+	// 5. Assert Results
+	joinedDocs := result.Data.([]data.Document)
+
+	// Expecting two orders for Alice, sorted by amount DESC
+	assert.Equal(t, "user1", joinedDocs[0]["user_id"])
+	assert.Equal(t, "Alice", joinedDocs[0]["user_name"])
+	assert.Equal(t, "orderC", joinedDocs[0]["order_id"])
+	assert.Equal(t, float64(150), joinedDocs[0]["amount"])
+
+	assert.Equal(t, "user1", joinedDocs[1]["user_id"])
+	assert.Equal(t, "Alice", joinedDocs[1]["user_name"])
+	assert.Equal(t, "orderA", joinedDocs[1]["order_id"])
+	assert.Equal(t, float64(100), joinedDocs[1]["amount"])
+}
+
+func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
+	testutils.ConfigureDocumentFactory()
+	interactor, cleanup := createNativeInteractor(t)
+	defer cleanup()
+
+	logger := zap.NewNop()
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	// 1. Define Schema for products
+	productSchema := schema.SchemaDefinition{
+		Name:    "products",
+		Version: "1.0.0",
+		Fields: map[string]*schema.FieldDefinition{
+			"pid":   {Name: "pid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
+			"name":  {Name: "name", Type: schema.FieldTypeString},
+			"price": {Name: "price", Type: schema.FieldTypeNumber},
+		},
+		Indexes: []schema.IndexDefinition{
+			{Name: "ix_pid", Fields: []string{"pid"}, Type: schema.IndexTypeNormal},
+		},
+	}
+
+	ctx := context.Background()
+
+	// 2. Create Collection
+	productsCollection, err := p.CreateCollection(ctx, productSchema)
+	require.NoError(t, err)
+
+	// 3. Insert Data
+	_, err = productsCollection.CreateMany(ctx, []data.Document{
+		data.MustNewDocument(map[string]any{"pid": "prod1", "name": "Laptop", "price": 1200.0}),
+		data.MustNewDocument(map[string]any{"pid": "prod2", "name": "Mouse", "price": 25.0}),
+		data.MustNewDocument(map[string]any{"pid": "prod3", "name": "Keyboard", "price": 75.0}),
+		data.MustNewDocument(map[string]any{"pid": "prod4", "name": "Monitor", "price": 300.0}),
+	})
+	require.NoError(t, err)
+
+	// 4. Construct a query.Query with a RawQuery for collection.Read()
+	rawReadQuery := &query.Query{
+		Raw: &query.RawQuery{
+			Template: `SELECT pid, name, price FROM {{collections.products}} WHERE price > ? ORDER BY price DESC`,
+			Parameters: []any{float64(50.0)},
+			Collections: map[string]query.RawQueryTarget{
+				"products": {Collection: "products"},
+			},
+			Options: map[string]any{
+				"expectRows": true,
+			},
+		},
+	}
+
+	// 5. Execute Query on the 'products' collection
+	result, err := productsCollection.Read(ctx, rawReadQuery)
+	require.NoError(t, err)
+	assert.Equal(t, 3, result.Count)
+	assert.Len(t, result.Data.([]data.Document), 3)
+
+	// 6. Assert Results
+	readDocs := result.Data.([]data.Document)
+
+	// Expecting three products, sorted by price DESC
+	assert.Equal(t, "prod1", readDocs[0]["pid"])
+	assert.Equal(t, "Laptop", readDocs[0]["name"])
+	assert.Equal(t, float64(1200.0), readDocs[0]["price"])
+
+	assert.Equal(t, "prod4", readDocs[1]["pid"])
+	assert.Equal(t, "Monitor", readDocs[1]["name"])
+	assert.Equal(t, float64(300.0), readDocs[1]["price"])
+
+	assert.Equal(t, "prod3", readDocs[2]["pid"])
+	assert.Equal(t, "Keyboard", readDocs[2]["name"])
+	assert.Equal(t, float64(75.0), readDocs[2]["price"])
+}

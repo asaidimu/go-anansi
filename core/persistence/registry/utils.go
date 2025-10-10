@@ -107,10 +107,37 @@ func EnrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
 		return nil
 	}
 
+	// --- Add ID Field ---
+	idField := &schema.FieldDefinition{
+		Name:     data.DocumentID,
+		Type:     schema.FieldTypeString,
+		Required: utils.BoolPtr(true),
+		Unique:   utils.BoolPtr(true),
+	}
+	sc = sc.MustAddField(idField, nil)
+
+	// --- Enforce ID Index ---
+	var filteredIndexes []schema.IndexDefinition
+	for _, index := range sc.Indexes {
+		if len(index.Fields) == 1 && index.Fields[0] == data.DocumentID {
+			continue // Skip user-defined index on 'id'.
+		}
+		filteredIndexes = append(filteredIndexes, index)
+	}
+	sc.Indexes = filteredIndexes
+
+	sc = sc.MustAddIndex(schema.IndexDefinition{
+		Name:   "pk_id",
+		Fields: []string{data.DocumentID},
+		Type:   schema.IndexTypePrimary,
+		Unique: utils.BoolPtr(true),
+	})
+
+	// --- Add Metadata Field ---
 	metadataField := &schema.FieldDefinition{
-		Name:   data.MetadataFieldName,
+		Name:   data.MetadataField,
 		Type:   schema.FieldTypeObject,
-		Schema: schema.NestedSchemaReference{ID: data.MetadataFieldName},
+		Schema: schema.NestedSchemaReference{ID: data.MetadataField},
 	}
 
 	provider := func(sc *schema.SchemaDefinition) (*schema.NestedSchemaDefinition, []*schema.NestedSchemaDefinition) {

@@ -296,7 +296,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 			Value:    query.FilterValue{StringVal: utils.StringPtr("t1")},
 		},
 	}
-	rowsAffected, err := interactor.UpdateDocuments(ctx, testSchema, updates, filterT1)
+	rowsAffected, err := interactor.UpdateDocuments(ctx, testSchema, updates, nil, filterT1)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), rowsAffected)
 
@@ -320,7 +320,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 			Value:    query.FilterValue{BoolVal: utils.BoolPtr(false)},
 		},
 	}
-	rowsAffectedAll, err := interactor.UpdateDocuments(ctx, testSchema, updatesAll, filterIncomplete)
+	rowsAffectedAll, err := interactor.UpdateDocuments(ctx, testSchema, updatesAll, nil, filterIncomplete)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), rowsAffectedAll) // Only t2 was incomplete
 
@@ -574,7 +574,7 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 			Value:    query.FilterValue{StringVal: utils.StringPtr("acc1")},
 		},
 	}
-	_, err = txInteractor.UpdateDocuments(ctx, testSchema, updates, filterAcc1)
+	_, err = txInteractor.UpdateDocuments(ctx, testSchema, updates, nil, filterAcc1)
 	require.NoError(t, err)
 
 	// Insert within transaction
@@ -623,7 +623,7 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 			Value:    query.FilterValue{StringVal: utils.StringPtr("acc1")},
 		},
 	}
-	_, err = txInteractor2.UpdateDocuments(ctx, testSchema, updates2, filterAcc1_2)
+	_, err = txInteractor2.UpdateDocuments(ctx, testSchema, updates2, nil, filterAcc1_2)
 	require.NoError(t, err)
 	_, err = txInteractor2.InsertDocuments(ctx, testSchema, []data.Document{
 		data.MustNewDocument(map[string]any{"account_id": "acc4", "balance": 300.0}),
@@ -692,4 +692,95 @@ func TestNativeInteractor_CheckCollection(t *testing.T) {
 	exists, err = interactor.SchemaManager().CollectionExists(ctx, "test_collection")
 	require.NoError(t, err)
 	require.True(t, exists)
+}
+
+func TestNativeInteractor_RawQuery(t *testing.T) {
+	testutils.ConfigureDocumentFactory()
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	interactor, err := createNativeInteractor(t, db)
+	require.NoError(t, err)
+
+	// 1. Create a collection using DSL
+	testSchema := &schema.SchemaDefinition{
+		Name: "raw_users",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":    {Name: "id", Type: schema.FieldTypeString},
+			"name":  {Name: "name", Type: schema.FieldTypeString},
+			"email": {Name: "email", Type: schema.FieldTypeString},
+			"age":   {Name: "age", Type: schema.FieldTypeInteger},
+		},
+		Indexes: []schema.IndexDefinition{
+			{Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+		},
+	}
+	ctx := context.Background()
+	err = interactor.SchemaManager().CreateCollection(ctx, *testSchema)
+	require.NoError(t, err)
+
+	// 2. Insert some data using DSL
+	docsToInsert := []data.Document{
+		data.MustNewDocument(map[string]any{"name": "Alice", "email": "alice@example.com", "age": 30}),
+		data.MustNewDocument(map[string]any{"name": "Bob", "email": "bob@example.com", "age": 25}),
+		data.MustNewDocument(map[string]any{"name": "Charlie", "email": "charlie@example.com", "age": 35}),
+	}
+	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
+	require.NoError(t, err)
+
+	// 3. Execute a raw SELECT query
+	rawSelectQuery := &query.RawQuery{
+		Template:   "SELECT id, name, age FROM raw_users WHERE age > ? ORDER BY age ASC",
+		Parameters: []any{28},
+	}
+	selectResult, err := interactor.Query(ctx, &query.Query{Raw: rawSelectQuery})
+	require.NoError(t, err)
+	assert.True(t, selectResult.Success)
+	assert.Equal(t, 2, selectResult.Count)
+	assert.Len(t, selectResult.Data.([]data.Document), 2)
+
+	// Verify selected data
+	selectedDocs := selectResult.Data.([]data.Document)
+	assert.Equal(t, "Alice", selectedDocs[0]["name"])
+	assert.Equal(t, int64(30), selectedDocs[0]["age"])
+
+	assert.Equal(t, "Charlie", selectedDocs[1]["name"])
+	assert.Equal(t, int64(35), selectedDocs[1]["age"])
+
+	// 4. Execute a raw UPDATE query
+	rawUpdateQuery := &query.RawQuery{
+		Template:   "UPDATE raw_users SET age = ? WHERE id = ?",
+		Parameters: []any{31, selectedDocs[0].ID()},
+	}
+	updateResult, err := interactor.Query(ctx, &query.Query{Raw: rawUpdateQuery})
+	require.NoError(t, err)
+	assert.True(t, updateResult.Success)
+	assert.Equal(t, int64(1), updateResult.AffectedRows)
+
+	// Verify the update using DSL select
+	updatedUser, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
+		Target:  &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
+		Filters: &query.QueryFilter{Condition: &query.FilterCondition{Field: "id", Operator: query.ComparisonOperatorEq, Value: query.FilterValue{StringVal: utils.StringPtr(
+			selectedDocs[0].ID(),
+		)}}},
+	})
+	require.NoError(t, err)
+	assert.Len(t, updatedUser, 1)
+	assert.Equal(t, int64(31), updatedUser[0]["age"])
+
+	// 5. Execute a raw DDL query (CREATE INDEX)
+	rawCreateIndexQuery := &query.RawQuery{
+		Template: "CREATE INDEX idx_raw_users_email ON raw_users (email)",
+	}
+	createIndexResult, err := interactor.Query(ctx, &query.Query{Raw: rawCreateIndexQuery})
+	require.NoError(t, err)
+	assert.True(t, createIndexResult.Success)
+	assert.Equal(t, int64(1), createIndexResult.AffectedRows) // SQLite reports 1 affected row for CREATE INDEX
+
+	// Verify index exists
+	row := db.QueryRow("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_raw_users_email';")
+	var indexName string
+	err = row.Scan(&indexName)
+	require.NoError(t, err)
+	assert.Equal(t, "idx_raw_users_email", indexName)
 }

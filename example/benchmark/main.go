@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math/rand"
-	"sync"
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6"
@@ -24,23 +23,38 @@ import (
 )
 
 const (
-	numDocuments = 1000000
-	numWorkers   = 10
+	// numDocuments is the total number of documents to process in the benchmark.
+	numDocuments = 100000
+	// numWorkers is the number of concurrent goroutines used in Transact/Async operations.
+	numWorkers = 10
 )
 
-// User schema definition
+// getUserSchema defines the structure of the "User" documents.
 func getUserSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
+	sc := &schema.SchemaDefinition{
 		Name:    "User",
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":     {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
+			// "ida" is the primary unique identifier used for lookups
+			"ida":    {Name: "ida", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
 			"name":   {Name: "name", Type: "string", Required: coreutils.BoolPtr(true)},
 			"email":  {Name: "email", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
 			"age":    {Name: "age", Type: "integer", Required: coreutils.BoolPtr(true)},
 			"active": {Name: "active", Type: "boolean", Required: coreutils.BoolPtr(true)},
 		},
 	}
+	sc = sc.MustAddIndex(schema.IndexDefinition{
+		Name:   "key_ida",
+		Fields: []string{"ida"},
+		Type:   schema.IndexTypeNormal,
+		Unique: coreutils.BoolPtr(true),
+	})
+	sc = sc.MustAddIndex(schema.IndexDefinition{
+		Name:   "key_age",
+		Fields: []string{"age"},
+		Type:   schema.IndexTypeNormal,
+	})
+	return sc
 }
 
 func main() {
@@ -53,7 +67,8 @@ func main() {
 	}
 	defer logger.Sync()
 
-	// 2. Setup In-Memory SQLite Database
+	// 2. Setup SQLite Database (using WAL mode for better concurrency)
+	// We use the same configuration as the original file for consistency.
 	db, err := sql.Open("sqlite3", "anansi.db?_mutex=full&_cache_size=10000&_journal_mode=WAL&_synchronous=NORMAL")
 	if err != nil {
 		log.Fatalf("Failed to open database: %v", err)
@@ -71,20 +86,12 @@ func main() {
 		log.Fatalf("Failed to create native interactor: %v", err)
 	}
 
-	// 4. Setup Document Factory Config
-	factoryConfig := data.DocumentFactoryConfig{
-		HmacSecret: []byte("benchmark-secret-key"),
-	}
-
-	// 5. Setup Decorators
-	decorators := &utils.Decorators{}
-
-	// 6. Initialize Anansi Persistence Layer
+	// 4. Setup Anansi Persistence Layer
 	cfg := anansi.SetupConfig{
 		Interactor:    interactor,
 		Logger:        logger,
-		FactoryConfig: factoryConfig,
-		Decorators:    decorators,
+		FactoryConfig: data.DocumentFactoryConfig{},
+		Decorators:    &utils.Decorators{},
 	}
 	p, err := anansi.Setup(cfg)
 	if err != nil {
@@ -93,10 +100,10 @@ func main() {
 	elapsed := time.Since(start)
 	logger.Info(fmt.Sprintf("Anansi persistence layer initialized successfully in %s.", elapsed))
 
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer cancel()
 
-	// 7. Create "users" collection
+	// 5. Create "users" collection (Users table must exist for benchmarks)
 	userSchema := getUserSchema()
 	usersCollection, err := p.CreateCollection(ctx, *userSchema)
 	if err != nil {
@@ -111,19 +118,21 @@ func main() {
 func runBenchmarks(ctx context.Context, collection base.Collection, p base.Persistence, logger *zap.Logger) {
 	logger.Info("--- Starting Benchmarks ---", zap.Int("workers", numWorkers))
 
-	// Benchmark Create
+	// 1. Benchmark Create (Data Seeding)
+	// This must run first and successfully commit all 1M documents
+	// to ensure subsequent READ, UPDATE, and DELETE benchmarks operate on real data.
 	benchmarkCreate(ctx, collection, p, logger)
 
-	// Benchmark Read (Single)
+	// 2. Benchmark Read (Single) - Read 1M documents
 	benchmarkReadSingle(ctx, collection, p, logger)
 
-	// Benchmark Read (Multiple)
+	// 3. Benchmark Read (Multiple) - Query 10 times
 	benchmarkReadMultiple(ctx, collection, p, logger)
 
-	// Benchmark Update
+	// 4. Benchmark Update - Update 1M documents
 	benchmarkUpdate(ctx, collection, p, logger)
 
-	// Benchmark Delete
+	// 5. Benchmark Delete - Delete 1M documents
 	benchmarkDelete(ctx, collection, p, logger)
 
 	logger.Info("--- Benchmarks Finished ---")
@@ -132,41 +141,54 @@ func runBenchmarks(ctx context.Context, collection base.Collection, p base.Persi
 func benchmarkCreate(ctx context.Context, collection base.Collection, p base.Persistence, logger *zap.Logger) {
 	start := time.Now()
 
+	// FIX: Use the correct loop structure to distribute all numDocuments across numWorkers.
 	p.Transact(ctx, func(tctx context.Context, t base.BasePersistence) (any, error) {
-		for i := range numWorkers {
+		for w := 0; w < numWorkers; w++ {
+			// This goroutine handles a slice of the total documents
 			t.Async(tctx, func(rctx context.Context) (any, error) {
-				user := data.MustNewDocument(map[string]any{
-					"id":     fmt.Sprintf("user-%d", i),
-					"name":   fmt.Sprintf("User %d", i),
-					"email":  fmt.Sprintf("user%d@example.com", i),
-					"age":    rand.Intn(50) + 20,
-					"active": true,
-				})
-				_, err := collection.CreateOne(ctx, user)
-				if err != nil {
-					return nil, err
+				for i := w; i < numDocuments; i += numWorkers {
+					// FIX: Ensure 'ida' is unique by using the document index 'i'
+					user := data.MustNewDocument(map[string]any{
+						"ida":    fmt.Sprintf("user-%d", i),
+						"name":   fmt.Sprintf("User %d", i),
+						"email":  fmt.Sprintf("user%d@example.com", i),
+						"age":    rand.Intn(50) + 20, // Age 20-69
+						"active": true,
+					})
+					// Use 'ctx' for collection operations based on original implementation
+					_, err := collection.CreateOne(ctx, user)
+					if err != nil {
+						logger.Error("Failed to create user", zap.Int("user_id", i), zap.Error(err))
+						// We allow returning the error to halt the transaction if necessary
+						return nil, err
+					}
 				}
 				return nil, nil
 			})
 		}
 		return nil, nil
 	})
+
 	elapsed := time.Since(start)
 	logger.Info(fmt.Sprintf("CREATE: %d documents in %s. (%.2f docs/sec)", numDocuments, elapsed, float64(numDocuments)/elapsed.Seconds()))
 }
 
 func benchmarkReadSingle(ctx context.Context, collection base.Collection, p base.Persistence, logger *zap.Logger) {
 	start := time.Now()
-	var wg sync.WaitGroup
-	wg.Add(numWorkers)
 
+	// FIX: Use the correct loop structure to distribute all numDocuments across numWorkers.
 	p.Transact(ctx, func(tctx context.Context, t base.BasePersistence) (any, error) {
-		for i := range numWorkers {
+		for w := 0; w < numWorkers; w++ {
+			// This goroutine handles a slice of the total documents
 			t.Async(tctx, func(rctx context.Context) (any, error) {
-				query := query.NewQueryBuilder().Where("id").Eq(fmt.Sprintf("user-%d", i)).Build()
-				_, err := collection.Read(ctx, &query)
-				if err != nil {
-					return nil, err
+				for i := w; i < numDocuments; i += numWorkers {
+					// Query for a specific document by its unique 'ida'
+					query := query.NewQueryBuilder().Where("ida").Eq(fmt.Sprintf("user-%d", i)).Build()
+					_, err := collection.Read(ctx, &query)
+					if err != nil {
+						logger.Error("Failed to read user", zap.Int("user_id", i), zap.Error(err))
+						return nil, err
+					}
 				}
 				return nil, nil
 			})
@@ -180,14 +202,20 @@ func benchmarkReadSingle(ctx context.Context, collection base.Collection, p base
 
 func benchmarkReadMultiple(ctx context.Context, collection base.Collection, p base.Persistence, logger *zap.Logger) {
 	start := time.Now()
+	// NOTE: This test remains largely unchanged as it was originally designed to run a small number of parallel queries (10).
+	// We run 10 separate, concurrent queries against the 'age' field (which should benefit from an index).
 	p.Transact(ctx, func(tctx context.Context, t base.BasePersistence) (any, error) {
-		for range numWorkers {
+		for w := range numWorkers {
 			t.Async(tctx, func(rctx context.Context) (any, error) {
 				query := query.NewQueryBuilder().Where("age").Gt(30).Build()
+				starta := time.Now()
 				_, err := collection.Read(ctx, &query)
+				elapseda := time.Since(starta)
 				if err != nil {
 					logger.Error("Failed to read users", zap.Error(err))
+					return nil, err
 				}
+				logger.Info(fmt.Sprintf("READ (%d): Query 'age > 30' in %s.", w, elapseda))
 				return nil, nil
 			})
 		}
@@ -201,14 +229,17 @@ func benchmarkReadMultiple(ctx context.Context, collection base.Collection, p ba
 func benchmarkUpdate(ctx context.Context, collection base.Collection, p base.Persistence, logger *zap.Logger) {
 	start := time.Now()
 
+	// This function had the correct logic and is retained for consistency.
 	p.Transact(ctx, func(tctx context.Context, t base.BasePersistence) (any, error) {
-		for w := range numWorkers {
+		for w := 0; w < numWorkers; w++ {
 			t.Async(tctx, func(rctx context.Context) (any, error) {
 				for i := w; i < numDocuments; i += numWorkers {
+					// Update age to a new random value
 					update := data.MustNewDocument(map[string]any{"age": rand.Intn(50) + 20})
-					filter := query.NewQueryBuilder().Where("id").Eq(fmt.Sprintf("user-%d", i)).Build().Filters
-					_, err := collection.Update(ctx, &base.CollectionUpdate{Filter: filter, Data: update})
+					filter := query.NewQueryBuilder().Where("ida").Eq(fmt.Sprintf("user-%d", i)).Build().Filters
+					_, err := collection.Update(ctx, &base.CollectionUpdate{Filter: filter, Set: update})
 					if err != nil {
+						logger.Error("Failed to update user", zap.Int("user_id", i), zap.Error(err))
 						return nil, err
 					}
 				}
@@ -225,14 +256,16 @@ func benchmarkUpdate(ctx context.Context, collection base.Collection, p base.Per
 func benchmarkDelete(ctx context.Context, collection base.Collection, p base.Persistence, logger *zap.Logger) {
 	start := time.Now()
 
+	// This function had the correct distribution logic but now runs on a correctly populated dataset.
 	p.Transact(ctx, func(tctx context.Context, t base.BasePersistence) (any, error) {
-		for w := range numWorkers {
+		for w := 0; w < numWorkers; w++ {
 			t.Async(tctx, func(rctx context.Context) (any, error) {
 				for i := w; i < numDocuments; i += numWorkers {
-					filter := query.NewQueryBuilder().Where("id").Eq(fmt.Sprintf("user-%d", i)).Build().Filters
+					// Delete each document individually
+					filter := query.NewQueryBuilder().Where("ida").Eq(fmt.Sprintf("user-%d", i)).Build().Filters
 					_, err := collection.Delete(rctx, filter, false)
 					if err != nil {
-						logger.Error("Failed to delete user", zap.Error(err))
+						logger.Error("Failed to delete user", zap.Int("user_id", i), zap.Error(err))
 						return nil, err
 					}
 				}

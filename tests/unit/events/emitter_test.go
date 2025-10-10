@@ -49,7 +49,7 @@ func TestNewEventEmitter(t *testing.T) {
 }
 
 func TestEventEmitter_EmitEvent(t *testing.T) {
-	emittedEvents := make(chan TestEvent, 1)
+	emittedEvents := make(chan TestEvent, 2)
 	mockBus := &MockEventBus[TestEvent]{
 		EmitFunc: func(eventType string, event TestEvent) {
 			emittedEvents <- event
@@ -173,7 +173,7 @@ func TestEventEmitter_WithEventEmission(t *testing.T) {
 	logger := zaptest.NewLogger(t)
 
 	// Mock factory for TestEvent
-	eventFactory := func(ctx context.Context, eventType string, operation string, input any, output any, errorMsg *string, startTime time.Time, duration *int64) TestEvent {
+	eventFactory := func(ctx context.Context, eventType string, operation string, input any, output any, errorMsg *string, startTime time.Time, duration *int64, extra map[string]any) TestEvent {
 		contextMap := map[string]any{}
 		return TestEvent{
 			ID:      operation,
@@ -199,6 +199,7 @@ func TestEventEmitter_WithEventEmission(t *testing.T) {
 		SuccessEventTypes: []string{"op.success"},
 		FailedEventTypes:  []string{"op.failed"},
 		Input:             map[string]string{"data": "input"},
+		Extra: nil,
 	}
 
 	// Test successful operation
@@ -208,7 +209,7 @@ func TestEventEmitter_WithEventEmission(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, "operation_output", result)
-	assert.Len(t, emittedEvents, 4, "Expected 4 events for successful operation (op.start, *, op.success, *)")
+	assert.Len(t, emittedEvents, 8, "Expected 8 events for successful operation (op.start, *, op.success, *)")
 
 	// Find and check start event
 	var startEvent TestEvent
@@ -242,7 +243,7 @@ func TestEventEmitter_WithEventEmission(t *testing.T) {
 
 	assert.Error(t, err)
 	assert.Equal(t, expectedErr, err)
-	assert.Len(t, emittedEvents, 4, "Expected 4 events for failed operation (op.start, *, op.failed, *)")
+	assert.Len(t, emittedEvents, 8, "Expected 8 events for failed operation (op.start, *, op.failed, *)")
 
 	// Find and check start event for failed operation
 	for _, ev := range emittedEvents {

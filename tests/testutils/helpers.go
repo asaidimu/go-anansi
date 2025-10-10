@@ -11,7 +11,6 @@ import (
 // ConfigureDocumentFactory sets up the document factory with a default secret for tests.
 func ConfigureDocumentFactory() {
 	config := data.DocumentFactoryConfig{
-		HmacSecret: []byte("a-very-secret-key-for-testing-purposes-123"),
 		Providers: []data.MetadataProviderConfig{
 			{
 				Name: "custom",

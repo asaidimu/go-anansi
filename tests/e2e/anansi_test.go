@@ -53,7 +53,6 @@ func newTestSchema(name string) *schema.SchemaDefinition {
 		Name:    name,
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: "string"},
 			"name": {Name: "name", Type: "string"},
 		},
 	}
@@ -70,7 +69,7 @@ func TestAnansiSetupAndBasicOperation(t *testing.T) {
 
 	// 3. Setup Document Factory Config
 	factoryConfig := data.DocumentFactoryConfig{
-		HmacSecret: []byte("e2e-test-secret-key"), // Use a test secret
+		Providers: []data.MetadataProviderConfig{},
 	}
 
 	// 4. Setup Decorators (none for this basic test)
@@ -115,9 +114,7 @@ func TestAnansiSetupCalledTwice(t *testing.T) {
 	require.NoError(t, err)
 
 	// 3. Setup Document Factory Config
-	factoryConfig1 := data.DocumentFactoryConfig{
-		HmacSecret: []byte("e2e-test-secret-key-1"),
-	}
+	factoryConfig1 := data.DocumentFactoryConfig{}
 
 	// 4. Setup Decorators
 	decorators1 := &utils.Decorators{}
@@ -139,9 +136,7 @@ func TestAnansiSetupCalledTwice(t *testing.T) {
 	defer cleanupInteractor2()
 	logger2, err := zap.NewDevelopment()
 	require.NoError(t, err)
-	factoryConfig2 := data.DocumentFactoryConfig{
-		HmacSecret: []byte("e2e-test-secret-key-2"),
-	}
+	factoryConfig2 := data.DocumentFactoryConfig{}
 	decorators2 := &utils.Decorators{}
 
 	cfg2 := anansi.SetupConfig{

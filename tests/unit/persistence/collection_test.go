@@ -7,6 +7,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
+	cevents "github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	persistence "github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
@@ -16,7 +17,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/asaidimu/go-anansi/v6/tests/testutils"
-	cevents "github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -40,8 +40,8 @@ func testSchema(name ...string) *schema.SchemaDefinition {
 		Version:     "1.0.0",
 		Description: "test collection",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: "string", Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
-			"name": {Name: "name", Type: "string", Required: utils.BoolPtr(true)},
+			"name":   {Name: "name", Type: "string", Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
+			"status": {Name: "status", Type: "string"},
 		},
 	}
 }
@@ -60,10 +60,9 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 
 	validator, err := schema.NewDocumentValidator(testSchemaDef, nil)
 	assert.NoError(t, err)
-	expected := data.MustNewDocument(map[string]any{"id": "1", "name": "Test1"})
+	expected := data.MustNewDocument(map[string]any{"name": "Test1"})
 	_, ok := validator.Validate(expected.AsMap(), false)
 	assert.True(t, ok)
-
 
 	err = manager.CreateCollection(context.Background(), *testSchemaDef)
 	assert.NoError(t, err)
@@ -71,7 +70,7 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 	engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
 	factory := pevents.NewPersistenceEventFactory(testSchemaDef.Name, logger)
 	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
-	c, err := collection.NewCollection(eventEmitter, testSchemaDef.Name, testSchemaDef, ephemeralInteractor, engine, logger, resolveSchema)
+	c, err := collection.NewCollection(eventEmitter, testSchemaDef.Name, testSchemaDef, ephemeralInteractor, engine, logger, resolveSchema, nil)
 	assert.NoError(t, err)
 
 	ctx := context.Background()
@@ -87,7 +86,7 @@ func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *z
 	engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
 	factory := pevents.NewPersistenceEventFactory(nonExistentSchema.Name, logger)
 	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
-	c, _ := collection.NewCollection(eventEmitter, nonExistentSchema.Name, nonExistentSchema, ephemeralInteractor, engine, logger, resolveSchema)
+	c, _ := collection.NewCollection(eventEmitter, nonExistentSchema.Name, nonExistentSchema, ephemeralInteractor, engine, logger, resolveSchema, nil)
 	ctx := context.Background()
 	return c, ephemeralInteractor, logger, nonExistentSchema, bus, ctx
 }
@@ -101,7 +100,7 @@ func TestCollection_Create(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
 	t.Run("single document success", func(t *testing.T) {
-		expected := data.Document{"id": "1", "name": "Test1"}
+		expected := data.Document{"name": "Test2"}
 
 		result, err := collection.CreateOne(ctx, expected)
 		assert.NotNil(t, result)
@@ -111,7 +110,7 @@ func TestCollection_Create(t *testing.T) {
 		assert.Equal(t, actual["name"], expected["name"])
 
 		// Verify the document was actually inserted by reading it back
-		readQuery := query.NewQueryBuilder().Where("id").Eq("1").Build()
+		readQuery := query.NewQueryBuilder().Where("id").Eq(result.Data.Must().GetString("id")).Build()
 		readResult, err := collection.Read(ctx, &readQuery)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, readResult.Count)
@@ -119,7 +118,7 @@ func TestCollection_Create(t *testing.T) {
 	})
 
 	t.Run("multiple documents success", func(t *testing.T) {
-		docs := []data.Document{{"id": "2", "name": "Test2"}, {"id": "3", "name": "Test3"}}
+		docs := []data.Document{{"name": "Test8"}, {"name": "Test3"}}
 
 		result, err := collection.CreateMany(ctx, docs)
 
@@ -129,7 +128,9 @@ func TestCollection_Create(t *testing.T) {
 		assert.Len(t, result, 2)
 
 		// Verify the documents were actually inserted by reading them back
-		readQuery := query.NewQueryBuilder().Where("id").In("2", "3").Build()
+		readQuery := query.NewQueryBuilder().Where("id").In(
+			result[0].Data.Must().GetString("id"),
+			result[1].Data.Must().GetString("id")).Build()
 		readResult, err := collection.Read(ctx, &readQuery)
 		assert.NoError(t, err)
 		assert.Equal(t, 2, readResult.Count)
@@ -139,8 +140,8 @@ func TestCollection_Create(t *testing.T) {
 	})
 
 	t.Run("insert documents error - duplicate ID", func(t *testing.T) {
-		// ID "1" already exists from previous test
-		doc := data.Document{"id": "1", "name": "DuplicateTest"}
+		// Name "Test2" already exists from previous test
+		doc := data.Document{"name": "Test2"}
 		_, err := collection.CreateOne(ctx, doc)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "unique constraint violation")
@@ -151,15 +152,15 @@ func TestCollection_Read(t *testing.T) {
 	c, _, _, _, _, ctx := setupCollection(t)
 
 	// Insert some data for reading
-	_, err := c.CreateOne(ctx, data.Document{"id": "1", "name": "Test1"})
+	_, err := c.CreateOne(ctx, data.Document{"name": "Test3"})
 	assert.NoError(t, err)
-	_, err = c.CreateOne(ctx, data.Document{"id": "2", "name": "Test2"})
+	_, err = c.CreateOne(ctx, data.Document{"name": "Test4"})
 	assert.NoError(t, err)
 
-	q := query.NewQueryBuilder().Where("name").Eq("Test1").Build()
+	q := query.NewQueryBuilder().Where("name").Eq("Test3").Build()
 
 	t.Run("read documents success", func(t *testing.T) {
-		expected := data.Document{"id": "1", "name": "Test1"}
+		expected := data.Document{"name": "Test3"}
 
 		result, err := c.Read(ctx, &q)
 		assert.NoError(t, err)
@@ -178,7 +179,7 @@ func TestCollection_Read(t *testing.T) {
 		engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
 		factory := pevents.NewPersistenceEventFactory(nonExistentSchema.Name, logger)
 		eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
-		nonExistentCollection, _ := collection.NewCollection(eventEmitter, nonExistentSchema.Name, nonExistentSchema, ephemeralInteractor, engine, logger, resolveSchema)
+		nonExistentCollection, _ := collection.NewCollection(eventEmitter, nonExistentSchema.Name, nonExistentSchema, ephemeralInteractor, engine, logger, resolveSchema, nil)
 
 		result, err := nonExistentCollection.Read(ctx, &q)
 
@@ -191,14 +192,14 @@ func TestCollection_Read(t *testing.T) {
 func TestCollection_Update(t *testing.T) {
 	c, _, _, _, _, ctx := setupCollection(t)
 
-	// Insert some data for updating
-	_, err := c.CreateOne(ctx, data.Document{"id": "1", "name": "OriginalName"})
-	assert.NoError(t, err)
+	// Insert a document to be updated.
+	r, err := c.CreateOne(ctx, data.Document{"name": "OriginalName"})
+	require.NoError(t, err)
 
-	q := query.NewQueryBuilder().Where("id").Eq("1").Build()
+	q := query.NewQueryBuilder().Where("id").Eq(r.Data.Must().GetString("id")).Build()
 	result, err := c.Read(ctx, &q)
-	assert.NoError(t, err)
-	assert.Equal(t, 1, result.Count)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Count)
 
 	d := result.Data.(data.Document)
 	updates := data.Document{
@@ -206,32 +207,69 @@ func TestCollection_Update(t *testing.T) {
 	}
 
 	metadata, ok := d.Metadata()
-	assert.Equal(t, true, ok)
+	require.True(t, ok)
 	updates.SetMetadata(metadata)
 
-	updateParams := &persistence.CollectionUpdate{Data: updates, Filter: q.Filters}
 
-	t.Run("update documents success", func(t *testing.T) {
+	t.Run("update document with wrong version should not update", func(t *testing.T) {
+		// We need to read the document again to get the latest version
+		readResult, err := c.Read(ctx, &q)
+		require.NoError(t, err)
+		latestVersion, _ := readResult.Data.(data.Document).GetInt("_metadata_.version")
+
+		wrongVersion := latestVersion + 10
+		updateParamsWrongVersion := &persistence.CollectionUpdate{Set: updates, Filter: q.Filters, Version: &wrongVersion}
+		rowsAffected, err := c.Update(ctx, updateParamsWrongVersion)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, rowsAffected)
+	})
+
+	t.Run("update multiple documents without optimistic locking", func(t *testing.T) {
+		// Use a fresh collection for this test to avoid conflicts
+		c, _, _, _, _, ctx := setupCollection(t)
+
+		// Insert some data for updating
+		_, err := c.CreateOne(ctx, data.Document{"name": "UpdateMulti1", "status": "pending"})
+		assert.NoError(t, err)
+		_, err = c.CreateOne(ctx, data.Document{"name": "UpdateMulti2", "status": "pending"})
+		assert.NoError(t, err)
+
+		// Filter for documents to update
+		q := query.NewQueryBuilder().Where("status").Eq("pending").Build()
+
+		// Define the update payload. No version is provided, so no optimistic locking.
+		updates := data.Document{"status": "done"}
+		updateParams := &persistence.CollectionUpdate{Set: updates, Filter: q.Filters, Version: nil} // Explicitly nil
+
+		// Perform the update
 		rowsAffected, err := c.Update(ctx, updateParams)
 		assert.NoError(t, err)
-		assert.Equal(t, 1, rowsAffected)
+		assert.Equal(t, 2, rowsAffected)
 
-		// Verify the document was actually updated
-		readQuery := query.NewQueryBuilder().Where("id").Eq("1").Build()
+		// Verify the documents were actually updated
+		readQuery := query.NewQueryBuilder().Where("status").Eq("done").Build()
 		readResult, err := c.Read(ctx, &readQuery)
 		assert.NoError(t, err)
-		assert.Equal(t, "UpdatedName", readResult.Data.(data.Document)["name"])
+		assert.Equal(t, 2, readResult.Count)
+
+		docs := readResult.Data.([]data.Document)
+		assert.Equal(t, "done", docs[0]["status"])
+		assert.Equal(t, "done", docs[1]["status"])
 	})
 
 	t.Run("update documents error - non-existent collection", func(t *testing.T) {
 		// Create a new collection instance with a non-existent schema name
 		nonExistentCollection, _, _, _, _, ctx := setupNonExistentCollection()
 
+		updates := data.Document{"name": "any"}
+		updateParams := &persistence.CollectionUpdate{Set: updates, Filter: q.Filters, Version: nil}
+
 		rowsAffected, err := nonExistentCollection.Update(ctx, updateParams)
 
 		assert.Error(t, err)
 		assert.Equal(t, 0, rowsAffected)
 		require.Error(t, err)
+		assert.Contains(t, err.Error(), "Unexpected field")
 	})
 }
 
@@ -239,12 +277,12 @@ func TestCollection_Delete(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
 	// Insert some data for deleting
-	_, err := collection.CreateOne(ctx, data.Document{"id": "1", "name": "ToDelete"})
+	r, err := collection.CreateOne(ctx, data.Document{"name": "ToDelete"})
 	assert.NoError(t, err)
-	_, err = collection.CreateOne(ctx, data.Document{"id": "2", "name": "ToKeep"})
+	_, err = collection.CreateOne(ctx, data.Document{"name": "ToKeep"})
 	assert.NoError(t, err)
 
-	filters := query.NewQueryBuilder().Where("id").Eq("1").Build().Filters
+	filters := query.NewQueryBuilder().Where("id").Eq(r.Data.Must().GetString("id")).Build().Filters
 
 	t.Run("delete documents success", func(t *testing.T) {
 		rowsAffected, err := collection.Delete(ctx, filters, false)
@@ -253,7 +291,7 @@ func TestCollection_Delete(t *testing.T) {
 		assert.Equal(t, 1, rowsAffected)
 
 		// Verify the document was actually deleted
-		readQuery := query.NewQueryBuilder().Where("id").Eq("1").Build()
+		readQuery := query.NewQueryBuilder().Where("id").Eq(r.Data.Must().GetString("id")).Build()
 		readResult, err := collection.Read(ctx, &readQuery)
 		assert.NoError(t, err)
 		assert.Equal(t, 0, readResult.Count)
@@ -273,8 +311,8 @@ func TestCollection_Delete(t *testing.T) {
 	t.Run("delete all documents with unsafe flag", func(t *testing.T) {
 		// Re-create collection and add data for this specific test case
 		collection, _, _, _, _, ctx = setupCollection(t)
-		collection.CreateOne(ctx, data.Document{"id": "3", "name": "Doc3"})
-		collection.CreateOne(ctx, data.Document{"id": "4", "name": "Doc4"})
+		collection.CreateOne(ctx, data.Document{"name": "Doc3"})
+		collection.CreateOne(ctx, data.Document{"name": "Doc4"})
 
 		// Debug: Read documents before deletion
 		q := query.NewQueryBuilder().Build()
@@ -297,7 +335,7 @@ func TestCollection_Delete(t *testing.T) {
 	t.Run("delete all documents without unsafe flag should fail", func(t *testing.T) {
 		// Re-create collection and add data for this specific test case
 		collection, _, _, _, _, ctx = setupCollection(t)
-		collection.CreateOne(ctx, data.Document{"id": "5", "name": "Doc5"})
+		collection.CreateOne(ctx, data.Document{"name": "Doc5"})
 
 		// Attempt to delete all documents by passing nil filter and unsafe=false
 		rowsAffected, err := collection.Delete(ctx, nil, false)

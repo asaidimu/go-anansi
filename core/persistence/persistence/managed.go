@@ -5,6 +5,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
+	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
@@ -164,4 +165,12 @@ func (m *managedPersistence) Migrate(
 		return nil, err
 	}
 	return m.wrapped.Migrate(ctx, name, migration, dryRun)
+}
+
+// Query delegates the call to the wrapped persistence after checking the closed state.
+func (m *managedPersistence) Query(ctx context.Context, rawQuery *query.RawQuery) (*query.RawQueryResult, error) {
+	if err := m.checkClosed(); err != nil {
+		return nil, err
+	}
+	return m.wrapped.Query(ctx, rawQuery)
 }

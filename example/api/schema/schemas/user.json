@@ -1,0 +1,22 @@
+{
+  "name": "user",
+  "version": "1.0.0",
+  "fields": {
+    "username": {
+      "name": "username",
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "passwordHash": {
+      "name": "passwordHash",
+      "type": "string",
+      "required": true
+    },
+    "role": {
+      "name": "role",
+      "type": "string",
+      "required": true
+    }
+  }
+}

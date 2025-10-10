@@ -2,12 +2,12 @@ package events
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
+	putils "github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"go.uber.org/zap"
 )
 
@@ -39,15 +39,15 @@ func (f *PersistenceEventFactory) CreateEvent(
 	errorMsg *string,
 	startTime time.Time,
 	duration *int64,
+	extra map[string]any,
 ) base.PersistenceEvent {
 	transactionID := f.extractTransactionID(ctx)
 	contextMap := PersitenceEventContextData.Data(ctx)
 
-	// Handle collection name (could be empty for persistence-level events)
 	var collectionName *string
-	if f.collectionName != "" {
-		collectionName = &f.collectionName
-	}
+	if name, ok := putils.CollectionNameFromContext(ctx); ok {
+        collectionName = &name
+    }
 
 	// Create the complete event
 	event := base.PersistenceEvent{
@@ -61,27 +61,6 @@ func (f *PersistenceEventFactory) CreateEvent(
 		TransactionID: transactionID,
 		Duration:      duration,
 		Context:       contextMap,
-	}
-
-	// Log event creation if logger is available
-	if f.logger != nil {
-		etype := string(eventType)
-
-		logLevel := zap.DebugLevel
-		if errorMsg != nil {
-			logLevel = zap.ErrorLevel
-		} else if etype != "" && strings.Contains(strings.ToLower(etype), "success") {
-			logLevel = zap.InfoLevel
-		}
-
-		f.logger.Log(logLevel, "Persistence event created",
-			zap.String("type", string(eventType)),
-			zap.String("operation", operation),
-			zap.Any("collection", collectionName),
-			zap.Any("transactionID", transactionID),
-			zap.Any("duration", duration),
-			zap.Bool("hasError", errorMsg != nil),
-		)
 	}
 
 	return event

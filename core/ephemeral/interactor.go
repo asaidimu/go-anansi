@@ -190,7 +190,7 @@ func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *sche
 }
 
 // UpdateDocuments updates documents in the in-memory store.
-func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, updates map[string]any, filters *query.QueryFilter) (int64, error) {
+func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, updates map[string]any, computedUpdates map[string]query.Query,  filters *query.QueryFilter) (int64, error) {
 	c, err := i.store.getCollection(schemaDef.Name)
 	if err != nil {
 		return 0, err
@@ -361,6 +361,17 @@ func (i *EphemeralDatabaseInteractor) DeleteDocuments(ctx context.Context, schem
 	}
 
 	return deletedCount, nil
+}
+
+// Query executes a raw query against the ephemeral store.
+// Currently, this is a placeholder and does not fully support raw queries.
+func (i *EphemeralDatabaseInteractor) Query(ctx context.Context, rawQuery *query.Query) (*query.RawQueryResult, error) {
+	// Placeholder implementation: raw queries are not fully supported in ephemeral store
+	// A more complete implementation would parse the rawQuery.Template and execute it.
+	return &query.RawQueryResult{
+		Success: false,
+		Message: "Raw queries are not fully supported in the ephemeral database interactor.",
+	}, errors.New("raw queries not supported")
 }
 
 func (i *EphemeralDatabaseInteractor) HasTransaction(ctx context.Context) bool {
