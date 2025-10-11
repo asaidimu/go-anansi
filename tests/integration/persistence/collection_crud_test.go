@@ -87,7 +87,6 @@ func TestCollection_Update(t *testing.T) {
 
 	updateQuery := query.NewQueryBuilder().Where("id").Eq(id).Build()
 
-
 	_, err = collection.Update(context.Background(), &base.CollectionUpdate{
 		Set:   docToUpdate,
 		Filter: updateQuery.Filters,

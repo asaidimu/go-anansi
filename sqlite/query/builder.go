@@ -95,7 +95,6 @@ func (x *sqliteFactory) Build(
 
 	return nativeQuery, nil
 }
-
 func (f *sqliteFactory) buildRawQuery(q *query.Query, stmtType native.StatementType) (native.Query[types.SQLitePayload], error) {
 	raw := q.Raw
 	finalSQL := raw.Template
