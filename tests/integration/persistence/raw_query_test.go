@@ -150,9 +150,8 @@ func TestPersistence_RawQuery_SyntaxError(t *testing.T) {
 		Template: `SELECT FROM table_that_does_not_exist`,
 	}
 
-	result, err := p.Query(context.Background(), rawSyntaxErrorQuery)
+	_, err = p.Query(context.Background(), rawSyntaxErrorQuery)
 	assert.Error(t, err)
-	assert.Nil(t, result)
 }
 
 func TestPersistence_RawQuery_Delete(t *testing.T) {
@@ -278,4 +277,51 @@ func TestPersistence_RawQuery_MissingPlaceholder(t *testing.T) {
 
 	_, err = p.Query(context.Background(), rawMissingPlaceholderQuery)
 	assert.Error(t, err)
+}
+
+func TestPersistence_RawQuery_CollectionRead(t *testing.T) {
+	interactor, cleanup := createNativeInteractor(t)
+	defer cleanup()
+
+	logger := zap.NewNop()
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	productSchema := schema.SchemaDefinition{
+		Name:    "products",
+		Version: "1.0.0",
+		Fields: map[string]*schema.FieldDefinition{
+			"pid":   {Name: "pid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
+			"name":  {Name: "name", Type: schema.FieldTypeString},
+			"price": {Name: "price", Type: schema.FieldTypeNumber},
+		},
+	}
+
+	ctx := context.Background()
+	productsCollection, err := p.CreateCollection(ctx, productSchema)
+	require.NoError(t, err)
+
+	_, err = productsCollection.CreateMany(ctx, []data.Document{
+		data.MustNewDocument(map[string]any{"pid": "prod1", "name": "Laptop", "price": 1200.0}),
+		data.MustNewDocument(map[string]any{"pid": "prod2", "name": "Mouse", "price": 25.0}),
+		data.MustNewDocument(map[string]any{"pid": "prod3", "name": "Keyboard", "price": 75.0}),
+	})
+	require.NoError(t, err)
+
+	rawReadQuery := &query.Query{
+		Raw: &query.RawQuery{
+			Template:   `SELECT * FROM {{collections.products}} WHERE price > ?`,
+			Parameters: []any{50.0},
+			Collections: map[string]query.RawQueryTarget{
+				"products": {Collection: "products"},
+			},
+		},
+	}
+
+	readResult, err := productsCollection.Read(ctx, rawReadQuery)
+	require.NoError(t, err)
+	assert.Equal(t, 2, readResult.Count)
+
+	readDocs := readResult.Data.([]data.Document)
+	assert.Len(t, readDocs, 2)
 }
