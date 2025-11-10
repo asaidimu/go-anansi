@@ -629,19 +629,60 @@ type SQLiteWhereClause struct {
 	factory    *sqliteFactory
 	filter     *query.QueryFilter
 	projection *SQLiteSelectProjection
+	pagination *query.PaginationOptions
 }
 
 func (w *SQLiteWhereClause) Value() (string, []any, error) {
-	if w.filter == nil {
+	var parts []string
+	var params []any
+
+	// Build filter SQL if present
+	if w.filter != nil {
+		filterSQL, filterParams, err := w.projection.buildQueryFilter(w.filter)
+		if err != nil {
+			return "", nil, err
+		}
+		if filterSQL != "" {
+			parts = append(parts, filterSQL)
+			params = append(params, filterParams...)
+		}
+	}
+
+	// Build cursor SQL if present
+	if w.pagination != nil && w.pagination.Type == query.PaginationTypeCursor && w.pagination.Cursor != nil {
+		cursorField := w.pagination.Cursor.Field
+		cursorValue := w.pagination.Cursor.Cursor
+
+		if cursorField != nil && cursorValue != nil {
+			cursorOp := query.ComparisonOperatorGt
+			if len(w.pagination.Order) > 0 && w.pagination.Order[0].Direction == query.SortDirectionDesc {
+				cursorOp = query.ComparisonOperatorLt
+			}
+
+			cursorCondition := &query.FilterCondition{
+				Field:    *cursorField,
+				Operator: cursorOp,
+				Value:    *cursorValue,
+			}
+
+			cursorSQL, cursorParams, err := w.projection.buildFilterCondition(cursorCondition)
+			if err != nil {
+				return "", nil, err
+			}
+
+			if cursorSQL != "" {
+				parts = append(parts, cursorSQL)
+				params = append(params, cursorParams...)
+			}
+		}
+	}
+
+	if len(parts) == 0 {
 		return "", nil, nil
 	}
 
-	filterSQL, params, err := w.projection.buildQueryFilter(w.filter)
-	if err != nil {
-		return "", nil, err
-	}
-
-	return fmt.Sprintf("WHERE %s", filterSQL), params, nil
+	sql := "WHERE " + strings.Join(parts, " AND ")
+	return sql, params, nil
 }
 
 // SQLiteGroupByClause handles GROUP BY clause
@@ -718,18 +759,26 @@ func (h *SQLiteHavingClause) Value() (string, []any, error) {
 
 // SQLiteOrderByClause handles ORDER BY clause
 type SQLiteOrderByClause struct {
-	factory *sqliteFactory
-	sorts   []query.SortConfiguration
-	schemas map[string]*schema.SchemaDefinition
+	factory    *sqliteFactory
+	sorts      []query.SortConfiguration
+	schemas    map[string]*schema.SchemaDefinition
+	pagination *query.PaginationOptions
 }
 
 func (o *SQLiteOrderByClause) Value() (string, []any, error) {
-	if len(o.sorts) == 0 {
-		return "", nil, nil
+	allSorts := make([]query.SortConfiguration, 0, len(o.sorts))
+	allSorts = append(allSorts, o.sorts...) // explicit user sorts
+
+	if o.pagination != nil && len(o.pagination.Order) > 0 {
+		allSorts = append(allSorts, o.pagination.Order...) // pagination sorts appended
+	}
+
+	if len(allSorts) == 0 {
+		return "", nil, nil // no ordering
 	}
 
 	var parts []string
-	for _, sort := range o.sorts {
+	for _, sort := range allSorts {
 		resolvedField, err := o.factory.resolveFieldReference(sort.Field, o.schemas)
 		if err != nil {
 			return "", nil, err
@@ -755,9 +804,14 @@ func (l *SQLiteLimitClause) Value() (string, []any, error) {
 		return "", nil, nil
 	}
 
+	if l.pagination.Limit <= 0 {
+		return "", nil, fmt.Errorf("limit must be greater than zero for pagination")
+	}
+
 	sql := fmt.Sprintf("LIMIT %d", l.pagination.Limit)
-	if l.pagination.Offset != nil && *l.pagination.Offset > 0 {
-		sql = fmt.Sprintf("%s OFFSET %d", sql, *l.pagination.Offset)
+
+	if l.pagination.Type == query.PaginationTypeOffset && l.pagination.Offset != nil && *l.pagination.Offset > 0 {
+		sql += fmt.Sprintf(" OFFSET %d", *l.pagination.Offset)
 	}
 
 	return sql, nil, nil
@@ -913,11 +967,12 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
 	}
 
 	// Build filters (WHERE clause)
-	if q.Filters != nil {
+	if q.Filters != nil || (q.Pagination != nil && q.Pagination.Type == query.PaginationTypeCursor) {
 		tree.filters = &SQLiteWhereClause{
 			factory:    f,
 			filter:     q.Filters,
 			projection: tree.projection.(*SQLiteSelectProjection),
+			pagination: q.Pagination,
 		}
 	}
 
@@ -938,11 +993,12 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
 	}
 
 	// Build ORDER BY clause
-	if len(q.Sort) > 0 {
+	if len(q.Sort) > 0 || (q.Pagination != nil && len(q.Pagination.Order) > 0) {
 		tree.orderBy = &SQLiteOrderByClause{
-			factory: f,
-			sorts:   q.Sort,
-			schemas: schemas,
+			factory:    f,
+			sorts:      q.Sort,
+			schemas:    schemas,
+			pagination: q.Pagination,
 		}
 	}
 

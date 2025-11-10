@@ -80,7 +80,7 @@ func TestInsertAndSelectIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	insertedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
-		Query: nqInsert,
+		Query:  nqInsert,
 		Schema: resultSchema,
 	})
 
@@ -102,7 +102,7 @@ func TestInsertAndSelectIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
-		Query: nqSelect,
+		Query:  nqSelect,
 		Schema: resultSchema,
 	})
 	require.NoError(t, err)
@@ -137,7 +137,7 @@ func TestUpdateIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
-		Query: nqInsert,
+		Query:  nqInsert,
 		Schema: resultSchema,
 	})
 	require.NoError(t, err)
@@ -159,7 +159,7 @@ func TestUpdateIntegration(t *testing.T) {
 		Filters: filters,
 	}
 
-	nqUpdate, err := builder.Build(&updateQuery, native.StmtUpdate, map[string]any{ "set": updates })
+	nqUpdate, err := builder.Build(&updateQuery, native.StmtUpdate, map[string]any{"set": updates})
 	require.NoError(t, err)
 
 	rowsAffected, err := executor.Exec(context.Background(), native.NativeQuery[types.SQLitePayload]{
@@ -185,7 +185,7 @@ func TestUpdateIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
-		Query: nqSelect,
+		Query:  nqSelect,
 		Schema: resultSchema,
 	})
 
@@ -206,7 +206,6 @@ func TestDeleteIntegration(t *testing.T) {
 		{"id": "2", "name": "Bob", "age": 25, "email": "bob@example.com"},
 	}
 
-
 	insertQuery := query.Query{
 		Target: &query.QueryTarget{
 			Name:   userSchema.Name,
@@ -217,12 +216,11 @@ func TestDeleteIntegration(t *testing.T) {
 	nqInsert, err := builder.Build(&insertQuery, native.StmtInsert, records)
 	require.NoError(t, err)
 
-
 	resultSchema, err := query.SchemaFromQuery(&insertQuery, nil)
 	require.NoError(t, err)
 
 	_, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
-		Query: nqInsert,
+		Query:  nqInsert,
 		Schema: resultSchema,
 	})
 
@@ -269,10 +267,144 @@ func TestDeleteIntegration(t *testing.T) {
 	require.NoError(t, err)
 
 	selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
-		Query: nqSelect,
+		Query:  nqSelect,
 		Schema: resultSchema,
 	})
 	require.NoError(t, err)
 	assert.Len(t, selectedDocs, 1)
 	assert.Contains(t, selectedDocs, data.Document{"id": "2", "name": "Bob", "age": int64(25), "email": "bob@example.com"})
 }
+func TestOffsetPagination(t *testing.T) {
+	db, executor, userSchema := setupQueryExecutorTest(t)
+	defer db.Close()
+
+	builder := sqlite_query.NewSQLiteFactory()
+
+	// Insert test data
+	records := make([]data.Document, 11)
+	for i := 0; i < 11; i++ {
+		records[i] = data.MustNewDocument(map[string]any{
+			"name":  "Alice",
+			"age":   30 + i,
+			"email": "alice@example.com",
+		})
+	}
+
+	insertQuery := query.Query{
+		Target: &query.QueryTarget{Name: userSchema.Name, Schema: userSchema},
+	}
+
+	nqInsert, err := builder.Build(&insertQuery, native.StmtInsert, records)
+	require.NoError(t, err)
+
+	resultSchema, err := query.SchemaFromQuery(&insertQuery, nil)
+	require.NoError(t, err)
+
+	_, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{Query: nqInsert, Schema: resultSchema})
+	require.NoError(t, err)
+
+	// Helper to test offset pagination
+	testOffset := func(offset int, limit int, direction query.SortDirection, expectedAges []int) {
+		selectQuery := query.Query{
+			Target: &query.QueryTarget{Name: userSchema.Name, Schema: userSchema},
+			Pagination: &query.PaginationOptions{
+				Type:   query.PaginationTypeOffset,
+				Offset: utils.PrimitivePtr(offset),
+				Limit:  limit,
+				Order: []query.SortConfiguration{
+					{Field: "id", Direction: direction},
+				},
+			},
+		}
+
+		nqSelect, err := builder.Build(&selectQuery, native.StmtSelect, nil)
+		require.NoError(t, err)
+
+		resultSchema, err := query.SchemaFromQuery(&selectQuery, nil)
+		require.NoError(t, err)
+
+		selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{Query: nqSelect, Schema: resultSchema})
+		require.NoError(t, err)
+		assert.Len(t, selectedDocs, len(expectedAges))
+
+		for i, age := range expectedAges {
+			gotAge, err := selectedDocs[i].GetInt("age")
+			require.NoError(t, err)
+			assert.Equal(t, age, gotAge)
+		}
+	}
+
+	// Forward pagination
+	testOffset(5, 3, query.SortDirectionAsc, []int{35, 36, 37})
+	// Backward pagination
+	testOffset(5, 3, query.SortDirectionDesc, []int{35, 34, 33})
+}
+
+func TestCursorPagination(t *testing.T) {
+	db, executor, userSchema := setupQueryExecutorTest(t)
+	defer db.Close()
+
+	builder := sqlite_query.NewSQLiteFactory()
+
+	// Insert test data
+	records := make([]data.Document, 11)
+	for i := range 11 {
+		records[i] = data.MustNewDocument(map[string]any{
+			"name":  "Alice",
+			"age":   30 + i,
+			"email": "alice@example.com",
+		})
+	}
+
+	insertQuery := query.Query{
+		Target: &query.QueryTarget{Name: userSchema.Name, Schema: userSchema},
+	}
+
+	nqInsert, err := builder.Build(&insertQuery, native.StmtInsert, records)
+	require.NoError(t, err)
+
+	resultSchema, err := query.SchemaFromQuery(&insertQuery, nil)
+	require.NoError(t, err)
+
+	_, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{Query: nqInsert, Schema: resultSchema})
+	require.NoError(t, err)
+
+	// Test cursor pagination
+	cursorField := "age"
+
+	selectQuery := query.Query{
+		Target: &query.QueryTarget{Name: userSchema.Name, Schema: userSchema},
+		Pagination: &query.PaginationOptions{
+			Type: query.PaginationTypeCursor,
+			Limit: 3,
+			Cursor: &query.PaginationCursor{
+				Field:  &cursorField,
+				Cursor: &query.FilterValue{
+					NumberVal: utils.PrimitivePtr(float64(34)),
+				},
+			},
+			Order: []query.SortConfiguration{
+				{Field: cursorField, Direction: query.SortDirectionAsc},
+			},
+		},
+	}
+
+	nqSelect, err := builder.Build(&selectQuery, native.StmtSelect, nil)
+	require.NoError(t, err)
+
+	resultSchema, err = query.SchemaFromQuery(&selectQuery, nil)
+	require.NoError(t, err)
+
+	selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{Query: nqSelect, Schema: resultSchema})
+	require.NoError(t, err)
+	assert.Len(t, selectedDocs, 3)
+
+	expectedAges := []int{35, 36, 37}
+	for i, age := range expectedAges {
+		gotAge, err := selectedDocs[i].GetInt("age")
+		require.NoError(t, err)
+		assert.Equal(t, age, gotAge)
+	}
+}
+
+

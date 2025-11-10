@@ -143,13 +143,21 @@ type PaginationType string
 
 const (
 	PaginationTypeOffset PaginationType = "offset"
+	PaginationTypeCursor PaginationType = "cursor"
 )
+
+type PaginationCursor struct {
+	Field  *string `json:"field"`
+	Cursor *FilterValue `json:"cursor"`
+}
 
 // PaginationOptions defines how the query results should be paginated.
 type PaginationOptions struct {
-	Type   PaginationType `json:"type"`             // The type of pagination, which is always "offset".
-	Limit  int            `json:"limit"`            // The maximum number of records to return.
-	Offset *int           `json:"offset,omitempty"` // The starting offset for offset-based pagination.
+	Type   PaginationType      `json:"type"`             // The type of pagination.
+	Limit  int                 `json:"limit"`            // The maximum number of records to return.
+	Offset *int                `json:"offset,omitempty"` // The starting offset for offset-based pagination.
+	Cursor *PaginationCursor   `json:"cursor,omitempty"` // The cursor for cursor-based pagination, if nil starts with the first entry
+	Order  []SortConfiguration `json:"order,omitempty"`  // The fields to order by, defaults to id
 }
 
 // ProjectionField defines a field to be included or excluded in the query result.
@@ -205,8 +213,8 @@ const (
 )
 
 type QueryTarget struct {
-	Name   string  `json:"name,omitempty"`
-	Alias  *string `json:"alias,omitempty"`
+	Name   string                   `json:"name,omitempty"`
+	Alias  *string                  `json:"alias,omitempty"`
 	Schema *schema.SchemaDefinition `json:"schema,omitempty"`
 }
 
@@ -297,17 +305,17 @@ type RawQuery struct {
 // Query represents a query to be executed against a collection.
 // It contains fields for filtering, projecting, sorting, and limiting results.
 type Query struct {
-	Target     *QueryTarget             `json:"target,omitempty"`
-	Filters    *QueryFilter             `json:"filters,omitempty"`
-	Projection *ProjectionConfiguration `json:"projection,omitempty"`
-	Sort       []SortConfiguration      `json:"sort,omitempty"`
-	Limit      *int                     `json:"limit,omitempty"`
-	Pagination *PaginationOptions       `json:"pagination,omitempty"`
-	Joins      []JoinConfiguration      `json:"joins,omitempty"`
-	Distinct   *QueryDistinctConfig     `json:"distinct,omitempty"`
+	Target       *QueryTarget               `json:"target,omitempty"`
+	Filters      *QueryFilter               `json:"filters,omitempty"`
+	Projection   *ProjectionConfiguration   `json:"projection,omitempty"`
+	Sort         []SortConfiguration        `json:"sort,omitempty"`
+	Limit        *int                       `json:"limit,omitempty"`
+	Pagination   *PaginationOptions         `json:"pagination,omitempty"`
+	Joins        []JoinConfiguration        `json:"joins,omitempty"`
+	Distinct     *QueryDistinctConfig       `json:"distinct,omitempty"`
 	Aggregations []AggregationConfiguration `json:"aggregations,omitempty"`
-	Union      *QueryUnion              `json:"union,omitempty"`
-	Hints      []QueryHint              `json:"hints,omitempty"`
+	Union        *QueryUnion                `json:"union,omitempty"`
+	Hints        []QueryHint                `json:"hints,omitempty"`
 
 	// New raw query field - takes precedence over DSL fields when present
 	Raw *RawQuery `json:"raw,omitempty"`
