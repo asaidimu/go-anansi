@@ -12,17 +12,17 @@ import (
 func (f *sqliteFactory) buildCreateIndexTree(q *query.Query, extra any) (SQLNode, error) {
 	index, ok := extra.(schema.IndexDefinition)
 	if !ok {
-		return nil, fmt.Errorf("extra is not an IndexDefinition")
+		return nil, ErrIndexExtraNotIndexDefinition
 	}
 	return &createIndexTree{collection: q.Target.Name, index: &index}, nil
 }
 
 func (t *createIndexTree) Value() (string, []any, error) {
 	if len(t.collection) == 0 {
-		return "", nil, fmt.Errorf("schema is not defined for create index tree")
+		return "", nil, ErrIndexSchemaNotDefined
 	}
 	if t.index == nil {
-		return "", nil, fmt.Errorf("index is not defined for create index tree")
+		return "", nil, ErrIndexIndexNotDefined
 	}
 
 	collection := t.collection
@@ -64,14 +64,14 @@ func (t *createIndexTree) Value() (string, []any, error) {
 func (f *sqliteFactory) buildDropIndexTree(_ *query.Query, extra any) (SQLNode, error) {
 	index, ok := extra.(schema.IndexDefinition)
 	if !ok {
-		return nil, fmt.Errorf("extra is not an IndexDefinition")
+		return nil, ErrIndexExtraNotIndexDefinition
 	}
 	return &dropIndexTree{index: &index}, nil
 }
 
 func (t *dropIndexTree) Value() (string, []any, error) {
 	if t.index == nil {
-		return "", nil, fmt.Errorf("index is not defined for drop index tree")
+		return "", nil, ErrIndexIndexNotDefined
 	}
 
 	return fmt.Sprintf("DROP INDEX IF EXISTS %s;", t.index.Name), nil, nil

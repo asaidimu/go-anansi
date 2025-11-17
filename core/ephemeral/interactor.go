@@ -2,23 +2,19 @@ package ephemeral
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"sync"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	store "github.com/asaidimu/go-store/v3"
 )
 
-var (
-	ErrNotTransaction     = errors.New("not a transaction")
-)
 
 // EphemeralDatabaseInteractor provides an in-memory implementation of the
 // persistence.DatabaseInteractor interface. This is useful for testing or for
@@ -274,19 +270,11 @@ func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schem
 								break
 							}
 							stream.Close()
-							return nil, &EphemeralError{
-								Operation: "InsertDocuments",
-								Message:   fmt.Sprintf("for unique check: %v", registry.ErrFailedToReadDocuments),
-								Cause:     errors.Join(registry.ErrFailedToReadDocuments, err),
-							}
+							return nil, common.SystemErrorFrom(ErrUniqueCheckFailed).WithOperation("ephemeral.InsertDocuments").WithCause(err)
 						}
 						if existingDocResult.Data[field.Name] == val {
 							stream.Close()
-															return nil, &EphemeralError{
-									Operation: "InsertDocuments",
-									Message:   fmt.Sprintf("field '%s' with value '%v' already exists", field.Name, val),
-									Cause:     registry.ErrUniqueConstraintViolation,
-								}
+							return nil, common.SystemErrorFrom(ErrUniqueConstraintViolation).WithOperation("ephemeral.InsertDocuments").WithPath(field.Name).WithMessage(fmt.Sprintf("field '%s' with value '%v' already exists", field.Name, val)).WithCause(base.ErrUniqueConstraintViolation)
 						}
 					}
 					stream.Close()
@@ -371,7 +359,7 @@ func (i *EphemeralDatabaseInteractor) Query(ctx context.Context, rawQuery *query
 	return &query.RawQueryResult{
 		Success: false,
 		Message: "Raw queries are not fully supported in the ephemeral database interactor.",
-	}, errors.New("raw queries not supported")
+	}, ErrRawQueriesNotSupported
 }
 
 func (i *EphemeralDatabaseInteractor) HasTransaction(ctx context.Context) bool {
@@ -497,11 +485,7 @@ func (m *EphemeralDatabaseInteractor) CreateCollection(ctx context.Context, sche
 	defer m.store.mu.Unlock()
 
 	if _, exists := m.store.collections[schemaDef.Name]; exists {
-		return &EphemeralError{
-			Operation: "CreateCollection",
-			Message:   fmt.Sprintf("'%s'", schemaDef.Name),
-			Cause:     registry.ErrCollectionAlreadyExists,
-		}
+		return common.SystemErrorFrom(ErrCollectionAlreadyExists).WithOperation("ephemeral.CreateCollection").WithPath(schemaDef.Name).WithCause(base.ErrCollectionAlreadyExists)
 	}
 
 	newStore := store.NewStore()
@@ -510,21 +494,13 @@ func (m *EphemeralDatabaseInteractor) CreateCollection(ctx context.Context, sche
 	for _, field := range schemaDef.Fields {
 		if field.Unique != nil && *field.Unique {
 			if err := newStore.CreateIndex(field.Name, []string{field.Name}); err != nil {
-				return &EphemeralError{
-					Operation: "CreateCollection",
-					Message:   fmt.Sprintf("for field %s", field.Name),
-					Cause:     errors.Join(registry.ErrFailedToCreateIndex, err),
-				}
+				return common.SystemErrorFrom(ErrCreateIndexFailed).WithOperation("ephemeral.CreateCollection").WithPath(field.Name).WithCause(err)
 			}
 		}
 	}
 	for _, index := range schemaDef.Indexes {
 		if err := newStore.CreateIndex(index.Name, index.Fields); err != nil {
-			return &EphemeralError{
-				Operation: "CreateCollection",
-				Message:   fmt.Sprintf("'%s'", index.Name),
-				Cause:     errors.Join(registry.ErrFailedToCreateIndex, err),
-			}
+			return common.SystemErrorFrom(ErrCreateIndexFailed).WithOperation("ephemeral.CreateCollection").WithPath(index.Name).WithCause(err)
 		}
 	}
 
@@ -564,11 +540,7 @@ func (m *EphemeralDatabaseInteractor) DropCollection(ctx context.Context,name st
 
 	c, ok := m.store.collections[name]
 	if !ok {
-		return &EphemeralError{
-			Operation: "DropCollection",
-			Message:   fmt.Sprintf("'%s'", name),
-			Cause:     ErrCollectionNotFound,
-		}
+		return common.SystemErrorFrom(ErrCollectionNotFound).WithOperation("ephemeral.DropCollection").WithPath(name).WithCause(base.ErrCollectionNotFound)
 	}
 
 	c.data.Close()

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
@@ -66,7 +67,9 @@ func TestTransactionWithGoroutine(t *testing.T) {
 		})
 
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "goroutine failed")
+		var sysErr *common.SystemError
+		require.ErrorAs(t, err, &sysErr)
+		assert.Equal(t, base.ErrTransactionAsyncOperationFailed.Code, sysErr.Code)
 
 		// Verify the data was not created.
 		q := query.NewQueryBuilder().Where("name").Eq("test").Build()

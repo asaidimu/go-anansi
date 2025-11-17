@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
@@ -89,21 +90,13 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 	_, err := executor(context.Background(), false, func(ctx context.Context, collection base.Collection, manager query.SchemaManager) (any, error) {
 		exists, err := manager.CollectionExists(ctx, REGISTRY_COLLECTION_NAME)
 		if err != nil {
-			return nil, &RegistryError{
-				Operation: "NewCollectionRegistry",
-				Message:   ErrFailedToCheckRegistryExistence.Error(),
-				Cause:     errors.Join(ErrFailedToCheckRegistryExistence, err),
-			}
+			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CHECK_REGISTRY_EXISTENCE")
 		}
 
 		if !exists {
 			registrySchema := RegistrySchema()
 			if err := manager.CreateCollection(ctx, *registrySchema); err != nil {
-				return nil, &RegistryError{
-					Operation: "NewCollectionRegistry",
-					Message:   fmt.Sprintf("'_schemas_': %v", ErrFailedToCreateRegistryCollection),
-					Cause:     errors.Join(ErrFailedToCreateRegistryCollection, err),
-				}
+				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_COLLECTION", fmt.Sprintf("'_schemas_': %v", ErrFailedToCreateRegistryCollection))
 			}
 		}
 		return nil, nil
@@ -137,11 +130,7 @@ func (r *collectionRegistry) Close(ctx context.Context) error {
 func (r *collectionRegistry) warmCache(ctx context.Context) error {
 	entries, err := r.loadAllFromDatabase(ctx)
 	if err != nil {
-		return &RegistryError{
-			Operation: "warmCache",
-			Message:   ErrFailedToWarmCache.Error(),
-			Cause:     errors.Join(ErrFailedToWarmCache, err),
-		}
+		return common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_WARM_CACHE")
 	}
 
 	for _, entry := range entries {
@@ -167,99 +156,75 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []sc
 	}
 
 	// Simple upfront validation
-	schemaNames := make(map[string]bool)
-	for _, schema := range schemas {
-		schemaKey := fmt.Sprintf("%s@%s", schema.Name, schema.Version)
-		if schemaNames[schemaKey] {
-			return nil, &RegistryError{
-				Operation: "CreateCollections",
-				Message:   fmt.Sprintf("'%s' version '%s'", schema.Name, schema.Version),
-				Cause:     ErrDuplicateSchemaInBatch,
-			}
-		}
-		schemaNames[schemaKey] = true
-
-		// Basic validation
-		enrichedSchema := EnrichSchema(&schema)
-		if err := enrichedSchema.Validate(); err != nil {
-			return nil, &RegistryError{
-				Operation: "CreateCollections",
-				Message:   fmt.Sprintf("invalid schema '%s' v%s: %v", schema.Name, schema.Version, err),
-				Cause:     errors.Join(data.ErrSchemaViolation, err),
-			}
-		}
-
-		// Check if collection already exists
-		if _, err := r.GetRegistryEntry(ctx, schema.Name); err == nil {
-			return nil, &RegistryError{
-				Operation: "CreateCollections",
-				Message:   fmt.Sprintf("'%s'", schema.Name),
-				Cause:     ErrCollectionAlreadyExists,
-			}
-		} else if !errors.Is(err, ErrCollectionNotFound) {
-			return nil, &RegistryError{
-				Operation: "CreateCollections",
-				Message:   ErrFailedToCheckRegistryExistence.Error(),
-				Cause:     errors.Join(ErrFailedToCheckRegistryExistence, err),
-			}
-		}
-	}
-
-	// Execute in transaction
-	results, err := execute(ctx, r.executor, true, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) ([]*RegistryEntry, error) {
-		var createdEntries []*RegistryEntry
-
+			schemaNames := make(map[string]bool)
 		for _, schema := range schemas {
+			schemaKey := fmt.Sprintf("%s@%s", schema.Name, schema.Version)
+			if schemaNames[schemaKey] {
+				return nil, common.NewSystemError("ERR_REGISTRY_DUPLICATE_SCHEMA_IN_BATCH", fmt.Sprintf("duplicate schema in batch: '%s' version '%s'", schema.Name, schema.Version))
+			}
+			schemaNames[schemaKey] = true
+	
+			// Basic validation
 			enrichedSchema := EnrichSchema(&schema)
-
-			// Generate physical name
-			physicalName, err := generatePhysicalName(&schema)
-			if err != nil {
-				return nil, &RegistryError{
-					Operation: "CreateCollections",
-					Message:   fmt.Sprintf("for '%s' v%s", schema.Name, schema.Version),
-					Cause:     errors.Join(ErrFailedToGeneratePhysicalName, err),
-				}
+			if err := enrichedSchema.Validate(); err != nil {
+				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_INVALID_SCHEMA", fmt.Sprintf("invalid schema '%s' v%s", schema.Name, schema.Version))
 			}
-
-			// Create physical collection
-			tempSchema := *enrichedSchema
-			tempSchema.Name = physicalName
-			if err := manager.CreateCollection(tctx, tempSchema); err != nil {
-				return nil, &RegistryError{
-					Operation: "CreateCollections",
-					Message:   fmt.Sprintf("'%s'", physicalName),
-					Cause:     errors.Join(base.ErrCollectionCreation, err),
-				}
+	
+			// Check if collection already exists
+			if _, err := r.GetRegistryEntry(ctx, schema.Name); err == nil {
+				return nil, base.ErrCollectionAlreadyExists.WithMessage(fmt.Sprintf("collection already exists: '%s'", schema.Name))
+			} else if !errors.Is(err, base.ErrCollectionNotFound) {
+				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CHECK_REGISTRY_EXISTENCE")
 			}
-
-			// Build and persist registry entry
-			entry := &RegistryEntry{
-				Name:          schema.Name,
-				Description:   schema.Description,
-				ActiveVersion: schema.Version,
-				Versions: map[string]SchemaVersionRecord{
-					schema.Version: {
-						Physical: physicalName,
-						Schema:   tempSchema,
-					},
-				},
-			}
-
-			result, err := r.persistRegistryEntry(tctx, collection, entry)
-			if err != nil {
-				return nil, &RegistryError{
-					Operation: "CreateCollections",
-					Message:   fmt.Sprintf("for '%s'", entry.Name),
-					Cause:     errors.Join(ErrFailedToPersistRegistryEntry, err),
-				}
-			}
-			createdEntries = append(createdEntries, result)
 		}
-
-		return createdEntries, nil
-	})
-
+	
+		// Execute in transaction
+		requiresTransaction := true
+		if _, ok := ctx.Value("github.com/asaidimu/go-anansi/__transaction__").(base.Transaction); ok {
+			requiresTransaction = false
+		}
+	
+		results, err := execute(ctx, r.executor, requiresTransaction, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) ([]*RegistryEntry, error) {
+			var createdEntries []*RegistryEntry
+	
+			for _, schema := range schemas {
+				enrichedSchema := EnrichSchema(&schema)
+	
+				// Generate physical name
+				physicalName, err := generatePhysicalName(&schema)
+				if err != nil {
+					return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_GENERATE_PHYSICAL_NAME", fmt.Sprintf("for '%s' v%s", schema.Name, schema.Version))
+				}
+	
+				// Create physical collection
+				tempSchema := *enrichedSchema
+				tempSchema.Name = physicalName
+				if err := manager.CreateCollection(tctx, tempSchema); err != nil {
+					return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_COLLECTION_CREATION_FAILED", fmt.Sprintf("failed to create physical collection '%s'", physicalName))
+				}
+	
+				// Build and persist registry entry
+				entry := &RegistryEntry{
+					Name:          schema.Name,
+					Description:   schema.Description,
+					ActiveVersion: schema.Version,
+					Versions: map[string]SchemaVersionRecord{
+						schema.Version: {
+							Physical: physicalName,
+							Schema:   tempSchema,
+						},
+					},
+				}
+	
+				result, err := r.persistRegistryEntry(tctx, collection, entry)
+				if err != nil {
+					return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_PERSIST_REGISTRY_ENTRY", fmt.Sprintf("for '%s'", entry.Name))
+				}
+				createdEntries = append(createdEntries, result)
+			}
+	
+			return createdEntries, nil
+		})
 	if err != nil {
 		return nil, err
 	}
@@ -304,11 +269,7 @@ func (r *collectionRegistry) GetSchema(ctx context.Context, name string, version
 
 	versionRecord, ok := entry.Versions[resolvedVersion]
 	if !ok {
-		return nil, &RegistryError{
-			Operation: "GetSchema",
-			Message:   fmt.Sprintf("version '%s' not found for collection '%s'", resolvedVersion, name),
-			Cause:     ErrVersionNotFoundForCollection,
-		}
+		return nil, common.NewSystemError("ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION", fmt.Sprintf("version '%s' not found for collection '%s'", resolvedVersion, name))
 	}
 
 	return &versionRecord.Schema, nil
@@ -327,11 +288,7 @@ func (r *collectionRegistry) ResolvePhysicalName(ctx context.Context, name strin
 func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version string, schema *schema.SchemaDefinition, physicalName ...string) (*RegistryEntry, error) {
 	enrichedSchema := EnrichSchema(schema)
 	if err := enrichedSchema.Validate(); err != nil {
-		return nil, &RegistryError{
-			Operation: "AddSchemaVersion",
-			Message:   fmt.Sprintf("invalid schema: %v", err),
-			Cause:     errors.Join(base.ErrInvalidSchema, err),
-		}
+		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INVALID_SCHEMA", fmt.Sprintf("invalid schema: %v", err))
 	}
 
 	entry, err := r.GetRegistryEntry(ctx, name)
@@ -340,11 +297,7 @@ func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version
 	}
 
 	if _, exists := entry.Versions[version]; exists {
-		return nil, &RegistryError{
-			Operation: "AddSchemaVersion",
-			Message:   fmt.Sprintf("version '%s' for collection '%s'", version, name),
-			Cause:     ErrVersionAlreadyExists,
-		}
+		return nil, base.ErrVersionAlreadyExists.WithMessage(fmt.Sprintf("version '%s' for collection '%s'", version, name))
 	}
 
 	// Determine physical name
@@ -354,11 +307,7 @@ func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version
 	} else {
 		actualPhysicalName, err = generatePhysicalName(schema)
 		if err != nil {
-			return nil, &RegistryError{
-				Operation: "AddSchemaVersion",
-				Message:   fmt.Sprintf("for '%s v%s'", schema.Name, schema.Version),
-				Cause:     errors.Join(ErrFailedToGeneratePhysicalName, err),
-			}
+			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_GENERATE_PHYSICAL_NAME", fmt.Sprintf("for '%s v%s'", schema.Name, schema.Version))
 		}
 	}
 
@@ -368,11 +317,7 @@ func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version
 		tempSchema := *enrichedSchema
 		tempSchema.Name = actualPhysicalName
 		if err := manager.CreateCollection(tctx, tempSchema); err != nil {
-			return nil, &RegistryError{
-				Operation: "AddSchemaVersion",
-				Message:   fmt.Sprintf("failed to create physical collection '%s'", actualPhysicalName),
-				Cause:     errors.Join(base.ErrCollectionCreation, err),
-			}
+			return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_COLLECTION_CREATION_FAILED", fmt.Sprintf("failed to create physical collection '%s'", actualPhysicalName))
 		}
 
 		// Update registry entry
@@ -405,19 +350,11 @@ func (r *collectionRegistry) SetActiveVersion(ctx context.Context, name, version
 	}
 
 	if entry.ActiveVersion == version {
-		return nil, &RegistryError{
-			Operation: "SetActiveVersion",
-			Message:   fmt.Sprintf("'%s'", name),
-			Cause:     ErrVersionAlreadyActive,
-		}
+		return nil, common.NewSystemError("ERR_REGISTRY_VERSION_ALREADY_ACTIVE", fmt.Sprintf("version '%s' for collection '%s' is already active", version, name))
 	}
 
 	if _, ok := entry.Versions[version]; !ok {
-		return nil, &RegistryError{
-			Operation: "SetActiveVersion",
-			Message:   fmt.Sprintf("version '%s' not found for collection '%s'", version, name),
-			Cause:     ErrVersionNotFoundForCollection,
-		}
+		return nil, common.NewSystemError("ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION", fmt.Sprintf("version '%s' not found for collection '%s'", version, name))
 	}
 
 	// Execute in transaction
@@ -450,11 +387,7 @@ func (r *collectionRegistry) DropCollection(ctx context.Context, name string, op
 		if opts.DeletePhysicalData {
 			for _, versionRecord := range entry.Versions {
 				if err := manager.DropCollection(ctx, versionRecord.Physical); err != nil {
-					return false, &RegistryError{
-						Operation: "DropCollection",
-						Message:   fmt.Sprintf("%s", versionRecord.Physical),
-						Cause:     errors.Join(base.ErrDropCollection, err),
-					}
+					return false, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_DROP_PHYSICAL_COLLECTION", fmt.Sprintf("failed to drop physical collection '%s'", versionRecord.Physical))
 				}
 			}
 		}
@@ -485,30 +418,18 @@ func (r *collectionRegistry) PruneVersion(ctx context.Context, name, version str
 
 	versionRecord, ok := entry.Versions[version]
 	if !ok {
-		return nil, &RegistryError{
-			Operation: "PruneVersion",
-			Message:   fmt.Sprintf("version '%s' not found for collection '%s'", version, name),
-			Cause:     ErrVersionNotFoundForCollection,
-		}
+		return nil, common.NewSystemError("ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION", fmt.Sprintf("version '%s' not found for collection '%s'", version, name))
 	}
 
 	if entry.ActiveVersion == version {
-		return nil, &RegistryError{
-			Operation: "PruneVersion",
-			Message:   fmt.Sprintf("version '%s' for collection '%s'", version, name),
-			Cause:     ErrCannotPruneActiveVersion,
-		}
+		return nil, common.NewSystemError("ERR_REGISTRY_CANNOT_PRUNE_ACTIVE_VERSION", fmt.Sprintf("version '%s' for collection '%s' is active", version, name))
 	}
 
 	// Execute in transaction
 	updatedEntry, err := execute(ctx, r.executor, true, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
 		// Drop the physical collection
 		if err := manager.DropCollection(ctx, versionRecord.Physical); err != nil {
-			return nil, &RegistryError{
-				Operation: "PruneVersion",
-				Message:   fmt.Sprintf("%s", versionRecord.Physical),
-				Cause:     errors.Join(ErrFailedToDropPhysicalCollection, err),
-			}
+			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_DROP_PHYSICAL_COLLECTION", fmt.Sprintf("failed to drop physical collection '%s'", versionRecord.Physical))
 		}
 
 		// Remove version from entry
@@ -535,11 +456,7 @@ func (r *collectionRegistry) List(ctx context.Context) ([]*RegistryEntry, error)
 	// Load all from database (could optimize by checking cache first)
 	allEntries, err := r.loadAllFromDatabase(ctx)
 	if err != nil {
-		return nil, &RegistryError{
-			Operation: "List",
-			Message:   ErrFailedToListCollections.Error(),
-			Cause:     errors.Join(ErrFailedToListCollections, err),
-		}
+		return nil, base.ErrFailedToListCollections.WithCause(err)
 	}
 
 	// Update cache with fresh data
@@ -578,24 +495,16 @@ func (r *collectionRegistry) loadFromDatabase(ctx context.Context, name string) 
 	})
 
 	if err != nil {
-		return nil, &RegistryError{
-			Operation: "loadFromDatabase",
-			Message:   fmt.Sprintf("'%s'", name),
-			Cause:     errors.Join(ErrFailedToQueryRegistryCollection, err),
-		}
+		return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_QUERY_REGISTRY_COLLECTION", fmt.Sprintf("failed to query registry for collection '%s'", name))
 	}
 
 	readResult := result
 	if readResult.Count == 0 {
-		return nil, ErrCollectionNotFound
+		return nil, base.ErrCollectionNotFound
 	}
 
 	if readResult.Count > 1 {
-		return nil, &RegistryError{
-			Operation: "loadFromDatabase",
-			Message:   fmt.Sprintf("'%s'", name),
-			Cause:     ErrMultipleRegistryEntriesFound,
-		}
+		return nil, base.ErrMultipleEntriesFound.WithMessage(fmt.Sprintf("multiple entries found for collection '%s'", name))
 	}
 
 	row := readResult.Data.(data.Document)
@@ -610,11 +519,7 @@ func (r *collectionRegistry) loadAllFromDatabase(ctx context.Context) ([]*Regist
 	})
 
 	if err != nil {
-		return nil, &RegistryError{
-			Operation: "loadAllFromDatabase",
-			Message:   ErrFailedToListCollections.Error(),
-			Cause:     errors.Join(ErrFailedToListCollections, err),
-		}
+		return nil, base.ErrFailedToListCollections.WithCause(err)
 	}
 
 	readResult := result
@@ -628,11 +533,7 @@ func (r *collectionRegistry) loadAllFromDatabase(ctx context.Context) ([]*Regist
 		row := readResult.Data.(data.Document)
 		entry, err := unmarshalEntry(row)
 		if err != nil {
-			return nil, &RegistryError{
-				Operation: "loadAllFromDatabase",
-				Message:   ErrFailedToUnmarshalRegistryEntry.Error(),
-				Cause:     errors.Join(ErrFailedToUnmarshalRegistryEntry, err),
-			}
+			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_UNMARSHAL_REGISTRY_ENTRY")
 		}
 		entries = append(entries, entry)
 	} else {
@@ -640,11 +541,7 @@ func (r *collectionRegistry) loadAllFromDatabase(ctx context.Context) ([]*Regist
 		for _, row := range rows {
 			entry, err := unmarshalEntry(row)
 			if err != nil {
-				return nil, &RegistryError{
-					Operation: "loadAllFromDatabase",
-					Message:   ErrFailedToUnmarshalRegistryEntry.Error(),
-					Cause:     errors.Join(ErrFailedToUnmarshalRegistryEntry, err),
-				}
+				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_UNMARSHAL_REGISTRY_ENTRY")
 			}
 			entries = append(entries, entry)
 		}
@@ -658,20 +555,12 @@ func (r *collectionRegistry) loadAllFromDatabase(ctx context.Context) ([]*Regist
 func (r *collectionRegistry) entryToDocument(entry *RegistryEntry) (data.Document, error) {
 	entryBytes, err := json.Marshal(entry)
 	if err != nil {
-		return data.MustNewDocument(nil), &RegistryError{
-			Operation: "entryToDocument",
-			Message:   ErrFailedToMarshalRegistryEntry.Error(),
-			Cause:     errors.Join(ErrFailedToMarshalRegistryEntry, err),
-		}
+		return data.MustNewDocument(nil), common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_MARSHAL_REGISTRY_ENTRY")
 	}
 
 	var docData map[string]any
 	if err := json.Unmarshal(entryBytes, &docData); err != nil {
-		return data.MustNewDocument(nil), &RegistryError{
-			Operation: "entryToDocument",
-			Message:   ErrFailedToUnmarshalRegistryEntry.Error(),
-			Cause:     errors.Join(ErrFailedToUnmarshalRegistryEntry, err),
-		}
+		return data.MustNewDocument(nil), common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_UNMARSHAL_REGISTRY_ENTRY")
 	}
 
 	return data.MustNewDocument(docData), nil
@@ -685,28 +574,16 @@ func (r *collectionRegistry) persistRegistryEntry(ctx context.Context, collectio
 
 	result, err := collection.CreateOne(ctx, doc)
 	if err != nil {
-		return nil, &RegistryError{
-			Operation: "persistRegistryEntry",
-			Message:   ErrFailedToCreateRegistryEntry.Error(),
-			Cause:     errors.Join(ErrFailedToCreateRegistryEntry, err),
-		}
+		return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_ENTRY")
 	}
 
 	if len(result.Issues) > 0 {
-		return nil, &RegistryError{
-			Operation: "persistRegistryEntry",
-			Message:   fmt.Sprintf("%v", result.Issues),
-			Cause:     ErrFailedToCreateRegistryEntryWithIssues,
-		}
+		return nil, common.NewSystemError("ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_ENTRY_WITH_ISSUES", fmt.Sprintf("%v", result.Issues))
 	}
 
 	rentry, err := unmarshalEntry(result.Data)
 	if err != nil {
-		return nil, &RegistryError{
-			Operation: "persistRegistryEntry",
-			Message:   ErrFailedToCreateRegistryEntry.Error(),
-			Cause:     errors.Join(ErrFailedToCreateRegistryEntry, err),
-		}
+		return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_ENTRY")
 	}
 
 	return rentry, nil
@@ -725,11 +602,7 @@ func (r *collectionRegistry) updateRegistryEntry(ctx context.Context, collection
 	})
 
 	if err != nil {
-		return &RegistryError{
-			Operation: "updateRegistryEntry",
-			Message:   fmt.Sprintf("for collection %s", name),
-			Cause:     errors.Join(ErrFailedToUpdateRegistryEntry, err),
-		}
+		return common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_UPDATE_REGISTRY_ENTRY", fmt.Sprintf("for collection %s", name))
 	}
 
 	return nil
@@ -739,11 +612,7 @@ func (r *collectionRegistry) deleteRegistryEntry(ctx context.Context, collection
 	q := r.buildNameQuery(name)
 	_, err := collection.Delete(ctx, q.Filters, false)
 	if err != nil {
-		return &RegistryError{
-			Operation: "deleteRegistryEntry",
-			Message:   fmt.Sprintf("for collection %s", name),
-			Cause:     errors.Join(ErrFailedToDeleteRegistryEntry, err),
-		}
+		return common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_DELETE_REGISTRY_ENTRY", fmt.Sprintf("for collection %s", name))
 	}
 	return nil
 }

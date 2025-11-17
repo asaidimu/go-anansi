@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/stretchr/testify/require"
 )
@@ -56,7 +57,9 @@ func TestDocument_TypeSafeAccessors(t *testing.T) {
 	// GetString - key not found
 	_, err = doc.GetString("non_existent")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrKeyNotFound)
+	var sysErr *common.SystemError
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrKeyNotFound.Code, sysErr.Code)
 
 	// GetInt - successful int retrieval
 	intVal, err := doc.GetInt("int")
@@ -81,12 +84,14 @@ func TestDocument_TypeSafeAccessors(t *testing.T) {
 	// GetInt - key not found
 	_, err = doc.GetInt("non_existent")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrKeyNotFound)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrKeyNotFound.Code, sysErr.Code)
 
 	// GetInt - cannot coerce (e.g., "hello")
 	_, err = doc.GetInt("uncoercible_int")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrTypeMismatch)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrTypeConversion.Code, sysErr.Code)
 
 	// GetFloat64 - successful float retrieval
 	floatVal, err := doc.GetFloat64("float")
@@ -111,12 +116,14 @@ func TestDocument_TypeSafeAccessors(t *testing.T) {
 	// GetFloat64 - key not found
 	_, err = doc.GetFloat64("non_existent")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrKeyNotFound)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrKeyNotFound.Code, sysErr.Code)
 
 	// GetFloat64 - cannot coerce (e.g., "hello")
 	_, err = doc.GetFloat64("uncoercible_float")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrTypeMismatch)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrTypeConversion.Code, sysErr.Code)
 
 	// GetBool - successful bool retrieval
 	boolVal, err := doc.GetBool("bool")
@@ -136,12 +143,14 @@ func TestDocument_TypeSafeAccessors(t *testing.T) {
 	// GetBool - key not found
 	_, err = doc.GetBool("non_existent")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrKeyNotFound)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrKeyNotFound.Code, sysErr.Code)
 
 	// GetBool - cannot coerce (e.g., "abc")
 	_, err = doc.GetBool("uncoercible_bool")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrTypeMismatch)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrTypeConversion.Code, sysErr.Code)
 
 	// GetTime - successful time retrieval
 	timeVal, err := doc.GetTime("time")
@@ -161,12 +170,14 @@ func TestDocument_TypeSafeAccessors(t *testing.T) {
 	// GetTime - key not found
 	_, err = doc.GetTime("non_existent")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrKeyNotFound)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrKeyNotFound.Code, sysErr.Code)
 
 	// GetTime - cannot coerce (e.g., "abc")
 	_, err = doc.GetTime("uncoercible_time")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrTypeMismatch)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrTypeConversion.Code, sysErr.Code)
 
 	// GetDocument - successful document retrieval
 	nestedDoc, err := doc.GetDocument("nested")
@@ -176,12 +187,14 @@ func TestDocument_TypeSafeAccessors(t *testing.T) {
 	// GetDocument - key not found
 	_, err = doc.GetDocument("non_existent")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrKeyNotFound)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrKeyNotFound.Code, sysErr.Code)
 
 	// GetDocument - cannot coerce (e.g., a string)
 	_, err = doc.GetDocument("str")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrTypeMismatch)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrTypeConversion.Code, sysErr.Code)
 
 	// GetDocumentArray - successful document array retrieval
 	docArr, err := doc.GetDocumentArray("doc_arr")
@@ -191,10 +204,12 @@ func TestDocument_TypeSafeAccessors(t *testing.T) {
 	// GetDocumentArray - key not found
 	_, err = doc.GetDocumentArray("non_existent")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrKeyNotFound)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrKeyNotFound.Code, sysErr.Code)
 
 	// GetDocumentArray - cannot coerce (e.g., a string)
 	_, err = doc.GetDocumentArray("str")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrTypeMismatch)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrTypeConversion.Code, sysErr.Code)
 }

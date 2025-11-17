@@ -1,7 +1,6 @@
 package schema
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -700,11 +699,9 @@ func (graph *ValidationGraph) traverse(fmap *FunctionMap, document map[string]an
 func NewDocumentValidator(schema *SchemaDefinition, fmap *FunctionMap) (*DocumentValidator, error) {
 	// Validate schema before building the graph
 	if err := schema.Validate(); err != nil {
-		return nil, &SchemaError{
-			Operation: "NewDocumentValidator",
-			Message:   "schema validation failed",
-			Cause:     err,
-		}
+		return nil, ErrValidatorSchemaValidationFailed.WithCause(err).
+			WithOperation("schema.NewDocumentValidator").
+			WithMessage("schema validation failed during validator creation")
 	}
 
 	graph := newValidationGraph()
@@ -715,11 +712,9 @@ func NewDocumentValidator(schema *SchemaDefinition, fmap *FunctionMap) (*Documen
 	for nodeID := range graph.nodes {
 		if graph.visitedState[nodeID] == dfsUnvisited {
 			if graph.dfsCheck(nodeID) {
-				return nil, &SchemaError{
-					Operation: "NewDocumentValidator",
-					Message:   fmt.Sprintf("circular dependency detected in validation graph involving node: %s", nodeID),
-					Cause:     errors.New("circular dependency detected"), // No specific error variable for this
-				}
+				return nil, ErrValidatorCircularDependency.
+					WithOperation("schema.NewDocumentValidator").
+					WithMessage(fmt.Sprintf("circular dependency detected in validation graph involving node: %s", nodeID))
 			}
 		}
 	}
@@ -962,7 +957,9 @@ func (n *ArrayValidationNode) validateArrayItem(item any, itemType FieldType, it
 
 	validator, err := NewDocumentValidator(tempSchema, ctx.FunctionMap)
 	if err != nil {
-		return []common.Issue{{Code: "VALIDATOR_CREATION_ERROR", Message: err.Error(), Path: itemPath}}
+		return []common.Issue{ErrValidatorCreationFailed.WithCause(err).
+			WithOperation("schema.ArrayValidationNode.validateArrayItem").
+			WithPath(itemPath).ToIssue()}
 	}
 
 	itemIssues, _ := validator.Validate(map[string]any{"item": item}, false)
@@ -1032,7 +1029,9 @@ func (n *RecordValidationNode) validateRecordItem(itemValue any, itemPath string
 
 	validator, err := NewDocumentValidator(tempSchema, ctx.FunctionMap)
 	if err != nil {
-		return []common.Issue{{Code: "VALIDATOR_CREATION_ERROR", Message: fmt.Sprintf("Failed to create validator for item at path '%s': %v", itemPath, err), Path: itemPath}}
+		return []common.Issue{ErrValidatorCreationFailed.WithCause(err).
+			WithOperation("schema.RecordValidationNode.validateRecordItem").
+			WithPath(itemPath).ToIssue()}
 	}
 
 	itemIssues, _ := validator.Validate(map[string]any{"item": itemValue}, false)
@@ -1131,7 +1130,8 @@ func (n *UnionValidationNode) tryUnionSchema(value any, schemaRef NestedSchemaRe
 
 	validator, err := NewDocumentValidator(tempSchema, ctx.FunctionMap)
 	if err != nil {
-		return false, nil
+		return false, []common.Issue{ErrValidatorCreationFailed.WithCause(err).
+			WithOperation("schema.UnionValidationNode.tryUnionSchema").ToIssue()}
 	}
 
 	itemIssues, matched := validator.Validate(map[string]any{"root": value}, false)

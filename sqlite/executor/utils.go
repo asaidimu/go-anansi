@@ -2,12 +2,15 @@ package executor
 
 import (
 	"database/sql"
-	"fmt"
+	"errors"
 	"strings"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
+	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
@@ -77,7 +80,7 @@ func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 
 	// Check for errors from reader
 	if err := <-utilErrChan; err != nil {
-		return nil, fmt.Errorf("error after scanning rows: %w", err)
+		return nil, err
 	}
 
 	return results, nil
@@ -94,7 +97,7 @@ func readRowsToDocs(rows *sql.Rows) (<-chan data.Document, <-chan error) {
 
 		columns, err := rows.Columns()
 		if err != nil {
-			errChan <- fmt.Errorf("failed to get columns: %w", err)
+			errChan <- native.ErrFailedToReadRows.WithCause(err).WithMessage("failed to get columns")
 			return
 		}
 
@@ -107,7 +110,7 @@ func readRowsToDocs(rows *sql.Rows) (<-chan data.Document, <-chan error) {
 			}
 
 			if err := rows.Scan(scanArgs...); err != nil {
-				errChan <- fmt.Errorf("failed to scan row: %w", err)
+				errChan <- native.ErrFailedToReadRows.WithCause(err).WithMessage("failed to scan row")
 				return
 			}
 
@@ -181,4 +184,27 @@ func fromSQLiteValue(fieldDef *schema.FieldDefinition, value any) (any, error) {
 		}
 	}
 	return convertedValue, err
+}
+
+// translateError converts a driver-specific SQLite error into a standardized
+// native error from the core package. This is crucial for abstracting away the
+// underlying database implementation.
+func translateError(err error) *common.SystemError {
+	if err == nil {
+		return nil
+	}
+
+	var sqliteErr sqlite3.Error
+	if errors.As(err, &sqliteErr) {
+		switch sqliteErr.ExtendedCode {
+		case sqlite3.ErrConstraintUnique:
+			return native.ErrUniqueConstraintViolation.WithCause(err)
+		case sqlite3.ErrConstraintForeignKey:
+			return native.ErrForeignKeyConstraintViolation.WithCause(err)
+		// Add other specific mappings here as needed
+		}
+	}
+
+	// Fallback for generic or unmapped errors
+	return native.ErrOperationFailed.WithCause(err)
 }

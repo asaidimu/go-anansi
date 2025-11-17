@@ -130,11 +130,7 @@ func (p *QueryPartitioner) partitionFilters(filter *QueryFilter) (*QueryFilter, 
 		}
 	}
 
-	return nil, nil, &QueryError{
-		Operation: "partitionFilters",
-		Message:   "invalid filter structure",
-		Cause:     errors.New("invalid filter structure"), // No specific error variable for this
-	}
+	return nil, nil, common.NewSystemError("ERR_QUERY_INVALID_FILTER_STRUCTURE", "invalid filter structure").WithOperation("partitionFilters").WithCause(errors.New("invalid filter structure"))
 }
 
 func (p *QueryPartitioner) isConditionSupported(cond *FilterCondition) bool {
@@ -209,11 +205,7 @@ func (p *QueryPartitioner) augmentProjection(originalQuery, dbQuery, postQuery *
 
 	// Ensure we don't have conflicting include/exclude
 	if len(dbQuery.Projection.Exclude) > 0 {
-		return &QueryError{
-			Operation: "augmentProjection",
-			Message:   "cannot augment projection with dependencies when an exclude projection is already present",
-			Cause:     errors.New("conflicting projection"), // No specific error variable for this
-		}
+		return common.NewSystemError("ERR_QUERY_CONFLICTING_PROJECTION", "cannot augment projection with dependencies when an exclude projection is already present").WithOperation("augmentProjection").WithCause(errors.New("conflicting projection"))
 	}
 
 	// Add dependencies to the projection

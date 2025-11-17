@@ -15,7 +15,7 @@ type SQLiteDeleteFromClause struct {
 
 func (c *SQLiteDeleteFromClause) Value() (string, []any, error) {
 	if c.target == nil {
-		return "", nil, fmt.Errorf("no target specified for delete")
+		return "", nil, ErrDeleteNoTarget
 	}
 	return fmt.Sprintf("DELETE FROM %s", c.target.Name), nil, nil
 }
@@ -31,7 +31,7 @@ func (s *SQLiteDeleteStatement) Value() (string, []any, error) {
 
 	// DELETE FROM clause
 	if s.tree.target == nil {
-		return "", nil, fmt.Errorf("delete statement must have a target")
+		return "", nil, ErrDeleteStatementNoTarget
 	}
 	targetSQL, targetParams, err := s.tree.target.Value()
 	if err != nil {
@@ -65,7 +65,7 @@ func (f *sqliteFactory) buildDeleteTree(q *query.Query) (SQLNode, error) {
 
 	// Build target (FROM clause)
 	if q.Target == nil {
-		return nil, fmt.Errorf("delete query must have a target")
+		return nil, ErrDeleteQueryNoTarget
 	}
 	tree.target = &SQLiteDeleteFromClause{
 		target: q.Target,

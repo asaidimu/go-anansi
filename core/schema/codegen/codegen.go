@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
@@ -48,11 +49,11 @@ type GeneratedField struct {
 
 // SemanticFieldTypeInfo contains semantic information about field types
 type SemanticFieldTypeInfo struct {
-	BaseType           string
-	IsReferenceType    bool
-	AllowsSchemaRef    bool
-	RequiresItemsType  bool
-	StructuredOnly     bool // Only allows structured nested schemas
+	BaseType          string
+	IsReferenceType   bool
+	AllowsSchemaRef   bool
+	RequiresItemsType bool
+	StructuredOnly    bool // Only allows structured nested schemas
 }
 
 // SemanticFieldTypeMapping provides semantic-aware type mapping
@@ -129,11 +130,8 @@ func (sg *StructGenerator) GenerateStruct(sc *schema.SchemaDefinition) (*Generat
 
 	// First validate the schema semantics
 	if err := sc.Validate(); err != nil {
-		return nil, &CodegenError{
-			Operation: "GenerateStruct",
-			Message:   ErrSchemaValidationFailed.Error(),
-			Cause:     err,
-		}
+		return nil, common.SystemErrorFrom(err, ErrSchemaValidationFailed.Code, ErrSchemaValidationFailed.Message).
+			WithOperation("codegen.StructGenerator.GenerateStruct")
 	}
 
 	structName := sg.toStructName(sc.Name)
@@ -149,11 +147,9 @@ func (sg *StructGenerator) GenerateStruct(sc *schema.SchemaDefinition) (*Generat
 
 		field, err := sg.generateFieldSemantic(fieldDef)
 		if err != nil {
-			return nil, &CodegenError{
-				Operation: "GenerateStruct",
-				Message:   fmt.Sprintf("error generating field %s (ID: %s)", fieldDef.Name, fieldID),
-				Cause:     err,
-			}
+			return nil, common.SystemErrorFrom(err, ErrSchemaValidationFailed.Code,
+				fmt.Sprintf("error generating field %s (ID: %s)", fieldDef.Name, fieldID)).
+				WithOperation("codegen.StructGenerator.GenerateStruct")
 		}
 
 		fields = append(fields, *field)
@@ -184,11 +180,8 @@ func (sg *StructGenerator) generateFieldSemantic(fieldDef *schema.FieldDefinitio
 	// Get semantic info for this field type
 	semanticInfo, exists := SemanticFieldTypeMapping[fieldDef.Type]
 	if !exists {
-		return nil, &CodegenError{
-			Operation: "generateFieldSemantic",
-			Message:   fmt.Sprintf("unsupported field type: %s", fieldDef.Type),
-			Cause:     ErrUnsupportedFieldType,
-		}
+		return nil, schema.ErrUnsupportedFieldType.WithOperation("codegen.StructGenerator.generateFieldSemantic").
+			WithMessage(fmt.Sprintf("unsupported field type: %s for field '%s'", fieldDef.Type, fieldDef.Name))
 	}
 
 	// Validate semantic rules
@@ -229,44 +222,36 @@ func (sg *StructGenerator) generateFieldSemantic(fieldDef *schema.FieldDefinitio
 
 // validateFieldSemantics validates semantic rules for a field
 func (sg *StructGenerator) validateFieldSemantics(fieldDef *schema.FieldDefinition, semanticInfo SemanticFieldTypeInfo) error {
-	// Rule 1: Primitive types cannot have schema references
-	if !semanticInfo.AllowsSchemaRef && fieldDef.Schema != nil {
-		return &CodegenError{
-			Operation: "validateFieldSemantics",
-			Message:   fmt.Sprintf("primitive field type '%s' cannot have schema references", fieldDef.Type),
-			Cause:     ErrPrimitiveFieldHasSchemaRef,
+		// Rule 1: Primitive types cannot have schema references
+		if !semanticInfo.AllowsSchemaRef && fieldDef.Schema != nil {
+			return common.SystemErrorFrom(ErrPrimitiveFieldHasSchemaRef, ErrPrimitiveFieldHasSchemaRef.Code,
+				fmt.Sprintf("primitive field type '%s' cannot have schema references", fieldDef.Type)).
+				WithOperation("codegen.StructGenerator.validateFieldSemantics")
 		}
-	}
-
-	// Rule 2: Array/Set with schema reference must have ItemsType
-	if semanticInfo.RequiresItemsType && fieldDef.Schema != nil && fieldDef.ItemsType == nil {
-		return &CodegenError{
-			Operation: "validateFieldSemantics",
-			Message:   fmt.Sprintf("array/set field '%s' has schema reference but no ItemsType specified", fieldDef.Name),
-			Cause:     ErrArraySetNoItemsType,
+	
+		// Rule 2: Array/Set with schema reference must have ItemsType
+		if semanticInfo.RequiresItemsType && fieldDef.Schema != nil && fieldDef.ItemsType == nil {
+	                      return common.SystemErrorFrom(ErrArraySetNoItemsType, ErrArraySetNoItemsType.Code,
+	                          fmt.Sprintf("array/set field '%s' has schema reference but no ItemsType specified", fieldDef.Name)).
+	                          WithOperation("codegen.StructGenerator.validateFieldSemantics")
 		}
-	}
-
-	// Rule 3: Object fields can only reference structured schemas
-	if semanticInfo.StructuredOnly && fieldDef.Schema != nil {
-		if ref, ok := fieldDef.Schema.(schema.NestedSchemaReference); ok {
-			if nestedSchema, exists := sg.schema.FindNestedSchema(ref.ID); exists {
-				if nestedSchema.IsStructured == nil || !*nestedSchema.IsStructured {
-					return &CodegenError{
-						Operation: "validateFieldSemantics",
-						Message:   fmt.Sprintf("object field '%s' cannot reference literal nested schema '%s' - only structured schemas allowed", fieldDef.Name, ref.ID),
-						Cause:     ErrObjectReferencesLiteralSchema,
+	
+		// Rule 3: Object fields can only reference structured schemas
+		if semanticInfo.StructuredOnly && fieldDef.Schema != nil {
+			if ref, ok := fieldDef.Schema.(schema.NestedSchemaReference); ok {
+				if nestedSchema, exists := sg.schema.FindNestedSchema(ref.ID); exists {
+					if nestedSchema.IsStructured == nil || !*nestedSchema.IsStructured {
+						return common.SystemErrorFrom(ErrObjectReferencesLiteralSchema, ErrObjectReferencesLiteralSchema.Code,
+							fmt.Sprintf("object field '%s' cannot reference literal nested schema '%s' - only structured schemas allowed", fieldDef.Name, ref.ID)).
+							WithOperation("codegen.StructGenerator.validateFieldSemantics")
 					}
-				}
-			} else {
-				return &CodegenError{
-					Operation: "validateFieldSemantics",
-					Message:   fmt.Sprintf("field '%s' references unknown nested schema '%s'", fieldDef.Name, ref.ID),
-					Cause:     ErrUnknownNestedSchema,
+				} else {
+					return common.SystemErrorFrom(ErrUnknownNestedSchema, ErrUnknownNestedSchema.Code,
+						fmt.Sprintf("field '%s' references unknown nested schema '%s'", fieldDef.Name, ref.ID)).
+						WithOperation("codegen.StructGenerator.validateFieldSemantics")
 				}
 			}
 		}
-	}
 
 	return nil
 }
@@ -297,11 +282,9 @@ func (sg *StructGenerator) generateArrayType(fieldDef *schema.FieldDefinition, s
 
 	itemSemanticInfo, exists := SemanticFieldTypeMapping[*fieldDef.ItemsType]
 	if !exists {
-		return "", &CodegenError{
-			Operation: "generateArrayType",
-			Message:   fmt.Sprintf("unsupported ItemsType: %s", *fieldDef.ItemsType),
-			Cause:     ErrUnsupportedItemsType,
-		}
+		return "", common.SystemErrorFrom(ErrUnsupportedItemsType, ErrUnsupportedItemsType.Code,
+			fmt.Sprintf("unsupported ItemsType: %s", *fieldDef.ItemsType)).
+			WithOperation("codegen.StructGenerator.generateArrayType")
 	}
 
 	// Handle schema references for item types
@@ -408,11 +391,9 @@ func (sg *StructGenerator) GenerateNestedStructs(schema *schema.SchemaDefinition
 		if nestedSchema.IsStructured != nil && *nestedSchema.IsStructured {
 			nestedStruct, err := sg.generateNestedStructSemantic(nestedSchemaID, nestedSchema)
 			if err != nil {
-				return nil, &CodegenError{
-					Operation: "GenerateNestedStructs",
-					Message:   fmt.Sprintf("error generating nested struct %s (ID: %s)", nestedSchema.Name, nestedSchemaID),
-					Cause:     err,
-				}
+				return nil, common.SystemErrorFrom(err, ErrSchemaValidationFailed.Code,
+					fmt.Sprintf("error generating nested struct %s (ID: %s)", nestedSchema.Name, nestedSchemaID)).
+					WithOperation("codegen.StructGenerator.GenerateNestedStructs")
 			}
 			structs = append(structs, nestedStruct)
 		}
@@ -444,11 +425,9 @@ func (sg *StructGenerator) generateNestedStructSemantic(nestedSchemaID string, n
 			field, err := sg.generateFieldSemantic(fieldDef)
 			if err != nil {
 				sg.schema = originalSchema
-				return nil, &CodegenError{
-					Operation: "generateNestedStructSemantic",
-					Message:   fmt.Sprintf("error generating field %s (ID: %s) in nested schema %s", fieldDef.Name, fieldID, nestedSchema.Name),
-					Cause:     err,
-				}
+				return nil, common.SystemErrorFrom(err, ErrSchemaValidationFailed.Code,
+					fmt.Sprintf("error generating field %s (ID: %s) in nested schema %s", fieldDef.Name, fieldID, nestedSchema.Name)).
+					WithOperation("codegen.StructGenerator.generateNestedStructSemantic")
 			}
 
 			sg.schema = originalSchema
@@ -499,11 +478,8 @@ func (sg *StructGenerator) GenerateComplete(sc *schema.SchemaDefinition) (string
 
 	// Validate schema semantics first
 	if err := sc.Validate(); err != nil {
-		return "", &CodegenError{
-			Operation: "GenerateComplete",
-			Message:   ErrSchemaValidationFailed.Error(),
-			Cause:     err,
-		}
+		return "", common.SystemErrorFrom(err, ErrSchemaValidationFailed.Code, ErrSchemaValidationFailed.Message).
+			WithOperation("codegen.StructGenerator.GenerateComplete")
 	}
 
 	var code strings.Builder
@@ -587,16 +563,12 @@ func (sg *StructGenerator) toPascalCase(s string) string {
 	return result.String()
 }
 
-
 // Example usage function with semantic validation
 func GenerateStructFromJSONSemantic(schemaJSON string) (string, error) {
 	var sc schema.SchemaDefinition
 	if err := json.Unmarshal([]byte(schemaJSON), &sc); err != nil {
-		return "", &CodegenError{
-			Operation: "GenerateStructFromJSONSemantic",
-			Message:   ErrFailedToParseSchemaJSON.Error(),
-			Cause:     err,
-		}
+		return "", common.SystemErrorFrom(err, ErrFailedToParseSchemaJSON.Code, ErrFailedToParseSchemaJSON.Message).
+			WithOperation("GenerateStructFromJSONSemantic")
 	}
 
 	generator := NewStructGenerator("models")

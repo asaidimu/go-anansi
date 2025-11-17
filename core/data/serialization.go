@@ -3,7 +3,8 @@ package data
 import (
 	"context"
 	"encoding/json"
-	"errors"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
 // FromJSON creates a Document from JSON bytes with enhanced error handling.
@@ -14,11 +15,7 @@ func FromJSON(data []byte) (Document, error) {
 
 	var doc map[string]any
 	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, &DocumentError{
-			Operation: "FromJSON",
-			Message:   ErrFailedToUnmarshalJSON.Error(),
-			Cause:     errors.Join(ErrFailedToUnmarshalJSON, err),
-		}
+		return nil, common.SystemErrorFrom(ErrFailedToUnmarshalJSON).WithOperation("data.FromJSON").WithCause(err)
 	}
 	return getFactory().newDocument(context.Background(), doc)
 }
@@ -31,11 +28,7 @@ func FromStruct(s any) (Document, error) {
 
 	data, err := json.Marshal(s)
 	if err != nil {
-		return nil, &DocumentError{
-			Operation: "FromStruct",
-			Message:   ErrFailedToMarshalStruct.Error(),
-			Cause:     errors.Join(ErrFailedToMarshalStruct, err),
-		}
+		return nil, common.SystemErrorFrom(ErrFailedToMarshalStruct).WithOperation("data.FromStruct").WithCause(err)
 	}
 
 	return FromJSON(data)
@@ -43,30 +36,30 @@ func FromStruct(s any) (Document, error) {
 
 // ToJSON with pretty printing option.
 func (d Document) ToJSON(pretty ...bool) ([]byte, error) {
+	var (
+		data []byte
+		err  error
+	)
 	if len(pretty) > 0 && pretty[0] {
-		return json.MarshalIndent(d, "", "  ")
+		data, err = json.MarshalIndent(d, "", "  ")
+	} else {
+		data, err = json.Marshal(d)
 	}
-	return json.Marshal(d)
+	if err != nil {
+		return nil, common.SystemErrorFrom(ErrFailedToMarshalJSON).WithOperation("data.Document.ToJSON").WithCause(err)
+	}
+	return data, nil
 }
 
 // ToStruct converts to a struct with better error handling.
 func (d Document) ToStruct(target any) error {
 	data, err := d.ToJSON()
 	if err != nil {
-		return &DocumentError{
-			Operation: "ToStruct",
-			Message:   ErrFailedToMarshalJSON.Error(),
-			Cause:     errors.Join(ErrFailedToMarshalJSON, err),
-		}
+		return common.SystemErrorFrom(ErrFailedToMarshalJSON).WithOperation("data.Document.ToStruct").WithCause(err)
 	}
 
 	if err := json.Unmarshal(data, target); err != nil {
-		return &DocumentError{
-
-			Operation: "ToStruct",
-			Message:   ErrFailedToUnmarshalStruct.Error(),
-			Cause:     errors.Join(ErrFailedToUnmarshalStruct, err),
-		}
+		return common.SystemErrorFrom(ErrFailedToUnmarshalStruct).WithOperation("data.Document.ToStruct").WithCause(err)
 	}
 
 	return nil

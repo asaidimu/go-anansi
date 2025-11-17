@@ -2,11 +2,11 @@ package collection
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 
@@ -75,11 +75,7 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Document
 		if err != nil {
 			// If Validate itself returns an error, it's a system error, not a validation failure.
 			// We should return this error immediately.
-			return nil, &CollectionError{
-				Operation: "CreateMany",
-				Message:   "system error during validation",
-				Cause:     errors.Join(data.ErrSystemErrorDuringValidation, err),
-			}
+			return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_VALIDATION_SYSTEM_ERROR")
 		}
 
 		if !validationResult.Valid {
@@ -93,12 +89,13 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Document
 	}
 
 	if validCount != len(docs) {
-		// Some documents failed validation, return the results with details
-		return results, &CollectionError{
-			Operation: "CreateMany",
-			Message:   fmt.Sprintf("for %d documents", len(docs)-validCount),
-			Cause:     base.ErrValidationFailed,
+		var allIssues []common.Issue
+		for _, res := range results {
+			if res.Status == base.StatusFailedValidation && len(res.Issues) > 0 {
+				allIssues = append(allIssues, res.Issues...)
+			}
 		}
+		return results, base.ErrValidationFailed.WithIssues(allIssues).WithMessage(fmt.Sprintf("validation failed for %d documents", len(docs)-validCount))
 	}
 
 	// All documents are valid, proceed with actual creation
@@ -129,18 +126,18 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 	if q.Joins != nil {
 		modifiedQuery, err := q.Clone()
 		if err != nil {
-			return nil, base.NewPersistenceError("failed to clone query for join resolution", err)
+			return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_CLONE_QUERY_FAILED")
 		}
 		// Translate logical join targets to physical names
 		for i, join := range modifiedQuery.Joins {
 			name := join.Target
 			if c.resolveSchema == nil {
-				return nil, base.NewPersistenceError(data.ErrPhysicalNameResolverNotSet.Error(), nil)
+				return nil, schema.ErrPhysicalNameResolverNotSet
 			}
 			physicalName, schema, err := c.resolveSchema(ctx, name.Name)
 
 			if err != nil {
-				return nil, base.NewPersistenceError(fmt.Sprintf("%s for join target '%s': %v", data.ErrFailedToResolvePhysicalName.Error(), join.Target.Name, err), err)
+				return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_RESOLVE_PHYSICAL_NAME_FAILED", fmt.Sprintf("%s for join target '%s'", base.ErrFailedToResolvePhysicalName.Error(), join.Target.Name))
 			}
 
 			modifiedQuery.Joins[i].Target.Name = physicalName
@@ -175,7 +172,7 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 		// Expect a single document
 		doc, ok := result.Data.(data.Document)
 		if !ok {
-			return nil, base.NewPersistenceError("unexpected type for single document", nil)
+			return nil, base.ErrUnexpectedType.WithMessage("unexpected type for single document")
 		}
 		docs = []data.Document{doc}
 		wasSingle = true
@@ -183,7 +180,7 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 		// Expect a slice of documents
 		list, ok := result.Data.([]data.Document)
 		if !ok {
-			return nil, base.NewPersistenceError("unexpected type for multiple documents", nil)
+			return nil, base.ErrUnexpectedType.WithMessage("unexpected type for multiple documents")
 		}
 		docs = list
 	}
@@ -192,7 +189,7 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 	for i, doc := range docs {
 		if _, ok := doc.Metadata(); ok {
 			if err := docs[i].Hash(); err != nil {
-				return nil, base.NewPersistenceError("failed to re-hash document on read", err)
+				return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_HASH_DOCUMENT_FAILED")
 			}
 		} else {
 			docs[i] = data.MustNewDocument(doc)
@@ -216,18 +213,10 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 	validate := func() error {
 		result, err := c.Validate(ctx, params.Set, true)
 		if err != nil {
-			return &CollectionError{
-				Operation: "Update",
-				Message:   base.ErrUpdateDocuments.Error(),
-				Cause:     errors.Join(base.ErrUpdateDocuments, err),
-			}
+			return common.SystemErrorFrom(err, "ERR_PERSISTENCE_VALIDATION_SYSTEM_ERROR")
 		}
 		if !result.Valid {
-			return &CollectionError{
-				Operation: "Update",
-				Message:   fmt.Sprintf("%v", result.Issues),
-				Cause:     base.ErrValidationFailed,
-			}
+			return base.ErrValidationFailed.WithIssues(result.Issues)
 		}
 		return nil
 	}
@@ -254,11 +243,7 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 		version := float64(*params.Version)
 
 		if params.Filter == nil {
-			return 0, &CollectionError{
-				Operation: "Update",
-				Message:   "Cannot dangerously update documents",
-				Cause:     nil,
-			}
+			return 0, base.ErrDangerousUpdate
 		}
 
 		versionFilter := query.QueryFilter{
@@ -324,7 +309,7 @@ func ensureMetadataProjection(q *query.Query) *query.Query {
 	// Users must not manually include metadata
 	if q.Projection.HasField(data.MetadataField) {
 		// defensive: prevent overriding system metadata
-		panic(data.ErrExplicitMetadataProjectionForbidden.Error())
+		panic(base.ErrExplicitMetadataProjectionForbidden.Error())
 	}
 
 	// Always remove metadata from exclusions

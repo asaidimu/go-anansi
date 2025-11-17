@@ -1,52 +1,38 @@
 package schema
 
 import (
-	"errors"
-	"strings"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
-// SchemaError represents errors specific to schema operations.
-type SchemaError struct {
-	Operation string
-	Key       string
-	Message   string
-	Cause     error
-}
-
-func (e *SchemaError) Error() string {
-	var b strings.Builder
-	b.WriteString(e.Operation)
-	b.WriteString(" operation failed")
-
-	if e.Key != "" {
-		b.WriteString(" for key '")
-		b.WriteString(e.Key)
-		b.WriteString("': ")
-	} else {
-		b.WriteString(": ")
-	}
-	b.WriteString(e.Message)
-
-	if e.Cause != nil {
-		b.WriteString(" (caused by: ")
-		b.WriteString(e.Cause.Error())
-		b.WriteString(")")
-	}
-	return b.String()
-}
-
-func (e *SchemaError) Unwrap() error {
-	return e.Cause
-}
-
-// Pre-defined errors for the schema package.
 var (
-	ErrFieldTypeCannotHaveSchemaRef = errors.New("field of type cannot have a 'schema' reference")
-	ErrFailedToUnmarshalSchema      = errors.New("failed to unmarshal FieldDefinition.Schema into expected types or generic any")
-	ErrFieldTypeCannotHaveItemsType = errors.New("field of type cannot have an 'itemsType'")
-	ErrNestedSchemaDefCannotHaveBothFieldsAndType = errors.New("NestedSchemaDefinition cannot have both 'fields' and 'type'")
-	ErrFailedToUnmarshalNestedSchemaDefFields = errors.New("failed to unmarshal NestedSchemaDefinition.fields")
-	ErrNestedSchemaDefMustContainFieldsOrType = errors.New("NestedSchemaDefinition must contain either 'fields' or 'type'")
-	ErrUnknownSchemaChangeType = errors.New("unknown schema change type")
-	ErrFailedToUnmarshalNestedSchemaDefSchema = errors.New("failed to unmarshal NestedSchemaDefinition.Schema")
+	ErrSchemaViolation                     = common.NewSystemError("ERR_SCHEMA_VIOLATION", "schema violation")
+	ErrSystemErrorDuringValidation         = common.NewSystemError("ERR_SCHEMA_SYSTEM_ERROR_DURING_VALIDATION", "system error during document validation")
+	ErrFailedToResolvePhysicalName         = common.NewSystemError("ERR_SCHEMA_FAILED_TO_RESOLVE_PHYSICAL_NAME", "failed to resolve physical name")
+	ErrInvalidOrMissingMetadataVersion     = common.NewSystemError("ERR_SCHEMA_INVALID_OR_MISSING_METADATA_VERSION", "invalid or missing version in metadata")
+	ErrExplicitMetadataProjectionForbidden = common.NewSystemError("ERR_SCHEMA_EXPLICIT_METADATA_PROJECTION_FORBIDDEN", "users must not explicitly include _metadata_ in projection")
+	ErrGeneratingField                     = common.NewSystemError("ERR_SCHEMA_GENERATING_FIELD", "error generating field")
+	ErrUnsupportedFieldType                = common.NewSystemError("ERR_SCHEMA_UNSUPPORTED_FIELD_TYPE", "unsupported field type")
+	ErrPrimitiveFieldSchemaReference       = common.NewSystemError("ERR_SCHEMA_PRIMITIVE_FIELD_SCHEMA_REFERENCE", "primitive field type cannot have schema references")
+	ErrArraySetMissingItemsType            = common.NewSystemError("ERR_SCHEMA_ARRAY_SET_MISSING_ITEMS_TYPE", "array/set field has schema reference but no ItemsType specified")
+	ErrObjectFieldLiteralSchemaReference   = common.NewSystemError("ERR_SCHEMA_OBJECT_FIELD_LITERAL_SCHEMA_REFERENCE", "object field cannot reference literal nested schema - only structured schemas allowed")
+	ErrUnknownNestedSchemaReference        = common.NewSystemError("ERR_SCHEMA_UNKNOWN_NESTED_SCHEMA_REFERENCE", "field references unknown nested schema")
+	ErrUnknownSchemaChangeType             = common.NewSystemError("ERR_SCHEMA_UNKNOWN_SCHEMA_CHANGE_TYPE", "unknown schema change type")
+	ErrFieldTypeCannotHaveSchemaReference  = common.NewSystemError("ERR_SCHEMA_FIELD_TYPE_CANNOT_HAVE_SCHEMA_REFERENCE", "field of this type cannot have a 'schema' reference")
+	ErrFailedToUnmarshalFieldSchema        = common.NewSystemError("ERR_SCHEMA_FAILED_TO_UNMARSHAL_FIELD_SCHEMA", "failed to unmarshal FieldDefinition.Schema")
+	ErrFieldTypeCannotHaveItemsType        = common.NewSystemError("ERR_SCHEMA_FIELD_TYPE_CANNOT_HAVE_ITEMS_TYPE", "field of this type cannot have an 'itemsType'")
+	ErrNestedSchemaFieldsAndTypeConflict   = common.NewSystemError("ERR_SCHEMA_NESTED_SCHEMA_FIELDS_AND_TYPE_CONFLICT", "NestedSchemaDefinition cannot have both 'fields' and 'type'")
+	ErrFailedToUnmarshalNestedSchemaFields = common.NewSystemError("ERR_SCHEMA_FAILED_TO_UNMARSHAL_NESTED_SCHEMA_FIELDS", "failed to unmarshal NestedSchemaDefinition.fields")
+	ErrNestedSchemaMissingFieldsOrType     = common.NewSystemError("ERR_SCHEMA_NESTED_SCHEMA_MISSING_FIELDS_OR_TYPE", "NestedSchemaDefinition must contain either 'fields' or 'type'")
+	ErrFailedToCloneSchema                 = common.NewSystemError("ERR_SCHEMA_FAILED_TO_CLONE_SCHEMA", "failed to clone schema")
+	ErrFieldAlreadyExists                  = common.NewSystemError("ERR_SCHEMA_FIELD_ALREADY_EXISTS", "field already exists in schema")
+	ErrInvalidSchema                       = common.NewSystemError("ERR_SCHEMA_INVALID_SCHEMA", "invalid schema")
+	ErrPhysicalNameResolverNotSet          = common.NewSystemError("ERR_SCHEMA_PHYSICAL_NAME_RESOLVER_NOT_SET", "physical name resolver function is not set")
+	ErrFailedToUnmarshalSchema             = common.NewSystemError("ERR_SCHEMA_FAILED_TO_UNMARSHAL_SCHEMA", "failed to unmarshal schema")
+	ErrNestedSchemaDefCannotHaveBothFieldsAndType = common.NewSystemError("ERR_SCHEMA_NESTED_SCHEMA_DEF_CANNOT_HAVE_BOTH_FIELDS_AND_TYPE", "NestedSchemaDefinition cannot have both 'fields' and 'type'")
+	ErrFailedToUnmarshalNestedSchemaDefFields = common.NewSystemError("ERR_SCHEMA_FAILED_TO_UNMARSHAL_NESTED_SCHEMA_DEF_FIELDS", "failed to unmarshal NestedSchemaDefinition.fields")
+	ErrFailedToUnmarshalNestedSchemaDefSchema = common.NewSystemError("ERR_SCHEMA_FAILED_TO_UNMARSHAL_NESTED_SCHEMA_DEF_SCHEMA", "failed to unmarshal NestedSchemaDefinition.schema")
+	ErrValidatorSchemaValidationFailed        = common.NewSystemError("ERR_SCHEMA_VALIDATOR_SCHEMA_VALIDATION_FAILED", "schema validation failed during validator creation")
+	ErrValidatorCircularDependency            = common.NewSystemError("ERR_SCHEMA_VALIDATOR_CIRCULAR_DEPENDENCY", "circular dependency detected in validation graph")
+	ErrValidatorCreationFailed                = common.NewSystemError("ERR_SCHEMA_VALIDATOR_CREATION_FAILED", "failed to create nested validator")
 )
+

@@ -27,9 +27,11 @@ func (db *DocumentBuilder) SetIf(condition bool, key string, value any) *Documen
 }
 
 // SetNested adds a nested value.
-func (db *DocumentBuilder) SetNested(path string, value any) *DocumentBuilder {
-	db.doc.SetNested(path, value)
-	return db
+func (db *DocumentBuilder) SetNested(path string, value any) (*DocumentBuilder, error) {
+	if err := db.doc.SetNested(path, value); err != nil {
+		return nil, err
+	}
+	return db, nil
 }
 
 // WithMetadata adds metadata.

@@ -21,7 +21,7 @@ func (f *sqliteFactory) addAlias(original, alias string) {
 
 func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[string]*schema.SchemaDefinition) (string, error) {
 	if !isValidIdentifier(fieldRef) {
-		return "", fmt.Errorf("unsupported field reference: %s", fieldRef)
+		return "", ErrSelectUnsupportedFieldReference.WithCause(fmt.Errorf("unsupported field reference: %s", fieldRef))
 	}
 
 	parts := strings.Split(fieldRef, ".")
@@ -136,7 +136,7 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 				}
 				aggPart = fmt.Sprintf("MAX(%s)", resolvedField)
 			default:
-				return "", nil, fmt.Errorf("unsupported aggregation type: %s", agg.Type)
+				return "", nil, ErrSelectUnsupportedAggregationType.WithCause(fmt.Errorf("unsupported aggregation type: %s", agg.Type))
 			}
 
 			if agg.Alias != nil {
@@ -242,7 +242,7 @@ func (p *SQLiteSelectProjection) buildFunctionCall(fc *query.FunctionCall) (stri
 	// Handle expression operators
 	if sqlOp, ok := expressionOperators[fc.Function]; ok {
 		if len(fc.Arguments) != 2 {
-			return "", nil, fmt.Errorf("binary operator %s expects 2 arguments, got %d", fc.Function, len(fc.Arguments))
+			return "", nil, ErrSelectBinaryOperatorArgs.WithCause(fmt.Errorf("binary operator %s expects 2 arguments, got %d", fc.Function, len(fc.Arguments)))
 		}
 
 		arg1SQL, arg1Params, err := p.buildProjectionValue(&fc.Arguments[0])
@@ -348,7 +348,7 @@ func (p *SQLiteSelectProjection) buildQueryFilter(filter *query.QueryFilter) (st
 	if filter.TextSearchQuery != nil {
 		return p.buildTextSearch(filter.TextSearchQuery)
 	}
-	return "", nil, fmt.Errorf("empty filter")
+	return "", nil, ErrSelectEmptyFilter
 }
 
 func (p *SQLiteSelectProjection) buildFilterCondition(condition *query.FilterCondition) (string, []any, error) {
@@ -394,7 +394,7 @@ func (p *SQLiteSelectProjection) buildFilterCondition(condition *query.FilterCon
 		}
 		return fmt.Sprintf("%s IS NULL", resolvedField), nil, nil
 	default:
-		return "", nil, fmt.Errorf("unsupported operator: %s", condition.Operator)
+		return "", nil, ErrSelectUnsupportedOperator.WithCause(fmt.Errorf("unsupported operator: %s", condition.Operator))
 	}
 
 	resolvedField, err := p.factory.resolveFieldReference(condition.Field, p.schemas)
@@ -425,7 +425,7 @@ func (p *SQLiteSelectProjection) buildFilterGroup(group *query.FilterGroup) (str
 	case common.LogicalOr:
 		operator = "OR"
 	default:
-		return "", nil, fmt.Errorf("unsupported logical operator: %s", group.Operator)
+		return "", nil, ErrSelectUnsupportedLogicalOperator.WithCause(fmt.Errorf("unsupported logical operator: %s", group.Operator))
 	}
 
 	sql := fmt.Sprintf("(%s)", strings.Join(conditions, fmt.Sprintf(" %s ", operator)))
@@ -476,7 +476,7 @@ func (p *SQLiteSelectProjection) buildTextSearch(search *query.TextSearchQuery) 
 				params = append(params, "%"+searchValue+"%")
 			}
 		default:
-			return "", nil, fmt.Errorf("unsupported text search type: %s", search.Type)
+			return "", nil, ErrSelectUnsupportedTextSearchType.WithCause(fmt.Errorf("unsupported text search type: %s", search.Type))
 		}
 
 		conditions = append(conditions, condition)
@@ -499,7 +499,7 @@ func (p *SQLiteSelectProjection) buildTextSearch(search *query.TextSearchQuery) 
 func (p *SQLiteSelectProjection) buildFilterValue(value *query.FilterValue) (string, []any, error) {
 	if value.StringVal != nil {
 		if strings.Contains(*value.StringVal, ";") {
-			return "", nil, fmt.Errorf("unsupported filter value: %s", *value.StringVal)
+			return "", nil, ErrSelectUnsupportedFilterValue.WithCause(fmt.Errorf("unsupported filter value: %s", *value.StringVal))
 		}
 		param := p.factory.nextParam()
 		return param, []any{*value.StringVal}, nil
@@ -538,7 +538,7 @@ func (p *SQLiteSelectProjection) buildFilterValue(value *query.FilterValue) (str
 	if value.SubqueryVal != nil {
 		// For subqueries, we'd need to recursively build the query
 		// This is a simplified implementation
-		return "(SELECT ...)", nil, fmt.Errorf("subquery support not yet implemented")
+		return "(SELECT ...)", nil, ErrSelectSubqueryNotImplemented
 	}
 	if value.ObjectVal != nil {
 		// For object values, we might serialize to JSON
@@ -557,7 +557,7 @@ type SQLiteFromClause struct {
 
 func (f *SQLiteFromClause) Value() (string, []any, error) {
 	if f.target == nil {
-		return "", nil, fmt.Errorf("no target specified")
+		return "", nil, ErrSelectNoTargetSpecified
 	}
 
 	sql := fmt.Sprintf("FROM %s", f.target.Name)
@@ -596,7 +596,7 @@ func (j *SQLiteJoinClause) Value() (string, []any, error) {
 		case query.JoinTypeFull:
 			joinType = "FULL OUTER JOIN"
 		default:
-			return "", nil, fmt.Errorf("unsupported join type: %s", join.Type)
+			return "", nil, ErrSelectUnsupportedJoinType.WithCause(fmt.Errorf("unsupported join type: %s", join.Type))
 		}
 
 		joinSQL := fmt.Sprintf("%s %s", joinType, join.Target.Name)
@@ -805,7 +805,7 @@ func (l *SQLiteLimitClause) Value() (string, []any, error) {
 	}
 
 	if l.pagination.Limit <= 0 {
-		return "", nil, fmt.Errorf("limit must be greater than zero for pagination")
+		return "", nil, ErrSelectLimitInvalid
 	}
 
 	sql := fmt.Sprintf("LIMIT %d", l.pagination.Limit)
@@ -895,7 +895,7 @@ func (s *SQLiteSelectStatement) Value() (string, []any, error) {
 		if part.node != nil {
 			sql, params, err := part.node.Value()
 			if err != nil {
-				return "", nil, fmt.Errorf("error building %s: %w", part.name, err)
+				return "", nil, ErrSelectBuildError.WithCause(fmt.Errorf("error building %s: %w", part.name, err))
 			}
 			if sql != "" {
 				sqlParts = append(sqlParts, sql)

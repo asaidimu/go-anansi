@@ -1,10 +1,10 @@
 package data
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
@@ -18,12 +18,7 @@ func Get[T any](doc Document, key string) (T, error) {
 
 	result, ok := val.(T)
 	if !ok {
-		return zero, &DocumentError{
-			Operation: "Get[T]",
-			Key:       key,
-			Message:   fmt.Sprintf("%s: cannot convert %T to %T", ErrTypeConversion.Error(), val, zero),
-			Cause:     errors.Join(ErrTypeConversion, ErrTypeMismatch),
-		}
+		return zero, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Get[T]").WithPath(key).WithMessage(fmt.Sprintf("cannot convert %T to %T", val, zero)).WithCause(ErrTypeMismatch)
 	}
 	return result, nil
 }
@@ -75,12 +70,7 @@ func GetWithCoercion[T any](doc Document, key string) (T, error) {
 		}
 	}
 
-	return zero, &DocumentError{
-		Operation: "GetWithCoercion[T]",
-		Key:       key,
-		Message:   fmt.Sprintf("%s: cannot convert %T to %T", ErrTypeConversion.Error(), val, zero),
-		Cause:     errors.Join(ErrTypeConversion, ErrTypeMismatch),
-	}
+	return zero, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.GetWithCoercion[T]").WithPath(key).WithMessage(fmt.Sprintf("cannot convert %T to %T", val, zero)).WithCause(ErrTypeMismatch)
 }
 
 // GetNested with generic type support
@@ -93,12 +83,7 @@ func GetNested[T any](doc Document, path string) (T, error) {
 
 	result, ok := val.(T)
 	if !ok {
-		return zero, &DocumentError{
-			Operation: "GetNested[T]",
-			Key:       path,
-			Message:   fmt.Sprintf("%s: cannot convert %T to %T", ErrTypeConversion.Error(), val, zero),
-			Cause:     errors.Join(ErrTypeConversion, ErrTypeMismatch),
-		}
+		return zero, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.GetNested[T]").WithPath(path).WithMessage(fmt.Sprintf("cannot convert %T to %T", val, zero)).WithCause(ErrTypeMismatch)
 	}
 	return result, nil
 }

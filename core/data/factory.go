@@ -21,6 +21,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/google/uuid"
 )
@@ -118,11 +119,7 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 	for _, providerConfig := range f.config.Providers {
 		providerMeta, err := providerConfig.Provider(ctx, doc)
 		if err != nil {
-			return nil, &DocumentError{
-				Operation: "newDocument",
-				Message:   fmt.Sprintf("%s: %s", ErrMetadataProviderFailed.Error(), providerConfig.Name),
-				Cause:     errors.Join(ErrMetadataProviderFailed, err),
-			}
+			return nil, common.SystemErrorFrom(ErrMetadataProviderFailed).WithOperation("data.documentFactory.newDocument").WithMessage(fmt.Sprintf("metadata provider '%s' failed", providerConfig.Name)).WithCause(err)
 		}
 		maps.Copy(meta, providerMeta)
 	}
@@ -182,11 +179,7 @@ func (f *documentFactory) calculateHash(doc Document) (string, error) {
 	meta, ok := dataToSign.Metadata()
 
 	if !ok {
-		return "", &DocumentError{
-			Operation: "CalculateHash",
-			Message:   ErrNoMetadata.Error(),
-			Cause:     ErrNoMetadata,
-		}
+		return "", common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.documentFactory.calculateHash")
 	}
 
 	// Create a copy of the metadata and remove the hash field itself
@@ -195,11 +188,7 @@ func (f *documentFactory) calculateHash(doc Document) (string, error) {
 	// Use canonicalMarshal to ensure consistent key ordering for hashing.
 	toSign, err := canonicalMarshal(dataToSign)
 	if err != nil {
-		return "", &DocumentError{
-			Operation: "CalculateHash",
-			Message:   ErrFailedToMarshalMetadata.Error(),
-			Cause:     errors.Join(ErrFailedToMarshalMetadata, err),
-		}
+		return "", common.SystemErrorFrom(ErrFailedToMarshalMetadata).WithOperation("data.documentFactory.calculateHash").WithCause(err)
 	}
 
 	h := sha256.New()
@@ -220,11 +209,7 @@ func (f *documentFactory) signDocument(doc Document, privateKey *rsa.PrivateKey)
 	// Marshal the document to a canonical byte slice
 	canonicalBytes, err := canonicalMarshal(docToSign)
 	if err != nil {
-		return "", &DocumentError{
-			Operation: "signDocument",
-			Message:   "failed to marshal document for signing",
-			Cause:     err,
-		}
+		return "", common.SystemErrorFrom(ErrSignDocumentMarshalFailed).WithOperation("data.documentFactory.signDocument").WithCause(err)
 	}
 
 	// Hash the canonical bytes
@@ -235,11 +220,7 @@ func (f *documentFactory) signDocument(doc Document, privateKey *rsa.PrivateKey)
 	// Sign the hash
 	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hashed)
 	if err != nil {
-		return "", &DocumentError{
-			Operation: "signDocument",
-			Message:   "failed to sign document hash",
-			Cause:     err,
-		}
+		return "", common.SystemErrorFrom(ErrSignDocumentFailed).WithOperation("data.documentFactory.signDocument").WithCause(err)
 	}
 
 	return base64.StdEncoding.EncodeToString(signature), nil
@@ -250,11 +231,7 @@ func (f *documentFactory) verifySignature(doc Document, publicKey *rsa.PublicKey
 	// Decode the signature
 	sigBytes, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
-		return &DocumentError{
-			Operation: "verifySignature",
-			Message:   "failed to decode base64 signature",
-			Cause:     err,
-		}
+		return common.SystemErrorFrom(ErrVerifySignatureDecodeFailed).WithOperation("data.documentFactory.verifySignature").WithCause(err)
 	}
 
 	// Create a copy of the document and remove the signature field
@@ -268,11 +245,7 @@ func (f *documentFactory) verifySignature(doc Document, publicKey *rsa.PublicKey
 	// Marshal the document to a canonical byte slice
 	canonicalBytes, err := canonicalMarshal(docToVerify)
 	if err != nil {
-		return &DocumentError{
-			Operation: "verifySignature",
-			Message:   "failed to marshal document for verification",
-			Cause:     err,
-		}
+		return common.SystemErrorFrom(ErrVerifyDocumentMarshalFailed).WithOperation("data.documentFactory.verifySignature").WithCause(err)
 	}
 
 	// Hash the canonical bytes
@@ -283,11 +256,7 @@ func (f *documentFactory) verifySignature(doc Document, publicKey *rsa.PublicKey
 	// Verify the signature
 	err = rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, hashed, sigBytes)
 	if err != nil {
-		return &DocumentError{
-			Operation: "verifySignature",
-			Message:   "signature verification failed",
-			Cause:     errors.Join(ErrSignatureInvalid, err),
-		}
+		return common.SystemErrorFrom(ErrSignatureVerificationFailed).WithOperation("data.documentFactory.verifySignature").WithCause(errors.Join(ErrSignatureInvalid, err))
 	}
 
 	return nil
@@ -348,7 +317,7 @@ func canonicalMarshal(v any) ([]byte, error) {
 func LoadPrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
 	block, _ := pem.Decode(pemBytes)
 	if block == nil {
-		return nil, errors.New("failed to decode PEM block containing private key")
+		return nil, ErrFailedToDecodePEMBlock
 	}
 
 	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
@@ -356,12 +325,12 @@ func LoadPrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
 		// Try parsing as PKCS8
 		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 		if err != nil {
-			return nil, errors.New("failed to parse private key: not in PKCS1 or PKCS8 format")
+			return nil, ErrFailedToParsePrivateKey
 		}
 		if rsaKey, ok := key.(*rsa.PrivateKey); ok {
 			return rsaKey, nil
 		}
-		return nil, errors.New("key is not an RSA private key")
+		return nil, ErrNotRSAPrivateKey
 	}
 	return key, nil
 }
@@ -370,17 +339,17 @@ func LoadPrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
 func LoadPublicKey(pemBytes []byte) (*rsa.PublicKey, error) {
 	block, _ := pem.Decode(pemBytes)
 	if block == nil {
-		return nil, errors.New("failed to decode PEM block containing public key")
+		return nil, ErrFailedToDecodePEMPublicKey
 	}
 
 	key, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return nil, errors.New("failed to parse public key")
+		return nil, ErrFailedToParsePublicKey
 	}
 
 	if rsaKey, ok := key.(*rsa.PublicKey); ok {
 		return rsaKey, nil
 	}
 
-	return nil, errors.New("key is not an RSA public key")
+	return nil, ErrNotRSAPublicKey
 }

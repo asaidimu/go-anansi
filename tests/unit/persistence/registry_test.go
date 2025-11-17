@@ -2,10 +2,13 @@ package persistence_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
+	cevents "github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	persistence "github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
@@ -15,7 +18,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
-	cevents "github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -177,7 +179,7 @@ func TestDropCollection(t *testing.T) {
 
 		// Verify registry entry is gone
 		_, err = cr.GetRegistryEntry(ctx, sampleSchema.Name)
-		assert.ErrorIs(t, err, registry.ErrCollectionNotFound, "Registry entry should be gone")
+		assert.ErrorIs(t, err, base.ErrCollectionNotFound, "Registry entry should be gone")
 
 		// Verify physical collection is gone
 		exists, err = schemaManager.CollectionExists(context.Background(), physicalName)
@@ -206,7 +208,7 @@ func TestDropCollection(t *testing.T) {
 
 		// Verify registry entry is gone
 		_, err = cr.GetRegistryEntry(ctx, sampleSchema.Name)
-		assert.ErrorIs(t, err, registry.ErrCollectionNotFound, "Registry entry should be gone")
+		assert.ErrorIs(t, err, base.ErrCollectionNotFound, "Registry entry should be gone")
 
 		// Verify physical collection still exists
 		exists, err = schemaManager.CollectionExists(context.Background(), physicalName)
@@ -217,7 +219,7 @@ func TestDropCollection(t *testing.T) {
 	t.Run("Returns ErrCollectionNotFound if collection does not exist", func(t *testing.T) {
 		cr, _, _ := setupTestEnv(t)
 		err := cr.DropCollection(ctx, "non_existent_collection", base.DropCollectionOptions{DeletePhysicalData: true})
-		assert.ErrorIs(t, err, registry.ErrCollectionNotFound)
+		assert.ErrorIs(t, err, base.ErrCollectionNotFound)
 	})
 }
 
@@ -286,12 +288,12 @@ func TestPruneVersion(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, entry)
 
-		// Attempt to prune the active version
 		_, err = cr.PruneVersion(ctx, sampleSchema.Name, entry.ActiveVersion)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "cannot prune active version")
+		var sysErr *common.SystemError
+		assert.True(t, errors.As(err, &sysErr))
+		assert.Equal(t, "ERR_REGISTRY_CANNOT_PRUNE_ACTIVE_VERSION", sysErr.Code)
 	})
-
 	t.Run("Fails to prune non-existent version", func(t *testing.T) {
 		cr, _, _ := setupTestEnv(t)
 
@@ -308,7 +310,7 @@ func TestPruneVersion(t *testing.T) {
 	t.Run("Returns ErrCollectionNotFound if collection does not exist", func(t *testing.T) {
 		cr, _, _ := setupTestEnv(t)
 		_, err := cr.PruneVersion(ctx, "non_existent_collection", "1.0.0")
-		assert.ErrorIs(t, err, registry.ErrCollectionNotFound)
+		assert.ErrorIs(t, err, base.ErrCollectionNotFound)
 	})
 }
 
@@ -336,7 +338,7 @@ func TestGetRegistryEntry(t *testing.T) {
 	t.Run("Returns ErrCollectionNotFound if collection does not exist", func(t *testing.T) {
 		cr, _, _ := setupTestEnv(t)
 		_, err := cr.GetRegistryEntry(ctx, "non_existent_collection")
-		assert.ErrorIs(t, err, registry.ErrCollectionNotFound)
+		assert.ErrorIs(t, err, base.ErrCollectionNotFound)
 	})
 }
 
@@ -377,7 +379,7 @@ func TestAddSchemaVersion(t *testing.T) {
 		newSchema := *sampleSchema
 		newSchema.Version = "1.1.0"
 		_, err := cr.AddSchemaVersion(ctx, "non_existent_collection", "1.1.0", &newSchema)
-		assert.ErrorIs(t, err, registry.ErrCollectionNotFound)
+		assert.ErrorIs(t, err, base.ErrCollectionNotFound)
 	})
 
 	t.Run("Fails if version already exists", func(t *testing.T) {
@@ -390,7 +392,9 @@ func TestAddSchemaVersion(t *testing.T) {
 		// Attempt to add the same version again
 		_, err = cr.AddSchemaVersion(ctx, sampleSchema.Name, "1.0.0", sampleSchema)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "already exists")
+		var sysErr *common.SystemError
+		assert.True(t, errors.As(err, &sysErr))
+		assert.Equal(t, "ERR_PERSISTENCE_VERSION_ALREADY_EXISTS", sysErr.Code)
 	})
 
 	t.Run("Fails if new schema is invalid", func(t *testing.T) {
@@ -442,7 +446,7 @@ func TestSetActiveVersion(t *testing.T) {
 	t.Run("Fails if collection does not exist", func(t *testing.T) {
 		cr, _, _ := setupTestEnv(t)
 		_, err := cr.SetActiveVersion(ctx, "non_existent_collection", "1.0.0")
-		assert.ErrorIs(t, err, registry.ErrCollectionNotFound)
+		assert.ErrorIs(t, err, base.ErrCollectionNotFound)
 	})
 
 	t.Run("Fails if version does not exist", func(t *testing.T) {
@@ -455,7 +459,9 @@ func TestSetActiveVersion(t *testing.T) {
 		// Attempt to set a non-existent version as active
 		_, err = cr.SetActiveVersion(ctx, sampleSchema.Name, "9.9.9")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "version '9.9.9' not found")
+		var sysErr *common.SystemError
+		assert.True(t, errors.As(err, &sysErr))
+		assert.Equal(t, "ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION", sysErr.Code)
 	})
 
 	t.Run("Fails if version is already active", func(t *testing.T) {
@@ -468,7 +474,9 @@ func TestSetActiveVersion(t *testing.T) {
 		// Attempt to set the current active version again
 		_, err = cr.SetActiveVersion(ctx, sampleSchema.Name, "1.0.0")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "already the active version")
+		var sysErr *common.SystemError
+		assert.True(t, errors.As(err, &sysErr))
+		assert.Equal(t, "ERR_REGISTRY_VERSION_ALREADY_ACTIVE", sysErr.Code)
 	})
 }
 
@@ -543,7 +551,7 @@ func TestList(t *testing.T) {
 	t.Run("Returns ErrCollectionNotFound if collection does not exist", func(t *testing.T) {
 		cr, _, _ := setupTestEnv(t)
 		_, err := cr.GetSchema(ctx, "non_existent_collection")
-		assert.ErrorIs(t, err, registry.ErrCollectionNotFound)
+		assert.ErrorIs(t, err, base.ErrCollectionNotFound)
 	})
 
 	t.Run("Returns error if specific version not found", func(t *testing.T) {
@@ -556,7 +564,9 @@ func TestList(t *testing.T) {
 		// Attempt to get a non-existent version
 		_, err = cr.GetSchema(ctx, sampleSchema.Name, "9.9.9")
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "version '9.9.9' not found")
+		var sysErr *common.SystemError
+		assert.True(t, errors.As(err, &sysErr))
+		assert.Equal(t, "ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION", sysErr.Code)
 	})
 }
 

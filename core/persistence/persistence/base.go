@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	cevents "github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
@@ -165,9 +166,8 @@ func (p *basePersistence) CreateCollections(ctx context.Context, schemas []schem
 func (p *basePersistence) HasCollection(ctx context.Context, name string) (bool, error) {
 	_, err := (p.registry).GetRegistryEntry(ctx, name)
 	if err != nil {
-		if errors.Is(err, registry.ErrCollectionNotFound) {
-			return false, nil
-		}
+		        if errors.Is(err, base.ErrCollectionNotFound) {
+		            return false, nil		}
 		return false, err
 	}
 	return true, nil
@@ -196,14 +196,10 @@ func (p *basePersistence) Metadata(ctx context.Context, filter *base.MetadataFil
 	entries, err := (p.registry).List(ctx)
 	if err != nil {
 		// If the registry is empty, it might return a not found error. In this case, we should return empty metadata.
-		if errors.Is(err, registry.ErrCollectionNotFound) {
+		if errors.Is(err, base.ErrCollectionNotFound) {
 			return base.Metadata{}, nil
 		}
-		return base.Metadata{}, &PersistenceError{
-			Operation: "Metadata",
-			Message:   registry.ErrFailedToListCollections.Error(),
-			Cause:     errors.Join(registry.ErrFailedToListCollections, err),
-		}
+		return base.Metadata{}, common.NewSystemError("ERR_PERSISTENCE_METADATA_FAILED", base.ErrFailedToListCollections.Error()).WithCause(err)
 	}
 
 	collections := make([]*base.CollectionMetadata, len(entries))

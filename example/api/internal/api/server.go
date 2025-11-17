@@ -214,11 +214,7 @@ func (s *APIServer) createDocuments(w http.ResponseWriter, r *http.Request, coll
 
 	results, err := collection.CreateMany(r.Context(), reqBody.Documents)
 	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "CREATE_ERROR",
-			Message: "Failed to create documents",
-			Details: err.Error(),
-		}, r)
+		s.Response.WriteError(w, http.StatusInternalServerError, err, r)
 		return
 	}
 

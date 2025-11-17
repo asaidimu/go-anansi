@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
@@ -29,7 +28,7 @@ func newManagedPersistence(wrapped base.Persistence) base.Persistence {
 // checkClosed returns an error if the persistence instance is closed.
 func (m *managedPersistence) checkClosed() error {
 	if m.closed {
-		return registry.ErrPersistenceClosed
+		return base.ErrPersistenceClosed
 	}
 	return nil
 }

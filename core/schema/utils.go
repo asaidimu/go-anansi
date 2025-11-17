@@ -1,13 +1,13 @@
 package schema
 
 import (
-	"errors"
 	"fmt"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
@@ -280,11 +280,8 @@ func (s *SchemaDefinition) MustToJSON() string {
 func (s *SchemaDefinition) Clone() (*SchemaDefinition, error) {
 	var newSchema SchemaDefinition
 	if err := utils.Clone(*s, &newSchema); err != nil {
-		return nil, &SchemaError{
-			Operation: "Clone",
-			Message:   "failed to clone schema",
-			Cause:     err,
-		}
+		return nil, common.SystemErrorFrom(err, "ERR_SCHEMA_FAILED_TO_CLONE_SCHEMA", "failed to clone schema").
+			WithOperation("schema.SchemaDefinition.Clone")
 	}
 	return &newSchema, nil
 }
@@ -303,7 +300,8 @@ func (s *SchemaDefinition) MustClone() *SchemaDefinition {
 // This allows the provider to be intelligent about reusing existing nested schemas.
 func (s *SchemaDefinition) AddField(field *FieldDefinition, provider func(*SchemaDefinition) (*NestedSchemaDefinition, []*NestedSchemaDefinition)) (*SchemaDefinition, error) {
 	if s == nil || field == nil {
-		return s, nil
+		return nil, ErrInvalidSchema.WithOperation("schema.SchemaDefinition.AddField").
+			WithMessage("schema or field cannot be nil when adding a field")
 	}
 
 	clone := s.MustClone()
@@ -315,11 +313,8 @@ func (s *SchemaDefinition) AddField(field *FieldDefinition, provider func(*Schem
 
 	// Check if field already exists
 	if _, exists := clone.Fields[field.Name]; exists {
-		return nil, &SchemaError{
-			Operation: "AddField",
-			Message:   fmt.Sprintf("field '%s' already exists in schema", field.Name),
-			Cause:     errors.New("field already exists in schema"), // No specific error variable for this
-		}
+		return nil, ErrFieldAlreadyExists.WithOperation("schema.SchemaDefinition.AddField").
+			WithMessage(fmt.Sprintf("field '%s' already exists in schema", field.Name))
 	}
 
 	// Add the field

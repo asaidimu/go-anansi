@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
@@ -51,7 +52,7 @@ func (s *sqliteExecutor) Query(ctx context.Context, query native.NativeQuery[typ
 	payload := q.Raw()
 	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
 	if err != nil {
-		return nil, fmt.Errorf("failed to execute %s query: %w", q.StatementType(), err)
+		return nil, translateError(err).WithOperation("Query")
 	}
 	defer rows.Close()
 
@@ -70,7 +71,7 @@ func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.Native
 	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to execute %s query: %w", q.StatementType(), err)
+		return nil, nil, translateError(err).WithOperation("QueryStream")
 	}
 
 	docChan := make(chan data.Document)
@@ -114,7 +115,7 @@ func (s *sqliteExecutor) Exec(ctx context.Context, compiled native.NativeQuery[t
 	payload := q.Raw()
 	result, err := s.runner().ExecContext(ctx, payload.SQL, payload.Params...)
 	if err != nil {
-		return 0, fmt.Errorf("failed to execute %s query: %w", q.StatementType(), err)
+		return 0, translateError(err).WithOperation("Exec")
 	}
 	return result.RowsAffected()
 }
@@ -127,13 +128,13 @@ func (s *sqliteExecutor) ExecuteQuery(ctx context.Context, compiled native.Nativ
 	if strings.HasPrefix(template, "SELECT") {
 		rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
 		if err != nil {
-			return &query.RawQueryResult{Success: false, Message: fmt.Sprintf("failed to execute raw SELECT query: %v", err)}, err
+			return nil, translateError(err).WithOperation("ExecuteQuery")
 		}
 		defer rows.Close()
 
 		results, err := ReadRows(s.logger, compiled.Schema, rows)
 		if err != nil {
-			return &query.RawQueryResult{Success: false, Message: fmt.Sprintf("failed to read raw SELECT query results: %v", err)}, err
+			return nil, err
 		}
 
 		return &query.RawQueryResult{
@@ -145,7 +146,7 @@ func (s *sqliteExecutor) ExecuteQuery(ctx context.Context, compiled native.Nativ
 	} else {
 		result, err := s.runner().ExecContext(ctx, payload.SQL, payload.Params...)
 		if err != nil {
-			return &query.RawQueryResult{Success: false, Message: fmt.Sprintf("failed to execute raw EXEC query: %v", err)}, err
+			return nil, translateError(err).WithOperation("ExecuteQuery")
 		}
 		affectedRows, _ := result.RowsAffected()
 		return &query.RawQueryResult{
@@ -158,17 +159,24 @@ func (s *sqliteExecutor) ExecuteQuery(ctx context.Context, compiled native.Nativ
 
 func (s *sqliteExecutor) BeginTransaction(ctx context.Context) (native.QueryExecutor[types.SQLitePayload], error) {
 	if s.tx != nil {
-		return nil, fmt.Errorf("cannot begin a new transaction: already in a transaction")
+		return nil, native.ErrCannotNestTransactions.WithOperation("BeginTransaction")
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to begin transaction: %w", err)
+		return nil, native.ErrTransactionFailed.WithCause(err).WithOperation("BeginTransaction")
 	}
 
 	ti, err := newSQLiteExecutor(s.db, s.logger, tx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create new interactor for transaction: %w", err)
+		// If creating the executor fails, we must roll back the transaction
+		if rbErr := tx.Rollback(); rbErr != nil {
+			return nil, native.ErrTransactionFailed.WithCause(err).WithIssue(common.Issue{
+				Code:    native.ErrTransactionFailed.Code,
+				Message: fmt.Sprintf("failed to rollback after failing to create transaction executor: %v", rbErr),
+			}).WithOperation("BeginTransaction")
+		}
+		return nil, native.ErrTransactionFailed.WithCause(err).WithOperation("BeginTransaction")
 	}
 
 	return ti, nil
@@ -176,16 +184,26 @@ func (s *sqliteExecutor) BeginTransaction(ctx context.Context) (native.QueryExec
 
 func (i *sqliteExecutor) Commit(ctx context.Context) error {
 	if i.tx == nil {
-		return fmt.Errorf("commit not applicable: not in a transactional context")
+		return native.ErrTransactionFailed.WithOperation("Commit").WithMessage("not in a transactional context")
 	}
-	return i.tx.Commit()
+	err := i.tx.Commit()
+	i.tx = nil // Clear the transaction reference
+	if err != nil {
+		return native.ErrTransactionFailed.WithCause(err).WithOperation("Commit")
+	}
+	return nil
 }
 
 func (i *sqliteExecutor) Rollback(ctx context.Context) error {
 	if i.tx == nil {
-		return fmt.Errorf("rollback not applicable: not in a transactional context")
+		return native.ErrTransactionFailed.WithOperation("Rollback").WithMessage("not in a transactional context")
 	}
-	return i.tx.Rollback()
+	err := i.tx.Rollback()
+	i.tx = nil // Clear the transaction reference
+	if err != nil {
+		return native.ErrTransactionFailed.WithCause(err).WithOperation("Rollback")
+	}
+	return nil
 }
 
 func (i *sqliteExecutor) Close() error {

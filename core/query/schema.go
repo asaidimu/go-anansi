@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
@@ -18,6 +19,7 @@ type SchemaFromQueryOptions struct {
 	FunctionTypeMap map[string]schema.FieldType
 
 	// DefaultAggregationTypes maps aggregation types to their expected return types
+	// If not provided, aggregation types will default to FieldTypeUnknown
 	DefaultAggregationTypes map[AggregationType]schema.FieldType
 }
 
@@ -43,11 +45,7 @@ func SchemaFromQuery(q *Query, options *SchemaFromQueryOptions) (*schema.SchemaD
 
 	// Validate that we have a target schema
 	if q.Target == nil || q.Target.Schema == nil {
-		return nil, &QueryError{
-			Operation: "SchemaFromQuery",
-			Message:   "query target schema is required",
-			Cause:     errors.New("query target schema is required"), // No specific error variable for this
-		}
+		return nil, common.NewSystemError("ERR_QUERY_SCHEMA_TARGET_REQUIRED", "query target schema is required").WithOperation("SchemaFromQuery").WithCause(errors.New("query target schema is required"))
 	}
 
 	// Handle aggregation queries - they have a completely different result structure
@@ -60,21 +58,13 @@ func SchemaFromQuery(q *Query, options *SchemaFromQueryOptions) (*schema.SchemaD
 
 	// Apply joins - this adds nested schemas for joined collections
 	if err := applyJoinsToSchema(resultSchema, q.Joins); err != nil {
-		return nil, &QueryError{
-			Operation: "SchemaFromQuery",
-			Message:   "failed to apply joins to schema",
-			Cause:     err,
-		}
+		return nil, common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_JOINS_FAILED", "failed to apply joins to schema").WithOperation("SchemaFromQuery").WithCause(err)
 	}
 
 	// Apply projections - this filters and transforms fields
 	if q.Projection != nil {
 		if err := applyProjectionToSchema(resultSchema, q.Projection, q.Target.Schema, options); err != nil {
-			return nil, &QueryError{
-				Operation: "SchemaFromQuery",
-				Message:   "failed to apply projection to schema",
-				Cause:     err,
-			}
+			return nil, common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_FAILED", "failed to apply projection to schema").WithOperation("SchemaFromQuery").WithCause(err)
 		}
 	}
 
@@ -107,9 +97,6 @@ func generateAggregationResultSchema(q *Query, options *SchemaFromQueryOptions) 
 	if hasGrouping {
 		// Result will be: { "groupValue": { "agg1": value, "agg2": value } }
 		// We need to create a dynamic structure based on group fields
-
-		// The top-level will be an object where keys are group values
-		// and values are objects containing aggregation results
 
 		// Create a nested schema for the aggregation values
 		aggregationValueSchema := &schema.NestedSchemaDefinition{
@@ -179,11 +166,7 @@ func generateAggregationResultSchema(q *Query, options *SchemaFromQueryOptions) 
 func applyJoinsToSchema(resultSchema *schema.SchemaDefinition, joins []JoinConfiguration) error {
 	for _, join := range joins {
 		if join.Target.Schema == nil {
-			return &QueryError{
-			Operation: "applyJoinsToSchema",
-			Message:   fmt.Sprintf("join target schema is required for %s", join.Target.Name),
-			Cause:     errors.New("join target schema is required"), // No specific error variable for this
-		}
+			return common.NewSystemError("ERR_QUERY_SCHEMA_JOIN_TARGET_REQUIRED", fmt.Sprintf("join target schema is required for %s", join.Target.Name)).WithOperation("applyJoinsToSchema").WithCause(errors.New("join target schema is required"))
 		}
 
 		// Determine the field name for the joined data
@@ -201,37 +184,21 @@ func applyJoinsToSchema(resultSchema *schema.SchemaDefinition, joins []JoinConfi
 				// This is a nested part, so traverse the schema
 				field, exists := currentSchema.Fields[part]
 				if !exists {
-					return &QueryError{
-						Operation: "applyJoinsToSchema",
-						Message:   fmt.Sprintf("nested join field '%s' not found in schema", part),
-						Cause:     errors.New("nested join field not found"), // No specific error variable for this
-					}
+					return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_JOIN_FIELD_NOT_FOUND", fmt.Sprintf("nested join field '%s' not found in schema", part)).WithOperation("applyJoinsToSchema").WithCause(errors.New("nested join field not found"))
 				}
 
 				if field.Type != schema.FieldTypeObject {
-					return &QueryError{
-						Operation: "applyJoinsToSchema",
-						Message:   fmt.Sprintf("nested join field '%s' is not an object", part),
-						Cause:     errors.New("nested join field is not an object"), // No specific error variable for this
-					}
+					return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_JOIN_FIELD_NOT_OBJECT", fmt.Sprintf("nested join field '%s' is not an object", part)).WithOperation("applyJoinsToSchema").WithCause(errors.New("nested join field is not an object"))
 				}
 
 				nestedSchemaRef, ok := field.Schema.(schema.NestedSchemaReference)
 				if !ok {
-					return &QueryError{
-						Operation: "applyJoinsToSchema",
-						Message:   fmt.Sprintf("nested join field '%s' does not have a nested schema reference", part),
-						Cause:     errors.New("nested join field does not have a nested schema reference"), // No specific error variable for this
-					}
+					return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_JOIN_NO_SCHEMA_REF", fmt.Sprintf("nested join field '%s' does not have a nested schema reference", part)).WithOperation("applyJoinsToSchema").WithCause(errors.New("nested join field does not have a nested schema reference"))
 				}
 
 				nestedSchema, exists := currentSchema.NestedSchemas[nestedSchemaRef.ID]
 				if !exists {
-					return &QueryError{
-						Operation: "applyJoinsToSchema",
-						Message:   fmt.Sprintf("nested schema '%s' not found for nested join", nestedSchemaRef.ID),
-						Cause:     errors.New("nested schema not found for nested join"), // No specific error variable for this
-					}
+					return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_SCHEMA_NOT_FOUND", fmt.Sprintf("nested schema '%s' not found for nested join", nestedSchemaRef.ID)).WithOperation("applyJoinsToSchema").WithCause(errors.New("nested schema not found for nested join"))
 				}
 
 				currentSchema = &schema.SchemaDefinition{
@@ -259,11 +226,7 @@ func addJoinField(targetSchema *schema.SchemaDefinition, fieldName string, join 
 	// Apply projection to joined schema if specified
 	if join.Projection != nil {
 		if err := applyProjectionToSchema(joinedSchema, join.Projection, join.Target.Schema, nil); err != nil {
-			return &QueryError{
-				Operation: "addJoinField",
-				Message:   fmt.Sprintf("failed to apply projection to joined schema %s", fieldName),
-				Cause:     err,
-			}
+			return common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_JOINED_FAILED", fmt.Sprintf("failed to apply projection to joined schema %s", fieldName)).WithOperation("addJoinField").WithCause(err)
 		}
 	}
 
@@ -313,7 +276,7 @@ func applyProjectionToSchema(resultSchema *schema.SchemaDefinition, projection *
 				if field, exists := resultSchema.Fields[exclude.Name]; exists {
 					// Apply nested exclusion to the field's schema
 					if err := applyNestedProjection(field, exclude.Nested, originalSchema); err != nil {
-						return &QueryError{Operation: "applyProjectionToSchema", Message: fmt.Sprintf("%s to field %s", ErrFailedToApplyNestedExclusion.Error(), exclude.Name), Cause: err}
+						return common.NewSystemError("ERR_QUERY_SCHEMA_RECURSIVE_NESTED_EXCLUSION_FAILED", fmt.Sprintf("%s to field %s", err.Error(), exclude.Name)).WithOperation("applyProjectionToSchema").WithCause(err)
 					}
 				}
 			}
@@ -338,7 +301,7 @@ func applyProjectionToSchema(resultSchema *schema.SchemaDefinition, projection *
 				// Handle nested projections
 				if include.Nested != nil {
 					if err := applyNestedProjection(newField, include.Nested, originalSchema); err != nil {
-						return &QueryError{Operation: "applyProjectionToSchema", Message: fmt.Sprintf("%s to field %s", ErrFailedToApplyNestedProjection.Error(), include.Name), Cause: err}
+						return common.NewSystemError("ERR_QUERY_SCHEMA_RECURSIVE_NESTED_PROJECTION_FAILED", fmt.Sprintf("%s to field %s", err.Error(), include.Name)).WithOperation("applyProjectionToSchema").WithCause(err)
 					}
 				}
 
@@ -608,11 +571,7 @@ func applyNestedProjection(field *schema.FieldDefinition, projection *Projection
 	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeRecord:
 		// Continue processing
 	default:
-		return &QueryError{
-			Operation: "applyNestedProjection",
-			Message:   fmt.Sprintf("cannot apply nested projection to field of type %s", field.Type),
-			Cause:     errors.New("cannot apply nested projection to field of this type"), // No specific error variable for this
-		}
+		return common.NewSystemError("ERR_QUERY_SCHEMA_CANNOT_APPLY_NESTED_PROJECTION", fmt.Sprintf("cannot apply nested projection to field of type %s", field.Type)).WithOperation("applyNestedProjection").WithCause(errors.New("cannot apply nested projection to field of this type"))
 	}
 
 	// Handle nested schema references
@@ -630,11 +589,7 @@ func applyNestedProjection(field *schema.FieldDefinition, projection *Projection
 		return applyProjectionToSchemaReferenceSlice(field, nestedRefs, projection, originalSchema)
 	}
 
-	return &QueryError{
-		Operation: "applyNestedProjection",
-		Message:   fmt.Sprintf("unsupported nested schema format for field %s", field.Name),
-		Cause:     errors.New("unsupported nested schema format"), // No specific error variable for this
-	}
+	return common.NewSystemError("ERR_QUERY_SCHEMA_UNSUPPORTED_NESTED_SCHEMA_FORMAT", fmt.Sprintf("unsupported nested schema format for field %s", field.Name)).WithOperation("applyNestedProjection").WithCause(errors.New("unsupported nested schema format"))
 }
 
 // applyProjectionToSchemaReference handles projection for a single nested schema reference
@@ -642,11 +597,7 @@ func applyProjectionToSchemaReference(field *schema.FieldDefinition, nestedRef s
 	// Find the referenced nested schema using the provided method
 	originalNestedSchema, exists := originalSchema.FindNestedSchema(nestedRef.ID)
 	if !exists {
-		return &QueryError{
-			Operation: "applyProjectionToSchemaReference",
-			Message:   fmt.Sprintf("nested schema reference %s not found", nestedRef.ID),
-			Cause:     errors.New("nested schema reference not found"), // No specific error variable for this
-		}
+		return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_SCHEMA_REF_NOT_FOUND", fmt.Sprintf("nested schema reference %s not found", nestedRef.ID)).WithOperation("applyProjectionToSchemaReference").WithCause(errors.New("nested schema reference not found"))
 	}
 
 	// Clone the nested schema for modification
@@ -655,19 +606,11 @@ func applyProjectionToSchemaReference(field *schema.FieldDefinition, nestedRef s
 	// Apply projection to the nested schema's fields
 	if originalNestedSchema.IsStructured != nil && *originalNestedSchema.IsStructured {
 		if err := applyProjectionToNestedSchema(modifiedNestedSchema, projection, originalSchema); err != nil {
-			return &QueryError{
-				Operation: "applyProjectionToSchemaReference",
-				Message:   fmt.Sprintf("failed to apply projection to nested schema %s", nestedRef.ID),
-				Cause:     err,
-			}
+			return common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_NESTED_FAILED", fmt.Sprintf("failed to apply projection to nested schema %s", nestedRef.ID)).WithOperation("applyProjectionToSchemaReference").WithCause(err)
 		}
 	} else {
 		// For non-structured nested schemas, we can't apply field-level projections
-		return &QueryError{
-			Operation: "applyProjectionToSchemaReference",
-			Message:   fmt.Sprintf("cannot apply field projection to non-structured nested schema %s", nestedRef.ID),
-			Cause:     errors.New("cannot apply field projection to non-structured nested schema"), // No specific error variable for this
-		}
+		return common.NewSystemError("ERR_QUERY_SCHEMA_CANNOT_APPLY_FIELD_PROJECTION_NON_STRUCTURED", fmt.Sprintf("cannot apply field projection to non-structured nested schema %s", nestedRef.ID)).WithOperation("applyProjectionToSchemaReference").WithCause(errors.New("cannot apply field projection to non-structured nested schema"))
 	}
 
 	// Create a new nested schema ID to avoid conflicts
@@ -703,11 +646,7 @@ func applyProjectionToSchemaReferenceSlice(field *schema.FieldDefinition, nested
 		// Find the referenced nested schema
 		originalNestedSchema, exists := originalSchema.FindNestedSchema(nestedRef.ID)
 		if !exists {
-			return &QueryError{
-			Operation: "applyProjectionToSchemaReferenceSlice",
-			Message:   fmt.Sprintf("nested schema reference %s not found in union type", nestedRef.ID),
-			Cause:     errors.New("nested schema reference not found in union type"), // No specific error variable for this
-		}
+			return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_SCHEMA_REF_NOT_FOUND_UNION", fmt.Sprintf("nested schema reference %s not found in union type", nestedRef.ID)).WithOperation("applyProjectionToSchemaReferenceSlice").WithCause(errors.New("nested schema reference not found in union type"))
 		}
 
 		// Clone the nested schema for modification
@@ -716,11 +655,7 @@ func applyProjectionToSchemaReferenceSlice(field *schema.FieldDefinition, nested
 		// Apply projection if the nested schema is structured
 		if originalNestedSchema.IsStructured != nil && *originalNestedSchema.IsStructured {
 			if err := applyProjectionToNestedSchema(modifiedNestedSchema, projection, originalSchema); err != nil {
-				return &QueryError{
-					Operation: "applyProjectionToSchemaReferenceSlice",
-					Message:   fmt.Sprintf("failed to apply projection to nested schema %s in union", nestedRef.ID),
-					Cause:     err,
-				}
+				return common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_NESTED_UNION_FAILED", fmt.Sprintf("failed to apply projection to nested schema %s in union", nestedRef.ID)).WithOperation("applyProjectionToSchemaReferenceSlice").WithCause(err)
 			}
 		}
 
@@ -741,8 +676,8 @@ func applyProjectionToSchemaReferenceSlice(field *schema.FieldDefinition, nested
 		// Create updated reference with ID matching the schema name
 		updatedRef := schema.NestedSchemaReference{
 			ID:          projectedSchemaID, // This must match NestedSchemaDefinition.Name
-			Constraints: nestedRef.Constraints,
-			Indexes:     nestedRef.Indexes,
+			Constraints: nestedRef.Constraints, // Preserve existing constraints
+			Indexes:     nestedRef.Indexes,     // Preserve existing indexes
 		}
 		projectedRefs = append(projectedRefs, updatedRef)
 	}
@@ -764,22 +699,14 @@ func applyProjectionToNestedSchema(nestedSchema *schema.NestedSchemaDefinition, 
 		for i := range nestedSchema.StructuredFieldsArray {
 			if nestedSchema.StructuredFieldsArray[i].Fields != nil {
 				if err := applyProjectionToFieldsMap(nestedSchema.StructuredFieldsArray[i].Fields, projection, parentSchema); err != nil {
-					return &QueryError{
-						Operation: "applyProjectionToNestedSchema",
-						Message:   fmt.Sprintf("failed to apply projection to conditional fields array at index %d", i),
-						Cause:     err,
-					}
+					return common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_CONDITIONAL_FAILED", fmt.Sprintf("failed to apply projection to conditional fields array at index %d", i)).WithOperation("applyProjectionToNestedSchema").WithCause(err)
 				}
 			}
 		}
 		return nil
 	}
 
-	return &QueryError{
-		Operation: "applyProjectionToNestedSchema",
-		Message:   "nested schema has no structured fields to project",
-		Cause:     errors.New("nested schema has no structured fields to project"), // No specific error variable for this
-	}
+	return common.NewSystemError("ERR_QUERY_SCHEMA_NO_STRUCTURED_FIELDS_TO_PROJECT", "nested schema has no structured fields to project").WithOperation("applyProjectionToNestedSchema").WithCause(errors.New("nested schema has no structured fields to project"))
 }
 
 // applyProjectionToFieldsMap applies projection to a map of field definitions
@@ -791,11 +718,7 @@ func applyProjectionToFieldsMap(fields map[string]*schema.FieldDefinition, proje
 				// Apply nested projection before excluding the field
 				if field, exists := fields[exclude.Name]; exists {
 					if err := applyNestedProjection(field, exclude.Nested, parentSchema); err != nil {
-						return &QueryError{
-						Operation: "applyProjectionToFieldsMap",
-						Message:   fmt.Sprintf("failed to apply recursive nested exclusion to field %s", exclude.Name),
-						Cause:     err,
-					}
+						return common.NewSystemError("ERR_QUERY_SCHEMA_RECURSIVE_NESTED_EXCLUSION_FAILED", fmt.Sprintf("failed to apply recursive nested exclusion to field %s", exclude.Name)).WithOperation("applyProjectionToFieldsMap").WithCause(err)
 					}
 				}
 			} else {
@@ -823,22 +746,14 @@ func applyProjectionToFieldsMap(fields map[string]*schema.FieldDefinition, proje
 				// Handle recursive nested projections
 				if include.Nested != nil {
 					if err := applyNestedProjection(newField, include.Nested, parentSchema); err != nil {
-						return &QueryError{
-						Operation: "applyProjectionToFieldsMap",
-						Message:   fmt.Sprintf("failed to apply recursive nested projection to field %s", include.Name),
-						Cause:     err,
-					}
+						return common.NewSystemError("ERR_QUERY_SCHEMA_RECURSIVE_NESTED_PROJECTION_FAILED", fmt.Sprintf("failed to apply recursive nested projection to field %s", include.Name)).WithOperation("applyProjectionToFieldsMap").WithCause(err)
 					}
 				}
 
 				newFields[fieldName] = newField
 			} else {
 				// Field doesn't exist in the original schema
-				return &QueryError{
-					Operation: "applyProjectionToFieldsMap",
-					Message:   fmt.Sprintf("field %s specified in projection include does not exist", include.Name),
-					Cause:     errors.New("field specified in projection include does not exist"), // No specific error variable for this
-				}
+				return common.NewSystemError("ERR_QUERY_SCHEMA_PROJECTION_INCLUDE_FIELD_NOT_EXIST", fmt.Sprintf("field %s specified in projection include does not exist", include.Name)).WithOperation("applyProjectionToFieldsMap").WithCause(errors.New("field specified in projection include does not exist"))
 			}
 		}
 
@@ -863,11 +778,7 @@ func applyProjectionToFieldsMap(fields map[string]*schema.FieldDefinition, proje
 			if fieldDef != nil {
 				// Check for field name conflicts
 				if _, exists := fields[fieldDef.Name]; exists {
-					return &QueryError{
-						Operation: "applyProjectionToFieldsMap",
-						Message:   fmt.Sprintf("computed field %s conflicts with existing field", fieldDef.Name),
-						Cause:     errors.New("computed field conflicts with existing field"), // No specific error variable for this
-					}
+					return common.NewSystemError("ERR_QUERY_SCHEMA_COMPUTED_FIELD_CONFLICT", fmt.Sprintf("computed field %s conflicts with existing field", fieldDef.Name)).WithOperation("applyProjectionToFieldsMap").WithCause(errors.New("computed field conflicts with existing field"))
 				}
 				fields[fieldDef.Name] = fieldDef
 			}

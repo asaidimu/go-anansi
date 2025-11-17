@@ -1,31 +1,31 @@
 package ephemeral
 
 import (
-	"errors"
-	"fmt"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
+
 )
 
-// EphemeralError represents errors specific to ephemeral operations.
-type EphemeralError struct {
-	Operation string
-	Key       string
-	Message   string
-	Cause     error
-}
 
-func (e *EphemeralError) Error() string {
-	if e.Cause != nil {
-		return fmt.Sprintf("%s operation failed for key '%s': %s (caused by: %v)",
-			e.Operation, e.Key, e.Message, e.Cause)
-	}
-	return fmt.Sprintf("%s operation failed for key '%s': %s", e.Operation, e.Key, e.Message)
-}
-
-func (e *EphemeralError) Unwrap() error {
-	return e.Cause
-}
 
 // Pre-defined errors for the ephemeral package.
+
 var (
-	ErrCollectionNotFound = errors.New("collection not found")
+
+	ErrNotTransaction         = common.NewSystemError("ERR_EPHEMERAL_NOT_TRANSACTION", "not a transaction")
+
+	ErrRawQueriesNotSupported = common.NewSystemError("ERR_EPHEMERAL_RAW_QUERIES_NOT_SUPPORTED", "raw queries not supported")
+
+	ErrNoNumericValuesForAggregation = common.NewSystemError("ERR_EPHEMERAL_NO_NUMERIC_VALUES_FOR_AGGREGATION", "no numeric values found for aggregation")
+
+	ErrUniqueCheckFailed      = common.NewSystemError("ERR_EPHEMERAL_UNIQUE_CHECK_FAILED", "unique check failed")
+
+	ErrUniqueConstraintViolation = common.NewSystemError("ERR_EPHEMERAL_UNIQUE_CONSTRAINT_VIOLATION", "unique constraint violation")
+
+	ErrCollectionAlreadyExists = common.NewSystemError("ERR_EPHEMERAL_COLLECTION_ALREADY_EXISTS", "collection already exists")
+
+	ErrCreateIndexFailed      = common.NewSystemError("ERR_EPHEMERAL_CREATE_INDEX_FAILED", "failed to create index")
+
+	ErrCollectionNotFound     = common.NewSystemError("ERR_EPHEMERAL_COLLECTION_NOT_FOUND", "collection not found")
+
 )

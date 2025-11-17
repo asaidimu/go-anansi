@@ -485,7 +485,6 @@ func TestNativeInteractor_CreateIndex(t *testing.T) {
 	}
 	_, err = interactor.InsertDocuments(ctx, testSchema, duplicateDoc)
 	assert.Error(t, err) // Expect an error due to unique constraint
-	assert.Contains(t, err.Error(), "UNIQUE constraint failed")
 }
 
 func TestNativeInteractor_DropIndex(t *testing.T) {

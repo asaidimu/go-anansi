@@ -1,10 +1,10 @@
 package ephemeral
 
 import (
-	"fmt"
 	"reflect"
 	"strconv"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
@@ -14,7 +14,7 @@ func sumAggregate(records []data.Document, field string) (any, error) {
 	var sum float64
 	foundNumeric := false
 	for _, record := range records {
-		value, _ := utils.GetValueByPath(record,field) // Assuming getFieldValue is accessible or passed
+		value, _ := utils.GetValueByPath(record, field) // Assuming getFieldValue is accessible or passed
 		if value == nil {
 			continue // Skip nil values
 		}
@@ -35,7 +35,7 @@ func sumAggregate(records []data.Document, field string) (any, error) {
 				sum += f
 				foundNumeric = true
 			}
-		// Other types are ignored for sum
+			// Other types are ignored for sum
 		default:
 			// Optionally, return an error or log a warning if non-numeric types are encountered
 			// For now, we'll just skip them but warn if no numeric values are found.
@@ -43,11 +43,7 @@ func sumAggregate(records []data.Document, field string) (any, error) {
 	}
 
 	if !foundNumeric && len(records) > 0 {
-		return nil, &EphemeralError{
-			Operation: "sumAggregate",
-			Message:   fmt.Sprintf("%s on field '%s'", data.ErrNoNumericValuesForAggregation.Error(), field),
-			Cause:     data.ErrNoNumericValuesForAggregation,
-		}
+		return nil, common.SystemErrorFrom(ErrNoNumericValuesForAggregation).WithOperation("ephemeral.sumAggregate").WithPath(field).WithCause(data.ErrNoNumericValuesForAggregation)
 	}
 	return sum, nil
 }

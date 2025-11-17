@@ -21,7 +21,7 @@ func toSQLiteValue(fieldDef *schema.FieldDefinition, value any) (any, error) {
 		case reflect.Slice, reflect.Map:
 			jsonBytes, err := utils.ToJSONBytes(value)
 			if err != nil {
-				return nil, fmt.Errorf("failed to marshal value to JSON: %w", err)
+				return nil, ErrConvertMarshalValueFailed.WithCause(fmt.Errorf("failed to marshal value to JSON: %w", err))
 			}
 			return string(jsonBytes), nil
 		default:
@@ -34,7 +34,7 @@ func toSQLiteValue(fieldDef *schema.FieldDefinition, value any) (any, error) {
 	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeSet, schema.FieldTypeRecord, schema.FieldTypeUnion:
 		jsonBytes, err := utils.ToJSONBytes(value)
 		if err != nil {
-			return nil, fmt.Errorf("failed to marshal field '%s' to JSON: %w", fieldDef.Name, err)
+			return nil, ErrConvertMarshalFieldFailed.WithCause(fmt.Errorf("failed to marshal field '%s' to JSON: %w", fieldDef.Name, err))
 		}
 		return string(jsonBytes), nil
 	case schema.FieldTypeBoolean:

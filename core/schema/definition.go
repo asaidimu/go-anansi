@@ -179,21 +179,14 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 			// If Schema is provided for a type that doesn't support it, return an error.
 			// This enforces the semantic rule that schema refs are only valid for specific types.
 			if temp.Type != FieldTypeObject && temp.Type != FieldTypeArray && temp.Type != FieldTypeRecord && temp.Type != FieldTypeUnion {
-				return &SchemaError{
-				Operation: "UnmarshalJSON", // This operation name will be used for both FieldDefinition and PartialFieldDefinition
-				Message:   fmt.Sprintf("field of type '%s' cannot have a 'schema' reference", temp.Type),
-				Cause:     ErrFieldTypeCannotHaveSchemaRef,
-			}
+				return ErrFieldTypeCannotHaveSchemaReference.WithOperation("schema.FieldDefinition.UnmarshalJSON").
+					WithMessage(fmt.Sprintf("field of type '%s' cannot have a 'schema' reference", temp.Type))
 			}
 			// For any other types or if specific unmarshaling failed,
 			// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
 			var genericSchema any
 			if err := utils.FromJSON(temp.Schema, &genericSchema); err != nil {
-				return &SchemaError{
-				Operation: "UnmarshalJSON", // This operation name will be used for both FieldDefinition and PartialFieldDefinition
-				Message:   ErrFailedToUnmarshalSchema.Error(),
-				Cause:     err,
-			}
+				return ErrFailedToUnmarshalSchema.WithCause(err).WithOperation("schema.FieldDefinition.UnmarshalJSON")
 			}
 			fd.Schema = genericSchema
 		}
@@ -201,11 +194,8 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 
 	// Validate that ItemsType is only set for Array or Set types
 	if fd.ItemsType != nil && fd.Type != FieldTypeArray && fd.Type != FieldTypeSet {
-		return &SchemaError{
-			Operation: "UnmarshalJSON",
-			Message:   fmt.Sprintf("field of type '%s' cannot have an 'itemsType'", fd.Type),
-			Cause:     ErrFieldTypeCannotHaveItemsType,
-		}
+		return ErrFieldTypeCannotHaveItemsType.WithOperation("schema.FieldDefinition.UnmarshalJSON").
+			WithMessage(fmt.Sprintf("field of type '%s' cannot have an 'itemsType'", fd.Type))
 	}
 	return nil
 }
@@ -289,11 +279,7 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 	hasType := temp.Type != nil
 
 	if hasFields && hasType {
-		return &SchemaError{
-			Operation: "UnmarshalJSON",
-			Message:   ErrNestedSchemaDefCannotHaveBothFieldsAndType.Error(),
-			Cause:     ErrNestedSchemaDefCannotHaveBothFieldsAndType,
-		}
+		return ErrNestedSchemaDefCannotHaveBothFieldsAndType.WithOperation("schema.NestedSchemaDefinition.UnmarshalJSON")
 	}
 
 	nsd.Constraints = temp.Constraints
@@ -311,11 +297,7 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 			if err := utils.FromJSON(temp.Fields, &fieldsArray); err == nil {
 				nsd.StructuredFieldsArray = fieldsArray
 			} else {
-				return &SchemaError{
-				Operation: "UnmarshalJSON",
-				Message:   ErrFailedToUnmarshalNestedSchemaDefFields.Error(),
-				Cause:     ErrFailedToUnmarshalNestedSchemaDefFields,
-			}
+				return ErrFailedToUnmarshalNestedSchemaDefFields.WithOperation("schema.NestedSchemaDefinition.UnmarshalJSON")
 			}
 		}
 	} else if hasType {
@@ -325,7 +307,7 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 		nsd.ItemsType = temp.ItemsType
 
 		if *temp.Type == FieldTypeRecord || *temp.Type == FieldTypeUnknown {
-		    nsd.IsStructured = utils.BoolPtr(true)
+			nsd.IsStructured = utils.BoolPtr(true)
 			return nil
 		}
 
@@ -338,16 +320,13 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 				if err := utils.FromJSON(temp.Schema, &multiSchema); err == nil {
 					nsd.Schema = multiSchema
 				} else {
-					return ErrFailedToUnmarshalNestedSchemaDefSchema
+					return ErrFailedToUnmarshalNestedSchemaDefSchema.WithCause(err).WithOperation("schema.NestedSchemaDefinition.UnmarshalJSON")
 				}
 			}
 		}
 	} else {
-		return &SchemaError{
-			Operation: "UnmarshalJSON",
-			Message:   fmt.Sprintf("NestedSchemaDefinition must contain either 'fields' or 'type' %s, %s", temp.Name, string(data)),
-			Cause:     ErrNestedSchemaDefMustContainFieldsOrType,
-		}
+		return ErrNestedSchemaMissingFieldsOrType.WithOperation("schema.NestedSchemaDefinition.UnmarshalJSON").
+			WithMessage(fmt.Sprintf("NestedSchemaDefinition must contain either 'fields' or 'type' for '%s'", temp.Name))
 	}
 
 	return nil
@@ -539,16 +518,16 @@ type SchemaChange struct {
 
 // UnmarshalJSON implements the utils.FromJSONer interface for SchemaChange.
 func (sc *SchemaChange) UnmarshalJSON(data []byte) error {
-	var common struct {
+	var tempCommon struct {
 		Type SchemaChangeType `json:"type"`
 		ID   *string          `json:"id"`
 	}
-	if err := utils.FromJSON(data, &common); err != nil {
+	if err := utils.FromJSON(data, &tempCommon); err != nil {
 		return err
 	}
 
-	sc.Type = common.Type
-	sc.ID = common.ID
+	sc.Type = tempCommon.Type
+	sc.ID = tempCommon.ID
 
 	switch sc.Type {
 	case SchemaChangeTypeModifyProperty:
@@ -587,11 +566,7 @@ func (sc *SchemaChange) UnmarshalJSON(data []byte) error {
 		sc.SchemaChangeModifyNestedSchemaPayload = &SchemaChangeModifyNestedSchemaPayload{}
 		return utils.FromJSON(data, sc.SchemaChangeModifyNestedSchemaPayload)
 	default:
-		return &SchemaError{
-			Operation: "UnmarshalJSON",
-			Message:   fmt.Sprintf("unknown schema change type: %s", sc.Type),
-			Cause:     ErrUnknownSchemaChangeType,
-		}
+		return newUnknownSchemaChangeTypeError(sc.Type)
 	}
 }
 
@@ -718,28 +693,22 @@ func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
 		// If Schema is provided for a type that doesn't support it, return an error.
 		// This enforces the semantic rule that schema refs are only valid for specific types.
 		if temp.Type != FieldTypeObject && temp.Type != FieldTypeArray && temp.Type != FieldTypeRecord && temp.Type != FieldTypeUnion {
-			return &SchemaError{
-				Operation: "UnmarshalJSON", // This operation name will be used for both FieldDefinition and PartialFieldDefinition
-				Message:   fmt.Sprintf("field of type '%s' cannot have a 'schema' reference", temp.Type),
-				Cause:     ErrFieldTypeCannotHaveSchemaRef,
-			}
+			return ErrFieldTypeCannotHaveSchemaReference.WithOperation("schema.PartialFieldDefinition.UnmarshalJSON").
+				WithMessage(fmt.Sprintf("field of type '%s' cannot have a 'schema' reference", temp.Type))
 		}
 		// For any other types or if specific unmarshaling failed,
 		// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
 		var genericSchema any
 		if err := utils.FromJSON(temp.Schema, &genericSchema); err != nil {
-			return &SchemaError{
-				Operation: "UnmarshalJSON", // This operation name will be used for both FieldDefinition and PartialFieldDefinition
-				Message:   ErrFailedToUnmarshalSchema.Error(),
-				Cause:     err,
-			}
+			return ErrFailedToUnmarshalSchema.WithCause(err).WithOperation("schema.PartialFieldDefinition.UnmarshalJSON")
 		}
 		fd.Schema = genericSchema
 	}
 
 	// Validate that ItemsType is only set for Array or Set types
 	if fd.ItemsType != nil && fd.Type != FieldTypePtr(FieldTypeArray) && fd.Type != FieldTypePtr(FieldTypeSet) {
-		return ErrFieldTypeCannotHaveItemsType
+		return ErrFieldTypeCannotHaveItemsType.WithOperation("schema.PartialFieldDefinition.UnmarshalJSON").
+			WithMessage(fmt.Sprintf("field of type '%s' cannot have an 'itemsType'", *fd.Type))
 	}
 	return nil
 }
@@ -802,4 +771,9 @@ type SchemaHint map[string]any
 type ValidationResult struct {
 	Valid  bool           `json:"valid"`
 	Issues []common.Issue `json:"issues"`
+}
+
+func newUnknownSchemaChangeTypeError(changeType SchemaChangeType) error {
+	return ErrUnknownSchemaChangeType.WithOperation("schema.newUnknownSchemaChangeTypeError").
+		WithMessage(fmt.Sprintf("unknown schema change type: %s", changeType))
 }

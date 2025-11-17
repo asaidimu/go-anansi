@@ -21,11 +21,11 @@ type SQLiteInsertValues struct {
 
 func (i *SQLiteInsertValues) Value() (string, []any, error) {
 	if i.data == nil && i.batch == nil {
-		return "", nil, fmt.Errorf("no data provided for insert")
+		return "", nil, ErrInsertNoDataProvided
 	}
 
 	if i.data != nil && i.batch != nil {
-		return "", nil, fmt.Errorf("cannot specify both single document and batch")
+		return "", nil, ErrInsertSingleAndBatchMutuallyExclusive
 	}
 
 	// Determine fields to use for insert
@@ -34,7 +34,7 @@ func (i *SQLiteInsertValues) Value() (string, []any, error) {
 	}
 
 	if len(i.schema.FieldNames()) == 0 {
-		return "", nil, fmt.Errorf("provided schema has no fields defined for insert")
+		return "", nil, ErrInsertSchemaNoFields
 	}
 
 	// Handle single document case
@@ -44,7 +44,7 @@ func (i *SQLiteInsertValues) Value() (string, []any, error) {
 
 	// Handle batch case
 	if len(i.batch) == 0 {
-		return "", nil, fmt.Errorf("empty batch provided for insert")
+		return "", nil, ErrInsertEmptyBatch
 	}
 
 	return i.buildBatchInsert(i.batch)
@@ -52,7 +52,7 @@ func (i *SQLiteInsertValues) Value() (string, []any, error) {
 
 func (i *SQLiteInsertValues) buildSingleInsert(doc data.Document) (string, []any, error) {
 	if len(doc) == 0 {
-		return "", nil, fmt.Errorf("empty document provided for insert")
+		return "", nil, ErrInsertEmptyDocument
 	}
 
 	placeholders, params, err := i.processDocumentFields(doc)
@@ -69,7 +69,7 @@ func (i *SQLiteInsertValues) buildSingleInsert(doc data.Document) (string, []any
 
 func (i *SQLiteInsertValues) buildBatchInsert(batch []data.Document) (string, []any, error) {
 	if len(batch) == 0 {
-		return "", nil, fmt.Errorf("empty batch provided for insert")
+		return "", nil, ErrInsertEmptyBatch
 	}
 
 	var allPlaceholders []string
@@ -78,7 +78,7 @@ func (i *SQLiteInsertValues) buildBatchInsert(batch []data.Document) (string, []
 	for docIdx, doc := range batch {
 		placeholders, params, err := i.processDocumentFields(doc)
 		if err != nil {
-			return "", nil, fmt.Errorf("document %d: %w", docIdx, err)
+			return "", nil, ErrInsertDocumentError.WithCause(fmt.Errorf("document %d: %w", docIdx, err))
 		}
 
 		allPlaceholders = append(allPlaceholders, fmt.Sprintf("(%s)", strings.Join(placeholders, ", ")))
@@ -115,7 +115,7 @@ func (i *SQLiteInsertValues) processDocumentFields(
 
 		convertedValue, err := toSQLiteValue(fieldDef, value)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to convert field %s: %w", field, err)
+			return nil, nil, ErrInsertFieldConversionFailed.WithCause(fmt.Errorf("failed to convert field %s: %w", field, err))
 		}
 
 		params = append(params, convertedValue)
@@ -135,7 +135,7 @@ func (s *SQLiteInsertStatement) Value() (string, []any, error) {
 
 	// INSERT INTO clause
 	if s.tree.target == nil {
-		return "", nil, fmt.Errorf("insert statement must have a target")
+		return "", nil, ErrInsertStatementNoTarget
 	}
 	targetSQL, targetParams, err := s.tree.target.Value()
 	if err != nil {
@@ -146,7 +146,7 @@ func (s *SQLiteInsertStatement) Value() (string, []any, error) {
 
 	// VALUES clause
 	if s.tree.values == nil {
-		return "", nil, fmt.Errorf("insert statement must have values")
+		return "", nil, ErrInsertStatementNoValues
 	}
 	valuesSQL, valuesParams, err := s.tree.values.Value()
 	if err != nil {
@@ -169,7 +169,7 @@ type SQLiteInsertTargetClause struct {
 
 func (i *SQLiteInsertTargetClause) Value() (string, []any, error) {
 	if i.target == nil {
-		return "", nil, fmt.Errorf("no target specified for insert")
+		return "", nil, ErrInsertNoTargetSpecified
 	}
 	return fmt.Sprintf("INSERT INTO %s", i.target.Name), nil, nil
 }
@@ -179,14 +179,14 @@ func (f *sqliteFactory) buildInsertTree(q *query.Query, extra any) (SQLNode, err
 	tree := &insertTree{}
 
 	if q.Target == nil {
-		return nil, fmt.Errorf("insert query must have a target")
+		return nil, ErrInsertQueryNoTarget
 	}
 	tree.target = &SQLiteInsertTargetClause{
 		target: q.Target,
 	}
 
 	if extra == nil {
-		return nil, fmt.Errorf("insert query must have data")
+		return nil, ErrInsertQueryNoData
 	}
 
 	values := &SQLiteInsertValues{
@@ -200,7 +200,7 @@ func (f *sqliteFactory) buildInsertTree(q *query.Query, extra any) (SQLNode, err
 	case []data.Document:
 		values.batch = v
 	default:
-		return nil, fmt.Errorf("invalid data type for insert: %T", extra)
+		return nil, ErrInsertInvalidDataType.WithCause(fmt.Errorf("invalid data type for insert: %T", extra))
 	}
 
 	tree.values = values

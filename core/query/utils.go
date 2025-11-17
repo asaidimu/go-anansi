@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
@@ -26,11 +27,7 @@ import (
 //   }
 func From(data any) (*Query, error) {
 	if data == nil {
-		return nil, &QueryError{
-			Operation: "From",
-			Message:   "input data cannot be nil",
-			Cause:     errors.New("input data cannot be nil"), // No specific error variable for this
-		}
+		return nil, common.NewSystemError("ERR_QUERY_FROM_INPUT_NIL", "input data cannot be nil").WithOperation("From").WithCause(errors.New("input data cannot be nil"))
 	}
 
 	var jsonBytes []byte
@@ -49,11 +46,7 @@ func From(data any) (*Query, error) {
 		}
 		jsonBytes = v
 	default:
-		return nil, &QueryError{
-			Operation: "From",
-			Message:   fmt.Sprintf("unsupported input type: %T, expected string or []byte", data),
-			Cause:     errors.New("unsupported input type"), // No specific error variable for this
-		}
+		return nil, common.NewSystemError("ERR_QUERY_FROM_UNSUPPORTED_INPUT_TYPE", fmt.Sprintf("unsupported input type: %T, expected string or []byte", data)).WithOperation("From").WithCause(errors.New("unsupported input type"))
 	}
 
 	// Check for null JSON
@@ -66,11 +59,7 @@ func From(data any) (*Query, error) {
 
 	// Unmarshal the JSON data using the custom UnmarshalJSON methods
 	if err = utils.FromJSON(jsonBytes, &query); err != nil {
-		return nil, &QueryError{
-			Operation: "From",
-			Message:   "failed to unmarshal JSON into Query",
-			Cause:     err,
-		}
+		return nil, common.NewSystemError("ERR_QUERY_FROM_UNMARSHAL_FAILED", "failed to unmarshal JSON into Query").WithOperation("From").WithCause(err)
 	}
 
 	return &query, nil
@@ -104,58 +93,34 @@ func (q *Query) Validate() error {
 	// Validate pagination if present
 	if q.Pagination != nil {
 		if q.Pagination.Limit < 0 {
-			return &QueryError{
-				Operation: "Validate",
-				Message:   fmt.Sprintf("pagination limit cannot be negative: %d", q.Pagination.Limit),
-				Cause:     ErrPaginationLimitNotPositive, // Reusing this error
-			}
+			return common.NewSystemError(ErrPaginationLimitNotPositive.Code, fmt.Sprintf("pagination limit cannot be negative: %d", q.Pagination.Limit)).WithOperation("Validate").WithCause(ErrPaginationLimitNotPositive)
 		}
 		if q.Pagination.Offset != nil && *q.Pagination.Offset < 0 {
-			return &QueryError{
-				Operation: "Validate",
-				Message:   fmt.Sprintf("pagination offset cannot be negative: %d", *q.Pagination.Offset),
-				Cause:     ErrPaginationOffsetNegative, // Reusing this error
-			}
+			return common.NewSystemError(ErrPaginationOffsetNegative.Code, fmt.Sprintf("pagination offset cannot be negative: %d", *q.Pagination.Offset)).WithOperation("Validate").WithCause(ErrPaginationOffsetNegative)
 		}
 	}
 
 	// Validate aggregations if present
 	for i, agg := range q.Aggregations {
 		if agg.Field == "" && agg.Type != AggregationTypeCount {
-			return &QueryError{
-				Operation: "Validate",
-				Message:   fmt.Sprintf("aggregation at index %d: field is required for %s aggregation", i, agg.Type),
-				Cause:     errors.New("aggregation field is required"), // No specific error variable for this
-			}
+			return common.NewSystemError("ERR_QUERY_VALIDATE_AGGREGATION_FIELD_REQUIRED", fmt.Sprintf("aggregation at index %d: field is required for %s aggregation", i, agg.Type)).WithOperation("Validate").WithCause(errors.New("aggregation field is required"))
 		}
 	}
 
 	// Validate joins if present
 	for i, join := range q.Joins {
 		if join.Target.Name == "" {
-			return &QueryError{
-				Operation: "Validate",
-				Message:   fmt.Sprintf("join at index %d: target name is required", i),
-				Cause:     errors.New("join target name is required"), // No specific error variable for this
-			}
+			return common.NewSystemError("ERR_QUERY_VALIDATE_JOIN_TARGET_REQUIRED", fmt.Sprintf("join at index %d: target name is required", i)).WithOperation("Validate").WithCause(errors.New("join target name is required"))
 		}
 	}
 
 	// Validate sort configurations if present
 	for i, sort := range q.Sort {
 		if sort.Field == "" {
-			return &QueryError{
-				Operation: "Validate",
-				Message:   fmt.Sprintf("sort at index %d: field is required", i),
-				Cause:     errors.New("sort field is required"), // No specific error variable for this
-			}
+			return common.NewSystemError("ERR_QUERY_VALIDATE_SORT_FIELD_REQUIRED", fmt.Sprintf("sort at index %d: field is required", i)).WithOperation("Validate").WithCause(errors.New("sort field is required"))
 		}
 		if sort.Direction != SortDirectionAsc && sort.Direction != SortDirectionDesc {
-			return &QueryError{
-				Operation: "Validate",
-				Message:   fmt.Sprintf("sort at index %d: invalid direction '%s', must be 'asc' or 'desc'", i, sort.Direction),
-				Cause:     ErrInvalidSortDirection, // Reusing this error
-			}
+			return common.NewSystemError(ErrInvalidSortDirection.Code, fmt.Sprintf("sort at index %d: invalid direction '%s', must be 'asc' or 'desc'", i, sort.Direction)).WithOperation("Validate").WithCause(ErrInvalidSortDirection)
 		}
 	}
 
@@ -167,11 +132,7 @@ func (q *Query) Validate() error {
 func (q *Query) Clone() (*Query, error) {
 	var newQuery Query
 	if err := utils.Clone(*q, &newQuery); err != nil {
-		return nil, &QueryError{
-			Operation: "Clone",
-			Message:   "failed to clone query",
-			Cause:     err,
-		}
+		return nil, common.NewSystemError("ERR_QUERY_CLONE_FAILED", "failed to clone query").WithOperation("Clone").WithCause(err)
 	}
 	return &newQuery, nil
 }

@@ -5,9 +5,9 @@ package transaction
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/google/uuid"
@@ -91,7 +91,7 @@ func (tx *transaction) WaitForOperations(ctx context.Context) error {
 	go func() {
 		defer close(done)
 		tx.wg.Wait()
-		close(tx.errChan) // Close channel to signal no more errors will be sent.
+		close(tx.errChan)           // Close channel to signal no more errors will be sent.
 		operationErr = <-tx.errChan // Read the one potential error.
 	}()
 
@@ -99,7 +99,7 @@ func (tx *transaction) WaitForOperations(ctx context.Context) error {
 	case <-done:
 		return operationErr
 	case <-ctx.Done():
-		return fmt.Errorf("timed out waiting for transaction operations: %w", ctx.Err())
+		return base.ErrTransactionTimeout.WithCause(ctx.Err())
 	}
 }
 
@@ -129,12 +129,12 @@ func (tx *transaction) finalize(ctx context.Context, op func(context.Context, qu
 	defer tx.mu.Unlock()
 
 	if tx.committed {
-		return fmt.Errorf("transaction already committed or rolled back")
+		return base.ErrTransactionAlreadyFinalized
 	}
 	defer func() { tx.committed = true }()
 
 	if !tx.interactor.HasTransaction(ctx) {
-		return fmt.Errorf("no active transaction to finalize")
+		return base.ErrTransactionNoActive
 	}
 
 	return op(ctx, tx.interactor)
@@ -168,7 +168,7 @@ func Execute(
 	if !baseInteractor.HasTransaction(ctx) {
 		baseInteractor, err = baseInteractor.StartTransaction(ctx)
 		if err != nil {
-			return nil, base.NewPersistenceError("failed to start transaction", err)
+			return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_FAILED_TO_START_TRANSACTION")
 		}
 		managed = true
 	}
@@ -193,24 +193,28 @@ func Execute(
 	if callbackErr != nil {
 		finalErr = callbackErr
 	} else if operationErr != nil {
-		finalErr = fmt.Errorf("transaction failed due to an async operation: %w", operationErr)
+		finalErr = base.ErrTransactionAsyncOperationFailed.WithCause(operationErr)
 	}
 
 	if finalErr != nil {
 		if rollbackErr := tx.Rollback(ictx); rollbackErr != nil {
+			return result, base.ErrTransactionFailed.WithCause(rollbackErr).WithCause(finalErr)
 		}
 		return result, finalErr
 	}
 
 	if commitErr := tx.Commit(ictx); commitErr != nil {
-		rollbackErr := tx.Rollback(ictx);
-		return result, fmt.Errorf("failed to commit transaction: %w, %w", commitErr, rollbackErr)
+		err := base.ErrTransactionCommitFailed.WithCause(commitErr)
+		if rollbackErr := tx.Rollback(ictx); rollbackErr != nil {
+			return result, err.WithCause(rollbackErr)
+		}
+		return result, err
 	}
 
 	return result, nil
 }
 
-func (tx *transaction) ID() string  {
+func (tx *transaction) ID() string {
 	return tx.id
 }
 

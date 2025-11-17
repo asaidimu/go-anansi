@@ -76,7 +76,7 @@ func (x *sqliteFactory) Build(
 	case native.StmtCheckCollection:
 		sqlTree, err = f.buildCheckTableTree(q)
 	default:
-		return nil, fmt.Errorf("unsupported statement type: %s", stmtType)
+		return nil, ErrBuilderUnsupportedStatementType.WithCause(fmt.Errorf("unsupported statement type: %s", stmtType))
 	}
 
 	if err != nil {

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
@@ -29,11 +30,7 @@ func (sb *StructBinder) To(target any) error {
 func (sb *StructBinder) ToWithContext(ctx context.Context, target any) error {
 	rv := reflect.ValueOf(target)
 	if rv.Kind() != reflect.Ptr || rv.Elem().Kind() != reflect.Struct {
-		return &DocumentError{
-			Operation: "BindTo",
-			Message:   ErrInvalidTargetType.Error(),
-			Cause:     ErrInvalidTargetType,
-		}
+		return common.SystemErrorFrom(ErrInvalidTargetType).WithOperation("BindTo")
 	}
 
 	rv = rv.Elem()
@@ -77,22 +74,12 @@ func (sb *StructBinder) ToWithContext(ctx context.Context, target any) error {
 			if omitEmpty {
 				continue
 			}
-			return &DocumentError{
-				Operation: "BindTo",
-				Key:       fieldName,
-				Message:   fmt.Sprintf("%s for struct field %s", ErrRequiredFieldNotFound.Error(), field.Name),
-				Cause:     ErrRequiredFieldNotFound,
-			}
+			return common.SystemErrorFrom(err).WithOperation("BindTo").WithPath(fieldName).WithCode(ErrRequiredFieldNotFound.Code).WithMessage(fmt.Sprintf("required field not found for struct field %s", field.Name))
 		}
 
 		// Set the field value
 		if err := setFieldValue(fieldValue, value); err != nil {
-			return &DocumentError{
-				Operation: "BindTo",
-				Key:       fieldName,
-				Message:   fmt.Sprintf("%s for field %s", ErrFailedToSetField.Error(), field.Name),
-				Cause:     ErrFailedToSetField,
-			}
+			return common.SystemErrorFrom(err).WithOperation("BindTo").WithPath(fieldName).WithCode(ErrFailedToSetField.Code).WithMessage(fmt.Sprintf("failed to set field %s", field.Name))
 		}
 	}
 
@@ -186,11 +173,7 @@ func setFieldValue(field reflect.Value, value any) error {
 		return setFieldValue(field.Elem(), value)
 	}
 
-	return &DocumentError{
-		Operation: "setFieldValue",
-		Message:   fmt.Sprintf("%s: cannot convert %T to %v", ErrTypeConversionFailed.Error(), value, fieldType),
-		Cause:     ErrTypeConversionFailed,
-	}
+	return common.SystemErrorFrom(ErrTypeConversionFailed).WithOperation("setFieldValue").WithMessage(fmt.Sprintf("cannot convert %T to %v", value, fieldType))
 }
 
 // setSliceField handles assigning a slice of 'any' values to a reflect.Value
@@ -242,7 +225,7 @@ func setMapField(field reflect.Value, values map[string]any) error {
 // FromStructWithTags creates a Document from a struct using 'doc' tags
 func FromStructWithTags(s any) (Document, error) {
 	rv := reflect.ValueOf(s)
-	if rv.Kind() == reflect.Ptr {
+	if rv.Kind() == reflect.Pointer {
 		rv = rv.Elem()
 	}
 

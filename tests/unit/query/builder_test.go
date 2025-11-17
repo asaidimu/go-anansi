@@ -397,7 +397,7 @@ func TestQueryBuilder_Validate(t *testing.T) {
 			expected: query.QueryValidationResult{
 				Valid: false,
 				Errors: []string{
-					"validateQueryFilter operation failed: filter condition field cannot be empty (caused by: filter condition field cannot be empty)",
+					"validateQueryFilter [ERR_QUERY_FILTER_CONDITION_FIELD_EMPTY]: filter condition field cannot be empty",
 				},
 			},
 		},

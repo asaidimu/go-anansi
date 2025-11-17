@@ -3,6 +3,7 @@ package data_test
 import (
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/stretchr/testify/require"
 )
@@ -43,7 +44,9 @@ func TestDocument_GetSet(t *testing.T) {
 	// Test Set with empty key
 	err = doc.Set("", "invalid")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrKeyEmpty)
+	var sysErr *common.SystemError
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrKeyEmpty.Code, sysErr.Code)
 }
 
 func TestDocument_GetSetNested(t *testing.T) {
@@ -68,27 +71,35 @@ func TestDocument_GetSetNested(t *testing.T) {
 	// Test GetNested non-existent path
 	_, err = doc.GetNested("address.zip")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrPathSegmentNotFound)
+	var sysErr *common.SystemError
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrPathSegmentNotFound.Code, sysErr.Code)
 
 	_, err = doc.GetNested("non_existent.path")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrPathSegmentNotFound)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrPathSegmentNotFound.Code, sysErr.Code)
 
 	// Test SetNested with empty path
 	err = doc.SetNested("", "invalid")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrKeyEmpty)
+
+	sysErr, ok := err.(*common.SystemError)
+	require.True(t, ok)
+	require.Equal(t, sysErr.Code, data.ErrKeyEmpty.Code)
 
 	// Test GetNested with empty path
 	_, err = doc.GetNested("")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrKeyEmpty)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrKeyEmpty.Code, sysErr.Code)
 
 	// Test SetNested into non-map type
 	doc.Set("foo", "bar")
 	err = doc.SetNested("foo.baz", "qux")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrCannotTraverse)
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrCannotTraverse.Code, sysErr.Code)
 }
 
 func TestDocument_DeleteNested_NonMapParent(t *testing.T) {
@@ -101,7 +112,9 @@ func TestDocument_DeleteNested_NonMapParent(t *testing.T) {
 
 	err = doc.DeleteNested("user.name.first")
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrParentNotMap)
+	var sysErr *common.SystemError
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrParentNotMap.Code, sysErr.Code)
 }
 
 func TestDocument_DeleteNested(t *testing.T) {
@@ -124,7 +137,9 @@ func TestDocument_DeleteNested(t *testing.T) {
 		require.NoError(t, err)
 		_, err = doc.Get("product")
 		require.Error(t, err)
-		require.ErrorIs(t, err, data.ErrKeyNotFound)
+		var sysErr *common.SystemError
+		require.ErrorAs(t, err, &sysErr)
+		require.Equal(t, data.ErrKeyNotFound.Code, sysErr.Code)
 	})
 
 	// Test case 2: Delete nested field
@@ -134,7 +149,9 @@ func TestDocument_DeleteNested(t *testing.T) {
 		require.NoError(t, err)
 		_, err = doc.GetNested("user.address.city")
 		require.Error(t, err)
-		require.ErrorIs(t, err, data.ErrPathSegmentNotFound)
+		var sysErr *common.SystemError
+		require.ErrorAs(t, err, &sysErr)
+		require.Equal(t, data.ErrPathSegmentNotFound.Code, sysErr.Code)
 
 		// Verify other nested fields remain
 		val, err := doc.GetNested("user.address.street")
@@ -154,7 +171,9 @@ func TestDocument_DeleteNested(t *testing.T) {
 		doc := initialDoc.Clone()
 		err := doc.DeleteNested("")
 		require.Error(t, err)
-		require.ErrorIs(t, err, data.ErrKeyEmpty)
+		var sysErr *common.SystemError
+		require.ErrorAs(t, err, &sysErr)
+		require.Equal(t, data.ErrKeyEmpty.Code, sysErr.Code)
 	})
 
 	// Test case 5: Delete from non-map parent
@@ -162,7 +181,9 @@ func TestDocument_DeleteNested(t *testing.T) {
 		doc := initialDoc.Clone()
 		err := doc.DeleteNested("user.name.first")
 		require.Error(t, err)
-		require.ErrorIs(t, err, data.ErrParentNotMap)
+		var sysErr *common.SystemError
+		require.ErrorAs(t, err, &sysErr)
+		require.Equal(t, data.ErrParentNotMap.Code, sysErr.Code)
 	})
 }
 
@@ -173,9 +194,9 @@ func TestDocument_SetID_ReturnsError(t *testing.T) {
 	err = doc.Set("id", "some-value")
 	require.Error(t, err)
 
-	var docErr *data.DocumentError
-	require.ErrorAs(t, err, &docErr)
-	require.Equal(t, "Set", docErr.Operation)
-	require.Equal(t, "id", docErr.Key)
-	require.ErrorIs(t, docErr.Cause, data.ErrReadOnlyField)
+	var sysErr *common.SystemError
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, "data.Document.Set", sysErr.Operation)
+	require.Equal(t, "id", sysErr.Path)
+	require.Equal(t, data.ErrReadOnlyField.Code, sysErr.Code)
 }

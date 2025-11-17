@@ -1,9 +1,10 @@
 package ephemeral
 
 import (
-	"fmt"
 	"sync"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	store "github.com/asaidimu/go-store/v3"
@@ -24,7 +25,7 @@ type collection struct {
 }
 
 // NewEphemeral creates a new in-memory database interactor and schema manager that share the same underlying data store.
-func NewEphemeral() (query.DatabaseInteractor) {
+func NewEphemeral() query.DatabaseInteractor {
 	store := &ephemeralStore{
 		collections: make(map[string]*collection),
 	}
@@ -38,11 +39,7 @@ func (s *ephemeralStore) getCollection(name string) (*collection, error) {
 	defer s.mu.RUnlock()
 	c, ok := s.collections[name]
 	if !ok {
-		return nil, &EphemeralError{
-			Operation: "getCollection",
-			Message:   fmt.Sprintf("'%s'", name),
-			Cause:     ErrCollectionNotFound,
-		}
+		return nil, common.SystemErrorFrom(ErrCollectionNotFound).WithOperation("ephemeral.getCollection").WithPath(name).WithCause(base.ErrCollectionNotFound)
 	}
 	return c, nil
 }

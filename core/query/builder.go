@@ -56,9 +56,15 @@ func (qb *QueryBuilder) Schema(schema *schema.SchemaDefinition) *QueryBuilder {
 
 func (qb *QueryBuilder) Clone() *QueryBuilder {
 	// Deep clone the query structure
-	data, _ := json.Marshal(qb.query)
+	data, err := json.Marshal(qb.query)
+	if err != nil {
+		panic(fmt.Sprintf("failed to marshal query for cloning: %v", err))
+	}
 	var clonedQuery Query
-	json.Unmarshal(data, &clonedQuery)
+	err = json.Unmarshal(data, &clonedQuery)
+	if err != nil {
+		panic(fmt.Sprintf("failed to unmarshal cloned query: %v", err))
+	}
 
 	return &QueryBuilder{
 		query: clonedQuery,
@@ -134,20 +140,12 @@ func (qb *QueryBuilder) validateQueryFilter(filter QueryFilter) error {
 
     // Must have at least one field
     if !hasCondition && !hasGroup && !hasTextSearch {
-        		return &QueryError{
-			Operation: "validateQueryFilter",
-			Message:   ErrQueryFilterMustHaveOneFieldPopulated.Error(),
-			Cause:     ErrQueryFilterMustHaveOneFieldPopulated,
-		}
+        		return ErrQueryFilterMustHaveOneFieldPopulated.WithOperation("validateQueryFilter")
     }
 
     // Condition and Group are mutually exclusive
     if hasCondition && hasGroup {
-        		return &QueryError{
-			Operation: "validateQueryFilter",
-			Message:   ErrQueryFilterMutuallyExclusive.Error(),
-			Cause:     ErrQueryFilterMutuallyExclusive,
-		}
+        		return ErrQueryFilterMutuallyExclusive.WithOperation("validateQueryFilter")
     }
 
     // TextSearch can be combined with either Condition or Group, so no additional constraint needed
@@ -155,18 +153,13 @@ func (qb *QueryBuilder) validateQueryFilter(filter QueryFilter) error {
     // Existing field-specific validation...
     if filter.Condition != nil {
         if filter.Condition.Field == "" {
-            			return &QueryError{
-				Operation: "validateQueryFilter",
-				Message:   ErrFilterConditionFieldEmpty.Error(),
-				Cause:     ErrFilterConditionFieldEmpty,
-			}
+            			return ErrFilterConditionFieldEmpty.WithOperation("validateQueryFilter")
         }
         if !filter.Condition.Operator.IsStandard() {
-            return &QueryError{
-                Operation: "validateQueryFilter",
-                Message:   fmt.Sprintf("unknown comparison operator: %s", filter.Condition.Operator),
-                Cause:     ErrUnknownComparisonOperator,
-            }
+            return common.NewSystemError(
+                ErrUnknownComparisonOperator.Code,
+                fmt.Sprintf("unknown comparison operator: %s", filter.Condition.Operator),
+            ).WithOperation("validateQueryFilter").WithCause(ErrUnknownComparisonOperator)
         }
     }
 
@@ -180,18 +173,10 @@ func (qb *QueryBuilder) validateQueryFilter(filter QueryFilter) error {
 
     if filter.TextSearchQuery != nil {
         if filter.TextSearchQuery.Query == "" {
-            return &QueryError{
-                Operation: "validateQueryFilter",
-                Message:   ErrTextSearchQueryEmpty.Error(),
-                Cause:     ErrTextSearchQueryEmpty,
-            }
+            return ErrTextSearchQueryEmpty.WithOperation("validateQueryFilter")
         }
         if len(filter.TextSearchQuery.Fields) == 0 {
-            return &QueryError{
-                Operation: "validateQueryFilter",
-                Message:   ErrTextSearchFieldsEmpty.Error(),
-                Cause:     ErrTextSearchFieldsEmpty,
-            }
+            return ErrTextSearchFieldsEmpty.WithOperation("validateQueryFilter")
         }
     }
 
@@ -199,7 +184,12 @@ func (qb *QueryBuilder) validateQueryFilter(filter QueryFilter) error {
 }
 
 func (qb *QueryBuilder) String() string {
-	data, _ := json.MarshalIndent(qb.query, "", "  ")
+	data, err := json.MarshalIndent(qb.query, "", "  ")
+	if err != nil {
+		// This should ideally not happen for a well-formed Query struct.
+		// Log the error if a logger is available, or return an empty string.
+		return ""
+	}
 	return string(data)
 }
 

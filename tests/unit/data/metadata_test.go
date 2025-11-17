@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -88,21 +89,27 @@ func TestSetMetadataValue_Protection(t *testing.T) {
 	// Attempt to overwrite internal keys
 	err := doc.SetMetadataValue(data.MetadataVersion, 99)
 	assert.Error(t, err)
-	assert.ErrorIs(t, err, data.ErrReadOnlyField)
+	var sysErr *common.SystemError
+	require.ErrorAs(t, err, &sysErr)
+	assert.Equal(t, data.ErrReadOnlyField.Code, sysErr.Code)
 
 	err = doc.SetMetadataValue(data.MetadataChecksum, "abc")
 	assert.Error(t, err)
-	assert.ErrorIs(t, err, data.ErrReadOnlyField)
+	require.ErrorAs(t, err, &sysErr)
+	assert.Equal(t, data.ErrReadOnlyField.Code, sysErr.Code)
 
 	err = doc.SetMetadataValue(data.MetadataCreated, time.Now())
 	assert.Error(t, err)
-	assert.ErrorIs(t, err, data.ErrReadOnlyField)
+	require.ErrorAs(t, err, &sysErr)
+	assert.Equal(t, data.ErrReadOnlyField.Code, sysErr.Code)
 
 	err = doc.SetMetadataValue(data.MetadataUpdated, time.Now())
 	assert.Error(t, err)
-	assert.ErrorIs(t, err, data.ErrReadOnlyField)
+	require.ErrorAs(t, err, &sysErr)
+	assert.Equal(t, data.ErrReadOnlyField.Code, sysErr.Code)
 
 	err = doc.SetMetadataValue(data.MetadataSignature, "sig")
 	assert.Error(t, err)
-	assert.ErrorIs(t, err, data.ErrReadOnlyField)
+	require.ErrorAs(t, err, &sysErr)
+	assert.Equal(t, data.ErrReadOnlyField.Code, sysErr.Code)
 }

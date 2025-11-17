@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
 // JSONPathQuery executes a JSONPath-like query on the document.
@@ -48,11 +48,7 @@ func (d Document) parseJSONPath(path string) ([]string, error) {
 			current.WriteRune(char)
 		case ']':
 			if !inBrackets {
-				return nil, &DocumentError{
-					Operation: "parseJSONPath",
-					Message:   fmt.Sprintf("unexpected ']' at position %d", i),
-					Cause:     ErrInvalidJSONPathSyntax,
-				}
+				return nil, common.SystemErrorFrom(ErrInvalidJSONPathSyntax).WithOperation("data.Document.parseJSONPath").WithMessage(fmt.Sprintf("unexpected ']' at position %d", i))
 			}
 			current.WriteRune(char)
 			segments = append(segments, current.String())
@@ -73,11 +69,7 @@ func (d Document) parseJSONPath(path string) ([]string, error) {
 	}
 
 	if inBrackets {
-		return nil, &DocumentError{
-			Operation: "parseJSONPath",
-			Message:   "unclosed bracket in path",
-			Cause:     ErrInvalidJSONPathSyntax,
-		}
+		return nil, common.SystemErrorFrom(ErrInvalidJSONPathSyntax).WithOperation("data.Document.parseJSONPath").WithMessage("unclosed bracket in path")
 	}
 
 	if current.Len() > 0 {
@@ -154,11 +146,7 @@ func (d Document) processBracketSegment(item any, segment string) ([]any, error)
 		return []any{}, nil
 	}
 
-	return nil, &DocumentError{
-		Operation: "processBracketSegment",
-		Message:   fmt.Sprintf("invalid bracket expression: %s", segment),
-		Cause:     ErrInvalidJSONPathSyntax,
-	}
+	return nil, common.SystemErrorFrom(ErrInvalidJSONPathSyntax).WithOperation("data.Document.processBracketSegment").WithMessage(fmt.Sprintf("invalid bracket expression: %s", segment))
 }
 
 // processWildcard handles wildcard operations on arrays and objects

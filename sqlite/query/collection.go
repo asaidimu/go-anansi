@@ -14,7 +14,7 @@ func (f *sqliteFactory) buildCreateTableTree(q *query.Query) (SQLNode, error) {
 
 func (t *createTableTree) Value() (string, []any, error) {
 	if t.schema == nil {
-		return "", nil, fmt.Errorf("schema is not defined for create table tree")
+		return "", nil, ErrCollectionSchemaNotDefined
 	}
 
 	sc := (*t.schema)
@@ -36,7 +36,7 @@ func (t *createTableTree) Value() (string, []any, error) {
 		field := sc.FindField(name)
 		columnDef, err := t.buildColumnDefinition(name, field)
 		if err != nil {
-			return "", nil, fmt.Errorf("error on field '%s': %w", name, err)
+			return "", nil, ErrCollectionFieldError.WithCause(fmt.Errorf("error on field '%s': %w", name, err))
 		}
 		columns = append(columns, "    "+columnDef)
 	}
@@ -135,7 +135,7 @@ func (f *sqliteFactory) buildDropTableTree(q *query.Query) (SQLNode, error) {
 
 func (t *dropTableTree) Value() (string, []any, error) {
 	if len(t.name) ==0 {
-		return "", nil, fmt.Errorf("schema is not defined for drop table tree")
+		return "", nil, ErrCollectionSchemaNotDefined
 	}
 
 	return fmt.Sprintf("DROP TABLE IF EXISTS %s;", t.name), nil, nil
@@ -151,7 +151,7 @@ type checkTableTree struct {
 
 func (t *checkTableTree) Value() (string, []any, error) {
 	if len(t.name) == 0 {
-		return "", nil, fmt.Errorf("table name is not defined for check table tree")
+		return "", nil, ErrCollectionTableNameNotDefined
 	}
 	sql := "SELECT name FROM sqlite_master WHERE type='table' AND name=?"
 	params := []any{t.name}

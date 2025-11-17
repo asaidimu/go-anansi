@@ -198,7 +198,7 @@ func (u *sqliteUpdateAssignments) buildSetClauseExpression(q *query.Query) (stri
 		}
 	}
 
-	return "", nil, fmt.Errorf("invalid query for computed field: %+v", q)
+	return "", nil, ErrUpdateInvalidComputedFieldQuery.WithCause(fmt.Errorf("invalid query for computed field: %+v", q))
 }
 
 // SQLiteUpdateStatement represents a complete UPDATE statement
@@ -212,7 +212,7 @@ func (s *SQLiteUpdateStatement) Value() (string, []any, error) {
 
 	// UPDATE clause (target)
 	if s.tree.target == nil {
-		return "", nil, fmt.Errorf("update statement must have a target")
+		return "", nil, ErrUpdateStatementNoTarget
 	}
 	targetSQL, targetParams, err := s.tree.target.Value()
 	if err != nil {
@@ -223,7 +223,7 @@ func (s *SQLiteUpdateStatement) Value() (string, []any, error) {
 
 	// SET clause
 	if s.tree.assignments == nil {
-		return "", nil, fmt.Errorf("update statement must have assignments")
+		return "", nil, ErrUpdateStatementNoAssignments
 	}
 	assignmentsSQL, assignmentsParams, err := s.tree.assignments.Value()
 	if err != nil {
@@ -260,7 +260,7 @@ type sqliteUpdateTargetClause struct {
 
 func (u *sqliteUpdateTargetClause) Value() (string, []any, error) {
 	if u.target == nil {
-		return "", nil, fmt.Errorf("no target specified for update")
+		return "", nil, ErrUpdateNoTargetSpecified
 	}
 	return fmt.Sprintf("UPDATE %s", quoteIdentifier(u.target.Name)), nil, nil
 }
@@ -268,22 +268,22 @@ func (u *sqliteUpdateTargetClause) Value() (string, []any, error) {
 // buildUpdateTree builds a SQLNode for an UPDATE statement.
 func (f *sqliteFactory) buildUpdateTree(q *query.Query, extra any) (SQLNode, error) {
 	if q.Target == nil {
-		return nil, fmt.Errorf("update query must have a target")
+		return nil, ErrUpdateQueryNoTarget
 	}
 	if extra == nil {
-		return nil, fmt.Errorf("update query must have data payload")
+		return nil, ErrUpdateQueryNoDataPayload
 	}
 
 	updatePayload, ok := extra.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("invalid data type for update payload: expected map[string]any, got %T", extra)
+		return nil, ErrUpdateInvalidPayloadType.WithCause(fmt.Errorf("invalid data type for update payload: expected map[string]any, got %T", extra))
 	}
 
 	var setData data.Document
 	if setVal, ok := updatePayload["set"]; ok && setVal != nil {
 		setData, ok = data.AsDocument(setVal)
 		if !ok {
-			return nil, fmt.Errorf("invalid data type for 'set' in update: %T", setVal)
+			return nil, ErrUpdateInvalidSetType.WithCause(fmt.Errorf("invalid data type for 'set' in update: %T", setVal))
 		}
 	}
 
@@ -291,7 +291,7 @@ func (f *sqliteFactory) buildUpdateTree(q *query.Query, extra any) (SQLNode, err
 	if computeVal, ok := updatePayload["compute"]; ok && computeVal != nil {
 		computeData, ok = computeVal.(map[string]query.Query)
 		if !ok {
-			return nil, fmt.Errorf("invalid data type for 'compute' in update: %T", computeVal)
+			return nil, ErrUpdateInvalidComputeType.WithCause(fmt.Errorf("invalid data type for 'compute' in update: %T", computeVal))
 		}
 	}
 

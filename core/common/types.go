@@ -5,17 +5,6 @@ import "fmt"
 // ContextKey is a type for context keys to avoid collisions
 type ContextKey string
 
-// Issue represents a detailed validation or operational issue. It is used to provide
-// structured, machine-readable feedback about problems encountered during an operation,
-// which is particularly useful for form validation or API error responses.
-type Issue struct {
-	Code        string `json:"code"`                  // Code is a machine-readable identifier for the type of issue (e.g., "validation_error", "not_found").
-	Message     string `json:"message"`               // Message is a human-readable description of the issue.
-	Path        string `json:"path,omitempty"`        // Path indicates the location of the issue, such as a field name in a JSON document (e.g., "user.address.zipCode").
-	Severity    string `json:"severity,omitempty"`    // Severity indicates the seriousness of the issue, typically "error" or "warning".
-	Description string `json:"description,omitempty"` // Description provides a more detailed, potentially multi-line explanation of the issue and how to resolve it.
-}
-
 // LogicalOperator defines the logical operators that can be used to combine conditions
 // in constraints and filters.
 type LogicalOperator string

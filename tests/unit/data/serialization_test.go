@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/stretchr/testify/require"
 )
@@ -66,7 +67,9 @@ func TestDocument_ToStruct(t *testing.T) {
 	var invalidPerson InvalidPerson
 	err = doc.ToStruct(&invalidPerson)
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrFailedToUnmarshalStruct)
+	var sysErr *common.SystemError
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrFailedToUnmarshalStruct.Code, sysErr.Code)
 }
 
 func TestFromStruct(t *testing.T) {
@@ -100,5 +103,7 @@ func TestFromStruct(t *testing.T) {
 	invalid := InvalidStruct{Ch: make(chan int)}
 	doc, err = data.FromStruct(invalid)
 	require.Error(t, err)
-	require.ErrorIs(t, err, data.ErrFailedToMarshalStruct)
+	var sysErr *common.SystemError
+	require.ErrorAs(t, err, &sysErr)
+	require.Equal(t, data.ErrFailedToMarshalStruct.Code, sysErr.Code)
 }

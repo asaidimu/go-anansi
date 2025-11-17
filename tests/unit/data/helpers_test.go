@@ -1,10 +1,10 @@
 package data_test
 
 import (
-	"errors"
 	"testing"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -33,12 +33,15 @@ func TestGetGeneric(t *testing.T) {
 	// Test key not found
 	_, err = data.Get[string](doc, "nonexistent")
 	assert.Error(t, err)
-	assert.True(t, errors.Is(err, data.ErrKeyNotFound))
+	var sysErr *common.SystemError
+	require.ErrorAs(t, err, &sysErr)
+	assert.Equal(t, data.ErrKeyNotFound.Code, sysErr.Code)
 
 	// Test type mismatch
 	_, err = data.Get[int](doc, "name")
 	assert.Error(t, err)
-	assert.True(t, errors.Is(err, data.ErrTypeConversion))
+	require.ErrorAs(t, err, &sysErr)
+	assert.Equal(t, data.ErrTypeConversion.Code, sysErr.Code)
 }
 
 func TestGetWithCoercion(t *testing.T) {
@@ -72,7 +75,9 @@ func TestGetWithCoercion(t *testing.T) {
 	// Test failed coercion
 	_, err = data.GetWithCoercion[int](doc, "is_admin")
 	assert.Error(t, err)
-	assert.True(t, errors.Is(err, data.ErrTypeConversion))
+	var sysErr *common.SystemError
+	require.ErrorAs(t, err, &sysErr)
+	assert.Equal(t, data.ErrTypeConversion.Code, sysErr.Code)
 }
 
 func TestMustHelper(t *testing.T) {
@@ -141,7 +146,9 @@ func TestStructBinder(t *testing.T) {
 	var userMissing User
 	err = docMissing.Bind().To(&userMissing)
 	assert.Error(t, err)
-	assert.True(t, errors.Is(err, data.ErrRequiredFieldNotFound))
+	sysErr, ok := err.(*common.SystemError)
+	assert.True(t,ok)
+	assert.Equal(t, sysErr.Code, data.ErrRequiredFieldNotFound.Code)
 
 	// Test BindTo generic helper
 	userFromGeneric, err := data.BindTo[User](doc)

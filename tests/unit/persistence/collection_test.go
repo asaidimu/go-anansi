@@ -2,6 +2,7 @@ package persistence_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
@@ -144,7 +145,7 @@ func TestCollection_Create(t *testing.T) {
 		doc := data.Document{"name": "Test2"}
 		_, err := collection.CreateOne(ctx, doc)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "unique constraint violation")
+		assert.True(t, errors.Is(err, persistence.ErrUniqueConstraintViolation))
 	})
 }
 
@@ -185,7 +186,7 @@ func TestCollection_Read(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Nil(t, result)
-		assert.Contains(t, err.Error(), "collection not found")
+		assert.Contains(t, err.Error(), "database query execution failed")
 	})
 }
 
@@ -269,7 +270,7 @@ func TestCollection_Update(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, 0, rowsAffected)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "Unexpected field")
+		assert.Contains(t, err.Error(), "validation failed")
 	})
 }
 
@@ -305,7 +306,7 @@ func TestCollection_Delete(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Equal(t, 0, rowsAffected)
-		assert.Contains(t, err.Error(), "collection not found")
+		assert.ErrorIs(t, err, base.ErrCollectionNotFound)
 	})
 
 	t.Run("delete all documents with unsafe flag", func(t *testing.T) {

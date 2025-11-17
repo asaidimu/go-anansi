@@ -1,5 +1,7 @@
 package parser
 
+import "github.com/asaidimu/go-anansi/v6/core/common"
+
 type TokenType string
 
 // Token represents a lexical token
@@ -24,7 +26,7 @@ type Lexer interface {
 	// GetErrors returns a slice of lexical errors encountered so far.
 	// This method might be optional depending on how you want to handle errors.
 	// Some lexers might just return an ILLEGAL token and embed the error message there.
-	GetErrors() []error
+	GetErrors() []*common.SystemError
 
 	// PeekToken allows looking at the next token without consuming it.
 	// This is often useful for parsers that need to "look ahead" to make decisions.

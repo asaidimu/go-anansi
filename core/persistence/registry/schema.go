@@ -3,6 +3,7 @@ package registry
 import (
 	"fmt"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // REGISTRY_COLLECTION_NAME is the constant name for the internal collection that
@@ -74,7 +75,11 @@ var RegistryCollectionSchemaJson = fmt.Sprintf(`
 
 func RegistrySchema() *schema.SchemaDefinition {
 	var def schema.SchemaDefinition
-	def.From([]byte(RegistryCollectionSchemaJson))
+	if err := utils.FromJSON([]byte(RegistryCollectionSchemaJson), &def); err != nil {
+		// This should ideally not happen as the JSON is hardcoded and controlled.
+		// If it does, it indicates a critical internal error.
+		panic(fmt.Sprintf("failed to unmarshal registry schema: %v", err))
+	}
 
 	return EnrichSchema(&def)
 }

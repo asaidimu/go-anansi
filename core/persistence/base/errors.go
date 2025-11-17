@@ -1,71 +1,40 @@
 package base
 
 import (
-	"errors"
-	"fmt"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
-// PersistenceError represents a custom error type for persistence operations.
-type PersistenceError struct {
-	Message string
-	Err     error
-}
-
-// Error returns the string representation of the PersistenceError.
-func (e *PersistenceError) Error() string {
-	if e.Err != nil {
-		return fmt.Sprintf("%s: %v", e.Message, e.Err)
-	}
-	return e.Message
-}
-
-// Unwrap returns the underlying error, if any.
-func (e *PersistenceError) Unwrap() error {
-	return e.Err
-}
-
-// NewPersistenceError creates a new PersistenceError.
-func NewPersistenceError(message string, err error) error {
-	return &PersistenceError{
-		Message: message,
-		Err:     err,
-	}
-}
-
-// Pre-defined errors for the persistence package.
+// Common errors for the persistence layer.
 var (
-	ErrInvalidDataType              = errors.New("Invalid data type: expected map[string]any or []map[string]any")
-	ErrValidationFailed             = errors.New("Provided data does not conform to the collection's schema")
-	ErrInsertDocuments              = errors.New("Failed to insert data into collection")
-	ErrReadDocuments                = errors.New("Failed to read data from collection")
-	ErrUpdateDocuments              = errors.New("Failed to update data in collection")
-	ErrDeleteDocuments              = errors.New("Failed to delete data from collection")
-	ErrInvalidUpdateParams          = errors.New("Invalid update parameters provided")
-	ErrDeleteRequiresFilter         = errors.New("Delete operation requires a filter or unsafe flag")
-	ErrConflict                     = errors.New("Optimistic lock conflict: record version mismatch")
-	ErrMetadataNotImplemented       = errors.New("Collection metadata method not implemented")
-	ErrDataConversionFailed         = errors.New("Failed to convert data to a map for validation")
-	ErrCollectionAlreadyExists      = errors.New("Collection with a similar name already exists")
-	ErrSchemaNotFound               = errors.New("Schema does not exist")
-	ErrInvalidSchema                = errors.New("Schema provided is invalid")
-	ErrUnexpectedSchemaCount        = errors.New("Unexpected count for schema name")
-	ErrFailedToInitializeEventBus   = errors.New("Could not initialize event bus")
-	ErrFailedToCreateSchemaRegistry = errors.New("Failed to create schema registry")
-	ErrFailedToStartTransaction     = errors.New("Failed to start database transaction")
-	ErrFailedToCommitTransaction    = errors.New("Failed to commit database transaction")
-	ErrFailedToRollbackTransaction  = errors.New("Failed to rollback database transaction")
-	ErrReadingSchemas               = errors.New("Error reading schemas to get collection names")
-	ErrMapToStructConversion        = errors.New("Failed to convert map to struct")
-	ErrStructToMapConversion        = errors.New("Failed to convert struct to map")
-	ErrCollectionCreation           = errors.New("Failed to create collection")
-	ErrSchemaCollectionInit         = errors.New("Failed to initialize schemas collection")
-	ErrCollectionDeletion           = errors.New("Failed to delete collection")
-	ErrDropCollection               = errors.New("Failed to drop collection from database")
-	ErrSchemaRead                   = errors.New("Error reading schema collection")
-	ErrDocumentToStructConversion   = errors.New("Error converting document to struct")
-	ErrCollectionInitialization     = errors.New("Failed to initialize collection")
-	ErrFailedToRegisterSchema       = errors.New("Failed to register schema")
-	ErrFailedToUnregisterSchema     = errors.New("Failed to unregister schema")
-	ErrFailedToRefreshNames         = errors.New("Failed to refresh names")
-	ErrFailedToInitializePersistence = errors.New("Failed to initialize persistence layer")
+	ErrExplicitMetadataProjectionForbidden = common.NewSystemError("ERR_PERSISTENCE_EXPLICIT_METADATA_PROJECTION_FORBIDEN", "Explicit metadata projection is forbidden")
+	ErrFailedToResolvePhysicalName     = common.NewSystemError("ERR_PERSISTENCE_RESOLVE_PHYSICAL_NAME_FAILED", "failed to resolve physical name")
+	ErrCollectionNotFound              = common.NewSystemError("ERR_PERSISTENCE_COLLECTION_NOT_FOUND", "collection not found")
+	ErrTransactionTimeout              = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_TIMEOUT", "timed out waiting for transaction operations")
+	ErrTransactionAlreadyFinalized     = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_ALREADY_FINALIZED", "transaction already committed or rolled back")
+	ErrTransactionNoActive             = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_NO_ACTIVE", "no active transaction to finalize")
+	ErrTransactionAsyncOperationFailed = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_ASYNC_OPERATION_FAILED", "transaction failed due to an async operation")
+	ErrTransactionCommitFailed         = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_COMMIT_FAILED", "failed to commit transaction")
+	ErrTransactionFailed               = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_FAILED", "the transaction failed")
+	ErrCollectionAlreadyExists         = common.NewSystemError("ERR_PERSISTENCE_COLLECTION_ALREADY_EXISTS", "collection already exists")
+	ErrFailedToCreateIndex             = common.NewSystemError("ERR_PERSISTENCE_FAILED_TO_CREATE_INDEX", "failed to create index")
+	ErrFailedToReadDocuments           = common.NewSystemError("ERR_PERSISTENCE_FAILED_TO_READ_DOCUMENTS", "failed to read documents")
+	ErrUniqueConstraintViolation       = common.NewSystemError("ERR_PERSISTENCE_UNIQUE_CONSTRAINT_VIOLATION", "unique constraint violation")
+	ErrPersistenceClosed               = common.NewSystemError("ERR_PERSISTENCE_CLOSED", "persistence instance is closed")
+	ErrFailedToListCollections         = common.NewSystemError("ERR_PERSISTENCE_FAILED_TO_LIST_COLLECTIONS", "failed to list collections from registry")
+	ErrMultipleEntriesFound            = common.NewSystemError("ERR_PERSISTENCE_MULTIPLE_ENTRIES_FOUND", "multiple entries found")
+	ErrVersionAlreadyExists            = common.NewSystemError("ERR_PERSISTENCE_VERSION_ALREADY_EXISTS", "version already exists")
+	ErrVersionNotFound                 = common.NewSystemError("ERR_PERSISTENCE_VERSION_NOT_FOUND", "version not found")
+	ErrInvalidUpdateParams             = common.NewSystemError("ERR_PERSISTENCE_INVALID_UPDATE_PARAMS", "Invalid update parameters provided")
+	ErrDeleteRequiresFilter            = common.NewSystemError("ERR_PERSISTENCE_DELETE_REQUIRES_FILTER", "Delete operation requires a filter or unsafe flag")
+	ErrValidationFailed                = common.NewSystemError("ERR_PERSISTENCE_VALIDATION_FAILED", "document validation failed")
+	ErrUnexpectedType                  = common.NewSystemError("ERR_PERSISTENCE_UNEXPECTED_TYPE", "unexpected type")
+	ErrDangerousUpdate                 = common.NewSystemError("ERR_PERSISTENCE_DANGEROUS_UPDATE", "Cannot dangerously update documents")
+	ErrValidationSystemError           = common.NewSystemError("ERR_PERSISTENCE_VALIDATION_SYSTEM_ERROR", "A system error occurred during validation")
+	ErrInsertDocumentsFailed           = common.NewSystemError("ERR_PERSISTENCE_INSERT_DOCUMENTS_FAILED", "failed to insert documents")
+	ErrReadDocumentsFailed             = common.NewSystemError("ERR_PERSISTENCE_READ_DOCUMENTS_FAILED", "failed to read documents")
+	ErrUpdateDocumentsFailed           = common.NewSystemError("ERR_PERSISTENCE_UPDATE_DOCUMENTS_FAILED", "failed to update documents")
+	ErrDeleteDocumentsFailed           = common.NewSystemError("ERR_PERSISTENCE_DELETE_DOCUMENTS_FAILED", "failed to delete documents")
+	ErrRawQueryProcessorRegistryLookupFailed = common.NewSystemError("ERR_PERSISTENCE_RAW_QUERY_PROCESSOR_REGISTRY_LOOKUP_FAILED", "failed to lookup registry entry for raw query processing")
+	ErrRawQueryProcessorPhysicalNameResolutionFailed = common.NewSystemError("ERR_PERSISTENCE_RAW_QUERY_PROCESSOR_PHYSICAL_NAME_RESOLUTION_FAILED", "failed to resolve physical name for raw query processing")
+	ErrFailedToStartTransaction                      = common.NewSystemError("ERR_PERSISTENCE_FAILED_TO_START_TRANSACTION", "failed to start transaction")
 )

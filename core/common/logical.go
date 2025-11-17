@@ -1,18 +1,16 @@
 package common
 
-import "errors"
-
 // Pre-defined errors for logical operator evaluation.
 var (
-	ErrEmptyResults      = errors.New("results slice cannot be empty")
-	ErrInvalidOperator   = errors.New("unknown logical operator")
-	ErrInvalidNotOperand = errors.New("logical NOT requires exactly one result")
+	ErrEmptConditions      = NewSystemError("ERR_COMMON_EMPTY_CONDITIONS", "conditions slice cannot be empty")
+	ErrInvalidOperator   = NewSystemError("ERR_COMMON_INVALID_OPERATOR", "unknown logical operator")
+	ErrInvalidNotOperand = NewSystemError("ERR_COMMON_INVALID_NOT_OPERAND", "logical NOT requires exactly one result")
 )
 
 // Evaluate evaluates a logical operator against a slice of boolean results.
 func (o LogicalOperator) Evaluate(conditions []bool) (bool, error) {
 	if len(conditions) == 0 {
-		return false, ErrEmptyResults
+		return false, ErrEmptConditions
 	}
 
 	switch o {

@@ -5,28 +5,19 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // GetNested with enhanced path parsing and error handling.
 func (d Document) GetNested(path string) (any, error) {
 	if path == "" {
-		return nil, &DocumentError{
-			Operation: "GetNested",
-			Key:       path,
-			Message:   ErrKeyEmpty.Error(),
-			Cause:     ErrKeyEmpty,
-		}
+		return nil, common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.GetNested").WithPath(path)
 	}
 
 	val, ok := utils.GetValueByPath(d, path)
 	if !ok {
-		return nil, &DocumentError{
-			Operation: "GetNested",
-			Key:       path,
-			Message:   ErrPathSegmentNotFound.Error(),
-			Cause:     ErrPathSegmentNotFound,
-		}
+		return nil, common.SystemErrorFrom(ErrPathSegmentNotFound).WithOperation("data.Document.GetNested").WithPath(path)
 	}
 	return val, nil
 }
@@ -34,12 +25,7 @@ func (d Document) GetNested(path string) (any, error) {
 // SetNested with path validation and intermediate map creation.
 func (d Document) SetNested(path string, value any) error {
 	if path == "" {
-		return &DocumentError{
-			Operation: "SetNested",
-			Key:       path,
-			Message:   ErrKeyEmpty.Error(),
-			Cause:     ErrKeyEmpty,
-		}
+		return common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.SetNested").WithPath(path)
 	}
 
 	parts := strings.Split(path, ".")
@@ -62,12 +48,7 @@ func (d Document) SetNested(path string, value any) error {
 		} else if nextDoc, ok := next.(Document); ok {
 			current = nextDoc
 		} else {
-			return &DocumentError{
-				Operation: "SetNested",
-				Key:       strings.Join(parts[:i+1], "."),
-				Message:   fmt.Sprintf("%s: cannot traverse into %T", ErrCannotTraverse.Error(), next),
-				Cause:     errors.Join(ErrCannotTraverse, ErrInvalidPath),
-			}
+			return common.SystemErrorFrom(ErrCannotTraverse).WithOperation("data.Document.SetNested").WithPath(strings.Join(parts[:i+1], ".")).WithMessage(fmt.Sprintf("cannot traverse into %T", next)).WithCause(errors.Join(ErrCannotTraverse, ErrInvalidPath))
 		}
 	}
 
@@ -77,12 +58,7 @@ func (d Document) SetNested(path string, value any) error {
 // DeleteNested removes a value at a nested path.
 func (d Document) DeleteNested(path string) error {
 	if path == "" {
-		return &DocumentError{
-			Operation: "DeleteNested",
-			Key:       path,
-			Message:   ErrKeyEmpty.Error(),
-			Cause:     ErrKeyEmpty,
-		}
+		return common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.DeleteNested").WithPath(path)
 	}
 
 	parts := strings.Split(path, ".")
@@ -96,12 +72,7 @@ func (d Document) DeleteNested(path string) error {
 
 	parent, ok := utils.GetValueByPath(d, parentPath)
 	if !ok {
-		return &DocumentError{
-			Operation: "DeleteNested",
-			Key:       parentPath,
-			Message:   "parent path not found",
-			Cause:     ErrPathSegmentNotFound,
-		}
+		return common.SystemErrorFrom(ErrPathSegmentNotFound).WithOperation("data.Document.DeleteNested").WithPath(parentPath).WithMessage("parent path not found")
 	}
 
 	switch p := parent.(type) {
@@ -110,12 +81,7 @@ func (d Document) DeleteNested(path string) error {
 	case map[string]any:
 		delete(p, keyToDelete)
 	default:
-		return &DocumentError{
-			Operation: "DeleteNested",
-			Key:       path,
-			Message:   fmt.Sprintf("%s: parent is not a map: %T", ErrParentNotMap.Error(), p),
-			Cause:     errors.Join(ErrParentNotMap, ErrInvalidPath),
-		}
+		return common.SystemErrorFrom(ErrParentNotMap).WithOperation("data.Document.DeleteNested").WithPath(path).WithMessage(fmt.Sprintf("parent is not a map: %T", p)).WithCause(errors.Join(ErrParentNotMap, ErrInvalidPath))
 	}
 
 	return nil

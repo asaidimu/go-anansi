@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -52,11 +53,7 @@ func generatePhysicalName(s *schema.SchemaDefinition) (string, error) {
 	maxNameLength := maxLength - versionLength - separatorLength
 
 	if maxNameLength < 1 {
-		return "", &RegistryError{
-			Operation: "generatePhysicalName",
-			Message:   fmt.Sprintf("to fit in %d character limit", maxLength),
-			Cause:     ErrVersionTooLong,
-		}
+		return "", common.NewSystemError("ERR_REGISTRY_VERSION_TOO_LONG", fmt.Sprintf("version too long to fit in %d character limit", maxLength))
 	}
 
 	// Truncate name if necessary
@@ -69,11 +66,7 @@ func generatePhysicalName(s *schema.SchemaDefinition) (string, error) {
 
 	// Final validation
 	if len(physicalName) > maxLength {
-		return "", &RegistryError{
-			Operation: "generatePhysicalName",
-			Message:   fmt.Sprintf("%d character limit", maxLength),
-			Cause:     ErrGeneratedNameExceedsLimit,
-		}
+		return "", common.NewSystemError("ERR_REGISTRY_GENERATED_NAME_EXCEEDS_LIMIT", fmt.Sprintf("generated name exceeds %d character limit", maxLength))
 	}
 
 	return physicalName, nil

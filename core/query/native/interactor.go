@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -46,10 +47,10 @@ var _ query.SchemaManager = (*NativeInteractor[any])(nil)
 // It initializes a base-level interactor that is not yet in a transaction.
 func NewNativeInteractor[T any](ix QueryExecutor[T], qf QueryFactory[T], logger *zap.Logger) (query.DatabaseInteractor, error) {
 	if ix == nil {
-		return nil, errors.New("query executor cannot be nil")
+		return nil, common.NewSystemError("ERR_NATIVE_QUERY_EXECUTOR_NIL", "query executor cannot be nil")
 	}
 	if qf == nil {
-		return nil, errors.New("query factory cannot be nil")
+		return nil, common.NewSystemError("ERR_NATIVE_QUERY_FACTORY_NIL", "query factory cannot be nil")
 	}
 
 	return &NativeInteractor[T]{
@@ -74,12 +75,12 @@ func (i *NativeInteractor[T]) Close() error {
 func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.Query) ([]data.Document, error) {
 	compiled, err := i.b.Build(dsl, StmtSelect, nil)
 	if err != nil {
-		return nil, newNativeError("SelectDocuments", "could not build query", err)
+		return nil, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.SelectDocuments")
 	}
 
 	resultSchema, err := query.SchemaFromQuery(dsl, nil)
 	if err != nil {
-		return nil, newNativeError("SelectDocuments", "could not determine result schema", err)
+		return nil, common.SystemErrorFrom(err, ErrCouldNotGetResultSchema.Code, ErrCouldNotGetResultSchema.Message).WithOperation("native.NativeInteractor.SelectDocuments")
 	}
 
 	return i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
@@ -89,12 +90,12 @@ func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schem
 func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan data.Document, <-chan error, error) {
 	compiled, err := i.b.Build(dsl, StmtSelect, nil)
 	if err != nil {
-		return nil, nil, newNativeError("SelectStream", "could not build query", err)
+		return nil, nil, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.SelectStream")
 	}
 
 	resultSchema, err := query.SchemaFromQuery(dsl, nil)
 	if err != nil {
-		return nil, nil, newNativeError("SelectStream", "could not determine result schema", err)
+		return nil, nil, common.SystemErrorFrom(err, ErrCouldNotGetResultSchema.Code, ErrCouldNotGetResultSchema.Message).WithOperation("native.NativeInteractor.SelectStream")
 	}
 
 	return i.ix.QueryStream(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
@@ -114,7 +115,7 @@ func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schem
 
 	compiled, err := i.b.Build(dsl, StmtUpdate, updatePayload)
 	if err != nil {
-		return 0, newNativeError("UpdateDocuments", "could not build query", err)
+		return 0, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.UpdateDocuments")
 	}
 
 	return i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: schema})
@@ -131,12 +132,12 @@ func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *schema.Sc
 	}
 	compiled, err := i.b.Build(dsl, StmtInsert, records)
 	if err != nil {
-		return nil, newNativeError("InsertDocuments", "could not build query", err)
+		return nil, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.InsertDocuments")
 	}
 
 	resultSchema, err := query.SchemaFromQuery(dsl, nil)
 	if err != nil {
-		return nil, newNativeError("InsertDocuments", "could not determine result schema", err)
+		return nil, common.SystemErrorFrom(err, ErrCouldNotGetResultSchema.Code, ErrCouldNotGetResultSchema.Message).WithOperation("native.NativeInteractor.InsertDocuments")
 	}
 
 	return i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
@@ -145,7 +146,7 @@ func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *schema.Sc
 // DeleteDocuments deletes documents matching the filter.
 func (i *NativeInteractor[T]) DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
 	if filters == nil && !unsafeDelete {
-		return 0, newNativeError("DeleteDocuments", ErrCouldNotDeleteWithoutFilters.Error(), nil)
+		return 0, ErrCouldNotDeleteWithoutFilters.WithOperation("native.NativeInteractor.DeleteDocuments")
 	}
 
 	dsl := &query.Query{
@@ -154,7 +155,7 @@ func (i *NativeInteractor[T]) DeleteDocuments(ctx context.Context, schema *schem
 	}
 	compiled, err := i.b.Build(dsl, StmtDelete, nil)
 	if err != nil {
-		return 0, newNativeError("DeleteDocuments", "could not build query", err)
+		return 0, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.DeleteDocuments")
 	}
 
 	return i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: schema})
@@ -164,7 +165,7 @@ func (i *NativeInteractor[T]) DeleteDocuments(ctx context.Context, schema *schem
 func (i *NativeInteractor[T]) Query(ctx context.Context, raw *query.Query) (*query.RawQueryResult, error) {
 	compiled, err := i.b.Build(raw, StmtRaw, nil)
 	if err != nil {
-		return nil, newNativeError("Query", "could not build query", err)
+		return nil, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.Query")
 	}
 
 	return i.ix.ExecuteQuery(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
@@ -175,13 +176,13 @@ func (i *NativeInteractor[T]) StartTransaction(ctx context.Context) (query.Datab
 	i.txMu.Lock()
 	defer i.txMu.Unlock()
 
-	if i.isTx {
-		return nil, newNativeError("StartTransaction", ErrCannotNestTransactions.Error(), ErrCannotNestTransactions)
+	if i.isTx { // The system allows nesting transactions, or the facade of nesting transactions
+		return i, nil
 	}
 
 	txExecutor, err := i.ix.BeginTransaction(ctx)
 	if err != nil {
-		return nil, newNativeError("StartTransaction", ErrFailedToBeginTransaction.Error(), err)
+		return nil, common.SystemErrorFrom(err, ErrFailedToBeginTransaction.Code, ErrFailedToBeginTransaction.Message).WithOperation("native.NativeInteractor.StartTransaction")
 	}
 
 	tx := &NativeInteractor[T]{
@@ -207,10 +208,10 @@ func (i *NativeInteractor[T]) StartTransaction(ctx context.Context) (query.Datab
 // Commit commits the current transaction.
 func (i *NativeInteractor[T]) Commit(ctx context.Context) error {
 	if !i.isTx {
-		return newNativeError("Commit", "interactor is not a transaction", nil)
+		return common.NewSystemError("ERR_NATIVE_COMMIT_NOT_APPLICABLE", "interactor is not a transaction").WithOperation("native.NativeInteractor.Commit")
 	}
 	if !i.done.CompareAndSwap(false, true) {
-		return newNativeError("Commit", "transaction already finished", nil)
+		return common.NewSystemError("ERR_NATIVE_COMMIT_NOT_APPLICABLE", "transaction already finished").WithOperation("native.NativeInteractor.Commit")
 	}
 	return i.ix.Commit(ctx)
 }
@@ -218,10 +219,10 @@ func (i *NativeInteractor[T]) Commit(ctx context.Context) error {
 // Rollback rolls back the current transaction.
 func (i *NativeInteractor[T]) Rollback(ctx context.Context) error {
 	if !i.isTx {
-		return newNativeError("Rollback", "interactor is not a transaction", nil)
+		return common.NewSystemError("ERR_NATIVE_ROLLBACK_NOT_APPLICABLE", "interactor is not a transaction").WithOperation("native.NativeInteractor.Rollback")
 	}
 	if !i.done.CompareAndSwap(false, true) {
-		return newNativeError("Rollback", "transaction already finished", nil)
+		return common.NewSystemError("ERR_NATIVE_ROLLBACK_NOT_APPLICABLE", "transaction already finished").WithOperation("native.NativeInteractor.Rollback")
 	}
 	return i.ix.Rollback(ctx)
 }
@@ -241,7 +242,7 @@ func (i *NativeInteractor[T]) CollectionExists(ctx context.Context, name string)
 
 	compiled, err := i.b.Build(&query.Query{ Target: &query.QueryTarget{ Name: name} }, StmtCheckCollection, nil)
 	if err != nil {
-		return false, newNativeError("CollectionExists", "could not build query", err)
+		return false, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.CollectionExists")
 	}
 
 	result, err := i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: &schema.SchemaDefinition{
@@ -250,7 +251,7 @@ func (i *NativeInteractor[T]) CollectionExists(ctx context.Context, name string)
 	}})
 
 	if err != nil {
-		return false, newNativeError("CollectionExists", "could not check for collection", err)
+		return false, ErrCouldNotCheckCollection.WithCause(err).WithOperation("native.NativeInteractor.CollectionExists")
 	}
 
 	return len(result) > 0, nil
@@ -265,8 +266,7 @@ func (i *NativeInteractor[T]) CreateCollection(ctx context.Context, sc schema.Sc
 		// If we are already in a transaction, StartTransaction will fail,
 		// which is not what we want. We want to *reuse* it.
 		// So we check the error type. If it's a nesting error, we proceed with `i`.
-		var nativeErr *NativeError
-		if errors.As(err, &nativeErr) && errors.Is(nativeErr.Cause, ErrCannotNestTransactions) {
+		if errors.Is(err, ErrCannotNestTransactions) {
 			tx = i
 		} else {
 			return err
@@ -295,10 +295,10 @@ func (i *NativeInteractor[T]) createCollectionLogic(ctx context.Context, sc sche
 	dsl := &query.Query{Target: &query.QueryTarget{Name: sc.Name, Schema: &sc}}
 	compiled, err := i.b.Build(dsl, StmtCreateCollection, nil)
 	if err != nil {
-		return newNativeError("CreateCollection", "could not build create collection query", err)
+		return common.SystemErrorFrom(err, ErrCouldNotBuildCreateCollectionQuery.Code, ErrCouldNotBuildCreateCollectionQuery.Message).WithOperation("native.NativeInteractor.createCollectionLogic")
 	}
 	if _, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: &sc}); err != nil {
-		return newNativeError("CreateCollection", "could not create collection", err)
+		return common.SystemErrorFrom(err, ErrCouldNotCreateCollection.Code, ErrCouldNotCreateCollection.Message).WithOperation("native.NativeInteractor.createCollectionLogic")
 	}
 
 	// 2. Create associated indexes
@@ -318,7 +318,7 @@ func (i *NativeInteractor[T]) CreateIndex(ctx context.Context, collection string
 	dsl := &query.Query{Target: &query.QueryTarget{Name: collection}}
 	compiled, err := i.b.Build(dsl, StmtCreateIndex, index)
 	if err != nil {
-		return newNativeError("CreateIndex", "could not build query", err)
+		return common.SystemErrorFrom(err, ErrCouldNotBuildCreateIndexQuery.Code, ErrCouldNotBuildCreateIndexQuery.Message).WithOperation("native.NativeInteractor.CreateIndex")
 	}
 	_, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
 	return err
@@ -329,7 +329,7 @@ func (i *NativeInteractor[T]) DropIndex(ctx context.Context, collection string, 
 	dsl := &query.Query{Target: &query.QueryTarget{Name: collection}}
 	compiled, err := i.b.Build(dsl, StmtDropIndex, index)
 	if err != nil {
-		return newNativeError("DropIndex", "could not build query", err)
+		return common.SystemErrorFrom(err, ErrCouldNotBuildDropIndexQuery.Code, ErrCouldNotBuildDropIndexQuery.Message).WithOperation("native.NativeInteractor.DropIndex")
 	}
 	_, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
 	return err
@@ -340,7 +340,7 @@ func (i *NativeInteractor[T]) DropCollection(ctx context.Context, name string) e
 	dsl := &query.Query{Target: &query.QueryTarget{Name: name}}
 	compiled, err := i.b.Build(dsl, StmtDropCollection, nil)
 	if err != nil {
-		return newNativeError("DropCollection", "could not build query", err)
+		return common.SystemErrorFrom(err, ErrCouldNotBuildDropCollectionQuery.Code, ErrCouldNotBuildDropCollectionQuery.Message).WithOperation("native.NativeInteractor.DropCollection")
 	}
 	_, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
 	return err
@@ -351,13 +351,6 @@ func (i *NativeInteractor[T]) Capabilities() query.Capabilities {
 	return i.qf.Capabilities()
 }
 
-// newNativeError is a helper to standardize error creation.
-func newNativeError(op, msg string, cause error) error {
-	return &NativeError{
-		Operation: op,
-		Message:   msg,
-		Cause:     cause,
-	}
-}
+
 
 

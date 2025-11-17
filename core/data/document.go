@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
@@ -41,11 +42,7 @@ func convertToDocumentMap(data any) (map[string]any, error) {
 			}
 			return doc, nil
 		}
-		return nil, &DocumentError{
-			Operation: "convertToDocumentMap",
-			Message:   fmt.Sprintf("%s: %T", ErrInvalidTargetType.Error(), data),
-			Cause:     ErrInvalidTargetType,
-		}
+		return nil, common.SystemErrorFrom(ErrInvalidTargetType).WithOperation("data.convertToDocumentMap").WithMessage(fmt.Sprintf("cannot convert %T to Document", data))
 	}
 }
 
@@ -76,12 +73,7 @@ func MustNewDocument(data any) Document {
 func (d Document) Get(key string) (any, error) {
 	val, ok := utils.GetValueByPath(d, key)
 	if !ok {
-		return nil, &DocumentError{
-			Operation: "Get",
-			Key:       key,
-			Message:   "key not found",
-			Cause:     ErrKeyNotFound,
-		}
+		return nil, common.SystemErrorFrom(ErrKeyNotFound).WithOperation("data.Document.Get").WithPath(key)
 	}
 	return val, nil
 }
@@ -98,12 +90,7 @@ func (d Document) GetOr(key string, defaultValue any) any {
 func (d Document) MustGet(key string) any {
 	val, ok := utils.GetValueByPath(d, key)
 	if !ok {
-		panic(&DocumentError{
-			Operation: "MustGet",
-			Key:       key,
-			Message:   "key not found",
-			Cause:     ErrKeyNotFound,
-		})
+		panic(common.SystemErrorFrom(ErrKeyNotFound).WithOperation("data.Document.MustGet").WithPath(key))
 	}
 	return val
 }
@@ -111,20 +98,10 @@ func (d Document) MustGet(key string) any {
 // Set with validation support.
 func (d Document) Set(key string, value any) error {
 	if key == DocumentID {
-		return &DocumentError{
-			Operation: "Set",
-			Key:       key,
-			Message:   fmt.Sprintf("the '%s' field is managed by the library and cannot be set manually", DocumentID),
-			Cause:     ErrReadOnlyField,
-		}
+		return common.SystemErrorFrom(ErrReadOnlyField).WithOperation("data.Document.Set").WithPath(key).WithMessage(fmt.Sprintf("field '%s' is managed by the library and cannot be set manually", DocumentID))
 	}
 	if key == "" {
-		return &DocumentError{
-			Operation: "Set",
-			Key:       key,
-			Message:   ErrKeyEmpty.Error(),
-			Cause:     ErrKeyEmpty,
-		}
+		return common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.Set").WithPath(key)
 	}
 	d[key] = value
 	return nil
@@ -209,12 +186,7 @@ func (d Document) GetDocumentArray(keyOrPath string) ([]Document, error) {
 func (d Document) getAndCoerce(keyOrPath string, targetType reflect.Type, operation string) (any, error) {
 	val, ok := utils.GetValueByPath(d, keyOrPath)
 	if !ok {
-		return nil, &DocumentError{
-			Operation: operation,
-			Key:       keyOrPath,
-			Message:   "key not found",
-			Cause:     ErrKeyNotFound,
-		}
+		return nil, common.SystemErrorFrom(ErrKeyNotFound).WithOperation("data.Document." + operation).WithPath(keyOrPath)
 	}
 
 	var coercedVal any
@@ -236,21 +208,11 @@ func (d Document) getAndCoerce(keyOrPath string, targetType reflect.Type, operat
 	case reflect.TypeOf([]Document{}):
 		coercedVal, conversionOk = AsDocumentArray(val)
 	default:
-		return nil, &DocumentError{
-			Operation: operation,
-			Key:       keyOrPath,
-			Message:   fmt.Sprintf("unsupported target type for coercion: %s", targetType.String()),
-			Cause:     ErrTypeConversion,
-		}
+		return nil, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document." + operation).WithPath(keyOrPath).WithMessage(fmt.Sprintf("unsupported target type for coercion: %s", targetType.String()))
 	}
 
 	if !conversionOk {
-		return nil, &DocumentError{
-			Operation: operation,
-			Key:       keyOrPath,
-			Message:   fmt.Sprintf("%s: cannot convert %T to %s", ErrTypeConversion.Error(), val, targetType.String()),
-			Cause:     errors.Join(ErrTypeConversion, ErrTypeMismatch),
-		}
+		return nil, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document." + operation).WithPath(keyOrPath).WithMessage(fmt.Sprintf("cannot convert %T to %s", val, targetType.String())).WithCause(errors.Join(ErrTypeConversion, ErrTypeMismatch))
 	}
 
 	return coercedVal, nil
@@ -312,11 +274,11 @@ func deepCloneValue(v any) any {
 		}
 		return result
 	case []Document:
-		result := make([]Document, len(val))
+		arr := make([]Document, len(val))
 		for i, doc := range val {
-			result[i] = doc.Clone()
+			arr[i] = doc.Clone()
 		}
-		return result
+		return arr
 	default:
 		return v
 	}
@@ -441,20 +403,20 @@ func asMapValue(v any) any {
 			nested[nk] = asMapValue(nv)
 		}
 		return nested
-	case []Document:
-		arr := make([]any, len(val))
-		for i, doc := range val {
-			arr[i] = doc.AsMap()
-		}
-		return arr
 	case []any:
 		arr := make([]any, len(val))
 		for i, item := range val {
 			arr[i] = asMapValue(item)
 		}
 		return arr
+	case []Document:
+		arr := make([]Document, len(val))
+		for i, doc := range val {
+			arr[i] = doc.Clone()
+		}
+		return arr
 	default:
-		return val // primitive type (string, int, etc.)
+		return v
 	}
 }
 
@@ -494,11 +456,7 @@ func (d Document) StripMetadata() Document {
 func (d Document) Hash() error {
 	meta, ok := d.Metadata()
 	if !ok {
-		return &DocumentError{
-			Operation: "Hash",
-			Message:   ErrNoMetadata.Error(),
-			Cause:     ErrNoMetadata,
-		}
+		return common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.Document.Hash")
 	}
 
 	hash, err := getFactory().calculateHash(d)
@@ -552,20 +510,12 @@ func (d Document) Sign(privateKey *rsa.PrivateKey) error {
 func (d Document) Verify(publicKey *rsa.PublicKey) error {
 	meta, ok := d.Metadata()
 	if !ok {
-		return &DocumentError{
-			Operation: "Verify",
-			Message:   ErrNoMetadata.Error(),
-			Cause:     ErrNoMetadata,
-		}
+		return common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.Document.Verify")
 	}
 
 	signature, ok := meta[MetadataSignature].(string)
 	if !ok {
-		return &DocumentError{
-			Operation: "Verify",
-			Message:   "no signature found in metadata",
-			Cause:     ErrSignatureInvalid,
-		}
+		return common.SystemErrorFrom(ErrSignatureInvalid).WithOperation("data.Document.Verify").WithMessage("no signature found in metadata")
 	}
 
 	return getFactory().verifySignature(d, publicKey, signature)
@@ -577,11 +527,11 @@ func (d Document) Verify(publicKey *rsa.PublicKey) error {
 func (d Document) GetMetadataValue(key string) (any, error) {
 	meta, ok := d.Metadata()
 	if !ok {
-		return nil, &DocumentError{Operation: "GetMetadataValue", Key: key, Cause: ErrNoMetadata}
+		return nil, common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.Document.GetMetadataValue").WithPath(key)
 	}
 	val, ok := meta[key]
 	if !ok {
-		return nil, &DocumentError{Operation: "GetMetadataValue", Key: key, Cause: ErrKeyNotFound}
+		return nil, common.SystemErrorFrom(ErrKeyNotFound).WithOperation("data.Document.GetMetadataValue").WithPath(key)
 	}
 	return val, nil
 }
@@ -591,7 +541,7 @@ func (d Document) GetMetadataValue(key string) (any, error) {
 func (d Document) SetMetadataValue(key string, value any) error {
 	switch key {
 	case MetadataChecksum, MetadataSignature, MetadataVersion, MetadataCreated, MetadataUpdated:
-		return &DocumentError{Operation: "SetMetadataValue", Key: key, Message: "cannot overwrite internal metadata field", Cause: ErrReadOnlyField}
+		return common.SystemErrorFrom(ErrReadOnlyField).WithOperation("data.Document.SetMetadataValue").WithPath(key).WithMessage("cannot overwrite internal metadata field")
 	}
 
 	meta, ok := d.Metadata()
@@ -611,7 +561,7 @@ func (d Document) Version() (int, error) {
 	}
 	version, ok := utils.CoerceToPrimitiveValue[int](val)
 	if !ok {
-		return 0, &DocumentError{Operation: "Version", Key: MetadataVersion, Cause: ErrTypeConversion}
+		return 0, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document.Version").WithPath(MetadataVersion).WithMessage(fmt.Sprintf("cannot convert %T to int", val))
 	}
 	return version, nil
 }
@@ -624,7 +574,7 @@ func (d Document) Checksum() (string, error) {
 	}
 	checksum, ok := val.(string)
 	if !ok {
-		return "", &DocumentError{Operation: "Checksum", Key: MetadataChecksum, Cause: ErrTypeConversion}
+		return "", common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document.Checksum").WithPath(MetadataChecksum).WithMessage(fmt.Sprintf("cannot convert %T to string", val))
 	}
 	return checksum, nil
 }
@@ -637,7 +587,7 @@ func (d Document) Signature() (string, error) {
 	}
 	signature, ok := val.(string)
 	if !ok {
-		return "", &DocumentError{Operation: "Signature", Key: MetadataSignature, Cause: ErrTypeConversion}
+		return "", common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document.Signature").WithPath(MetadataSignature).WithMessage(fmt.Sprintf("cannot convert %T to string", val))
 	}
 	return signature, nil
 }
@@ -651,7 +601,7 @@ func (d Document) CreatedAt() (time.Time, error) {
 	}
 	createdAt, ok := utils.CoerceTime(val)
 	if !ok {
-		return time.Time{}, &DocumentError{Operation: "CreatedAt", Key: MetadataCreated, Cause: ErrTypeConversion}
+		return time.Time{}, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document.CreatedAt").WithPath(MetadataCreated).WithMessage(fmt.Sprintf("cannot convert %T to time.Time", val))
 	}
 	return createdAt, nil
 }
@@ -664,7 +614,7 @@ func (d Document) UpdatedAt() (time.Time, error) {
 	}
 	updatedAt, ok := utils.CoerceTime(val)
 	if !ok {
-		return time.Time{}, &DocumentError{Operation: "UpdatedAt", Key: MetadataUpdated, Cause: ErrTypeConversion}
+		return time.Time{}, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document.UpdatedAt").WithPath(MetadataUpdated).WithMessage(fmt.Sprintf("cannot convert %T to time.Time", val))
 	}
 	return updatedAt, nil
 }
@@ -677,7 +627,7 @@ func (d Document) GetMetadataString(key string) (string, error) {
 	}
 	str, ok := utils.CoerceToPrimitiveValue[string](val)
 	if !ok {
-		return "", &DocumentError{Operation: "GetMetadataString", Key: key, Cause: ErrTypeConversion}
+		return "", common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document.GetMetadataString").WithPath(key).WithMessage(fmt.Sprintf("cannot convert %T to string", val))
 	}
 	return str, nil
 }
@@ -690,7 +640,7 @@ func (d Document) GetMetadataInt(key string) (int, error) {
 	}
 	num, ok := utils.CoerceToPrimitiveValue[int](val)
 	if !ok {
-		return 0, &DocumentError{Operation: "GetMetadataInt", Key: key, Cause: ErrTypeConversion}
+		return 0, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document.GetMetadataInt").WithPath(key).WithMessage(fmt.Sprintf("cannot convert %T to int", val))
 	}
 	return num, nil
 }
@@ -703,7 +653,7 @@ func (d Document) GetMetadataFloat(key string) (float64, error) {
 	}
 	num, ok := utils.CoerceToPrimitiveValue[float64](val)
 	if !ok {
-		return 0, &DocumentError{Operation: "GetMetadataFloat", Key: key, Cause: ErrTypeConversion}
+		return 0, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document.GetMetadataFloat").WithPath(key).WithMessage(fmt.Sprintf("cannot convert %T to float64", val))
 	}
 	return num, nil
 }
@@ -716,7 +666,7 @@ func (d Document) GetMetadataBool(key string) (bool, error) {
 	}
 	boolean, ok := utils.CoerceToPrimitiveValue[bool](val)
 	if !ok {
-		return false, &DocumentError{Operation: "GetMetadataBool", Key: key, Cause: ErrTypeConversion}
+		return false, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document.GetMetadataBool").WithPath(key).WithMessage(fmt.Sprintf("cannot convert %T to bool", val))
 	}
 	return boolean, nil
 }
@@ -729,7 +679,7 @@ func (d Document) GetMetadataTime(key string) (time.Time, error) {
 	}
 	t, ok := utils.CoerceTime(val)
 	if !ok {
-		return time.Time{}, &DocumentError{Operation: "GetMetadataTime", Key: key, Cause: ErrTypeConversion}
+		return time.Time{}, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document.GetMetadataTime").WithPath(key).WithMessage(fmt.Sprintf("cannot convert %T to time.Time", val))
 	}
 	return t, nil
 }

@@ -3,6 +3,8 @@ package parser
 import (
 	"fmt"
 	"strings"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
 // QDSLLexer is a complete implementation of the Lexer interface.
@@ -28,7 +30,7 @@ type QDSLLexer struct {
 	column int
 
 	// For collecting lexical errors
-	errors []error
+	errors []*common.SystemError
 
 	// For PeekToken functionality
 	peekedToken Token // The token peeked at, if any
@@ -41,7 +43,7 @@ func NewQDSLLexer(input string) *QDSLLexer {
 		input:  input,
 		line:   1,
 		column: 0,
-		errors: []error{},
+		errors: []*common.SystemError{},
 	}
 	l.readChar()
 	return l
@@ -66,7 +68,7 @@ func (l *QDSLLexer) NextToken() Token {
 }
 
 // GetErrors returns the slice of lexical errors encountered.
-func (l *QDSLLexer) GetErrors() []error {
+func (l *QDSLLexer) GetErrors() []*common.SystemError {
 	return l.errors
 }
 
@@ -122,11 +124,10 @@ func (l *QDSLLexer) getNextTokenInternal() Token {
 			l.readChar() // Advance past the second '='
 		} else {
 			tok = newToken(TOKEN_ILLEGAL, l.ch, tokenLine, tokenColumn, tokenPosition)
-			l.addError(&LexerError{
-				Operation: "NextToken",
-				Message:   fmt.Sprintf("unexpected character '%c' at line %d, column %d", l.ch, tokenLine, tokenColumn),
-				Cause:     ErrUnexpectedCharacter,
-			})
+			l.addError(ErrUnexpectedCharacter.
+				WithOperation("parser.QDSLLexer.NextToken").
+				WithMessage(fmt.Sprintf("unexpected character '%c'", l.ch)).
+				WithPath(fmt.Sprintf("line %d, column %d", tokenLine, tokenColumn)))
 			l.readChar()
 		}
 	case '<':
@@ -242,11 +243,10 @@ func (l *QDSLLexer) getNextTokenInternal() Token {
 			// readNumber() already advanced position
 		} else {
 			tok = newToken(TOKEN_ILLEGAL, l.ch, tokenLine, tokenColumn, tokenPosition)
-			l.addError(&LexerError{
-				Operation: "NextToken",
-				Message:   fmt.Sprintf("unexpected character '%c' at line %d, column %d", l.ch, tokenLine, tokenColumn),
-				Cause:     ErrUnexpectedCharacter,
-			})
+			l.addError(ErrUnexpectedCharacter.
+				WithOperation("parser.QDSLLexer.NextToken").
+				WithMessage(fmt.Sprintf("unexpected character '%c'", l.ch)).
+				WithPath(fmt.Sprintf("line %d, column %d", tokenLine, tokenColumn)))
 			l.readChar()
 		}
 	}
@@ -365,12 +365,10 @@ func (l *QDSLLexer) readString() string {
 	}
 
 	if l.ch == 0 {
-		l.addError(&LexerError{
-			Operation: "readString",
-			Message:   fmt.Sprintf("unterminated string literal at line %d", l.line),
-			Cause:     ErrUnterminatedString,
-		})
-		return l.input[position:l.position]
+					l.addError(ErrUnterminatedString.
+						WithOperation("parser.QDSLLexer.readString").
+						WithPath(fmt.Sprintf("line %d", l.line)))
+						return l.input[position:l.position]
 	}
 
 	result := l.input[position:l.position]
@@ -379,7 +377,7 @@ func (l *QDSLLexer) readString() string {
 }
 
 // addError adds an error to the lexer's error collection.
-func (l *QDSLLexer) addError(err error) {
+func (l *QDSLLexer) addError(err *common.SystemError) {
 	l.errors = append(l.errors, err)
 }
 

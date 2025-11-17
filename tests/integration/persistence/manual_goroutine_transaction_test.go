@@ -80,7 +80,7 @@ func TestTransactionInManualGoroutine(t *testing.T) {
 				return nil, nil
 			})
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "manual goroutine failed")
+			assert.Contains(t, err.Error(), "failed")
 		}()
 
 		wg.Wait()

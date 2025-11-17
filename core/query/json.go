@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
 // MarshalJSON implements the json.Marshaler interface for QueryDistinctConfig.
@@ -59,11 +61,7 @@ func (qdc *QueryDistinctConfig) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	return &QueryError{
-		Operation: "UnmarshalJSON",
-		Message:   fmt.Sprintf("invalid QueryDistinctConfig: expected boolean or object with 'fields' array, got %s", string(data)),
-		Cause:     errors.New("invalid QueryDistinctConfig"), // No specific error variable for this
-	}
+	return common.NewSystemError("ERR_QUERY_INVALID_DISTINCT_CONFIG_UNMARSHAL", fmt.Sprintf("invalid QueryDistinctConfig: expected boolean or object with 'fields' array, got %s", string(data))).WithOperation("UnmarshalJSON").WithCause(errors.New("invalid QueryDistinctConfig"))
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface for QueryFilter.
@@ -79,11 +77,7 @@ func (qf *QueryFilter) UnmarshalJSON(data []byte) error {
 	// Use an anonymous map to peek at the raw JSON data to identify the type
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return &QueryError{
-			Operation: "UnmarshalJSON",
-			Message:   "invalid QueryFilter: failed to unmarshal into raw map",
-			Cause:     err,
-		}
+		return common.NewSystemError("ERR_QUERY_INVALID_FILTER_UNMARSHAL_RAW", "invalid QueryFilter: failed to unmarshal into raw map").WithOperation("UnmarshalJSON").WithCause(err)
 	}
 
 	// Priority 1: Check for "condition" wrapper, which indicates a FilterCondition
@@ -94,11 +88,7 @@ func (qf *QueryFilter) UnmarshalJSON(data []byte) error {
 			return nil
 		}
 		// If there's a "condition" key but it failed to unmarshal, it's an error.
-		return &QueryError{
-		Operation: "UnmarshalJSON",
-		Message:   "invalid QueryFilter: failed to unmarshal nested FilterCondition",
-		Cause:     errors.New("failed to unmarshal nested FilterCondition"), // No specific error variable for this
-	}
+		return common.NewSystemError("ERR_QUERY_INVALID_FILTER_UNMARSHAL_CONDITION", "invalid QueryFilter: failed to unmarshal nested FilterCondition").WithOperation("UnmarshalJSON").WithCause(errors.New("failed to unmarshal nested FilterCondition"))
 	}
 
 	// Priority 2: Attempt to unmarshal as FilterGroup (has "conditions" field)
@@ -136,11 +126,7 @@ func (qf *QueryFilter) UnmarshalJSON(data []byte) error {
 	}
 
 	// If none of the above types matched, then it's an invalid structure.
-	return &QueryError{
-		Operation: "UnmarshalJSON",
-		Message:   fmt.Sprintf("invalid QueryFilter: data does not match FilterCondition, FilterGroup, TextSearchQuery, or wrapped condition: %s", string(data)),
-		Cause:     errors.New("invalid QueryFilter structure"), // No specific error variable for this
-	}
+	return common.NewSystemError("ERR_QUERY_INVALID_FILTER_STRUCTURE", fmt.Sprintf("invalid QueryFilter: data does not match FilterCondition, FilterGroup, TextSearchQuery, or wrapped condition: %s", string(data))).WithOperation("UnmarshalJSON").WithCause(errors.New("invalid QueryFilter structure"))
 }
 
 // MarshalJSON implements the json.Marshaler interface for QueryFilter.
@@ -238,11 +224,7 @@ func (fv *FilterValue) UnmarshalJSON(data []byte) error {
 	}
 
 	// If none of the above succeeded, the data is not a recognized FilterValue type.
-	return &QueryError{
-		Operation: "UnmarshalJSON",
-		Message:   fmt.Sprintf("unsupported FilterValue type or invalid JSON: %s", string(data)),
-		Cause:     errors.New("unsupported FilterValue type or invalid JSON"), // No specific error variable for this
-	}
+	return common.NewSystemError("ERR_QUERY_UNSUPPORTED_FILTER_VALUE_TYPE", fmt.Sprintf("unsupported FilterValue type or invalid JSON: %s", string(data))).WithOperation("UnmarshalJSON").WithCause(errors.New("unsupported FilterValue type or invalid JSON"))
 }
 
 // MarshalJSON implements the json.Marshaler interface for FilterValue.
@@ -298,48 +280,28 @@ func (p *ProjectionComputedItem) UnmarshalJSON(b []byte) error {
 	var itemType string
 	if typeVal, ok := raw["type"]; ok {
 		if err := json.Unmarshal(typeVal, &itemType); err != nil {
-			return &QueryError{
-				Operation: "UnmarshalJSON",
-				Message:   "failed to unmarshal 'type' field in ProjectionComputedItem",
-				Cause:     err,
-			}
+			return common.NewSystemError("ERR_QUERY_PROJECTION_COMPUTED_ITEM_UNMARSHAL_TYPE", "failed to unmarshal 'type' field in ProjectionComputedItem").WithOperation("UnmarshalJSON").WithCause(err)
 		}
 	} else {
 		// If 'type' field is missing, it's an invalid ProjectionComputedItem
-		return &QueryError{
-			Operation: "UnmarshalJSON",
-			Message:   "missing 'type' field for ProjectionComputedItem",
-			Cause:     errors.New("missing 'type' field"), // No specific error variable for this
-		}
+		return common.NewSystemError("ERR_QUERY_PROJECTION_COMPUTED_ITEM_MISSING_TYPE", "missing 'type' field for ProjectionComputedItem").WithOperation("UnmarshalJSON").WithCause(errors.New("missing 'type' field"))
 	}
 
 	switch itemType {
 	case "computed":
 		var cfe ComputedFieldExpression
 		if err := json.Unmarshal(b, &cfe); err != nil {
-			return &QueryError{
-				Operation: "UnmarshalJSON",
-				Message:   "failed to unmarshal as ComputedFieldExpression",
-				Cause:     err,
-			}
+			return common.NewSystemError("ERR_QUERY_PROJECTION_COMPUTED_ITEM_UNMARSHAL_COMPUTED", "failed to unmarshal as ComputedFieldExpression").WithOperation("UnmarshalJSON").WithCause(err)
 		}
 		p.ComputedFieldExpression = &cfe
 	case "case":
 		var ce CaseExpression
 		if err := json.Unmarshal(b, &ce); err != nil {
-			return &QueryError{
-				Operation: "UnmarshalJSON",
-				Message:   "failed to unmarshal as CaseExpression",
-				Cause:     err,
-			}
+			return common.NewSystemError("ERR_QUERY_PROJECTION_COMPUTED_ITEM_UNMARSHAL_CASE", "failed to unmarshal as CaseExpression").WithOperation("UnmarshalJSON").WithCause(err)
 		}
 		p.CaseExpression = &ce
 	default:
-		return &QueryError{
-			Operation: "UnmarshalJSON",
-			Message:   fmt.Sprintf("unknown 'type' field for ProjectionComputedItem: %s", itemType),
-			Cause:     errors.New("unknown 'type' field"), // No specific error variable for this
-		}
+		return common.NewSystemError("ERR_QUERY_PROJECTION_COMPUTED_ITEM_UNKNOWN_TYPE", fmt.Sprintf("unknown 'type' field for ProjectionComputedItem: %s", itemType)).WithOperation("UnmarshalJSON").WithCause(errors.New("unknown 'type' field"))
 	}
 
 	return nil
@@ -364,11 +326,7 @@ func (p PaginationOptions) MarshalJSON() ([]byte, error) {
 		return json.Marshal(aux)
 	default:
 		// Handle unknown or unsupported pagination types.
-		return nil, &QueryError{
-			Operation: "MarshalJSON",
-			Message:   fmt.Sprintf("unknown pagination type: %s", p.Type),
-			Cause:     errors.New("unknown pagination type"), // No specific error variable for this
-		}
+		return nil, common.NewSystemError("ERR_QUERY_UNKNOWN_PAGINATION_TYPE_MARSHAL", fmt.Sprintf("unknown pagination type: %s", p.Type)).WithOperation("MarshalJSON").WithCause(errors.New("unknown pagination type"))
 	}
 }
 
@@ -392,20 +350,12 @@ func (p *PaginationOptions) UnmarshalJSON(b []byte) error {
 			Offset *int `json:"offset,omitempty"`
 		}
 		if err := json.Unmarshal(b, &aux); err != nil {
-			return &QueryError{
-				Operation: "UnmarshalJSON",
-				Message:   "failed to unmarshal offset pagination options",
-				Cause:     err,
-			}
+			return common.NewSystemError("ERR_QUERY_PAGINATION_UNMARSHAL_OFFSET_FAILED", "failed to unmarshal offset pagination options").WithOperation("UnmarshalJSON").WithCause(err)
 		}
 		p.Limit = aux.Limit
 		p.Offset = aux.Offset
 	default:
-		return &QueryError{
-			Operation: "UnmarshalJSON",
-			Message:   fmt.Sprintf("unknown or missing pagination type '%s' in JSON", p.Type),
-			Cause:     errors.New("unknown or missing pagination type"), // No specific error variable for this
-		}
+		return common.NewSystemError("ERR_QUERY_UNKNOWN_PAGINATION_TYPE_UNMARSHAL", fmt.Sprintf("unknown or missing pagination type '%s' in JSON", p.Type)).WithOperation("UnmarshalJSON").WithCause(errors.New("unknown or missing pagination type"))
 	}
 
 	return nil
