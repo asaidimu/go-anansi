@@ -27,3 +27,5 @@ go-anansi
 dist
 *.db
 .commit-message.md
+*/**/tmp
+tmp/*
