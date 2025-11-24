@@ -1,126 +1,172 @@
-# `go-anansi`: A Resilient Go Persistence Platform 🕷️
+# Go-Anansi: A Schema-Driven, Hybrid Persistence Layer for Go
 
-[![GoDoc](https://img.shields.io/badge/godoc-reference-blue.svg)](https://pkg.go.dev/github.com/asaidimu/go-anansi/v6)
-[![Go Report Card](https://goreportcard.com/badge/github.com/asaidimu/go-anansi/v6)](https://goreportcard.com/report/github.com/asaidimu/go-anansi/v6)
-[![License](https://img.shields.io/badge/License-Proprietary-red.svg)](./LICENSE.md)
-[![Current Version](https://img.shields.io/badge/Version-v6-blue.svg)](https://github.com/asaidimu/go-anansi/releases)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg?style=flat)](https://github.com/asaidimu/go-anansi/actions)
+![Go Version](https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=for-the-badge&logo=go)
+![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)
+![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen?style=for-the-badge)
 
-## 🔗 Quick Links
+Go-Anansi is a sophisticated, schema-driven persistence framework for Go applications, engineered for flexibility, extensibility, and high performance. It provides a robust data access layer that abstracts away underlying database complexities, allowing developers to focus on business logic rather than boilerplate data management.
 
-*   [Overview & Features](#-overview--features)
-*   [Installation & Setup](#-installation--setup)
-*   [Usage Documentation](#-usage-documentation)
-    *   [Basic CRUD with Playground](#basic-crud-with-playground)
-    *   [Production Setup](#production-setup)
-    *   [Event-Driven Persistence](#event-driven-persistence)
-    *   [Application-Level Row-Level Security](#application-level-row-level-security)
-    *   [Complex Queries & Joins](#complex-queries--joins)
-    *   [API Usage Example](#api-usage-example)
-*   [Project Architecture](#-project-architecture)
-*   [Development & Contributing](#-development--contributing)
-*   [Additional Information](#-additional-information)
+## 🚀 Quick Links
+
+*   [Overview](#overview--features)
+*   [Key Features](#key-features)
+*   [Installation & Setup](#installation--setup)
+*   [Usage Documentation](#usage-documentation)
+*   [Project Architecture](#project-architecture)
+*   [Development & Contributing](#development--contributing)
+*   [Additional Information](#additional-information)
+*   [License](#license)
 
 ---
 
-## 🕷️ Overview & Features
+## ✨ Overview & Features
 
-`go-anansi` is a powerful, flexible, and schema-driven persistence platform for Go applications. Inspired by the resilience and intricate design of a spider's web, Anansi provides a robust abstraction layer over various data stores, enabling developers to define their data models declaratively, perform complex queries, and manage data lifecycle with ease and confidence.
+Go-Anansi is designed to revolutionize how Go applications interact with data stores. At its core, it's a highly modular persistence layer that leverages a decorator pattern, enabling flexible composition of functionalities like lifecycle management, event emission, and custom business logic. A standout feature is its self-managing nature, utilizing an internal `CollectionRegistry` to store system metadata, making the system self-describing and simplifying setup.
 
-Designed for modern Go applications, `go-anansi` simplifies data interaction by offering a unified API for CRUD operations, transactional guarantees, and an event-driven architecture for real-time observability and extensibility. It emphasizes strong data consistency through schema validation and versioning, while its pluggable design allows seamless integration with different database technologies, starting with a robust SQLite implementation.
+The framework's advanced query engine intelligently partitions queries, distributing processing between the database backend and in-memory execution based on the database's capabilities. This hybrid approach ensures both performance and unparalleled flexibility in handling complex data access patterns that might not be natively supported by all underlying data stores. While currently providing a robust SQLite implementation, its pluggable `DatabaseInteractor` interface means it can seamlessly integrate with various SQL or NoSQL backends.
 
-### ✨ Key Features
+Go-Anansi champions a schema-driven development approach. All data interactions are governed by declarative schema definitions, ensuring data integrity and consistency. It intentionally provides a flexible, unopinionated core, allowing users to inject specific functionalities like migration systems as decorators, reinforcing its adaptable philosophy.
 
-*   **Flexible Data Modeling:**
-    *   `Document` type for schema-aware, flexible data structures with comprehensive JSON serialization/deserialization.
-    *   Path-based access to nested data.
-    *   Data transformation, diffing, merging, and robust type coercion utilities.
-*   **Robust Persistence Layer:**
-    *   Abstracted `Persistence` interface supporting various data stores.
-    *   Centralized `Collection Registry` for managing schema definitions and versions.
-    *   Automatic bootstrapping and management of internal schema metadata.
-    *   Transactional operations for atomic data and schema changes.
-    *   Event-driven architecture for persistence operations, offering hooks for auditing, logging, and custom logic.
-*   **Powerful Query Engine:**
-    *   Domain-Specific Language (DSL) for expressive data querying.
-    *   Support for filtering, sorting, pagination (offset and cursor-based), and field projection.
-    *   Aggregation functions (e.g., count, sum) and distinct operations.
-    *   In-memory query helper for testing and pre-processing.
-    *   Comprehensive join capabilities (Inner, Left, Right, Full).
-*   **Schema Management & Validation:**
-    *   Declarative schema definition including field types, constraints, and indexes.
-    *   Automatic data validation against defined schemas.
-    *   Mechanisms for tracking and applying schema changes (migrations).
-*   **SQLite Database Integration:**
-    *   Concrete, production-ready implementation of the persistence layer for SQLite databases.
-    *   Automatic SQL generation for CRUD operations based on schema definitions.
-*   **Developer Experience & Utilities:**
-    *   Extensive unit, integration, and end-to-end test suites.
-    *   Generic utility functions for common tasks (type coercion, JSON handling, pointer helpers).
+### Key Features
 
-### 🚀 Upcoming Features (Proposals)
-
-We are actively working on enhancing `go-anansi` with powerful new capabilities:
-
-*   **Persistence Layer Health Check (`persistence.HealthCheck`):** A method to proactively verify the integrity and consistency of the persistence layer, including database connectivity and physical collection existence, upon application startup or on demand.
-*   **Enforcing Document Schema at Creation and Runtime Validation (`collection.Document()`):** A `Collection.Document()` factory method that returns a new `data.Document` instance pre-populated with schema-defined defaults and structured to reflect the schema. This `SchemaAwareDocument` will also enforce schema types and constraints at runtime during `Set` and `SetNested` operations, providing immediate feedback.
-*   **Pluggable Full-Text Search Functionality:** A comprehensive, pluggable search solution leveraging a coordinated dual-cursor architecture for storage efficiency and performance. This includes both consistent search-as-a-filter via `Read()` and real-time streaming search via a new `Search()` method. It will support pluggable backends (e.g., Bleve) and event-driven indexing.
+*   **Flexible Data Modeling**:
+    *   `Document` type (`map[string]any`) for schema-aware, flexible data structures.
+    *   Comprehensive JSON serialization/deserialization for `Document` and Go structs.
+    *   Support for path-based access to nested data.
+    *   Data transformation, diffing, and merging utilities.
+    *   Robust type coercion capabilities.
+*   **Robust Persistence Layer**:
+    *   Abstracted `Persistence` interface supporting various data stores via a `DatabaseInteractor`.
+    *   Centralized `CollectionRegistry` for managing schema definitions and versions.
+    *   Automatic bootstrapping and management of an internal schema metadata store (`_schemas_`).
+    *   Transactional operations for atomic data and schema changes with robust concurrency handling.
+    *   Event-driven architecture providing hooks for observability and extensibility during persistence operations.
+*   **Powerful Query Engine**:
+    *   Domain-Specific Language (DSL) for expressive data querying (filtering, sorting, pagination, projection, joins, aggregations, distinct operations).
+    *   Hybrid query execution that intelligently partitions queries between database and in-memory processing based on backend capabilities.
+    *   Comprehensive join capabilities (Inner, Left, Right, Full) and aggregation functions.
+*   **Schema Management & Validation**:
+    *   Declarative schema definition supporting field types, constraints, indexes, and nested schemas.
+    *   Graph-based validator for efficient, complex data validation, including conditional logic and circular dependency detection.
+    *   Mechanisms for tracking and applying schema changes (migrations), with user-injectable data transformation logic.
+    *   Code generation utilities (`codegen`) to create type-safe Go structs from schema definitions.
+*   **SQLite Database Integration**:
+    *   Concrete `DatabaseInteractor` implementation for SQLite databases.
+    *   Automatic SQL generation for CRUD operations based on schema definitions, including advanced JSON functions.
+*   **Developer Experience & Utilities**:
+    *   `Playground` helper for quick development setup with SQLite.
+    *   Extensive unit, integration, and end-to-end test suites (with recognized areas for further expansion).
+    *   Generic utility functions for common tasks (e.g., type coercion, JSON handling, pointer helpers).
 
 ---
 
-## 🛠️ Installation & Setup
+## 💾 Installation & Setup
 
 ### Prerequisites
 
-*   **Go**: Version `1.24.4` or higher (from `go.mod`).
-*   **SQLite3**: The `github.com/mattn/go-sqlite3` driver is used for SQLite integration. Ensure necessary build tools for CGo are available if compiling from source.
+*   **Go**: Version 1.24 or higher.
+*   **SQLite**: The SQLite driver is automatically included, but ensure your system has `sqlite3` development libraries if compiling from source in some environments.
 
 ### Installation Steps
 
-To integrate `go-anansi` into your Go project, use `go get`:
+To integrate Go-Anansi into your Go project, use `go get`:
 
 ```bash
 go get github.com/asaidimu/go-anansi/v6
 ```
 
-### Configuration
+### Basic Setup
 
-`go-anansi` offers two primary ways to initialize the persistence layer:
+Go-Anansi offers two primary ways to initialize the persistence layer:
 
-1.  **`anansi.Setup`**: The **production path**, providing granular control over every component.
-2.  **`anansi.Playground`**: A **development-only helper** for quick setup of an in-memory or file-based SQLite environment. It's not intended for production.
+1.  **`anansi.Setup`**: The production-grade path, offering full control over every component.
+2.  **`anansi.Playground`**: A development-only helper for quick local testing with SQLite.
 
-#### `anansi.SetupConfig` (Production)
+#### 1. Production Setup (`anansi.Setup`)
 
-This configuration struct allows you to inject custom implementations for various core components.
+For production environments, you configure the `anansi.SetupConfig` with your chosen `DatabaseInteractor`, logger, event bus, custom decorators, and schema definitions.
 
 ```go
-type SetupConfig struct {
-	Interactor    query.DatabaseInteractor        // Concrete database implementation (e.g., SQLite, PostgreSQL)
-	Logger        *zap.Logger                     // Structured logger for framework operations
-	EventBus      events.EventBus[base.PersistenceEvent] // Pub/sub backbone for events
-	FactoryConfig data.DocumentFactoryConfig      // Configures Document factory (hashing, metadata)
-	Decorators    *utils.Decorators               // Inject cross-cutting concerns (security, audit)
-	Schemas       []schema.SchemaDefinition       // Schemas to auto-create on first start
+package main
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log"
+	"time"
+
+	"github.com/asaidimu/go-anansi/v6"
+	"github.com/asaidimu/go-anansi/v6/core/data"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
+	"github.com/asaidimu/go-anansi/v6/core/query/native"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
+	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
+	u "github.com/asaidimu/go-anansi/v6/utils" // for NewWatermillEventBus
+	_ "github.com/mattn/go-sqlite3"           // SQLite driver
+	"go.uber.org/zap"
+)
+
+func main() {
+	logger, _ := zap.NewDevelopment()
+	defer logger.Sync()
+
+	db, err := sql.Open("sqlite3", "./production.db")
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+	defer db.Close()
+
+	executor, err := sqliteExecutor.NewSQLiteExecutor(db, logger)
+	if err != nil {
+		log.Fatalf("Failed to create SQLite executor: %v", err)
+	}
+	queryFactory := sqliteQuery.NewSQLiteFactory()
+	interactor, err := native.NewNativeInteractor(executor, queryFactory, logger)
+	if err != nil {
+		log.Fatalf("Failed to create native interactor: %v", err)
+	}
+
+	productSchema := &schema.SchemaDefinition{
+		Name:    "Product",
+		Version: "1.0.0",
+		Fields: map[string]*schema.FieldDefinition{
+			"name":  {Name: "name", Type: "string", Required: &[]bool{true}[0]},
+			"price": {Name: "price", Type: "number", Required: &[]bool{true}[0]},
+			"stock": {Name: "stock", Type: "integer", Required: &[]bool{true}[0]},
+		},
+	}
+
+	persistence, err := anansi.Setup(anansi.SetupConfig{
+		Interactor:    interactor,
+		Logger:        logger,
+		EventBus:      u.NewWatermillEventBus[anansi.PersistenceEvent](logger),
+		FactoryConfig: data.DocumentFactoryConfig{},
+		Decorators:    &utils.Decorators{}, // Add custom decorators here
+		Schemas:       []schema.SchemaDefinition{*productSchema},
+	})
+	if err != nil {
+		log.Fatalf("Failed to setup Anansi: %v", err)
+	}
+
+	// Use the persistence instance...
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	productsCollection, err := persistence.Collection(ctx, "Product")
+	if err != nil {
+		log.Fatalf("Failed to get product collection: %v", err)
+	}
+
+	fmt.Println("Anansi production setup successful, ready to use!")
+	_ = productsCollection // suppress unused variable warning
 }
 ```
 
-#### `anansi.PlaygroundConfig` (Development)
+#### 2. Development Setup (`anansi.Playground`)
 
-A simplified configuration for development environments.
-
-```go
-type PlaygroundConfig struct {
-	DBPath        string                    // SQLite DSN (e.g., ":memory:", "file.db")
-	EnableLogging bool                      // Enable zap.NewDevelopment() logger
-	EnableEvents  bool                      // Enable WatermillEventBus
-	Schemas       []schema.SchemaDefinition // Schemas to auto-create
-}
-```
-
-### Verification
-
-To verify your installation and get a quick feel for `go-anansi`, run the basic example:
+For local development and testing, `anansi.Playground` simplifies initialization by spinning up a complete SQLite-based environment. Remember to `defer cleanup()`!
 
 ```go
 package main
@@ -131,12 +177,9 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	coreutils "github.com/asaidimu/go-anansi/v6/core/utils"
-	_ "github.com/mattn/go-sqlite3"
+	coreutils "github.com/asaidimu/go-anansi/v6/core/utils" // For BoolPtr
+	_ "github.com/mattn/go-sqlite3"                         // SQLite driver
 	"go.uber.org/zap"
 )
 
@@ -158,47 +201,58 @@ func main() {
 
 	productSchema := getProductSchema()
 
-	// Initialize with Playground for development
 	p, cleanup, err := anansi.Playground(anansi.PlaygroundConfig{
-		DBPath:        ":memory:", // Use in-memory SQLite for quick testing
+		DBPath:        ":memory:", // Use an in-memory database
 		EnableLogging: true,
-		EnableEvents:  false,
+		EnableEvents:  true,
 		Schemas:       []schema.SchemaDefinition{*productSchema},
 	})
 	if err != nil {
 		log.Fatalf("Failed to start playground: %v", err)
 	}
-	defer cleanup() // IMPORTANT: Defer cleanup for Playground environments!
+	defer cleanup() // IMPORTANT: Ensure cleanup is deferred
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	products, err := p.Collection(ctx, productSchema.Name)
 	if err != nil {
 		log.Fatalf("Failed to get products collection: %v", err)
 	}
-	logger.Info("Products collection ready.")
 
-	// Perform a simple Create operation
-	newProduct := data.MustNewDocument(map[string]any{"name": "Test Gadget", "price": 99.99, "stock": 100})
-	createResult, err := products.CreateOne(ctx, newProduct)
-	if err != nil {
-		log.Fatalf("Failed to create product: %v", err)
-	}
-	logger.Info("Product created:", zap.Any("product", createResult.Data))
+	logger.Info("Anansi Playground initialized and ready for use!")
+	_ = products // suppress unused variable warning
 }
+```
+
+### Verification
+
+After running either `Setup` or `Playground`, if no fatal errors occur, the persistence layer is initialized. You can verify by attempting to retrieve a collection:
+
+```go
+// ... (after anansi.Setup or anansi.Playground)
+
+ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+
+collectionNames, err := p.ListCollections(ctx)
+if err != nil {
+    log.Fatalf("Failed to list collections: %v", err)
+}
+fmt.Printf("Successfully listed collections: %v\n", collectionNames)
 ```
 
 ---
 
 ## 📖 Usage Documentation
 
-### Basic CRUD with Playground
+Go-Anansi provides a rich API for interacting with your data. The core interfaces are `Persistence` (for global operations like managing collections) and `Collection` (for operations on a single collection).
 
-The `anansi.Playground` function provides a convenient way to quickly spin up a fully functional `go-anansi` environment for development and testing. It handles database initialization, logger setup, and schema loading.
+### Basic CRUD Operations
+
+Here's a basic example demonstrating how to define a schema, initialize the persistence layer (using `Playground` for simplicity), and perform CRUD operations:
 
 ```go
-// From example/basic/main.go
 package main
 
 import (
@@ -230,25 +284,21 @@ func getProductSchema() *schema.SchemaDefinition {
 }
 
 func main() {
-	logger, err := zap.NewDevelopment()
-	if err != nil {
-		log.Fatalf("Failed to create logger: %v", err)
-	}
+	logger, _ := zap.NewDevelopment()
 	defer logger.Sync()
 
 	productSchema := getProductSchema()
 
-	// 3. Start Playground with full dev features (using a persistent file for example)
 	p, cleanup, err := anansi.Playground(anansi.PlaygroundConfig{
-		DBPath:        "anansi.db", // This will create anansi.db in your current directory
-		EnableLogging: true,
+		DBPath:        "anansi.db",
+		EnableLogging: false,
 		EnableEvents:  true,
 		Schemas:       []schema.SchemaDefinition{*productSchema},
 	})
 	if err != nil {
 		log.Fatalf("Failed to start playground: %v", err)
 	}
-	defer cleanup() // !!! IMPORTANT: Always defer cleanup() in Playground environments
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -259,6 +309,16 @@ func main() {
 	}
 	logger.Info("Products collection ready.")
 
+	// Subscribe to a creation event (optional, demonstrates eventing)
+	unsub := products.Subscribe(ctx, base.SubscriptionOptions{
+		Event: base.DocumentCreateSuccess,
+		Callback: func(ctx context.Context, event base.PersistenceEvent) error {
+			logger.Info("Event: Document Created", zap.String("collection", *event.Collection), zap.Any("input", event.Input))
+			return nil
+		},
+	})
+	defer products.Unsubscribe(ctx, unsub)
+
 	// --- CRUD Operations ---
 
 	// Create
@@ -268,175 +328,72 @@ func main() {
 	if _, err = products.CreateOne(ctx, p1); err != nil {
 		log.Fatalf("Failed to create Laptop: %v", err)
 	}
+	logger.Info("Created Laptop.")
+
 	if _, err = products.CreateOne(ctx, p2); err != nil {
 		log.Fatalf("Failed to create Mouse: %v", err)
 	}
+	logger.Info("Created Mouse.")
 
-	// Read all products
-	q := query.NewQueryBuilder().Build()
-	result, err := products.Read(ctx, &q)
+	// Read all documents
+	qAll := query.NewQueryBuilder().Build()
+	resultAll, err := products.Read(ctx, &qAll)
 	if err != nil {
-		log.Fatalf("Read failed: %v", err)
+		log.Fatalf("Read all failed: %v", err)
 	}
-
-	if result.Count > 0 {
-		for _, doc := range result.Data.([]data.Document) {
-			logger.Info("Found",
-				zap.String("id", doc.ID()),
-				zap.String("name", doc["name"].(string)),
-				zap.Float64("price", doc["price"].(float64)),
-				zap.Int64("stock", doc["stock"].(int64)),
-			)
+	logger.Info("All Products:")
+	if resultAll.Count > 0 {
+		for _, doc := range resultAll.Data.([]data.Document) {
+			logger.Info("  ", zap.String("id", doc.ID()), zap.Any("data", doc))
 		}
 	} else {
 		logger.Info("No products found.")
 	}
 
-	// Update (reduce stock of Laptop)
-	update := data.MustNewDocument(map[string]any{"stock": 45})
-	filter := query.NewQueryBuilder().Where("id").Eq(p1.ID()).Build().Filters
+	// Update (reduce stock for Laptop)
+	updateData := data.MustNewDocument(map[string]any{"stock": 45})
+	filterLaptop := query.NewQueryBuilder().Where("id").Eq(p1.ID()).Build().Filters
 
-	if _, err = products.Update(ctx, &base.CollectionUpdate{Filter: filter, Set: update}); err != nil {
+	if _, err = products.Update(ctx, &base.CollectionUpdate{Filter: filterLaptop, Set: updateData}); err != nil {
 		log.Fatalf("Update failed: %v", err)
 	}
 	logger.Info("Updated Laptop stock.")
 
 	// Read updated Laptop
-	q = query.NewQueryBuilder().Where("id").Eq(p1.ID()).Build()
-	if result, err = products.Read(ctx, &q); err != nil {
-		log.Fatalf("Read updated failed: %v", err)
+	qLaptop := query.NewQueryBuilder().Where("id").Eq(p1.ID()).Build()
+	if resultLaptop, err := products.Read(ctx, &qLaptop); err != nil {
+		log.Fatalf("Read updated Laptop failed: %v", err)
 	}
-	if result.Count > 0 {
-		doc := result.Data.(data.Document)
-		logger.Info("After update",
-			zap.String("id", doc.ID()),
-			zap.Int64("stock", doc.Must().GetInt64("stock")), // Using Must() for brevity
-		)
+	if resultLaptop.Count > 0 {
+		doc := resultLaptop.Data.(data.Document)
+		logger.Info("Laptop after update:", zap.Any("data", doc))
 	}
 
 	// Delete Mouse
-	delFilter := query.NewQueryBuilder().Where("id").Eq(p2.ID()).Build().Filters
-	if _, err = products.Delete(ctx, delFilter, false); err != nil {
+	delFilterMouse := query.NewQueryBuilder().Where("id").Eq(p2.ID()).Build().Filters
+	if _, err = products.Delete(ctx, delFilterMouse, false); err != nil {
 		log.Fatalf("Delete failed: %v", err)
 	}
-	logger.Info("Deleted Mouse")
+	logger.Info("Deleted Mouse.")
 
 	// Verify deletion
-	q = query.NewQueryBuilder().Where("id").Eq(p2.ID()).Build()
-	if result, err = products.Read(ctx, &q); err != nil {
-		log.Fatalf("Verify failed: %v", err)
+	qMouse := query.NewQueryBuilder().Where("id").Eq(p2.ID()).Build()
+	if resultMouse, err := products.Read(ctx, &qMouse); err != nil {
+		log.Fatalf("Verify deletion failed: %v", err)
 	}
-	if result.Count != 0 {
+	if resultMouse.Count != 0 {
 		logger.Error("Mouse still exists after delete!")
-	}
-}
-```
-
-### Production Setup
-
-For production environments, you'll use `anansi.Setup` to explicitly configure each component.
-
-```go
-package main
-
-import (
-	"context"
-	"database/sql"
-	"log"
-	"time"
-
-	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/events"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
-	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
-	_ "github.com/mattn/go-sqlite3"
-	"go.uber.org/zap"
-)
-
-// Example production setup for an in-memory SQLite database.
-func main() {
-	logger, err := zap.NewProduction() // Use production logger
-	if err != nil {
-		log.Fatalf("Failed to create logger: %v", err)
-	}
-	defer logger.Sync()
-
-	// 1. Setup Database Interactor (e.g., SQLite)
-	db, err := sql.Open("sqlite3", ":memory:")
-	if err != nil {
-		logger.Fatal("Failed to open database", zap.Error(err))
-	}
-	defer db.Close()
-
-	executor, err := sqliteExecutor.NewSQLiteExecutor(db, logger)
-	if err != nil {
-		logger.Fatal("Failed to create SQLite executor", zap.Error(err))
-	}
-	queryFactory := sqliteQuery.NewSQLiteFactory()
-	interactor, err := native.NewNativeInteractor(executor, queryFactory, logger)
-	if err != nil {
-		logger.Fatal("Failed to create native interactor", zap.Error(err))
-	}
-
-	// 2. Setup Event Bus (e.g., Watermill in-memory for simplicity)
-	eventBus := utils.NewWatermillEventBus[base.PersistenceEvent](logger)
-	defer eventBus.Close()
-
-	// 3. Define Schemas
-	userSchema := schema.SchemaDefinition{
-		Name:    "User",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"username": {Name: "username", Type: "string", Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
-			"email":    {Name: "email", Type: "string", Required: utils.BoolPtr(true)},
-		},
-	}
-
-	// 4. Configure Anansi Setup
-	setupConfig := anansi.SetupConfig{
-		Interactor:    interactor,
-		Logger:        logger,
-		EventBus:      eventBus,
-		FactoryConfig: data.DocumentFactoryConfig{}, // Default config
-		Decorators:    &utils.Decorators{},         // No custom decorators for now
-		Schemas:       []schema.SchemaDefinition{userSchema},
-	}
-
-	// 5. Initialize Anansi
-	p, err := anansi.Setup(setupConfig)
-	if err != nil {
-		logger.Fatal("Failed to setup Anansi", zap.Error(err))
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	// Get collection and perform operations
-	usersCollection, err := p.Collection(ctx, "User")
-	if err != nil {
-		logger.Fatal("Failed to get User collection", zap.Error(err))
-	}
-
-	newUser := data.MustNewDocument(map[string]any{"username": "johndoe", "email": "john@example.com"})
-	_, err = usersCollection.CreateOne(ctx, newUser)
-	if err != nil {
-		logger.Error("Failed to create user", zap.Error(err))
 	} else {
-		logger.Info("User created successfully!")
+		logger.Info("Mouse successfully deleted.")
 	}
 }
 ```
 
-### Event-Driven Persistence
+### Advanced Queries and Joins
 
-`go-anansi` is built with an event-driven core, allowing you to react to persistence operations in real-time.
+The `core/query` package provides a powerful, fluent API for constructing complex queries, including joins and aggregations.
 
 ```go
-// From example/events/main.go
 package main
 
 import (
@@ -448,9 +405,6 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6"
 	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/events"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -458,358 +412,12 @@ import (
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	_ "github.com/mattn/go-sqlite3"
-	"go.uber.org/zap"
 )
 
-// Product schema definition
-func getProductSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
-		Name:    "Product",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"name":  {Name: "name", Type: "string", Required: coreutils.BoolPtr(true)},
-			"price": {Name: "price", Type: "number", Required: coreutils.BoolPtr(true)},
-			"stock": {Name: "stock", Type: "integer", Required: coreutils.BoolPtr(true)},
-		},
-	}
-}
-
-func main() {
-	logger, _ := zap.NewDevelopment()
-	defer logger.Sync()
-
-	db, _ := sql.Open("sqlite3", "file::memory:?cache=shared")
-	defer db.Close()
-
-	executor, _ := sqliteExecutor.NewSQLiteExecutor(db, logger)
-	queryFactory := sqliteQuery.NewSQLiteFactory()
-	interactor, _ := native.NewNativeInteractor(executor, queryFactory, logger)
-
-	factoryConfig := data.DocumentFactoryConfig{}
-	decorators := &utils.Decorators{}
-	bus := utils.NewWatermillEventBus[base.PersistenceEvent](logger) // Use Watermill for event bus
-	defer bus.Close()
-
-	cfg := anansi.SetupConfig{
-		Interactor:    interactor,
-		Logger:        logger,
-		FactoryConfig: factoryConfig,
-		Decorators:    decorators,
-		EventBus:      bus, // Inject the event bus
-	}
-	p, err := anansi.Setup(cfg)
-	if err != nil {
-		log.Fatalf("Failed to setup Anansi: %v", err)
-	}
-	logger.Info("Anansi persistence layer initialized successfully.")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	productSchema := getProductSchema()
-	productsCollection, err := p.CreateCollection(ctx, *productSchema)
-	if err != nil {
-		log.Fatalf("Failed to create products collection: %v", err)
-	}
-	logger.Info("Products collection created.")
-
-	// Subscribe to DocumentCreateSuccess events specifically for the "Product" collection
-	unsub := productsCollection.Subscribe(context.Background(), base.SubscriptionOptions{
-		Event: base.DocumentCreateSuccess,
-		Callback: func(ctx context.Context, event base.PersistenceEvent) error {
-			logger.Info(fmt.Sprintf("Event received: Product created in '%s' \n %v", *event.Collection, event.Input))
-			// You can add custom logic here, e.g., send a notification, update a cache, etc.
-			return nil
-		},
-		Label:       coreutils.StringPtr("ProductCreationNotifier"),
-		Description: coreutils.StringPtr("Logs details of newly created products."),
-	})
-	defer productsCollection.Unsubscribe(context.Background(), unsub)
-
-	// Create a product - this will trigger the subscribed event
-	product1 := data.MustNewDocument(map[string]any{"id": "P001", "name": "Laptop", "price": 1200.00, "stock": 50})
-	_, err = productsCollection.CreateOne(ctx, product1)
-	if err != nil {
-		log.Fatalf("Failed to create product P001: %v", err)
-	}
-	logger.Info("Created product P001: Laptop")
-
-	// The event callback will now be triggered and log the creation.
-	// Add a small delay to ensure event processing has a chance to occur in non-transactional contexts.
-	time.Sleep(100 * time.Millisecond)
-
-	logger.Info("Example finished.")
-}
-```
-
-### Application-Level Row-Level Security
-
-Leverage `CollectionDecorators` to implement cross-cutting concerns like row-level security directly within your application logic.
-
-```go
-// From example/complex/main.go
-package main
-
-import (
-	"context"
-	"database/sql"
-	"embed"
-	"encoding/json"
-	"fmt"
-	"io/fs"
-	"log"
-	"net/http"
-	"time"
-
-	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
-	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
-	_ "github.com/mattn/go-sqlite3"
-	"go.uber.org/zap"
-)
-
-//go:embed schemas/*.json
-var schemasFS embed.FS
-
-const (
-	userCtxKey = "userID" // Key for user ID in context
-)
-
-// SecurityDecorator enforces document-level security based on ownerId.
-func SecurityDecorator(logger *zap.Logger) utils.CollectionDecorator {
-	return func(next base.Collection) base.Collection {
-		return &securityDecorator{
-			next:   next,
-			logger: logger,
-		}
-	}
-}
-
-type securityDecorator struct {
-	next   base.Collection
-	logger *zap.Logger
-}
-
-var _ base.Collection = (*securityDecorator)(nil)
-
-// getUserIDFromContext extracts the user ID from the context.
-func (d *securityDecorator) getUserIDFromContext(ctx context.Context) (string, error) {
-	userID, ok := ctx.Value(userCtxKey).(string)
-	if !ok || userID == "" {
-		return "", fmt.Errorf("unauthorized: user ID not found in context")
-	}
-	return userID, nil
-}
-
-// Read method for security decorator.
-func (d *securityDecorator) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
-	userID, err := d.getUserIDFromContext(ctx)
-	if err != nil {
-		return nil, err // Unauthorized
-	}
-
-	// Add a filter to ensure only documents owned by the user are returned
-	ownerFilter := query.NewQueryBuilder().Where("ownerId").Eq(userID).Build().Filters
-
-	// Combine with existing filters
-	if q.Filters == nil {
-		q.Filters = ownerFilter
-	} else {
-		// Use AND to combine the original filter with the ownerId filter
-		q.Filters = query.NewQueryBuilder().AndFilter(*q.Filters).AndFilter(*ownerFilter).Build().Filters
-	}
-
-	return d.next.Read(ctx, q)
-}
-
-// (Other CRUD methods omitted for brevity, see example/complex/main.go for full implementation)
-
-func (d *securityDecorator) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
-	if ownerID, ok := doc["ownerId"].(string); ok && ownerID != "" {
-		userID, err := d.getUserIDFromContext(ctx)
-		if err != nil {
-			return base.CreateResult{}, err
-		}
-		if userID != ownerID {
-			return base.CreateResult{}, fmt.Errorf("forbidden: cannot create document with ownerId %s as user %s", ownerID, userID)
-		}
-	}
-	return d.next.CreateOne(ctx, doc)
-}
-
-// (Other base.Collection interface methods would delegate to d.next)
-func (d *securityDecorator) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) { /* ... */ return d.next.CreateMany(ctx, docs) }
-func (d *securityDecorator) Update(ctx context.Context, update *base.CollectionUpdate) (int, error) { /* ... */ return d.next.Update(ctx, update) }
-func (d *securityDecorator) Delete(ctx context.Context, qf *query.QueryFilter, unsafe bool) (int, error) { /* ... */ return d.next.Delete(ctx, qf, unsafe) }
-func (d *securityDecorator) Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error) { return d.next.Validate(ctx, data, loose) }
-func (d *securityDecorator) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) (*base.CollectionMetadata, error) { return d.next.Metadata(ctx, filter, forceRefresh) }
-func (d *securityDecorator) Subscribe(ctx context.Context, options base.SubscriptionOptions) string { return d.next.Subscribe(ctx, options) }
-func (d *securityDecorator) Unsubscribe(ctx context.Context, id string) { d.next.Unsubscribe(ctx, id) }
-func (d *securityDecorator) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) { return d.next.Subscriptions(ctx) }
-func (d *securityDecorator) Capabilities(ctx context.Context) *query.Capabilities { return d.next.Capabilities(ctx) }
-
-
-// authenticateMiddleware is a simple middleware to simulate authentication
-func authenticateMiddleware(next http.Handler, logger *zap.Logger) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		userID := r.Header.Get("X-User-ID")
-		if userID == "" {
-			logger.Warn("Unauthorized access attempt: X-User-ID header missing")
-			http.Error(w, "Unauthorized: X-User-ID header required", http.StatusUnauthorized)
-			return
-		}
-		ctx := context.WithValue(r.Context(), userCtxKey, userID)
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
-}
-
-// writeJSONResponse writes a JSON response to the http.ResponseWriter
-func writeJSONResponse(w http.ResponseWriter, status int, data any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(data); err != nil {
-		log.Printf("Error writing JSON response: %v", err)
-	}
-}
-
-func main() {
-	logger, _ := zap.NewDevelopment()
-	defer logger.Sync()
-
-	db, _ := sql.Open("sqlite3", "file::memory:?cache=shared") // In-memory DB for example
-	defer db.Close()
-
-	executor, _ := sqliteExecutor.NewSQLiteExecutor(db, logger)
-	queryFactory := sqliteQuery.NewSQLiteFactory()
-	interactor, _ := native.NewNativeInteractor(executor, queryFactory, logger)
-
-	factoryConfig := data.DocumentFactoryConfig{}
-
-	// Apply the SecurityDecorator
-	decorators := &utils.Decorators{
-		CollectionDecorators: []utils.DecoratorFunc[base.Collection]{
-			(utils.DecoratorFunc[base.Collection])(SecurityDecorator(logger)),
-		},
-	}
-
-	userSchemaBytes, _ := fs.ReadFile(schemasFS, "schemas/user.json")
-	var userSchemaDef schema.SchemaDefinition
-	userSchemaDef.From(userSchemaBytes)
-
-	documentSchemaBytes, _ := fs.ReadFile(schemasFS, "schemas/document.json")
-	var documentSchemaDef schema.SchemaDefinition
-	documentSchemaDef.From(documentSchemaBytes)
-
-	cfg := anansi.SetupConfig{
-		Interactor:    interactor,
-		Logger:        logger,
-		FactoryConfig: factoryConfig,
-		Decorators:    decorators, // Decorators applied here
-		Schemas: []schema.SchemaDefinition{
-			userSchemaDef,
-			documentSchemaDef,
-		},
-	}
-	p, err := anansi.Setup(cfg)
-	if err != nil {
-		log.Fatalf("Failed to setup Anansi: %v", err)
-	}
-	logger.Info("Anansi persistence layer initialized successfully.")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	usersCollection, _ := p.Collection(ctx, userSchemaDef.Name)
-	documentsCollection, _ := p.Collection(ctx, documentSchemaDef.Name)
-
-	// Populate some initial data without authentication (system context for setup)
-	// User1
-	user1 := data.MustNewDocument(map[string]any{"id": "user1", "username": "alice", "passwordHash": "...", "role": "user"})
-	usersCollection.CreateOne(ctx, user1)
-	// User2
-	user2 := data.MustNewDocument(map[string]any{"id": "user2", "username": "bob", "passwordHash": "...", "role": "user"})
-	usersCollection.CreateOne(ctx, user2)
-
-	// Documents owned by User1
-	doc1 := data.MustNewDocument(map[string]any{"id": "doc1", "ownerId": "user1", "content": "Alice's secret", "accessLevel": "private"})
-	documentsCollection.CreateOne(ctx, doc1)
-	doc2 := data.MustNewDocument(map[string]any{"id": "doc2", "ownerId": "user1", "content": "Alice's public note", "accessLevel": "public"})
-	documentsCollection.CreateOne(ctx, doc2)
-	// Document owned by User2
-	doc3 := data.MustNewDocument(map[string]any{"id": "doc3", "ownerId": "user2", "content": "Bob's report", "accessLevel": "confidential"})
-	documentsCollection.CreateOne(ctx, doc3)
-
-
-	mux := http.NewServeMux()
-
-	// Handler to read documents - will be filtered by the decorator
-	mux.HandleFunc("/documents", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			q := query.NewQueryBuilder().Build() // User doesn't need to add ownerId filter
-			result, err := documentsCollection.Read(r.Context(), &q)
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			writeJSONResponse(w, http.StatusOK, result.Data)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
-	})
-
-	// Apply authentication middleware to protect API routes
-	authenticatedMux := authenticateMiddleware(mux, logger)
-
-	port := ":8080"
-	logger.Info(fmt.Sprintf("Server starting on port %s", port))
-	// Example usage:
-	// To access as user1: `curl -H "X-User-ID: user1" http://localhost:8080/documents` (will only see doc1, doc2)
-	// To access as user2: `curl -H "X-User-ID: user2" http://localhost:8080/documents` (will only see doc3)
-	log.Fatal(http.ListenAndServe(port, authenticatedMux))
-}
-```
-
-### Complex Queries & Joins
-
-The `QueryBuilder` and DSL enable powerful, database-agnostic queries, including joins.
-
-```go
-// From example/advanced/main.go
-package main
-
-import (
-	"context"
-	"database/sql"
-	"fmt"
-	"log"
-	"time"
-
-	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	coreutils "github.com/asaidimu/go-anansi/v6/core/utils"
-	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
-	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
-	"go.uber.org/zap"
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/asaidimu/go-anansi/v6/core/common"
-)
-
-// Define schemas for User, Account, and LedgerTransaction (renamed from Transaction to avoid Go keyword conflict)
+// Schemas for User, Account, and LedgerTransaction
 func getUserSchema() *schema.SchemaDefinition {
 	return &schema.SchemaDefinition{
-		Name:    "User",
-		Version: "1.0.0",
+		Name:    "User", Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
 			"id":    {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
 			"name":  {Name: "name", Type: "string", Required: coreutils.BoolPtr(true)},
@@ -820,11 +428,10 @@ func getUserSchema() *schema.SchemaDefinition {
 
 func getAccountSchema() *schema.SchemaDefinition {
 	return &schema.SchemaDefinition{
-		Name:    "Account",
-		Version: "1.0.0",
+		Name:    "Account", Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":      {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
-			"userId":  {Name: "userId", Type: "string", Required: coreutils.BoolPtr(true)}, // Foreign key to User
+			"id":     {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
+			"userId": {Name: "userId", Type: "string", Required: coreutils.BoolPtr(true)},
 			"balance": {Name: "balance", Type: "number", Required: coreutils.BoolPtr(true)},
 		},
 	}
@@ -832,52 +439,51 @@ func getAccountSchema() *schema.SchemaDefinition {
 
 func getLedgerTransactionSchema() *schema.SchemaDefinition {
 	return &schema.SchemaDefinition{
-		Name:    "LedgerTransaction",
-		Version: "1.0.0",
+		Name:    "LedgerTransaction", Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
 			"id":        {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
-			"accountId": {Name: "accountId", Type: "string", Required: coreutils.BoolPtr(true)}, // Foreign key to Account
+			"accountId": {Name: "accountId", Type: "string", Required: coreutils.BoolPtr(true)},
 			"amount":    {Name: "amount", Type: "number", Required: coreutils.BoolPtr(true)},
-			"type":      {Name: "type", Type: "string", Required: coreutils.BoolPtr(true)}, // e.g., "deposit", "withdrawal"
+			"type":      {Name: "type", Type: "string", Required: coreutils.BoolPtr(true)},
 			"timestamp": {Name: "timestamp", Type: "integer", Required: coreutils.BoolPtr(true)},
 		},
 	}
 }
 
 func main() {
+	// ... (Logger, DB, Interactor setup - similar to Basic Setup)
 	logger, _ := zap.NewDevelopment()
 	defer logger.Sync()
 
-	db, _ := sql.Open("sqlite3", "file::memory:?cache=shared")
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil { log.Fatalf("Failed to open database: %v", err) }
 	defer db.Close()
 
-	executor, _ := sqliteExecutor.NewSQLiteExecutor(db, logger)
+	executor, err := sqliteExecutor.NewSQLiteExecutor(db, logger)
+	if err != nil { log.Fatalf("Failed to create SQLite interactor: %v", err) }
 	queryFactory := sqliteQuery.NewSQLiteFactory()
-	interactor, _ := native.NewNativeInteractor(executor, queryFactory, logger)
+	interactor, err := native.NewNativeInteractor(executor, queryFactory, logger)
+	if err != nil { log.Fatalf("Failed to create native interactor: %v", err) }
 
 	factoryConfig := data.DocumentFactoryConfig{}
-	decorators := &utils.Decorators{} // No custom decorators for this example
-	
 	cfg := anansi.SetupConfig{
 		Interactor:    interactor,
 		Logger:        logger,
 		FactoryConfig: factoryConfig,
-		Decorators:    decorators,
+		Decorators:    &utils.Decorators{}, // No custom decorators for this example, but can add.
 	}
 	p, err := anansi.Setup(cfg)
-	if err != nil {
-		log.Fatalf("Failed to setup Anansi: %v", err)
-	}
+	if err != nil { log.Fatalf("Failed to setup Anansi: %v", err) }
 	logger.Info("Anansi persistence layer initialized successfully.")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Create Collections
+	// Create collections
 	usersCollection, _ := p.CreateCollection(ctx, *getUserSchema())
 	accountsCollection, _ := p.CreateCollection(ctx, *getAccountSchema())
 	transactionsCollection, _ := p.CreateCollection(ctx, *getLedgerTransactionSchema())
-
+	
 	// Populate Data
 	user1 := data.MustNewDocument(map[string]any{"id": "U001", "name": "Alice", "email": "alice@example.com"})
 	user2 := data.MustNewDocument(map[string]any{"id": "U002", "name": "Bob", "email": "bob@example.com"})
@@ -898,214 +504,289 @@ func main() {
 	aliceTransactionsQuery := query.NewQueryBuilder().
 		From("LedgerTransaction").
 		LeftJoin("Account").On(query.QueryFilter{
-		Condition: &query.FilterCondition{
-			Field:    "LedgerTransaction.accountId",
-			Operator: query.ComparisonOperatorEq,
-			Value: query.FilterValue{
-				FieldRefVal: &query.FieldReference{
-					Type:  "field",
-					Field: "Account.id",
-				},
-			},
-		},
-	}).End().
+			Condition: &query.FilterCondition{Field: "LedgerTransaction.accountId", Operator: query.ComparisonOperatorEq, Value: query.FilterValue{FieldRefVal: &query.FieldReference{Field: "Account.id"}}}},
+		).End().
 		LeftJoin("User").On(query.QueryFilter{
-		Condition: &query.FilterCondition{
-			Field:    "Account.userId",
-			Operator: query.ComparisonOperatorEq,
-			Value: query.FilterValue{
-				FieldRefVal: &query.FieldReference{
-					Type:  "field",
-					Field: "User.id",
-				},
-			},
-		},
-	}).End().
+			Condition: &query.FilterCondition{Field: "Account.userId", Operator: query.ComparisonOperatorEq, Value: query.FilterValue{FieldRefVal: &query.FieldReference{Field: "User.id"}}}},
+		).End().
 		Where("User.id").Eq("U001").
 		Build()
 
 	txResult, err := transactionsCollection.Read(ctx, &aliceTransactionsQuery)
-	if err != nil {
-		log.Fatalf("Failed to query transactions for Alice: %v", err)
-	}
+	if err != nil { log.Fatalf("Failed to query transactions for Alice: %v", err) }
 
-	logger.Info(fmt.Sprintf("Found %d transactions for Alice:", txResult.Count))
-	var aliceDocs []data.Document
-	if txResult.Count == 1 {
-		aliceDocs = []data.Document{txResult.Data.(data.Document)}
-	} else if txResult.Count > 1 {
-		aliceDocs = txResult.Data.([]data.Document)
+	fmt.Printf("Found %d transactions for Alice:\n", txResult.Count)
+	if txResult.Count > 0 {
+		docs := txResult.Data.([]data.Document)
+		for _, doc := range docs {
+			ledgerTx := doc["LedgerTransaction"].(map[string]any)
+			user := doc["User"].(map[string]any)
+			fmt.Printf("  Transaction ID: %s, Amount: %.2f, Type: %s, Account ID: %s, User Name: %s\n",
+				ledgerTx["id"], ledgerTx["amount"], ledgerTx["type"], ledgerTx["accountId"], user["name"])
+		}
 	}
-
-	for _, doc := range aliceDocs {
-		ledgerTx := doc["LedgerTransaction"].(map[string]any)
-		user := doc["User"].(map[string]any)
-		logger.Info(fmt.Sprintf("  Transaction ID: %s, Amount: %.2f, Type: %s, Account ID: %s, User Name: %s",
-			ledgerTx["id"], ledgerTx["amount"], ledgerTx["type"], ledgerTx["accountId"], user["name"]))
-	}
-
-	logger.Info("Advanced example finished.")
 }
 ```
 
-### API Usage Example
+### Event-Driven Architecture
 
-The `example/api` directory provides a comprehensive example of building a RESTful API using `go-anansi` as the persistence layer. You can find detailed API specifications in [`example/api/spec.md`](./example/api/spec.md).
-
-Here's a snippet showing how API endpoints interact with the `go-anansi` persistence layer:
+Subscribe to `PersistenceEvent`s to react to data changes across your application:
 
 ```go
-// From example/api/internal/api/server.go
-package api
+// ... (Persistence and Collection setup as above)
+
+// Subscribe to a specific event type, e.g., DocumentCreateSuccess
+unsubCreateSuccess := products.Subscribe(context.Background(), base.SubscriptionOptions{
+	Event: base.DocumentCreateSuccess,
+	Callback: func(ctx context.Context, event base.PersistenceEvent) error {
+		logger.Info("Caught DocumentCreateSuccess event!",
+			zap.String("collection", *event.Collection),
+			zap.Any("document_data", event.Input))
+		// Here you could trigger external systems, invalidate caches, etc.
+		return nil
+	},
+	Label: coreutils.StringPtr("ProductCreatedLogger"),
+})
+defer products.Unsubscribe(context.Background(), unsubCreateSuccess) // Don't forget to unsubscribe!
+
+// Subscribe to all events for a collection
+unsubAllCollectionEvents := products.Subscribe(context.Background(), base.SubscriptionOptions{
+	Event: base.PersistenceEvents, // Wildcard event for collection
+	Callback: func(ctx context.Context, event base.PersistenceEvent) error {
+		logger.Debug("Caught ALL collection events",
+			zap.String("event_type", string(event.Type)),
+			zap.String("collection", *event.Collection))
+		return nil
+	},
+})
+defer products.Unsubscribe(context.Background(), unsubAllCollectionEvents)
+
+// Perform an operation that triggers the event
+p1 := data.MustNewDocument(map[string]any{"name": "Monitor", "price": 300.00, "stock": 100})
+_, err = products.CreateOne(ctx, p1)
+if err != nil {
+	log.Fatalf("Failed to create Monitor: %v", err)
+}
+```
+
+### Custom Decorators (Extension Points)
+
+The decorator pattern is central to Go-Anansi's extensibility. You can inject custom logic into the persistence pipeline by creating `CollectionDecorator` or `PersistenceDecorator` functions.
+
+Here's an example of a `CollectionDecorator` that enforces a negative amount check for a `LedgerTransaction` collection:
+
+```go
+package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
+	"log"
+	"time"
 
+	"github.com/asaidimu/go-anansi/v6"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/query/native"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
+	coreutils "github.com/asaidimu/go-anansi/v6/core/utils"
+	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
+	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
+	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
-
-	"github.com/asaidimu/go-anansi/v6/example/api/internal/app"
-	"github.com/asaidimu/go-anansi/v6/example/api/internal/response"
 )
 
-// APIServer encapsulates the HTTP server and its dependencies.
-type APIServer struct { /* ... */ }
-
-// handleCollectionDocuments handles operations on /api/v1/collections/{collection}/documents
-func (s *APIServer) handleCollectionDocuments(w http.ResponseWriter, r *http.Request) {
-	collectionName := r.PathValue("collection")
-	// ... error handling for missing collectionName ...
-
-	collection, err := s.Persistence.Collection(r.Context(), collectionName)
-	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "COLLECTION_ERROR",
-			Message: fmt.Sprintf("Failed to get collection %s: %v", collectionName, err),
-		}, r)
-		return
-	}
-
-	switch r.Method {
-	case http.MethodPost:
-		s.createDocuments(w, r, collection)
-	case http.MethodGet:
-		s.readDocuments(w, r, collection)
-	default:
-		s.Response.WriteError(w, http.StatusMethodNotAllowed, response.APIError{
-			Code:    "METHOD_NOT_ALLOWED",
-			Message: "Method not allowed",
-		}, r)
+// NegativeAmountValidator is a CollectionDecorator that prevents transactions with negative amounts.
+func NegativeAmountValidator(logger *zap.Logger) utils.CollectionDecorator {
+	return func(next base.Collection) base.Collection {
+		return &negativeAmountValidator{
+			next:   next,
+			logger: logger,
+		}
 	}
 }
 
-// createDocuments handles POST /api/v1/collections/{collection}/documents
-func (s *APIServer) createDocuments(w http.ResponseWriter, r *http.Request, collection base.Collection) {
-	var reqBody struct {
-		Documents []data.Document `json:"documents"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
-			Code:    "BAD_REQUEST",
-			Message: "Invalid request body",
-			Details: err.Error(),
-		}, r)
-		return
-	}
-
-	results, err := collection.CreateMany(r.Context(), reqBody.Documents) // Delegate to Anansi's CreateMany
-	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, err, r)
-		return
-	}
-
-	createdDocs := make([]data.Document, len(results))
-	for i, res := range results {
-		createdDocs[i] = res.Data
-	}
-
-	s.Response.WriteJSON(w, http.StatusCreated, map[string]any{
-		"documents": createdDocs,
-	}, r)
+type negativeAmountValidator struct {
+	next   base.Collection
+	logger *zap.Logger
 }
 
-// readDocuments handles GET /api/v1/collections/{collection}/documents
-func (s *APIServer) readDocuments(w http.ResponseWriter, r *http.Request, collection base.Collection) {
-	// ... (Query parameter parsing for filter, sort, limit, offset, fields would go here)
-	q := query.NewQueryBuilder().Build() // Simple query for all documents for now
-	result, err := collection.Read(r.Context(), &q) // Delegate to Anansi's Read
-	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "READ_ERROR",
-			Message: "Failed to read documents",
-			Details: err.Error(),
-		}, r)
-		return
-	}
-	// ... (Handle result.Data being single document or slice)
+var _ base.Collection = (*negativeAmountValidator)(nil)
 
-	s.Response.WriteJSON(w, http.StatusOK, map[string]any{
-		"documents": result.Data,
-	}, r)
+func (d *negativeAmountValidator) validateAmount(doc data.Document) error {
+	if val, ok := doc["amount"]; ok {
+		if amount, isFloat := val.(float64); isFloat {
+			if amount < 0 {
+				d.logger.Warn("Attempted to create/update transaction with negative amount", zap.Float64("amount", amount))
+				return fmt.Errorf("transaction amount cannot be negative: %f", amount)
+			}
+		} else {
+			return fmt.Errorf("invalid amount type for document %v, expected float64", doc)
+		}
+	}
+	return nil
 }
 
-// Full API specification: [`example/api/spec.md`](./example/api/spec.md)
+// CreateOne method overridden to apply custom validation
+func (d *negativeAmountValidator) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
+	if err := d.validateAmount(doc); err != nil {
+		return base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: []common.Issue{{Message: err.Error()}}}, err
+	}
+	return d.next.CreateOne(ctx, doc)
+}
+
+// All other Collection interface methods would typically delegate to d.next without modification,
+// unless specific interception logic is required. For brevity, only `CreateOne` is shown here.
+// In a full implementation, all methods of `base.Collection` need to be implemented,
+// typically by calling `d.next.<MethodName>(...)`.
+
+func (d *negativeAmountValidator) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) { /* ... delegate ... */ return d.next.CreateMany(ctx, docs) }
+func (d *negativeAmountValidator) Read(ctx context.Context, query *query.Query) (*base.ReadResult, error) { /* ... delegate ... */ return d.next.Read(ctx, query) }
+func (d *negativeAmountValidator) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
+	if err := d.validateAmount(params.Set); err != nil {
+		return 0, err
+	}
+	return d.next.Update(ctx, params)
+}
+func (d *negativeAmountValidator) Delete(ctx context.Context, queryFilter *query.QueryFilter, unsafe bool) (int, error) { /* ... delegate ... */ return d.next.Delete(ctx, queryFilter, unsafe) }
+func (d *negativeAmountValidator) Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error) { /* ... delegate ... */ return d.next.Validate(ctx, data, loose) }
+func (d *negativeAmountValidator) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) (*base.CollectionMetadata, error) { /* ... delegate ... */ return d.next.Metadata(ctx, filter, forceRefresh) }
+func (d *negativeAmountValidator) Subscribe(ctx context.Context, options base.SubscriptionOptions) string { /* ... delegate ... */ return d.next.Subscribe(ctx, options) }
+func (d *negativeAmountValidator) Unsubscribe(ctx context.Context, id string) { d.next.Unsubscribe(ctx, id) }
+func (d *negativeAmountValidator) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) { /* ... delegate ... */ return d.next.Subscriptions(ctx) }
+func (d *negativeAmountValidator) Capabilities(ctx context.Context) *query.Capabilities { /* ... delegate ... */ return d.next.Capabilities(ctx) }
+
+
+func main() {
+	// ... (Logger, DB, Interactor setup - similar to Basic Setup)
+	logger, _ := zap.NewDevelopment()
+	defer logger.Sync()
+
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil { log.Fatalf("Failed to open database: %v", err) }
+	defer db.Close()
+
+	executor, err := sqliteExecutor.NewSQLiteExecutor(db, logger)
+	if err != nil { log.Fatalf("Failed to create SQLite interactor: %v", err) }
+	queryFactory := sqliteQuery.NewSQLiteFactory()
+	interactor, err := native.NewNativeInteractor(executor, queryFactory, logger)
+	if err != nil { log.Fatalf("Failed to create native interactor: %v", err) }
+
+	// 5. Setup Decorators - Add our custom validator
+	decorators := &utils.Decorators{
+		CollectionDecorators: []utils.DecoratorFunc[base.Collection]{
+			(utils.DecoratorFunc[base.Collection])(NegativeAmountValidator(logger)),
+		},
+	}
+	
+	// Initialize Anansi Persistence Layer with custom decorators
+	cfg := anansi.SetupConfig{
+		Interactor:    interactor,
+		Logger:        logger,
+		FactoryConfig: data.DocumentFactoryConfig{},
+		Decorators:    decorators,
+	}
+	p, err := anansi.Setup(cfg)
+	if err != nil { log.Fatalf("Failed to setup Anansi: %v", err) }
+	logger.Info("Anansi persistence layer initialized successfully.")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Create a transaction schema
+	ledgerTransactionSchema := getLedgerTransactionSchema()
+	transactionsCollection, _ := p.CreateCollection(ctx, *ledgerTransactionSchema)
+
+	// Attempt to create an invalid transaction (negative amount)
+	logger.Info("Attempting to create invalid transaction (negative amount)...")
+	invalidTx := data.MustNewDocument(map[string]any{"id": "T003", "accountId": "A001", "amount": -10.00, "type": "withdrawal", "timestamp": time.Now().Unix()})
+	_, err = transactionsCollection.CreateOne(ctx, invalidTx)
+	if err != nil {
+		logger.Info(fmt.Sprintf("Successfully prevented invalid transaction: %v", err))
+	} else {
+		log.Fatalf("ERROR: Invalid transaction (negative amount) was created!")
+	}
+}
+
+func getLedgerTransactionSchema() *schema.SchemaDefinition {
+	return &schema.SchemaDefinition{
+		Name:    "LedgerTransaction", // Renamed from Transaction
+		Version: "1.0.0",
+		Fields: map[string]*schema.FieldDefinition{
+			"id":        {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
+			"accountId": {Name: "accountId", Type: "string", Required: coreutils.BoolPtr(true)}, // Foreign key to Account
+			"amount":    {Name: "amount", Type: "number", Required: coreutils.BoolPtr(true)},
+			"type":      {Name: "type", Type: "string", Required: coreutils.BoolPtr(true)}, // e.g., "deposit", "withdrawal"
+			"timestamp": {Name: "timestamp", Type: "integer", Required: coreutils.BoolPtr(true)},
+		},
+	}
+}
+
 ```
+
+### Query Language (DSL)
+
+Go-Anansi provides a robust internal Domain-Specific Language (DSL) for constructing queries, which is directly translated to the underlying database's query language (e.g., SQL for SQLite). The DSL supports rich filtering, sorting, pagination, projection, joins, and aggregations.
+
+For a comprehensive specification of the query grammar and its JSON mapping, refer to the [QUERYLANG.md](QUERYLANG.md) document in the repository.
+
+### API Server Example
+
+The `example/api` directory provides a more complete example of how to build a RESTful API service on top of Go-Anansi. It demonstrates:
+
+*   Loading schema definitions from JSON files (`example/api/schema`).
+*   Initializing the `anansi.Persistence` layer.
+*   Implementing HTTP handlers for collection and document CRUD operations, including validation and metadata handling.
+*   Consistent API response and error handling.
+
+Refer to `example/api/main.go` and `example/api/internal/api/server.go` for implementation details, and `example/api/spec.md` for the full API documentation.
 
 ---
 
 ## 🏗️ Project Architecture
 
-`go-anansi` is designed with a layered, pluggable architecture, promoting separation of concerns and extensibility.
+Go-Anansi's architecture is a testament to modular design, leveraging interfaces and the decorator pattern to achieve a flexible, extensible, and robust persistence layer.
 
-*   **`anansi` Package**: The top-level entry point (`anansi.go`) providing simplified `Playground` for development and highly configurable `Setup` for production environments. It orchestrates the initialization of the entire persistence stack.
-*   **`core/data`**: Manages the core `Document` data type, which is the primary unit of data interaction. It handles flexible, schema-aware data structures, JSON marshaling/unmarshaling, path-based access, and data manipulation utilities (diffing, merging, cloning).
-*   **`core/schema`**: Defines the declarative schema language, including `SchemaDefinition`, `FieldDefinition`, `IndexDefinition`, `Migration`, and `ValidationNode`. It provides a robust `DocumentValidator` capable of building and traversing complex validation graphs for incoming data. It also includes code generation utilities (`codegen`) to produce Go structs from schemas.
-*   **`core/query`**: Encapsulates the Domain-Specific Language (DSL) for querying, represented by structs (`dsl.go`) and a fluent `QueryBuilder`. The `QueryEngine` acts as the central query processing unit, utilizing a `QueryPartitioner` to optimize query execution across database and in-memory layers based on `DatabaseInteractor` capabilities.
-*   **`core/persistence`**: The high-level, user-facing API for interacting with the data store. This package defines the `Persistence` and `Collection` interfaces, manages `Collection Registry` for schema versioning, handles transactional operations (`transaction`), and orchestrates an `EventEmitter` for persistence-related events.
-*   **`core/events`**: Provides a generic event bus interface (`events.EventBus`) and an `EventEmitter` for pub/sub messaging. It integrates with external messaging systems like Watermill (`utils/events.go`).
-*   **`core/ephemeral`**: An in-memory implementation of the `DatabaseInteractor` and `SchemaManager`, ideal for rapid prototyping, unit testing, and scenarios not requiring persistent storage.
-*   **`sqlite`**: A concrete, production-ready implementation of the `core/query.DatabaseInteractor` interface for SQLite databases. It includes an `executor` for interacting with `database/sql` and a `query/builder` for translating the generic `core/query` DSL into native SQLite SQL.
-*   **`core/common`**: Defines common types and error structures (`SystemError`, `Issue`), providing a consistent and extensible error handling mechanism across the entire framework.
-*   **`core/utils`**: A collection of generic helper functions for type coercion, JSON manipulation, map operations, and context management.
+### Core Components
 
-### Data Flow for `collection.Read()`
+*   **`Persistence` Interface**: The top-level facade, offering global operations like `CreateCollection`, `ListCollections`, `Transact`, and `Metadata`. It's the primary entry point for users to interact with the system.
+*   **`Collection` Interface**: Represents a single data collection (analogous to a database table). It defines CRUD operations (`CreateOne`, `Read`, `Update`, `Delete`), `Validate` against its schema, and collection-specific `Metadata` and `Subscribe` methods.
+*   **`CollectionRegistry`**: A self-managing internal component that stores and manages schema definitions and their versions. It handles the mapping of logical collection names to physical database names (e.g., table names) and their associated schema definitions.
+*   **`Document` (`core/data`)**: The universal data structure, essentially a `map[string]any` supercharged with fluent APIs for data access, transformations, serialization, and integrity features (hashing, signing).
+*   **`SchemaDefinition` (`core/schema`)**: Declaratively defines the structure, types, constraints, and indexes for collections. The `core/schema` package also includes a powerful graph-based validator for ensuring data integrity.
+*   **`QueryEngine` (`core/query`)**: The brain of data retrieval. It takes an abstract `Query` DSL object, partitions it based on the `DatabaseInteractor`'s `Capabilities`, and orchestrates execution between the database backend and in-memory processing (`QueryHelper`).
+*   **`DatabaseInteractor` (`core/query/native`)**: An interface that abstracts the underlying database technology. It defines the contract for executing native queries (e.g., SQL) for SELECT, INSERT, UPDATE, and DELETE operations, as well as transaction management.
+*   **`SQLiteExecutor` (`sqlite/executor`)**: The concrete implementation of `DatabaseInteractor` for SQLite, including SQL generation and execution logic.
+*   **`EventEmitter` (`core/events`)**: A generic publish-subscribe system that allows for decoupled observation and reaction to lifecycle events within the persistence layer.
 
-The `collection.Read()` operation, a cornerstone of data retrieval, follows a sophisticated, multi-stage pipeline:
+### Data Flow
 
-1.  **Request Initiation**: A `collection.Read(ctx, query)` call is made with a `Query` object (defined by the DSL).
-2.  **Interactor Resolution**: The `collection` first resolves the correct `query.DatabaseInteractor` for the current context (e.g., a transactional interactor if within an active transaction).
-3.  **Query Engine Dispatch**: The `Query` object is passed to the `core/query.QueryEngine`.
-4.  **Query Partitioning**: The `QueryEngine` utilizes a `QueryPartitioner`. This component intelligently analyzes the incoming `Query` and compares its operations (filters, sorts, aggregations, etc.) against the `Capabilities` declared by the currently configured `DatabaseInteractor` (e.g., SQLite). It then splits the `Query` into two parts:
-    *   **Database Query**: Operations that the `DatabaseInteractor` can efficiently execute natively (e.g., indexed filtering, simple sorting).
-    *   **Residual Query**: Operations that are either not supported by the database interactor or are more efficiently handled in-memory by Go code (e.g., custom Go functions, complex nested projections).
-5.  **Database Execution**: The `QueryEngine` sends the **Database Query** to the `DatabaseInteractor`. For SQLite, the `sqlite/query/builder` translates this into optimized SQL, which is then executed by `sqlite/executor` against the database. An initial, partially filtered dataset of `data.Document`s is returned.
-6.  **In-Memory Refinement**: The `QueryEngine` then takes this initial result set and employs a `QueryHelper` to apply all **Residual Query** operations in-memory (e.g., additional filtering, joining, aggregation, sorting, and pagination).
-7.  **Result Return**: The final, fully processed and shaped result set of `data.Document`s is returned to the caller.
-
-This two-phase approach (`database-first filtering` followed by `in-memory refinement`) ensures optimal performance and flexibility, leveraging database capabilities where strong, and falling back to robust Go-based processing for complex or unsupported operations.
+1.  **`Persistence.Collection(name)`**: Looks up collection metadata in `CollectionRegistry`. If not cached, it fetches the schema definition and its physical name. It then instantiates and caches a `Collection` instance for that name.
+2.  **`Collection.Read(query)`**: The `Query` DSL object is passed to the `QueryEngine`.
+3.  **`QueryEngine`**: Utilizes a `QueryPartitioner` to compare the `Query`'s requirements against the `DatabaseInteractor`'s declared `Capabilities`. The query is split into a "Database Query" (what the database can handle natively) and a "Residual Query" (what must be processed in-memory by Go).
+4.  **`DatabaseInteractor.SelectDocuments(dbQuery)`**: The database-specific implementation (e.g., `SQLiteExecutor`) translates the "Database Query" into native commands (e.g., SQL) and executes them, returning a preliminary set of `Document`s.
+5.  **`QueryHelper.ApplyResidualQuery(result, residualQuery)`**: The `QueryEngine` then uses an in-memory `QueryHelper` to apply any remaining filtering, sorting, or projections from the "Residual Query" on the documents fetched from the database.
+6.  **Results**: The final, fully processed `Document`s are returned to the user, enriched with system metadata (`_metadata_`).
+7.  **Eventing**: Throughout CRUD and lifecycle operations, `eventsPersistence` and `eventsCollection` decorators publish `PersistenceEvent`s to the `EventEmitter`, allowing registered subscribers to react.
 
 ### Extension Points
 
-`go-anansi` is built with extensibility as a core principle:
+Go-Anansi is highly extensible through several mechanisms:
 
-*   **`query.DatabaseInteractor`**: The most significant extension point. Developers can implement this interface to integrate `go-anansi` with any SQL or NoSQL database (e.g., PostgreSQL, MongoDB).
-*   **`events.EventBus`**: The `EventBus` interface allows plugging in different message brokers (e.g., Kafka, RabbitMQ) by providing a custom implementation. The current `WatermillEventBus` is an example.
-*   **`utils.CollectionDecorator` / `utils.PersistenceDecorator`**: Decorators provide a powerful way to inject cross-cutting concerns (e.g., logging, caching, auditing, row-level security, encryption) without modifying the core logic of collections or the persistence layer.
-*   **`core/query.QueryEngine` Custom Functions**: The query engine can be extended with custom `ComputeFunction` and `FilterFunction` implementations to enable application-specific logic directly within queries.
-*   **`core/persistence/migration.DataMigrator`**: For complex data migrations, custom `Transformer` functions can be provided to transform documents between schema versions.
-*   **`query.IndexManager`**: As part of the proposed full-text search, this interface will allow plugging in different search engines (e.g., Bleve, Elasticsearch) for search indexing and querying.
+*   **Decorator Pattern**: The `Persistence` and `Collection` interfaces are designed to be wrapped by custom decorators (`utils.DecoratorFunc`). This allows users to inject cross-cutting concerns (e.g., authentication, auditing, caching, custom validation, encryption, multi-tenancy) without altering the core logic. (See `example/complex` and `example/advanced` for examples).
+*   **Pluggable `DatabaseInteractor`**: The core `query.DatabaseInteractor` interface allows you to swap out the underlying database backend. Implement this interface to connect Go-Anansi to PostgreSQL, MySQL, MongoDB, or any other data store.
+*   **Custom `MetadataProvider`**: The `data.DocumentFactoryConfig` allows you to inject custom providers for document metadata (e.g., custom ID generation, custom timestamp formats).
+*   **Schema Predicates & Functions**: The schema validation system supports custom `Predicate` functions that can be registered to extend the validation rules.
+*   **Code Generation**: The `core/schema/codegen` package allows generating type-safe Go structs directly from your `SchemaDefinition`s, bridging the gap between dynamic data and static Go types. This is a powerful tool for enhancing developer experience and compile-time safety.
 
 ---
 
-## 👨‍💻 Development & Contributing
+## 🧑‍💻 Development & Contributing
 
-We welcome contributions to `go-anansi`!
+We welcome contributions! Please follow these guidelines to ensure a smooth development process.
 
 ### Development Setup
 
@@ -1114,46 +795,59 @@ We welcome contributions to `go-anansi`!
     git clone https://github.com/asaidimu/go-anansi.git
     cd go-anansi
     ```
-2.  **Ensure Go modules are tidy:**
+2.  **Install dependencies:**
     ```bash
     go mod tidy
     ```
-3.  **Install dependencies:**
-    This should be handled by `go mod tidy` and subsequent `go build` or `go test` commands.
+3.  **Build the project:**
+    ```bash
+    go build -v ./...
+    ```
 
 ### Scripts
 
-The project uses a `Makefile` for common development tasks:
+The project includes a `Makefile` for common development tasks:
 
-*   **`make build`**: Compiles all Go packages in the project.
-*   **`make test`**: Runs all unit and integration tests, clearing the test cache first.
+*   `make build`: Compiles the entire project.
+*   `make test`: Runs all unit and integration tests. It also cleans the test cache.
 
-Additionally, the `bin/bump.sh` script is available for automating Go module major version updates, handling changes in `go.mod` and import paths. Use it with `--dry-run` first!
+The `bin/bump.sh` script is provided for safely upgrading the Go module's major version across the codebase. Always use `--dry-run` first:
+
+```bash
+./bin/bump.sh <OLD_VERSION_NUMBER> <NEW_VERSION_NUMBER> --dry-run
+./bin/bump.sh <OLD_VERSION_NUMBER> <NEW_VERSION_NUMBER> # To apply changes
+go mod tidy
+```
 
 ### Testing
 
-To run the comprehensive test suite:
+Go-Anansi has a comprehensive test suite. To run tests:
 
 ```bash
 make test
 ```
 
-This will execute unit, integration, and end-to-end tests across the codebase. We strive for high test coverage and detailed test cases, as tracked internally in `test-gap.md`.
+The `test-gap.md` document outlines areas needing further test coverage, and contributions improving test coverage are highly appreciated. Focus areas include:
+
+*   `core/schema/validator.go` and `core/query/helper.go` require extensive, robust test suites for edge cases, deep nesting, and complex logic.
+*   `core/data/document.go` needs more tests for complex `DeepMerge` scenarios, deep copy verification in `Clone`, and `Equals` method behavior.
+*   `core/persistence/registry/registry.go` could benefit from more detailed transactional rollback tests for `CreateCollections`, `DropCollection`, `PruneVersion`, and `AddSchemaVersion`.
+*   `sqlite/executor/executor.go` needs more tests for `QueryStream` context cancellation and various error conditions.
+*   `sqlite/query/builder.go` requires comprehensive DSL coverage for all `buildXTree` methods, especially SQL injection prevention and schema mapping.
 
 ### Contributing Guidelines
 
-We appreciate your contributions! Please follow these general guidelines:
-
-1.  **Fork the repository** and create your branch from `main`.
-2.  **Ensure your code adheres to Go best practices** and `go fmt`.
-3.  **Write clear, concise commit messages** following conventional commits.
-4.  **Add unit and integration tests** for new features or bug fixes.
-5.  **Update documentation** (including the `README.md`) as appropriate.
-6.  **Submit a Pull Request** against the `main` branch.
+1.  **Fork** the repository.
+2.  **Create a new branch** for your feature or bug fix.
+3.  **Write clear, concise code** that adheres to Go best practices and existing coding style.
+4.  **Write unit and integration tests** for your changes.
+5.  **Ensure all tests pass** (`make test`).
+6.  **Update documentation** as needed.
+7.  **Submit a Pull Request** with a detailed description of your changes.
 
 ### Issue Reporting
 
-Encounter a bug or have a feature request? Please report it on our [GitHub Issues](https://github.com/asaidimu/go-anansi/issues) page.
+If you encounter any bugs, have feature requests, or need assistance, please [open an issue](https://github.com/asaidimu/go-anansi/issues). Provide as much detail as possible, including steps to reproduce, expected vs. actual behavior, and your environment.
 
 ---
 
@@ -1161,32 +855,45 @@ Encounter a bug or have a feature request? Please report it on our [GitHub Issue
 
 ### Troubleshooting
 
-For common issues and system error codes, refer to the internal [`system-errors.md`](./system-errors.md) document which describes standard error codes like `ERR_SCHEMA_VALIDATOR_SCHEMA_VALIDATION_FAILED`, `ERR_SCHEMA_VALIDATOR_CIRCULAR_DEPENDENCY`, and `ERR_SCHEMA_VALIDATOR_CREATION_FAILED`.
+*   **`ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_COLLECTION`**: This usually indicates an issue with the underlying database connection or permissions during initial setup of the internal `_schemas_` collection. Ensure your database is accessible and writable.
+*   **`ERR_PERSISTENCE_VALIDATION_FAILED`**: Your document data does not conform to the defined `SchemaDefinition`. Check the `Issues` field in the error for detailed validation messages, including the exact path and reason for failure.
+*   **Performance with `bind.go` or `Clone()`**: Operations involving reflection (like `data.Document.Bind()`) or deep cloning (`data.Document.Clone()`) can have performance implications. For high-performance scenarios, consider optimizing your data structures or avoiding excessive cloning.
 
 ### FAQ
 
-*   **How does `go-anansi` compare to traditional ORMs?**
-    `go-anansi` is less of a traditional ORM and more of a flexible persistence framework. It doesn't aim to map every database table to a Go struct 1:1. Instead, it uses a schema-driven `Document` model, offering more flexibility for evolving data schemas and supporting diverse storage backends with a unified query language, focusing on patterns like event-sourcing, CQRS, and microservices data layers.
+**Q: Does Go-Anansi have a built-in migration system?**
+A: Go-Anansi provides the *mechanisms* for tracking and applying schema changes (as described in `schema.Migration`), but the actual data transformation logic (`Transformer` functions) is designed to be injected by the user as a decorator. This offers maximum flexibility for custom migration strategies. API endpoints for `Migrate` and `Rollback` are defined, but their full implementation for data transformation requires user-defined logic.
 
-*   **Can I use `go-anansi` with a database other than SQLite?**
-    Yes! The core `query.DatabaseInteractor` interface is designed for pluggability. While SQLite is currently the primary concrete implementation, you can implement this interface for other databases (e.g., PostgreSQL, MySQL, MongoDB).
+**Q: Can I use Go-Anansi with databases other than SQLite?**
+A: Yes! Go-Anansi is designed with a pluggable `DatabaseInteractor` interface. While SQLite is the reference implementation, you can implement this interface for any other SQL or NoSQL database (e.g., PostgreSQL, MySQL, MongoDB).
 
-*   **How does schema evolution work?**
-    `go-anansi` supports declarative schema definitions and `Migration` objects. It provides mechanisms to track schema versions and apply changes, often involving data transformation functions to migrate data from an old schema version to a new one.
+**Q: How does Go-Anansi handle concurrency?**
+A: The framework is built with concurrency safety in mind. It uses mutexes for shared resources and a robust `Transaction` manager (within `core/persistence/transaction`) that correctly handles nesting and concurrent operations via `sync.WaitGroup` to ensure atomicity. Optimistic locking is also transparently implemented for updates.
 
-### Changelog / Roadmap
+### Roadmap
 
-For detailed changes between versions, please refer to the project's [release history on GitHub](https://github.com/asaidimu/go-anansi/releases).
-Our roadmap includes the exciting [upcoming features](#-upcoming-features-proposals) mentioned above, focusing on enhanced reliability, developer experience, and powerful search capabilities.
+Future enhancements and areas of active development include:
 
-### License
-
-`go-anansi` is licensed under the **Anansi Platform Proprietary License**.
-
-**IMPORTANT**: This is a source-available license. It is **NOT** an open-source license as defined by the Open Source Initiative. A separate commercial license is required for any form of commercial use. For details, please see the full [LICENSE.md](./LICENSE.md) file.
-
-### Acknowledgments
-
-`go-anansi` is a product of [CyberSync Printers & Stationers](https://github.com/asaidimu).
+*   **Enhanced Migration System**: Further development of data transformation capabilities and tools for `Migrate` and `Rollback` operations.
+*   **Pluggable Full-Text Search**: Integration of a high-performance, pluggable full-text search capability leveraging a coordinated dual-cursor architecture, as detailed in the [search.md](search.md) proposal. This will enable both consistent filter-based searches and real-time streaming search experiences.
+*   **More Database Interactors**: Community contributions for PostgreSQL, MySQL, or other database backends.
+*   **Advanced Query Optimizations**: Further intelligence in the `QueryEngine` for database-specific optimizations and query plan generation.
+*   **Code Generation Enhancements**: Expanding the `codegen` package to support more schema types (e.g., unions, enums) and automatically manage Go imports.
 
 ---
+
+## 📜 License
+
+This project is licensed under the **Anansi Platform Proprietary License**.
+
+**IMPORTANT: This is a source-available license. It is NOT an open-source license as defined by the Open Source Initiative. A separate commercial license is required for any form of commercial use.**
+
+For the full text of the license, please see the [LICENSE.md](LICENSE.md) file.
+
+To obtain a commercial license or discuss consulting engagements, please contact the Licensor.
+
+---
+
+## 🙏 Acknowledgments
+
+Go-Anansi is a product of CyberSync Printers & Stationers - BN-P7SABM5J. All rights reserved.
