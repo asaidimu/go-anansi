@@ -113,12 +113,14 @@ type ArrayValidationNode struct {
 	baseNode
 	fieldDef *FieldDefinition
 	schema   *SchemaDefinition
+	graph    *ValidationGraph
 }
 
 type RecordValidationNode struct {
 	baseNode
 	fieldDef *FieldDefinition
 	schema   *SchemaDefinition
+	graph    *ValidationGraph
 }
 
 type SetValidationNode struct {
@@ -133,6 +135,7 @@ type UnionValidationNode struct {
 	baseNode
 	fieldDef *FieldDefinition
 	schema   *SchemaDefinition
+	graphs   []*ValidationGraph
 }
 
 type ConstraintNode struct {
@@ -284,7 +287,7 @@ func (graph *ValidationGraph) dfsCheck(nodeID string) bool {
 	return false
 }
 
-func (graph *ValidationGraph) buildFromSchema(schema *SchemaDefinition, basePath string, dataContext any, addedConstraints map[string]bool, nsd *NestedSchemaDefinition) []*baseNode {
+func (graph *ValidationGraph) buildFromSchema(schema *SchemaDefinition, basePath string, dataContext any, addedConstraints map[string]bool, nsd *NestedSchemaDefinition) ([]*baseNode, error) {
 	var rootNodes []*baseNode
 
 	// Check if we have conditional fields
@@ -298,16 +301,20 @@ func (graph *ValidationGraph) buildFromSchema(schema *SchemaDefinition, basePath
 			return false
 		}()
 
+	var err error
 	if hasConditionalFields {
-		rootNodes = graph.buildConditionalSchema(schema, basePath, dataContext, addedConstraints, nsd)
+		rootNodes, err = graph.buildConditionalSchema(schema, basePath, dataContext, addedConstraints, nsd)
 	} else {
-		rootNodes = graph.buildRegularSchema(schema, basePath, dataContext, addedConstraints, nsd)
+		rootNodes, err = graph.buildRegularSchema(schema, basePath, dataContext, addedConstraints, nsd)
 	}
 
-	return rootNodes
+	if err != nil {
+		return nil, err
+	}
+	return rootNodes, nil
 }
 
-func (graph *ValidationGraph) buildConditionalSchema(schema *SchemaDefinition, basePath string, dataContext any, addedConstraints map[string]bool, nsd *NestedSchemaDefinition) []*baseNode {
+func (graph *ValidationGraph) buildConditionalSchema(schema *SchemaDefinition, basePath string, dataContext any, addedConstraints map[string]bool, nsd *NestedSchemaDefinition) ([]*baseNode, error) {
 	var rootNodes []*baseNode
 
 	// Process structured schema with conditional fields
@@ -337,10 +344,12 @@ func (graph *ValidationGraph) buildConditionalSchema(schema *SchemaDefinition, b
 
 	// Process all fields with conditional awareness
 	var allFieldNodes []*baseNode
-	// CORRECTED: The 'allFields' map is now correctly keyed by field name.
 	for fieldName, fieldDef := range allFields {
 		condition := conditionalFields[fieldName] // This will be nil for base fields
-		fieldNodes := graph.buildFieldNodes(fieldDef, basePath, []string{unexpectedNode.id}, schema, dataContext, addedConstraints, condition)
+		fieldNodes, err := graph.buildFieldNodes(fieldDef, basePath, []string{unexpectedNode.id}, schema, dataContext, addedConstraints, condition)
+		if err != nil {
+			return nil, err
+		}
 		allFieldNodes = append(allFieldNodes, fieldNodes...)
 	}
 
@@ -354,10 +363,10 @@ func (graph *ValidationGraph) buildConditionalSchema(schema *SchemaDefinition, b
 		rootNodes = append(rootNodes, &completionNode.baseNode)
 	}
 
-	return rootNodes
+	return rootNodes, nil
 }
 
-func (graph *ValidationGraph) buildRegularSchema(schema *SchemaDefinition, basePath string, dataContext any, addedConstraints map[string]bool, nsd *NestedSchemaDefinition) []*baseNode {
+func (graph *ValidationGraph) buildRegularSchema(schema *SchemaDefinition, basePath string, dataContext any, addedConstraints map[string]bool, nsd *NestedSchemaDefinition) ([]*baseNode, error) {
 	var rootNodes []*baseNode
 
 	// Determine fields to process
@@ -368,7 +377,6 @@ func (graph *ValidationGraph) buildRegularSchema(schema *SchemaDefinition, baseP
 
 	// Create expected fields map
 	expectedFields := make(map[string]bool)
-	// CORRECTED: Iterate over the field definitions and use the 'Name' property, not the map key.
 	for _, fieldDef := range fieldsToProcess {
 		expectedFields[fieldDef.Name] = true
 	}
@@ -381,7 +389,10 @@ func (graph *ValidationGraph) buildRegularSchema(schema *SchemaDefinition, baseP
 	// Process all fields
 	var allFieldNodes []*baseNode
 	for _, fieldDef := range fieldsToProcess {
-		fieldNodes := graph.buildFieldNodes(fieldDef, basePath, []string{unexpectedNode.id}, schema, dataContext, addedConstraints, nil)
+		fieldNodes, err := graph.buildFieldNodes(fieldDef, basePath, []string{unexpectedNode.id}, schema, dataContext, addedConstraints, nil)
+		if err != nil {
+			return nil, err
+		}
 		allFieldNodes = append(allFieldNodes, fieldNodes...)
 	}
 
@@ -395,11 +406,11 @@ func (graph *ValidationGraph) buildRegularSchema(schema *SchemaDefinition, baseP
 		rootNodes = append(rootNodes, &completionNode.baseNode)
 	}
 
-	return rootNodes
+	return rootNodes, nil
 }
 
 // Unified field processing method
-func (graph *ValidationGraph) buildFieldNodes(fieldDef *FieldDefinition, basePath string, baseDeps []string, schema *SchemaDefinition, dataContext any, addedConstraints map[string]bool, condition *FieldInclusionCondition) []*baseNode {
+func (graph *ValidationGraph) buildFieldNodes(fieldDef *FieldDefinition, basePath string, baseDeps []string, schema *SchemaDefinition, dataContext any, addedConstraints map[string]bool, condition *FieldInclusionCondition) ([]*baseNode, error) {
 	fieldPath := buildPath(basePath, fieldDef.Name)
 	currentDeps := baseDeps
 	var nodes []*baseNode
@@ -432,7 +443,10 @@ func (graph *ValidationGraph) buildFieldNodes(fieldDef *FieldDefinition, basePat
 	nodes = append(nodes, &typeNode.baseNode)
 
 	// Add field-type-specific nodes
-	typeSpecificNodes := graph.buildFieldTypeNodes(fieldDef, fieldPath, currentDeps, schema)
+	typeSpecificNodes, err := graph.buildFieldTypeNodes(fieldDef, fieldPath, currentDeps, schema)
+	if err != nil {
+		return nil, err
+	}
 	nodes = append(nodes, typeSpecificNodes...)
 	if len(typeSpecificNodes) > 0 {
 		currentDeps = []string{typeSpecificNodes[len(typeSpecificNodes)-1].id}
@@ -446,75 +460,77 @@ func (graph *ValidationGraph) buildFieldNodes(fieldDef *FieldDefinition, basePat
 		nodes = append(nodes, &completionNode.baseNode)
 	}
 
-	return nodes
+	return nodes, nil
 }
 
-func (graph *ValidationGraph) buildFieldTypeNodes(fieldDef *FieldDefinition, fieldPath string, currentDeps []string, schema *SchemaDefinition) []*baseNode {
+// TODO: 2025-12-08. Review this method
+// NOTE:
+// 1. Refactor required, go iteration is not deterministic, we need to check
+// on this when formatting/parsing issue paths
+// 2. Cache subgraphs
+//
+func (graph *ValidationGraph) buildFieldTypeNodes(fieldDef *FieldDefinition, fieldPath string, currentDeps []string, schema *SchemaDefinition) ([]*baseNode, error) {
+	var node ValidationNode
 	var nodes []*baseNode
+	var err error
 
 	switch fieldDef.Type {
 	case FieldTypeEnum:
-		enumNode := &EnumValidationNode{
+		node = &EnumValidationNode{
 			baseNode: baseNode{id: buildNodeID(fieldPath, "enum", ""), path: fieldPath, deps: currentDeps},
 			fieldDef: fieldDef,
 		}
-		graph.addNode(enumNode)
-		nodes = append(nodes, &enumNode.baseNode)
 
 	case FieldTypeArray:
-		arrayNode := &ArrayValidationNode{
-			baseNode: baseNode{id: buildNodeID(fieldPath, "array", ""), path: fieldPath, deps: currentDeps},
-			fieldDef: fieldDef,
-			schema:   schema,
-		}
-		graph.addNode(arrayNode)
-		nodes = append(nodes, &arrayNode.baseNode)
+		node, err = graph.buildArrayNode(fieldDef, fieldPath, currentDeps, schema)
 
 	case FieldTypeSet:
-		setNode := &SetValidationNode{
+		node = &SetValidationNode{
 			baseNode: baseNode{id: buildNodeID(fieldPath, "set", ""), path: fieldPath, deps: currentDeps},
-		}
-		graph.addNode(setNode)
-		nodes = append(nodes, &setNode.baseNode)
-
-	case FieldTypeObject:
-		if objectNodes := graph.buildObjectFieldNodes(fieldDef, fieldPath, currentDeps, schema); len(objectNodes) > 0 {
-			nodes = append(nodes, objectNodes...)
 		}
 
 	case FieldTypeRecord:
-		recordNode := &RecordValidationNode{
-			baseNode: baseNode{id: buildNodeID(fieldPath, "record", ""), path: fieldPath, deps: currentDeps},
-			fieldDef: fieldDef,
-			schema:   schema,
-		}
-		graph.addNode(recordNode)
-		nodes = append(nodes, &recordNode.baseNode)
+		node, err = graph.buildRecordNode(fieldDef, fieldPath, currentDeps, schema)
 
 	case FieldTypeUnion:
-		unionNode := &UnionValidationNode{
-			baseNode: baseNode{id: buildNodeID(fieldPath, "union", ""), path: fieldPath, deps: currentDeps},
-			fieldDef: fieldDef,
-			schema:   schema,
+		node, err = graph.buildUnionNode(fieldDef, fieldPath, currentDeps, schema)
+
+	case FieldTypeObject:
+		objectNodes, err := graph.buildObjectFieldNodes(fieldDef, fieldPath, currentDeps, schema)
+		if err != nil {
+			return nil, err
 		}
-		graph.addNode(unionNode)
-		nodes = append(nodes, &unionNode.baseNode)
+		if len(objectNodes) > 0 {
+			nodes = append(nodes, objectNodes...)
+		}
+		return nodes, nil
 	}
 
-	return nodes
+	if err != nil {
+		return nil, err
+	}
+
+	if node != nil {
+		graph.addNode(node)
+		if bn, ok := node.(interface{ GetID() string; GetPath() string; GetDependencies() []string }); ok {
+			nodes = append(nodes, &baseNode{id: bn.GetID(), path: bn.GetPath(), deps: bn.GetDependencies()})
+		}
+	}
+
+	return nodes, nil
 }
 
-func (graph *ValidationGraph) buildObjectFieldNodes(fieldDef *FieldDefinition, fieldPath string, currentDeps []string, schema *SchemaDefinition) []*baseNode {
+func (graph *ValidationGraph) buildObjectFieldNodes(fieldDef *FieldDefinition, fieldPath string, currentDeps []string, schema *SchemaDefinition) ([]*baseNode, error) {
 	var nodes []*baseNode
 
 	ref, ok := fieldDef.Schema.(NestedSchemaReference)
 	if !ok {
-		return nodes
+		return nil, ErrInvalidSchema
 	}
 
 	nestedSchemaDef, exists := schema.FindNestedSchema(ref.ID)
 	if !exists || nestedSchemaDef.IsStructured == nil || !*nestedSchemaDef.IsStructured {
-		return nodes
+		return nil, ErrInvalidSchema
 	}
 
 	// Build reference constraints
@@ -532,7 +548,6 @@ func (graph *ValidationGraph) buildObjectFieldNodes(fieldDef *FieldDefinition, f
 	}
 
 	// Handle structured fields
-	// CORRECTED: Rebuild the Fields map using fieldDef.Name as the key.
 	if nestedSchemaDef.StructuredFieldsArray != nil {
 		for _, structuredFieldEntry := range nestedSchemaDef.StructuredFieldsArray {
 			for _, def := range structuredFieldEntry.Fields {
@@ -545,8 +560,11 @@ func (graph *ValidationGraph) buildObjectFieldNodes(fieldDef *FieldDefinition, f
 		}
 	}
 
-	nestedNodes := graph.buildFromSchema(tempSchema, fieldPath, nil, make(map[string]bool), nestedSchemaDef)
+	nestedNodes, err := graph.buildFromSchema(tempSchema, fieldPath, nil, make(map[string]bool), nestedSchemaDef)
 
+	if err != nil {
+		return nil, err
+	}
 	markerNode := &NestedSchemaNode{
 		baseNode: baseNode{
 			id:   buildNodeID(fieldPath, "nested_schema", ""),
@@ -557,7 +575,7 @@ func (graph *ValidationGraph) buildObjectFieldNodes(fieldDef *FieldDefinition, f
 	graph.addNode(markerNode)
 	nodes = append(nodes, &markerNode.baseNode)
 
-	return nodes
+	return nodes, nil
 }
 
 func (graph *ValidationGraph) buildFromConstraints(constraints SchemaConstraint[FieldType], path string, deps []string, dataContext any, addedConstraints map[string]bool) []string {
@@ -577,6 +595,144 @@ func (graph *ValidationGraph) dependenciesSatisfied(nodeID string, visited map[s
 		}
 	}
 	return true
+}
+
+// createSubGraph builds a standalone validation graph for a single field definition.
+// This is used for complex types (Array, Record, Union) that need to validate their
+// children as if they were root elements of a new schema.
+func (graph *ValidationGraph) createSubGraph(
+	rootFieldName string,
+	rootFieldDef *FieldDefinition,
+	parentSchema *SchemaDefinition,
+	debugName string,
+) (*ValidationGraph, error) {
+	tempSchema := &SchemaDefinition{
+		Name:          debugName,
+		Fields:        map[string]*FieldDefinition{rootFieldName: rootFieldDef},
+		NestedSchemas: parentSchema.NestedSchemas,
+	}
+
+	subGraph := newValidationGraph()
+	addedConstraints := make(map[string]bool)
+
+	// We pass nil for dataContext as sub-graphs usually start fresh validation contexts
+	if _, err := subGraph.buildFromSchema(tempSchema, "", nil, addedConstraints, nil); err != nil {
+		return nil, err
+	}
+
+	return subGraph, nil
+}
+
+// buildArrayNode handles the specific logic for array validation construction
+func (graph *ValidationGraph) buildArrayNode(fieldDef *FieldDefinition, fieldPath string, deps []string, schema *SchemaDefinition) (ValidationNode, error) {
+	// Construct the definition for the items inside the array
+	tempRootField := &FieldDefinition{
+		Name:      "item",
+		Type:      *fieldDef.ItemsType,
+		Schema:    fieldDef.Schema,
+		ItemsType: nil, // Recursion handled by the new subgraph
+	}
+
+	// Create the isolated validation environment for the array items
+	arrayGraph, err := graph.createSubGraph("item", tempRootField, schema, "temp_array_item_check")
+	if err != nil {
+		return nil, err
+	}
+
+	return &ArrayValidationNode{
+		baseNode: baseNode{id: buildNodeID(fieldPath, "array", ""), path: fieldPath, deps: deps},
+		fieldDef: fieldDef,
+		schema:   schema,
+		graph:    arrayGraph,
+	}, nil
+}
+
+// buildRecordNode handles the specific logic for record validation construction
+func (graph *ValidationGraph) buildRecordNode(fieldDef *FieldDefinition, fieldPath string, deps []string, schema *SchemaDefinition) (ValidationNode, error) {
+	ref, ok := fieldDef.Schema.(NestedSchemaReference)
+	if fieldDef.Schema != nil && !ok {
+		return nil, ErrInvalidSchema.WithMessage("Record schema must be a NestedSchemaReference")
+	}
+
+	nested, ok := schema.FindNestedSchema(ref.ID)
+	if fieldDef.Schema != nil && !ok {
+		return nil, ErrInvalidSchema.WithMessage(fmt.Sprintf("Nested schema '%s' not found for record items", ref.ID))
+	}
+
+	var recordGraph *ValidationGraph
+	var err error
+
+	// If we have a nested schema, build the subgraph for the record values
+	if nested != nil {
+		var tempRootField *FieldDefinition
+
+		if nested.IsStructured != nil && *nested.IsStructured {
+			tempRootField = &FieldDefinition{Name: "item", Type: FieldTypeObject, Schema: ref}
+		} else if nested.Type != nil {
+			tempRootField = &FieldDefinition{Name: "item", Type: *nested.Type, Schema: nested.Schema, ItemsType: nested.ItemsType}
+		}
+
+		if tempRootField != nil {
+			recordGraph, err = graph.createSubGraph("item", tempRootField, schema, "temp_record_item_check")
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return &RecordValidationNode{
+		baseNode: baseNode{id: buildNodeID(fieldPath, "record", ""), path: fieldPath, deps: deps},
+		fieldDef: fieldDef,
+		schema:   schema,
+		graph:    recordGraph,
+	}, nil
+}
+
+// buildUnionNode handles the specific logic for union validation construction
+func (graph *ValidationGraph) buildUnionNode(fieldDef *FieldDefinition, fieldPath string, deps []string, schema *SchemaDefinition) (ValidationNode, error) {
+	refs, ok := fieldDef.Schema.([]NestedSchemaReference)
+	if !ok {
+		return nil, ErrInvalidSchema.WithMessage("Union schema must be an array of NestedSchemaReference")
+	}
+
+	graphs := make([]*ValidationGraph, 0, len(refs))
+
+	for _, ref := range refs {
+		nestedDef, exists := schema.FindNestedSchema(ref.ID)
+		if !exists {
+			return nil, ErrInvalidSchema.WithMessage(fmt.Sprintf("Nested schema '%s' not found for union option", ref.ID))
+		}
+
+		var tempRootField *FieldDefinition
+
+		// Logic to wrap the nested definition into a field for the temporary graph
+		if nestedDef.IsStructured != nil && *nestedDef.IsStructured {
+			tempRootField = &FieldDefinition{Name: "root", Type: FieldTypeObject, Schema: ref}
+		} else if nestedDef.Type != nil {
+			tempRootField = &FieldDefinition{
+				Name:        "root",
+				Type:        *nestedDef.Type,
+				Schema:      nestedDef.Schema,
+				ItemsType:   nestedDef.ItemsType,
+				Constraints: nestedDef.Constraints,
+			}
+		} else {
+			return nil, ErrInvalidSchema.WithMessage(fmt.Sprintf("Invalid nested schema for '%s'", ref.ID))
+		}
+
+		unionGraph, err := graph.createSubGraph("root", tempRootField, schema, fmt.Sprintf("temp_union_check_%s", ref.ID))
+		if err != nil {
+			return nil, err
+		}
+		graphs = append(graphs, unionGraph)
+	}
+
+	return &UnionValidationNode{
+		baseNode: baseNode{id: buildNodeID(fieldPath, "union", ""), path: fieldPath, deps: deps},
+		fieldDef: fieldDef,
+		schema:   schema,
+		graphs:   graphs,
+	}, nil
 }
 
 func (graph *ValidationGraph) buildFromConstraintRule(rule SchemaConstraintRule[FieldType], path string, deps []string, dataContext any, addedConstraints map[string]bool) []string {
@@ -706,7 +862,9 @@ func NewDocumentValidator(schema *SchemaDefinition, fmap *FunctionMap) (*Documen
 
 	graph := newValidationGraph()
 	addedConstraints := make(map[string]bool)
-	graph.buildFromSchema(schema, "", nil, addedConstraints, nil)
+	if _, err := graph.buildFromSchema(schema, "", nil, addedConstraints, nil); err != nil {
+		return nil, err
+	}
 
 	// Perform cycle detection after graph construction
 	for nodeID := range graph.nodes {
@@ -930,45 +1088,17 @@ func (n *ArrayValidationNode) executeArrayValidation(ctx *ValidationContext) *No
 	}
 
 	var allIssues []common.Issue
-	itemType := *n.fieldDef.ItemsType
 
 	for i, item := range items {
 		itemPath := fmt.Sprintf("%s[%d]", n.path, i)
-		itemIssues := n.validateArrayItem(item, itemType, itemPath, ctx)
+		itemIssues, _ := n.graph.traverse(ctx.FunctionMap, map[string]any{"item": item}, false)
+		for j := range itemIssues {
+			itemIssues[j].Path = strings.Replace(itemIssues[j].Path, "item", itemPath, 1)
+		}
 		allIssues = append(allIssues, itemIssues...)
 	}
 
 	return &NodeResult{Success: len(allIssues) == 0, Issues: allIssues}
-}
-
-func (n *ArrayValidationNode) validateArrayItem(item any, itemType FieldType, itemPath string, ctx *ValidationContext) []common.Issue {
-	tempRootField := FieldDefinition{
-		Name:      "item",
-		Type:      itemType,
-		Schema:    n.fieldDef.Schema,
-		ItemsType: nil,
-	}
-
-	tempSchema := &SchemaDefinition{
-		Name:          "temp_array_item_check",
-		Fields:        map[string]*FieldDefinition{"item": &tempRootField},
-		NestedSchemas: n.schema.NestedSchemas,
-	}
-
-	validator, err := NewDocumentValidator(tempSchema, ctx.FunctionMap)
-	if err != nil {
-		return []common.Issue{ErrValidatorCreationFailed.WithCause(err).
-			WithOperation("schema.ArrayValidationNode.validateArrayItem").
-			WithPath(itemPath).ToIssue()}
-	}
-
-	itemIssues, _ := validator.Validate(map[string]any{"item": item}, false)
-
-	for j := range itemIssues {
-		itemIssues[j].Path = strings.Replace(itemIssues[j].Path, "item", itemPath, 1)
-	}
-
-	return itemIssues
 }
 
 func (n *RecordValidationNode) Execute(ctx *ValidationContext) *NodeResult {
@@ -986,61 +1116,21 @@ func (n *RecordValidationNode) executeRecordValidation(ctx *ValidationContext) *
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for record", Path: n.path}}}
 	}
 
-	if n.fieldDef.Schema == nil {
+	if n.graph == nil {
 		return &NodeResult{Success: true}
 	}
 
-	ref, ok := n.fieldDef.Schema.(NestedSchemaReference)
-	if !ok {
-		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_RECORD_SCHEMA", Message: "Record schema must be a NestedSchemaReference", Path: n.path}}}
-	}
-
-	nestedDef, exists := n.schema.FindNestedSchema(ref.ID)
-	if !exists {
-		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "NESTED_SCHEMA_NOT_FOUND", Message: fmt.Sprintf("Nested schema '%s' not found for record items", ref.ID), Path: n.path}}}
-	}
-
 	var allIssues []common.Issue
-
-	for key, itemValue := range recordMap {
+	for key, item := range recordMap {
 		itemPath := buildPath(n.path, key)
-		itemIssues := n.validateRecordItem(itemValue, itemPath, ref, nestedDef, ctx)
+		itemIssues, _ := n.graph.traverse(ctx.FunctionMap, map[string]any{"item": item}, false)
+		for j := range itemIssues {
+			itemIssues[j].Path = strings.Replace(itemIssues[j].Path, "item", itemPath, 1)
+		}
 		allIssues = append(allIssues, itemIssues...)
 	}
 
 	return &NodeResult{Success: len(allIssues) == 0, Issues: allIssues}
-}
-
-func (n *RecordValidationNode) validateRecordItem(itemValue any, itemPath string, ref NestedSchemaReference, nestedDef *NestedSchemaDefinition, ctx *ValidationContext) []common.Issue {
-	var tempRootField FieldDefinition
-	if nestedDef.IsStructured != nil && *nestedDef.IsStructured {
-		tempRootField = FieldDefinition{Name: "item", Type: FieldTypeObject, Schema: ref}
-	} else if nestedDef.Type != nil {
-		tempRootField = FieldDefinition{Name: "item", Type: *nestedDef.Type, Schema: nestedDef.Schema, ItemsType: nestedDef.ItemsType}
-	} else {
-		return nil
-	}
-
-	tempSchema := &SchemaDefinition{
-		Name:          "temp_record_item_check",
-		Fields:        map[string]*FieldDefinition{"item": &tempRootField},
-		NestedSchemas: n.schema.NestedSchemas,
-	}
-
-	validator, err := NewDocumentValidator(tempSchema, ctx.FunctionMap)
-	if err != nil {
-		return []common.Issue{ErrValidatorCreationFailed.WithCause(err).
-			WithOperation("schema.RecordValidationNode.validateRecordItem").
-			WithPath(itemPath).ToIssue()}
-	}
-
-	itemIssues, _ := validator.Validate(map[string]any{"item": itemValue}, false)
-
-	for j := range itemIssues {
-		itemIssues[j].Path = strings.Replace(itemIssues[j].Path, "item", itemPath, 1)
-	}
-
-	return itemIssues
 }
 
 func (n *SetValidationNode) Execute(ctx *ValidationContext) *NodeResult {
@@ -1079,17 +1169,30 @@ func (n *UnionValidationNode) executeUnionValidation(ctx *ValidationContext) *No
 		return &NodeResult{Success: true}
 	}
 
-	schemas, ok := n.fieldDef.Schema.([]NestedSchemaReference)
-	if !ok {
-		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_UNION_SCHEMA", Path: n.path}}}
-	}
-
 	var specificConstraintViolations []common.Issue
-
-	for _, schemaRef := range schemas {
-		if matched, constraintViolations := n.tryUnionSchema(value, schemaRef, ctx); matched {
+	for _, graph := range n.graphs {
+		itemIssues, matched := graph.traverse(ctx.FunctionMap, map[string]any{"root": value}, false)
+		if matched {
 			return &NodeResult{Success: true}
-		} else if len(constraintViolations) > 0 {
+		}
+
+		for i := range itemIssues {
+			itemIssues[i].Path = strings.Replace(itemIssues[i].Path, "root", n.path, 1)
+		}
+
+		hasStructuralIssues := false
+		var constraintViolations []common.Issue
+
+		for _, issue := range itemIssues {
+			switch issue.Code {
+			case "TYPE_MISMATCH", "UNEXPECTED_FIELD", "REQUIRED_FIELD_MISSING", "ENUM_VIOLATION":
+				hasStructuralIssues = true
+			case "CONSTRAINT_VIOLATION":
+				constraintViolations = append(constraintViolations, issue)
+			}
+		}
+
+		if !hasStructuralIssues && len(constraintViolations) > 0 {
 			specificConstraintViolations = append(specificConstraintViolations, constraintViolations...)
 		}
 	}
@@ -1099,70 +1202,6 @@ func (n *UnionValidationNode) executeUnionValidation(ctx *ValidationContext) *No
 	}
 
 	return &NodeResult{Success: false, Issues: []common.Issue{{Code: "UNION_NO_MATCH", Message: "Value does not match any of the union schemas", Path: n.path}}}
-}
-
-func (n *UnionValidationNode) tryUnionSchema(value any, schemaRef NestedSchemaReference, ctx *ValidationContext) (bool, []common.Issue) {
-	nestedDef, exists := n.schema.FindNestedSchema(schemaRef.ID)
-	if !exists {
-		return false, nil
-	}
-
-	var tempRootField FieldDefinition
-	if nestedDef.IsStructured != nil && *nestedDef.IsStructured {
-		tempRootField = FieldDefinition{Name: "root", Type: FieldTypeObject, Schema: schemaRef}
-	} else if nestedDef.Type != nil {
-		tempRootField = FieldDefinition{
-			Name:        "root",
-			Type:        *nestedDef.Type,
-			Schema:      nestedDef.Schema,
-			ItemsType:   nestedDef.ItemsType,
-			Constraints: nestedDef.Constraints,
-		}
-	} else {
-		return false, nil
-	}
-
-	tempSchema := &SchemaDefinition{
-		Name:          "temp_union_check",
-		Fields:        map[string]*FieldDefinition{"root": &tempRootField},
-		NestedSchemas: n.schema.NestedSchemas,
-	}
-
-	validator, err := NewDocumentValidator(tempSchema, ctx.FunctionMap)
-	if err != nil {
-		return false, []common.Issue{ErrValidatorCreationFailed.WithCause(err).
-			WithOperation("schema.UnionValidationNode.tryUnionSchema").ToIssue()}
-	}
-
-	itemIssues, matched := validator.Validate(map[string]any{"root": value}, false)
-
-	if matched {
-		return true, nil
-	}
-
-	// Rewrite paths
-	for i := range itemIssues {
-		itemIssues[i].Path = strings.Replace(itemIssues[i].Path, "root", n.path, 1)
-	}
-
-	// Check for structural vs constraint issues
-	hasStructuralIssues := false
-	var constraintViolations []common.Issue
-
-	for _, issue := range itemIssues {
-		switch issue.Code {
-		case "TYPE_MISMATCH", "UNEXPECTED_FIELD", "REQUIRED_FIELD_MISSING", "ENUM_VIOLATION":
-			hasStructuralIssues = true
-		case "CONSTRAINT_VIOLATION":
-			constraintViolations = append(constraintViolations, issue)
-		}
-	}
-
-	if !hasStructuralIssues && len(constraintViolations) > 0 {
-		return false, constraintViolations
-	}
-
-	return false, nil
 }
 
 func (n *ConstraintNode) Execute(ctx *ValidationContext) *NodeResult {

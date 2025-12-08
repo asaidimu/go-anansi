@@ -29,7 +29,7 @@ func (sb *StructBinder) To(target any) error {
 // ToWithContext binds with context support
 func (sb *StructBinder) ToWithContext(ctx context.Context, target any) error {
 	rv := reflect.ValueOf(target)
-	if rv.Kind() != reflect.Ptr || rv.Elem().Kind() != reflect.Struct {
+	if rv.Kind() != reflect.Pointer || rv.Elem().Kind() != reflect.Struct {
 		return common.SystemErrorFrom(ErrInvalidTargetType).WithOperation("BindTo")
 	}
 
@@ -166,7 +166,7 @@ func setFieldValue(field reflect.Value, value any) error {
 		if valueMap, ok := value.(map[string]any); ok {
 			return setMapField(field, valueMap)
 		}
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if field.IsNil() {
 			field.Set(reflect.New(fieldType.Elem()))
 		}
@@ -186,7 +186,7 @@ func setSliceField(field reflect.Value, values []any) error {
 
 	for i, val := range values {
 		elem := slice.Index(i)
-		if elementType.Kind() == reflect.Ptr {
+		if elementType.Kind() == reflect.Pointer {
 			elem.Set(reflect.New(elementType.Elem()))
 			elem = elem.Elem()
 		}
@@ -223,7 +223,7 @@ func setMapField(field reflect.Value, values map[string]any) error {
 }
 
 // FromStructWithTags creates a Document from a struct using 'doc' tags
-func FromStructWithTags(s any) (Document, error) {
+func FromStructWithTags(s any, partial ...bool) (Document, error) {
 	rv := reflect.ValueOf(s)
 	if rv.Kind() == reflect.Pointer {
 		rv = rv.Elem()
@@ -235,6 +235,11 @@ func FromStructWithTags(s any) (Document, error) {
 
 	rt := rv.Type()
 	doc := make(Document)
+
+	allowPartial := false
+	if partial != nil {
+		allowPartial = partial[0]
+	}
 
 	for i := 0; i < rt.NumField(); i++ {
 		field := rt.Field(i)
@@ -259,7 +264,7 @@ func FromStructWithTags(s any) (Document, error) {
 		}
 
 		// Skip zero values if omitempty
-		if omitEmpty && fieldValue.IsZero() {
+		if allowPartial || (omitEmpty && fieldValue.IsZero()) {
 			continue
 		}
 

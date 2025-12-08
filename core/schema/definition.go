@@ -392,6 +392,8 @@ type SchemaDefinition struct {
 	// NOTE. When looking up a field from this map, DO NOT USE THE KEY OF THE
 	// MAP AS THE NESTED SCHEMA NAME. THE NAME OF THE FIELD IS AT
 	// NestedSchemaDefinition.Name . i.e schema.NestedSchemas[nestedUUID].Name
+	// TODO: Deprecate nestedSchemas in favor of schemas
+	// Schemas       map[string]*NestedSchemaDefinition `json:"schemas,omitempty"`
 	NestedSchemas map[string]*NestedSchemaDefinition `json:"nestedSchemas,omitempty"`
 	Indexes       []IndexDefinition                  `json:"indexes,omitempty"`
 	Constraints   SchemaConstraint[FieldType]        `json:"constraints,omitempty"`

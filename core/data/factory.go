@@ -96,7 +96,9 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 		return nil, ErrFactoryNotConfigured
 	}
 	doc := Document(data)
-	doc[DocumentID] = strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
+	if !f.hasValidID(doc) {
+		doc[DocumentID] = strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
+	}
 
 	// Ensure metadata field exists
 	meta, ok := doc.Metadata()
@@ -224,6 +226,43 @@ func (f *documentFactory) signDocument(doc Document, privateKey *rsa.PrivateKey)
 	}
 
 	return base64.StdEncoding.EncodeToString(signature), nil
+}
+
+func (f *documentFactory) hasValidID(doc Document) bool {
+	i, ok := doc[DocumentID]
+	if !ok {
+		return false
+	}
+
+	id, ok := i.(string)
+	if !ok {
+		return false
+	}
+
+	// UUID without dashes must be exactly 32 hex characters
+	if len(id) != 32 {
+		return false
+	}
+
+	// Reconstruct dashed UUID
+	var b strings.Builder
+	b.Grow(36)
+	b.WriteString(id[0:8])
+	b.WriteByte('-')
+	b.WriteString(id[8:12])
+	b.WriteByte('-')
+	b.WriteString(id[12:16])
+	b.WriteByte('-')
+	b.WriteString(id[16:20])
+	b.WriteByte('-')
+	b.WriteString(id[20:])
+
+	u, err := uuid.Parse(b.String())
+	if err != nil {
+		return false
+	}
+
+	return u.Version() == 7
 }
 
 // verifySignature verifies the signature of a document against a public key.

@@ -5,62 +5,32 @@ import (
 	"log"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	coreutils "github.com/asaidimu/go-anansi/v6/core/utils" // For BoolPtr
-	_ "github.com/mattn/go-sqlite3"                         // SQLite driver
+	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
-// getProductSchema returns a minimal, valid Product schema.
-func getProductSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
-		Name:    "Product",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"name":  {Name: "name", Type: "string", Required: coreutils.BoolPtr(true)},
-			"price": {Name: "price", Type: "number", Required: coreutils.BoolPtr(true)},
-			"stock": {Name: "stock", Type: "integer", Required: coreutils.BoolPtr(true)},
-		},
-	}
-}
 
 func main() {
-	// 1. Create logger (optional but recommended for dev)
-	logger, err := zap.NewDevelopment()
+	app := NewApp()
+	cleanup, err := app.Init()
 	if err != nil {
-		log.Fatalf("Failed to create logger: %v", err)
-	}
-	defer logger.Sync()
-
-	// 2. Define schema
-	productSchema := getProductSchema()
-
-	// 3. Start Playground with full dev features
-	p, cleanup, err := anansi.Playground(anansi.PlaygroundConfig{
-		DBPath:        "anansi.db",
-		EnableLogging: false,
-		EnableEvents:  true,
-		Schemas:       []schema.SchemaDefinition{*productSchema},
-	})
-	if err != nil {
-		log.Fatalf("Failed to start playground: %v", err)
+		log.Fatalf("Failed to start application: %v", err)
 	}
 	defer cleanup()
 
-	// 4. Get collection (auto-created via Schemas above)
+	logger := app.Logger
+
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	products, err := p.Collection(ctx, productSchema.Name)
+	products, err := app.ProductsModel()
 	if err != nil {
 		log.Fatalf("Failed to get products collection: %v", err)
 	}
-	logger.Info("Products collection ready.")
 
+	// Subscribe to events
 	unsub := products.Subscribe(ctx, base.SubscriptionOptions{
 		Event: base.DocumentCreateStart,
 		Callback: func(ctx context.Context, event base.PersistenceEvent) error {
@@ -74,75 +44,129 @@ func main() {
 	})
 	defer products.Unsubscribe(ctx, unsub)
 
-	// --- CRUD Operations ---
+	logger.Info("Typed Products collection ready.")
 
-	// Create
-	p1 := data.MustNewDocument(map[string]any{"name": "Laptop", "price": 1200.00, "stock": 50})
-	p2 := data.MustNewDocument(map[string]any{"name": "Mouse", "price": 25.00, "stock": 200})
+	// --- CRUD Operations with Type Safety ---
 
-	if _, err = products.CreateOne(ctx, p1); err != nil {
+	// Create single product
+	p1 := Product{
+		Name:  "Laptop",
+		Price: 1200.00,
+		Stock: 50,
+	}
+
+	p1, err = products.CreateProduct(ctx, p1)
+	if err != nil {
 		log.Fatalf("Failed to create Laptop: %v", err)
 	}
+	logger.Info("Created product",
+		zap.String("id", p1.ID),
+		zap.String("name", p1.Name),
+		zap.Float64("price", p1.Price),
+		zap.Int("stock", p1.Stock),
+	)
 
-	if _, err = products.CreateOne(ctx, p2); err != nil {
-		log.Fatalf("Failed to create Mouse: %v", err)
+	// Create multiple products
+	newProducts := []Product{
+		{Name: "Mouse", Price: 25.00, Stock: 200},
+		{Name: "Keyboard", Price: 75.00, Stock: 150},
+		{Name: "Monitor", Price: 300.00, Stock: 75},
 	}
 
-	// Read
-	q := query.NewQueryBuilder().Build()
-	result, err := products.Read(ctx, &q)
+	createdProducts, err := products.CreateProducts(ctx, newProducts)
+	if err != nil {
+		log.Fatalf("Failed to create products: %v", err)
+	}
+	logger.Info("Created multiple products", zap.Int("count", len(createdProducts)))
+
+	// Read all products
+	allProducts, err := products.ListAllProducts(ctx)
 	if err != nil {
 		log.Fatalf("Read failed: %v", err)
 	}
 
-	if result.Count > 0 {
-		for _, doc := range result.Data.([]data.Document) {
-			logger.Info("Found",
-				zap.String("id", doc.ID()),
-				zap.String("name", doc["name"].(string)),
-				zap.Float64("price", doc["price"].(float64)),
-				zap.Int64("stock", doc["stock"].(int64)),
-			)
-		}
-	} else {
-		logger.Info("No products found.")
-	}
-
-	// Update
-	update := data.MustNewDocument(map[string]any{"stock": 45})
-	filter := query.NewQueryBuilder().Where("id").Eq(p1.ID()).Build().Filters
-
-	if _, err = products.Update(ctx, &base.CollectionUpdate{Filter: filter, Set: update}); err != nil {
-		log.Fatalf("Update failed: %v", err)
-	}
-
-	// Read updated
-	q = query.NewQueryBuilder().Where("id").Eq(p1.ID()).Build()
-
-	if result, err = products.Read(ctx, &q); err != nil {
-		log.Fatalf("Read updated failed: %v", err)
-	}
-	if result.Count > 0 {
-		doc := result.Data.(data.Document)
-		logger.Info("After update",
-			zap.String("id", doc.ID()),
-			zap.Int("stock", doc["stock"].(int)),
+	logger.Info("All products", zap.Int("count", len(allProducts)))
+	for _, product := range allProducts {
+		logger.Info("Product",
+			zap.String("id", product.ID),
+			zap.String("name", product.Name),
+			zap.Float64("price", product.Price),
+			zap.Int("stock", product.Stock),
 		)
 	}
 
-	// Delete
-	delFilter := query.NewQueryBuilder().Where("id").Eq(p2.ID()).Build().Filters
-	if _, err = products.Delete(ctx, delFilter, false); err != nil {
+	// Get single product by ID
+	foundProduct, err := products.GetProduct(ctx, p1.ID)
+	if err != nil {
+		log.Fatalf("Failed to get product: %v", err)
+	}
+	logger.Info("Found product by ID",
+		zap.String("id", foundProduct.ID),
+		zap.String("name", foundProduct.Name),
+	)
+
+	// Find products with query (e.g., price > 100)
+	q := query.NewQueryBuilder().Where("price").Gt(100.0).Build()
+	expensiveProducts, err := products.FindProducts(ctx, &q)
+	if err != nil {
+		log.Fatalf("Query failed: %v", err)
+	}
+	logger.Info("Expensive products", zap.Int("count", len(expensiveProducts)))
+	for _, product := range expensiveProducts {
+		logger.Info("Expensive product",
+			zap.String("name", product.Name),
+			zap.Float64("price", product.Price),
+		)
+	}
+
+	// Update single product (partial update)
+	updatedProduct, err := products.UpdateProduct(ctx, p1.ID, Product{
+		Stock: 45, // Only update stock
+	})
+	if err != nil {
+		log.Fatalf("Update failed: %v", err)
+	}
+	logger.Info("After update",
+		zap.String("id", updatedProduct.ID),
+		zap.String("name", updatedProduct.Name),
+		zap.Int("stock", updatedProduct.Stock),
+	)
+
+	// Update multiple products matching a filter
+	filter := query.NewQueryBuilder().Where("price").Lt(100.0).Build().Filters
+	count, err := products.UpdateProducts(ctx, filter, Product{
+		Stock: 500, // Increase stock for all cheap items
+	})
+	if err != nil {
+		log.Fatalf("Bulk update failed: %v", err)
+	}
+	logger.Info("Bulk update completed", zap.Int("affected", count))
+
+	// Delete single product
+	mouseID := createdProducts[0].ID
+	if err = products.DeleteProduct(ctx, mouseID); err != nil {
 		log.Fatalf("Delete failed: %v", err)
 	}
-	logger.Info("Deleted Mouse")
+	logger.Info("Deleted product", zap.String("id", mouseID))
 
 	// Verify deletion
-	q = query.NewQueryBuilder().Where("id").Eq(p2.ID()).Build()
-	if result, err = products.Read(ctx, &q); err != nil {
-		log.Fatalf("Verify failed: %v", err)
+	_, err = products.GetProduct(ctx, mouseID)
+	if err != nil {
+		logger.Info("Confirmed deletion - product not found")
 	}
-	if result.Count != 0 {
-		logger.Error("Mouse still exists after delete!")
+
+	// Delete multiple products matching filter
+	deleteFilter := query.NewQueryBuilder().Where("stock").Gt(400).Build().Filters
+	deletedCount, err := products.DeleteProducts(ctx, deleteFilter, false)
+	if err != nil {
+		log.Fatalf("Bulk delete failed: %v", err)
 	}
+	logger.Info("Bulk delete completed", zap.Int("deleted", deletedCount))
+
+	// Final count
+	finalProducts, err := products.ListAllProducts(ctx)
+	if err != nil {
+		log.Fatalf("Final read failed: %v", err)
+	}
+	logger.Info("Final product count", zap.Int("remaining", len(finalProducts)))
 }

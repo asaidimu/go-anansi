@@ -594,7 +594,6 @@ func (d Document) Signature() (string, error) {
 
 // CreatedAt returns the document's creation timestamp.
 func (d Document) CreatedAt() (time.Time, error) {
-	fmt.Printf("%v \n",d)
 	val, err := d.GetMetadataValue(MetadataCreated)
 	if err != nil {
 		return time.Time{}, err
