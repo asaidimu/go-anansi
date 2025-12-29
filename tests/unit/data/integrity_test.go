@@ -25,21 +25,26 @@ func TestDocumentHashing(t *testing.T) {
 	_, hashExists := meta[data.MetadataChecksum]
 	assert.True(t, hashExists, "checksum should exist in metadata after Hash() call")
 
-	assert.True(t, doc.VerifyHash(), "initial hash verification should succeed")
+	ok, err = doc.VerifyHash()
+	assert.True(t, ok, "initial hash verification should succeed")
+	require.NoError(t, err)
 
 	// 2. Modifying non-metadata field should invalidate metadata hash
 	doc["field1"] = "newValue"
-	assert.False(t, doc.VerifyHash(), "checksum should still be valid after modifying non-metadata field")
+	ok, err = doc.VerifyHash()
+	assert.False(t, ok, "checksum should still be valid after modifying non-metadata field")
 
 	// 3. Modifying metadata field SHOULD invalidate the hash
 	meta[data.MetadataVersion] = 2
 	doc.SetMetadata(meta)
-	assert.False(t, doc.VerifyHash(), "checksum should be invalid after modifying metadata field")
+	ok, err = doc.VerifyHash()
+	assert.False(t, ok, "checksum should be invalid after modifying metadata field")
 
 	// 4. Re-hashing should make it valid again
 	err = doc.Hash()
 	require.NoError(t, err)
-	assert.True(t, doc.VerifyHash(), "hash should be valid again after re-hashing")
+	ok, err = doc.VerifyHash()
+	assert.True(t, ok, "hash should be valid again after re-hashing")
 }
 
 func TestDocumentSigning(t *testing.T) {

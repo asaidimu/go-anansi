@@ -1,9 +1,9 @@
 package common
 
-import "fmt"
-
 // ContextKey is a type for context keys to avoid collisions
 type ContextKey string
+
+const CollectionNameContextKey ContextKey = "anansi.collection.name"
 
 // LogicalOperator defines the logical operators that can be used to combine conditions
 // in constraints and filters.
@@ -24,12 +24,6 @@ const (
 type FunctionMap map[string]any
 
 
-func (ve Issue) Error() string {
-	if ve.Path != "" {
-		return fmt.Sprintf("validation error at '%s': %s", ve.Path, ve.Message)
-	}
-	return fmt.Sprintf("validation error: %s", ve.Message)
-}
 
 // Future represents the result of an asynchronous operation.
 type Future[T any] interface {

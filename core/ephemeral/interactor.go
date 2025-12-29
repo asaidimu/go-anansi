@@ -521,7 +521,11 @@ func (m *EphemeralDatabaseInteractor) CreateIndex(ctx context.Context, collectio
 		return err
 	}
 
-	return c.data.CreateIndex(index.Name, index.Fields)
+	err = c.data.CreateIndex(index.Name, index.Fields)
+	if err != nil {
+		return common.SystemErrorFrom(err).WithOperation("ephemeral.CreateIndex").WithCause(err)
+	}
+	return nil
 }
 
 func (m *EphemeralDatabaseInteractor) DropIndex(ctx context.Context, collection string, index schema.IndexDefinition) error {
@@ -530,7 +534,11 @@ func (m *EphemeralDatabaseInteractor) DropIndex(ctx context.Context, collection 
 		return err
 	}
 
-	return c.data.DropIndex(index.Name)
+	err = c.data.DropIndex(index.Name)
+	if err != nil {
+		return common.SystemErrorFrom(err).WithOperation("ephemeral.DropIndex").WithCause(err)
+	}
+	return nil
 }
 
 // DropCollection removes a collection from the in-memory store.

@@ -239,28 +239,28 @@ func main() {
 		ProductIDs: []string{finalProducts[0].ID, finalProducts[1].ID},
 		Quantity:   1,
 	}
-	c1, err = carts.CreateCart(ctx, c1)
+	c1, err = carts.Create(ctx, c1)
 	if err != nil {
 		log.Fatalf("Failed to create cart: %v", err)
 	}
 	logger.Info("Created cart", zap.String("id", c1.ID), zap.String("user_id", c1.UserID))
 
 	// Update cart
-	updatedCart, err := carts.UpdateCart(ctx, c1.ID, Cart{Quantity: 2})
+	updatedCart, err := carts.Update(ctx, c1.ID, Cart{Quantity: 2})
 	if err != nil {
 		log.Fatalf("Update cart failed: %v", err)
 	}
 	logger.Info("Updated cart", zap.String("id", updatedCart.ID), zap.Int("quantity", updatedCart.Quantity))
 
 	// Get single cart by ID
-	foundCart, err := carts.GetCart(ctx, c1.ID)
+	foundCart, err := carts.FindByID(ctx, c1.ID)
 	if err != nil {
 		log.Fatalf("Failed to get cart: %v", err)
 	}
 	logger.Info("Found cart by ID", zap.String("id", foundCart.ID), zap.String("user_id", foundCart.UserID))
 
 	// Delete cart
-	if err = carts.DeleteCart(ctx, c1.ID); err != nil {
+	if err = carts.DeleteByID(ctx, c1.ID); err != nil {
 		log.Fatalf("Delete cart failed: %v", err)
 	}
 	logger.Info("Deleted cart", zap.String("id", c1.ID))

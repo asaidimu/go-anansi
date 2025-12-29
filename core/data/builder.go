@@ -8,7 +8,7 @@ type DocumentBuilder struct {
 // NewDocumentBuilder creates a new document builder.
 func NewDocumentBuilder() *DocumentBuilder {
 	return &DocumentBuilder{
-		doc: make(Document),
+		doc: MustNewDocument(nil),
 	}
 }
 
@@ -35,9 +35,20 @@ func (db *DocumentBuilder) SetNested(path string, value any) (*DocumentBuilder, 
 }
 
 // WithMetadata adds metadata.
-func (db *DocumentBuilder) WithMetadata(metadata map[string]any) *DocumentBuilder {
-	db.doc.SetMetadata(metadata)
-	return db
+func (db *DocumentBuilder) WithMetadata(metadata map[string]any) (*DocumentBuilder, error) {
+	meta, ok := db.doc.Metadata()
+	if !ok {
+		return nil, ErrNoMetadata
+	}
+	set := make(map[string]any, 0)
+	for key, value := range(metadata) {
+		if err := db.doc.SetMetadataValue(key, value); err != nil {
+			db.doc.SetMetadata(meta)
+			return nil, err
+		}
+		set[key] = value
+	}
+	return db, nil
 }
 
 // Build returns the constructed document.

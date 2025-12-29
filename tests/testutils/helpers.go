@@ -30,5 +30,5 @@ func ConfigureDocumentFactory() {
 	}
 	// This might be called by multiple test packages, but the factory is a singleton
 	// and is designed to be configured only once.
-	_ = data.ConfigureDocumentFactory(config)
+	_ = data.ConfigureDocumentFactory(config, nil)
 }

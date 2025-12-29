@@ -24,7 +24,7 @@ func NewPersistenceManager(db *Database, schemaLoader *schema.SchemaLoader, cfg 
 	setupCfg := anansi.SetupConfig{
 		Interactor:    db.Interactor,
 		Logger:        logger,
-		FactoryConfig: factoryConfig,
+		DocumentFactoryConfig: factoryConfig,
 		Schemas:       schemaLoader.Schemas,
 	}
 	p, err := anansi.Setup(setupCfg)

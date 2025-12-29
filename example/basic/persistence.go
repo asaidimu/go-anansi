@@ -87,7 +87,8 @@ func (app *App) ProductsModel() (*Products, error) {
 // UsersModel returns a singleton instance of the Users model.
 func (app *App) UsersModel() (*Users, error) {
 	return UseModel(app, UsersCollectionName, func(raw base.Collection) *Users {
-		return &Users{ModelCollection: collection.NewModelCollection[User](raw)}
+		wrappedUsersModel := raw // we can wrap this in custom functionality here
+		return &Users{ModelCollection: collection.NewModelCollection[User](wrappedUsersModel)}
 	})
 }
 

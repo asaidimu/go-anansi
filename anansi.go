@@ -21,13 +21,13 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
@@ -70,8 +70,8 @@ type SetupConfig struct {
 	// production; it integrates with external message brokers if desired.
 	EventBus events.EventBus[base.PersistenceEvent]
 
-	// FactoryConfig configures the Document factory (hashing, metadata, etc.).
-	FactoryConfig data.DocumentFactoryConfig
+	// DocumentFactoryConfig configures the Document factory (hashing, metadata, etc.).
+	DocumentFactoryConfig data.DocumentFactoryConfig
 
 	// Decorators inject cross-cutting concerns (security, audit, encryption…).
 	Decorators *utils.Decorators
@@ -85,13 +85,20 @@ type SetupConfig struct {
 // Persistence and any error from the initial call.
 func Setup(config SetupConfig) (base.Persistence, error) {
 	setupOnce.Do(func() {
+		if config.Logger == nil {
+			config.Logger = zap.NewNop()
+		}
+
 		ctx := context.Background()
 
+			// config.SanitizerConfig,
+			// config.CollectionSanitizerConfigs,
 		// 1. Initialise the global Document factory.
-		if err := data.ConfigureDocumentFactory(config.FactoryConfig); err != nil {
+		if err := data.ConfigureDocumentFactory(config.DocumentFactoryConfig, config.Logger); err != nil {
 			setupError = err
 			return
 		}
+
 
 		// 2. Core persistence object.
 		p, err := persistence.NewPersistence(
@@ -113,7 +120,7 @@ func Setup(config SetupConfig) (base.Persistence, error) {
 
 		newSchemas := make([]schema.SchemaDefinition, 0, len(config.Schemas))
 		for _, s := range config.Schemas {
-			exists, err := p.HasCollection(ctx, s.Name) // We check for the existince of the collection so as not to re-create it
+			exists, err := p.HasCollection(ctx, s.Name) // We check for the existence of the collection so as not to re-create it
 			if err != nil {
 				setupError = err
 				return
@@ -151,6 +158,15 @@ type PlaygroundConfig struct {
 
 	// Schemas are created automatically on first start if they do not exist.
 	Schemas []schema.SchemaDefinition
+
+	// EnableSanitization adds default sanitization patterns to protect
+	// sensitive data in logs and events. Recommended for any playground
+	// that handles real or realistic test data.
+	EnableSanitization bool
+
+	// CustomSanitizerConfig allows custom sanitization configuration.
+	// If nil and EnableSanitization is true, uses NewSecureDefaultConfig().
+	CustomSanitizerConfig *data.FieldMaskConfig
 }
 
 // Playground returns a fully-functional Persistence together with a
@@ -179,6 +195,9 @@ func Playground(cfg PlaygroundConfig) (base.Persistence, func(), error) {
 		logger = l
 	}
 
+	// -----------------------------------------------------------------
+	//  Event Bus
+	// -----------------------------------------------------------------
 	var bus events.EventBus[base.PersistenceEvent]
 	var busCleanup func()
 	if cfg.EnableEvents {
@@ -187,6 +206,22 @@ func Playground(cfg PlaygroundConfig) (base.Persistence, func(), error) {
 		bus = b
 	}
 
+	// -----------------------------------------------------------------
+	//  Sanitization
+	// -----------------------------------------------------------------
+	var sanitizerConfig *data.FieldMaskConfig
+	if cfg.EnableSanitization {
+		if cfg.CustomSanitizerConfig != nil {
+			sanitizerConfig = cfg.CustomSanitizerConfig
+		} else {
+			defaultConfig := data.NewSecureDefaultConfig()
+			sanitizerConfig = &defaultConfig
+		}
+	}
+
+	// -----------------------------------------------------------------
+	//  Database
+	// -----------------------------------------------------------------
 	dsn := cfg.DBPath
 	if cfg.DBPath != ":memory:" {
 		dsn = fmt.Sprintf("file:%s?cache=shared&_fk=1", cfg.DBPath)
@@ -221,7 +256,9 @@ func Playground(cfg PlaygroundConfig) (base.Persistence, func(), error) {
 		Interactor:    interactor,
 		Logger:        logger,
 		EventBus:      bus,
-		FactoryConfig: data.DocumentFactoryConfig{},
+		DocumentFactoryConfig: data.DocumentFactoryConfig{
+			GlobalSanitizer: sanitizerConfig,
+		},
 		Decorators:    &utils.Decorators{},
 		Schemas:       cfg.Schemas,
 	})

@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -792,4 +793,31 @@ func CoerceTime(v any) (time.Time, bool) {
 	default:
 		return time.Time{}, false
 	}
+}
+
+// CoerceToSlice attempts to convert an interface to a slice of type T.
+// It iterates through the input if it's a slice and coerces each individual element.
+func CoerceToSlice[T Primitive](value any) ([]T, bool) {
+	if value == nil {
+		return nil, false
+	}
+
+	// Use reflection to check if the input is actually a slice or array
+	rv := reflect.ValueOf(value)
+	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+		return nil, false
+	}
+
+	result := make([]T, 0, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		// Coerce each element using your existing logic
+		item, ok := CoerceToPrimitiveValue[T](rv.Index(i).Interface())
+		if !ok {
+			// If one element fails, the whole slice coercion is considered failed
+			return nil, false
+		}
+		result = append(result, item)
+	}
+
+	return result, true
 }

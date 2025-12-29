@@ -1,11 +1,11 @@
 package persistence
 
 import (
+	cevents "github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	cevents "github.com/asaidimu/go-anansi/v6/core/events"
 	"go.uber.org/zap"
 )
 
@@ -26,7 +26,12 @@ func NewPersistence(
 		collectionDecorators = decorators.CollectionDecorators
 	}
 
-	factory := events.NewPersistenceEventFactory("__anansi_persistence__", logger)
+	// Create the event factory with optional sanitization
+	factory := events.NewPersistenceEventFactory(
+		"__anansi_persistence__",
+		logger,
+	)
+
 	eventEmitter := cevents.NewEventEmitter(bus, factory.CreateEvent, logger)
 
 	base, err := newBasePersistence(interactor, eventEmitter, logger, collectionDecorators)
@@ -43,5 +48,3 @@ func NewPersistence(
 
 	return eventEmitting, nil
 }
-
-

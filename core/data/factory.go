@@ -24,6 +24,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 )
 
 // MetadataProvider is a function that returns metadata to be merged into a document.
@@ -38,15 +39,43 @@ type MetadataProviderConfig struct {
 }
 
 // DocumentFactoryConfig holds the complete configuration for the document factory.
+// TODO, we need a way to configure the sanitizers at runtime to
+// accomodate schema changes
 type DocumentFactoryConfig struct {
-	Providers []MetadataProviderConfig
+	Providers            []MetadataProviderConfig
+	// GlobalSanitizer configures field-level data sanitization for events.
+	// When set, all events emitted by the persistence layer will have their
+	// Input and Output fields sanitized according to the specified policies.
+	// This prevents sensitive data from appearing in logs and event subscribers.
+	//
+	// If nil, no sanitization is applied (NOT recommended for production).
+	// Use data.NewSecureDefaultConfig() for sensible defaults.
+	GlobalSanitizer      *FieldMaskConfig
+	// CollectionSanitizers allows per-collection sanitization overrides.
+	// Keys are collection names, values are the sanitization config to use
+	// for that specific collection. If a collection is not found in this map,
+	// the global Sanitizer Config is used.
+	//
+	// Example:
+	//   CollectionSanitizers: map[string]data.FieldMaskConfig{
+	//     "credentials": strictConfig,  // Stricter rules for credentials
+	//     "users":       moderateConfig, // Moderate rules for users
+	//   }
+	CollectionSanitizers map[string]*FieldMaskConfig
+}
+
+// Sanitization state in the factory
+type sanitizationState struct {
+	global     *DocumentSanitizer
+	collection map[string]*DocumentSanitizer
 }
 
 // documentFactory is a singleton responsible for creating and managing documents.
 type documentFactory struct {
-	mu         sync.RWMutex
-	config     DocumentFactoryConfig
-	configured bool
+	mu           sync.RWMutex
+	config       DocumentFactoryConfig
+	sanitization *sanitizationState
+	configured   bool
 }
 
 var (
@@ -64,15 +93,32 @@ func getFactory() *documentFactory {
 
 // ConfigureDocumentFactory sets up the document factory singleton.
 // It must be called once at application startup.
-func ConfigureDocumentFactory(config DocumentFactoryConfig) error {
+func ConfigureDocumentFactory(config DocumentFactoryConfig, logger *zap.Logger) error {
 	var err error
 
 	configureOnce.Do(func() {
 		f := getFactory()
+		f.mu.Lock()
+		defer f.mu.Unlock()
 		if f.configured {
 			err = ErrFactoryAlreadyConfigured
 			return
 		}
+
+		// Initialize sanitization state
+		f.sanitization = &sanitizationState{
+			collection: make(map[string]*DocumentSanitizer),
+		}
+
+		if config.GlobalSanitizer != nil {
+			f.sanitization.global = NewDocumentSanitizer(*config.GlobalSanitizer, logger)
+		}
+
+		for collectionName, collectionConfig := range config.CollectionSanitizers {
+			mergedConfig := mergeConfigs(config.GlobalSanitizer, *collectionConfig)
+			f.sanitization.collection[collectionName] = NewDocumentSanitizer(mergedConfig, logger)
+		}
+
 		f.config = config
 		f.configured = true
 	})
@@ -88,6 +134,30 @@ func ConfigureDocumentFactory(config DocumentFactoryConfig) error {
 	}
 
 	return nil
+}
+
+// getSanitizerForContext returns the appropriate sanitizer based on context.
+// If the context contains a collection name, it returns the collection-specific
+// sanitizer (which is already merged with global config). Otherwise, it returns
+// the global sanitizer.
+func (f *documentFactory) getSanitizerForContext(ctx context.Context) *DocumentSanitizer {
+	f.mu.RLock()
+	defer f.mu.RUnlock()
+
+	if f.sanitization == nil {
+		return nil // No sanitization configured
+	}
+
+	// Try to get collection name from context
+	if collectionName, ok := ctx.Value(common.CollectionNameContextKey).(string); ok && collectionName != "" {
+		// Check for collection-specific sanitizer
+		if sanitizer, exists := f.sanitization.collection[collectionName]; exists {
+			return sanitizer
+		}
+	}
+
+	// Fall back to global sanitizer
+	return f.sanitization.global
 }
 
 // newDocument creates a new document with injected metadata.
@@ -132,7 +202,7 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 	// Calculate and set the hash
 	hash, err := f.calculateHash(doc)
 	if err != nil {
-		return nil, err
+		return nil, common.SystemErrorFrom(err).WithOperation("data.documentFactory.newDocument")
 	}
 	meta[MetadataChecksum] = hash
 	doc.SetMetadata(meta)
@@ -347,7 +417,11 @@ func canonicalize(v any) any {
 // canonicalMarshal marshals a value into a canonical JSON byte slice.
 // It uses the canonicalize helper to ensure consistent key ordering for hashing.
 func canonicalMarshal(v any) ([]byte, error) {
-	return json.Marshal(canonicalize(v))
+	data, err := json.Marshal(canonicalize(v))
+	if err != nil {
+		return nil, common.SystemErrorFrom(err).WithOperation("data.canonicalMarshal").WithCode(common.ErrFailedToMarshalInput.Code).WithMessage("failed to marshal canonicalized data to JSON")
+	}
+	return data, nil
 }
 
 // --- Key Loading Helpers ---
@@ -356,20 +430,20 @@ func canonicalMarshal(v any) ([]byte, error) {
 func LoadPrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
 	block, _ := pem.Decode(pemBytes)
 	if block == nil {
-		return nil, ErrFailedToDecodePEMBlock
+		return nil, common.SystemErrorFrom(ErrFailedToDecodePEMBlock).WithOperation("data.LoadPrivateKey")
 	}
 
 	key, err := x509.ParsePKCS1PrivateKey(block.Bytes)
 	if err != nil {
 		// Try parsing as PKCS8
-		key, err := x509.ParsePKCS8PrivateKey(block.Bytes)
-		if err != nil {
-			return nil, ErrFailedToParsePrivateKey
+		pkcs8Key, pkcs8Err := x509.ParsePKCS8PrivateKey(block.Bytes)
+		if pkcs8Err != nil {
+			return nil, common.SystemErrorFrom(ErrFailedToParsePrivateKey).WithOperation("data.LoadPrivateKey").WithCause(errors.Join(err, pkcs8Err))
 		}
-		if rsaKey, ok := key.(*rsa.PrivateKey); ok {
+		if rsaKey, ok := pkcs8Key.(*rsa.PrivateKey); ok {
 			return rsaKey, nil
 		}
-		return nil, ErrNotRSAPrivateKey
+		return nil, common.SystemErrorFrom(ErrNotRSAPrivateKey).WithOperation("data.LoadPrivateKey")
 	}
 	return key, nil
 }
@@ -378,17 +452,17 @@ func LoadPrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
 func LoadPublicKey(pemBytes []byte) (*rsa.PublicKey, error) {
 	block, _ := pem.Decode(pemBytes)
 	if block == nil {
-		return nil, ErrFailedToDecodePEMPublicKey
+		return nil, common.SystemErrorFrom(ErrFailedToDecodePEMPublicKey).WithOperation("data.LoadPublicKey")
 	}
 
 	key, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		return nil, ErrFailedToParsePublicKey
+		return nil, common.SystemErrorFrom(ErrFailedToParsePublicKey).WithOperation("data.LoadPublicKey").WithCause(err)
 	}
 
 	if rsaKey, ok := key.(*rsa.PublicKey); ok {
 		return rsaKey, nil
 	}
 
-	return nil, ErrNotRSAPublicKey
+	return nil, common.SystemErrorFrom(ErrNotRSAPublicKey).WithOperation("data.LoadPublicKey")
 }

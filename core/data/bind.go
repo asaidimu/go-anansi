@@ -39,7 +39,7 @@ func (sb *StructBinder) ToWithContext(ctx context.Context, target any) error {
 	for i := 0; i < rt.NumField(); i++ {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return common.SystemErrorFrom(ctx.Err()).WithOperation("BindTo")
 		default:
 		}
 
@@ -281,7 +281,10 @@ func FromStructWithTags(s any, partial ...bool) (Document, error) {
 			continue
 		}
 
-		value := convertInterface(fieldValue.Interface())
+		value, err := convertInterface(fieldValue.Interface())
+		if err != nil {
+			return nil, err
+		}
 		doc[fieldName] = value
 	}
 
@@ -289,27 +292,24 @@ func FromStructWithTags(s any, partial ...bool) (Document, error) {
 }
 
 // convertInterface recursively converts an interface value to its generic representation.
-func convertInterface(v any) any {
+func convertInterface(v any) (any, error) {
 	if v == nil {
-		return nil
+		return nil, nil
 	}
-
 	rv := reflect.ValueOf(v)
-
 	// Dereference pointers to get the underlying value
 	if rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
-			return nil
+			return nil, nil
 		}
 		rv = rv.Elem()
 	}
 
 	// Use the potentially dereferenced value's interface
 	v = rv.Interface()
-
 	// time.Time is a struct but should be treated as a primitive value.
 	if _, ok := v.(time.Time); ok {
-		return v
+		return v, nil
 	}
 
 	switch rv.Kind() {
@@ -317,21 +317,22 @@ func convertInterface(v any) any {
 		// Recursively convert nested structs into map[string]any
 		doc, err := FromStructWithTags(v)
 		if err != nil {
-			return v // Return original value on error
+			return nil, err // Propagate error
 		}
-		return doc
-
+		return doc, nil
 	case reflect.Slice:
 		s := rv
-		// Create a generic slice and recursively convert each element
 		ret := make([]any, s.Len())
 		for i := 0; i < s.Len(); i++ {
-			ret[i] = convertInterface(s.Index(i).Interface())
+			r, err := convertInterface(s.Index(i).Interface())
+			if err != nil {
+				return nil, err
+			}
+			ret[i] = r
 		}
-		return ret
-
+		return ret, nil
 	default:
 		// Return primitive types as is
-		return v
+		return v, nil
 	}
 }

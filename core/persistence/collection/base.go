@@ -120,7 +120,7 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) (
 
 	if err != nil {
 		for i, doc := range docs {
-			results[i] = base.CreateResult{Status: base.StatusFailedPersistence, Data: doc, Error: err.Error()}
+			results[i] = base.CreateResult{Status: base.StatusFailedPersistence, Data: doc, Error: common.SystemErrorFrom(err) }
 		}
 		return results, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INSERT_DOCUMENTS_FAILED")
 	}

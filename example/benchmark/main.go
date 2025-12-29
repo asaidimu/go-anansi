@@ -90,7 +90,7 @@ func main() {
 	cfg := anansi.SetupConfig{
 		Interactor:    interactor,
 		Logger:        logger,
-		FactoryConfig: data.DocumentFactoryConfig{},
+		DocumentFactoryConfig: data.DocumentFactoryConfig{},
 		Decorators:    &utils.Decorators{},
 	}
 	p, err := anansi.Setup(cfg)

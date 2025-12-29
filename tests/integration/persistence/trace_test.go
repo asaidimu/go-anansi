@@ -34,7 +34,8 @@ func TestTraceDocumentInsertion(t *testing.T) {
 	insertedDoc := insertedDocs[0]
 
 	// Verify the hash of the returned document
-	ok := insertedDoc.VerifyHash()
+	ok, err := insertedDoc.VerifyHash()
+	require.NoError(t, err)
 	require.True(t, ok, "Hash of document returned by interactor should be valid")
 
 	// Optionally, read it back from the database to see if it changes again
@@ -45,7 +46,8 @@ func TestTraceDocumentInsertion(t *testing.T) {
 
 	readDoc := readDocs[0]
 
-	ok = readDoc.VerifyHash()
+	ok, err = readDoc.VerifyHash()
+	require.NoError(t, err)
 	require.NoError(t, err)
 	require.True(t, ok, "Hash of document read back from DB should be valid")
 

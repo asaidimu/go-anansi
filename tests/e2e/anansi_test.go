@@ -79,7 +79,7 @@ func TestAnansiSetupAndBasicOperation(t *testing.T) {
 	cfg := anansi.SetupConfig{
 		Interactor:    interactor,
 		Logger:        logger,
-		FactoryConfig: factoryConfig,
+		DocumentFactoryConfig: factoryConfig,
 		Decorators:    decorators,
 	}
 	p, err := anansi.Setup(cfg)
@@ -123,7 +123,7 @@ func TestAnansiSetupCalledTwice(t *testing.T) {
 	cfg1 := anansi.SetupConfig{
 		Interactor:    interactor1,
 		Logger:        logger1,
-		FactoryConfig: factoryConfig1,
+		DocumentFactoryConfig: factoryConfig1,
 		Decorators:    decorators1,
 	}
 	p1, err1 := anansi.Setup(cfg1)
@@ -142,7 +142,7 @@ func TestAnansiSetupCalledTwice(t *testing.T) {
 	cfg2 := anansi.SetupConfig{
 		Interactor:    interactor2,
 		Logger:        logger2,
-		FactoryConfig: factoryConfig2,
+		DocumentFactoryConfig: factoryConfig2,
 		Decorators:    decorators2,
 	}
 	p2, err2 := anansi.Setup(cfg2)

@@ -84,7 +84,37 @@ func (m *MustHelper) GetDocumentArray(keyOrPath string) []Document {
 	return val
 }
 
+// --- New Slice Helpers ---
+
+// GetStringArray retrieves a []string with path support, panics if not found or not convertible
+func (m *MustHelper) GetStringArray(keyOrPath string) []string {
+	val, err := m.doc.GetStringArray(keyOrPath)
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
+
+// GetIntArray retrieves a []int with path support, panics if not found or not convertible
+func (m *MustHelper) GetIntArray(keyOrPath string) []int {
+	val, err := m.doc.GetIntArray(keyOrPath)
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
+
+// GetArray retrieves a []any with path support, panics if not found
+func (m *MustHelper) GetArray(keyOrPath string) []any {
+	val, err := m.doc.GetArray(keyOrPath)
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
+
 // Generic Must getter with type parameter
+// Note: This assumes a top-level Get[T] function exists in your package
 func MustGet[T any](doc Document, key string) T {
 	val, err := Get[T](doc, key)
 	if err != nil {

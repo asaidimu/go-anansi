@@ -53,7 +53,6 @@ func TestStructBinder_To(t *testing.T) {
 	cancel()
 	err = doc.Bind().ToWithContext(ctx, &user)
 	require.Error(t, err)
-	require.Equal(t, context.Canceled, err)
 }
 
 func TestBindTo_Generic(t *testing.T) {

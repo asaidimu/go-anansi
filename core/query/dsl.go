@@ -54,13 +54,11 @@ const (
 	TextOperatorOr  TextOperator = "or"  // Any term can match
 )
 
-// In dsl.go
 type FieldReference struct {
-	Type  string `json:"type"`  // Should be "field"
 	Field string `json:"field"` // The field to reference
+	Type  string `json:"type"`  // Should be "field"
 }
 
-// In dsl.go
 type SubqueryValue struct {
 	Type  string `json:"type"` // Should be "subquery"
 	Query Query  `json:"query"`
@@ -294,6 +292,7 @@ type RawQuery struct {
 
 	// Maps placeholder names in the 'Template' string to specific collection targets.
 	// This field is only relevant when 'Template' is used.
+    // TODO Review whether this should be a slice or a map
 	Collections map[string]RawQueryTarget `json:"from,omitempty"`
 
 	// Parameters are parameters for the query. Primarily for SQL.

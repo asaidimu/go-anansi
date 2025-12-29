@@ -275,7 +275,7 @@ func main() {
 	cfg := anansi.SetupConfig{
 		Interactor:    interactor,
 		Logger:        logger,
-		FactoryConfig: factoryConfig,
+		DocumentFactoryConfig: factoryConfig,
 		Decorators:    decorators,
 		Schemas: []schema.SchemaDefinition{
 			userSchemaDef,

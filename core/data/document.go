@@ -46,31 +46,6 @@ func convertToDocumentMap(data any) (map[string]any, error) {
 	}
 }
 
-// TODO: refactor this file to remove duplication
-// NewDocument creates a new Document from a map[string]any.
-func NewDocumentWithContext(ctx context.Context, data map[string]any) (Document, error) {
-	if data == nil {
-		data = make(map[string]any)
-	}
-	return getFactory().newDocument(ctx, data)
-}
-
-// MustNewDocument creates a new Document from various map forms, panics on failure.
-func MustNewDocumentWithContext(ctx context.Context, data any) Document {
-	doc, err := convertToDocumentMap(data)
-	if err != nil {
-		panic(err)
-	}
-
-	d, err := getFactory().newDocument(ctx, doc)
-	if err != nil {
-		panic(err)
-	}
-
-	return d
-}
-
-
 // NewDocument creates a new Document from a map[string]any.
 func NewDocument(data map[string]any) (Document, error) {
 	if data == nil {
@@ -207,6 +182,33 @@ func (d Document) GetDocumentArray(keyOrPath string) ([]Document, error) {
 	return val.([]Document), nil
 }
 
+// GetStringArray retrieves a slice of strings with path support.
+func (d Document) GetStringArray(keyOrPath string) ([]string, error) {
+	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]string{}), "GetStringArray")
+	if err != nil {
+		return nil, err
+	}
+	return val.([]string), nil
+}
+
+// GetIntArray retrieves a slice of integers with path support.
+func (d Document) GetIntArray(keyOrPath string) ([]int, error) {
+	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]int{}), "GetIntArray")
+	if err != nil {
+		return nil, err
+	}
+	return val.([]int), nil
+}
+
+// GetArray retrieves a generic slice ([]any) with path support.
+func (d Document) GetArray(keyOrPath string) ([]any, error) {
+	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]any{}), "GetArray")
+	if err != nil {
+		return nil, err
+	}
+	return val.([]any), nil
+}
+
 // getAndCoerce is a private helper function to retrieve a value by path and coerce it to a target type.
 func (d Document) getAndCoerce(keyOrPath string, targetType reflect.Type, operation string) (any, error) {
 	val, ok := utils.GetValueByPath(d, keyOrPath)
@@ -232,6 +234,14 @@ func (d Document) getAndCoerce(keyOrPath string, targetType reflect.Type, operat
 		coercedVal, conversionOk = AsDocument(val)
 	case reflect.TypeOf([]Document{}):
 		coercedVal, conversionOk = AsDocumentArray(val)
+		case reflect.TypeOf([]string{}):
+        coercedVal, conversionOk = utils.CoerceToSlice[string](val)
+    case reflect.TypeOf([]int{}):
+        coercedVal, conversionOk = utils.CoerceToSlice[int](val)
+    case reflect.TypeOf([]any{}):
+        if slice, ok := val.([]any); ok {
+            coercedVal, conversionOk = slice, true
+        }
 	default:
 		return nil, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document." + operation).WithPath(keyOrPath).WithMessage(fmt.Sprintf("unsupported target type for coercion: %s", targetType.String()))
 	}
@@ -452,16 +462,16 @@ func (d Document) ID() string {
 
 // Metadata access with enhanced functionality
 func (d Document) Metadata() (map[string]any, bool) {
-	val, ok := d[MetadataField]
-	if !ok {
-		return nil, false
-	}
+    val, ok := d[MetadataField]
+    if !ok { return nil, false }
 
-	if meta, ok := val.(map[string]any); ok {
-		return meta, true
-	}
-
-	return nil, false
+    if meta, ok := val.(map[string]any); ok {
+        // Create a copy to prevent external mutation
+        newMeta := make(map[string]any, len(meta))
+        maps.Copy(newMeta, meta)
+        return newMeta, true
+    }
+    return nil, false
 }
 
 func (d Document) SetMetadata(metadata map[string]any) {
@@ -495,23 +505,23 @@ func (d Document) Hash() error {
 }
 
 // VerifyHash checks the integrity of the metadata block against its hash.
-func (d Document) VerifyHash() bool {
+func (d Document) VerifyHash() (bool, error) {
 	meta, ok := d.Metadata()
 	if !ok {
-		return false
+		return false, nil
 	}
 
 	providedHash, ok := meta[MetadataChecksum].(string)
 	if !ok {
-		return false
+		return false, nil
 	}
 
 	calculatedHash, err := getFactory().calculateHash(d)
 	if err != nil {
-		return false
+		return false, err
 	}
 
-	return providedHash == calculatedHash
+	return providedHash == calculatedHash, nil
 }
 
 // Sign computes and sets the RSA signature for the entire document.

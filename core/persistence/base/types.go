@@ -313,7 +313,7 @@ type CreateResult struct {
 	Issues []common.Issue `json:"issues,omitempty"`
 
 	// Error contains the persistence error message if the status is FAILED_PERSISTENCE.
-	Error string `json:"error,omitempty"`
+	Error *common.SystemError `json:"error,omitempty"`
 }
 
 // DeleteResult defines the structure of the response for a successful delete operation.
@@ -457,7 +457,6 @@ type CollectionUpdate struct {
 	Version *int               `json:"version,omitempty"`
 }
 
-const CollectionNameContextKey common.ContextKey = "__collection_name__"
 
 // Collection defines the contract for operations on a specific collection.
 // This includes standard CRUD (Create, Read, Update, Delete) operations, as well as methods

@@ -48,7 +48,7 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 
 	// Configure the document factory
 	config := data.DocumentFactoryConfig{}
-	err := data.ConfigureDocumentFactory(config)
+	err := data.ConfigureDocumentFactory(config, logger)
 	require.NoError(t, err)
 
 	interactor := ephemeral.NewEphemeral()

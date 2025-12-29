@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
@@ -28,6 +29,7 @@ func getProductSchema() *schema.SchemaDefinition {
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
 			"name":  {Name: "name", Type: "string", Required: coreutils.BoolPtr(true)},
+			"value":  {Name: "value", Type: "number", Required: coreutils.BoolPtr(true)},
 			"price": {Name: "price", Type: "number", Required: coreutils.BoolPtr(true)},
 			"stock": {Name: "stock", Type: "integer", Required: coreutils.BoolPtr(true)},
 		},
@@ -60,8 +62,16 @@ func main() {
 		log.Fatalf("Failed to create native interactor: %v", err)
 	}
 
-	// 4. Setup Document Factory Config
-	factoryConfig := data.DocumentFactoryConfig{}
+	// 4. Configuration for the Document layer
+	factoryConfig := data.DocumentFactoryConfig{
+		GlobalSanitizer: &data.FieldMaskConfig{
+			Fields: map[string]data.MaskedFieldPolicy{
+				"value":    data.MaskObscure,
+				"id":       data.MaskObscure,
+				"checksum": data.MaskRedact,
+			},
+		},
+	}
 
 	// 5. Setup Decorators (none for basic example)
 	decorators := &utils.Decorators{}
@@ -70,11 +80,11 @@ func main() {
 
 	// 6. Initialize Anansi Persistence Layer
 	cfg := anansi.SetupConfig{
-		Interactor:    interactor,
-		Logger:        logger,
-		FactoryConfig: factoryConfig,
-		Decorators:    decorators,
-		EventBus:     bus,
+		Interactor:            interactor,
+		Logger:                logger,
+		DocumentFactoryConfig: factoryConfig,
+		Decorators:            decorators,
+		EventBus:              bus,
 	}
 	p, err := anansi.Setup(cfg)
 	if err != nil {
@@ -96,7 +106,11 @@ func main() {
 	unsub := productsCollection.Subscribe(context.Background(), base.SubscriptionOptions{
 		Event: base.DocumentCreateSuccess,
 		Callback: func(ctx context.Context, event base.PersistenceEvent) error {
-			logger.Info(fmt.Sprintf("Product created in '%s' \n %v", *event.Collection, event.Input))
+			input, ok := data.AsDocument(event.Input)
+			if ok {
+				pretty, _ := input.ToJSON(true)
+				logger.Info(fmt.Sprintf("Product created in '%s' \n %s", *event.Collection, pretty))
+			}
 			return nil
 		},
 	})
@@ -105,20 +119,23 @@ func main() {
 
 	// Create Products
 	logger.Info("Creating products...")
-	product1 := data.MustNewDocument(map[string]any{"id": "P001", "name": "Laptop", "price": 1200.00, "stock": 50})
-	product2 := data.MustNewDocument(map[string]any{"id": "P002", "name": "Mouse", "price": 25.00, "stock": 200})
+	laptop := data.MustNewDocument(map[string]any{"value":100.00, "name": "Laptop", "price": 1200.00, "stock": 50})
+	mouse := data.MustNewDocument(map[string]any{"value":2.00, "name": "Mouse", "price": 25.00, "stock": 200})
 
-	_, err = productsCollection.CreateOne(ctx, product1)
+	_, err = productsCollection.CreateOne(ctx, laptop)
 	if err != nil {
-		log.Fatalf("Failed to create product P001: %v", err)
+		log.Fatalf("Failed to add Laptop: %v", err)
 	}
-	logger.Info("Created product P001: Laptop")
+	logger.Info(fmt.Sprintf("Created product Laptop with id %s\n", laptop.ID()))
 
-
-	_, err = productsCollection.CreateOne(ctx, product2)
+	_, err = productsCollection.CreateOne(ctx, mouse)
 	if err != nil {
-		log.Fatalf("Failed to create product P002: %v", err)
+		if e, ok := err.(*common.SystemError); ok {
+			log.Fatalf("Failed to add mouse: %v", e.ToIssue())
+		}
+		log.Fatalf("Failed to add mouse: %v", err)
 	}
+	logger.Info(fmt.Sprintf("Created product Laptop with id %s\n", mouse.ID()))
 
 	// Read Products
 	logger.Info("Reading all products...")
@@ -129,57 +146,59 @@ func main() {
 	}
 
 	if readResult.Count > 0 {
-		for _, doc := range readResult.Data {
-			logger.Info(fmt.Sprintf("Found product: ID=%s, Name=%s, Price=%.2f, Stock=%d",
-				doc["id"], doc["name"], doc["price"], doc["stock"]))
+		for _, found := range readResult.Data {
+			doc := found.Sanitize(ctx)
+			logger.Info(fmt.Sprintf("Found product: ID=%s, Name=%s, Price=%.2f, Stock=%d, Value=%s",
+				doc["id"], doc["name"], doc["price"], doc["stock"], doc["value"]))
 		}
 	} else {
 		logger.Info("No products found.")
 	}
 
-	// Update Product (P001 stock)
-	logger.Info("Updating product P001 stock...")
-	updateProduct1 := data.MustNewDocument(map[string]any{"id": "P001", "stock": 45})
-	filterP001 := query.NewQueryBuilder().Where("id").Eq("P001").Build().Filters
+	// Update Product (Laptop stock)
+	logger.Info("Updating Laptop stock...")
+	updateProduct1 := data.MustNewDocument(map[string]any{"stock": 45})
+	filterP001 := query.NewQueryBuilder().Where("id").Eq(laptop.ID()).Build().Filters
 	_, err = productsCollection.Update(ctx, &base.CollectionUpdate{Filter: filterP001, Set: updateProduct1})
 	if err != nil {
-		log.Fatalf("Failed to update product P001: %v", err)
+		log.Fatalf("Failed to update Laptop: %v", err)
 	}
-	logger.Info("Updated product P001 stock to 45.")
+	logger.Info("Updated product Laptop stock to 45.")
 
 	// Read updated product
-	logger.Info("Reading updated product P001...")
-	readP001Query := query.NewQueryBuilder().Where("id").Eq("P001").Build()
+	logger.Info("Reading updated Laptop...")
+	readP001Query := query.NewQueryBuilder().Where("id").Eq(laptop.ID()).Build()
 	readP001Result, err := productsCollection.Read(ctx, &readP001Query)
 	if err != nil {
-		log.Fatalf("Failed to read product P001 after update: %v", err)
+		log.Fatalf("Failed to read Laptop after update: %v", err)
 	}
 	if readP001Result.Count > 0 {
 		updatedProduct := readP001Result.Data[0]
-		logger.Info(fmt.Sprintf("Updated product P001: ID=%s, Name=%s, Price=%.2f, Stock=%d",
-			updatedProduct["id"], updatedProduct["name"], updatedProduct["price"], updatedProduct["stock"]))
+		updatedProduct = updatedProduct.Sanitize(ctx)
+		logger.Info(fmt.Sprintf("Updated Laptop: ID=%s, Name=%s, Price=%.2f, Stock=%d, Value=%s",
+			updatedProduct["id"], updatedProduct["name"], updatedProduct["price"], updatedProduct["stock"], updatedProduct["value"]))
 	}
 
 	// Delete Product (P002)
-	logger.Info("Deleting product P002...")
-	filterP002 := query.NewQueryBuilder().Where("id").Eq("P002").Build().Filters
+	logger.Info("Deleting product mouse...")
+	filterP002 := query.NewQueryBuilder().Where("id").Eq(mouse.ID()).Build().Filters
 	_, err = productsCollection.Delete(ctx, filterP002, false) // false for not deleting physical data
 	if err != nil {
-		log.Fatalf("Failed to delete product P002: %v", err)
+		log.Fatalf("Failed to delete mouse: %v", err)
 	}
-	logger.Info("Deleted product P002.")
+	logger.Info("Deleted mouse.")
 
 	// Verify deletion
-	logger.Info("Verifying product P002 deletion...")
-	readP002Query := query.NewQueryBuilder().Where("id").Eq("P002").Build()
+	logger.Info("Verifying product mouse deletion...")
+	readP002Query := query.NewQueryBuilder().Where("id").Eq(mouse.ID()).Build()
 	readP002Result, err := productsCollection.Read(ctx, &readP002Query)
 	if err != nil {
-		log.Fatalf("Failed to read product P002 after deletion: %v", err)
+		log.Fatalf("Failed to read mouse after deletion: %v", err)
 	}
 	if readP002Result.Count == 0 {
-		logger.Info("Product P002 successfully deleted (not found).")
+		logger.Info("Mouse successfully deleted (not found).")
 	} else {
-		logger.Warn("Product P002 still found after deletion.")
+		logger.Warn("Mouse still found after deletion.")
 	}
 
 	logger.Info("Basic example finished.")
