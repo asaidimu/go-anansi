@@ -3,12 +3,12 @@ package main
 import (
 	"context"
 	"log"
-	"time"
+	"sync"
 
 	"github.com/asaidimu/go-anansi/v6"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	coreutils "github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
+	appschema "github.com/asaidimu/go-anansi/v6/example/basic/schema"
 	"go.uber.org/zap"
 )
 
@@ -16,18 +16,10 @@ type App struct {
 	p       base.Persistence
 	Logger  *zap.Logger
 	cleanup func()
-}
 
-func getProductSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
-		Name:    "Product",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"name":  {Name: "name", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
-			"price": {Name: "price", Type: "number", Required: coreutils.BoolPtr(true)},
-			"stock": {Name: "stock", Type: "integer", Required: coreutils.BoolPtr(true)},
-		},
-	}
+	// Models
+	models map[string]any
+	mu       sync.Mutex
 }
 
 func NewApp() *App {
@@ -37,17 +29,20 @@ func NewApp() *App {
 	}
 	return &App{
 		Logger: logger,
+		models: make(map[string]any),
 	}
 }
 
 func (app *App) Init() (func(), error) {
-	productSchema := getProductSchema() // we could load all schemas from maybe a file since schemas can be written in json
+	schemas, err := appschema.GetSchemas()
+	if err != nil {
+		return nil, err
+	}
 
 	p, cleanup, err := anansi.Playground(anansi.PlaygroundConfig{
-		DBPath:        "anansi.db",
 		EnableLogging: false,
 		EnableEvents:  true,
-		Schemas:       []schema.SchemaDefinition{*productSchema},
+		Schemas:       schemas,
 	})
 
 	if err != nil {
@@ -59,14 +54,46 @@ func (app *App) Init() (func(), error) {
 	return app.cleanup, nil
 }
 
-func (app *App) ProductsModel() (*Products, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	productSchema := getProductSchema() // we could look up the name in the registry
-	productsCollection, err := app.p.Collection(ctx, productSchema.Name)
+// UseModel is a generic function to get or create a model singleton.
+// It uses a factory function to construct the model if it doesn't exist.
+func UseModel[T any](app *App, name string, factory func(base.Collection) *T) (*T, error) {
+	app.mu.Lock()
+	defer app.mu.Unlock()
+
+	// If the model already exists in our cache, return it.
+	if model, ok := app.models[name]; ok {
+		return model.(*T), nil
+	}
+
+	// Get the underlying collection from the persistence layer.
+	collection, err := app.p.Collection(context.Background(), name)
 	if err != nil {
 		return nil, err
 	}
-	products := NewProductsCollection(productsCollection)
-	return products, nil
+
+	// Use the factory to create a new instance of the model.
+	model := factory(collection)
+	app.models[name] = model
+	return model, nil
+}
+
+// ProductsModel returns a singleton instance of the Products model.
+func (app *App) ProductsModel() (*Products, error) {
+	return UseModel(app, ProductsCollectionName, func(raw base.Collection) *Products {
+		return &Products{ModelCollection: collection.NewModelCollection[Product](raw)}
+	})
+}
+
+// UsersModel returns a singleton instance of the Users model.
+func (app *App) UsersModel() (*Users, error) {
+	return UseModel(app, UsersCollectionName, func(raw base.Collection) *Users {
+		return &Users{ModelCollection: collection.NewModelCollection[User](raw)}
+	})
+}
+
+// CartsModel returns a singleton instance of the Carts model.
+func (app *App) CartsModel() (*Carts, error) {
+	return UseModel(app, CartsCollectionName, func(raw base.Collection) *Carts {
+		return &Carts{ModelCollection: collection.NewModelCollection[Cart](raw)}
+	})
 }

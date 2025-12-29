@@ -81,9 +81,9 @@ func TestCartSimulation_Success(t *testing.T) {
 		q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
 		readResult, err := inventory.Read(ctx, &q)
 		require.NoError(t, err)
-		require.Equal(t, 1, readResult.Count)
-
-		item := readResult.Data.(data.Document)
+		        require.Equal(t, 1, readResult.Count)
+		
+				item := readResult.Data[0]
 		quantity := item["quantity"].(int)
 		require.GreaterOrEqual(t, quantity, 1)
 
@@ -124,7 +124,7 @@ func TestCartSimulation_Success(t *testing.T) {
 	q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
 	readResult, err := inventory.Read(context.Background(), &q)
 	require.NoError(t, err)
-	assert.Equal(t, int(9), readResult.Data.(data.Document)["quantity"])
+	assert.Equal(t, int(9), readResult.Data[0]["quantity"])
 
 	// Check sales record
 	q = query.NewQueryBuilder().Where("id").Eq(sale.Must().GetString("id")).Build()
@@ -152,7 +152,7 @@ func TestCartSimulation_InsufficientInventory(t *testing.T) {
 		q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
 		readResult, err := inventory.Read(ctx, &q)
 		require.NoError(t, err)
-		item := readResult.Data.(data.Document)
+		item := readResult.Data[0]
 		quantity := item["quantity"].(int)
 
 		if quantity < 20 {
@@ -179,7 +179,7 @@ func TestCartSimulation_InsufficientInventory(t *testing.T) {
 	readResult, err := inventory.Read(context.Background(), &q)
 	require.NoError(t, err)
 
-	item := readResult.Data.(data.Document)
+	item := readResult.Data[0]
 	assert.Equal(t, int(10), item["quantity"])
 
 	// Check no sales record was created
@@ -209,7 +209,7 @@ func TestCartSimulation_PaymentFailure(t *testing.T) {
 		q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
 		readResult, err := inventory.Read(ctx, &q)
 		require.NoError(t, err)
-		item := readResult.Data.(data.Document)
+		item := readResult.Data[0]
 		quantity := item["quantity"].(int)
 		item["quantity"] = quantity - 1
 		update := base.CollectionUpdate{
@@ -243,7 +243,7 @@ func TestCartSimulation_PaymentFailure(t *testing.T) {
 
 	readResult, err := inventory.Read(context.Background(), &q)
 	require.NoError(t, err)
-	item := readResult.Data.(data.Document)
+	item := readResult.Data[0]
 	assert.Equal(t, int(10), item["quantity"])
 
 	// Check no sales record was created

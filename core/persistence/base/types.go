@@ -365,11 +365,11 @@ type BasePersistence interface {
 	// ListCollections returns a list of names of all available collections.
 	ListCollections(ctx context.Context) ([]string, error)
 
-	// Delete removes a collection entirely, specified by its ID.
-	Delete(ctx context.Context, id string) (bool, error)
+	// Delete removes a collection entirely, specified by its name.
+	Delete(ctx context.Context, name string) (bool, error)
 
-	// Schema retrieves a schema definition by its unique ID.
-	Schema(ctx context.Context, id string, version ...string) (*schema.SchemaDefinition, error)
+	// Schema retrieves a schema definition by its name and version.
+	Schema(ctx context.Context, name string, version ...string) (*schema.SchemaDefinition, error)
 
 	// Metadata retrieves metadata about the persistence layer, optionally filtered
 	// by the provided criteria.
@@ -378,7 +378,7 @@ type BasePersistence interface {
 		filter *MetadataFilter,
 	) (Metadata, error)
 
-	// Async provides a safe way to spawn a goroutine that is part of the transaction.
+	// Async provides a safe way to spawn a goroutine that is part of a transaction.
 	// It returns a Future that can be used to await the result of the operation.
 	Async(ctx context.Context, f func(ctx context.Context) (any, error)) Future
 
@@ -386,7 +386,9 @@ type BasePersistence interface {
 	// This allows for operations that are not tied to a specific collection,
 	// or for highly optimized, custom queries.
 	Query(ctx context.Context, rawQuery *query.RawQuery) (*query.RawQueryResult, error)
+
 }
+
 
 // Persistence defines the core contract for the persistence layer. It provides a
 // comprehensive set of methods for managing collections, schemas, transactions, and
@@ -503,9 +505,11 @@ type Collection interface {
 	Capabilities(ctx context.Context) *query.Capabilities
 }
 
-// QueryResult represents the result of a database query.
+
+
+// ReadResult represents the result of a database query.
 type ReadResult struct {
-	Data  any `json:"data"`
+	Data  []data.Document `json:"data"`
 	Count int `json:"count,omitempty"`
 }
 
@@ -540,4 +544,48 @@ type Transaction interface {
 
 	// ID returns the id of this transaction.
 	ID() string
+}
+
+
+// ModelCollection defines a set of type-safe operations for a specific model T.
+// It acts as a bridge between the untyped persistence layer and the domain models,
+// enabling robust business logic while maintaining strict type safety.
+type ModelCollection[T any] interface {
+	// --- State Management (CRUD) ---
+
+	// Create persists a new model and returns the hydrated version (with IDs/timestamps).
+	Create(ctx context.Context, doc T) (T, error)
+
+	// CreateMany performs a bulk insertion of multiple models.
+	CreateMany(ctx context.Context, docs []T) ([]T, error)
+
+	// FindByID retrieves a single model by its unique identifier.
+	FindByID(ctx context.Context, id string) (T, error)
+
+	// Read executes a structured query and returns a slice of matching models.
+	Read(ctx context.Context, q *query.Query) ([]T, error)
+
+	// Update applies partial changes to a model by ID and returns the updated state.
+	Update(ctx context.Context, id string, update T) (T, error)
+
+	// UpdateMany applies a partial update to all models matching the filter.
+	UpdateMany(ctx context.Context, filter *query.QueryFilter, update T) (int, error)
+
+	// DeleteByID removes a single model from the collection.
+	DeleteByID(ctx context.Context, id string) error
+
+	// DeleteMany removes all models matching the filter.
+	DeleteMany(ctx context.Context, filter *query.QueryFilter, unsafe bool) (int, error)
+
+	// --- Business Logic & Lifecycle ---
+
+	// Validate checks if the model instance conforms to the collection's schema.
+	// This allows for "dry-run" validation in business logic.
+	Validate(ctx context.Context, doc T, loose bool) error
+
+	// Subscribe registers a listener for real-time events on this model type.
+	Subscribe(ctx context.Context, options SubscriptionOptions) string
+
+	// Unsubscribe removes a previously registered event listener.
+	Unsubscribe(ctx context.Context, id string)
 }

@@ -299,12 +299,7 @@ func main() {
 	}
 
 	logger.Info(fmt.Sprintf("Found %d transactions for Alice:", txResult.Count))
-	var aliceDocs []data.Document
-	if txResult.Count == 1 {
-		aliceDocs = []data.Document{txResult.Data.(data.Document)}
-	} else if txResult.Count > 1 {
-		aliceDocs = txResult.Data.([]data.Document)
-	}
+	var aliceDocs  = txResult.Data
 
 	for _, doc := range aliceDocs {
 		// Access nested fields using schema names as keys
@@ -338,12 +333,7 @@ func main() {
 		log.Fatalf("Failed to query user details for account A002: %v", err)
 	}
 
-	var accountDocs []data.Document
-	if accountResult.Count == 1 {
-		accountDocs = []data.Document{accountResult.Data.(data.Document)}
-	} else if accountResult.Count > 1 {
-		accountDocs = accountResult.Data.([]data.Document)
-	}
+	var accountDocs = accountResult.Data
 
 	if len(accountDocs) > 0 {
 		doc := accountDocs[0]

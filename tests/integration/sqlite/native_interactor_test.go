@@ -736,7 +736,7 @@ func TestNativeInteractor_RawQuery(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, selectResult.Success)
 	assert.Equal(t, 2, selectResult.Count)
-	assert.Len(t, selectResult.Data.([]data.Document), 2)
+	assert.Len(t, selectResult.Data, 2)
 
 	// Verify selected data
 	selectedDocs := selectResult.Data.([]data.Document)

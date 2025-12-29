@@ -59,7 +59,7 @@ func TestCollection_Read(t *testing.T) {
 	readResult, err := collection.Read(context.Background(), &readQuery)
 	require.NoError(t, err)
 	assert.Equal(t, 1, readResult.Count)
-	readDoc := readResult.Data.(data.Document)
+	readDoc := readResult.Data[0]
 	assert.Equal(t, "test-doc", readDoc["name"])
 }
 
@@ -81,7 +81,7 @@ func TestCollection_Update(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, readUpdatedResult.Count)
 
-	readUpdatedDoc := readUpdatedResult.Data.(data.Document)
+	readUpdatedDoc := readUpdatedResult.Data[0]
 
 	docToUpdate := data.Document{"name": "updated-doc"}
 
@@ -99,7 +99,7 @@ func TestCollection_Update(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Equal(t, 1, readUpdatedResult.Count)
-	readUpdatedDoc = readUpdatedResult.Data.(data.Document)
+	readUpdatedDoc = readUpdatedResult.Data[0]
 	assert.Equal(t, "updated-doc", readUpdatedDoc["name"])
 }
 

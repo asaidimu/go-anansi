@@ -222,22 +222,35 @@ func setMapField(field reflect.Value, values map[string]any) error {
 	return nil
 }
 
-// FromStructWithTags creates a Document from a struct using 'doc' tags
+// FromStructWithTags creates a Document from a struct using 'doc' tags.
+// It recursively converts nested structs and slices.
 func FromStructWithTags(s any, partial ...bool) (Document, error) {
 	rv := reflect.ValueOf(s)
 	if rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return nil, nil
+		}
 		rv = rv.Elem()
 	}
 
 	if rv.Kind() != reflect.Struct {
-		return FromStruct(s) // Fallback to JSON marshaling
+		return FromStruct(s) // Fallback to JSON marshaling for non-structs
+	}
+
+	// Handle time.Time as a special case that should not be converted to a map
+	if _, ok := rv.Interface().(time.Time); ok {
+		// This function is expected to return a Document (map[string]any).
+		// Returning the time.Time value directly would be a type error.
+		// The caller, convertInterface, handles this case appropriately.
+		// This check here is more of a safeguard.
+		return nil, common.SystemErrorFrom(ErrTypeConversionFailed).WithMessage("cannot convert time.Time to Document directly")
 	}
 
 	rt := rv.Type()
 	doc := make(Document)
 
 	allowPartial := false
-	if partial != nil {
+	if len(partial) > 0 {
 		allowPartial = partial[0]
 	}
 
@@ -250,12 +263,10 @@ func FromStructWithTags(s any, partial ...bool) (Document, error) {
 			continue
 		}
 
-		// Parse tag options
 		tagParts := strings.Split(docTag, ",")
 		fieldName := tagParts[0]
 		options := tagParts[1:]
 
-		// Check omitempty option
 		omitEmpty := false
 		for _, opt := range options {
 			if opt == "omitempty" {
@@ -263,15 +274,64 @@ func FromStructWithTags(s any, partial ...bool) (Document, error) {
 			}
 		}
 
-		// Skip zero values if omitempty
-		if allowPartial || (omitEmpty && fieldValue.IsZero()) {
+		// Logic for skipping fields:
+		// - In partial mode, skip zero-value fields.
+		// - In full mode, only skip zero-value fields if omitempty is set.
+		if (allowPartial && fieldValue.IsZero()) || (!allowPartial && omitEmpty && fieldValue.IsZero()) {
 			continue
 		}
 
-		// Convert field value
-		value := fieldValue.Interface()
+		value := convertInterface(fieldValue.Interface())
 		doc[fieldName] = value
 	}
 
 	return doc, nil
+}
+
+// convertInterface recursively converts an interface value to its generic representation.
+func convertInterface(v any) any {
+	if v == nil {
+		return nil
+	}
+
+	rv := reflect.ValueOf(v)
+
+	// Dereference pointers to get the underlying value
+	if rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return nil
+		}
+		rv = rv.Elem()
+	}
+
+	// Use the potentially dereferenced value's interface
+	v = rv.Interface()
+
+	// time.Time is a struct but should be treated as a primitive value.
+	if _, ok := v.(time.Time); ok {
+		return v
+	}
+
+	switch rv.Kind() {
+	case reflect.Struct:
+		// Recursively convert nested structs into map[string]any
+		doc, err := FromStructWithTags(v)
+		if err != nil {
+			return v // Return original value on error
+		}
+		return doc
+
+	case reflect.Slice:
+		s := rv
+		// Create a generic slice and recursively convert each element
+		ret := make([]any, s.Len())
+		for i := 0; i < s.Len(); i++ {
+			ret[i] = convertInterface(s.Index(i).Interface())
+		}
+		return ret
+
+	default:
+		// Return primitive types as is
+		return v
+	}
 }

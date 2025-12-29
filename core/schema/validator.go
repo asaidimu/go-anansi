@@ -901,7 +901,7 @@ func (n *UnexpectedFieldsNode) Execute(ctx *ValidationContext) *NodeResult {
 		return &NodeResult{Success: true}
 	}
 
-	dataMap, ok := currentData.(map[string]any)
+	dataMap, ok := utils.GetMapStringAny(currentData)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for unexpected field check", Path: n.path}}}
 	}
@@ -921,7 +921,7 @@ func (n *ConditionalUnexpectedFieldsNode) Execute(ctx *ValidationContext) *NodeR
 		return &NodeResult{Success: true}
 	}
 
-	dataMap, ok := currentData.(map[string]any)
+	dataMap, ok := utils.GetMapStringAny(currentData)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for conditional field check", Path: n.path}}}
 	}
@@ -963,7 +963,7 @@ func (n *RequiredFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 		}
 	}
 
-	dataMap, ok := parentData.(map[string]any)
+	dataMap, ok := utils.GetMapStringAny(parentData)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_DATA_STRUCTURE", Message: "Cannot check for required fields on non-object parent", Path: parentPath}}}
 	}
@@ -986,7 +986,7 @@ func (n *ConditionalRequiredFieldNode) Execute(ctx *ValidationContext) *NodeResu
 		return &NodeResult{Success: true}
 	}
 
-	dataMap, ok := parentData.(map[string]any)
+	dataMap, ok := utils.GetMapStringAny(parentData)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "INVALID_DATA_STRUCTURE", Message: "Cannot check for required fields on non-object parent", Path: parentPath}}}
 	}
@@ -1012,7 +1012,7 @@ func (n *ConditionalFieldNode) Execute(ctx *ValidationContext) *NodeResult {
 		return &NodeResult{Success: true}
 	}
 
-	dataMap, ok := parentData.(map[string]any)
+	dataMap, ok := utils.GetMapStringAny(parentData)
 	if !ok {
 		// Not an object, so can't evaluate condition or check for field.
 		return &NodeResult{Success: true}
@@ -1078,8 +1078,8 @@ func (n *ArrayValidationNode) executeArrayValidation(ctx *ValidationContext) *No
 		return &NodeResult{Success: true}
 	}
 
-	items, ok := value.([]any)
-	if !ok {
+	val := reflect.ValueOf(value)
+	if val.Kind() != reflect.Slice {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected array", Path: n.path}}}
 	}
 
@@ -1089,7 +1089,8 @@ func (n *ArrayValidationNode) executeArrayValidation(ctx *ValidationContext) *No
 
 	var allIssues []common.Issue
 
-	for i, item := range items {
+	for i := 0; i < val.Len(); i++ {
+		item := val.Index(i).Interface()
 		itemPath := fmt.Sprintf("%s[%d]", n.path, i)
 		itemIssues, _ := n.graph.traverse(ctx.FunctionMap, map[string]any{"item": item}, false)
 		for j := range itemIssues {
@@ -1111,7 +1112,7 @@ func (n *RecordValidationNode) executeRecordValidation(ctx *ValidationContext) *
 		return &NodeResult{Success: true}
 	}
 
-	recordMap, ok := value.(map[string]any)
+	recordMap, ok := utils.GetMapStringAny(value)
 	if !ok {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected object for record", Path: n.path}}}
 	}
@@ -1139,13 +1140,14 @@ func (n *SetValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 		return &NodeResult{Success: true}
 	}
 
-	items, ok := value.([]any)
-	if !ok {
+	val := reflect.ValueOf(value)
+	if val.Kind() != reflect.Slice {
 		return &NodeResult{Success: false, Issues: []common.Issue{{Code: "TYPE_MISMATCH", Message: "Expected array for set", Path: n.path}}}
 	}
 
 	seen := make(map[string]bool)
-	for i, item := range items {
+	for i := 0; i < val.Len(); i++ {
+		item := val.Index(i).Interface()
 		key := fmt.Sprintf("%v", item)
 		if seen[key] {
 			return &NodeResult{Success: false, Issues: []common.Issue{{Code: "SET_DUPLICATE", Message: fmt.Sprintf("Duplicate value found in set at index %d", i), Path: n.path}}}
@@ -1234,7 +1236,7 @@ func (n *ConstraintNode) Execute(ctx *ValidationContext) *NodeResult {
 
 		issuePath := n.path
 		if n.constraint.Field != nil && *n.constraint.Field != "" {
-			if _, ok := predicateData.(map[string]any); ok {
+			if _, ok := utils.GetMapStringAny(predicateData); ok {
 				if n.path != "" {
 					issuePath = buildPath(n.path, *n.constraint.Field)
 				} else {

@@ -22,7 +22,7 @@ func MetadataFieldPath(field string) string {
 	return fmt.Sprintf("%s.%s", MetadataField, field)
 }
 
-// DefaultMetadataSchema returns the base schema definition for the _metadata block.
+// DefaultMetadataSchema returns the base schema definition for the _metadata_ block.
 // This schema includes the fields managed by the framework for versioning and security.
 // Consumers can extend the returned object by adding their own custom field definitions
 // to its Fields map before passing it into the EnrichmentOptions.

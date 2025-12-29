@@ -1,6 +1,7 @@
 package api
 
 import (
+	"maps"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -243,18 +244,7 @@ func (s *APIServer) readDocuments(w http.ResponseWriter, r *http.Request, collec
 		}, r)
 		return
 	}
-	var documents []data.Document
-
-	switch result.Count {
-	case 0:
-		documents = []data.Document{}
-	case 1:
-		doc := result.Data.(data.Document)
-		documents = []data.Document{doc}
-	default:
-		docs := result.Data.([]data.Document)
-		documents = docs
-	}
+	documents := result.Data
 
 	s.Response.WriteJSON(w, http.StatusOK, map[string]any{
 		"documents": documents,
@@ -356,19 +346,10 @@ func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	existingDoc, ok := readResult.Data.(data.Document)
-	if !ok {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "INTERNAL_ERROR",
-			Message: "Unexpected data format from persistence layer",
-		}, r)
-		return
-	}
+	existingDoc := readResult.Data[0]
 
 	// Merge updateData into existingDoc
-	for key, value := range updateData {
-		existingDoc[key] = value
-	}
+	maps.Copy(existingDoc, updateData)
 
 	update := &base.CollectionUpdate{
 		Filter: query.NewQueryBuilder().Where("id").Eq(documentID).Build().Filters,

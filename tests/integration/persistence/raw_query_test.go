@@ -59,7 +59,7 @@ func TestPersistence_RawQuery_Update(t *testing.T) {
 	readResult, err := productsCollection.Read(ctx, &readQuery)
 	require.NoError(t, err)
 	assert.Equal(t, 1, readResult.Count)
-	readDoc := readResult.Data.(data.Document)
+	readDoc := readResult.Data[0]
 	assert.Equal(t, 1300.0, readDoc["price"])
 }
 
@@ -199,7 +199,7 @@ func TestPersistence_RawQuery_Delete(t *testing.T) {
 	readResult, err := productsCollection.Read(ctx, &readQuery)
 	require.NoError(t, err)
 	assert.Equal(t, 1, readResult.Count)
-	readDoc := readResult.Data.(data.Document)
+	readDoc := readResult.Data[0]
 	assert.Equal(t, "Laptop", readDoc["name"])
 }
 
@@ -322,6 +322,6 @@ func TestPersistence_RawQuery_CollectionRead(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 2, readResult.Count)
 
-	readDocs := readResult.Data.([]data.Document)
+	readDocs := readResult.Data
 	assert.Len(t, readDocs, 2)
 }

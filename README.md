@@ -343,7 +343,7 @@ func main() {
 	}
 	logger.Info("All Products:")
 	if resultAll.Count > 0 {
-		for _, doc := range resultAll.Data.([]data.Document) {
+		for _, doc := range resultAll.Data {
 			logger.Info("  ", zap.String("id", doc.ID()), zap.Any("data", doc))
 		}
 	} else {
@@ -517,7 +517,7 @@ func main() {
 
 	fmt.Printf("Found %d transactions for Alice:\n", txResult.Count)
 	if txResult.Count > 0 {
-		docs := txResult.Data.([]data.Document)
+		docs := txResult.Data
 		for _, doc := range docs {
 			ledgerTx := doc["LedgerTransaction"].(map[string]any)
 			user := doc["User"].(map[string]any)

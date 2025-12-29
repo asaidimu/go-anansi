@@ -115,7 +115,7 @@ func TestCollection_Create(t *testing.T) {
 		readResult, err := collection.Read(ctx, &readQuery)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, readResult.Count)
-		assert.Equal(t, expected, readResult.Data.(data.Document))
+		assert.Equal(t, expected, readResult.Data[0])
 	})
 
 	t.Run("multiple documents success", func(t *testing.T) {
@@ -136,8 +136,8 @@ func TestCollection_Create(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 2, readResult.Count)
 		// Note: Order might not be guaranteed, so we'll just check for presence
-		assert.Contains(t, readResult.Data.([]data.Document), docs[0])
-		assert.Contains(t, readResult.Data.([]data.Document), docs[1])
+		assert.Contains(t, readResult.Data, docs[0])
+		assert.Contains(t, readResult.Data, docs[1])
 	})
 
 	t.Run("insert documents error - duplicate ID", func(t *testing.T) {
@@ -168,7 +168,7 @@ func TestCollection_Read(t *testing.T) {
 		assert.NotNil(t, result)
 		assert.Equal(t, 1, result.Count)
 
-		final := result.Data.(data.Document)
+		final := result.Data[0]
 		final.StripMetadata()
 		assert.Equal(t, expected["name"], final["name"])
 	})
@@ -202,7 +202,7 @@ func TestCollection_Update(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, result.Count)
 
-	d := result.Data.(data.Document)
+	d := result.Data[0]
 	updates := data.Document{
 		"name": "UpdatedName",
 	}
@@ -216,7 +216,7 @@ func TestCollection_Update(t *testing.T) {
 		// We need to read the document again to get the latest version
 		readResult, err := c.Read(ctx, &q)
 		require.NoError(t, err)
-		latestVersion, _ := readResult.Data.(data.Document).GetInt("_metadata_.version")
+		latestVersion, _ := readResult.Data[0].GetInt("_metadata_.version")
 
 		wrongVersion := latestVersion + 10
 		updateParamsWrongVersion := &persistence.CollectionUpdate{Set: updates, Filter: q.Filters, Version: &wrongVersion}
@@ -253,7 +253,7 @@ func TestCollection_Update(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 2, readResult.Count)
 
-		docs := readResult.Data.([]data.Document)
+		docs := readResult.Data
 		assert.Equal(t, "done", docs[0]["status"])
 		assert.Equal(t, "done", docs[1]["status"])
 	})

@@ -208,7 +208,7 @@ func (fieldDef *FieldDefinition) ValidateType(value any) bool {
 	case FieldTypeBoolean:
 		_, ok = value.(bool)
 	case FieldTypeArray, FieldTypeSet:
-		_, ok = value.([]any)
+		ok = reflect.ValueOf(value).Kind() == reflect.Slice
 	case FieldTypeObject, FieldTypeRecord:
 		rv := reflect.ValueOf(value)
 		if rv.Kind() == reflect.Map {
@@ -356,3 +356,4 @@ func (s *SchemaDefinition) MustAddField(field *FieldDefinition, provider func(*S
 	}
 	return result
 }
+

@@ -32,7 +32,7 @@ import (
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	u "github.com/asaidimu/go-anansi/v6/utils"
-	_ "github.com/mattn/go-sqlite3" // SQLite driver – imported for side-effects.
+	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
 
@@ -113,7 +113,7 @@ func Setup(config SetupConfig) (base.Persistence, error) {
 
 		newSchemas := make([]schema.SchemaDefinition, 0, len(config.Schemas))
 		for _, s := range config.Schemas {
-			exists, err := p.HasCollection(ctx, s.Name)
+			exists, err := p.HasCollection(ctx, s.Name) // We check for the existince of the collection so as not to re-create it
 			if err != nil {
 				setupError = err
 				return
@@ -139,8 +139,8 @@ func Setup(config SetupConfig) (base.Persistence, error) {
 // PlaygroundConfig controls the dev-only environment.
 type PlaygroundConfig struct {
 	// DBPath is the SQLite DSN.
-	//   * ":memory:"  → in-memory (default)
-	//   * "file.db"   → persistent file on disk
+	//   * ":memory:"  -> in-memory (default)
+	//   * "file.db"   -> persistent file on disk
 	DBPath string
 
 	// EnableLogging turns on zap.NewDevelopment() output.

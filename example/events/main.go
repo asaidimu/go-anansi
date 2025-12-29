@@ -129,7 +129,7 @@ func main() {
 	}
 
 	if readResult.Count > 0 {
-		for _, doc := range readResult.Data.([]data.Document) {
+		for _, doc := range readResult.Data {
 			logger.Info(fmt.Sprintf("Found product: ID=%s, Name=%s, Price=%.2f, Stock=%d",
 				doc["id"], doc["name"], doc["price"], doc["stock"]))
 		}
@@ -155,7 +155,7 @@ func main() {
 		log.Fatalf("Failed to read product P001 after update: %v", err)
 	}
 	if readP001Result.Count > 0 {
-		updatedProduct := readP001Result.Data.(data.Document)
+		updatedProduct := readP001Result.Data[0]
 		logger.Info(fmt.Sprintf("Updated product P001: ID=%s, Name=%s, Price=%.2f, Stock=%d",
 			updatedProduct["id"], updatedProduct["name"], updatedProduct["price"], updatedProduct["stock"]))
 	}

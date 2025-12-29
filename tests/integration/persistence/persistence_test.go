@@ -241,7 +241,7 @@ func TestPersistence_Transact(t *testing.T) {
 			return nil, err
 		}
 		require.Equal(t, 1, bobResult.Count)
-		bobDoc := bobResult.Data.(data.Document)
+		bobDoc := bobResult.Data[0]
 
 		// Add 20 to Bob
 		bobDoc["balance"] = 70.0
@@ -263,7 +263,7 @@ func TestPersistence_Transact(t *testing.T) {
 	require.NoError(t, err)
 
 	balances := make(map[string]any)
-	for _, doc := range result.Data.([]data.Document) {
+	for _, doc := range result.Data {
 		balances[doc["name"].(string)] = doc["balance"]
 	}
 
@@ -279,7 +279,7 @@ func TestPersistence_Transact(t *testing.T) {
 			return nil, err
 		}
 		require.Equal(t, 1, aliceResult.Count)
-		aliceDoc := aliceResult.Data.(data.Document)
+		aliceDoc := aliceResult.Data[0]
 
 		// Subtract 10 from Alice
 		aliceDoc["balance"] = 70.0
@@ -299,7 +299,7 @@ func TestPersistence_Transact(t *testing.T) {
 			return nil, err
 		}
 		require.Equal(t, 1, bobResult.Count)
-		bobDoc := bobResult.Data.(data.Document)
+		bobDoc := bobResult.Data[0]
 		meta, _ := bobDoc.Metadata()
 		updateBob.SetMetadata(meta)
 
@@ -316,7 +316,7 @@ func TestPersistence_Transact(t *testing.T) {
 	require.NoError(t, err)
 
 	rollbackBalances := make(map[string]any)
-	for _, doc := range rollbackResult.Data.([]data.Document) {
+	for _, doc := range rollbackResult.Data {
 		rollbackBalances[doc["name"].(string)] = doc["balance"]
 	}
 
@@ -479,7 +479,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 			return nil, err
 		}
 		require.Equal(t, 1, aliceResult.Count)
-		aliceDoc := aliceResult.Data.(data.Document)
+		aliceDoc := aliceResult.Data[0]
 
 		// Subtract 10 from Alice
 		aliceDoc["balance"] = 50.0
@@ -622,7 +622,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	result, err := usersCollection.Read(context.Background(), &joinQuery)
 	require.NoError(t, err)
 	assert.NotNil(t, result)
-	d := result.Data.([]data.Document)
+	d := result.Data
 
 	// 6. Assert Results
 	assert.Len(t, d, 3) // Expecting 3 documents (all users)
@@ -737,7 +737,7 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, result.Success)
 	assert.Equal(t, 2, result.Count)
-	assert.Len(t, result.Data.([]data.Document), 2)
+	assert.Len(t, result.Data, 2)
 
 	// 5. Assert Results
 	joinedDocs := result.Data.([]data.Document)
@@ -810,10 +810,10 @@ func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
 	result, err := productsCollection.Read(ctx, rawReadQuery)
 	require.NoError(t, err)
 	assert.Equal(t, 3, result.Count)
-	assert.Len(t, result.Data.([]data.Document), 3)
+	assert.Len(t, result.Data, 3)
 
 	// 6. Assert Results
-	readDocs := result.Data.([]data.Document)
+	readDocs := result.Data
 
 	// Expecting three products, sorted by price DESC
 	assert.Equal(t, "prod1", readDocs[0]["pid"])

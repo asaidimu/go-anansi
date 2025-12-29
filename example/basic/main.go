@@ -11,7 +11,6 @@ import (
 	"go.uber.org/zap"
 )
 
-
 func main() {
 	app := NewApp()
 	cleanup, err := app.Init()
@@ -169,4 +168,100 @@ func main() {
 		log.Fatalf("Final read failed: %v", err)
 	}
 	logger.Info("Final product count", zap.Int("remaining", len(finalProducts)))
+
+	// --- Demonstrate Users and Carts ---
+	logger.Info("--- Testing Users and Carts ---")
+
+	users, err := app.UsersModel()
+	if err != nil {
+		log.Fatalf("Failed to get users collection: %v", err)
+	}
+	logger.Info("Typed Users collection ready.")
+
+	// Create single user
+	u1 := User{
+		Username: "john.doe",
+		Email:    "john.doe@example.com",
+	}
+	u1, err = users.CreateUser(ctx, u1)
+	if err != nil {
+		log.Fatalf("Failed to create user: %v", err)
+	}
+	logger.Info("Created user", zap.String("id", u1.ID), zap.String("username", u1.Username))
+
+	// Create multiple users
+	newUsers := []User{
+		{Username: "jane.doe", Email: "jane.doe@example.com"},
+		{Username: "peter.jones", Email: "peter.jones@example.com"},
+	}
+	createdUsers, err := users.CreateUsers(ctx, newUsers)
+	if err != nil {
+		log.Fatalf("Failed to create users: %v", err)
+	}
+	logger.Info("Created multiple users", zap.Int("count", len(createdUsers)))
+
+	// Read all users
+	allUsers, err := users.ListAllUsers(ctx)
+	if err != nil {
+		log.Fatalf("Read all users failed: %v", err)
+	}
+	logger.Info("All users", zap.Int("count", len(allUsers)))
+
+	// Get single user by ID
+	foundUser, err := users.GetUser(ctx, u1.ID)
+	if err != nil {
+		log.Fatalf("Failed to get user: %v", err)
+	}
+	logger.Info("Found user by ID", zap.String("id", foundUser.ID), zap.String("username", foundUser.Username))
+
+	// Update user
+	updatedUser, err := users.UpdateUser(ctx, u1.ID, User{Username: "john.doe.updated"})
+	if err != nil {
+		log.Fatalf("Update user failed: %v", err)
+	}
+	logger.Info("Updated user", zap.String("id", updatedUser.ID), zap.String("username", updatedUser.Username))
+
+	// Delete user
+	if err = users.DeleteUser(ctx, u1.ID); err != nil {
+		log.Fatalf("Delete user failed: %v", err)
+	}
+	logger.Info("Deleted user", zap.String("id", u1.ID))
+
+	carts, err := app.CartsModel()
+	if err != nil {
+		log.Fatalf("Failed to get carts collection: %v", err)
+	}
+	logger.Info("Typed Carts collection ready.")
+
+	// Create single cart
+	c1 := Cart{
+		UserID:     createdUsers[0].ID, // Associate with one of the created users
+		ProductIDs: []string{finalProducts[0].ID, finalProducts[1].ID},
+		Quantity:   1,
+	}
+	c1, err = carts.CreateCart(ctx, c1)
+	if err != nil {
+		log.Fatalf("Failed to create cart: %v", err)
+	}
+	logger.Info("Created cart", zap.String("id", c1.ID), zap.String("user_id", c1.UserID))
+
+	// Update cart
+	updatedCart, err := carts.UpdateCart(ctx, c1.ID, Cart{Quantity: 2})
+	if err != nil {
+		log.Fatalf("Update cart failed: %v", err)
+	}
+	logger.Info("Updated cart", zap.String("id", updatedCart.ID), zap.Int("quantity", updatedCart.Quantity))
+
+	// Get single cart by ID
+	foundCart, err := carts.GetCart(ctx, c1.ID)
+	if err != nil {
+		log.Fatalf("Failed to get cart: %v", err)
+	}
+	logger.Info("Found cart by ID", zap.String("id", foundCart.ID), zap.String("user_id", foundCart.UserID))
+
+	// Delete cart
+	if err = carts.DeleteCart(ctx, c1.ID); err != nil {
+		log.Fatalf("Delete cart failed: %v", err)
+	}
+	logger.Info("Deleted cart", zap.String("id", c1.ID))
 }

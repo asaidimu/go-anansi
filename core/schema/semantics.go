@@ -5,13 +5,15 @@ import (
 )
 
 func (schema *SchemaDefinition) Validate() error {
+	// TODO: Create a JSON schema for schemas then use that to validate the
+	// structure before we can even unmarshal
 	basePath := ""
 	return schema.validateSchemaSemanticRecursive(basePath)
 }
 
 func (schema *SchemaDefinition) validateSchemaSemanticRecursive(basePath string) error {
-	for fieldName, fieldDef := range schema.Fields {
-		fieldPath := buildPath(basePath, fieldName)
+	for fieldId, fieldDef := range schema.Fields {
+		fieldPath := buildPath(basePath, fieldId)
 
 		if err := validateFieldSemantic(fieldDef, schema, fieldPath); err != nil {
 			return err
@@ -25,6 +27,7 @@ func (schema *SchemaDefinition) validateSchemaSemanticRecursive(basePath string)
 }
 
 func validateFieldSemantic(fieldDef *FieldDefinition, schema *SchemaDefinition, fieldPath string) error {
+
 	if fieldDef.Schema == nil {
 		return nil
 	}
@@ -42,6 +45,7 @@ func validateFieldSemantic(fieldDef *FieldDefinition, schema *SchemaDefinition, 
 		return ErrPrimitiveFieldSchemaReference.
 			WithOperation("schema.validateFieldSemantic").
 			WithMessage(fmt.Sprintf("primitive field type '%s' at '%s' cannot have schema references", fieldDef.Type, fieldPath))
+
 	}
 	return nil
 }
@@ -143,5 +147,3 @@ func validateNestedSchemaSemantics(fieldDef *FieldDefinition, schema *SchemaDefi
 	}
 	return nil
 }
-
-

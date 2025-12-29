@@ -46,6 +46,31 @@ func convertToDocumentMap(data any) (map[string]any, error) {
 	}
 }
 
+// TODO: refactor this file to remove duplication
+// NewDocument creates a new Document from a map[string]any.
+func NewDocumentWithContext(ctx context.Context, data map[string]any) (Document, error) {
+	if data == nil {
+		data = make(map[string]any)
+	}
+	return getFactory().newDocument(ctx, data)
+}
+
+// MustNewDocument creates a new Document from various map forms, panics on failure.
+func MustNewDocumentWithContext(ctx context.Context, data any) Document {
+	doc, err := convertToDocumentMap(data)
+	if err != nil {
+		panic(err)
+	}
+
+	d, err := getFactory().newDocument(ctx, doc)
+	if err != nil {
+		panic(err)
+	}
+
+	return d
+}
+
+
 // NewDocument creates a new Document from a map[string]any.
 func NewDocument(data map[string]any) (Document, error) {
 	if data == nil {

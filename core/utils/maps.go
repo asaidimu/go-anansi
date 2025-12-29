@@ -3,6 +3,7 @@ package utils
 import (
 	"reflect"
 	"strings"
+
 )
 
 func ConvertMaps(m map[string]any) {
@@ -95,3 +96,30 @@ func GetValueByPath(data any, path string) (any, bool) {
 
 	return current, true
 }
+
+func GetMapStringAny(value any) (map[string]any, bool) {
+	if value == nil {
+		return nil, false
+	}
+
+	// Fast path 1: Exact match
+	if m, ok := value.(map[string]any); ok {
+		return m, true
+	}
+
+	rv := reflect.ValueOf(value)
+	if rv.Kind() != reflect.Map || rv.Type().Key().Kind() != reflect.String {
+		return nil, false
+	}
+
+	// Fallback path: Use MapIter to avoid slice allocation from rv.MapKeys()
+	resultMap := make(map[string]any, rv.Len())
+	iter := rv.MapRange()
+	for iter.Next() {
+		// iter.Key() is guaranteed to be a string based on the check above
+		resultMap[iter.Key().String()] = iter.Value().Interface()
+	}
+
+	return resultMap, true
+}
+

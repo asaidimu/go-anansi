@@ -68,7 +68,7 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test Update
-	docToUpdate := result.Data.(data.Document)
+	docToUpdate := result.Data[0]
 	docToUpdate["name"] = "new_value"
 	updateFilter := query.NewQueryBuilder().Where("id").Eq(id).Build().Filters
 	_, err = collection.Update(context.Background(), &base.CollectionUpdate{Set: docToUpdate, Filter: updateFilter})
@@ -271,7 +271,7 @@ func TestPersistence_DocumentUpdateEvents(t *testing.T) {
 	readQuery := query.NewQueryBuilder().Where("id").Eq(id).Build()
 	readResult, err := collection.Read(context.Background(), &readQuery)
 	require.NoError(t, err)
-	originalDoc := readResult.Data.(data.Document)
+	originalDoc := readResult.Data[0]
 
 	// Create a new document for update, copying original metadata
 	updateDoc := originalDoc.Clone()

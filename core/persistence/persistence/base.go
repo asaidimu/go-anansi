@@ -147,7 +147,7 @@ func (p *basePersistence) ListCollections(ctx context.Context) ([]string, error)
 }
 
 func (p *basePersistence) CreateCollection(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
-	_, err := (p.registry).CreateCollection(ctx, &sc)
+	_, err := p.registry.CreateCollection(ctx, &sc)
 	if err != nil {
 		return nil, err
 	}

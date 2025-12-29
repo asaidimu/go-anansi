@@ -142,7 +142,7 @@ func TestPersistence_Transact(t *testing.T) {
 		}
 
 		require.Equal(t, 1, aliceResult.Count)
-		aliceDoc := aliceResult.Data.(data.Document)
+		aliceDoc := aliceResult.Data[0]
 
 		// Subtract 20 from Alice
 		aliceDoc["balance"] = 80.0
@@ -166,7 +166,7 @@ func TestPersistence_Transact(t *testing.T) {
 				return nil, err
 			}
 			require.Equal(t, 1, bobResult.Count)
-			bobDoc := bobResult.Data.(data.Document)
+			bobDoc := bobResult.Data[0]
 
 			// Add 20 to Bob
 			bobDoc["balance"] = 70.0
@@ -190,7 +190,7 @@ func TestPersistence_Transact(t *testing.T) {
 	require.NoError(t, err)
 
 	balances := make(map[string]any)
-	for _, doc := range result.Data.([]data.Document) {
+	for _, doc := range result.Data {
 		balances[doc["id"].(string)] = doc["balance"]
 	}
 
@@ -211,7 +211,7 @@ func TestPersistence_Transact(t *testing.T) {
 			return nil, err
 		}
 		require.Equal(t, 1, aliceResult.Count)
-		aliceDoc := aliceResult.Data.(data.Document)
+		aliceDoc := aliceResult.Data[0]
 
 		// Subtract 10 from Alice
 		aliceDoc["balance"] = 70.0
@@ -231,7 +231,7 @@ func TestPersistence_Transact(t *testing.T) {
 			return nil, err
 		}
 		require.Equal(t, 1, bobResult.Count)
-		bobDoc := bobResult.Data.(data.Document)
+		bobDoc := bobResult.Data[0]
 		meta, _ := bobDoc.Metadata()
 		updateBob.SetMetadata(meta)
 
@@ -248,7 +248,7 @@ func TestPersistence_Transact(t *testing.T) {
 	require.NoError(t, err)
 
 	rollbackBalances := make(map[string]any)
-	for _, doc := range rollbackResult.Data.([]data.Document) {
+	for _, doc := range rollbackResult.Data {
 		rollbackBalances[doc["id"].(string)] = doc["balance"]
 	}
 
@@ -398,7 +398,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 				return nil, err
 			}
 			require.Equal(t, 1, aliceResult.Count)
-			aliceDoc := aliceResult.Data.(data.Document)
+			aliceDoc := aliceResult.Data[0]
 
 			// Update Alice's balance
 			aliceDoc["balance"] = 50.0
@@ -419,7 +419,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	result, err := finalAccounts.Read(context.Background(), &query.Query{})
 	require.NoError(t, err)
 	require.Equal(t, 1, result.Count)
-	doc := result.Data.(data.Document)
+	doc := result.Data[0]
 	balances := make(map[string]any)
 	balances[doc["id"].(string)] = doc["balance"]
 
@@ -518,7 +518,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	result, err := usersCollection.Read(context.Background(), &joinQuery)
 	require.NoError(t, err)
 	assert.NotNil(t, result)
-	d := result.Data.([]data.Document)
+	d := result.Data
 
 	// 6. Assert Results
 	assert.Len(t, d, 3) // Expecting 3 documents (all users)

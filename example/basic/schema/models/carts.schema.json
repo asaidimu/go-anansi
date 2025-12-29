@@ -1,0 +1,22 @@
+{
+  "name": "Carts",
+  "version": "1.0.0",
+  "fields": {
+    "user_id": {
+      "name": "user_id",
+      "type": "string",
+      "required": true
+    },
+    "product_ids": {
+      "name": "product_ids",
+      "type": "array",
+      "itemsType": "string",
+      "required": true
+    },
+    "quantity": {
+      "name": "quantity",
+      "type": "integer",
+      "required": true
+    }
+  }
+}

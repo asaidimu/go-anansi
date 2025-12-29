@@ -165,25 +165,7 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 		return result, err
 	}
 
-	var docs []data.Document
-	var wasSingle bool
-
-	if result.Count == 1 {
-		// Expect a single document
-		doc, ok := result.Data.(data.Document)
-		if !ok {
-			return nil, base.ErrUnexpectedType.WithMessage("unexpected type for single document")
-		}
-		docs = []data.Document{doc}
-		wasSingle = true
-	} else {
-		// Expect a slice of documents
-		list, ok := result.Data.([]data.Document)
-		if !ok {
-			return nil, base.ErrUnexpectedType.WithMessage("unexpected type for multiple documents")
-		}
-		docs = list
-	}
+	docs := result.Data
 
 	// Ensure all docs have metadata and are re-hashed
 	for i, doc := range docs {
@@ -196,12 +178,7 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 		}
 	}
 
-	// Restore original shape
-	if wasSingle {
-		result.Data = docs[0]
-	} else {
-		result.Data = docs
-	}
+	result.Data = docs
 
 	return result, nil
 }

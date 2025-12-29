@@ -148,14 +148,6 @@ func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadRe
 		Count: count,
 	}
 
-	if count == 0 {
-		result.Data = nil
-	}
-
-	if count == 1 {
-		result.Data = docs[0]
-	}
-
 	return &result, nil
 }
 
