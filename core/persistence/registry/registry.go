@@ -224,9 +224,13 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []sc
 			}
 
 			// Build and persist registry entry
+			description := ""
+			if schema.Description != nil {
+				description = *schema.Description
+			}
 			entry := &RegistryEntry{
 				Name:          schema.Name,
-				Description:   schema.Description,
+				Description:   description,
 				ActiveVersion: schema.Version,
 				Versions: map[string]SchemaVersionRecord{
 					schema.Version: {

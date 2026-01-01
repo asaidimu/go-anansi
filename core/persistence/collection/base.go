@@ -51,6 +51,10 @@ func newBaseCollection(
 		return nil, err
 	}
 
+	description := ""
+	if sc.Description != nil {
+		description = *sc.Description
+	}
 	base := &baseCollection{
 		eventEmitter:  eventEmitter,
 		name:          name,
@@ -65,7 +69,7 @@ func newBaseCollection(
 			SchemaVersion:  sc.Version,
 			Name:           name,
 			CollectionName: name,
-			Description:    sc.Description,
+			Description:    description,
 			Status:         "active",
 			CreatedAt:      fmt.Sprintf("%d", 0), // get this from the registry
 			CreatedBy:      "system",             // this field is being used wrong
@@ -120,7 +124,7 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) (
 
 	if err != nil {
 		for i, doc := range docs {
-			results[i] = base.CreateResult{Status: base.StatusFailedPersistence, Data: doc, Error: common.SystemErrorFrom(err) }
+			results[i] = base.CreateResult{Status: base.StatusFailedPersistence, Data: doc, Error: common.SystemErrorFrom(err)}
 		}
 		return results, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INSERT_DOCUMENTS_FAILED")
 	}

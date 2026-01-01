@@ -56,7 +56,7 @@ func newTestSchema(name ...string) *schema.SchemaDefinition {
 	return &schema.SchemaDefinition{
 		Name:        sname,
 		Version:     "8.0.0",
-		Description: "test collection",
+		Description: utils.StringPtr("test collection"),
 		Fields: map[string]*schema.FieldDefinition{
 			"name":      {Name: "name", Type: "string", Required: utils.BoolPtr(true)},
 			"age":       {Name: "age", Type: "integer"},
@@ -99,7 +99,6 @@ func TestPersistence_CreateAndGetCollection(t *testing.T) {
 	logger, err := zap.NewDevelopment()
 	require.NoError(t, err)
 
-
 	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
@@ -108,7 +107,7 @@ func TestPersistence_CreateAndGetCollection(t *testing.T) {
 	logger.Debug("Started create collection")
 
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-    defer cancel()
+	defer cancel()
 	// Create the collection
 	createdCollection, err := p.CreateCollection(timeoutCtx, *schema)
 	require.NoError(t, err)
@@ -227,7 +226,7 @@ func TestPersistence_Transact(t *testing.T) {
 		require.Equal(t, 1, aliceResult.Count)
 
 		// Subtract 20 from Alice
-		aliceDoc := data.Document{ "balance": 80 }
+		aliceDoc := data.Document{"balance": 80}
 		filterAlice := query.NewQueryBuilder().Where("name").Eq("Alice").Build().Filters
 		_, err = acc.Update(tctx, &base.CollectionUpdate{Set: aliceDoc, Filter: filterAlice})
 		if err != nil {
@@ -432,7 +431,7 @@ func TestPersistence_MetadataOnEmptyDB(t *testing.T) {
 
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor, nil,  logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// Get metadata from an empty database
@@ -667,11 +666,13 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 		Name:    "users",
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
-			"uid":   {Name: "uid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
+			"uid":  {Name: "uid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
 			"name": {Name: "name", Type: schema.FieldTypeString},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "ix_uid", Fields: []string{"uid"}, Type: schema.IndexTypeNormal},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition{Name: "ix_uid", Fields: []string{"uid"}, Type: schema.IndexTypeNormal},
+			},
 		},
 	}
 
@@ -683,8 +684,11 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 			"user_id":  {Name: "user_id", Type: schema.FieldTypeString},
 			"amount":   {Name: "amount", Type: schema.FieldTypeNumber},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "order_id_pk", Fields: []string{"order_id"}, Type: schema.IndexTypePrimary},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition{
+					Name: "order_id_pk", Fields: []string{"order_id"}, Type: schema.IndexTypePrimary},
+			},
 		},
 	}
 
@@ -772,8 +776,10 @@ func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
 			"name":  {Name: "name", Type: schema.FieldTypeString},
 			"price": {Name: "price", Type: schema.FieldTypeNumber},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "ix_pid", Fields: []string{"pid"}, Type: schema.IndexTypeNormal},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition{Name: "ix_pid", Fields: []string{"pid"}, Type: schema.IndexTypeNormal},
+			},
 		},
 	}
 
@@ -795,7 +801,7 @@ func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
 	// 4. Construct a query.Query with a RawQuery for collection.Read()
 	rawReadQuery := &query.Query{
 		Raw: &query.RawQuery{
-			Template: `SELECT pid, name, price FROM {{collections.products}} WHERE price > ? ORDER BY price DESC`,
+			Template:   `SELECT pid, name, price FROM {{collections.products}} WHERE price > ? ORDER BY price DESC`,
 			Parameters: []any{float64(50.0)},
 			Collections: map[string]query.RawQueryTarget{
 				"products": {Collection: "products"},

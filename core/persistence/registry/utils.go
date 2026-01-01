@@ -110,9 +110,9 @@ func EnrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
 	sc = sc.MustAddField(idField, nil)
 
 	// --- Enforce ID Index ---
-	var filteredIndexes []schema.IndexDefinition
+	var filteredIndexes []schema.IndexOrReference
 	for _, index := range sc.Indexes {
-		if len(index.Fields) == 1 && index.Fields[0] == data.DocumentID {
+		if len(index.Index.Fields) == 1 && index.Index.Fields[0] == data.DocumentID {
 			continue // Skip user-defined index on 'id'.
 		}
 		filteredIndexes = append(filteredIndexes, index)

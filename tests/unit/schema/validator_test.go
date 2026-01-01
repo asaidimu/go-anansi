@@ -25,9 +25,11 @@ func TestValidator_Validate(t *testing.T) {
 			"email": {
 				Name: "email",
 				Type: schema.FieldTypeString,
-				Constraints: []schema.SchemaConstraintRule[schema.FieldType]{
-					schema.Constraint[schema.FieldType]{
-						Predicate: "isEmail",
+				Constraints: []schema.ConstraintRule[schema.FieldType]{
+					{
+						Constraint: &schema.Constraint[schema.FieldType]{
+							Predicate: "isEmail",
+						},
 					},
 				},
 			},
@@ -149,8 +151,8 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 	stringType := schema.FieldTypeString
 	nestedSchema := &schema.NestedSchemaDefinition{
 		Name:         "address",
-		IsStructured: &trueBool,
-		StructuredFieldsMap: map[string]*schema.FieldDefinition{
+		Fields: &schema.NestedSchemaFields{
+			FieldsMap: map[string]*schema.FieldDefinition{
 			"street": {
 				Name:     "street",
 				Type:     schema.FieldTypeString,
@@ -161,12 +163,13 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 				Type: schema.FieldTypeString,
 			},
 		},
+		},
 	}
 
 	contactSchema := &schema.NestedSchemaDefinition{
 		Name:         "contact",
-		IsStructured: &trueBool,
-		StructuredFieldsMap: map[string]*schema.FieldDefinition{
+		Fields: &schema.NestedSchemaFields{
+			FieldsMap: map[string]*schema.FieldDefinition{
 			"email": {
 				Name: "email",
 				Type: schema.FieldTypeString,
@@ -175,6 +178,7 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 				Name: "phone",
 				Type: schema.FieldTypeString,
 			},
+		},
 		},
 	}
 
@@ -191,8 +195,8 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 				ItemsType: &stringType,
 			},
 			"contacts": {
-				Name: "contacts",
-				Type: schema.FieldTypeSet,
+				Name:      "contacts",
+				Type:      schema.FieldTypeSet,
 				ItemsType: &stringType,
 			},
 			"primaryContact": {

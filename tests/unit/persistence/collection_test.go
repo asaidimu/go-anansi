@@ -39,7 +39,7 @@ func testSchema(name ...string) *schema.SchemaDefinition {
 	return &schema.SchemaDefinition{
 		Name:        sname,
 		Version:     "1.0.0",
-		Description: "test collection",
+		Description: utils.StringPtr("test collection"),
 		Fields: map[string]*schema.FieldDefinition{
 			"name":   {Name: "name", Type: "string", Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
 			"status": {Name: "status", Type: "string"},

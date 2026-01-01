@@ -303,10 +303,10 @@ func (i *NativeInteractor[T]) createCollectionLogic(ctx context.Context, sc sche
 
 	// 2. Create associated indexes
 	for _, index := range sc.Indexes {
-		if index.Type == schema.IndexTypePrimary {
+		if index.Index.Type == schema.IndexTypePrimary {
 			continue // Primary indexes are usually created automatically
 		}
-		if err := i.CreateIndex(ctx, sc.Name, index); err != nil {
+		if err := i.CreateIndex(ctx, sc.Name, *index.Index); err != nil {
 			return err // CreateIndex already returns a detailed NativeError
 		}
 	}

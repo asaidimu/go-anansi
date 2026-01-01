@@ -18,37 +18,39 @@ func TestValidator_Validate_Extended(t *testing.T) {
 
 	// Define nested schemas
 	permissionSchema := &schema.NestedSchemaDefinition{
-		Name:         "permission",
-		IsStructured: &trueBool,
-		StructuredFieldsMap: map[string]*schema.FieldDefinition{
-			"resource": {
-				Name:     "resource",
-				Type:     schema.FieldTypeString,
-				Required: &trueBool,
-			},
-			"level": {
-				Name:     "level",
-				Type:     schema.FieldTypeEnum,
-				Required: &trueBool,
-				Values:   []any{"read", "write", "admin"},
+		Name: "permission",
+		Fields: &schema.NestedSchemaFields{
+			FieldsMap: map[string]*schema.FieldDefinition{
+				"resource": {
+					Name:     "resource",
+					Type:     schema.FieldTypeString,
+					Required: &trueBool,
+				},
+				"level": {
+					Name:     "level",
+					Type:     schema.FieldTypeEnum,
+					Required: &trueBool,
+					Values:   []any{"read", "write", "admin"},
+				},
 			},
 		},
 	}
 
 	roleSchema := &schema.NestedSchemaDefinition{
-		Name:         "role",
-		IsStructured: &trueBool,
-		StructuredFieldsMap: map[string]*schema.FieldDefinition{
-			"name": {
-				Name:     "name",
-				Type:     schema.FieldTypeString,
-				Required: &trueBool,
-			},
-			"fb08c75c-4d0c-4d28-88c2-da1e6219ee26": {
-				Name:      "permissions",
-				Type:      schema.FieldTypeArray,
-				ItemsType: &objectType,
-				Schema:    schema.NestedSchemaReference{ID: "permission"},
+		Name: "role",
+		Fields: &schema.NestedSchemaFields{
+			FieldsMap: map[string]*schema.FieldDefinition{
+				"name": {
+					Name:     "name",
+					Type:     schema.FieldTypeString,
+					Required: &trueBool,
+				},
+				"fb08c75c-4d0c-4d28-88c2-da1e6219ee26": {
+					Name:      "permissions",
+					Type:      schema.FieldTypeArray,
+					ItemsType: &objectType,
+					Schema:    schema.NestedSchemaReference{ID: "permission"},
+				},
 			},
 		},
 	}
@@ -93,35 +95,40 @@ func TestValidator_Validate_Extended(t *testing.T) {
 			},
 		},
 		NestedSchemas: map[string]*schema.NestedSchemaDefinition{
-			"6af36eb1-c0be-44b1-afa1-feb2a14f4427":   permissionSchema,
-			"role":         roleSchema,
-			"stringSchema": {Name: "stringSchema", Type: &stringType},
-			"numberSchema": {Name: "numberSchema", Type: &integerType},
+			"6af36eb1-c0be-44b1-afa1-feb2a14f4427": permissionSchema,
+			"role":                                 roleSchema,
+			"stringSchema":                         {Name: "stringSchema", Type: &stringType},
+			"numberSchema":                         {Name: "numberSchema", Type: &integerType},
 			"recordItem": {
-				Name:         "recordItem",
-				IsStructured: &trueBool,
-				StructuredFieldsMap: map[string]*schema.FieldDefinition{
-					"name": {
-						Name:     "name",
-						Type:     schema.FieldTypeString,
-						Required: &trueBool,
-					},
-					"value": {
-						Name: "value",
-						Type: schema.FieldTypeInteger,
+				Name: "recordItem",
+				Fields: &schema.NestedSchemaFields{
+					FieldsMap: map[string]*schema.FieldDefinition{
+						"name": {
+							Name:     "name",
+							Type:     schema.FieldTypeString,
+							Required: &trueBool,
+						},
+						"value": {
+							Name: "value",
+							Type: schema.FieldTypeInteger,
+						},
 					},
 				},
 			},
 		},
 		Constraints: schema.SchemaConstraint[schema.FieldType]{
-			schema.ConstraintGroup[schema.FieldType]{
-				Name:     "user_constraints",
-				Operator: common.LogicalAnd,
-				Rules: []schema.SchemaConstraintRule[schema.FieldType]{
-					schema.Constraint[schema.FieldType]{
-						Name:      "username_availability",
-						Predicate: "isUsernameAvailable",
-						Field:     &[]string{"username"}[0],
+			schema.ConstraintRule[schema.FieldType]{
+				ConstraintGroup: &schema.ConstraintGroup[schema.FieldType]{
+					Name:     "user_constraints",
+					Operator: common.LogicalAnd,
+					Rules: []schema.ConstraintRule[schema.FieldType]{
+						{
+							Constraint: &schema.Constraint[schema.FieldType]{
+								Name:      "username_availability",
+								Predicate: "isUsernameAvailable",
+								Field:     &[]string{"username"}[0],
+							},
+						},
 					},
 				},
 			},

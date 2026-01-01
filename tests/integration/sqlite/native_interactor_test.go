@@ -63,8 +63,12 @@ func TestNativeInteractor_CreateCollection(t *testing.T) {
 			"name": {Name: "name", Type: schema.FieldTypeString},
 			"age":  {Name: "age", Type: schema.FieldTypeInteger},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition{
+
+			Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+			},
 		},
 	}
 
@@ -120,8 +124,10 @@ func TestNativeInteractor_InsertDocuments(t *testing.T) {
 			"name":       {Name: "name", Type: schema.FieldTypeString},
 			"price":      {Name: "price", Type: schema.FieldTypeNumber},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "product_id_pk", Fields: []string{"product_id"}, Type: schema.IndexTypePrimary},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition {Name: "product_id_pk", Fields: []string{"product_id"}, Type: schema.IndexTypePrimary},
+			},
 		},
 	}
 
@@ -178,8 +184,10 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 			"amount":      {Name: "amount", Type: schema.FieldTypeNumber},
 			"status":      {Name: "status", Type: schema.FieldTypeString},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "order_id_pk", Fields: []string{"order_id"}, Type: schema.IndexTypePrimary},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition {Name: "order_id_pk", Fields: []string{"order_id"}, Type: schema.IndexTypePrimary},
+			},
 		},
 	}
 
@@ -270,8 +278,10 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 			"description": {Name: "description", Type: schema.FieldTypeString},
 			"completed": {Name: "completed", Type: schema.FieldTypeBoolean},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "task_id_pk", Fields: []string{"task_id"}, Type: schema.IndexTypePrimary},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition {Name: "task_id_pk", Fields: []string{"task_id"}, Type: schema.IndexTypePrimary},
+			},
 		},
 	}
 
@@ -351,8 +361,10 @@ func TestNativeInteractor_DeleteDocuments(t *testing.T) {
 			"item_id": {Name: "item_id", Type: schema.FieldTypeString},
 			"name":    {Name: "name", Type: schema.FieldTypeString},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "item_id_pk", Fields: []string{"item_id"}, Type: schema.IndexTypePrimary},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition {Name: "item_id_pk", Fields: []string{"item_id"}, Type: schema.IndexTypePrimary},
+			},
 		},
 	}
 
@@ -417,8 +429,10 @@ func TestNativeInteractor_DropCollection(t *testing.T) {
 		Fields: map[string]*schema.FieldDefinition{
 			"id": {Name: "id", Type: schema.FieldTypeString},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition {Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+			},
 		},
 	}
 
@@ -456,9 +470,13 @@ func TestNativeInteractor_CreateIndex(t *testing.T) {
 			"id":    {Name: "id", Type: schema.FieldTypeString},
 			"value": {Name: "value", Type: schema.FieldTypeString},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
-			{Name: "idx_value", Fields: []string{"value"}, Type: schema.IndexTypeUnique},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition {Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+			},
+			{
+				Index: &schema.IndexDefinition {Name: "idx_value", Fields: []string{"value"}, Type: schema.IndexTypeUnique},
+			},
 		},
 	}
 
@@ -500,9 +518,13 @@ func TestNativeInteractor_DropIndex(t *testing.T) {
 			"id":         {Name: "id", Type: schema.FieldTypeString},
 			"data_value": {Name: "data_value", Type: schema.FieldTypeString},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
-			{Name: "idx_data_value", Fields: []string{"data_value"}, Type: schema.IndexTypeNormal},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition {Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+			},
+			{
+				Index: &schema.IndexDefinition{Name: "idx_data_value", Fields: []string{"data_value"}, Type: schema.IndexTypeNormal},
+			},
 		},
 	}
 
@@ -542,8 +564,10 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 			"account_id": {Name: "account_id", Type: schema.FieldTypeString},
 			"balance":    {Name: "balance", Type: schema.FieldTypeNumber},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "account_id_pk", Fields: []string{"account_id"}, Type: schema.IndexTypePrimary},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition {Name: "account_id_pk", Fields: []string{"account_id"}, Type: schema.IndexTypePrimary},
+			},
 		},
 	}
 
@@ -710,8 +734,10 @@ func TestNativeInteractor_RawQuery(t *testing.T) {
 			"email": {Name: "email", Type: schema.FieldTypeString},
 			"age":   {Name: "age", Type: schema.FieldTypeInteger},
 		},
-		Indexes: []schema.IndexDefinition{
-			{Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+		Indexes: []schema.IndexOrReference{
+			{
+				Index: &schema.IndexDefinition {Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+			},
 		},
 	}
 	ctx := context.Background()

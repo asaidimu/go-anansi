@@ -32,6 +32,7 @@ const (
 	FieldTypeRecord  FieldType = "record"
 	FieldTypeUnion   FieldType = "union"
 	FieldTypeUnknown FieldType = "unknown"
+	FieldTypeDynamic FieldType = "dynamic" // Deprecated: Use FieldTypeRecord instead
 )
 
 // IndexType represents the type of an index, which is used to optimize database queries.
@@ -89,32 +90,143 @@ type Constraint[T FieldType] struct {
 	ErrorMessage *string         `json:"errorMessage,omitempty"`
 }
 
-// IsSchemaConstraintRule is a marker method to satisfy the SchemaConstraintRule interface.
-func (c Constraint[T]) IsSchemaConstraintRule() {}
-
 // ConstraintGroup defines a group of multiple constraints with a logical operator.
 type ConstraintGroup[T FieldType] struct {
-	Name     string                    `json:"name"`
-	Operator common.LogicalOperator    `json:"operator"`
-	Rules    []SchemaConstraintRule[T] `json:"rules"`
+	Name     string                 `json:"name"`
+	Operator common.LogicalOperator `json:"operator"`
+	Rules    []ConstraintRule[T]    `json:"rules"`
 }
 
-// IsSchemaConstraintRule is a marker method to satisfy the SchemaConstraintRule interface.
-func (cg ConstraintGroup[T]) IsSchemaConstraintRule() {}
-
-// SchemaConstraintRule is an interface that both Constraint and ConstraintGroup must implement.
-type SchemaConstraintRule[T FieldType] interface {
-	IsSchemaConstraintRule()
+// ResourceReference defines a reference to a component in the registry.
+type ResourceReference struct {
+	ID string `json:"id"`
 }
 
-// SchemaConstraint represents a collection of constraints or groups applied at the schema level.
-type SchemaConstraint[T FieldType] []SchemaConstraintRule[T]
+// ConstraintRule represents a discriminated union of Constraint, ConstraintGroup, or ResourceReference.
+// Exactly one field should be non-nil at any time.
+type ConstraintRule[T FieldType] struct {
+	Constraint      *Constraint[T]
+	ConstraintGroup *ConstraintGroup[T]
+
+	// TODO: put into use
+	Reference       *ResourceReference
+}
+
+// UnmarshalJSON implements custom unmarshaling for ConstraintRule.
+func (cr *ConstraintRule[T]) UnmarshalJSON(data []byte) error {
+	// Try ResourceReference first (simplest structure)
+	var ref ResourceReference
+	if err := json.Unmarshal(data, &ref); err == nil && ref.ID != "" {
+		cr.Reference = &ref
+		return nil
+	}
+
+	// Try ConstraintGroup (has operator field)
+	var temp struct {
+		Operator *common.LogicalOperator `json:"operator"`
+	}
+	if err := json.Unmarshal(data, &temp); err == nil && temp.Operator != nil {
+		var group ConstraintGroup[T]
+		if err := json.Unmarshal(data, &group); err == nil {
+			cr.ConstraintGroup = &group
+			return nil
+		}
+	}
+
+	// Default to Constraint
+	var constraint Constraint[T]
+	if err := json.Unmarshal(data, &constraint); err != nil {
+		return err
+	}
+	cr.Constraint = &constraint
+	return nil
+}
+
+// MarshalJSON implements custom marshaling for ConstraintRule.
+func (cr ConstraintRule[T]) MarshalJSON() ([]byte, error) {
+	if cr.Reference != nil {
+		return json.Marshal(cr.Reference)
+	}
+	if cr.ConstraintGroup != nil {
+		return json.Marshal(cr.ConstraintGroup)
+	}
+	if cr.Constraint != nil {
+		return json.Marshal(cr.Constraint)
+	}
+	return nil, fmt.Errorf("ConstraintRule has no active variant")
+}
+
+// IsConstraint returns true if this rule is a Constraint.
+func (cr *ConstraintRule[T]) IsConstraint() bool {
+	return cr.Constraint != nil
+}
+
+// IsConstraintGroup returns true if this rule is a ConstraintGroup.
+func (cr *ConstraintRule[T]) IsConstraintGroup() bool {
+	return cr.ConstraintGroup != nil
+}
+
+// IsReference returns true if this rule is a ResourceReference.
+func (cr *ConstraintRule[T]) IsReference() bool {
+	return cr.Reference != nil
+}
+
+// SchemaConstraint represents a collection of constraint rules.
+type SchemaConstraint[T FieldType] []ConstraintRule[T]
+
+// IndexOrReference represents a discriminated union of IndexDefinition or ResourceReference.
+// Exactly one field should be non-nil at any time.
+type IndexOrReference struct {
+	Index     *IndexDefinition
+
+	// TODO: put into use
+	Reference *ResourceReference
+}
+
+// UnmarshalJSON implements custom unmarshaling for IndexOrReference.
+func (ior *IndexOrReference) UnmarshalJSON(data []byte) error {
+	// Try ResourceReference first
+	var ref ResourceReference
+	if err := json.Unmarshal(data, &ref); err == nil && ref.ID != "" {
+		ior.Reference = &ref
+		return nil
+	}
+
+	// Default to IndexDefinition
+	var index IndexDefinition
+	if err := json.Unmarshal(data, &index); err != nil {
+		return err
+	}
+	ior.Index = &index
+	return nil
+}
+
+// MarshalJSON implements custom marshaling for IndexOrReference.
+func (ior IndexOrReference) MarshalJSON() ([]byte, error) {
+	if ior.Reference != nil {
+		return json.Marshal(ior.Reference)
+	}
+	if ior.Index != nil {
+		return json.Marshal(ior.Index)
+	}
+	return nil, fmt.Errorf("IndexOrReference has no active variant")
+}
+
+// IsIndex returns true if this is an IndexDefinition.
+func (ior *IndexOrReference) IsIndex() bool {
+	return ior.Index != nil
+}
+
+// IsReference returns true if this is a ResourceReference.
+func (ior *IndexOrReference) IsReference() bool {
+	return ior.Reference != nil
+}
 
 // NestedSchemaReference defines a reference to a nested schema.
 type NestedSchemaReference struct {
 	ID          string                      `json:"id"`
 	Constraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
-	Indexes     []IndexDefinition           `json:"indexes,omitempty"`
+	Indexes     []IndexOrReference          `json:"indexes,omitempty"`
 }
 
 // FieldDefinition defines a field within a schema.
@@ -136,32 +248,33 @@ type FieldDefinition struct {
 }
 
 func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
-	type Alias FieldDefinition // Create an alias to avoid infinite recursion
+	type Alias FieldDefinition
 
-	// Unmarshal into a temporary struct to access the 'type' field and raw 'schema' field
 	var temp struct {
 		Type   FieldType       `json:"type"`
 		Schema json.RawMessage `json:"schema,omitempty"`
 		*Alias
 	}
 
-	temp.Alias = (*Alias)(fd) // Point Alias to the actual FieldDefinition
+	temp.Alias = (*Alias)(fd)
 	if err := utils.FromJSON(data, &temp); err != nil {
 		return err
 	}
 
-	// Copy the unmarshaled data back to the original FieldDefinition
 	*fd = FieldDefinition(*temp.Alias)
 	fd.Type = temp.Type
 
-	// Now, handle the 'Schema' field based on its 'Type'
+	// Normalize deprecated "dynamic" to "record"
+	if fd.Type == FieldTypeDynamic {
+		fd.Type = FieldTypeRecord
+	}
+
 	if temp.Schema != nil {
 		handled := false
 		switch temp.Type {
-		case FieldTypeObject, FieldTypeArray, FieldTypeRecord:
+		case FieldTypeObject, FieldTypeArray, FieldTypeRecord, FieldTypeDynamic:
 			var singleSchema NestedSchemaReference
 			if err := utils.FromJSON(temp.Schema, &singleSchema); err == nil {
-				// Check if the unmarshalled schema is valid
 				if singleSchema.ID != "" {
 					fd.Schema = singleSchema
 					handled = true
@@ -176,14 +289,10 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 		}
 
 		if !handled {
-			// If Schema is provided for a type that doesn't support it, return an error.
-			// This enforces the semantic rule that schema refs are only valid for specific types.
-			if temp.Type != FieldTypeObject && temp.Type != FieldTypeArray && temp.Type != FieldTypeRecord && temp.Type != FieldTypeUnion {
+			if temp.Type != FieldTypeObject && temp.Type != FieldTypeArray && temp.Type != FieldTypeRecord && temp.Type != FieldTypeDynamic && temp.Type != FieldTypeUnion {
 				return ErrFieldTypeCannotHaveSchemaReference.WithOperation("schema.FieldDefinition.UnmarshalJSON").
 					WithMessage(fmt.Sprintf("field of type '%s' cannot have a 'schema' reference", temp.Type))
 			}
-			// For any other types or if specific unmarshaling failed,
-			// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
 			var genericSchema any
 			if err := utils.FromJSON(temp.Schema, &genericSchema); err != nil {
 				return ErrFailedToUnmarshalSchema.WithCause(err).WithOperation("schema.FieldDefinition.UnmarshalJSON")
@@ -192,7 +301,6 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 		}
 	}
 
-	// Validate that ItemsType is only set for Array or Set types
 	if fd.ItemsType != nil && fd.Type != FieldTypeArray && fd.Type != FieldTypeSet {
 		return ErrFieldTypeCannotHaveItemsType.WithOperation("schema.FieldDefinition.UnmarshalJSON").
 			WithMessage(fmt.Sprintf("field of type '%s' cannot have an 'itemsType'", fd.Type))
@@ -224,45 +332,94 @@ type FieldInclusionCondition struct {
 	Value any    `json:"value"`
 }
 
-// NestedSchemaDefinition represents a reusable, nested schema structure.
-type NestedSchemaDefinition struct {
-	Name        string            `json:"name"` // NOTE: This should always be used as the name for a nested schema definition, not it's key in any map
-	Description *string           `json:"description,omitempty"`
-	Indexes     []IndexDefinition `json:"indexes,omitempty"`
-	Metadata    map[string]any    `json:"metadata,omitempty"`
-	Concrete    *bool             `json:"concrete,omitempty"`
+// ConditionalFieldSet represents a set of fields that apply when a condition is met.
+type ConditionalFieldSet struct {
+	Fields map[string]*FieldDefinition `json:"fields"`
+	When   *FieldInclusionCondition    `json:"when,omitempty"`
+}
 
+// NestedSchemaFields represents the discriminated union of field definitions.
+// Either FieldsMap or FieldsArray should be set, but not both.
+type NestedSchemaFields struct {
+	FieldsMap   map[string]*FieldDefinition
+	FieldsArray []ConditionalFieldSet
+}
+
+// UnmarshalJSON implements custom unmarshaling for NestedSchemaFields.
+func (nsf *NestedSchemaFields) UnmarshalJSON(data []byte) error {
+	// Try map form first
+	var fieldsMap map[string]*FieldDefinition
+	if err := json.Unmarshal(data, &fieldsMap); err == nil {
+		nsf.FieldsMap = fieldsMap
+		return nil
+	}
+
+	// Try array form
+	var fieldsArray []ConditionalFieldSet
+	if err := json.Unmarshal(data, &fieldsArray); err == nil {
+		nsf.FieldsArray = fieldsArray
+		return nil
+	}
+
+	return fmt.Errorf("failed to unmarshal NestedSchemaFields: must be map or array")
+}
+
+// MarshalJSON implements custom marshaling for NestedSchemaFields.
+func (nsf NestedSchemaFields) MarshalJSON() ([]byte, error) {
+	if nsf.FieldsMap != nil {
+		return json.Marshal(nsf.FieldsMap)
+	}
+	if nsf.FieldsArray != nil {
+		return json.Marshal(nsf.FieldsArray)
+	}
+	return nil, fmt.Errorf("NestedSchemaFields has no active variant")
+}
+
+// IsMap returns true if fields are represented as a map.
+func (nsf *NestedSchemaFields) IsMap() bool {
+	return nsf.FieldsMap != nil
+}
+
+// IsArray returns true if fields are represented as a conditional array.
+func (nsf *NestedSchemaFields) IsArray() bool {
+	return nsf.FieldsArray != nil
+}
+
+// NestedSchemaDefinition represents a reusable, nested schema structure.
+// This is a discriminated union: either it has Fields (structured) or Type (primitive/typed).
+type NestedSchemaDefinition struct {
+	Name        string         `json:"name"`
+	Description *string        `json:"description,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	Concrete    *bool          `json:"concrete,omitempty"`
+
+	Indexes     []IndexOrReference          `json:"indexes,omitempty"`
+	Constraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
+
+	// Structured variant (has fields)
+	Fields *NestedSchemaFields `json:"fields,omitempty"`
+
+	// Typed variant (primitive or has type)
 	Type      *FieldType `json:"type,omitempty"`
 	Default   any        `json:"default,omitempty"`
 	Schema    any        `json:"schema,omitempty"`
 	ItemsType *FieldType `json:"itemsType,omitempty"`
-
-	Constraints           SchemaConstraint[FieldType] `json:"constraints,omitempty"`
-	StructuredFieldsMap   map[string]*FieldDefinition `json:"fields,omitempty"`
-	StructuredFieldsArray []struct {
-		Fields map[string]*FieldDefinition `json:"fields"`
-		When   *FieldInclusionCondition    `json:"when,omitempty"`
-	} `json:"fields,omitempty"`
-
-	IsStructured *bool
 }
 
-// UnmarshalJSON implements the utils.FromJSONer interface for NestedSchemaDefinition.
 func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
+	type Alias NestedSchemaDefinition
 	var temp struct {
-		Name        string            `json:"name"`
-		Description *string           `json:"description"`
-		Indexes     []IndexDefinition `json:"indexes"`
-		Metadata    map[string]any    `json:"metadata"`
-		Concrete    *bool             `json:"concrete"`
-
-		Type        *FieldType                  `json:"type"`
-		Constraints SchemaConstraint[FieldType] `json:"constraints"`
-		Default     any                         `json:"default"`
-		Schema      json.RawMessage             `json:"schema"`
-		ItemsType   *FieldType                  `json:"itemsType"`
-
-		Fields json.RawMessage `json:"fields"`
+		Name        string          `json:"name"`
+		Description *string         `json:"description"`
+		Metadata    map[string]any  `json:"metadata"`
+		Concrete    *bool           `json:"concrete"`
+		Indexes     json.RawMessage `json:"indexes"`
+		Constraints json.RawMessage `json:"constraints"`
+		Type        *FieldType      `json:"type"`
+		Default     any             `json:"default"`
+		Schema      json.RawMessage `json:"schema"`
+		ItemsType   *FieldType      `json:"itemsType"`
+		Fields      json.RawMessage `json:"fields"`
 	}
 
 	if err := utils.FromJSON(data, &temp); err != nil {
@@ -271,9 +428,26 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 
 	nsd.Name = temp.Name
 	nsd.Description = temp.Description
-	nsd.Indexes = temp.Indexes
 	nsd.Metadata = temp.Metadata
 	nsd.Concrete = temp.Concrete
+
+	// Unmarshal indexes
+	if temp.Indexes != nil {
+		var indexes []IndexOrReference
+		if err := json.Unmarshal(temp.Indexes, &indexes); err != nil {
+			return err
+		}
+		nsd.Indexes = indexes
+	}
+
+	// Unmarshal constraints
+	if temp.Constraints != nil {
+		var constraints SchemaConstraint[FieldType]
+		if err := json.Unmarshal(temp.Constraints, &constraints); err != nil {
+			return err
+		}
+		nsd.Constraints = constraints
+	}
 
 	hasFields := temp.Fields != nil
 	hasType := temp.Type != nil
@@ -282,32 +456,25 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 		return ErrNestedSchemaDefCannotHaveBothFieldsAndType.WithOperation("schema.NestedSchemaDefinition.UnmarshalJSON")
 	}
 
-	nsd.Constraints = temp.Constraints
-
 	if hasFields {
-		nsd.IsStructured = utils.BoolPtr(true)
-		var fieldsMap map[string]*FieldDefinition
-		if err := utils.FromJSON(temp.Fields, &fieldsMap); err == nil {
-			nsd.StructuredFieldsMap = fieldsMap
-		} else {
-			var fieldsArray []struct {
-				Fields map[string]*FieldDefinition `json:"fields"`
-				When   *FieldInclusionCondition    `json:"when,omitempty"`
-			}
-			if err := utils.FromJSON(temp.Fields, &fieldsArray); err == nil {
-				nsd.StructuredFieldsArray = fieldsArray
-			} else {
-				return ErrFailedToUnmarshalNestedSchemaDefFields.WithOperation("schema.NestedSchemaDefinition.UnmarshalJSON")
-			}
+		var fields NestedSchemaFields
+		if err := json.Unmarshal(temp.Fields, &fields); err != nil {
+			return ErrFailedToUnmarshalNestedSchemaDefFields.WithCause(err).WithOperation("schema.NestedSchemaDefinition.UnmarshalJSON")
 		}
+		nsd.Fields = &fields
 	} else if hasType {
-		nsd.IsStructured = utils.BoolPtr(false)
 		nsd.Type = temp.Type
+
+		// Normalize deprecated "dynamic" to "record"
+		if *nsd.Type == FieldTypeDynamic {
+			*nsd.Type = FieldTypeRecord
+		}
+
 		nsd.Default = temp.Default
 		nsd.ItemsType = temp.ItemsType
 
-		if *temp.Type == FieldTypeRecord || *temp.Type == FieldTypeUnknown {
-			nsd.IsStructured = utils.BoolPtr(true)
+		// For record/dynamic types, we don't need schema
+		if *temp.Type == FieldTypeRecord || *temp.Type == FieldTypeDynamic {
 			return nil
 		}
 
@@ -332,7 +499,6 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// MarshalJSON implements the json.Marshaler interface for NestedSchemaDefinition.
 func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 
@@ -340,32 +506,24 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 	if nsd.Description != nil {
 		m["description"] = *nsd.Description
 	}
-	if nsd.Indexes != nil {
-		m["indexes"] = nsd.Indexes
-	}
 	if nsd.Metadata != nil {
 		m["metadata"] = nsd.Metadata
 	}
 	if nsd.Concrete != nil {
 		m["concrete"] = *nsd.Concrete
 	}
-
-	if nsd.Constraints != nil {
+	if len(nsd.Indexes) > 0 {
+		m["indexes"] = nsd.Indexes
+	}
+	if len(nsd.Constraints) > 0 {
 		m["constraints"] = nsd.Constraints
 	}
 
-	if *nsd.IsStructured == true {
-		if nsd.StructuredFieldsMap != nil {
-			m["fields"] = nsd.StructuredFieldsMap
-		} else if nsd.StructuredFieldsArray != nil {
-			m["fields"] = nsd.StructuredFieldsArray
-		} else if nsd.Type != nil { // <--- had to add this logic
-			m["type"] = *nsd.Type
-		}
-	} else {
-		if nsd.Type != nil {
-			m["type"] = *nsd.Type
-		}
+	// Marshal based on which variant is active
+	if nsd.Fields != nil {
+		m["fields"] = nsd.Fields
+	} else if nsd.Type != nil {
+		m["type"] = *nsd.Type
 		if nsd.Default != nil {
 			m["default"] = nsd.Default
 		}
@@ -380,27 +538,90 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
+// IsStructured returns true if this is a structured schema (has fields).
+func (nsd *NestedSchemaDefinition) IsStructured() bool {
+	return nsd.Fields != nil
+}
+
+// IsTyped returns true if this is a typed schema (has type).
+func (nsd *NestedSchemaDefinition) IsTyped() bool {
+	return nsd.Type != nil
+}
+
+// ConstraintOrGroup represents a discriminated union for registry constraints.
+// Exactly one field should be non-nil at any time.
+type ConstraintOrGroup struct {
+	Constraint      *Constraint[FieldType]
+	ConstraintGroup *ConstraintGroup[FieldType]
+}
+
+// UnmarshalJSON implements custom unmarshaling for ConstraintOrGroup.
+func (cog *ConstraintOrGroup) UnmarshalJSON(data []byte) error {
+	// Try ConstraintGroup first (has operator field)
+	var temp struct {
+		Operator *common.LogicalOperator `json:"operator"`
+	}
+	if err := json.Unmarshal(data, &temp); err == nil && temp.Operator != nil {
+		var group ConstraintGroup[FieldType]
+		if err := json.Unmarshal(data, &group); err == nil {
+			cog.ConstraintGroup = &group
+			return nil
+		}
+	}
+
+	// Default to Constraint
+	var constraint Constraint[FieldType]
+	if err := json.Unmarshal(data, &constraint); err != nil {
+		return err
+	}
+	cog.Constraint = &constraint
+	return nil
+}
+
+// MarshalJSON implements custom marshaling for ConstraintOrGroup.
+func (cog ConstraintOrGroup) MarshalJSON() ([]byte, error) {
+	if cog.ConstraintGroup != nil {
+		return json.Marshal(cog.ConstraintGroup)
+	}
+	if cog.Constraint != nil {
+		return json.Marshal(cog.Constraint)
+	}
+	return nil, fmt.Errorf("ConstraintOrGroup has no active variant")
+}
+
+// IsConstraint returns true if this is a Constraint.
+func (cog *ConstraintOrGroup) IsConstraint() bool {
+	return cog.Constraint != nil
+}
+
+// IsConstraintGroup returns true if this is a ConstraintGroup.
+func (cog *ConstraintOrGroup) IsConstraintGroup() bool {
+	return cog.ConstraintGroup != nil
+}
+
+// Registry contains reusable schema components.
+type Registry struct {
+	Schemas     map[string]*NestedSchemaDefinition `json:"schemas,omitempty"`
+	Constraints map[string]*ConstraintOrGroup      `json:"constraints,omitempty"`
+	Indexes     map[string]*IndexDefinition        `json:"indexes,omitempty"`
+}
+
 // SchemaDefinition defines a complete schema for a collection.
 type SchemaDefinition struct {
-	Name        string `json:"name"`
-	Version     string `json:"version"`
-	Description string `json:"description,omitempty"`
-	// NOTE. When looking up a field from this map, DO NOT USE THE KEY OF THE
-	// MAP AS THE FIELDS NAME. THE NAME OF THE FIELD IS AT FieldDefinition.Name.
-	// i.e schema.Fields[fieldUUID].Name
-	Fields map[string]*FieldDefinition `json:"fields"`
-	// NOTE. When looking up a field from this map, DO NOT USE THE KEY OF THE
-	// MAP AS THE NESTED SCHEMA NAME. THE NAME OF THE FIELD IS AT
-	// NestedSchemaDefinition.Name . i.e schema.NestedSchemas[nestedUUID].Name
-	// TODO: Deprecate nestedSchemas in favor of schemas
-	// Schemas       map[string]*NestedSchemaDefinition `json:"schemas,omitempty"`
-	NestedSchemas map[string]*NestedSchemaDefinition `json:"nestedSchemas,omitempty"`
-	Indexes       []IndexDefinition                  `json:"indexes,omitempty"`
+	Name          string                             `json:"name"`
+	Description   *string                            `json:"description,omitempty"`
+	Version       string                             `json:"version"`
+	Fields        map[string]*FieldDefinition        `json:"fields"`
+	Registry      *Registry                          `json:"registry,omitempty"`
+	Indexes       []IndexOrReference                 `json:"indexes,omitempty"`
 	Constraints   SchemaConstraint[FieldType]        `json:"constraints,omitempty"`
-	Metadata      map[string]any                     `json:"metadata,omitempty"`
 	Migrations    []Migration                        `json:"migrations,omitempty"`
 	Hint          *SchemaHint                        `json:"hint,omitempty"`
-	Mock          func(faker any) (any, error)       `json:"-"`
+	Dependencies  []string                           `json:"dependencies,omitempty"`  // Deprecated
+	NestedSchemas map[string]*NestedSchemaDefinition `json:"nestedSchemas,omitempty"` // Deprecated: Use Registry.Schemas instead
+
+	Metadata map[string]any               `json:"metadata,omitempty"`
+	Mock     func(faker any) (any, error) `json:"-"`
 }
 
 // AddVersionField adds the versioning field to the schema's fields if it doesn't already exist.
@@ -420,9 +641,9 @@ func (s *SchemaDefinition) AddVersionField() {
 // MustAddIndex adds a new index to the schema definition and returns the modified schema.
 func (s *SchemaDefinition) MustAddIndex(index IndexDefinition) *SchemaDefinition {
 	if s.Indexes == nil {
-		s.Indexes = make([]IndexDefinition, 0)
+		s.Indexes = make([]IndexOrReference, 0)
 	}
-	s.Indexes = append(s.Indexes, index)
+	s.Indexes = append(s.Indexes, IndexOrReference{Index: &index})
 	return s
 }
 
@@ -431,29 +652,25 @@ type SchemaChangeType string
 
 // Supported schema change types.
 const (
-	SchemaChangeTypeModifyProperty     SchemaChangeType = "modifyProperty"
-	SchemaChangeTypeAddField           SchemaChangeType = "addField"
-	SchemaChangeTypeRemoveField        SchemaChangeType = "removeField"
-	SchemaChangeTypeModifyField        SchemaChangeType = "modifyField"
-	SchemaChangeTypeAddIndex           SchemaChangeType = "addIndex"
-	SchemaChangeTypeRemoveIndex        SchemaChangeType = "removeIndex"
-	SchemaChangeTypeModifyIndex        SchemaChangeType = "modifyIndex"
-	SchemaChangeTypeAddConstraint      SchemaChangeType = "addConstraint"
-	SchemaChangeTypeRemoveConstraint   SchemaChangeType = "removeConstraint"
-	SchemaChangeTypeModifyConstraint   SchemaChangeType = "modifyConstraint"
-	SchemaChangeTypeDeprecateField     SchemaChangeType = "deprecateField"
-	SchemaChangeTypeAddNestedSchema    SchemaChangeType = "addNestedSchema"
-	SchemaChangeTypeRemoveNestedSchema SchemaChangeType = "removeNestedSchema"
-	SchemaChangeTypeModifyNestedSchema SchemaChangeType = "modifyNestedSchema"
+	SchemaChangeTypeModifyProperty   SchemaChangeType = "modifyProperty"
+	SchemaChangeTypeAddField         SchemaChangeType = "addField"
+	SchemaChangeTypeRemoveField      SchemaChangeType = "removeField"
+	SchemaChangeTypeModifyField      SchemaChangeType = "modifyField"
+	SchemaChangeTypeAddIndex         SchemaChangeType = "addIndex"
+	SchemaChangeTypeRemoveIndex      SchemaChangeType = "removeIndex"
+	SchemaChangeTypeModifyIndex      SchemaChangeType = "modifyIndex"
+	SchemaChangeTypeAddConstraint    SchemaChangeType = "addConstraint"
+	SchemaChangeTypeRemoveConstraint SchemaChangeType = "removeConstraint"
+	SchemaChangeTypeModifyConstraint SchemaChangeType = "modifyConstraint"
+	SchemaChangeTypeDeprecateField   SchemaChangeType = "deprecateField"
+	SchemaChangeTypeAddSchema        SchemaChangeType = "addSchema"
+	SchemaChangeTypeRemoveSchema     SchemaChangeType = "removeSchema"
+	SchemaChangeTypeModifySchema     SchemaChangeType = "modifySchema"
 )
 
 // SchemaChangeModifyPropertyPayload is the payload for a ModifyProperty schema change.
 type SchemaChangeModifyPropertyPayload struct {
-	Name        *string        `json:"name,omitempty"`
-	Version     *string        `json:"version,omitempty"`
-	Description *string        `json:"description,omitempty"`
-	Metadata    map[string]any `json:"metadata,omitempty"`
-	Hint        *SchemaHint    `json:"hint,omitempty"`
+	Value any `json:"value"`
 }
 
 // SchemaChangeAddFieldPayload is the payload for an AddField schema change.
@@ -463,12 +680,7 @@ type SchemaChangeAddFieldPayload struct {
 
 // SchemaChangeModifyFieldPayload is the payload for a ModifyField schema change.
 type SchemaChangeModifyFieldPayload struct {
-	Changes             PartialFieldDefinition `json:"changes"`
-	NestedSchemaChanges *struct {
-		ID          *string                     `json:"id,omitempty"`
-		Constraints SchemaConstraint[FieldType] `json:"constraints,omitempty"`
-		Indexes     []IndexDefinition           `json:"indexes,omitempty"`
-	} `json:"nestedSchemaChanges,omitempty"`
+	Changes PartialFieldDefinition `json:"changes"`
 }
 
 // SchemaChangeAddIndexPayload is the payload for an AddIndex schema change.
@@ -483,29 +695,29 @@ type SchemaChangeModifyIndexPayload struct {
 
 // SchemaChangeAddConstraintPayload is the payload for an AddConstraint schema change.
 type SchemaChangeAddConstraintPayload struct {
-	Constraint SchemaConstraintRule[FieldType] `json:"constraint"`
+	Constraint ConstraintRule[FieldType] `json:"constraint"`
 }
 
 // SchemaChangeModifyConstraintPayload is the payload for a ModifyConstraint schema change.
 type SchemaChangeModifyConstraintPayload struct {
-	Changes any `json:"changes"`
+	Changes PartialConstraint `json:"changes"`
 }
 
-// SchemaChangeAddNestedSchemaPayload is the payload for an AddNestedSchema schema change.
-type SchemaChangeAddNestedSchemaPayload struct {
+// SchemaChangeAddSchemaPayload is the payload for an AddSchema schema change.
+type SchemaChangeAddSchemaPayload struct {
 	Definition NestedSchemaDefinition `json:"definition"`
 }
 
-// SchemaChangeModifyNestedSchemaPayload is the payload for a ModifyNestedSchema schema change.
-type SchemaChangeModifyNestedSchemaPayload struct {
-	Changes PartialNestedSchemaDefinition `json:"changes"`
+// SchemaChangeModifySchemaPayload is the payload for a ModifySchema schema change.
+type SchemaChangeModifySchemaPayload struct {
+	Changes []SchemaChange `json:"changes"`
 }
 
 // SchemaChange defines a single change to be made to a schema during a migration.
 type SchemaChange struct {
 	Type SchemaChangeType `json:"type"`
-
-	ID *string `json:"id,omitempty"`
+	ID   *string          `json:"id,omitempty"`
+	Name *string          `json:"name,omitempty"` // For removeIndex, removeConstraint
 
 	*SchemaChangeModifyPropertyPayload
 	*SchemaChangeAddFieldPayload
@@ -514,15 +726,15 @@ type SchemaChange struct {
 	*SchemaChangeModifyIndexPayload
 	*SchemaChangeAddConstraintPayload
 	*SchemaChangeModifyConstraintPayload
-	*SchemaChangeAddNestedSchemaPayload
-	*SchemaChangeModifyNestedSchemaPayload
+	*SchemaChangeAddSchemaPayload
+	*SchemaChangeModifySchemaPayload
 }
 
-// UnmarshalJSON implements the utils.FromJSONer interface for SchemaChange.
 func (sc *SchemaChange) UnmarshalJSON(data []byte) error {
 	var tempCommon struct {
 		Type SchemaChangeType `json:"type"`
 		ID   *string          `json:"id"`
+		Name *string          `json:"name"`
 	}
 	if err := utils.FromJSON(data, &tempCommon); err != nil {
 		return err
@@ -530,6 +742,7 @@ func (sc *SchemaChange) UnmarshalJSON(data []byte) error {
 
 	sc.Type = tempCommon.Type
 	sc.ID = tempCommon.ID
+	sc.Name = tempCommon.Name
 
 	switch sc.Type {
 	case SchemaChangeTypeModifyProperty:
@@ -559,25 +772,29 @@ func (sc *SchemaChange) UnmarshalJSON(data []byte) error {
 	case SchemaChangeTypeModifyConstraint:
 		sc.SchemaChangeModifyConstraintPayload = &SchemaChangeModifyConstraintPayload{}
 		return utils.FromJSON(data, sc.SchemaChangeModifyConstraintPayload)
-	case SchemaChangeTypeAddNestedSchema:
-		sc.SchemaChangeAddNestedSchemaPayload = &SchemaChangeAddNestedSchemaPayload{}
-		return utils.FromJSON(data, sc.SchemaChangeAddNestedSchemaPayload)
-	case SchemaChangeTypeRemoveNestedSchema:
+	case SchemaChangeTypeAddSchema:
+		sc.SchemaChangeAddSchemaPayload = &SchemaChangeAddSchemaPayload{}
+		return utils.FromJSON(data, sc.SchemaChangeAddSchemaPayload)
+	case SchemaChangeTypeRemoveSchema:
 		return nil
-	case SchemaChangeTypeModifyNestedSchema:
-		sc.SchemaChangeModifyNestedSchemaPayload = &SchemaChangeModifyNestedSchemaPayload{}
-		return utils.FromJSON(data, sc.SchemaChangeModifyNestedSchemaPayload)
+	case SchemaChangeTypeModifySchema:
+		sc.SchemaChangeModifySchemaPayload = &SchemaChangeModifySchemaPayload{}
+		return utils.FromJSON(data, sc.SchemaChangeModifySchemaPayload)
+	case SchemaChangeTypeDeprecateField:
+		return nil
 	default:
 		return newUnknownSchemaChangeTypeError(sc.Type)
 	}
 }
 
-// MarshalJSON implements the json.Marshaler interface for SchemaChange.
 func (sc SchemaChange) MarshalJSON() ([]byte, error) {
 	m := make(map[string]any)
 	m["type"] = sc.Type
 	if sc.ID != nil && *sc.ID != "" {
 		m["id"] = *sc.ID
+	}
+	if sc.Name != nil && *sc.Name != "" {
+		m["name"] = *sc.Name
 	}
 
 	var payloadBytes []byte
@@ -612,22 +829,22 @@ func (sc SchemaChange) MarshalJSON() ([]byte, error) {
 		if sc.SchemaChangeModifyConstraintPayload != nil {
 			payloadBytes, err = json.Marshal(sc.SchemaChangeModifyConstraintPayload)
 		}
-	case SchemaChangeTypeAddNestedSchema:
-		if sc.SchemaChangeAddNestedSchemaPayload != nil {
-			payloadBytes, err = json.Marshal(sc.SchemaChangeAddNestedSchemaPayload)
+	case SchemaChangeTypeAddSchema:
+		if sc.SchemaChangeAddSchemaPayload != nil {
+			payloadBytes, err = json.Marshal(sc.SchemaChangeAddSchemaPayload)
 		}
-	case SchemaChangeTypeModifyNestedSchema:
-		if sc.SchemaChangeModifyNestedSchemaPayload != nil {
-			payloadBytes, err = json.Marshal(sc.SchemaChangeModifyNestedSchemaPayload)
+	case SchemaChangeTypeModifySchema:
+		if sc.SchemaChangeModifySchemaPayload != nil {
+			payloadBytes, err = json.Marshal(sc.SchemaChangeModifySchemaPayload)
 		}
-	case SchemaChangeTypeRemoveField, SchemaChangeTypeRemoveIndex, SchemaChangeTypeRemoveConstraint, SchemaChangeTypeDeprecateField, SchemaChangeTypeRemoveNestedSchema:
+	case SchemaChangeTypeRemoveField, SchemaChangeTypeRemoveIndex, SchemaChangeTypeRemoveConstraint, SchemaChangeTypeDeprecateField, SchemaChangeTypeRemoveSchema:
 		return json.Marshal(m)
 	default:
 		return json.Marshal(m)
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, common.SystemErrorFrom(err).WithOperation("schema.SchemaChange.MarshalJSON").WithCause(err)
 	}
 
 	if payloadBytes != nil {
@@ -660,27 +877,32 @@ type PartialFieldDefinition struct {
 }
 
 func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
-	type Alias PartialFieldDefinition // Create an alias to avoid infinite recursion
+	type Alias PartialFieldDefinition
 
-	// Unmarshal into a temporary struct to access the 'type' field and raw 'schema' field
 	var temp struct {
-		Type   FieldType       `json:"type"`
+		Type   *FieldType      `json:"type"`
 		Schema json.RawMessage `json:"schema,omitempty"`
 		*Alias
 	}
 
-	temp.Alias = (*Alias)(fd) // Point Alias to the actual FieldDefinition
+	temp.Alias = (*Alias)(fd)
 	if err := utils.FromJSON(data, &temp); err != nil {
 		return err
 	}
 
-	// Copy the unmarshaled data back to the original FieldDefinition
 	*fd = PartialFieldDefinition(*temp.Alias)
 
-	// Now, handle the 'Schema' field based on its 'Type'
-	if temp.Schema != nil {
-		switch temp.Type {
-		case FieldTypeObject, FieldTypeUnion, FieldTypeRecord, FieldTypeArray:
+	if temp.Type != nil {
+		fd.Type = temp.Type
+		// Normalize deprecated "dynamic" to "record"
+		if *fd.Type == FieldTypeDynamic {
+			*fd.Type = FieldTypeRecord
+		}
+	}
+
+	if temp.Schema != nil && temp.Type != nil {
+		switch *temp.Type {
+		case FieldTypeObject, FieldTypeUnion, FieldTypeRecord, FieldTypeDynamic, FieldTypeArray:
 			var singleSchema NestedSchemaReference
 			if err := utils.FromJSON(temp.Schema, &singleSchema); err == nil {
 				fd.Schema = singleSchema
@@ -692,14 +914,10 @@ func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
 				return nil
 			}
 		}
-		// If Schema is provided for a type that doesn't support it, return an error.
-		// This enforces the semantic rule that schema refs are only valid for specific types.
-		if temp.Type != FieldTypeObject && temp.Type != FieldTypeArray && temp.Type != FieldTypeRecord && temp.Type != FieldTypeUnion {
+		if *temp.Type != FieldTypeObject && *temp.Type != FieldTypeArray && *temp.Type != FieldTypeRecord && *temp.Type != FieldTypeDynamic && *temp.Type != FieldTypeUnion {
 			return ErrFieldTypeCannotHaveSchemaReference.WithOperation("schema.PartialFieldDefinition.UnmarshalJSON").
-				WithMessage(fmt.Sprintf("field of type '%s' cannot have a 'schema' reference", temp.Type))
+				WithMessage(fmt.Sprintf("field of type '%s' cannot have a 'schema' reference", *temp.Type))
 		}
-		// For any other types or if specific unmarshaling failed,
-		// unmarshal Schema into a generic any. This will likely be map[string]any for objects.
 		var genericSchema any
 		if err := utils.FromJSON(temp.Schema, &genericSchema); err != nil {
 			return ErrFailedToUnmarshalSchema.WithCause(err).WithOperation("schema.PartialFieldDefinition.UnmarshalJSON")
@@ -707,8 +925,7 @@ func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
 		fd.Schema = genericSchema
 	}
 
-	// Validate that ItemsType is only set for Array or Set types
-	if fd.ItemsType != nil && fd.Type != FieldTypePtr(FieldTypeArray) && fd.Type != FieldTypePtr(FieldTypeSet) {
+	if fd.ItemsType != nil && fd.Type != nil && *fd.Type != FieldTypeArray && *fd.Type != FieldTypeSet {
 		return ErrFieldTypeCannotHaveItemsType.WithOperation("schema.PartialFieldDefinition.UnmarshalJSON").
 			WithMessage(fmt.Sprintf("field of type '%s' cannot have an 'itemsType'", *fd.Type))
 	}
@@ -726,10 +943,21 @@ type PartialIndexDefinition struct {
 	Name        *string                `json:"name,omitempty"`
 }
 
+// PartialConstraint represents a partial definition of a constraint, used for modifications.
+type PartialConstraint struct {
+	Name         *string  `json:"name,omitempty"`
+	Predicate    *string  `json:"predicate,omitempty"`
+	Field        *string  `json:"field,omitempty"`
+	Fields       []string `json:"fields,omitempty"`
+	Parameters   any      `json:"parameters,omitempty"`
+	Description  *string  `json:"description,omitempty"`
+	ErrorMessage *string  `json:"errorMessage,omitempty"`
+}
+
 // PartialNestedSchemaDefinition represents a partial definition of a nested schema, used for modifications.
 type PartialNestedSchemaDefinition struct {
-	Name        string                      `json:"name,omitempty"`
-	Description string                      `json:"description,omitempty"`
+	Name        *string                     `json:"name,omitempty"`
+	Description *string                     `json:"description,omitempty"`
 	Indexes     []IndexDefinition           `json:"indexes,omitempty"`
 	Metadata    map[string]any              `json:"metadata,omitempty"`
 	Concrete    *bool                       `json:"concrete,omitempty"`
@@ -750,17 +978,23 @@ type DataTransform[Initial, Next any] struct {
 	Backward TransformFunction[Next, Initial] `json:"-"`
 }
 
+// MigrationVersion represents the version transition for a migration.
+type MigrationVersion struct {
+	Source string  `json:"source"`
+	Target *string `json:"target,omitempty"`
+}
+
 // Migration defines a single migration, consisting of schema changes and data transformations.
 type Migration struct {
-	ID            string         `json:"id"`
-	SchemaVersion string         `json:"schemaVersion"`
-	Changes       []SchemaChange `json:"changes"`
-	Description   string         `json:"description"`
-	Status        string         `json:"status"`
-	Rollback      []SchemaChange `json:"rollback,omitempty"`
-	Transform     string         `json:"transform"`
-	CreatedAt     string         `json:"createdAt"`
-	Checksum      string         `json:"checksum"`
+	ID          string           `json:"id"`
+	Version     MigrationVersion `json:"version"`
+	Changes     []SchemaChange   `json:"changes"`
+	Description string           `json:"description"`
+	Status      string           `json:"status,omitempty"`
+	Rollback    []SchemaChange   `json:"rollback,omitempty"`
+	Transform   string           `json:"transform"`
+	CreatedAt   string           `json:"createdAt"`
+	Checksum    string           `json:"checksum"`
 }
 
 // InputHint provides hints for UI generation or tooling.

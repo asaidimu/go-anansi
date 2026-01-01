@@ -9,6 +9,7 @@
     "version": { "type": "string" },
     "description": { "type": "string" },
     "metadata": { "type": "object", "additionalProperties": true },
+    "concrete": { "type": "boolean" },
     "fields": {
       "type": "object",
       "propertyNames": { "not": { "enum": ["id", "_metadata_"] } },
@@ -44,7 +45,16 @@
     "constraints": { "$ref": "#/$defs/schemaConstraint" },
     "migrations": { "type": "array", "items": { "$ref": "#/$defs/migration" } },
     "hints": { "type": "object", "additionalProperties": true },
-    "dependencies": { "type": "array", "items": { "type": "string" } }
+    "dependencies": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Deprecated: Use dependencies in DomainModel instead"
+    },
+    "nestedSchemas": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/nestedSchemaDefinition" },
+      "description": "Deprecated: Use registry.schemas instead"
+    }
   },
 
   "$defs": {
@@ -69,7 +79,15 @@
         "deprecated": { "type": "boolean" },
         "description": { "type": "string" },
         "default": { "nullable": true },
-        "values": { "type": "array", "items": { "anyOf": [{ "type": "string" }, { "type": "number" }] } },
+        "values": {
+          "type": "array",
+          "items": {
+            "anyOf": [
+              { "type": "string" },
+              { "type": "number" }
+            ]
+          }
+        },
         "itemsType": { "$ref": "#/$defs/fieldType" },
         "schema": {
           "anyOf": [
@@ -78,7 +96,26 @@
           ]
         },
         "constraints": { "$ref": "#/$defs/schemaConstraint" },
-        "hint": { "type": "object", "properties": { "input": { "type": "object" } } }
+        "hint": {
+          "type": "object",
+          "properties": {
+            "input": { "type": "object", "additionalProperties": true }
+          }
+        }
+      }
+    },
+
+    "baseSchemaMetadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "metadata": { "type": "object", "additionalProperties": true },
+        "concrete": {
+          "type": "boolean",
+          "description": "Deprecated: Indicates whether this schema represents a standalone entity"
+        }
       }
     },
 
@@ -86,10 +123,11 @@
       "type": "object",
       "required": ["name"],
       "additionalProperties": false,
+      "allOf": [{ "$ref": "#/$defs/baseSchemaMetadata" }],
       "properties": {
         "name": { "type": "string" },
         "description": { "type": "string" },
-        "metadata": { "type": "object" },
+        "metadata": { "type": "object", "additionalProperties": true },
         "concrete": { "type": "boolean" },
         "indexes": {
           "type": "array",
@@ -100,7 +138,12 @@
             ]
           }
         },
-        "constraints": { "$ref": "#/$defs/schemaConstraint" }
+        "constraints": { "$ref": "#/$defs/schemaConstraint" },
+        "fields": {},
+        "type": {},
+        "default": {},
+        "itemsType": {},
+        "schema": {}
       },
       "oneOf": [
         {
@@ -108,18 +151,29 @@
           "properties": {
             "fields": {
               "anyOf": [
-                { "type": "object", "additionalProperties": { "$ref": "#/$defs/fieldDefinition" } },
+                {
+                  "type": "object",
+                  "additionalProperties": { "$ref": "#/$defs/fieldDefinition" }
+                },
                 {
                   "type": "array",
                   "items": {
                     "type": "object",
                     "required": ["fields"],
+                    "additionalProperties": false,
                     "properties": {
-                      "fields": { "type": "object", "additionalProperties": { "$ref": "#/$defs/fieldDefinition" } },
+                      "fields": {
+                        "type": "object",
+                        "additionalProperties": { "$ref": "#/$defs/fieldDefinition" }
+                      },
                       "when": {
                         "type": "object",
                         "required": ["field", "value"],
-                        "properties": { "field": { "type": "string" }, "value": {} }
+                        "additionalProperties": false,
+                        "properties": {
+                          "field": { "type": "string" },
+                          "value": {}
+                        }
                       }
                     }
                   }
@@ -150,11 +204,14 @@
         {
           "type": "object",
           "required": ["name", "predicate"],
+          "additionalProperties": false,
           "properties": {
+            "type": { "enum": ["schema"] },
             "name": { "type": "string" },
             "predicate": { "type": "string" },
             "field": { "type": "string" },
-            "parameters": { "type": "object", "additionalProperties": true },
+            "fields": { "type": "array", "items": { "type": "string" } },
+            "parameters": { "additionalProperties": true },
             "description": { "type": "string" },
             "errorMessage": { "type": "string" }
           }
@@ -162,10 +219,19 @@
         {
           "type": "object",
           "required": ["name", "operator", "rules"],
+          "additionalProperties": false,
           "properties": {
             "name": { "type": "string" },
             "operator": { "enum": ["and", "or", "not"] },
-            "rules": { "type": "array", "items": { "$ref": "#/$defs/constraintOrGroup" } }
+            "rules": {
+              "type": "array",
+              "items": {
+                "anyOf": [
+                  { "$ref": "#/$defs/constraintOrGroup" },
+                  { "$ref": "#/$defs/resourceReference" }
+                ]
+              }
+            }
           }
         }
       ]
@@ -184,12 +250,18 @@
     "fieldSchema": {
       "type": "object",
       "required": ["id"],
+      "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
         "constraints": { "$ref": "#/$defs/schemaConstraint" },
         "indexes": {
           "type": "array",
-          "items": { "$ref": "#/$defs/indexDefinition" }
+          "items": {
+            "anyOf": [
+              { "$ref": "#/$defs/indexDefinition" },
+              { "$ref": "#/$defs/resourceReference" }
+            ]
+          }
         }
       }
     },
@@ -197,6 +269,7 @@
     "indexDefinition": {
       "type": "object",
       "required": ["name", "fields", "type"],
+      "additionalProperties": false,
       "properties": {
         "name": { "type": "string" },
         "fields": { "type": "array", "items": { "type": "string" } },
@@ -204,37 +277,63 @@
         "unique": { "type": "boolean" },
         "order": { "enum": ["asc", "desc"] },
         "description": { "type": "string" },
-        "partial": {
-          "type": "object",
-          "properties": {
-            "operator": { "enum": ["and", "or", "not"] },
-            "field": { "type": "string" },
-            "value": {},
-            "conditions": { "type": "array", "items": { "$ref": "#/$defs/indexDefinition/properties/partial" } }
-          }
+        "partial": { "$ref": "#/$defs/partialIndexCondition" }
+      }
+    },
+
+    "partialIndexCondition": {
+      "type": "object",
+      "required": ["operator", "field"],
+      "additionalProperties": false,
+      "properties": {
+        "operator": { "enum": ["and", "or", "not"] },
+        "field": { "type": "string" },
+        "value": {},
+        "conditions": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/partialIndexCondition" }
         }
       }
     },
 
     "migration": {
       "type": "object",
-      "required": ["id", "version", "changes", "transform"],
+      "required": ["id", "version", "changes", "transform", "createdAt", "checksum"],
+      "additionalProperties": false,
       "properties": {
         "id": { "type": "string" },
         "version": {
           "type": "object",
           "required": ["source"],
+          "additionalProperties": false,
           "properties": {
             "source": { "type": "string" },
             "target": { "type": "string" }
           }
         },
         "description": { "type": "string" },
+        "status": { "type": "string" },
         "createdAt": { "type": "string", "format": "date-time" },
         "checksum": { "type": "string" },
-        "transform": { "anyOf": [{ "type": "string" }, { "type": "object" }] },
-        "changes": { "type": "array", "items": { "$ref": "#/$defs/schemaChange" } },
-        "rollback": { "type": "array", "items": { "$ref": "#/$defs/schemaChange" } }
+        "transform": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "object" }
+          ]
+        },
+        "changes": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/schemaChange" }
+        },
+        "rollback": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/schemaChange" }
+        },
+        "dependencies": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Deprecated: Use dependencies in DomainModel instead"
+        }
       }
     },
 
@@ -243,15 +342,26 @@
         {
           "type": "object",
           "required": ["type", "id", "value"],
+          "additionalProperties": false,
           "properties": {
             "type": { "const": "modifyProperty" },
-            "id": { "enum": ["name", "description", "metadata", "concrete", "version", "deprecated"] },
+            "id": {
+              "enum": [
+                "name",
+                "description",
+                "metadata",
+                "concrete",
+                "version",
+                "deprecated"
+              ]
+            },
             "value": {}
           }
         },
         {
           "type": "object",
           "required": ["type", "id", "definition"],
+          "additionalProperties": false,
           "properties": {
             "type": { "const": "addField" },
             "id": { "type": "string" },
@@ -261,6 +371,7 @@
         {
           "type": "object",
           "required": ["type", "id", "changes"],
+          "additionalProperties": false,
           "properties": {
             "type": { "const": "modifyField" },
             "id": { "type": "string" },
@@ -270,6 +381,7 @@
         {
           "type": "object",
           "required": ["type", "id"],
+          "additionalProperties": false,
           "properties": {
             "type": { "const": "removeField" },
             "id": { "type": "string" }
@@ -278,6 +390,7 @@
         {
           "type": "object",
           "required": ["type", "definition"],
+          "additionalProperties": false,
           "properties": {
             "type": { "const": "addIndex" },
             "definition": { "$ref": "#/$defs/indexDefinition" }
@@ -286,6 +399,7 @@
         {
           "type": "object",
           "required": ["type", "name"],
+          "additionalProperties": false,
           "properties": {
             "type": { "const": "removeIndex" },
             "name": { "type": "string" }
@@ -293,7 +407,55 @@
         },
         {
           "type": "object",
+          "required": ["type", "name", "changes"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "modifyIndex" },
+            "name": { "type": "string" },
+            "changes": { "$ref": "#/$defs/indexPatch" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "constraint"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "addConstraint" },
+            "constraint": { "$ref": "#/$defs/constraintOrGroup" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "name"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "removeConstraint" },
+            "name": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "name", "changes"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "modifyConstraint" },
+            "name": { "type": "string" },
+            "changes": { "$ref": "#/$defs/constraintPatch" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "id"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "deprecateField" },
+            "id": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
           "required": ["type", "id", "definition"],
+          "additionalProperties": false,
           "properties": {
             "type": { "const": "addSchema" },
             "id": { "type": "string" },
@@ -302,11 +464,24 @@
         },
         {
           "type": "object",
+          "required": ["type", "id"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "removeSchema" },
+            "id": { "type": "string" }
+          }
+        },
+        {
+          "type": "object",
           "required": ["type", "id", "changes"],
+          "additionalProperties": false,
           "properties": {
             "type": { "const": "modifySchema" },
             "id": { "type": "string" },
-            "changes": { "type": "array", "items": { "$ref": "#/$defs/schemaChange" } }
+            "changes": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/schemaChange" }
+            }
           }
         }
       ]
@@ -314,20 +489,115 @@
 
     "fieldPatch": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "name": { "type": "string" },
         "type": { "$ref": "#/$defs/fieldType" },
         "required": { "type": ["boolean", "null"] },
         "description": { "type": ["string", "null"] },
         "default": { "nullable": true },
-        "deprecated": { "type": ["boolean", "null"] }
+        "deprecated": { "type": ["boolean", "null"] },
+        "unique": { "type": ["boolean", "null"] },
+        "values": {
+          "anyOf": [
+            { "type": "array" },
+            { "type": "null" }
+          ]
+        },
+        "schema": { "nullable": true },
+        "itemsType": {
+          "anyOf": [
+            { "$ref": "#/$defs/fieldType" },
+            { "type": "null" }
+          ]
+        },
+        "constraints": {
+          "anyOf": [
+            { "$ref": "#/$defs/schemaConstraint" },
+            { "type": "null" }
+          ]
+        },
+        "hint": {
+          "anyOf": [
+            { "type": "object" },
+            { "type": "null" }
+          ]
+        }
       }
     },
 
+    "indexPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "fields": {
+          "anyOf": [
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "null" }
+          ]
+        },
+        "type": {
+          "anyOf": [
+            { "$ref": "#/$defs/indexType" },
+            { "type": "null" }
+          ]
+        },
+        "unique": { "type": ["boolean", "null"] },
+        "order": {
+          "anyOf": [
+            { "enum": ["asc", "desc"] },
+            { "type": "null" }
+          ]
+        },
+        "description": { "type": ["string", "null"] },
+        "partial": {
+          "anyOf": [
+            { "$ref": "#/$defs/partialIndexCondition" },
+            { "type": "null" }
+          ]
+        }
+      }
+    },
+
+    "constraintPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "predicate": { "type": ["string", "null"] },
+        "field": { "type": ["string", "null"] },
+        "fields": {
+          "anyOf": [
+            { "type": "array", "items": { "type": "string" } },
+            { "type": "null" }
+          ]
+        },
+        "parameters": { "nullable": true },
+        "description": { "type": ["string", "null"] },
+        "errorMessage": { "type": ["string", "null"] }
+      }
+    },
+
+    "indexType": {
+      "enum": ["normal", "unique", "primary", "fulltext", "spatial"]
+    },
+
     "fieldType": {
-      "enum": ["string", "number", "integer", "decimal", "boolean", "array", "set", "enum", "object", "record", "union", "dynamic"]
+      "enum": [
+        "string",
+        "number",
+        "integer",
+        "decimal",
+        "boolean",
+        "array",
+        "set",
+        "enum",
+        "object",
+        "record",
+        "union",
+        "dynamic"
+      ]
     }
   }
 }
-
-

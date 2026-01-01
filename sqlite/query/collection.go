@@ -26,8 +26,8 @@ func (t *createTableTree) Value() (string, []any, error) {
 	var primaryKeys []string
 
 	for _, index := range sc.Indexes {
-		if index.Type == schema.IndexTypePrimary && len(index.Fields) > 0 {
-			primaryKeys = index.Fields
+		if index.Index.Type == schema.IndexTypePrimary && len(index.Index.Fields) > 0 {
+			primaryKeys = index.Index.Fields
 			break
 		}
 	}

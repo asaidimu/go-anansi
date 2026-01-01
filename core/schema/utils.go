@@ -134,16 +134,16 @@ func (fd *FieldDefinition) FindNestedField(schema *SchemaDefinition, path []stri
 
 // FindField finds a field by its name in a nested schema.
 func (nsd *NestedSchemaDefinition) FindField(name string) *FieldDefinition {
-	if *nsd.IsStructured {
-		if nsd.StructuredFieldsMap != nil {
-			for fieldName, field := range nsd.StructuredFieldsMap {
+	if nsd.IsStructured() {
+		if nsd.Fields.FieldsMap != nil {
+			for fieldName, field := range nsd.Fields.FieldsMap {
 				if fieldName == name {
 					return field
 				}
 			}
 		}
-		if nsd.StructuredFieldsArray != nil {
-			for _, conditionalFields := range nsd.StructuredFieldsArray {
+		if nsd.Fields.FieldsArray != nil {
+			for _, conditionalFields := range nsd.Fields.FieldsArray {
 				for fieldName, field := range conditionalFields.Fields {
 					if fieldName == name {
 						return field
@@ -216,7 +216,7 @@ func (fieldDef *FieldDefinition) ValidateType(value any) bool {
 				ok = true
 			}
 		}
-	case FieldTypeUnion, FieldTypeEnum, FieldTypeUnknown:
+	case FieldTypeUnion, FieldTypeEnum:
 		return true
 	}
 

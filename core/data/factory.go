@@ -42,7 +42,7 @@ type MetadataProviderConfig struct {
 // TODO, we need a way to configure the sanitizers at runtime to
 // accomodate schema changes
 type DocumentFactoryConfig struct {
-	Providers            []MetadataProviderConfig
+	Providers []MetadataProviderConfig
 	// GlobalSanitizer configures field-level data sanitization for events.
 	// When set, all events emitted by the persistence layer will have their
 	// Input and Output fields sanitized according to the specified policies.
@@ -50,7 +50,7 @@ type DocumentFactoryConfig struct {
 	//
 	// If nil, no sanitization is applied (NOT recommended for production).
 	// Use data.NewSecureDefaultConfig() for sensible defaults.
-	GlobalSanitizer      *FieldMaskConfig
+	GlobalSanitizer *FieldMaskConfig
 	// CollectionSanitizers allows per-collection sanitization overrides.
 	// Keys are collection names, values are the sanitization config to use
 	// for that specific collection. If a collection is not found in this map,
@@ -222,8 +222,14 @@ func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchema
 	dependencyNames := make(map[string]bool)
 
 	// Initialize the StructuredFieldsMap if it's nil
-	if mergedSchema.StructuredFieldsMap == nil {
-		mergedSchema.StructuredFieldsMap = make(map[string]*schema.FieldDefinition)
+	if mergedSchema.Fields == nil {
+		mergedSchema.Fields = &schema.NestedSchemaFields{
+			FieldsMap: make(map[string]*schema.FieldDefinition),
+		}
+	}
+
+	if mergedSchema.Fields.FieldsMap == nil {
+		mergedSchema.Fields.FieldsMap = make(map[string]*schema.FieldDefinition)
 	}
 
 	for _, providerConfig := range f.config.Providers {
@@ -236,8 +242,8 @@ func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchema
 		}
 
 		// Merge the provider's schema fields into the top-level metadata schema
-		if providerConfig.Schema != nil && providerConfig.Schema.StructuredFieldsMap != nil {
-			maps.Copy(mergedSchema.StructuredFieldsMap, providerConfig.Schema.StructuredFieldsMap)
+		if providerConfig.Schema != nil && providerConfig.Schema.Fields != nil && providerConfig.Schema.Fields.FieldsMap != nil {
+			maps.Copy(mergedSchema.Fields.FieldsMap, providerConfig.Schema.Fields.FieldsMap)
 		}
 	}
 

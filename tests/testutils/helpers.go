@@ -16,9 +16,11 @@ func ConfigureDocumentFactory() {
 				Name: "custom",
 				Schema: &schema.NestedSchemaDefinition{
 					Name: "custom_meta",
-					StructuredFieldsMap: map[string]*schema.FieldDefinition{
-						"custom_field": {
-							Name: "custom_field", Type: "string", Required: utils.BoolPtr(true),
+					Fields: &schema.NestedSchemaFields{
+						FieldsMap: map[string]*schema.FieldDefinition{
+							"custom_field": {
+								Name: "custom_field", Type: "string", Required: utils.BoolPtr(true),
+							},
 						},
 					},
 				},

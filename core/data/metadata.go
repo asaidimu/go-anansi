@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	DocumentID     = "id"
+	DocumentID        = "id"
 	MetadataField     = "_metadata_"
 	MetadataChecksum  = "checksum"
 	MetadataSignature = "signature"
@@ -16,7 +16,6 @@ const (
 	MetadataCreated   = "created"
 	MetadataUpdated   = "updated"
 )
-
 
 func MetadataFieldPath(field string) string {
 	return fmt.Sprintf("%s.%s", MetadataField, field)
@@ -27,30 +26,30 @@ func MetadataFieldPath(field string) string {
 // Consumers can extend the returned object by adding their own custom field definitions
 // to its Fields map before passing it into the EnrichmentOptions.
 func DefaultMetadataSchema() *schema.NestedSchemaDefinition {
-	IsStructured := true
 	return &schema.NestedSchemaDefinition{
 		Name: MetadataField,
-		IsStructured: &IsStructured,
-		StructuredFieldsMap: map[string]*schema.FieldDefinition{
-			"version": {
-				Name:     MetadataVersion,
-				Type:     schema.FieldTypeNumber,
-				Required: utils.BoolPtr(true),
-			},
-			"created": {
-				Name:     MetadataCreated,
-				Type:     schema.FieldTypeString,
-				Required: utils.BoolPtr(true),
-			},
-			"updated": {
-				Name:     MetadataUpdated,
-				Type:     schema.FieldTypeString,
-				Required: utils.BoolPtr(true),
-			},
-			"checksum": {
-				Name:     MetadataChecksum,
-				Type:     schema.FieldTypeString,
-				Required: utils.BoolPtr(true),
+		Fields: &schema.NestedSchemaFields{
+			FieldsMap: map[string]*schema.FieldDefinition{
+				"version": {
+					Name:     MetadataVersion,
+					Type:     schema.FieldTypeNumber,
+					Required: utils.BoolPtr(true),
+				},
+				"created": {
+					Name:     MetadataCreated,
+					Type:     schema.FieldTypeString,
+					Required: utils.BoolPtr(true),
+				},
+				"updated": {
+					Name:     MetadataUpdated,
+					Type:     schema.FieldTypeString,
+					Required: utils.BoolPtr(true),
+				},
+				"checksum": {
+					Name:     MetadataChecksum,
+					Type:     schema.FieldTypeString,
+					Required: utils.BoolPtr(true),
+				},
 			},
 		},
 	}

@@ -499,8 +499,8 @@ func (m *EphemeralDatabaseInteractor) CreateCollection(ctx context.Context, sche
 		}
 	}
 	for _, index := range schemaDef.Indexes {
-		if err := newStore.CreateIndex(index.Name, index.Fields); err != nil {
-			return common.SystemErrorFrom(ErrCreateIndexFailed).WithOperation("ephemeral.CreateCollection").WithPath(index.Name).WithCause(err)
+		if err := newStore.CreateIndex(index.Index.Name, index.Index.Fields); err != nil {
+			return common.SystemErrorFrom(ErrCreateIndexFailed).WithOperation("ephemeral.CreateCollection").WithPath(index.Index.Name).WithCause(err)
 		}
 	}
 

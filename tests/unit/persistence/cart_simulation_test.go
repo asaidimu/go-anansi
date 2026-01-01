@@ -82,7 +82,7 @@ func TestCartSimulation_Success(t *testing.T) {
 		readResult, err := inventory.Read(ctx, &q)
 		require.NoError(t, err)
 		        require.Equal(t, 1, readResult.Count)
-		
+
 				item := readResult.Data[0]
 		quantity := item["quantity"].(int)
 		require.GreaterOrEqual(t, quantity, 1)

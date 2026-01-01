@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -33,10 +32,11 @@ func TestSchemaDefinition_FindNestedSchema(t *testing.T) {
 func TestNestedSchemaDefinition_FindField(t *testing.T) {
 	nestedSchemaDef := &schema.NestedSchemaDefinition{
 		Name: "profile_schema",
-		IsStructured: utils.BoolPtr(true),
-		StructuredFieldsMap: map[string]*schema.FieldDefinition{
-			"email": {Name: "email", Type: schema.FieldTypeString},
-			"age":   {Name: "age", Type: schema.FieldTypeInteger},
+		Fields: &schema.NestedSchemaFields{
+			FieldsMap: map[string]*schema.FieldDefinition{
+				"email": {Name: "email", Type: schema.FieldTypeString},
+				"age":   {Name: "age", Type: schema.FieldTypeInteger},
+			},
 		},
 	}
 
@@ -52,16 +52,14 @@ func TestNestedSchemaDefinition_FindField(t *testing.T) {
 	})
 
 	nestedSchemaDefWithArray := &schema.NestedSchemaDefinition{
-		Name: "contact_schema",
-		IsStructured: utils.BoolPtr(true),
-		StructuredFieldsArray: []struct {
-			Fields map[string]*schema.FieldDefinition `json:"fields"`
-			When   *schema.FieldInclusionCondition `json:"when,omitempty"`
-		}{
+		Name:         "contact_schema",
+		Fields: &schema.NestedSchemaFields{
+			FieldsArray: []schema.ConditionalFieldSet{
 			{
 				Fields: map[string]*schema.FieldDefinition{
 					"email": {Name: "email", Type: schema.FieldTypeString},
 				},
+			},
 			},
 		},
 	}

@@ -70,7 +70,7 @@ func SchemaFromQuery(q *Query, options *SchemaFromQueryOptions) (*schema.SchemaD
 
 	// Update schema metadata
 	resultSchema.Name = generateResultSchemaName(q)
-	resultSchema.Description = "Generated schema for query result"
+	resultSchema.Description = utils.StringPtr("Generated schema for query result")
 
 	return resultSchema, nil
 }
@@ -80,7 +80,9 @@ func generateAggregationResultSchema(q *Query, options *SchemaFromQueryOptions) 
 	resultSchema := &schema.SchemaDefinition{
 		Name:        generateResultSchemaName(q) + "_aggregated",
 		Version:     "1.0.0",
-		Description: "Generated schema for aggregation query result",
+		Description: utils.StringPtr(
+		"Generated schema for aggregation query result",
+		),
 		Fields:      make(map[string]*schema.FieldDefinition),
 	}
 
@@ -102,8 +104,9 @@ func generateAggregationResultSchema(q *Query, options *SchemaFromQueryOptions) 
 		aggregationValueSchema := &schema.NestedSchemaDefinition{
 			Name:         "AggregationValues",
 			Description:  utils.StringPtr("Schema for aggregated values"),
-			IsStructured: utils.BoolPtr(true),
-			StructuredFieldsMap: make(map[string]*schema.FieldDefinition),
+			Fields: &schema.NestedSchemaFields{
+				FieldsMap: make(map[string]*schema.FieldDefinition),
+			},
 		}
 
 		// Add fields for each aggregation
@@ -116,7 +119,7 @@ func generateAggregationResultSchema(q *Query, options *SchemaFromQueryOptions) 
 			}
 
 			fieldType := inferAggregationFieldType(agg, q.Target.Schema, options)
-			aggregationValueSchema.StructuredFieldsMap[fieldName] = &schema.FieldDefinition{
+			aggregationValueSchema.Fields.FieldsMap[fieldName] = &schema.FieldDefinition{
 				Name:        fieldName,
 				Type:        fieldType,
 				Required:    utils.BoolPtr(false),
@@ -204,7 +207,7 @@ func applyJoinsToSchema(resultSchema *schema.SchemaDefinition, joins []JoinConfi
 				currentSchema = &schema.SchemaDefinition{
 					Name:          nestedSchema.Name,
 					NestedSchemas: currentSchema.NestedSchemas,
-					Fields:        nestedSchema.StructuredFieldsMap,
+					Fields:        nestedSchema.Fields.FieldsMap,
 				}
 
 			} else {
@@ -235,8 +238,9 @@ func addJoinField(targetSchema *schema.SchemaDefinition, fieldName string, join 
 	nestedSchema := &schema.NestedSchemaDefinition{
 		Name:                nestedSchemaName,
 		Description:         utils.StringPtr(fmt.Sprintf("Joined data from %s", join.Target.Name)),
-		IsStructured:        utils.BoolPtr(true),
-		StructuredFieldsMap: joinedSchema.Fields,
+		Fields: &schema.NestedSchemaFields{
+			FieldsMap: joinedSchema.Fields,
+		},
 	}
 
 	// Add to nested schemas
@@ -393,7 +397,7 @@ func cloneSchemaDefinition(original *schema.SchemaDefinition) *schema.SchemaDefi
 		Version:     original.Version,
 		Description: original.Description,
 		Fields:      make(map[string]*schema.FieldDefinition),
-		Indexes:     make([]schema.IndexDefinition, len(original.Indexes)),
+		Indexes:     make([]schema.IndexOrReference, len(original.Indexes)),
 		Constraints: make(schema.SchemaConstraint[schema.FieldType], len(original.Constraints)),
 	}
 
@@ -467,9 +471,9 @@ func cloneFieldDefinition(original *schema.FieldDefinition) *schema.FieldDefinit
 func cloneNestedSchemaDefinition(original *schema.NestedSchemaDefinition) *schema.NestedSchemaDefinition {
 	clone := &schema.NestedSchemaDefinition{
 		Name:        original.Name,
-		IsStructured: original.IsStructured,
 		Schema:      original.Schema,
 		Default:     original.Default,
+		Fields: &schema.NestedSchemaFields{},
 	}
 
 	// Clone pointer fields
@@ -489,26 +493,23 @@ func cloneNestedSchemaDefinition(original *schema.NestedSchemaDefinition) *schem
 	}
 
 	// Clone structured fields map
-	if original.StructuredFieldsMap != nil {
-		clone.StructuredFieldsMap = make(map[string]*schema.FieldDefinition)
-		for name, field := range original.StructuredFieldsMap {
-			clone.StructuredFieldsMap[name] = cloneFieldDefinition(field)
+	if original.Fields != nil  && original.Fields.FieldsMap != nil {
+		clone.Fields.FieldsMap = make(map[string]*schema.FieldDefinition)
+		for name, field := range original.Fields.FieldsMap {
+			clone.Fields.FieldsMap[name] = cloneFieldDefinition(field)
 		}
 	}
 
 	// Clone structured fields array
-	if original.StructuredFieldsArray != nil {
-		clone.StructuredFieldsArray = make([]struct {
-			Fields map[string]*schema.FieldDefinition `json:"fields"`
-			When   *schema.FieldInclusionCondition    `json:"when,omitempty"`
-		}, len(original.StructuredFieldsArray))
+	if original.Fields != nil && original.Fields.FieldsArray != nil {
+		clone.Fields.FieldsArray =  make([]schema.ConditionalFieldSet, len(original.Fields.FieldsArray))
 
-		for i, structuredFields := range original.StructuredFieldsArray {
-			clone.StructuredFieldsArray[i].When = structuredFields.When
+		for i, structuredFields := range original.Fields.FieldsArray {
+			clone.Fields.FieldsArray[i].When = structuredFields.When
 			if structuredFields.Fields != nil {
-				clone.StructuredFieldsArray[i].Fields = make(map[string]*schema.FieldDefinition)
+				clone.Fields.FieldsArray[i].Fields = make(map[string]*schema.FieldDefinition)
 				for name, field := range structuredFields.Fields {
-					clone.StructuredFieldsArray[i].Fields[name] = cloneFieldDefinition(field)
+					clone.Fields.FieldsArray[i].Fields[name] = cloneFieldDefinition(field)
 				}
 			}
 		}
@@ -516,7 +517,7 @@ func cloneNestedSchemaDefinition(original *schema.NestedSchemaDefinition) *schem
 
 	// Clone indexes
 	if original.Indexes != nil {
-		clone.Indexes = make([]schema.IndexDefinition, len(original.Indexes))
+		clone.Indexes = make([]schema.IndexOrReference, len(original.Indexes))
 		copy(clone.Indexes, original.Indexes)
 	}
 
@@ -604,7 +605,7 @@ func applyProjectionToSchemaReference(field *schema.FieldDefinition, nestedRef s
 	modifiedNestedSchema := cloneNestedSchemaDefinition(originalNestedSchema)
 
 	// Apply projection to the nested schema's fields
-	if originalNestedSchema.IsStructured != nil && *originalNestedSchema.IsStructured {
+	if originalNestedSchema.IsStructured() {
 		if err := applyProjectionToNestedSchema(modifiedNestedSchema, projection, originalSchema); err != nil {
 			return common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_NESTED_FAILED", fmt.Sprintf("failed to apply projection to nested schema %s", nestedRef.ID)).WithOperation("applyProjectionToSchemaReference").WithCause(err)
 		}
@@ -653,7 +654,7 @@ func applyProjectionToSchemaReferenceSlice(field *schema.FieldDefinition, nested
 		modifiedNestedSchema := cloneNestedSchemaDefinition(originalNestedSchema)
 
 		// Apply projection if the nested schema is structured
-		if originalNestedSchema.IsStructured != nil && *originalNestedSchema.IsStructured {
+		if originalNestedSchema.IsStructured() {
 			if err := applyProjectionToNestedSchema(modifiedNestedSchema, projection, originalSchema); err != nil {
 				return common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_NESTED_UNION_FAILED", fmt.Sprintf("failed to apply projection to nested schema %s in union", nestedRef.ID)).WithOperation("applyProjectionToSchemaReferenceSlice").WithCause(err)
 			}
@@ -690,15 +691,15 @@ func applyProjectionToSchemaReferenceSlice(field *schema.FieldDefinition, nested
 // applyProjectionToNestedSchema applies projection configuration to a nested schema definition
 func applyProjectionToNestedSchema(nestedSchema *schema.NestedSchemaDefinition, projection *ProjectionConfiguration, parentSchema *schema.SchemaDefinition) error {
 	// Handle structured fields map
-	if nestedSchema.StructuredFieldsMap != nil {
-		return applyProjectionToFieldsMap(nestedSchema.StructuredFieldsMap, projection, parentSchema)
+	if nestedSchema.Fields != nil && nestedSchema.Fields.FieldsMap != nil {
+		return applyProjectionToFieldsMap(nestedSchema.Fields.FieldsMap, projection, parentSchema)
 	}
 
 	// Handle structured fields array (conditional fields)
-	if nestedSchema.StructuredFieldsArray != nil {
-		for i := range nestedSchema.StructuredFieldsArray {
-			if nestedSchema.StructuredFieldsArray[i].Fields != nil {
-				if err := applyProjectionToFieldsMap(nestedSchema.StructuredFieldsArray[i].Fields, projection, parentSchema); err != nil {
+	if nestedSchema.Fields != nil && nestedSchema.Fields.FieldsArray != nil {
+		for i := range nestedSchema.Fields.FieldsArray {
+			if nestedSchema.Fields.FieldsArray[i].Fields != nil {
+				if err := applyProjectionToFieldsMap(nestedSchema.Fields.FieldsArray[i].Fields, projection, parentSchema); err != nil {
 					return common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_CONDITIONAL_FAILED", fmt.Sprintf("failed to apply projection to conditional fields array at index %d", i)).WithOperation("applyProjectionToNestedSchema").WithCause(err)
 				}
 			}

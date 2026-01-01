@@ -25,10 +25,10 @@ func TestNestedSchemaDefinition_UnmarshalJSON(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "address_schema", nsd.Name)
 		require.NotNil(t, nsd.IsStructured)
-		assert.True(t, *nsd.IsStructured)
-		require.NotNil(t, nsd.StructuredFieldsMap)
-		assert.Len(t, nsd.StructuredFieldsMap, 2)
-		assert.Equal(t, schema.FieldTypeString, nsd.StructuredFieldsMap["street"].Type)
+		assert.True(t, nsd.IsStructured())
+		require.NotNil(t, nsd.Fields.FieldsMap)
+		assert.Len(t, nsd.Fields.FieldsMap, 2)
+		assert.Equal(t, schema.FieldTypeString, nsd.Fields.FieldsMap["street"].Type)
 	})
 
 	t.Run("should unmarshal structured nested schema with array of fields", func(t *testing.T) {
@@ -143,7 +143,6 @@ func TestNestedSchemaDefinition_UnmarshalJSON(t *testing.T) {
 		var nsd schema.SchemaDefinition
 		nsd.From([]byte(jsonData))
 
-		t.Logf("%s\n", nsd.MustToJSON())
 		nsd.MustClone()
 		assert.Equal(t, "OrganisationalUnit", nsd.Name)
 	})
@@ -175,9 +174,9 @@ func TestNestedSchemaDefinition_UnmarshalJSON(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "contact_schema", nsd.Name)
 		require.NotNil(t, nsd.IsStructured)
-		assert.True(t, *nsd.IsStructured)
-		require.NotNil(t, nsd.StructuredFieldsArray)
-		assert.Len(t, nsd.StructuredFieldsArray, 2)
+		assert.True(t, nsd.IsStructured())
+		require.NotNil(t, nsd.Fields.FieldsArray)
+		assert.Len(t, nsd.Fields.FieldsArray, 2)
 	})
 
 	t.Run("should unmarshal literal nested schema", func(t *testing.T) {
@@ -193,7 +192,7 @@ func TestNestedSchemaDefinition_UnmarshalJSON(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "tag_schema", nsd.Name)
 		require.NotNil(t, nsd.IsStructured)
-		assert.False(t, *nsd.IsStructured)
+		assert.False(t, nsd.IsStructured())
 		require.NotNil(t, nsd.Type)
 		assert.Equal(t, &stringType, nsd.Type)
 	})
@@ -225,13 +224,13 @@ func TestNestedSchemaDefinition_UnmarshalJSON(t *testing.T) {
 
 func TestNestedSchemaDefinition_MarshalJSON(t *testing.T) {
 	t.Run("should marshal structured nested schema with map of fields", func(t *testing.T) {
-		trueBool := true
 		nsd := schema.NestedSchemaDefinition{
-			Name:         "address_schema",
-			IsStructured: &trueBool,
-			StructuredFieldsMap: map[string]*schema.FieldDefinition{
-				"street": {Type: schema.FieldTypeString},
-				"city":   {Type: schema.FieldTypeString},
+			Name: "address_schema",
+			Fields: &schema.NestedSchemaFields{
+				FieldsMap: map[string]*schema.FieldDefinition{
+					"street": {Type: schema.FieldTypeString},
+					"city":   {Type: schema.FieldTypeString},
+				},
 			},
 		}
 
@@ -247,11 +246,9 @@ func TestNestedSchemaDefinition_MarshalJSON(t *testing.T) {
 	})
 
 	t.Run("should marshal literal nested schema", func(t *testing.T) {
-		falseBool := false
 		stringType := schema.FieldTypeString
 		nsd := schema.NestedSchemaDefinition{
 			Name:         "tag_schema",
-			IsStructured: &falseBool,
 			Type:         &stringType,
 		}
 

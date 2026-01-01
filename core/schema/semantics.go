@@ -53,7 +53,7 @@ func validateFieldSemantic(fieldDef *FieldDefinition, schema *SchemaDefinition, 
 func validateObjectFieldSemantic(fieldDef *FieldDefinition, schema *SchemaDefinition, fieldPath string) error {
 	if ref, ok := fieldDef.Schema.(NestedSchemaReference); ok {
 		if nestedSchemaDef, exists := schema.FindNestedSchema(ref.ID); exists {
-			if nestedSchemaDef.IsStructured == nil || !*nestedSchemaDef.IsStructured {
+			if !nestedSchemaDef.IsStructured() {
 				return ErrObjectFieldLiteralSchemaReference.
 					WithOperation("schema.validateObjectFieldSemantic").
 					WithMessage(fmt.Sprintf("object field '%s' cannot reference literal nested schema '%s' - only structured schemas are allowed", fieldPath, ref.ID))
@@ -102,7 +102,7 @@ func validateArraySetFieldSemantic(fieldDef *FieldDefinition, schema *SchemaDefi
 		if nestedSchemaDef, exists := schema.FindNestedSchema(ref.ID); exists {
 			switch *fieldDef.ItemsType {
 			case FieldTypeObject:
-				if nestedSchemaDef.IsStructured == nil || !*nestedSchemaDef.IsStructured {
+				if !nestedSchemaDef.IsStructured() {
 					return ErrObjectFieldLiteralSchemaReference.
 						WithOperation("schema.validateArraySetFieldSemantic").
 						WithMessage(fmt.Sprintf("array/set field '%s' with object ItemsType cannot reference literal nested schema '%s' - only structured schemas are allowed", fieldPath, ref.ID))
@@ -127,12 +127,12 @@ func validateNestedSchemaSemantics(fieldDef *FieldDefinition, schema *SchemaDefi
 	if fieldDef.Schema != nil && fieldDef.Type == FieldTypeObject {
 		if ref, ok := fieldDef.Schema.(NestedSchemaReference); ok {
 			if nestedSchemaDef, exists := schema.FindNestedSchema(ref.ID); exists {
-				if nestedSchemaDef.IsStructured != nil && *nestedSchemaDef.IsStructured {
+				if nestedSchemaDef.IsStructured() {
 					var tempSchema *SchemaDefinition
-					if nestedSchemaDef.StructuredFieldsMap != nil {
+					if nestedSchemaDef.Fields.FieldsMap != nil {
 						tempSchema = &SchemaDefinition{
 							Name:          nestedSchemaDef.Name,
-							Fields:        nestedSchemaDef.StructuredFieldsMap,
+							Fields:        nestedSchemaDef.Fields.FieldsMap,
 							NestedSchemas: schema.NestedSchemas,
 						}
 					}

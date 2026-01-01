@@ -99,8 +99,8 @@ func TestSchemaFromQuery(t *testing.T) {
 		require.True(t, ok)
 		nestedSchema, exists := resultSchema.NestedSchemas[nestedSchemaRef.ID]
 		require.True(t, exists)
-		assert.Len(t, nestedSchema.StructuredFieldsMap, 4)
-		assert.Contains(t, nestedSchema.StructuredFieldsMap, "amount")
+		assert.Len(t, nestedSchema.Fields.FieldsMap, 4)
+		assert.Contains(t, nestedSchema.Fields.FieldsMap, "amount")
 	})
 
 	t.Run("SelectWithAggregation", func(t *testing.T) {
@@ -164,7 +164,7 @@ func TestSchemaFromQuery(t *testing.T) {
 		expectedSchema := &schema.SchemaDefinition{
 			Name:        "users_projected_result",
 			Version:     "1.0.0",
-			Description: "Generated schema for query result",
+			Description: stringPtr("Generated schema for query result"),
 			Fields: map[string]*schema.FieldDefinition{
 				"id":   {Name: "id", Type: schema.FieldTypeString},
 				"name": {Name: "name", Type: schema.FieldTypeString},
@@ -249,10 +249,10 @@ func TestSchemaFromQuery(t *testing.T) {
 		require.True(t, exists)
 
 		// 4 from profiles + 1 for contact join
-		assert.Len(t, nestedProfileSchema.StructuredFieldsMap, 5)
-		assert.Contains(t, nestedProfileSchema.StructuredFieldsMap, "contact")
+		assert.Len(t, nestedProfileSchema.Fields.FieldsMap, 5)
+		assert.Contains(t, nestedProfileSchema.Fields.FieldsMap, "contact")
 
-		contactField := nestedProfileSchema.StructuredFieldsMap["contact"]
+		contactField := nestedProfileSchema.Fields.FieldsMap["contact"]
 		assert.Equal(t, schema.FieldTypeObject, contactField.Type)
 
 		contactSchemaRef, ok := contactField.Schema.(schema.NestedSchemaReference)
@@ -260,8 +260,8 @@ func TestSchemaFromQuery(t *testing.T) {
 		nestedContactSchema, exists := resultSchema.FindNestedSchema(contactSchemaRef.ID)
 		require.True(t, exists)
 
-		assert.Len(t, nestedContactSchema.StructuredFieldsMap, 3)
-		assert.Contains(t, nestedContactSchema.StructuredFieldsMap, "phone")
+		assert.Len(t, nestedContactSchema.Fields.FieldsMap, 3)
+		assert.Contains(t, nestedContactSchema.Fields.FieldsMap, "phone")
 
 		// Validate the schema with a sample document
 		doc := data.Document{

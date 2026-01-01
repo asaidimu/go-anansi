@@ -33,7 +33,7 @@ func newTestSchema(name ...string) *schema.SchemaDefinition {
 	return &schema.SchemaDefinition{
 		Name:        sname,
 		Version:     "1.0.0",
-		Description: "test collection",
+		Description: stringPtr("test collection"),
 		Fields: map[string]*schema.FieldDefinition{
 			"id":        {Name: "id", Type: "string", Required: func() *bool { b := true; return &b }(), Unique: func() *bool { b := true; return &b }()},
 			"name":      {Name: "name", Type: "string", Required: func() *bool { b := true; return &b }()},
