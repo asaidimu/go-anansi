@@ -80,8 +80,9 @@ func TestSchemaDefinition_From(t *testing.T) {
 	t.Run("should unmarshal valid json schema", func(t *testing.T) {
 		jsonData := []byte(`{
 			"name": "test_schema",
+			"version": "1.0.0",
 			"fields": {
-				"name": { "type": "string" }
+				"name": { "type": "string", "name": "example" }
 			}
 		}`)
 		var schemaDef schema.SchemaDefinition
@@ -94,8 +95,9 @@ func TestSchemaDefinition_From(t *testing.T) {
 	t.Run("should return error for invalid json", func(t *testing.T) {
 		jsonData := []byte(`{
 			"name": "test_schema",
-			"fields": {
-				"name": { "type": "string" },
+			"version": "1.0.0",
+			"field": {
+				"name": { "type": "string", "name": "example" }
 			}
 		}`)
 		var schemaDef schema.SchemaDefinition

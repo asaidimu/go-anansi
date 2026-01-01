@@ -4,9 +4,8 @@ import (
 	"fmt"
 )
 
+
 func (schema *SchemaDefinition) Validate() error {
-	// TODO: Create a JSON schema for schemas then use that to validate the
-	// structure before we can even unmarshal
 	basePath := ""
 	return schema.validateSchemaSemanticRecursive(basePath)
 }

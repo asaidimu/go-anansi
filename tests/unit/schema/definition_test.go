@@ -37,19 +37,6 @@ func TestNestedSchemaDefinition_UnmarshalJSON(t *testing.T) {
   "version": "1.0.0",
   "description": "Represents a unit within an organizational structure, supporting hierarchical and peer-to-peer groupings.",
   "fields": {
-    "id": {
-      "name": "id",
-      "type": "string",
-      "description": "Unique identifier for the organizational unit.",
-      "required": true,
-      "unique": true,
-      "hint": {
-        "input": {
-          "type": "text",
-          "placeholder": "e.g., ENT-12345"
-        }
-      }
-    },
     "name": {
       "name": "name",
       "type": "string",
@@ -141,9 +128,8 @@ func TestNestedSchemaDefinition_UnmarshalJSON(t *testing.T) {
 		}`
 
 		var nsd schema.SchemaDefinition
-		nsd.From([]byte(jsonData))
-
-		nsd.MustClone()
+		err := nsd.From([]byte(jsonData))
+		assert.NoError(t, err)
 		assert.Equal(t, "OrganisationalUnit", nsd.Name)
 	})
 
