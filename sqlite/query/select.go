@@ -19,7 +19,7 @@ func (f *sqliteFactory) addAlias(original, alias string) {
 	f.aliases[original] = alias
 }
 
-func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[string]*schema.SchemaDefinition) (string, error) {
+func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[string]*schema.SchemaDefinition, qualify ...bool) (string, error) {
 	if !isValidIdentifier(fieldRef) {
 		return "", ErrSelectUnsupportedFieldReference.WithCause(fmt.Errorf("unsupported field reference: %s", fieldRef))
 	}
@@ -28,6 +28,17 @@ func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[strin
 
 	// Case 1: Single field (e.g., "id", "name")
 	if len(parts) == 1 {
+		if qualify != nil && qualify[0] {
+			fieldName := parts[0]
+			for alias, schemaDef := range schemas {
+				if fieldDef := schemaDef.FindField(fieldName); fieldDef != nil {
+					// Return table-qualified name: "users"."id"
+					return fmt.Sprintf("%s.%s", quoteIdentifier(alias), quoteIdentifier(fieldName)), nil
+				}
+			}
+			return quoteIdentifier(fieldName), nil
+		}
+
 		return quoteIdentifier(parts[0]), nil
 	}
 
@@ -779,7 +790,7 @@ func (o *SQLiteOrderByClause) Value() (string, []any, error) {
 
 	var parts []string
 	for _, sort := range allSorts {
-		resolvedField, err := o.factory.resolveFieldReference(sort.Field, o.schemas)
+		resolvedField, err := o.factory.resolveFieldReference(sort.Field, o.schemas, true)
 		if err != nil {
 			return "", nil, err
 		}

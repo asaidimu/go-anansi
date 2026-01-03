@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -13,8 +12,8 @@ import (
 // SQLiteInsertValues handles the VALUES clause in an INSERT statement.
 type SQLiteInsertValues struct {
 	factory *sqliteFactory
-	data    data.Document
-	batch   []data.Document
+	data    map[string]any
+	batch   []map[string]any
 	schema  *schema.SchemaDefinition
 	fields  []string
 }
@@ -50,7 +49,7 @@ func (i *SQLiteInsertValues) Value() (string, []any, error) {
 	return i.buildBatchInsert(i.batch)
 }
 
-func (i *SQLiteInsertValues) buildSingleInsert(doc data.Document) (string, []any, error) {
+func (i *SQLiteInsertValues) buildSingleInsert(doc map[string]any) (string, []any, error) {
 	if len(doc) == 0 {
 		return "", nil, ErrInsertEmptyDocument
 	}
@@ -67,7 +66,7 @@ func (i *SQLiteInsertValues) buildSingleInsert(doc data.Document) (string, []any
 	return query, params, nil
 }
 
-func (i *SQLiteInsertValues) buildBatchInsert(batch []data.Document) (string, []any, error) {
+func (i *SQLiteInsertValues) buildBatchInsert(batch []map[string]any) (string, []any, error) {
 	if len(batch) == 0 {
 		return "", nil, ErrInsertEmptyBatch
 	}
@@ -94,7 +93,7 @@ func (i *SQLiteInsertValues) buildBatchInsert(batch []data.Document) (string, []
 
 // processDocumentFields converts document values to SQLite placeholders and params
 func (i *SQLiteInsertValues) processDocumentFields(
-	doc data.Document,
+	doc map[string]any,
 ) ([]string, []any, error) {
 	fields := i.fields
 	placeholders := make([]string, 0, len(fields))
@@ -195,9 +194,9 @@ func (f *sqliteFactory) buildInsertTree(q *query.Query, extra any) (SQLNode, err
 	}
 
 	switch v := extra.(type) {
-	case data.Document:
+	case map[string]any:
 		values.data = v
-	case []data.Document:
+	case []map[string]any:
 		values.batch = v
 	default:
 		return nil, ErrInsertInvalidDataType.WithCause(fmt.Errorf("invalid data type for insert: %T", extra))

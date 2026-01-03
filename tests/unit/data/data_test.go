@@ -17,6 +17,7 @@ func TestMain(m *testing.M) {
 func TestNewDocument_HasSystemMetadata(t *testing.T) {
 	doc, err := data.NewDocument(map[string]any{"foo": "bar"})
 	require.NoError(t, err)
+	require.NotNil(t, doc)
 
 	meta, ok := doc.Metadata()
 	require.True(t, ok, "document should always have metadata")
@@ -29,6 +30,7 @@ func TestNewDocument_HasSystemMetadata(t *testing.T) {
 func TestMustNewDocument_FromMap_HasMetadata(t *testing.T) {
 	input := map[string]any{"foo": "baz"}
 	doc := data.MustNewDocument(input)
+	require.NotNil(t, doc)
 
 	meta, ok := doc.Metadata()
 	require.True(t, ok)
@@ -40,6 +42,7 @@ func TestFromJSON_HasMetadata(t *testing.T) {
 	input := []byte(`{"hello": "world"}`)
 	doc, err := data.FromJSON(input)
 	require.NoError(t, err)
+	require.NotNil(t, doc)
 
 	meta, ok := doc.Metadata()
 	require.True(t, ok)
@@ -59,13 +62,18 @@ func TestNormalize_RemovesNestedMetadata(t *testing.T) {
 	require.True(t, ok)
 
 	normalized := doc.Normalize()
+	require.NotNil(t, normalized)
 
 	// Root metadata remains
 	_, ok = normalized.Metadata()
 	require.True(t, ok)
 
 	// Nested metadata stripped
-	child := normalized["nested"].(data.Document)
+	childVal, err := normalized.Get("nested")
+	require.NoError(t, err)
+	child, ok := childVal.(*data.Document)
+	require.True(t, ok)
+
 	_, ok = child.Metadata()
 	require.False(t, ok)
 }

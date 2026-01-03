@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -20,7 +19,7 @@ type DelayedEphemeralInteractor struct {
 	delay time.Duration
 }
 
-func (i *DelayedEphemeralInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]data.Document, error) {
+func (i *DelayedEphemeralInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]map[string]any, error) {
 	time.Sleep(i.delay)
 	return i.DatabaseInteractor.SelectDocuments(ctx, schemaDef, dsl)
 }
@@ -59,7 +58,7 @@ func TestQueryEngineCancellation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a document to query
-	_, err = delayedInteractor.InsertDocuments(context.Background(), schema, []data.Document{{"id": "1", "name": "test"}})
+	_, err = delayedInteractor.InsertDocuments(context.Background(), schema, []map[string]any{{"id": "1", "name": "test"}})
 	require.NoError(t, err)
 
 	// Create a context with a short timeout

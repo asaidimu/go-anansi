@@ -11,7 +11,7 @@ import (
 // JSONPathQuery executes a JSONPath-like query on the document.
 func (d Document) JSONPathQuery(path string) ([]any, error) {
 	if path == "" || path == "$" {
-		return []any{d}, nil
+		return []any{d.data}, nil
 	}
 
 	// Parse the JSONPath into segments
@@ -83,7 +83,7 @@ func (d Document) parseJSONPath(path string) ([]string, error) {
 // based on the provided path segments, supporting wildcard '*' and array indexing '[]'.
 // It returns a slice of all values found at the specified path.
 func (d Document) executeJSONPath(segments []string) ([]any, error) {
-	current := []any{d}
+	current := []any{d.data}
 
 	for i, segment := range segments {
 		var next []any
@@ -156,7 +156,7 @@ func (d Document) processWildcard(item any) []any {
 	if arr, ok := item.([]any); ok {
 		results = append(results, arr...)
 	} else if doc, ok := AsDocument(item); ok {
-		for _, v := range doc {
+		for _, v := range doc.data {
 			results = append(results, v)
 		}
 	}

@@ -1,7 +1,6 @@
 package api
 
 import (
-	"maps"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -109,7 +108,6 @@ func (s *APIServer) createCollection(w http.ResponseWriter, r *http.Request) {
 	s.Response.WriteJSON(w, http.StatusCreated, map[string]string{"name": reqBody.Schema.Name}, r)
 }
 
-
 // listCollections handles GET /api/v1/collections
 func (s *APIServer) listCollections(w http.ResponseWriter, r *http.Request) {
 	includeSchema := r.URL.Query().Get("include_schema") == "true"
@@ -139,10 +137,7 @@ func (s *APIServer) listCollections(w http.ResponseWriter, r *http.Request) {
 		}
 
 		colData := map[string]any{
-			"name":          metadata.Name,
-			"document_count": metadata.RecordCount,
-			"created_at":    metadata.CreatedAt,
-			"updated_at":    metadata.LastModified,
+			"name": metadata.Name,
 		}
 
 		if includeSchema {
@@ -193,7 +188,7 @@ func (s *APIServer) handleCollectionDocuments(w http.ResponseWriter, r *http.Req
 // createDocuments handles POST /api/v1/collections/{collection}/documents
 func (s *APIServer) createDocuments(w http.ResponseWriter, r *http.Request, collection base.Collection) {
 	var reqBody struct {
-		Documents []data.Document `json:"documents"`
+		Documents []map[string]any `json:"documents"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
@@ -213,19 +208,30 @@ func (s *APIServer) createDocuments(w http.ResponseWriter, r *http.Request, coll
 		return
 	}
 
-	results, err := collection.CreateMany(r.Context(), reqBody.Documents)
-	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, err, r)
+	all, ok := data.DocumentSlice(reqBody.Documents)
+
+	if !ok {
+		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
+			Code:    "BAD_REQUEST",
+			Message: "Could not work with provided data",
+		}, r)
 		return
 	}
 
-	createdDocs := make([]data.Document, len(results))
-	for i, res := range results {
-		createdDocs[i] = res.Data
+	results, err := collection.CreateMany(r.Context(), all)
+	resultset := base.CreateResultSet(results)
+	if err != nil {
+		s.Response.WriteJSON(w, http.StatusUnprocessableEntity, map[string]any{
+			"issues": resultset.Issues(),
+			"error":  err.Error(),
+		}, r)
+		return
 	}
 
+	documents := resultset.Documents().Sanitize(r.Context()).ToMaps()
+
 	s.Response.WriteJSON(w, http.StatusCreated, map[string]any{
-		"documents": createdDocs,
+		"documents": documents,
 	}, r)
 }
 
@@ -244,7 +250,7 @@ func (s *APIServer) readDocuments(w http.ResponseWriter, r *http.Request, collec
 		}, r)
 		return
 	}
-	documents := result.Data
+	documents := data.DocumentSet(result.Data).Sanitize(r.Context()).ToMaps()
 
 	s.Response.WriteJSON(w, http.StatusOK, map[string]any{
 		"documents": documents,
@@ -277,9 +283,8 @@ func (s *APIServer) handleSingleDocument(w http.ResponseWriter, r *http.Request)
 	case http.MethodGet:
 		s.readSingleDocument(w, r, collection, documentID)
 	case http.MethodPatch:
-		s.updateSingleDocument(w, r, collection, documentID)
 	case http.MethodPut:
-		s.replaceSingleDocument(w, r, collection, documentID)
+		s.updateSingleDocument(w, r, collection, documentID)
 	case http.MethodDelete:
 		s.deleteSingleDocument(w, r, collection, documentID)
 	default:
@@ -316,7 +321,7 @@ func (s *APIServer) readSingleDocument(w http.ResponseWriter, r *http.Request, c
 
 // updateSingleDocument handles PATCH /api/v1/collections/{collection}/documents/{id}
 func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request, collection base.Collection, documentID string) {
-	var updateData data.Document
+	var updateData *data.Document
 	if err := json.NewDecoder(r.Body).Decode(&updateData); err != nil {
 		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
 			Code:    "BAD_REQUEST",
@@ -349,11 +354,11 @@ func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request,
 	existingDoc := readResult.Data[0]
 
 	// Merge updateData into existingDoc
-	maps.Copy(existingDoc, updateData)
+	existingDoc.Merge(updateData)
 
 	update := &base.CollectionUpdate{
 		Filter: query.NewQueryBuilder().Where("id").Eq(documentID).Build().Filters,
-		Set:   existingDoc, // Pass the merged document with metadata
+		Set:    existingDoc, // Pass the merged document with metadata
 	}
 
 	count, err := collection.Update(r.Context(), update)
@@ -375,42 +380,6 @@ func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request,
 	}
 
 	s.Response.WriteJSON(w, http.StatusOK, map[string]any{"updated_count": count}, r)
-}
-
-// replaceSingleDocument handles PUT /api/v1/collections/{collection}/documents/{id}
-func (s *APIServer) replaceSingleDocument(w http.ResponseWriter, r *http.Request, collection base.Collection, documentID string) {
-	var replaceData data.Document
-	if err := json.NewDecoder(r.Body).Decode(&replaceData); err != nil {
-		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
-			Code:    "BAD_REQUEST",
-			Message: "Invalid request body",
-			Details: err.Error(),
-		}, r)
-		return
-	}
-
-	// Ensure the ID in the path matches the ID in the body, if provided in body
-	if id, ok := replaceData["id"]; ok && id != documentID {
-		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
-			Code:    "BAD_REQUEST",
-			Message: "Document ID in path and body do not match",
-		}, r)
-		return
-	}
-	replaceData["id"] = documentID // Ensure the document has the correct ID
-
-	// Anansi's CreateOne can act as an upsert if the ID exists
-	result, err := collection.CreateOne(r.Context(), replaceData)
-	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "REPLACE_ERROR",
-			Message: "Failed to replace document",
-			Details: err.Error(),
-		}, r)
-		return
-	}
-
-	s.Response.WriteJSON(w, http.StatusOK, result.Data, r)
 }
 
 // deleteSingleDocument handles DELETE /api/v1/collections/{collection}/documents/{id}

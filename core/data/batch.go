@@ -1,21 +1,22 @@
 package data
 
 import (
+	"context"
 	"math"
 	"reflect"
 	"sort"
 )
 
 // DocumentSet represents a collection of documents with batch operations.
-type DocumentSet []Document
+type DocumentSet []*Document
 
 // NewDocumentSet creates a new document set.
-func NewDocumentSet(docs ...Document) DocumentSet {
+func NewDocumentSet(docs ...*Document) DocumentSet {
 	return DocumentSet(docs)
 }
 
 // Filter applies a filter to all documents in the set.
-func (ds DocumentSet) Filter(predicate func(Document) bool) DocumentSet {
+func (ds DocumentSet) Filter(predicate func(*Document) bool) DocumentSet {
 	result := make(DocumentSet, 0)
 	for _, doc := range ds {
 		if predicate(doc) {
@@ -26,7 +27,7 @@ func (ds DocumentSet) Filter(predicate func(Document) bool) DocumentSet {
 }
 
 // Map applies a transformation to all documents in the set.
-func (ds DocumentSet) Map(transformer func(Document) Document) DocumentSet {
+func (ds DocumentSet) Map(transformer func(*Document) *Document) DocumentSet {
 	result := make(DocumentSet, len(ds))
 	for i, doc := range ds {
 		result[i] = transformer(doc)
@@ -35,7 +36,7 @@ func (ds DocumentSet) Map(transformer func(Document) Document) DocumentSet {
 }
 
 // Find returns the first document matching the predicate.
-func (ds DocumentSet) Find(predicate func(Document) bool) (Document, bool) {
+func (ds DocumentSet) Find(predicate func(*Document) bool) (*Document, bool) {
 	for _, doc := range ds {
 		if predicate(doc) {
 			return doc, true
@@ -46,7 +47,7 @@ func (ds DocumentSet) Find(predicate func(Document) bool) (Document, bool) {
 
 // Where returns documents where the specified key equals the value.
 func (ds DocumentSet) Where(key string, value any) DocumentSet {
-	return ds.Filter(func(d Document) bool {
+	return ds.Filter(func(d *Document) bool {
 		val, err := d.Get(key)
 		if err != nil {
 			return false
@@ -111,7 +112,7 @@ func (ds DocumentSet) GroupBy(key string) map[string]DocumentSet {
 }
 
 // Reduce applies a reducer function to all documents.
-func (ds DocumentSet) Reduce(reducer func(acc, current Document) Document, initial Document) Document {
+func (ds DocumentSet) Reduce(reducer func(acc, current *Document) *Document, initial *Document) *Document {
 	result := initial.Clone()
 	for _, doc := range ds {
 		result = reducer(result, doc)
@@ -185,4 +186,23 @@ type AggregationResult struct {
 	Max     float64 `json:"max"`
 	Median  float64 `json:"median"`
 	StdDev  float64 `json:"std_dev"`
+}
+
+// ToMaps converts the set of Documents back into a slice of raw maps.
+// This is perfect for JSON encoding or legacy API compatibility.
+func (ds DocumentSet) ToMaps() []map[string]any {
+	result := make([]map[string]any, len(ds))
+	for i, doc := range ds {
+		result[i] = doc.AsMap()
+	}
+	return result
+}
+
+// Sanitize applies context-aware masking to every document in the set.
+func (ds DocumentSet) Sanitize(ctx context.Context) DocumentSet {
+	result := make(DocumentSet, len(ds))
+	for i, doc := range ds {
+		result[i] = doc.Sanitize(ctx)
+	}
+	return result
 }

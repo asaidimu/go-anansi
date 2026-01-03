@@ -24,7 +24,7 @@ func TestDocument_ToJSON(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, result, "name")
 	require.Contains(t, result, "age")
-	require.Contains(t, result, data.MetadataField)
+	require.Contains(t, result, data.MetadataField) // Top-level metadata should now be present
 
 	// Test with pretty print
 	prettyBytes, err := doc.ToJSON(true)
@@ -87,14 +87,26 @@ func TestFromStruct(t *testing.T) {
 
 	doc, err := data.FromStruct(product)
 	require.NoError(t, err)
+	require.NotNil(t, doc)
 
 	require.Equal(t, "Laptop", doc.MustGet("name"))
 	require.Equal(t, 1200.50, doc.MustGet("price"))
 
+	// Create an expected document for comparison, stripping metadata
+	expectedDoc := data.MustNewDocument(map[string]any{
+		"id":    "prod1",
+		"name":  "Laptop",
+		"price": 1200.50,
+	})
+
+	// Compare stripped documents to ignore metadata and dynamic IDs
+	require.True(t, doc.StripMetadata().Equals(expectedDoc.StripMetadata()))
+
 	// Test with nil struct
 	doc, err = data.FromStruct(nil)
 	require.NoError(t, err)
-	require.True(t, doc.IsEmpty())
+	require.NotNil(t, doc)
+	require.True(t, doc.IsEmpty()) // cannot be empty since new documents have an id and metadata
 
 	// Test with struct that cannot be marshaled (e.g., contains a channel)
 	type InvalidStruct struct {

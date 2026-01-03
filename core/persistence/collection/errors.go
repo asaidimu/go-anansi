@@ -1,6 +1,8 @@
 package collection
 
+import "github.com/asaidimu/go-anansi/v6/core/common"
+
 // Pre-defined errors for the collection package.
 var (
-	// Add any specific collection errors here if needed
+	ErrCollectionInitializationFailed          = common.NewSystemError("ERR_COLLECTION_INITIALIZATION_FAILED", "failed to initialize collection")
 )

@@ -35,8 +35,7 @@ func TestNewDocument_IDEnforcement(t *testing.T) {
 		doc, err := data.NewDocument(map[string]any{"name": "test"})
 		require.NoError(t, err)
 
-		id, ok := doc["id"].(string)
-		require.True(t, ok)
+		id := doc.ID()
 		require.NotEmpty(t, id)
 
 		_, err = uuid.Parse(id)
@@ -48,8 +47,7 @@ func TestNewDocument_IDEnforcement(t *testing.T) {
 		doc, err := data.NewDocument(map[string]any{"id": originalID, "name": "test"})
 		require.NoError(t, err)
 
-		id, ok := doc["id"].(string)
-		require.True(t, ok)
+		id := doc.ID()
 		require.NotEqual(t, originalID, id)
 
 		_, err = uuid.Parse(id)

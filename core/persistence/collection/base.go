@@ -42,8 +42,12 @@ func newBaseCollection(
 	engine *query.QueryEngine,
 	logger *zap.Logger,
 ) (base.Collection, error) {
-	if sc == nil || sc.Validate() != nil {
-		return nil, schema.ErrInvalidSchema.WithMessage("Collection access requires a valid schema")
+	if sc == nil {
+		return nil, schema.ErrInvalidSchema.WithMessage("Collection access requires a non nil schema")
+	}
+
+	if err := sc.Validate(); err != nil {
+		return nil, schema.ErrInvalidSchema.WithMessage("Collection access requires a valid schema").WithCause(err)
 	}
 
 	validator, err := schema.NewDocumentValidator(sc, nil)
@@ -98,8 +102,8 @@ func (c *baseCollection) withTransaction(
 }
 
 // CreateOne creates a single document.
-func (c *baseCollection) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
-	results, err := c.CreateMany(ctx, []data.Document{doc})
+func (c *baseCollection) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
+	results, err := c.CreateMany(ctx, []*data.Document{doc})
 	result := base.CreateResult{}
 
 	if len(results) > 0 {
@@ -114,12 +118,13 @@ func (c *baseCollection) CreateOne(ctx context.Context, doc data.Document) (base
 }
 
 // CreateMany creates multiple documents.
-func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) {
+func (c *baseCollection) CreateMany(ctx context.Context, docs []*data.Document) ([]base.CreateResult, error) {
 	results := make([]base.CreateResult, len(docs))
 
 	// Insert the documents
 	inserted, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
-		return interactor.InsertDocuments(ctx, c.schema, docs)
+		values := data.AsMapSlice(docs)
+		return interactor.InsertDocuments(ctx, c.schema, values)
 	})
 
 	if err != nil {
@@ -129,10 +134,10 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Document) (
 		return results, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INSERT_DOCUMENTS_FAILED")
 	}
 
-	insertedDocs := inserted.([]data.Document)
+	insertedDocs := inserted.([]map[string]any)
 
 	for i, doc := range insertedDocs {
-		results[i] = base.CreateResult{Status: base.StatusCreated, Data: doc}
+		results[i] = base.CreateResult{Status: base.StatusCreated, Data: data.MustNewDocument(doc)}
 	}
 
 	return results, nil
@@ -147,8 +152,12 @@ func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadRe
 	}
 
 	count := len(docs)
+	values, ok := data.DocumentSlice(docs)
+	if !ok {
+		return nil, common.NewSystemError("ERR_PERSISTENCE_READ_DOCUMENTS_FAILED", "Failed to convert results to documents")
+	}
 	result := base.ReadResult{
-		Data:  docs,
+		Data:  values,
 		Count: count,
 	}
 
@@ -162,7 +171,7 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 	}
 
 	result, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
-		return interactor.UpdateDocuments(ctx, c.schema, params.Set, params.Compute, params.Filter)
+		return interactor.UpdateDocuments(ctx, c.schema, params.Set.AsMap(), params.Compute, params.Filter)
 	})
 
 	if err != nil {
@@ -194,8 +203,8 @@ func (c *baseCollection) Delete(ctx context.Context, q *query.QueryFilter, unsaf
 
 // Validate checks if the given data conforms to the collection's schema.
 // The 'loose' flag allows for partial validation.
-func (c *baseCollection) Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error) {
-	issues, ok := c.validator.Validate(data, loose)
+func (c *baseCollection) Validate(ctx context.Context, data *data.Document, loose bool) (*schema.ValidationResult, error) {
+	issues, ok := c.validator.Validate(data.AsMap(), loose)
 	return &schema.ValidationResult{
 		Valid:  ok,
 		Issues: issues,
@@ -272,3 +281,4 @@ func (c *baseCollection) getCurrentInteractor(ctx context.Context) query.Databas
 	// Not in a transaction - use base interactor with no-op cleanup
 	return c.interactor
 }
+

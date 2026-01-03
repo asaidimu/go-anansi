@@ -5,17 +5,30 @@ import (
 	"reflect"
 )
 
+// isSystemField checks if a key is a system-managed field that should be ignored during content comparison.
+func isSystemField(key string) bool {
+	return key == DocumentID || key == MetadataField
+}
+
 // Diff computes differences between two documents.
-func (d Document) Diff(other Document) DocumentDiff {
+func (d *Document) Diff(other *Document) DocumentDiff {
 	diff := DocumentDiff{
 		Added:    make(map[string]any),
 		Removed:  make(map[string]any),
 		Modified: make(map[string]DiffValue),
 	}
 
+	if d == nil || other == nil {
+		// Handle nil documents appropriately, maybe return an empty diff or an error
+		return diff
+	}
+
 	// Find added and modified
-	for k, v := range other {
-		if existing, ok := d[k]; ok {
+	for k, v := range other.data {
+		if isSystemField(k) {
+			continue
+		}
+		if existing, ok := d.data[k]; ok {
 			if !reflect.DeepEqual(existing, v) {
 				diff.Modified[k] = DiffValue{Old: existing, New: v}
 			}
@@ -25,8 +38,11 @@ func (d Document) Diff(other Document) DocumentDiff {
 	}
 
 	// Find removed
-	for k, v := range d {
-		if _, ok := other[k]; !ok {
+	for k, v := range d.data {
+		if isSystemField(k) {
+			continue
+		}
+		if _, ok := other.data[k]; !ok {
 			diff.Removed[k] = v
 		}
 	}
@@ -53,20 +69,20 @@ func (dd DocumentDiff) HasChanges() bool {
 }
 
 // Apply applies the diff to create a new document.
-func (d Document) Apply(diff DocumentDiff) Document {
+func (d *Document) Apply(diff DocumentDiff) *Document {
 	result := d.Clone()
 
 	// Remove deleted keys
 	for k := range diff.Removed {
-		delete(result, k)
+		delete(result.data, k)
 	}
 
 	// Add new keys
-	maps.Copy(result, diff.Added)
+	maps.Copy(result.data, diff.Added)
 
 	// Modify changed keys
 	for k, v := range diff.Modified {
-		result[k] = v.New
+		result.data[k] = v.New
 	}
 
 	return result

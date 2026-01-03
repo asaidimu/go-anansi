@@ -364,13 +364,13 @@ func TestSQLiteCapabilities_Sorting(t *testing.T) {
 	qNullsFirst := query.NewQueryBuilder().From("users").Schema(schema).OrderBy("age", query.SortDirectionDesc).ThenSortBy("name", query.SortDirectionAsc).Build()
 	nqNullsFirst, err := builder.Build(&qNullsFirst, native.StmtSelect, nil)
 	require.NoError(t, err)
-	assert.Contains(t, nqNullsFirst.Raw().SQL, "ORDER BY \"age\" DESC, \"name\" ASC")
+	assert.Contains(t, nqNullsFirst.Raw().SQL, "ORDER BY \"users\".\"age\" DESC, \"users\".\"name\" ASC")
 
 	// Test NULLS LAST
 	qNullsLast := query.NewQueryBuilder().From("users").Schema(schema).OrderBy("age", query.SortDirectionAsc).ThenSortBy("name", query.SortDirectionDesc).Build()
 	nqNullsLast, err := builder.Build(&qNullsLast, native.StmtSelect, nil)
 	require.NoError(t, err)
-	assert.Contains(t, nqNullsLast.Raw().SQL, "ORDER BY \"age\" ASC, \"name\" DESC")
+	assert.Contains(t, nqNullsLast.Raw().SQL, "ORDER BY \"users\".\"age\" ASC, \"users\".\"name\" DESC")
 
 	// Test Sort by Expression
 	qSortByExpr := query.NewQueryBuilder().From("users").Schema(schema).Select().AddComputed("age_plus_10", "ADD", &query.FieldReference{Field: "age"}, 10).End().OrderBy("age_plus_10", query.SortDirectionDesc).Build()

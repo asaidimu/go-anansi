@@ -20,8 +20,8 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
-	"go.uber.org/zap"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
+	"go.uber.org/zap"
 )
 
 //go:embed schemas/*.json
@@ -35,14 +35,14 @@ const (
 func SecurityDecorator(logger *zap.Logger) utils.CollectionDecorator {
 	return func(next base.Collection) base.Collection {
 		return &securityDecorator{
-			next:   next,
-			logger: logger,
+			Collection: next,
+			logger:     logger,
 		}
 	}
 }
 
 type securityDecorator struct {
-	next   base.Collection
+	base.Collection
 	logger *zap.Logger
 }
 
@@ -58,11 +58,10 @@ func (d *securityDecorator) getUserIDFromContext(ctx context.Context) (string, e
 }
 
 // checkAccess checks if the user has access to the document.
-func (d *securityDecorator) checkAccess(ctx context.Context, doc data.Document) error {
-	ownerID, ok := doc["ownerId"].(string)
-	if !ok || ownerID == "" {
-		// If no ownerId, assume public or handle as per policy
-		return nil
+func (d *securityDecorator) checkAccess(ctx context.Context, doc *data.Document) error {
+	ownerID, err := d.getOwnerId(doc)
+	if err != nil {
+		return err
 	}
 
 	userID, err := d.getUserIDFromContext(ctx)
@@ -76,9 +75,21 @@ func (d *securityDecorator) checkAccess(ctx context.Context, doc data.Document) 
 	return nil
 }
 
-func (d *securityDecorator) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
+func (d *securityDecorator) getOwnerId(doc *data.Document) (string, error) {
+	ownerID, err := doc.GetString("ownerId")
+
+	if err != nil {
+		return "", err
+	}
+	if ownerID == "" {
+		return "", fmt.Errorf("unauthorized: user ID not found in doc")
+	}
+	return ownerID, nil
+}
+
+func (d *securityDecorator) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
 	// For creation, ensure the ownerId matches the user in context if provided
-	if ownerID, ok := doc["ownerId"].(string); ok && ownerID != "" {
+	if ownerID, err := d.getOwnerId(doc); err == nil {
 		userID, err := d.getUserIDFromContext(ctx)
 		if err != nil {
 			return base.CreateResult{}, err
@@ -87,12 +98,12 @@ func (d *securityDecorator) CreateOne(ctx context.Context, doc data.Document) (b
 			return base.CreateResult{}, fmt.Errorf("forbidden: cannot create document with ownerId %s as user %s", ownerID, userID)
 		}
 	}
-	return d.next.CreateOne(ctx, doc)
+	return d.Collection.CreateOne(ctx, doc)
 }
 
-func (d *securityDecorator) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) {
+func (d *securityDecorator) CreateMany(ctx context.Context, docs []*data.Document) ([]base.CreateResult, error) {
 	for _, doc := range docs {
-		if ownerID, ok := doc["ownerId"].(string); ok && ownerID != "" {
+		if ownerID, err := d.getOwnerId(doc); err == nil {
 			userID, err := d.getUserIDFromContext(ctx)
 			if err != nil {
 				return nil, err
@@ -102,7 +113,7 @@ func (d *securityDecorator) CreateMany(ctx context.Context, docs []data.Document
 			}
 		}
 	}
-	return d.next.CreateMany(ctx, docs)
+	return d.Collection.CreateMany(ctx, docs)
 }
 
 func (d *securityDecorator) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
@@ -122,7 +133,7 @@ func (d *securityDecorator) Read(ctx context.Context, q *query.Query) (*base.Rea
 		q.Filters = query.NewQueryBuilder().AndFilter(*q.Filters).AndFilter(*ownerFilter).Build().Filters
 	}
 
-	return d.next.Read(ctx, q)
+	return d.Collection.Read(ctx, q)
 }
 
 func (d *securityDecorator) Update(ctx context.Context, update *base.CollectionUpdate) (int, error) {
@@ -142,7 +153,7 @@ func (d *securityDecorator) Update(ctx context.Context, update *base.CollectionU
 		update.Filter = query.NewQueryBuilder().AndFilter(*update.Filter).AndFilter(*ownerFilter).Build().Filters
 	}
 
-	return d.next.Update(ctx, update)
+	return d.Collection.Update(ctx, update)
 }
 
 func (d *securityDecorator) Delete(ctx context.Context, qf *query.QueryFilter, unsafe bool) (int, error) {
@@ -162,31 +173,7 @@ func (d *securityDecorator) Delete(ctx context.Context, qf *query.QueryFilter, u
 		qf = query.NewQueryBuilder().AndFilter(*qf).AndFilter(*ownerFilter).Build().Filters
 	}
 
-	return d.next.Delete(ctx, qf, unsafe)
-}
-
-func (d *securityDecorator) Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error) {
-	return d.next.Validate(ctx, data, loose)
-}
-
-func (d *securityDecorator) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) (*base.CollectionMetadata, error) {
-	return d.next.Metadata(ctx, filter, forceRefresh)
-}
-
-func (d *securityDecorator) Subscribe(ctx context.Context, options base.SubscriptionOptions) string {
-	return d.next.Subscribe(ctx, options)
-}
-
-func (d *securityDecorator) Unsubscribe(ctx context.Context, id string) {
-	d.next.Unsubscribe(ctx, id)
-}
-
-func (d *securityDecorator) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {
-	return d.next.Subscriptions(ctx)
-}
-
-func (d *securityDecorator) Capabilities(ctx context.Context) *query.Capabilities {
-	return d.next.Capabilities(ctx)
+	return d.Collection.Delete(ctx, qf, unsafe)
 }
 
 // authenticateMiddleware is a simple middleware to simulate authentication
@@ -273,10 +260,10 @@ func main() {
 
 	// 7. Initialize Anansi Persistence Layer
 	cfg := anansi.SetupConfig{
-		Interactor:    interactor,
-		Logger:        logger,
+		Interactor:            interactor,
+		Logger:                logger,
 		DocumentFactoryConfig: factoryConfig,
-		Decorators:    decorators,
+		Decorators:            decorators,
 		Schemas: []schema.SchemaDefinition{
 			userSchemaDef,
 			documentSchemaDef,
@@ -325,7 +312,7 @@ func main() {
 	mux.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			var newUser data.Document
+			var newUser *data.Document
 			if err := json.NewDecoder(r.Body).Decode(&newUser); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -353,7 +340,7 @@ func main() {
 	mux.HandleFunc("/documents", func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost:
-			var newDoc data.Document
+			var newDoc *data.Document
 			if err := json.NewDecoder(r.Body).Decode(&newDoc); err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return

@@ -5,7 +5,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
@@ -279,9 +278,9 @@ func (f *sqliteFactory) buildUpdateTree(q *query.Query, extra any) (SQLNode, err
 		return nil, ErrUpdateInvalidPayloadType.WithCause(fmt.Errorf("invalid data type for update payload: expected map[string]any, got %T", extra))
 	}
 
-	var setData data.Document
+	var setData map[string]any
 	if setVal, ok := updatePayload["set"]; ok && setVal != nil {
-		setData, ok = data.AsDocument(setVal)
+		setData, ok = setVal.(map[string]any)
 		if !ok {
 			return nil, ErrUpdateInvalidSetType.WithCause(fmt.Errorf("invalid data type for 'set' in update: %T", setVal))
 		}

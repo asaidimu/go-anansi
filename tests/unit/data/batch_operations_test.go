@@ -17,7 +17,7 @@ func TestDocumentSet_Filter(t *testing.T) {
 
 	ds := data.NewDocumentSet(doc1, doc2, doc3)
 
-	filtered := ds.Filter(func(d data.Document) bool {
+	filtered := ds.Filter(func(d *data.Document) bool {
 		status, _ := d.GetString("status")
 		return status == "active"
 	})
@@ -36,15 +36,15 @@ func TestDocumentSet_Map(t *testing.T) {
 
 	ds := data.NewDocumentSet(doc1, doc2)
 
-	mapped := ds.Map(func(d data.Document) data.Document {
+	mapped := ds.Map(func(d *data.Document) *data.Document {
 		val, _ := d.GetInt("value")
 		d.Set("value", val*2)
 		return d
 	})
 
 	require.Len(t, mapped, 2)
-	require.Equal(t, 20, mapped[0].MustGet("value"))
-	require.Equal(t, 40, mapped[1].MustGet("value"))
+	require.Equal(t, 20, mapped[0].Must().Get("value"))
+	require.Equal(t, 40, mapped[1].Must().Get("value"))
 }
 
 func TestDocumentSet_Find(t *testing.T) {
@@ -55,14 +55,14 @@ func TestDocumentSet_Find(t *testing.T) {
 
 	ds := data.NewDocumentSet(doc1, doc2)
 
-	found, ok := ds.Find(func(d data.Document) bool {
+	found, ok := ds.Find(func(d *data.Document) bool {
 		name, _ := d.GetString("name")
 		return name == "Alice"
 	})
 	require.True(t, ok)
 	require.Equal(t, doc1, found)
 
-	_, ok = ds.Find(func(d data.Document) bool {
+	_, ok = ds.Find(func(d *data.Document) bool {
 		name, _ := d.GetString("name")
 		return name == "Charlie"
 	})
@@ -153,14 +153,14 @@ func TestDocumentSet_Reduce(t *testing.T) {
 	initial, err := data.NewDocument(map[string]any{"total": 0})
 	require.NoError(t, err)
 
-	reduced := ds.Reduce(func(acc, current data.Document) data.Document {
+	reduced := ds.Reduce(func(acc, current *data.Document) *data.Document {
 		accTotal, _ := acc.GetInt("total")
 		currentValue, _ := current.GetInt("value")
 		acc.Set("total", accTotal+currentValue)
 		return acc
 	}, initial)
 
-	require.Equal(t, 30, reduced.MustGet("total"))
+	require.Equal(t, 30, reduced.Must().Get("total"))
 }
 
 func TestDocumentSet_Aggregate(t *testing.T) {

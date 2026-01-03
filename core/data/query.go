@@ -10,14 +10,14 @@ import (
 func Query(docs DocumentSet) *FluentQuery {
 	return &FluentQuery{
 		docs:    docs,
-		filters: make([]func(Document) bool, 0),
+		filters: make([]func(*Document) bool, 0),
 	}
 }
 
 // FluentQuery provides a fluent interface for querying documents
 type FluentQuery struct {
 	docs    DocumentSet
-	filters []func(Document) bool
+	filters []func(*Document) bool
 	sorters []SortCriteria
 	limit   int
 	offset  int
@@ -30,7 +30,7 @@ type SortCriteria struct {
 
 // Where adds an equality filter
 func (fq *FluentQuery) Where(key string, value any) *FluentQuery {
-	fq.filters = append(fq.filters, func(d Document) bool {
+	fq.filters = append(fq.filters, func(d *Document) bool {
 		val, err := d.Get(key)
 		if err != nil {
 			return false
@@ -41,7 +41,7 @@ func (fq *FluentQuery) Where(key string, value any) *FluentQuery {
 }
 
 // WhereFunc adds a custom filter function
-func (fq *FluentQuery) WhereFunc(predicate func(Document) bool) *FluentQuery {
+func (fq *FluentQuery) WhereFunc(predicate func(*Document) bool) *FluentQuery {
 	fq.filters = append(fq.filters, predicate)
 	return fq
 }
@@ -62,7 +62,7 @@ func (fc *FieldComparison) Equals(value any) *FluentQuery {
 }
 
 func (fc *FieldComparison) GreaterThan(value any) *FluentQuery {
-	fc.query.filters = append(fc.query.filters, func(d Document) bool {
+	fc.query.filters = append(fc.query.filters, func(d *Document) bool {
 		val, err := d.Get(fc.key)
 		if err != nil {
 			return false
@@ -73,7 +73,7 @@ func (fc *FieldComparison) GreaterThan(value any) *FluentQuery {
 }
 
 func (fc *FieldComparison) LessThan(value any) *FluentQuery {
-	fc.query.filters = append(fc.query.filters, func(d Document) bool {
+	fc.query.filters = append(fc.query.filters, func(d *Document) bool {
 		val, err := d.Get(fc.key)
 		if err != nil {
 			return false
@@ -84,7 +84,7 @@ func (fc *FieldComparison) LessThan(value any) *FluentQuery {
 }
 
 func (fc *FieldComparison) Contains(substr string) *FluentQuery {
-	fc.query.filters = append(fc.query.filters, func(d Document) bool {
+	fc.query.filters = append(fc.query.filters, func(d *Document) bool {
 		val, err := d.GetString(fc.key)
 		if err != nil {
 			return false
@@ -100,7 +100,7 @@ func (fc *FieldComparison) In(values ...any) *FluentQuery {
 		valueSet[v] = true
 	}
 
-	fc.query.filters = append(fc.query.filters, func(d Document) bool {
+	fc.query.filters = append(fc.query.filters, func(d *Document) bool {
 		val, err := d.Get(fc.key)
 		if err != nil {
 			return false
@@ -142,7 +142,7 @@ func (fq *FluentQuery) Count() int {
 	return len(result)
 }
 
-func (fq *FluentQuery) First() (Document, bool) {
+func (fq *FluentQuery) First() (*Document, bool) {
 	result := fq.Limit(1).Execute()
 	if len(result) == 0 {
 		return nil, false

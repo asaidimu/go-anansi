@@ -4,11 +4,11 @@ import "time"
 
 // MustHelper provides panic-based operations
 type MustHelper struct {
-	doc Document
+	doc *Document
 }
 
 // Must returns a helper for panic-based operations
-func (d Document) Must() *MustHelper {
+func (d *Document) Must() *MustHelper {
 	return &MustHelper{doc: d}
 }
 
@@ -66,8 +66,8 @@ func (m *MustHelper) GetTime(keyOrPath string) time.Time {
 	return val
 }
 
-// GetDocument retrieves a Document with path support, panics if not found or not convertible
-func (m *MustHelper) GetDocument(keyOrPath string) Document {
+// GetDocument retrieves a *Document with path support, panics if not found or not convertible
+func (m *MustHelper) GetDocument(keyOrPath string) *Document {
 	val, err := m.doc.GetDocument(keyOrPath)
 	if err != nil {
 		panic(err)
@@ -75,8 +75,8 @@ func (m *MustHelper) GetDocument(keyOrPath string) Document {
 	return val
 }
 
-// GetDocumentArray retrieves a []Document with path support, panics if not found or not convertible
-func (m *MustHelper) GetDocumentArray(keyOrPath string) []Document {
+// GetDocumentArray retrieves a []*Document with path support, panics if not found or not convertible
+func (m *MustHelper) GetDocumentArray(keyOrPath string) []*Document {
 	val, err := m.doc.GetDocumentArray(keyOrPath)
 	if err != nil {
 		panic(err)
@@ -115,7 +115,7 @@ func (m *MustHelper) GetArray(keyOrPath string) []any {
 
 // Generic Must getter with type parameter
 // Note: This assumes a top-level Get[T] function exists in your package
-func MustGet[T any](doc Document, key string) T {
+func MustGet[T any](doc *Document, key string) T {
 	val, err := Get[T](doc, key)
 	if err != nil {
 		panic(err)

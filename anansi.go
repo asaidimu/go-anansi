@@ -215,7 +215,7 @@ func Playground(cfg PlaygroundConfig) (base.Persistence, func(), error) {
 			sanitizerConfig = cfg.CustomSanitizerConfig
 		} else {
 			defaultConfig := data.NewSecureDefaultConfig()
-			sanitizerConfig = &defaultConfig
+			sanitizerConfig = defaultConfig
 		}
 	}
 

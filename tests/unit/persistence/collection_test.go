@@ -1,8 +1,9 @@
 package persistence_test
 
 import (
+	"slices"
 	"context"
-	"errors"
+
 	"os"
 	"testing"
 
@@ -101,27 +102,33 @@ func TestCollection_Create(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
 	t.Run("single document success", func(t *testing.T) {
-		expected := data.Document{"name": "Test2"}
+		expected := data.MustNewDocument(map[string]any{"name": "Test2"})
 
 		result, err := collection.CreateOne(ctx, expected)
+		if err != nil {
+			t.Logf("Error creating single document: %v", err)
+		}
 		assert.NotNil(t, result)
 		assert.NoError(t, err)
 		assert.IsType(t, persistence.CreateResult{}, result)
 		actual := result.Data.StripMetadata()
-		assert.Equal(t, actual["name"], expected["name"])
+		assert.Equal(t, actual.Must().GetString("name"), expected.Must().GetString("name"))
 
 		// Verify the document was actually inserted by reading it back
 		readQuery := query.NewQueryBuilder().Where("id").Eq(result.Data.Must().GetString("id")).Build()
 		readResult, err := collection.Read(ctx, &readQuery)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, readResult.Count)
-		assert.Equal(t, expected, readResult.Data[0])
+		assert.True(t, expected.Equals(readResult.Data[0]))
 	})
 
 	t.Run("multiple documents success", func(t *testing.T) {
-		docs := []data.Document{{"name": "Test8"}, {"name": "Test3"}}
+		docs := []*data.Document{data.MustNewDocument(map[string]any{"name": "Test8"}), data.MustNewDocument(map[string]any{"name": "Test3"})}
 
 		result, err := collection.CreateMany(ctx, docs)
+		if err != nil {
+			t.Logf("Error creating multiple documents: %v", err)
+		}
 
 		assert.NoError(t, err)
 		assert.NotNil(t, result)
@@ -136,16 +143,18 @@ func TestCollection_Create(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, 2, readResult.Count)
 		// Note: Order might not be guaranteed, so we'll just check for presence
-		assert.Contains(t, readResult.Data, docs[0])
-		assert.Contains(t, readResult.Data, docs[1])
+		for _, expectedDoc := range docs {
+			found := slices.ContainsFunc(readResult.Data, expectedDoc.Equals)
+			assert.True(t, found, "Expected document not found: %s", expectedDoc.String())
+		}
 	})
 
 	t.Run("insert documents error - duplicate ID", func(t *testing.T) {
 		// Name "Test2" already exists from previous test
-		doc := data.Document{"name": "Test2"}
+		doc := data.MustNewDocument(map[string]any{"name": "Test2"})
 		_, err := collection.CreateOne(ctx, doc)
 		assert.Error(t, err)
-		assert.True(t, errors.Is(err, persistence.ErrUniqueConstraintViolation))
+		assert.Contains(t, err.Error(), persistence.ErrUniqueConstraintViolation.Error())
 	})
 }
 
@@ -153,15 +162,21 @@ func TestCollection_Read(t *testing.T) {
 	c, _, _, _, _, ctx := setupCollection(t)
 
 	// Insert some data for reading
-	_, err := c.CreateOne(ctx, data.Document{"name": "Test3"})
+	_, err := c.CreateOne(ctx, data.MustNewDocument(map[string]any{"name": "Test3"}))
+	if err != nil {
+		t.Logf("Error creating Test3 document: %v", err)
+	}
 	assert.NoError(t, err)
-	_, err = c.CreateOne(ctx, data.Document{"name": "Test4"})
+	_, err = c.CreateOne(ctx, data.MustNewDocument(map[string]any{"name": "Test4"}))
+	if err != nil {
+		t.Logf("Error creating Test4 document: %v", err)
+	}
 	assert.NoError(t, err)
 
 	q := query.NewQueryBuilder().Where("name").Eq("Test3").Build()
 
 	t.Run("read documents success", func(t *testing.T) {
-		expected := data.Document{"name": "Test3"}
+		expected := data.MustNewDocument(map[string]any{"name": "Test3"})
 
 		result, err := c.Read(ctx, &q)
 		assert.NoError(t, err)
@@ -170,7 +185,7 @@ func TestCollection_Read(t *testing.T) {
 
 		final := result.Data[0]
 		final.StripMetadata()
-		assert.Equal(t, expected["name"], final["name"])
+		assert.Equal(t, expected.Must().GetString("name"), final.Must().GetString("name"))
 	})
 
 	t.Run("read documents error - non-existent collection", func(t *testing.T) {
@@ -194,7 +209,10 @@ func TestCollection_Update(t *testing.T) {
 	c, _, _, _, _, ctx := setupCollection(t)
 
 	// Insert a document to be updated.
-	r, err := c.CreateOne(ctx, data.Document{"name": "OriginalName"})
+	r, err := c.CreateOne(ctx, data.MustNewDocument(map[string]any{"name": "OriginalName"}))
+	if err != nil {
+		t.Logf("Error creating OriginalName document: %v", err)
+	}
 	require.NoError(t, err)
 
 	q := query.NewQueryBuilder().Where("id").Eq(r.Data.Must().GetString("id")).Build()
@@ -203,9 +221,9 @@ func TestCollection_Update(t *testing.T) {
 	require.Equal(t, 1, result.Count)
 
 	d := result.Data[0]
-	updates := data.Document{
+	updates := data.MustNewDocument(map[string]any{
 		"name": "UpdatedName",
-	}
+	})
 
 	metadata, ok := d.Metadata()
 	require.True(t, ok)
@@ -230,16 +248,22 @@ func TestCollection_Update(t *testing.T) {
 		c, _, _, _, _, ctx := setupCollection(t)
 
 		// Insert some data for updating
-		_, err := c.CreateOne(ctx, data.Document{"name": "UpdateMulti1", "status": "pending"})
+		_, err := c.CreateOne(ctx, data.MustNewDocument(map[string]any{"name": "UpdateMulti1", "status": "pending"}))
+		if err != nil {
+			t.Logf("Error creating UpdateMulti1 document: %v", err)
+		}
 		assert.NoError(t, err)
-		_, err = c.CreateOne(ctx, data.Document{"name": "UpdateMulti2", "status": "pending"})
+		_, err = c.CreateOne(ctx, data.MustNewDocument(map[string]any{"name": "UpdateMulti2", "status": "pending"}))
+		if err != nil {
+			t.Logf("Error creating UpdateMulti2 document: %v", err)
+		}
 		assert.NoError(t, err)
 
 		// Filter for documents to update
 		q := query.NewQueryBuilder().Where("status").Eq("pending").Build()
 
 		// Define the update payload. No version is provided, so no optimistic locking.
-		updates := data.Document{"status": "done"}
+		updates := data.MustNewDocument(map[string]any{"status": "done"})
 		updateParams := &persistence.CollectionUpdate{Set: updates, Filter: q.Filters, Version: nil} // Explicitly nil
 
 		// Perform the update
@@ -254,15 +278,15 @@ func TestCollection_Update(t *testing.T) {
 		assert.Equal(t, 2, readResult.Count)
 
 		docs := readResult.Data
-		assert.Equal(t, "done", docs[0]["status"])
-		assert.Equal(t, "done", docs[1]["status"])
+		assert.Equal(t, "done", docs[0].Must().GetString("status"))
+		assert.Equal(t, "done", docs[1].Must().GetString("status"))
 	})
 
 	t.Run("update documents error - non-existent collection", func(t *testing.T) {
 		// Create a new collection instance with a non-existent schema name
 		nonExistentCollection, _, _, _, _, ctx := setupNonExistentCollection()
 
-		updates := data.Document{"name": "any"}
+		updates := data.MustNewDocument(map[string]any{"name": "any"})
 		updateParams := &persistence.CollectionUpdate{Set: updates, Filter: q.Filters, Version: nil}
 
 		rowsAffected, err := nonExistentCollection.Update(ctx, updateParams)
@@ -278,9 +302,15 @@ func TestCollection_Delete(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
 	// Insert some data for deleting
-	r, err := collection.CreateOne(ctx, data.Document{"name": "ToDelete"})
+	r, err := collection.CreateOne(ctx, data.MustNewDocument(map[string]any{"name": "ToDelete"}))
+	if err != nil {
+		t.Logf("Error creating ToDelete document: %v", err)
+	}
 	assert.NoError(t, err)
-	_, err = collection.CreateOne(ctx, data.Document{"name": "ToKeep"})
+	_, err = collection.CreateOne(ctx, data.MustNewDocument(map[string]any{"name": "ToKeep"}))
+	if err != nil {
+		t.Logf("Error creating ToKeep document: %v", err)
+	}
 	assert.NoError(t, err)
 
 	filters := query.NewQueryBuilder().Where("id").Eq(r.Data.Must().GetString("id")).Build().Filters
@@ -306,14 +336,20 @@ func TestCollection_Delete(t *testing.T) {
 
 		assert.Error(t, err)
 		assert.Equal(t, 0, rowsAffected)
-		assert.ErrorIs(t, err, base.ErrCollectionNotFound)
+		assert.Contains(t, err.Error(), base.ErrCollectionNotFound.Error())
 	})
 
 	t.Run("delete all documents with unsafe flag", func(t *testing.T) {
 		// Re-create collection and add data for this specific test case
 		collection, _, _, _, _, ctx = setupCollection(t)
-		collection.CreateOne(ctx, data.Document{"name": "Doc3"})
-		collection.CreateOne(ctx, data.Document{"name": "Doc4"})
+		collection.CreateOne(ctx, data.MustNewDocument(map[string]any{"name": "Doc3"}))
+		if err != nil {
+			t.Logf("Error creating Doc3 document: %v", err)
+		}
+		collection.CreateOne(ctx, data.MustNewDocument(map[string]any{"name": "Doc4"}))
+		if err != nil {
+			t.Logf("Error creating Doc4 document: %v", err)
+		}
 
 		// Debug: Read documents before deletion
 		q := query.NewQueryBuilder().Build()
@@ -336,14 +372,17 @@ func TestCollection_Delete(t *testing.T) {
 	t.Run("delete all documents without unsafe flag should fail", func(t *testing.T) {
 		// Re-create collection and add data for this specific test case
 		collection, _, _, _, _, ctx = setupCollection(t)
-		collection.CreateOne(ctx, data.Document{"name": "Doc5"})
+		collection.CreateOne(ctx, data.MustNewDocument(map[string]any{"name": "Doc5"}))
+		if err != nil {
+			t.Logf("Error creating Doc5 document: %v", err)
+		}
 
 		// Attempt to delete all documents by passing nil filter and unsafe=false
 		rowsAffected, err := collection.Delete(ctx, nil, false)
 
 		assert.Error(t, err)
 		assert.Equal(t, 0, rowsAffected)
-		assert.Contains(t, err.Error(), "Delete operation requires a filter or unsafe flag")
+		assert.Contains(t, err.Error(), base.ErrDangerousDelete.Error())
 	})
 }
 
@@ -351,7 +390,7 @@ func TestCollection_Validate(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
 	t.Run("valid document", func(t *testing.T) {
-		doc := data.Document{"id": "1", "name": "Valid Name"}
+		doc := data.MustNewDocument(map[string]any{"id": "1", "name": "Valid Name"})
 		result, err := collection.Validate(ctx, doc, false)
 		assert.NoError(t, err)
 		assert.True(t, result.Valid)
@@ -359,7 +398,7 @@ func TestCollection_Validate(t *testing.T) {
 	})
 
 	t.Run("invalid document - missing required field", func(t *testing.T) {
-		doc := data.Document{"id": "1"} // Missing 'name'
+		doc := data.MustNewDocument(map[string]any{"id": "1"}) // Missing 'name'
 		result, err := collection.Validate(ctx, doc, false)
 		assert.NoError(t, err) // Validation itself should not return an error, but a result with issues
 		assert.False(t, result.Valid)
@@ -368,7 +407,7 @@ func TestCollection_Validate(t *testing.T) {
 	})
 
 	t.Run("invalid document - wrong type", func(t *testing.T) {
-		doc := data.Document{"id": "1", "name": 123} // Name should be string
+		doc := data.MustNewDocument(map[string]any{"id": "1", "name": 123}) // Name should be string
 		result, err := collection.Validate(ctx, doc, false)
 		assert.NoError(t, err)
 		assert.False(t, result.Valid)
@@ -377,7 +416,7 @@ func TestCollection_Validate(t *testing.T) {
 	})
 
 	t.Run("loose validation - missing required field allowed", func(t *testing.T) {
-		doc := data.Document{"id": "1"}                    // Missing 'name'
+		doc := data.MustNewDocument(map[string]any{"id": "1"})                    // Missing 'name'
 		result, err := collection.Validate(ctx, doc, true) // Loose validation
 		assert.NoError(t, err)
 		assert.True(t, result.Valid) // Should be valid in loose mode for missing required

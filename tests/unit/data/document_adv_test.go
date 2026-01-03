@@ -28,7 +28,7 @@ func TestDocument_DeepMerge(t *testing.T) {
 			"status": "inactive",
 		})
 
-		merged := doc1.DeepMerge(doc2)
+		doc1.DeepMerge(doc2) // DeepMerge now modifies in-place
 
 		expected := data.MustNewDocument(map[string]any{
 			"user": map[string]any{
@@ -41,19 +41,22 @@ func TestDocument_DeepMerge(t *testing.T) {
 			"status": "inactive",
 		})
 
-		// We need to remove metadata for a stable comparison in this test
-		actualMap := merged.StripMetadata().AsMap()
+		// We need to remove metadata and dynamic IDs for a stable comparison in this test
+		actualMap := doc1.StripMetadata().AsMap()
 		expectedMap := expected.StripMetadata().AsMap()
-		actualMap["id"] = 1
-		expectedMap["id"] = 1
+
+		// Remove dynamic IDs for comparison as they are generated
+		delete(actualMap, "id")
+		delete(expectedMap, "id")
+
 		assert.Equal(t, expectedMap, actualMap)
 	})
 
 	t.Run("should overwrite non-document values", func(t *testing.T) {
 		doc1 := data.MustNewDocument(map[string]any{"a": 1})
 		doc2 := data.MustNewDocument(map[string]any{"a": 2})
-		merged := doc1.DeepMerge(doc2)
-		val, err := merged.GetInt("a")
+		doc1.DeepMerge(doc2) // DeepMerge now modifies in-place
+		val, err := doc1.GetInt("a")
 		require.NoError(t, err)
 		assert.Equal(t, 2, val)
 	})
@@ -74,12 +77,12 @@ func TestDocument_Flatten(t *testing.T) {
 
 	flat := doc.Flatten(".")
 	expected := map[string]any{
-		"id": doc.Must().GetString("id"),
-		"a":       1,
-		"b.c":     2,
-		"b.d.e":   3,
-		"f[0].g":  4,
-		"f[1]":    5,
+		"id":     doc.Must().GetString("id"), // Use Must() on the pointer
+		"a":      1,
+		"b.c":    2,
+		"b.d.e":  3,
+		"f[0].g": 4,
+		"f[1]":   5,
 	}
 
 	assert.Equal(t, expected, flat)
@@ -87,9 +90,9 @@ func TestDocument_Flatten(t *testing.T) {
 
 func TestUnflatten(t *testing.T) {
 	flat := map[string]any{
-		"a":       1,
-		"b.c":     2,
-		"b.d.e":   3,
+		"a":     1,
+		"b.c":   2,
+		"b.d.e": 3,
 	}
 
 	doc := data.Unflatten(flat, ".")
@@ -101,8 +104,7 @@ func TestUnflatten(t *testing.T) {
 		},
 	})
 
-	doc["id"] = 1
-	expected["id"] = 1
+	// Compare stripped documents to ignore metadata and dynamic IDs
 	assert.True(t, expected.StripMetadata().Equals(doc.StripMetadata()))
 }
 
@@ -111,16 +113,18 @@ func TestDocument_DiffAndApply(t *testing.T) {
 		"a": 1,
 		"b": "hello",
 		"c": true,
-	}).StripMetadata()
+	})
 	doc2 := data.MustNewDocument(map[string]any{
 		"b": "world",
 		"c": true,
 		"d": 123,
-	}).StripMetadata()
+	})
 
-	doc1["id"] = 1
-	doc2["id"] = 1
-	diff := doc1.Diff(doc2)
+	// Strip metadata and IDs for consistent diff comparison
+	doc1Stripped := doc1.StripMetadata()
+	doc2Stripped := doc2.StripMetadata()
+
+	diff := doc1Stripped.Diff(doc2Stripped)
 
 	expectedDiff := data.DocumentDiff{
 		Added:   map[string]any{"d": 123},
@@ -136,8 +140,8 @@ func TestDocument_DiffAndApply(t *testing.T) {
 	assert.True(t, diff.HasChanges())
 
 	// Apply the diff
-	doc3 := doc1.Apply(diff)
-	assert.True(t, doc2.StripMetadata().Equals(doc3.StripMetadata()))
+	doc3 := doc1Stripped.Apply(diff)
+	assert.True(t, doc2Stripped.StripMetadata().Equals(doc3.StripMetadata()))
 }
 
 func TestDocument_JSONPathQuery(t *testing.T) {
@@ -216,6 +220,8 @@ func TestDocument_JSONPathQuery_Book(t *testing.T) {
 
 	result, err := doc.JSONPathQuery("$.store.book")
 	require.NoError(t, err)
+	// The JSONPathQuery returns []any, and the nested documents are returned as maps
+	// from deepCloneValue during the query processing.
 	assert.Equal(t, []any{
 		map[string]any{"title": "Book 1", "price": 10},
 		map[string]any{"title": "Book 2", "price": 20},
@@ -232,6 +238,7 @@ func TestDocument_Normalize(t *testing.T) {
 	// The MustNewDocument constructor adds metadata, so level1 will have it.
 	// Let's check if Normalize removes it.
 	normalized := docWithNestedMeta.Normalize()
+	require.NotNil(t, normalized)
 
 	// Check that top-level metadata is preserved
 	_, hasMeta := normalized.Metadata()
@@ -240,6 +247,7 @@ func TestDocument_Normalize(t *testing.T) {
 	// Check that nested metadata is removed
 	level1, err := normalized.GetDocument("level1")
 	require.NoError(t, err)
+	require.NotNil(t, level1)
 	_, hasNestedMeta := level1.Metadata()
 	assert.False(t, hasNestedMeta, "nested metadata should be removed")
 }

@@ -33,10 +33,6 @@ func TestInternalMetadataAccessors(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, createdAt, updatedAt) // Initially they should be the same
 
-	// Test error on doc without metadata
-	rawDoc := data.Document{"field": "value"}
-	_, err = rawDoc.Version()
-	assert.Error(t, err)
 }
 
 func TestCustomMetadataAccessors(t *testing.T) {

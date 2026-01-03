@@ -8,8 +8,8 @@
       "required": true,
       "unique": true
     },
-    "passwordHash": {
-      "name": "passwordHash",
+    "password": {
+      "name": "password",
       "type": "string",
       "required": true
     },

@@ -37,7 +37,7 @@ func TestCollection_Create(t *testing.T) {
 	collection, cleanup := setupCollectionTest(t)
 	defer cleanup()
 
-	docToCreate := data.Document{"name": "test-doc"}
+	docToCreate := data.MustNewDocument(map[string]any{"name": "test-doc"})
 	_, err := collection.CreateOne(context.Background(), docToCreate)
 	require.NoError(t, err)
 
@@ -51,7 +51,7 @@ func TestCollection_Read(t *testing.T) {
 	collection, cleanup := setupCollectionTest(t)
 	defer cleanup()
 
-	docToCreate := data.Document{"id": "1", "name": "test-doc"}
+	docToCreate := data.MustNewDocument(map[string]any{"id": "1", "name": "test-doc"})
 	_, err := collection.CreateOne(context.Background(), docToCreate)
 	require.NoError(t, err)
 
@@ -60,18 +60,18 @@ func TestCollection_Read(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, readResult.Count)
 	readDoc := readResult.Data[0]
-	assert.Equal(t, "test-doc", readDoc["name"])
+	assert.Equal(t, "test-doc", readDoc.MustGet("name"))
 }
 
 func TestCollection_Update(t *testing.T) {
 	collection,  cleanup := setupCollectionTest(t)
 	defer cleanup()
 
-	docToCreate := data.Document{"name": "test-doc"}
-	r, err := collection.CreateOne(context.Background(), docToCreate)
+	docToCreate := data.MustNewDocument(map[string]any{"name": "test-doc"})
+	_, err := collection.CreateOne(context.Background(), docToCreate)
 	require.NoError(t, err)
 
-	id := r.Data.Must().GetString("id")
+	id := docToCreate.ID()
 
 	readQuery := query.NewQueryBuilder().Where("id").Eq(id).Build()
 
@@ -83,7 +83,7 @@ func TestCollection_Update(t *testing.T) {
 
 	readUpdatedDoc := readUpdatedResult.Data[0]
 
-	docToUpdate := data.Document{"name": "updated-doc"}
+	docToUpdate := data.Patch(map[string]any{"name": "updated-doc"}) // this will update id and metadata
 
 	updateQuery := query.NewQueryBuilder().Where("id").Eq(id).Build()
 
@@ -98,16 +98,16 @@ func TestCollection_Update(t *testing.T) {
 	require.NotNil(t, readUpdatedResult)
 
 	require.NoError(t, err)
-	assert.Equal(t, 1, readUpdatedResult.Count)
+	assert.Equal(t, 1, readUpdatedResult.Count) // and this will fail
 	readUpdatedDoc = readUpdatedResult.Data[0]
-	assert.Equal(t, "updated-doc", readUpdatedDoc["name"])
+	assert.Equal(t, "updated-doc", readUpdatedDoc.MustGet("name"))
 }
 
 func TestCollection_Delete(t *testing.T) {
 	collection, cleanup := setupCollectionTest(t)
 	defer cleanup()
 
-	docToCreate := data.Document{"id": "1", "name": "test-doc"}
+	docToCreate := data.MustNewDocument(map[string]any{"id": "1", "name": "test-doc"})
 	_, err := collection.CreateOne(context.Background(), docToCreate)
 	require.NoError(t, err)
 

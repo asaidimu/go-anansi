@@ -10,6 +10,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/google/uuid"
 )
 
 // generatePhysicalName creates a database-safe identifier from schema name and version
@@ -91,8 +92,8 @@ func sanitizeForDatabase(input string) string {
 	return sanitized
 }
 
-func unmarshalEntry(doc data.Document) (*base.RegistryEntry, error) {
-	return utils.MapToStruct[*RegistryEntry](doc)
+func unmarshalEntry(doc *data.Document) (*base.RegistryEntry, error) {
+	return utils.MapToStruct[*RegistryEntry](doc.AsMap())
 }
 
 func EnrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
@@ -107,7 +108,8 @@ func EnrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
 		Required: utils.BoolPtr(true),
 		Unique:   utils.BoolPtr(true),
 	}
-	sc = sc.MustAddField(idField, nil)
+	id_id := uuid.Must(uuid.NewV7()).String()
+	sc = sc.MustAddField(id_id, idField, nil)
 
 	// --- Enforce ID Index ---
 	var filteredIndexes []schema.IndexOrReference
@@ -126,16 +128,24 @@ func EnrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
 		Unique: utils.BoolPtr(true),
 	})
 
+	metadata_id := uuid.Must(uuid.NewV7()).String()
+
+	msd, deps := data.GetMetadataSchema()
+
 	// --- Add Metadata Field ---
 	metadataField := &schema.FieldDefinition{
 		Name:   data.MetadataField,
 		Type:   schema.FieldTypeObject,
-		Schema: schema.NestedSchemaReference{ID: data.MetadataField},
+		Schema: schema.NestedSchemaReference{ID: *msd.ID},
 	}
 
 	provider := func(sc *schema.SchemaDefinition) (*schema.NestedSchemaDefinition, []*schema.NestedSchemaDefinition) {
-		return data.GetMetadataSchema()
+		return msd, deps
 	}
 
-	return sc.MustAddField(metadataField, provider)
+	result := sc.MustAddField(metadata_id,metadataField, provider)
+	if err := result.Validate(); err != nil {
+		panic(err)
+	}
+	return  result
 }

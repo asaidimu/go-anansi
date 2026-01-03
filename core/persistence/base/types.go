@@ -307,7 +307,7 @@ type CreateResult struct {
 	// Data is the document that was processed.
 	// - On success, this is the final, enriched document as it was persisted.
 	// - On failure, this is the original document that was submitted.
-	Data data.Document `json:"data"`
+	Data *data.Document `json:"data"`
 
 	// Issues contains detailed validation errors if the status is FAILED_VALIDATION.
 	Issues []common.Issue `json:"issues,omitempty"`
@@ -386,9 +386,7 @@ type BasePersistence interface {
 	// This allows for operations that are not tied to a specific collection,
 	// or for highly optimized, custom queries.
 	Query(ctx context.Context, rawQuery *query.RawQuery) (*query.RawQueryResult, error)
-
 }
-
 
 // Persistence defines the core contract for the persistence layer. It provides a
 // comprehensive set of methods for managing collections, schemas, transactions, and
@@ -448,7 +446,7 @@ type Persistence interface {
 // It specifies the data to be updated and a filter to select which documents to update.
 type CollectionUpdate struct {
 	// For simple SET operations, mapping a field path to its new literal value.
-	Set data.Document `json:"set,omitempty"`
+	Set *data.Document `json:"set,omitempty"`
 
 	// For advanced updates where a field's value is computed by an expression or subquery.
 	Compute map[string]query.Query `json:"compute,omitempty"`
@@ -457,17 +455,16 @@ type CollectionUpdate struct {
 	Version *int               `json:"version,omitempty"`
 }
 
-
 // Collection defines the contract for operations on a specific collection.
 // This includes standard CRUD (Create, Read, Update, Delete) operations, as well as methods
 // for schema management (migration, rollback), data validation, and collection-scoped
 // observability (metadata and subscriptions).
 type Collection interface {
 	// CreateOne creates a single document, returning a rich result object.
-	CreateOne(ctx context.Context, doc data.Document) (CreateResult, error)
+	CreateOne(ctx context.Context, doc *data.Document) (CreateResult, error)
 
 	// CreateMany creates multiple documents, returning a rich result for each.
-	CreateMany(ctx context.Context, docs []data.Document) ([]CreateResult, error)
+	CreateMany(ctx context.Context, docs []*data.Document) ([]CreateResult, error) // considering whether we should use array of pointers
 
 	// Read retrieves documents from the collection that match the given QueryDSL.
 	Read(ctx context.Context, query *query.Query) (*ReadResult, error)
@@ -481,7 +478,7 @@ type Collection interface {
 
 	// Validate checks if the given data conforms to the collection's schema.
 	// The 'loose' flag allows for partial validation.
-	Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error)
+	Validate(ctx context.Context, data *data.Document, loose bool) (*schema.ValidationResult, error)
 
 	// Metadata retrieves metadata specifically for this collection, with an option to
 	// force a refresh of the data.
@@ -504,12 +501,10 @@ type Collection interface {
 	Capabilities(ctx context.Context) *query.Capabilities
 }
 
-
-
 // ReadResult represents the result of a database query.
 type ReadResult struct {
-	Data  []data.Document `json:"data"`
-	Count int `json:"count,omitempty"`
+	Data  []*data.Document `json:"data"`
+	Count int              `json:"count,omitempty"`
 }
 
 // Transaction defines the interface for a database transaction.
@@ -544,7 +539,6 @@ type Transaction interface {
 	// ID returns the id of this transaction.
 	ID() string
 }
-
 
 // ModelCollection defines a set of type-safe operations for a specific model T.
 // It acts as a bridge between the untyped persistence layer and the domain models,

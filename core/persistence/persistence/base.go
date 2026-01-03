@@ -276,8 +276,12 @@ func (p *basePersistence) Subscriptions(ctx context.Context) ([]base.Subscriptio
 
 func (p *basePersistence) Transact(ctx context.Context, callback func(ctx context.Context, tx base.BasePersistence) (any, error)) (any, error) {
 	execute := func() (any, error) {
-		return transaction.Execute(ctx, p.interactor, p.logger, func(tctx context.Context, tx query.DatabaseInteractor) (any, error) {
-			return callback(tctx, p)
+		return transaction.Execute(ctx, p.interactor, p.logger, func(tctx context.Context, txInteractor query.DatabaseInteractor) (any, error) {
+			txBasePersistence, err := newBasePersistence(txInteractor, p.eventEmitter, p.logger, p.decorators)
+			if err != nil {
+				return nil, common.SystemErrorFrom(err, "ERR_TRANSACTION_PERSISTENCE_CREATION_FAILED", "failed to create transaction persistence instance").WithOperation("basePersistence.Transact")
+			}
+			return callback(tctx, txBasePersistence)
 		})
 	}
 

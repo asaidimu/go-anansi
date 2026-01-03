@@ -34,7 +34,7 @@ func (mc *modelCollection[T]) Create(ctx context.Context, doc T) (T, error) {
 }
 
 func (mc *modelCollection[T]) CreateMany(ctx context.Context, docs []T) ([]T, error) {
-	input := make([]data.Document, len(docs))
+	input := make([]*data.Document, len(docs))
 	for i, d := range docs {
 		converted, err := data.FromStructWithTags(d)
 		if err != nil {

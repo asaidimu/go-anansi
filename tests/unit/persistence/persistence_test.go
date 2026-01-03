@@ -123,10 +123,13 @@ func TestPersistence_Transact(t *testing.T) {
 	accounts, err := p.CreateCollection(context.Background(), *sc)
 	require.NoError(t, err)
 
-	r, err := accounts.CreateMany(context.Background(), []data.Document{
-		{ "name": "Alice", "balance": 100.0},
-		{ "name": "Bob", "balance": 50.0},
+	r, err := accounts.CreateMany(context.Background(), []*data.Document{
+		data.MustNewDocument(map[string]any{"name": "Alice", "balance": 100.0}),
+		data.MustNewDocument(map[string]any{"name": "Bob", "balance": 50.0}),
 	})
+	if err != nil {
+		t.Logf("Error creating multiple accounts: %v", err)
+	}
 	require.NoError(t, err)
 
 	ida := r[0].Data.Must().GetString("id")
@@ -145,7 +148,7 @@ func TestPersistence_Transact(t *testing.T) {
 		aliceDoc := aliceResult.Data[0]
 
 		// Subtract 20 from Alice
-		aliceDoc["balance"] = 80.0
+		aliceDoc.Set("balance", 80.0)
 		filterAlice := query.NewQueryBuilder().Where("id").Eq(ida).Build().Filters
 
 		// we can nest transactions, but don't
@@ -169,7 +172,7 @@ func TestPersistence_Transact(t *testing.T) {
 			bobDoc := bobResult.Data[0]
 
 			// Add 20 to Bob
-			bobDoc["balance"] = 70.0
+			bobDoc.Set("balance", 70.0)
 			filterBob := query.NewQueryBuilder().Where("id").Eq(idb).Build().Filters
 			_, err = accounts.Update(ctx, &base.CollectionUpdate{Set: bobDoc, Filter: filterBob})
 			if err != nil {
@@ -191,7 +194,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 	balances := make(map[string]any)
 	for _, doc := range result.Data {
-		balances[doc["id"].(string)] = doc["balance"]
+		balances[doc.Must().GetString("id")] = doc.Must().GetFloat64("balance")
 	}
 
 	assert.Equal(t, 80.0, balances[ida])
@@ -214,7 +217,7 @@ func TestPersistence_Transact(t *testing.T) {
 		aliceDoc := aliceResult.Data[0]
 
 		// Subtract 10 from Alice
-		aliceDoc["balance"] = 70.0
+		aliceDoc.Set("balance", 70.0)
 		filterAlice := query.NewQueryBuilder().Where("id").Eq(ida).Build().Filters
 		_, err = acc.Update(tctx, &base.CollectionUpdate{Set: aliceDoc, Filter: filterAlice})
 		if err != nil {
@@ -222,7 +225,7 @@ func TestPersistence_Transact(t *testing.T) {
 		}
 
 		// This will fail because of a non-existent field, causing a rollback
-		updateBob := data.Document{"non_existent_field": "error"}
+		updateBob := data.MustNewDocument(map[string]any{"non_existent_field": "error"})
 
 		// We still need metadata for the update to pass the initial check
 		bobQuery := query.NewQueryBuilder().Where("id").Eq(idb).Build()
@@ -249,7 +252,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 	rollbackBalances := make(map[string]any)
 	for _, doc := range rollbackResult.Data {
-		rollbackBalances[doc["id"].(string)] = doc["balance"]
+		rollbackBalances[doc.Must().GetString("id")] = doc.Must().GetFloat64("balance")
 	}
 
 	assert.Equal(t, 80.0, rollbackBalances[ida])
@@ -377,9 +380,12 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	accounts, err := p.CreateCollection(context.Background(), *sc)
 	require.NoError(t, err)
 
-	r, err := accounts.CreateMany(context.Background(), []data.Document{
-		{"name": "Alice", "balance": 100.0},
+	r, err := accounts.CreateMany(context.Background(), []*data.Document{
+		data.MustNewDocument(map[string]any{"name": "Alice", "balance": 100.0}),
 	})
+	if err != nil {
+		t.Logf("Error creating single account for panic test: %v", err)
+	}
 	require.NoError(t, err)
 
 	id := r[0].Data.Must().GetString("id")
@@ -401,7 +407,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 			aliceDoc := aliceResult.Data[0]
 
 			// Update Alice's balance
-			aliceDoc["balance"] = 50.0
+			aliceDoc.Set("balance", 50.0)
 			filterAlice := query.NewQueryBuilder().Where("id").Eq(id).Build().Filters
 			_, err = acc.Update(tctx, &base.CollectionUpdate{Set: aliceDoc, Filter: filterAlice})
 			if err != nil {
@@ -421,7 +427,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	require.Equal(t, 1, result.Count)
 	doc := result.Data[0]
 	balances := make(map[string]any)
-	balances[doc["id"].(string)] = doc["balance"]
+	balances[doc.Must().GetString("id")] = doc.Must().GetFloat64("balance")
 
 	assert.Equal(t, 100.0, balances[id])
 }
@@ -481,18 +487,24 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	require.NoError(t, err)
 
 	// 3. Insert Data
-	_, err = usersCollection.CreateMany(context.Background(), []data.Document{
-		{"idi": "user1", "name": "Alice"},
-		{"idi": "user2", "name": "Bob"},
-		{"idi": "user3", "name": "Charlie"},
+	_, err = usersCollection.CreateMany(context.Background(), []*data.Document{
+		data.MustNewDocument(map[string]any{"idi": "user1", "name": "Alice"}),
+		data.MustNewDocument(map[string]any{"idi": "user2", "name": "Bob"}),
+		data.MustNewDocument(map[string]any{"idi": "user3", "name": "Charlie"}),
 	})
+	if err != nil {
+		t.Logf("Error creating multiple users: %v", err)
+	}
 
 	require.NoError(t, err)
 
-	_, err = profilesCollection.CreateMany(context.Background(), []data.Document{
-		{"user": "user1", "bio": "Loves Go programming"},
-		{"user": "user2", "bio": "Enjoys testing"},
+	_, err = profilesCollection.CreateMany(context.Background(), []*data.Document{
+		data.MustNewDocument(map[string]any{"user": "user1", "bio": "Loves Go programming"}),
+		data.MustNewDocument(map[string]any{"user": "user2", "bio": "Enjoys testing"}),
 	})
+	if err != nil {
+		t.Logf("Error creating multiple profiles: %v", err)
+	}
 
 	require.NoError(t, err)
 
@@ -525,26 +537,26 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 
 	// Verify content
 	for _, doc := range d {
-		userData, userOk := doc["users"].(data.Document)
-		profileData, profileOk := doc["profiles"].(data.Document)
+		userData, errUser := doc.GetDocument("users")
+		require.NoError(t, errUser) // We expect "users" to always exist
 
-		assert.True(t, userOk)
+		profileData, errProfile := doc.GetDocument("profiles") // profileData can be nil if not found
 
-		switch userData["idi"] {
+		switch userData.Must().GetString("idi") {
 		case "user1":
-			assert.True(t, profileOk)
-			assert.Equal(t, "Alice", userData["name"])
-			assert.Equal(t, "Loves Go programming", profileData["bio"])
+			assert.NoError(t, errProfile) // We expect a profile here
+			assert.Equal(t, "Alice", userData.Must().GetString("name"))
+			assert.Equal(t, "Loves Go programming", profileData.Must().GetString("bio"))
 		case "user2":
-			assert.True(t, profileOk)
-			assert.Equal(t, "Bob", userData["name"])
-			assert.Equal(t, "Enjoys testing", profileData["bio"])
+			assert.NoError(t, errProfile) // We expect a profile here
+			assert.Equal(t, "Bob", userData.Must().GetString("name"))
+			assert.Equal(t, "Enjoys testing", profileData.Must().GetString("bio"))
 		case "user3":
-			assert.False(t, profileOk)          // No profile for user3
-			assert.Nil(t, doc["user_profiles"]) // Ensure it's explicitly nil
-			assert.Equal(t, "Charlie", userData["name"])
+			assert.NoError(t, errProfile) // We expect NO profile here
+			assert.True(t, profileData.IsEmpty()) // Ensure profileData is nil
+			assert.Equal(t, "Charlie", userData.Must().GetString("name"))
 		default:
-			t.Errorf("Unexpected user ID: %v", userData["idi"])
+			t.Errorf("Unexpected user ID: %v", userData.Must().GetString("idi"))
 		}
 	}
 }

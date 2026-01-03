@@ -1,6 +1,7 @@
 package data
 
 import (
+	"context"
 	"fmt"
 	"strings"
 )
@@ -20,7 +21,7 @@ func (d Document) Flatten(separator string) map[string]any {
 // using the specified separator for nested keys. It handles nested Documents
 // and slices, creating unique keys for each element.
 func (d Document) flattenInto(result map[string]any, prefix, separator string) {
-	for k, v := range d {
+	for k, v := range d.data {
 		key := k
 		if prefix != "" {
 			key = prefix + separator + k
@@ -49,11 +50,11 @@ func Unflatten(flat map[string]any, separator string) Document {
 		separator = "."
 	}
 
-	doc := make(Document)
+	docData := make(map[string]any)
 
 	for key, value := range flat {
 		parts := strings.Split(key, separator)
-		current := doc
+		current := docData
 
 		for i, part := range parts {
 			if i == len(parts)-1 {
@@ -64,14 +65,13 @@ func Unflatten(flat map[string]any, separator string) Document {
 					next = make(map[string]any)
 					current[part] = next
 				}
-				if nextDoc, ok := AsDocument(next); ok {
-					current = nextDoc
-				} else if nextMap, ok := next.(map[string]any); ok {
-					current = Document(nextMap)
+
+				if nextMap, ok := next.(map[string]any); ok {
+					current = nextMap
 				}
 			}
 		}
 	}
 
-	return doc
+	return Document{ctx: context.Background(), data: docData}
 }

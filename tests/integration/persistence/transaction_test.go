@@ -37,7 +37,7 @@ func TestTransactionWithGoroutine(t *testing.T) {
 					return nil, err
 				}
 
-				_, err = coll.CreateOne(ctx, data.Document{"id": "1", "name": "test"})
+				_, err = coll.CreateOne(ctx, data.MustNewDocument(map[string]any{"id": "1", "name": "test"}))
 				return nil, err
 			})
 
@@ -108,7 +108,7 @@ func TestTransactionWithNestedGoroutine(t *testing.T) {
 					return nil, err
 				}
 
-				_, err = coll.CreateOne(ctx, data.Document{"id": "nested", "name": "testa"})
+				_, err = coll.CreateOne(ctx, data.MustNewDocument(map[string]any{"id": "nested", "name": "testa"}))
 				return nil, err
 			})
 

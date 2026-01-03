@@ -5,12 +5,11 @@ import (
 	"strconv"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // sumAggregate computes the sum of a numeric field across multiple records.
-func sumAggregate(records []data.Document, field string) (any, error) {
+func sumAggregate(records []map[string]any, field string) (any, error) {
 	var sum float64
 	foundNumeric := false
 	for _, record := range records {
@@ -43,13 +42,13 @@ func sumAggregate(records []data.Document, field string) (any, error) {
 	}
 
 	if !foundNumeric && len(records) > 0 {
-		return nil, common.SystemErrorFrom(ErrNoNumericValuesForAggregation).WithOperation("ephemeral.sumAggregate").WithPath(field).WithCause(data.ErrNoNumericValuesForAggregation)
+		return nil, common.SystemErrorFrom(ErrNoNumericValuesForAggregation).WithOperation("ephemeral.sumAggregate").WithPath(field).WithCause(ErrNoNumericValuesForAggregation)
 	}
 	return sum, nil
 }
 
 // countAggregate computes the count of records. If a field is specified, it counts non-nil values for that field.
-func countAggregate(records []data.Document, field string) (any, error) {
+func countAggregate(records []map[string]any, field string) (any, error) {
 	if field == "" {
 		return len(records), nil // Count all records in the group
 	}
@@ -64,7 +63,7 @@ func countAggregate(records []data.Document, field string) (any, error) {
 }
 
 // avgAggregate computes the average of a numeric field across multiple records.
-func avgAggregate(records []data.Document, field string) (any, error) {
+func avgAggregate(records []map[string]any, field string) (any, error) {
 	var sum float64
 	var count int
 	for _, record := range records {
@@ -99,7 +98,7 @@ func avgAggregate(records []data.Document, field string) (any, error) {
 }
 
 // minAggregate finds the minimum value of a comparable field across multiple records.
-func minAggregate(records []data.Document, field string) (any, error) {
+func minAggregate(records []map[string]any, field string) (any, error) {
 	if len(records) == 0 {
 		return nil, nil
 	}
@@ -131,7 +130,7 @@ func minAggregate(records []data.Document, field string) (any, error) {
 }
 
 // maxAggregate finds the maximum value of a comparable field across multiple records.
-func maxAggregate(records []data.Document, field string) (any, error) {
+func maxAggregate(records []map[string]any, field string) (any, error) {
 	if len(records) == 0 {
 		return nil, nil
 	}

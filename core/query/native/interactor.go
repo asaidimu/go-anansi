@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"go.uber.org/zap"
@@ -72,7 +71,7 @@ func (i *NativeInteractor[T]) Close() error {
 }
 
 // SelectDocuments retrieves multiple documents matching the query.
-func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.Query) ([]data.Document, error) {
+func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.Query) ([]map[string]any, error) {
 	compiled, err := i.b.Build(dsl, StmtSelect, nil)
 	if err != nil {
 		return nil, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.SelectDocuments")
@@ -87,7 +86,7 @@ func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schem
 }
 
 // SelectStream retrieves a stream of documents matching the query.
-func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan data.Document, <-chan error, error) {
+func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan map[string]any, <-chan error, error) {
 	compiled, err := i.b.Build(dsl, StmtSelect, nil)
 	if err != nil {
 		return nil, nil, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.SelectStream")
@@ -122,9 +121,9 @@ func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schem
 }
 
 // InsertDocuments inserts new documents.
-func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *schema.SchemaDefinition, records []data.Document) ([]data.Document, error) {
+func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *schema.SchemaDefinition, records []map[string]any) ([]map[string]any, error) {
 	if len(records) == 0 {
-		return []data.Document{}, nil
+		return []map[string]any{}, nil
 	}
 
 	dsl := &query.Query{
@@ -240,14 +239,14 @@ func (i *NativeInteractor[T]) SchemaManager() query.SchemaManager {
 // CollectionExists checks if a collection exists. (Placeholder)
 func (i *NativeInteractor[T]) CollectionExists(ctx context.Context, name string) (bool, error) {
 
-	compiled, err := i.b.Build(&query.Query{ Target: &query.QueryTarget{ Name: name} }, StmtCheckCollection, nil)
+	compiled, err := i.b.Build(&query.Query{Target: &query.QueryTarget{Name: name}}, StmtCheckCollection, nil)
 	if err != nil {
 		return false, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.CollectionExists")
 	}
 
 	result, err := i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: &schema.SchemaDefinition{
-		Version:  "1.0.0",
-		Name: name,
+		Version: "1.0.0",
+		Name:    name,
 	}})
 
 	if err != nil {
@@ -350,7 +349,3 @@ func (i *NativeInteractor[T]) DropCollection(ctx context.Context, name string) e
 func (i *NativeInteractor[T]) Capabilities() query.Capabilities {
 	return i.qf.Capabilities()
 }
-
-
-
-

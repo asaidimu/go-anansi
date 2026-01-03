@@ -109,7 +109,7 @@ type ConstraintRule[T FieldType] struct {
 	ConstraintGroup *ConstraintGroup[T]
 
 	// TODO: put into use
-	Reference       *ResourceReference
+	Reference *ResourceReference
 }
 
 // UnmarshalJSON implements custom unmarshaling for ConstraintRule.
@@ -177,7 +177,7 @@ type SchemaConstraint[T FieldType] []ConstraintRule[T]
 // IndexOrReference represents a discriminated union of IndexDefinition or ResourceReference.
 // Exactly one field should be non-nil at any time.
 type IndexOrReference struct {
-	Index     *IndexDefinition
+	Index *IndexDefinition
 
 	// TODO: put into use
 	Reference *ResourceReference
@@ -388,6 +388,7 @@ func (nsf *NestedSchemaFields) IsArray() bool {
 // NestedSchemaDefinition represents a reusable, nested schema structure.
 // This is a discriminated union: either it has Fields (structured) or Type (primitive/typed).
 type NestedSchemaDefinition struct {
+	ID          *string        `json:"id,omitempty"`
 	Name        string         `json:"name"`
 	Description *string        `json:"description,omitempty"`
 	Metadata    map[string]any `json:"metadata,omitempty"`

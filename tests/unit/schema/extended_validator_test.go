@@ -95,7 +95,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 			},
 		},
 		NestedSchemas: map[string]*schema.NestedSchemaDefinition{
-			"6af36eb1-c0be-44b1-afa1-feb2a14f4427": permissionSchema,
+			"permission": permissionSchema,
 			"role":                                 roleSchema,
 			"stringSchema":                         {Name: "stringSchema", Type: &stringType},
 			"numberSchema":                         {Name: "numberSchema", Type: &integerType},

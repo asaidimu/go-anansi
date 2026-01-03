@@ -8,24 +8,27 @@ import (
 )
 
 func TestStripMetadata(t *testing.T) {
+	data.ConfigureDocumentFactory(data.DocumentFactoryConfig{}, nil)
 	// Create document with metadata
-	doc := data.Document{
-		"id":   "1",
-		"name": "Test1",
-		data.MetadataField: map[string]any{
-			"created": 1754420381,
-			"hash":    "a1ed91f3783c2a4f4de392df95f8d1c245be66bf68f9f098c7a5745d74b4c107",
-			"updated": 1754420381,
-			"version": 1,
-		},
-	}
+	doc, err := data.NewDocument(
+		map[string]any{
+			"name": "Test1",
+			data.MetadataField: map[string]any{
+				"created": 1754420381,
+				"hash":    "a1ed91f3783c2a4f4de392df95f8d1c245be66bf68f9f098c7a5745d74b4c107",
+				"updated": 1754420381,
+				"version": 1,
+			},
+		})
 
+	assert.NoError(t, err)
 	// Strip metadata
-	doc = doc.StripMetadata()
+	cp := doc.StripMetadata()
 
 	// Expected result without metadata
-	expected := data.Document{"id": "1", "name": "Test1"}
+	expected, err := data.NewDocument(map[string]any{"name": "Test1"})
+	assert.NoError(t, err)
 
 	// Assert equality
-	assert.Equal(t, expected, doc)
+	assert.True(t, expected.Equals(cp))
 }

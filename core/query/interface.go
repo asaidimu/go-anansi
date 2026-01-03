@@ -4,7 +4,6 @@ package query
 
 import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
@@ -33,7 +32,7 @@ type QueryGenerator interface {
 	// GenerateInsertSQL creates a SQL INSERT query string and its parameters from a slice
 	// of records. It supports both single and batch inserts, generating the appropriate
 	// syntax for the target database.
-	GenerateInsertSQL(records []data.Document) (string, []any, error)
+	GenerateInsertSQL(records []map[string]any) (string, []any, error)
 
 	// GenerateDeleteSQL creates a SQL DELETE query string and its parameters from a
 	// QueryFilter. For safety, it requires a WHERE clause unless the `unsafeDelete`
@@ -271,11 +270,11 @@ type QueryPartitionerInterface interface {
 // ComputeFunction is a function that computes a new value for a row of data.
 // It takes a document (representing a single row) and a set of arguments, and
 // returns the computed value.
-type ComputeFunction func(row data.Document, args []FilterValue) (any, error)
+type ComputeFunction func(row map[string]any, args []FilterValue) (any, error)
 
 // PredicateFunction is a function that performs custom filtering logic on a row.
 // It returns true if the row should be included in the result set, and false otherwise.
-type PredicateFunction func(doc data.Document, field string, value FilterValue) (bool, error)
+type PredicateFunction func(doc map[string]any, field string, value FilterValue) (bool, error)
 
 // PartitionedQuery holds the result of a query partitioning operation.
 type PartitionedQuery struct {

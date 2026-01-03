@@ -41,7 +41,7 @@ func newEventEmittingCollection(name string, collection base.Collection, eventEm
 	}
 }
 
-func (e *eventsCollection) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
+func (e *eventsCollection) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
 	config := events.OperationConfig{
 		Operation:         "createOne",
 		StartEventTypes:   []string{string(base.DocumentCreateStart)},
@@ -69,7 +69,7 @@ func (e *eventsCollection) CreateOne(ctx context.Context, doc data.Document) (ba
 }
 
 // CreateMany wraps the underlying collection's CreateMany method, adding event emission.
-func (e *eventsCollection) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) {
+func (e *eventsCollection) CreateMany(ctx context.Context, docs []*data.Document) ([]base.CreateResult, error) {
 	config := events.OperationConfig{
 		Operation:         "createMany",
 		StartEventTypes:   []string{string(base.DocumentCreateStart)},
@@ -157,7 +157,7 @@ func (e *eventsCollection) Delete(ctx context.Context, filter *query.QueryFilter
 
 // Validate delegates the call to the underlying collection's Validate method.
 // No events are emitted for validation as it is a read-only operation.
-func (e *eventsCollection) Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error) {
+func (e *eventsCollection) Validate(ctx context.Context, data *data.Document, loose bool) (*schema.ValidationResult, error) {
 	return e.collection.Validate(ctx, data, loose)
 }
 

@@ -21,12 +21,19 @@ func TestTraceDocumentInsertion(t *testing.T) {
 	require.NoError(t, err)
 
 
-	docToCreate, err := data.NewDocument(map[string]any{"id": "1", "name": "trace-doc", "age": 30, "is_active": true, "price": 99.99})
-	require.NoError(t, err)
+		docToCreate, err := data.NewDocument(map[string]any{"id": "1", "name": "trace-doc", "age": 30, "is_active": true, "price": 99.99})
 
 
-	// Directly insert using the interactor
-	insertedDocs, err := interactor.InsertDocuments(context.Background(), schema, []data.Document{docToCreate})
+		require.NoError(t, err)
+
+
+	
+
+
+		// Directly insert using the interactor
+
+
+		insertedDocs, err := interactor.InsertDocuments(context.Background(), schema, []map[string]any{docToCreate.AsMap()})
 	require.NoError(t, err)
 	require.Len(t, insertedDocs, 1)
 
@@ -34,7 +41,7 @@ func TestTraceDocumentInsertion(t *testing.T) {
 	insertedDoc := insertedDocs[0]
 
 	// Verify the hash of the returned document
-	ok, err := insertedDoc.VerifyHash()
+	ok, err := data.MustNewDocument(insertedDoc).VerifyHash()
 	require.NoError(t, err)
 	require.True(t, ok, "Hash of document returned by interactor should be valid")
 
@@ -46,7 +53,7 @@ func TestTraceDocumentInsertion(t *testing.T) {
 
 	readDoc := readDocs[0]
 
-	ok, err = readDoc.VerifyHash()
+	ok, err = data.MustNewDocument(readDoc).VerifyHash()
 	require.NoError(t, err)
 	require.NoError(t, err)
 	require.True(t, ok, "Hash of document read back from DB should be valid")

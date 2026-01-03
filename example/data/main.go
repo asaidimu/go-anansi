@@ -89,7 +89,7 @@ func main() {
 
 	// 6. In-memory query on a set of documents
 	// Build three documents correctly handling SetNested errors
-	buildUser := func(username, email string, age int, bio string) data.Document {
+	buildUser := func(username, email string, age int, bio string) *data.Document {
 		db := data.NewDocumentBuilder().
 			Set("username", username).
 			Set("email", email).
@@ -111,7 +111,7 @@ func main() {
 
 	// Fluent query: users older than 28
 	results := data.Query(docs).
-		WhereFunc(func(d data.Document) bool {
+		WhereFunc(func(d *data.Document) bool {
 			age, _ := d.GetInt("age")
 			return age > 28
 		}).

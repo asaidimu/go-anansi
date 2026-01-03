@@ -23,12 +23,13 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
 // MetadataProvider is a function that returns metadata to be merged into a document.
-type MetadataProvider func(ctx context.Context, doc Document) (map[string]any, error)
+type MetadataProvider func(ctx context.Context, doc *Document) (map[string]any, error)
 
 // MetadataProviderConfig holds a  nested schema, its dependencies and its corresponding provider.
 type MetadataProviderConfig struct {
@@ -161,13 +162,16 @@ func (f *documentFactory) getSanitizerForContext(ctx context.Context) *DocumentS
 }
 
 // newDocument creates a new document with injected metadata.
-func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) (Document, error) {
+func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) (*Document, error) {
 	if !f.configured {
 		return nil, ErrFactoryNotConfigured
 	}
-	doc := Document(data)
+	if data == nil {
+		data = make(map[string]any)
+	}
+	doc := &Document{ctx: ctx, data: data}
 	if !f.hasValidID(doc) {
-		doc[DocumentID] = strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
+		doc.data[DocumentID] = strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
 	}
 
 	// Ensure metadata field exists
@@ -182,7 +186,10 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 		meta[MetadataCreated] = now
 	}
 	meta[MetadataUpdated] = now
-	meta[MetadataVersion] = 1
+
+	if version, ok := meta[MetadataVersion]; !ok || !utils.IsInteger(version) {
+		meta[MetadataVersion] = 1
+	}
 
 	// Apply user-defined metadata providers
 	f.mu.RLock()
@@ -207,7 +214,9 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 	meta[MetadataChecksum] = hash
 	doc.SetMetadata(meta)
 
-	return doc.Normalize(), nil
+	normalizedDoc := doc.Normalize()
+	normalizedDoc.ctx = ctx // Ensure context is preserved after normalization
+	return normalizedDoc, nil
 }
 
 // GetMetadataSchema merges all provider schemas into a single metadata schema
@@ -252,7 +261,7 @@ func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchema
 
 // calculateHash computes the SHA256 hash of the document,
 // excluding the 'checksum' field itself, to ensure a consistent and verifiable identifier.
-func (f *documentFactory) calculateHash(doc Document) (string, error) {
+func (f *documentFactory) calculateHash(doc *Document) (string, error) {
 	dataToSign := doc.Clone()
 	meta, ok := dataToSign.Metadata()
 
@@ -275,7 +284,7 @@ func (f *documentFactory) calculateHash(doc Document) (string, error) {
 }
 
 // signDocument signs the entire document (excluding the signature itself) using a private key.
-func (f *documentFactory) signDocument(doc Document, privateKey *rsa.PrivateKey) (string, error) {
+func (f *documentFactory) signDocument(doc *Document, privateKey *rsa.PrivateKey) (string, error) {
 	// Create a copy of the document and remove the signature field
 	docToSign := doc.Clone()
 	meta, ok := docToSign.Metadata()
@@ -304,8 +313,8 @@ func (f *documentFactory) signDocument(doc Document, privateKey *rsa.PrivateKey)
 	return base64.StdEncoding.EncodeToString(signature), nil
 }
 
-func (f *documentFactory) hasValidID(doc Document) bool {
-	i, ok := doc[DocumentID]
+func (f *documentFactory) hasValidID(doc *Document) bool {
+	i, ok := doc.data[DocumentID]
 	if !ok {
 		return false
 	}
@@ -342,7 +351,7 @@ func (f *documentFactory) hasValidID(doc Document) bool {
 }
 
 // verifySignature verifies the signature of a document against a public key.
-func (f *documentFactory) verifySignature(doc Document, publicKey *rsa.PublicKey, signature string) error {
+func (f *documentFactory) verifySignature(doc *Document, publicKey *rsa.PublicKey, signature string) error {
 	// Decode the signature
 	sigBytes, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
@@ -380,6 +389,10 @@ func (f *documentFactory) verifySignature(doc Document, publicKey *rsa.PublicKey
 // canonicalize recursively sorts slices and maps to ensure a consistent hash.
 func canonicalize(v any) any {
 	switch val := v.(type) {
+	case *Document:
+		return canonicalize(val.data)
+	case Document:
+		return canonicalize(val.data)
 	case map[string]any:
 		newMap := make(map[string]any, len(val))
 		keys := make([]string, 0, len(val))

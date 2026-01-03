@@ -97,7 +97,7 @@ func NewSanitizer(config FieldMaskConfig, logger *zap.Logger) *Sanitizer {
 	}
 }
 
-// SanitizeDocument applies masking rules to a document (map[string]any)
+// SanitizeDocument applies masking rules to a map (map[string]any)
 // Returns a new map with masked values - does not modify the original
 func (s *Sanitizer) SanitizeDocument(doc map[string]any) map[string]any {
 	if doc == nil {
@@ -147,7 +147,7 @@ func (s *Sanitizer) applyPolicy(fieldName string, value any, policy MaskedFieldP
 
 	switch policy {
 	case MaskRedact:
-		return "[REDACTED]"
+		return "***"
 
 	case MaskHash:
 		return s.hashValue(value)
@@ -257,8 +257,8 @@ func CommonSecurityPatterns() []FieldMaskPattern {
 }
 
 // NewSecureDefaultConfig creates a sanitizer config with common security patterns
-func NewSecureDefaultConfig() FieldMaskConfig {
-	return FieldMaskConfig{
+func NewSecureDefaultConfig() *FieldMaskConfig {
+	return &FieldMaskConfig{
 		Fields:        make(map[string]MaskedFieldPolicy),
 		Patterns:      CommonSecurityPatterns(),
 		DefaultPolicy: MaskPreserve,
@@ -395,48 +395,31 @@ func (ds *DocumentSanitizer) SanitizeID(id string) string {
 }
 
 // Sanitize returns a sanitized copy of the document using context-aware sanitization.
-// The sanitizer is obtained from the global document factory, and the collection name
-// is extracted from the context to apply collection-specific rules.
-//
-// This is the primary method for sanitizing documents throughout the system.
-// It automatically applies the correct sanitization rules based on:
-// - Global sanitization config (from factory)
-// - Collection-specific overrides (from context)
-//
-// Example usage:
-//
-//	// In collection operations, context already has collection name
-//	safeDoc := doc.Sanitize(ctx)
-//	logger.Info("Document", zap.Any("doc", safeDoc))
-//
-//	// Sanitization rules are automatically applied:
-//	// - Global rules (password → [REDACTED])
-//	// - Collection rules (email → us****om in "users" collection)
-func (d Document) Sanitize(ctx context.Context) Document {
+func (d *Document) Sanitize(ctx context.Context) *Document {
 	sanitizer := getFactory().getSanitizerForContext(ctx)
 	if sanitizer == nil {
 		// No sanitization configured - return clone to maintain immutability
 		return d.Clone()
 	}
 
-	sanitized := sanitizer.SanitizeDocumentDeep(map[string]any(d))
-	return Document(sanitized)
+	sanitized := sanitizer.SanitizeDocumentDeep(d.data)
+	return &Document{ctx: d.ctx, data: sanitized}
 }
 
 // SafeString returns a sanitized string representation suitable for logging.
 // Uses context to determine appropriate sanitization rules.
-func (d Document) SafeString(ctx context.Context) string {
+func (d *Document) SafeString(ctx context.Context) string {
 	sanitized := d.Sanitize(ctx)
 	return sanitized.String()
 }
 
 // SanitizeArray sanitizes an array of documents using context-aware rules
-func SanitizeDocumentArray(ctx context.Context, docs []Document) []Document {
+func SanitizeDocumentArray(ctx context.Context, docs []*Document) []*Document {
 	if len(docs) == 0 {
 		return docs
 	}
 
-	sanitized := make([]Document, len(docs))
+	sanitized := make([]*Document, len(docs))
 	for i, doc := range docs {
 		sanitized[i] = doc.Sanitize(ctx)
 	}
@@ -452,20 +435,27 @@ func SanitizeValue(ctx context.Context, value any) any {
 	}
 
 	switch v := value.(type) {
+	case *Document:
+		return v.Sanitize(ctx)
 	case Document:
 		return v.Sanitize(ctx)
-
-	case []Document:
+	case []*Document:
 		return SanitizeDocumentArray(ctx, v)
-
+	case []Document:
+		// Convert to slice of pointers before sanitizing
+		docs := make([]*Document, len(v))
+		for i := range v {
+			docs[i] = &v[i]
+		}
+		return SanitizeDocumentArray(ctx, docs)
 	case map[string]any:
 		// Treat as document
-		return Document(v).Sanitize(ctx)
+		return (&Document{ctx: ctx, data: v}).Sanitize(ctx)
 
 	case []map[string]any:
 		sanitized := make([]map[string]any, len(v))
 		for i, m := range v {
-			sanitized[i] = Document(m).Sanitize(ctx)
+			sanitized[i] = (&Document{ctx: ctx, data: m}).Sanitize(ctx).data
 		}
 		return sanitized
 

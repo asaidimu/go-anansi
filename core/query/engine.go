@@ -6,7 +6,6 @@ import (
 	"hash/fnv"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"go.uber.org/zap"
@@ -52,7 +51,7 @@ func (e *QueryEngine) RegisterFilterFunction(operator ComparisonOperator, fn Pre
 }
 
 // Query orchestrates the entire query execution process, from partitioning to final result.
-func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *Query) ([]data.Document, error) {
+func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *Query) ([]map[string]any, error) {
 	interactor, ok := GetInteractor(ctx)
 	if !ok {
 		return nil, common.NewSystemError("ERR_QUERY_INTERACTOR_NOT_FOUND", "could not get interactor").WithOperation("Query")
@@ -83,7 +82,7 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 	}
 
 	// 2. Execute the database part of the query.
-	docs, err := utils.ExecuteWithContext(ctx, func() ([]data.Document, error) {
+	docs, err := utils.ExecuteWithContext(ctx, func() ([]map[string]any, error) {
 		return interactor.SelectDocuments(ctx, schemaDef, dbQuery)
 	})
 	if err != nil {
@@ -134,7 +133,7 @@ func (e *QueryEngine) generateCacheKey(dsl *Query) (uint64, error) {
 	return hasher.Sum64(), nil
 }
 
-func (e *QueryEngine) runPostProcessing(helper *QueryHelper, docs []data.Document) ([]data.Document, error) {
+func (e *QueryEngine) runPostProcessing(helper *QueryHelper, docs []map[string]any) ([]map[string]any, error) {
 	processedDocs := docs
 	var err error
 
@@ -153,7 +152,7 @@ func (e *QueryEngine) runPostProcessing(helper *QueryHelper, docs []data.Documen
 		if err != nil {
 			return nil, common.NewSystemError("ERR_QUERY_POST_PROCESSING_AGGREGATION_FAILED", "post-processing aggregation failed").WithOperation("runPostProcessing").WithCause(err)
 		}
-		return []data.Document{aggResult}, nil
+		return []map[string]any{aggResult}, nil
 	}
 
 	processedDocs, err = helper.Sort(processedDocs)

@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -68,7 +67,7 @@ func TestInsert(t *testing.T) {
 	qb.From("users").Schema(userSchema)
 
 	q := qb.Build()
-	data := data.Document{
+	data := map[string]any{
 		"first_name": "John",
 		"last_name":  "Doe",
 		"age":        30,
@@ -95,7 +94,7 @@ func TestUpdate(t *testing.T) {
 		Where("id").Eq("user-123")
 
 	q := qb.Build()
-	data := data.Document{
+	data := map[string]any{
 		"age":   31,
 		"email": "john.doe@example.com",
 	}
@@ -190,7 +189,7 @@ func TestSelectComplex(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, nq)
 
-	expectedSQL := `SELECT "id", "order_date", "total_amount" FROM orders INNER JOIN customers ON "orders"."customer_id" = "customers"."id" WHERE ("total_amount" >= $1 AND "customers"."region" = $2) ORDER BY "order_date" DESC LIMIT 10 OFFSET 20`
+	expectedSQL := `SELECT "id", "order_date", "total_amount" FROM orders INNER JOIN customers ON "orders"."customer_id" = "customers"."id" WHERE ("total_amount" >= $1 AND "customers"."region" = $2) ORDER BY "orders"."order_date" DESC LIMIT 10 OFFSET 20`
 	assert.Equal(t, expectedSQL, nq.Raw().SQL)
 	assert.Equal(t, 2, len(nq.Raw().Params))
 	assert.Equal(t, 100.0, nq.Raw().Params[0])

@@ -19,13 +19,23 @@ type PersistenceManager struct {
 
 // NewPersistenceManager sets up the Anansi persistence layer.
 func NewPersistenceManager(db *Database, schemaLoader *schema.SchemaLoader, cfg *Config, logger *zap.Logger) (*PersistenceManager, error) {
-	factoryConfig := data.DocumentFactoryConfig{}
+	factoryConfig := data.DocumentFactoryConfig{
+		GlobalSanitizer: &data.FieldMaskConfig{
+			Patterns:      data.CommonSecurityPatterns(),
+			DefaultPolicy: data.MaskPreserve,
+			ObscureConfig: data.DefaultObscureConfig(),
+			Fields: map[string]data.MaskedFieldPolicy{
+				"checksum": data.MaskObscure,
+				"role": data.MaskHash,
+			},
+		},
+	}
 
 	setupCfg := anansi.SetupConfig{
-		Interactor:    db.Interactor,
-		Logger:        logger,
+		Interactor:            db.Interactor,
+		Logger:                logger,
 		DocumentFactoryConfig: factoryConfig,
-		Schemas:       schemaLoader.Schemas,
+		Schemas:               schemaLoader.Schemas,
 	}
 	p, err := anansi.Setup(setupCfg)
 	if err != nil {

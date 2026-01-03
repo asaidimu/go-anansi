@@ -30,7 +30,7 @@ func TestDocumentHashing(t *testing.T) {
 	require.NoError(t, err)
 
 	// 2. Modifying non-metadata field should invalidate metadata hash
-	doc["field1"] = "newValue"
+	doc.Set("field1","newValue")
 	ok, err = doc.VerifyHash()
 	assert.False(t, ok, "checksum should still be valid after modifying non-metadata field")
 
@@ -72,7 +72,7 @@ func TestDocumentSigning(t *testing.T) {
 	assert.NoError(t, err, "initial signature verification should succeed")
 
 	// 2. Modifying a body field SHOULD invalidate the signature
-	doc["amount"] = 200
+	doc.Set("amount",200)
 	err = doc.Verify(publicKey)
 	assert.Error(t, err, "signature should be invalid after modifying a body field")
 

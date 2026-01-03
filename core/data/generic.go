@@ -9,13 +9,12 @@ import (
 )
 
 // Get with generic type support
-func Get[T any](doc Document, key string) (T, error) {
+func Get[T any](doc *Document, key string) (T, error) {
 	var zero T
 	val, err := doc.Get(key)
 	if err != nil {
 		return zero, err
 	}
-
 	result, ok := val.(T)
 	if !ok {
 		return zero, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Get[T]").WithPath(key).WithMessage(fmt.Sprintf("cannot convert %T to %T", val, zero)).WithCause(ErrTypeMismatch)
@@ -24,18 +23,16 @@ func Get[T any](doc Document, key string) (T, error) {
 }
 
 // GetWithCoercion attempts type coercion for common types
-func GetWithCoercion[T any](doc Document, key string) (T, error) {
+func GetWithCoercion[T any](doc *Document, key string) (T, error) {
 	var zero T
 	val, err := doc.Get(key)
 	if err != nil {
 		return zero, err
 	}
-
 	// Try direct type assertion first
 	if result, ok := val.(T); ok {
 		return result, nil
 	}
-
 	// Try coercion for common types
 	switch any(zero).(type) {
 	case string:
@@ -69,21 +66,20 @@ func GetWithCoercion[T any](doc Document, key string) (T, error) {
 			}
 		}
 	}
-
 	return zero, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.GetWithCoercion[T]").WithPath(key).WithMessage(fmt.Sprintf("cannot convert %T to %T", val, zero)).WithCause(ErrTypeMismatch)
 }
 
 // GetNested with generic type support
-func GetNested[T any](doc Document, path string) (T, error) {
+func GetNested[T any](doc *Document, path string) (T, error) {
 	var zero T
 	val, err := doc.GetNested(path)
 	if err != nil {
 		return zero, err
 	}
-
 	result, ok := val.(T)
 	if !ok {
 		return zero, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.GetNested[T]").WithPath(path).WithMessage(fmt.Sprintf("cannot convert %T to %T", val, zero)).WithCause(ErrTypeMismatch)
 	}
 	return result, nil
+
 }

@@ -381,3 +381,53 @@ var (
 	ErrFailedToCalculateHash        = NewSystemError("ERR_COMMON_FAILED_TO_CALCULATE_HASH", "failed to calculate hash")
 	ErrHashMismatch                 = NewSystemError("ERR_COMMON_HASH_MISMATCH", "hash mismatch")
 )
+
+type TransformFunc func(string) string
+
+// Sanitize recurses through the error tree to transform messages, codes, and paths.
+func (e *SystemError) Sanitize(tf TransformFunc) *SystemError {
+	if e == nil {
+		return nil
+	}
+
+	newErr := *e
+	newErr.Message = tf(e.Message)
+	newErr.Code = tf(e.Code)
+	newErr.Path = tf(e.Path)
+
+	// 1. Sanitize the Issues slice
+	if len(e.Issues) > 0 {
+		newIssues := make([]Issue, len(e.Issues))
+		for i, iss := range e.Issues {
+			newIssues[i] = sanitizeIssue(iss, tf)
+		}
+		newErr.Issues = newIssues
+	}
+
+	// 2. Sanitize the Cause (if it's a SystemError)
+	if e.Cause != nil {
+		var sysErr *SystemError
+		if errors.As(e.Cause, &sysErr) {
+			newErr.Cause = sysErr.Sanitize(tf)
+		} else {
+			// If it's a raw Go error, we wrap it in a sanitized SystemError
+			// to ensure the message is cleaned.
+			newErr.Cause = errors.New(tf(e.Cause.Error()))
+		}
+	}
+
+	return &newErr
+}
+
+// sanitizeIssue is a helper for the recursive DTO cleanup
+func sanitizeIssue(iss Issue, tf TransformFunc) Issue {
+	iss.Message = tf(iss.Message)
+	iss.Path = tf(iss.Path)
+	iss.Code = tf(iss.Code)
+	iss.Description = tf(iss.Description)
+	if iss.Cause != nil {
+		cleanedCause := sanitizeIssue(*iss.Cause, tf)
+		iss.Cause = &cleanedCause
+	}
+	return iss
+}

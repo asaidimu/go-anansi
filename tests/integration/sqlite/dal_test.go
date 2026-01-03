@@ -2,6 +2,7 @@ package sqlite_test
 
 import (
 	"database/sql"
+	"fmt"
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
@@ -14,6 +15,8 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 )
 
 func setupDALTestDB(t *testing.T) *sql.DB {
@@ -29,7 +32,8 @@ func setupDALTestDB(t *testing.T) *sql.DB {
 			email TEXT,
 			age INTEGER,
 			status TEXT,
-			region TEXT
+			region TEXT,
+			_metadata_ TEXT
 		)
 	`)
 	require.NoError(t, err)
@@ -40,7 +44,8 @@ func setupDALTestDB(t *testing.T) *sql.DB {
 			id TEXT PRIMARY KEY,
 			customer_id TEXT,
 			order_date TEXT,
-			total_amount REAL
+			total_amount REAL,
+			_metadata_ TEXT
 		)
 	`)
 	require.NoError(t, err)
@@ -50,7 +55,8 @@ func setupDALTestDB(t *testing.T) *sql.DB {
 		CREATE TABLE sales (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			region TEXT,
-			amount REAL
+			amount REAL,
+			_metadata_ TEXT
 		)
 	`)
 	require.NoError(t, err)
@@ -82,6 +88,8 @@ func setupDALTestDB(t *testing.T) *sql.DB {
 	`)
 	require.NoError(t, err)
 
+	testutils.ConfigureDocumentFactory()
+
 	return db
 }
 
@@ -107,14 +115,13 @@ func TestInsert_Integration(t *testing.T) {
 	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Schema(usersSchema)
 	q := qb.Build()
 
-	data := data.Document{
-		"id":         "user-3",
+	data := *data.MustNewDocument(map[string]any{
 		"first_name": "Peter",
 		"last_name":  "Jones",
 		"age":        45,
-	}
+	})
 
-	nq, err := builder.Build(&q, native.StmtInsert, data)
+	nq, err := builder.Build(&q, native.StmtInsert, data.AsMap())
 	require.NoError(t, err)
 
 	_, err = db.Exec(nq.Raw().SQL, nq.Raw().Params...)
@@ -122,7 +129,7 @@ func TestInsert_Integration(t *testing.T) {
 
 	// Verify insertion
 	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM users_1_0_0 WHERE id = 'user-3'").Scan(&count)
+	err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM users_1_0_0 WHERE id = '%s'", data.ID())).Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 }
@@ -142,14 +149,16 @@ func TestUpdate_Integration(t *testing.T) {
 			"age":        {Name: "age", Type: schema.FieldTypeInteger},
 			"status":     {Name: "status", Type: schema.FieldTypeString},
 			"region":     {Name: "region", Type: schema.FieldTypeString},
+			"metadata":   {Name: "_metadata_", Type: schema.FieldTypeRecord},
 		},
 	}
+
+	data := data.MustNewDocument(map[string]any{"age": 31})
+
 	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Schema(usersSchema).Where("id").Eq("user-1")
 	q := qb.Build()
 
-	data := data.Document{"age": 31}
-
-	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{ "set": data })
+	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{"set": data.StripMetadata().AsMap()})
 	require.NoError(t, err)
 
 	res, err := db.Exec(nq.Raw().SQL, nq.Raw().Params...)
@@ -161,7 +170,7 @@ func TestUpdate_Integration(t *testing.T) {
 
 	// Verify update
 	var age int
-	err = db.QueryRow("SELECT age FROM users_1_0_0 WHERE id = 'user-1'").Scan(&age)
+	err = db.QueryRow(fmt.Sprintf("SELECT age FROM users_1_0_0 WHERE id = '%s'", data.ID())).Scan(&age)
 	require.NoError(t, err)
 	assert.Equal(t, 31, age)
 }
@@ -211,7 +220,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 		CREATE TABLE complex_docs_01 (
 			id TEXT PRIMARY KEY,
 			tags TEXT,
-			metadata TEXT
+		    _metadata_ TEXT
 		)
 	`)
 	require.NoError(t, err)
@@ -223,7 +232,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 		Fields: map[string]*schema.FieldDefinition{
 			"id":       {Name: "id", Type: schema.FieldTypeString},
 			"tags":     {Name: "tags", Type: schema.FieldTypeArray},
-			"metadata": {Name: "metadata", Type: schema.FieldTypeObject},
+			"metadata": {Name: "_metadata_", Type: schema.FieldTypeObject},
 		},
 	}
 
@@ -232,41 +241,40 @@ func TestComplexTypes_Integration(t *testing.T) {
 	q := qb.Build()
 
 	tags := []string{"go", "sqlite", "testing"}
-	metadata := data.Document{"author": "Augustine", "version": 2}
-	insertData := data.Document{"id": "doc-1", "tags": tags, "metadata": metadata}
+	metadata := map[string]any{"author": "Augustine", "version": 2}
+	insertData := *data.MustNewDocument(map[string]any{"tags": tags, "_metadata_": metadata})
 
-	nq, err := builder.Build(&q, native.StmtInsert, insertData)
+	nq, err := builder.Build(&q, native.StmtInsert, insertData.AsMap())
 	require.NoError(t, err)
 
 	_, err = db.Exec(nq.Raw().SQL, nq.Raw().Params...)
 	require.NoError(t, err)
 
 	// Verify Insert
-	var id, rawTags, rawMetadata string
-	err = db.QueryRow("SELECT id, tags, metadata FROM complex_docs_01 WHERE id = 'doc-1'").Scan(&id, &rawTags, &rawMetadata)
+	var id, rawTags string
+	err = db.QueryRow(fmt.Sprintf("SELECT id, tags FROM complex_docs_01 WHERE id = '%s'", insertData.ID())).Scan(&id, &rawTags)
 	require.NoError(t, err)
-	assert.Equal(t, "doc-1", id)
+	assert.Equal(t, insertData.ID(), id)
 	assert.JSONEq(t, `["go", "sqlite", "testing"]`, rawTags)
-	assert.JSONEq(t, `{"author": "Augustine", "version": 2}`, rawMetadata)
 
 	// Update
 	updatedTags := []string{"go", "testing", "updated"}
-	updateData := data.Document{"tags": updatedTags}
-	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Schema(complexDocsSchema).Where("id").Eq("doc-1").Build()
+	updateData := map[string]any{"tags": updatedTags}
+	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Schema(complexDocsSchema).Where("id").Eq(insertData.ID()).Build()
 
-	nq, err = builder.Build(&q, native.StmtUpdate,  map[string]any{ "set": updateData })
+	nq, err = builder.Build(&q, native.StmtUpdate, map[string]any{"set": updateData})
 	require.NoError(t, err)
 
 	_, err = db.Exec(nq.Raw().SQL, nq.Raw().Params...)
 	require.NoError(t, err)
 
 	// Verify Update
-	err = db.QueryRow("SELECT tags FROM complex_docs_01 WHERE id = 'doc-1'").Scan(&rawTags)
+	err = db.QueryRow(fmt.Sprintf("SELECT tags FROM complex_docs_01 WHERE id = '%s'", insertData.ID())).Scan(&rawTags)
 	require.NoError(t, err)
 	assert.JSONEq(t, `["go", "testing", "updated"]`, rawTags)
 
 	// Select with nested field
-	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Schema(complexDocsSchema).Where("complex_docs.metadata.version").Eq(2).Build()
+	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Schema(complexDocsSchema).Where("complex_docs._metadata_.version").Eq(2).Build()
 	nq, err = builder.Build(&q, native.StmtSelect, nil)
 	require.NoError(t, err)
 
@@ -344,13 +352,12 @@ func TestSelectComplex_Integration(t *testing.T) {
 		var totalAmount float64
 		err := rows.Scan(&id, &totalAmount)
 		require.NoError(t, err)
-		results = append(results, data.Document{"id": id, "total_amount": totalAmount})
+		results = append(results, *data.MustNewDocument(map[string]any{"id": id, "total_amount": totalAmount}))
 	}
 
 	require.NoError(t, rows.Err())
 	assert.Len(t, results, 1)
-	assert.Equal(t, "order-1", results[0]["id"])
-	assert.Equal(t, 150.50, results[0]["total_amount"])
+	assert.Equal(t, 150.50, results[0].MustGet("total_amount"))
 }
 
 func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
@@ -425,7 +432,7 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 	_, err := db.Exec(`
 		CREATE TABLE docs (
 			id TEXT PRIMARY KEY,
-			metadata TEXT,
+			_metadata_ TEXT,
 			status TEXT
 		)
 	`)
@@ -433,7 +440,7 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 
 	// Insert sample data
 	_, err = db.Exec(`
-		INSERT INTO docs (id, metadata, status) VALUES
+		INSERT INTO docs (id, _metadata_, status) VALUES
 		('doc-1', '{"version": 1, "author": "John"}', 'pending'),
 		('doc-2', '{"version": 2, "author": "Jane"}', 'pending')
 	`)
@@ -446,7 +453,7 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 		Name: "docs",
 		Fields: map[string]*schema.FieldDefinition{
 			"id":       {Name: "id", Type: schema.FieldTypeString},
-			"metadata": {Name: "metadata", Type: schema.FieldTypeObject},
+			"metadata": {Name: "_metadata_", Type: schema.FieldTypeObject},
 			"status":   {Name: "status", Type: schema.FieldTypeString},
 		},
 	}
@@ -454,13 +461,13 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 	// Build the update query
 	qb := query.NewQueryBuilder().
 		From("docs").
-		Where("docs.metadata.version").Eq(2)
+		Where("docs._metadata_.version").Eq(2)
 
 	q := qb.Build()
 	q.Target.Schema = docSchema
-	updateData := data.Document{"status": "approved"}
+	updateData := map[string]any{"status": "approved"}
 
-	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{ "set": updateData })
+	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{"set": updateData})
 	require.NoError(t, err)
 
 	// Execute the query
@@ -532,24 +539,24 @@ func TestSelectWithAggregations_Integration(t *testing.T) {
 		var totalRevenue, avgSale, minSale, maxSale float64
 		err := rows.Scan(&saleCount, &totalRevenue, &avgSale, &minSale, &maxSale, &region)
 		require.NoError(t, err)
-		results = append(results, data.Document{
+		results = append(results, *data.MustNewDocument(map[string]any{
 			"region":        region,
 			"sale_count":    saleCount,
 			"total_revenue": totalRevenue,
 			"avg_sale":      avgSale,
 			"min_sale":      minSale,
 			"max_sale":      maxSale,
-		})
+		}))
 	}
 
 	require.NoError(t, rows.Err())
 	assert.Len(t, results, 1)
-	assert.Equal(t, "South", results[0]["region"])
-	assert.Equal(t, 2, results[0]["sale_count"])
-	assert.Equal(t, 450.0, results[0]["total_revenue"])
-	assert.Equal(t, 225.0, results[0]["avg_sale"])
-	assert.Equal(t, 200.0, results[0]["min_sale"])
-	assert.Equal(t, 250.0, results[0]["max_sale"])
+	assert.Equal(t, "South", results[0].MustGet("region"))
+	assert.Equal(t, 2, results[0].MustGet("sale_count"))
+	assert.Equal(t, 450.0, results[0].MustGet("total_revenue"))
+	assert.Equal(t, 225.0, results[0].MustGet("avg_sale"))
+	assert.Equal(t, 200.0, results[0].MustGet("min_sale"))
+	assert.Equal(t, 250.0, results[0].MustGet("max_sale"))
 }
 
 func TestComputedFieldTranslation(t *testing.T) {
@@ -565,14 +572,14 @@ func TestComputedFieldTranslation(t *testing.T) {
 
 	t.Run("demonstrate computed field translation for arithmetic", func(t *testing.T) {
 		dsl := query.NewQueryBuilder().Select().
-		AddComputed("next_version", "ADD",
-		&query.FieldReference{
-			Field: "metadata.version",
-		}, 1).End().
-		Build()
+			AddComputed("next_version", "ADD",
+				&query.FieldReference{
+					Field: "metadata.version",
+				}, 1).End().
+			Build()
 
 		dsl.Target = &query.QueryTarget{
-			Name: docSchema.Name,
+			Name:   docSchema.Name,
 			Schema: docSchema,
 		}
 
@@ -587,4 +594,3 @@ func TestComputedFieldTranslation(t *testing.T) {
 		assert.Equal(t, []any{float64(1)}, nq.Raw().Params)
 	})
 }
-

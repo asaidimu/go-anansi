@@ -29,6 +29,7 @@ var (
 	ErrValidationFailed                = common.NewSystemError("ERR_PERSISTENCE_VALIDATION_FAILED", "document validation failed")
 	ErrUnexpectedType                  = common.NewSystemError("ERR_PERSISTENCE_UNEXPECTED_TYPE", "unexpected type")
 	ErrDangerousUpdate                 = common.NewSystemError("ERR_PERSISTENCE_DANGEROUS_UPDATE", "Cannot dangerously update documents")
+	ErrDangerousDelete                 = common.NewSystemError("ERR_PERSISTENCE_DANGEROUS_DELETE", "Cannot dangerously delete documents")
 	ErrValidationSystemError           = common.NewSystemError("ERR_PERSISTENCE_VALIDATION_SYSTEM_ERROR", "A system error occurred during validation")
 	ErrInsertDocumentsFailed           = common.NewSystemError("ERR_PERSISTENCE_INSERT_DOCUMENTS_FAILED", "failed to insert documents")
 	ErrReadDocumentsFailed             = common.NewSystemError("ERR_PERSISTENCE_READ_DOCUMENTS_FAILED", "failed to read documents")

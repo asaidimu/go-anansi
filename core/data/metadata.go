@@ -5,6 +5,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/google/uuid"
 )
 
 const (
@@ -27,6 +28,7 @@ func MetadataFieldPath(field string) string {
 // to its Fields map before passing it into the EnrichmentOptions.
 func DefaultMetadataSchema() *schema.NestedSchemaDefinition {
 	return &schema.NestedSchemaDefinition{
+		ID: utils.StringPtr(uuid.Must(uuid.NewV7()).String()),
 		Name: MetadataField,
 		Fields: &schema.NestedSchemaFields{
 			FieldsMap: map[string]*schema.FieldDefinition{

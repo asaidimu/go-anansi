@@ -15,7 +15,7 @@ func (d Document) GetNested(path string) (any, error) {
 		return nil, common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.GetNested").WithPath(path)
 	}
 
-	val, ok := utils.GetValueByPath(d, path)
+	val, ok := utils.GetValueByPath(d.data, path)
 	if !ok {
 		return nil, common.SystemErrorFrom(ErrPathSegmentNotFound).WithOperation("data.Document.GetNested").WithPath(path)
 	}
@@ -29,7 +29,7 @@ func (d Document) SetNested(path string, value any) error {
 	}
 
 	parts := strings.Split(path, ".")
-	current := d
+	current := d.data
 
 	for i, part := range parts {
 		if i == len(parts)-1 {
@@ -44,9 +44,9 @@ func (d Document) SetNested(path string, value any) error {
 		}
 
 		if nextMap, ok := next.(map[string]any); ok {
-			current = Document(nextMap)
+			current = nextMap
 		} else if nextDoc, ok := next.(Document); ok {
-			current = nextDoc
+			current = nextDoc.data
 		} else {
 			return common.SystemErrorFrom(ErrCannotTraverse).WithOperation("data.Document.SetNested").WithPath(strings.Join(parts[:i+1], ".")).WithMessage(fmt.Sprintf("cannot traverse into %T", next)).WithCause(errors.Join(ErrCannotTraverse, ErrInvalidPath))
 		}
@@ -63,21 +63,21 @@ func (d Document) DeleteNested(path string) error {
 
 	parts := strings.Split(path, ".")
 	if len(parts) == 1 {
-		delete(d, parts[0])
+		delete(d.data, parts[0])
 		return nil
 	}
 
 	parentPath := strings.Join(parts[:len(parts)-1], ".")
 	keyToDelete := parts[len(parts)-1]
 
-	parent, ok := utils.GetValueByPath(d, parentPath)
+	parent, ok := utils.GetValueByPath(d.data, parentPath)
 	if !ok {
 		return common.SystemErrorFrom(ErrPathSegmentNotFound).WithOperation("data.Document.DeleteNested").WithPath(parentPath).WithMessage("parent path not found")
 	}
 
 	switch p := parent.(type) {
 	case Document:
-		delete(p, keyToDelete)
+		delete(p.data, keyToDelete)
 	case map[string]any:
 		delete(p, keyToDelete)
 	default:

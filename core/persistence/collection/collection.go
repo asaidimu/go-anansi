@@ -22,6 +22,9 @@ func NewCollection(
 	processor base.RawQueryProcessor,
 ) (base.Collection, error) {
 	base, err := newBaseCollection(eventEmitter, name, sc, interactor, engine, logger)
+	if err != nil {
+		return nil, err
+	}
 
 	// Decorate the base collection with the managed collection for metadata and versioning.
 	managed, err := newManagedCollection(

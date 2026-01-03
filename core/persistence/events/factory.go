@@ -56,7 +56,7 @@ func (f *PersistenceEventFactory) CreateEvent(
 		Operation:     operation,
 		Collection:    collectionName,
 		Input:         f.sanitizeEventData(ctx, input),
-		Output:         f.sanitizeEventData(ctx, output),
+		Output:        f.sanitizeEventData(ctx, output),
 		Error:         errorMsg,
 		TransactionID: transactionID,
 		Duration:      duration,
@@ -89,26 +89,6 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 	}
 
 	switch v := value.(type) {
-	case data.Document:
-		// Single document - use context-aware sanitization
-		return v.Sanitize(ctx)
-
-	case []data.Document:
-		// Array of documents
-		return data.SanitizeDocumentArray(ctx, v)
-
-	case map[string]any:
-		// Treat as document
-		return data.Document(v).Sanitize(ctx)
-
-	case []map[string]any:
-		// Array of maps - treat as documents
-		sanitized := make([]map[string]any, len(v))
-		for i, m := range v {
-			sanitized[i] = data.Document(m).Sanitize(ctx)
-		}
-		return sanitized
-
 	// Special case: ReadResult contains documents
 	case *base.ReadResult:
 		if v == nil {
@@ -116,7 +96,7 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 		}
 		sanitized := &base.ReadResult{
 			Count: v.Count,
-			Data:  data.SanitizeDocumentArray(ctx, v.Data),
+			Data:  data.SanitizeValue(ctx, v.Data).([]*data.Document),
 		}
 		return sanitized
 
@@ -124,7 +104,7 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 	case base.CreateResult:
 		sanitized := base.CreateResult{
 			Status: v.Status,
-			Data:   v.Data.Sanitize(ctx),
+			Data:   data.SanitizeValue(ctx, v.Data).(*data.Document),
 			Issues: v.Issues,
 			Error:  v.Error,
 		}
@@ -136,24 +116,16 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 			sanitized = append(sanitized,
 				base.CreateResult{
 					Status: result.Status,
-					Data:   result.Data.Sanitize(ctx),
 					Issues: result.Issues,
+					Data:   data.SanitizeValue(ctx, result.Data).(*data.Document),
 					Error:  result.Error,
 				})
-		}
-		return sanitized
-
-	case []any:
-		// Generic array - recurse on elements
-		sanitized := make([]any, len(v))
-		for i, item := range v {
-			sanitized[i] = f.sanitizeEventData(ctx, item)
 		}
 		return sanitized
 
 	default:
 		// Scalar or unknown type - preserve as-is
 		// This includes query filters, schema definitions, etc.
-		return value
+		return data.SanitizeValue(ctx, value)
 	}
 }

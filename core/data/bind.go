@@ -13,11 +13,11 @@ import (
 
 // StructBinder handles automatic struct binding
 type StructBinder struct {
-	doc Document
+	doc *Document
 }
 
 // Bind returns a struct binder helper
-func (d Document) Bind() *StructBinder {
+func (d *Document) Bind() *StructBinder {
 	return &StructBinder{doc: d}
 }
 
@@ -87,7 +87,7 @@ func (sb *StructBinder) ToWithContext(ctx context.Context, target any) error {
 }
 
 // BindTo is a generic version that returns the bound struct
-func BindTo[T any](doc Document) (T, error) {
+func BindTo[T any](doc *Document) (T, error) {
 	var result T
 	err := doc.Bind().To(&result)
 	return result, err
@@ -147,7 +147,7 @@ func setFieldValue(field reflect.Value, value any) error {
 			}
 		} else { // Handle nested structs
 			if valMap, ok := value.(map[string]any); ok {
-				nestedDoc := Document(valMap)
+				nestedDoc := &Document{ctx: context.Background(), data: valMap}
 				// Create a new instance of the nested struct type
 				newStruct := reflect.New(fieldType).Interface()
 				// Recursively bind the nested document to the new struct
@@ -224,7 +224,7 @@ func setMapField(field reflect.Value, values map[string]any) error {
 
 // FromStructWithTags creates a Document from a struct using 'doc' tags.
 // It recursively converts nested structs and slices.
-func FromStructWithTags(s any, partial ...bool) (Document, error) {
+func FromStructWithTags(s any, partial ...bool) (*Document, error) {
 	rv := reflect.ValueOf(s)
 	if rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
@@ -239,7 +239,7 @@ func FromStructWithTags(s any, partial ...bool) (Document, error) {
 
 	// Handle time.Time as a special case that should not be converted to a map
 	if _, ok := rv.Interface().(time.Time); ok {
-		// This function is expected to return a Document (map[string]any).
+		// This function is expected to return a Document (*Document).
 		// Returning the time.Time value directly would be a type error.
 		// The caller, convertInterface, handles this case appropriately.
 		// This check here is more of a safeguard.
@@ -247,7 +247,7 @@ func FromStructWithTags(s any, partial ...bool) (Document, error) {
 	}
 
 	rt := rv.Type()
-	doc := make(Document)
+	docData := make(map[string]any)
 
 	allowPartial := false
 	if len(partial) > 0 {
@@ -285,10 +285,10 @@ func FromStructWithTags(s any, partial ...bool) (Document, error) {
 		if err != nil {
 			return nil, err
 		}
-		doc[fieldName] = value
+		docData[fieldName] = value
 	}
 
-	return doc, nil
+	return &Document{ctx: context.Background(), data: docData}, nil
 }
 
 // convertInterface recursively converts an interface value to its generic representation.
@@ -314,7 +314,7 @@ func convertInterface(v any) (any, error) {
 
 	switch rv.Kind() {
 	case reflect.Struct:
-		// Recursively convert nested structs into map[string]any
+		// Recursively convert nested structs into *Document
 		doc, err := FromStructWithTags(v)
 		if err != nil {
 			return nil, err // Propagate error

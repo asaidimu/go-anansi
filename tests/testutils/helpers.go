@@ -24,7 +24,7 @@ func ConfigureDocumentFactory() {
 						},
 					},
 				},
-				Provider: func(_ context.Context, _ data.Document) (map[string]any, error) {
+				Provider: func(_ context.Context, _ *data.Document) (map[string]any, error) {
 					return map[string]any{"custom_field": "custom_value"}, nil
 				},
 			},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
@@ -35,6 +36,10 @@ func newManagedCollection(
 	processor base.RawQueryProcessor,
 ) (*managedCollection, error) {
 
+	if wrapped == nil {
+		return nil, ErrCollectionInitializationFailed
+	}
+
 	return &managedCollection{
 		schema:            schema,
 		physicalName:      physicalName,
@@ -48,8 +53,8 @@ func newManagedCollection(
 // --- Core Method Overrides ---
 
 // CreateOne handles the creation of a single document.
-func (c *managedCollection) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
-	results, err := c.CreateMany(ctx, []data.Document{doc})
+func (c *managedCollection) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
+	results, err := c.CreateMany(ctx, []*data.Document{doc})
 	result := base.CreateResult{}
 
 	if len(results) > 0 {
@@ -64,7 +69,7 @@ func (c *managedCollection) CreateOne(ctx context.Context, doc data.Document) (b
 }
 
 // CreateMany handles the creation of multiple documents, providing a rich result for each.
-func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) {
+func (c *managedCollection) CreateMany(ctx context.Context, docs []*data.Document) ([]base.CreateResult, error) {
 	results := make([]base.CreateResult, 0)
 	validCount := 0
 
@@ -95,11 +100,23 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Document
 				allIssues = append(allIssues, res.Issues...)
 			}
 		}
+
 		return results, base.ErrValidationFailed.WithIssues(allIssues).WithMessage(fmt.Sprintf("validation failed for %d documents", len(docs)-validCount))
 	}
 
 	// All documents are valid, proceed with actual creation
-	return c.wrapped.CreateMany(ctx, docs)
+	results, err := c.wrapped.CreateMany(ctx, docs)
+	if err != nil {
+		sanitizedErr := c.sanitize(ctx, err, nil)
+		// We must also sanitize errors inside the individual result objects
+		for i := range results {
+			if results[i].Error != nil {
+				results[i].Error = c.sanitize(ctx, results[i].Error, nil).(*common.SystemError)
+			}
+		}
+		return results, sanitizedErr
+	}
+	return results, nil
 }
 
 // Read fetches documents and enriches them with the metadata block for transport.
@@ -162,7 +179,7 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 	result, err := c.wrapped.Read(ctx, fq)
 
 	if err != nil || result.Count == 0 {
-		return result, err
+		return result, c.sanitize(ctx, err, fq)
 	}
 
 	docs := result.Data
@@ -244,17 +261,31 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 	now := strconv.FormatInt(time.Now().UnixNano(), 10)
 	updatedField := data.MetadataFieldPath(data.MetadataUpdated)
 
-	params.Set[updatedField] = now
+	params.Set.Set(updatedField, now)
 	// --- delegate actual update ---
-	return c.wrapped.Update(ctx, params)
+	count, err := c.wrapped.Update(ctx, params)
+	if err != nil {
+		// We use nil for query here unless you want to pass joined params
+		return count, c.sanitize(ctx, err, nil)
+	}
+	return count, nil
 }
 
 // --- Passthrough Methods ---
 func (c *managedCollection) Delete(ctx context.Context, q *query.QueryFilter, unsafe bool) (int, error) {
-	return c.wrapped.Delete(ctx, q, unsafe)
+	if q == nil && !unsafe {
+		return 0, base.ErrDangerousDelete
+	}
+
+	count, err := c.wrapped.Delete(ctx, q, unsafe)
+	if err != nil {
+		return count, c.sanitize(ctx, err, nil)
+	}
+
+	return count, nil
 }
 
-func (c *managedCollection) Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error) {
+func (c *managedCollection) Validate(ctx context.Context, data *data.Document, loose bool) (*schema.ValidationResult, error) {
 	return c.wrapped.Validate(ctx, data, loose)
 }
 
@@ -298,4 +329,46 @@ func ensureMetadataProjection(q *query.Query) *query.Query {
 	q.Projection.IncludeField(data.MetadataField, nil, nil)
 
 	return q
+}
+func (c *managedCollection) sanitize(_ context.Context, err error, q *query.Query) error {
+	if err == nil {
+		return nil
+	}
+
+	// 1. Build the translation registry
+	// Start with the primary collection
+	translations := map[string]string{
+		c.physicalName: c.logicalName,
+	}
+
+	// Add any joins involved in the current query
+	if q != nil && q.Joins != nil {
+		for _, join := range q.Joins {
+			if join.Target.Alias != nil {
+				translations[join.Target.Name] = *join.Target.Alias
+			}
+		}
+	}
+
+	// 2. Define the transformation logic
+	tf := func(input string) string {
+		if input == "" {
+			return ""
+		}
+		output := input
+		for phys, log := range translations {
+			output = fmt.Sprintf("%s", output)
+			output = (func(s string) string {
+				return (func(str string) string {
+					return strings.ReplaceAll(str, phys, log)
+				})(output)
+			})(output)
+		}
+		return output
+	}
+
+	// 3. Perform Deep Sanitization
+	// We use SystemErrorFrom to ensure we have a SystemError, then call the
+	// recursive Sanitize method we discussed earlier.
+	return common.SystemErrorFrom(err).Sanitize(tf)
 }

@@ -6,7 +6,6 @@ package native
 
 import (
 	"context"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
@@ -115,7 +114,7 @@ type QueryExecutor[T any] interface {
 	// Suitable for queries expected to return a bounded result set.
 	//
 	// Returns a slice of documents or an error if execution fails.
-	Query(ctx context.Context, query NativeQuery[T]) ([]data.Document, error)
+	Query(ctx context.Context, query NativeQuery[T]) ([]map[string]any, error)
 
 	// ExecuteRawQuery executes a raw, templated query directly against the database.
 	// This allows for operations that are not tied to a specific collection,
@@ -133,7 +132,7 @@ type QueryExecutor[T any] interface {
 	//   - A channel for receiving documents
 	//   - A channel for receiving errors during streaming
 	//   - An immediate error if the query cannot be started
-	QueryStream(ctx context.Context, query NativeQuery[T]) (<-chan data.Document, <-chan error, error)
+	QueryStream(ctx context.Context, query NativeQuery[T]) (<-chan map[string]any, <-chan error, error)
 
 	// BeginTransaction starts a new database transaction.
 	// Returns a new QueryExecutor instance that operates within the transaction context.

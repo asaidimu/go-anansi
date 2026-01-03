@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
+
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -135,9 +135,9 @@ func TestNativeInteractor_InsertDocuments(t *testing.T) {
 	err = interactor.SchemaManager().CreateCollection(ctx, *testSchema)
 	require.NoError(t, err)
 
-	docsToInsert := []data.Document{
-		data.MustNewDocument(map[string]any{"product_id": "p1", "name": "Laptop", "price": 1200.50}),
-		data.MustNewDocument(map[string]any{"product_id": "p2", "name": "Mouse", "price": 25.00}),
+	docsToInsert := []map[string]any{
+		{"product_id": "p1", "name": "Laptop", "price": 1200.50},
+		{"product_id": "p2", "name": "Mouse", "price": 25.00},
 	}
 
 	insertedDocs, err := interactor.InsertDocuments(ctx, testSchema, docsToInsert)
@@ -195,10 +195,10 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 	err = interactor.SchemaManager().CreateCollection(ctx, *testSchema)
 	require.NoError(t, err)
 
-	docsToInsert := []data.Document{
-		data.MustNewDocument(map[string]any{"order_id": "o1", "customer_id": "c1", "amount": 100.0, "status": "pending"}),
-		data.MustNewDocument(map[string]any{"order_id": "o2", "customer_id": "c2", "amount": 250.50, "status": "completed"}),
-		data.MustNewDocument(map[string]any{"order_id": "o3", "customer_id": "c1", "amount": 50.0, "status": "completed"}),
+	docsToInsert := []map[string]any{
+		{"order_id": "o1", "customer_id": "c1", "amount": 100.0, "status": "pending"},
+		{"order_id": "o2", "customer_id": "c2", "amount": 250.50, "status": "completed"},
+		{"order_id": "o3", "customer_id": "c1", "amount": 50.0, "status": "completed"},
 	}
 	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
 	require.NoError(t, err)
@@ -225,9 +225,7 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, docsC1, 2)
 	for _, doc := range docsC1 {
-		val, err := doc.Get("customer_id")
-		require.NoError(t, err)
-		assert.Equal(t, "c1", val)
+		assert.Equal(t, "c1", doc["customer_id"])
 	}
 
 	// Test 3: Select with multiple filters (customer_id = 'c1' AND status = 'completed')
@@ -258,9 +256,7 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Len(t, docsC1Completed, 1)
-	val, err := docsC1Completed[0].Get("order_id")
-	require.NoError(t, err)
-	assert.Equal(t, "o3", val)
+	assert.Equal(t, "o3", docsC1Completed[0]["order_id"])
 }
 
 func TestNativeInteractor_UpdateDocuments(t *testing.T) {
@@ -289,10 +285,10 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 	err = interactor.SchemaManager().CreateCollection(ctx, *testSchema)
 	require.NoError(t, err)
 
-	docsToInsert := []data.Document{
-		data.MustNewDocument(map[string]any{"task_id": "t1", "description": "Buy groceries", "completed": false}),
-		data.MustNewDocument(map[string]any{"task_id": "t2", "description": "Walk the dog", "completed": false}),
-		data.MustNewDocument(map[string]any{"task_id": "t3", "description": "Pay bills", "completed": true}),
+	docsToInsert := []map[string]any{
+		{"task_id": "t1", "description": "Buy groceries", "completed": false},
+		{"task_id": "t2", "description": "Walk the dog", "completed": false},
+		{"task_id": "t3", "description": "Pay bills", "completed": true},
 	}
 	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
 	require.NoError(t, err)
@@ -317,9 +313,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Len(t, updatedDoc, 1)
-	val, err := updatedDoc[0].Get("completed")
-	require.NoError(t, err)
-	assert.Equal(t, true, val)
+	assert.Equal(t, true, updatedDoc[0]["completed"])
 
 	// Update all incomplete tasks
 	updatesAll := map[string]any{"completed": true, "description": "DONE"}
@@ -341,9 +335,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, allDocs, 3)
 	for _, doc := range allDocs {
-		val, err := doc.Get("completed")
-		require.NoError(t, err)
-		assert.Equal(t, true, val)
+		assert.Equal(t, true, doc["completed"])
 	}
 }
 
@@ -372,10 +364,10 @@ func TestNativeInteractor_DeleteDocuments(t *testing.T) {
 	err = interactor.SchemaManager().CreateCollection(ctx, *testSchema)
 	require.NoError(t, err)
 
-	docsToInsert := []data.Document{
-		data.MustNewDocument(map[string]any{"item_id": "i1", "name": "Apple"}),
-		data.MustNewDocument(map[string]any{"item_id": "i2", "name": "Banana"}),
-		data.MustNewDocument(map[string]any{"item_id": "i3", "name": "Orange"}),
+	docsToInsert := []map[string]any{
+		{"item_id": "i1", "name": "Apple"},
+		{"item_id": "i2", "name": "Banana"},
+		{"item_id": "i3", "name": "Orange"},
 	}
 	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
 	require.NoError(t, err)
@@ -399,9 +391,7 @@ func TestNativeInteractor_DeleteDocuments(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, remainingDocs, 2)
 	for _, doc := range remainingDocs {
-		val, err := doc.Get("item_id")
-		require.NoError(t, err)
-		assert.NotEqual(t, "i2", val)
+		assert.NotEqual(t, "i2", doc["item_id"])
 	}
 
 	// Delete all remaining (unsafe delete)
@@ -492,14 +482,14 @@ func TestNativeInteractor_CreateIndex(t *testing.T) {
 	assert.Equal(t, "idx_value", indexName)
 
 	// Test inserting duplicate value for unique index
-	docsToInsert := []data.Document{
-		data.MustNewDocument(map[string]any{"id": "d1", "value": "unique_val"}),
+	docsToInsert := []map[string]any{
+		{"id": "d1", "value": "unique_val"},
 	}
 	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
 	require.NoError(t, err)
 
-	duplicateDoc := []data.Document{
-		data.MustNewDocument(map[string]any{"id": "d2", "value": "unique_val"}),
+	duplicateDoc := []map[string]any{
+		{"id": "d2", "value": "unique_val"},
 	}
 	_, err = interactor.InsertDocuments(ctx, testSchema, duplicateDoc)
 	assert.Error(t, err) // Expect an error due to unique constraint
@@ -576,9 +566,9 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Initial insert
-	_, err = interactor.InsertDocuments(ctx, testSchema, []data.Document{
-		data.MustNewDocument(map[string]any{"account_id": "acc1", "balance": 100.0}),
-		data.MustNewDocument(map[string]any{"account_id": "acc2", "balance": 50.0}),
+	_, err = interactor.InsertDocuments(ctx, testSchema, []map[string]any{
+		{"account_id": "acc1", "balance": 100.0},
+		{"account_id": "acc2", "balance": 50.0},
 	})
 	require.NoError(t, err)
 
@@ -601,8 +591,8 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Insert within transaction
-	_, err = txInteractor.InsertDocuments(ctx, testSchema, []data.Document{
-		data.MustNewDocument(map[string]any{"account_id": "acc3", "balance": 200.0}),
+	_, err = txInteractor.InsertDocuments(ctx, testSchema, []map[string]any{
+		{"account_id": "acc3", "balance": 200.0},
 	})
 
 	require.NoError(t, err)
@@ -626,14 +616,10 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	assert.Len(t, docsAfterCommit, 3) // Should now be 3 documents
 	acc1Doc := findDoc(docsAfterCommit, "account_id", "acc1")
 	require.NotNil(t, acc1Doc)
-	val, err := acc1Doc.Get("balance")
-	require.NoError(t, err)
-	assert.InDelta(t, 90.0, val, 0.001)
+	assert.InDelta(t, 90.0, acc1Doc["balance"], 0.001)
 	acc3Doc := findDoc(docsAfterCommit, "account_id", "acc3")
 	require.NotNil(t, acc3Doc)
-	val, err = acc3Doc.Get("balance")
-	require.NoError(t, err)
-	assert.InDelta(t, 200.0, val, 0.001)
+	assert.InDelta(t, 200.0, acc3Doc["balance"], 0.001)
 
 	// Test Rollback
 	txInteractor2, err := interactor.StartTransaction(ctx)
@@ -648,8 +634,8 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	}
 	_, err = txInteractor2.UpdateDocuments(ctx, testSchema, updates2, nil, filterAcc1_2)
 	require.NoError(t, err)
-	_, err = txInteractor2.InsertDocuments(ctx, testSchema, []data.Document{
-		data.MustNewDocument(map[string]any{"account_id": "acc4", "balance": 300.0}),
+	_, err = txInteractor2.InsertDocuments(ctx, testSchema, []map[string]any{
+		{"account_id": "acc4", "balance": 300.0},
 	})
 	require.NoError(t, err)
 
@@ -665,22 +651,18 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	assert.Len(t, docsAfterRollback, 3) // Should still be 3 documents
 	acc1DocAfterRollback := findDoc(docsAfterRollback, "account_id", "acc1")
 	require.NotNil(t, acc1DocAfterRollback)
-	val, err = acc1DocAfterRollback.Get("balance")
-	require.NoError(t, err)
-	assert.InDelta(t, 90.0, val, 0.001) // Should be original committed value
+	assert.InDelta(t, 90.0, acc1DocAfterRollback["balance"], 0.001) // Should be original committed value
 	acc4Doc := findDoc(docsAfterRollback, "account_id", "acc4")
 	assert.Nil(t, acc4Doc) // Should not exist
 /**/
 }
 
-func findDoc(docs []data.Document, key string, value any) data.Document {
+func findDoc(docs []map[string]any, key string, value any) map[string]any {
 	for _, doc := range docs {
-		val, err := doc.Get(key)
-		if err != nil {
-			continue
-		}
-		if val == value {
-			return doc
+		if val, ok := doc[key]; ok {
+			if val == value {
+				return doc
+			}
 		}
 	}
 	return nil
@@ -745,10 +727,10 @@ func TestNativeInteractor_RawQuery(t *testing.T) {
 	require.NoError(t, err)
 
 	// 2. Insert some data using DSL
-	docsToInsert := []data.Document{
-		data.MustNewDocument(map[string]any{"name": "Alice", "email": "alice@example.com", "age": 30}),
-		data.MustNewDocument(map[string]any{"name": "Bob", "email": "bob@example.com", "age": 25}),
-		data.MustNewDocument(map[string]any{"name": "Charlie", "email": "charlie@example.com", "age": 35}),
+	docsToInsert := []map[string]any{
+		{"id": 1, "name": "Alice", "email": "alice@example.com", "age": 30},
+		{"id": 2, "name": "Bob", "email": "bob@example.com", "age": 25},
+		{"id": 3, "name": "Charlie", "email": "charlie@example.com", "age": 35},
 	}
 	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
 	require.NoError(t, err)
@@ -765,7 +747,7 @@ func TestNativeInteractor_RawQuery(t *testing.T) {
 	assert.Len(t, selectResult.Data, 2)
 
 	// Verify selected data
-	selectedDocs := selectResult.Data.([]data.Document)
+	selectedDocs := selectResult.Data.([]map[string]any)
 	assert.Equal(t, "Alice", selectedDocs[0]["name"])
 	assert.Equal(t, int64(30), selectedDocs[0]["age"])
 
@@ -775,7 +757,7 @@ func TestNativeInteractor_RawQuery(t *testing.T) {
 	// 4. Execute a raw UPDATE query
 	rawUpdateQuery := &query.RawQuery{
 		Template:   "UPDATE raw_users SET age = ? WHERE id = ?",
-		Parameters: []any{31, selectedDocs[0].ID()},
+		Parameters: []any{31, selectedDocs[0]["id"]},
 	}
 	updateResult, err := interactor.Query(ctx, &query.Query{Raw: rawUpdateQuery})
 	require.NoError(t, err)
@@ -786,7 +768,7 @@ func TestNativeInteractor_RawQuery(t *testing.T) {
 	updatedUser, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target:  &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 		Filters: &query.QueryFilter{Condition: &query.FilterCondition{Field: "id", Operator: query.ComparisonOperatorEq, Value: query.FilterValue{StringVal: utils.StringPtr(
-			selectedDocs[0].ID(),
+			selectedDocs[0]["id"].(string),
 		)}}},
 	})
 	require.NoError(t, err)

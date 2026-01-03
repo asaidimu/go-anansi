@@ -528,12 +528,12 @@ func (graph *ValidationGraph) buildObjectFieldNodes(fieldDef *FieldDefinition, f
 
 	ref, ok := fieldDef.Schema.(NestedSchemaReference)
 	if !ok {
-		return nil, ErrInvalidSchema
+		return nil, ErrInvalidSchema.WithMessage("Could not find a nested reference")
 	}
 
-	nestedSchemaDef, exists := schema.FindNestedSchema(ref.ID)
+	nestedSchemaDef, exists := schema.FindNestedSchemaById(ref.ID)
 	if !exists || !nestedSchemaDef.IsStructured() {
-		return nil, ErrInvalidSchema
+		return nil, ErrInvalidSchema.WithMessage(fmt.Sprintf("Could not resolve nested schema with reference id `%s`", ref.ID))
 	}
 
 	// Build reference constraints
@@ -657,7 +657,7 @@ func (graph *ValidationGraph) buildRecordNode(fieldDef *FieldDefinition, fieldPa
 		return nil, ErrInvalidSchema.WithMessage("Record schema must be a NestedSchemaReference")
 	}
 
-	nested, ok := schema.FindNestedSchema(ref.ID)
+	nested, ok := schema.FindNestedSchemaById(ref.ID)
 	if fieldDef.Schema != nil && !ok {
 		return nil, ErrInvalidSchema.WithMessage(fmt.Sprintf("Nested schema '%s' not found for record items", ref.ID))
 	}
@@ -701,7 +701,7 @@ func (graph *ValidationGraph) buildUnionNode(fieldDef *FieldDefinition, fieldPat
 	graphs := make([]*ValidationGraph, 0, len(refs))
 
 	for _, ref := range refs {
-		nestedDef, exists := schema.FindNestedSchema(ref.ID)
+		nestedDef, exists := schema.FindNestedSchemaById(ref.ID)
 		if !exists {
 			return nil, ErrInvalidSchema.WithMessage(fmt.Sprintf("Nested schema '%s' not found for union option", ref.ID))
 		}

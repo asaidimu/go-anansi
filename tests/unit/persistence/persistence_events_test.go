@@ -56,8 +56,11 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	}
 
 	// Test Create
-	docToCreate := data.Document{"id": "1", "name": "value"}
+	docToCreate := data.MustNewDocument(map[string]any{"id": "1", "name": "value"})
 	d, err := collection.CreateOne(context.Background(), docToCreate)
+	if err != nil {
+		t.Logf("Error creating docToCreate document: %v", err)
+	}
 	require.NoError(t, err)
 
 	id := d.Data.Must().GetString("id")
@@ -69,7 +72,7 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 
 	// Test Update
 	docToUpdate := result.Data[0]
-	docToUpdate["name"] = "new_value"
+	docToUpdate.Set("name", "new_value")
 	updateFilter := query.NewQueryBuilder().Where("id").Eq(id).Build().Filters
 	_, err = collection.Update(context.Background(), &base.CollectionUpdate{Set: docToUpdate, Filter: updateFilter})
 	require.NoError(t, err)
@@ -239,8 +242,11 @@ func TestPersistence_DocumentUpdateEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a document to update
-	docToCreate := data.Document{"name": "initial"}
+	docToCreate := data.MustNewDocument(map[string]any{"name": "initial"})
 	d, err := collection.CreateOne(context.Background(), docToCreate)
+	if err != nil {
+		t.Logf("Error creating initial document for update: %v", err)
+	}
 	require.NoError(t, err)
 
 	id := d.Data.Must().GetString("id")
@@ -275,7 +281,7 @@ func TestPersistence_DocumentUpdateEvents(t *testing.T) {
 
 	// Create a new document for update, copying original metadata
 	updateDoc := originalDoc.Clone()
-	updateDoc["name"] = "updated"
+	updateDoc.Set("name", "updated")
 
 	updateFilter := query.NewQueryBuilder().Where("id").Eq(id).Build().Filters
 	_, err = collection.Update(context.Background(), &base.CollectionUpdate{Set: updateDoc, Filter: updateFilter})
@@ -284,7 +290,7 @@ func TestPersistence_DocumentUpdateEvents(t *testing.T) {
 	// Test failed update (e.g., trying to update a non-existent document with a filter that doesn't match)
 	// For ephemeral, an update to a non-existent document will not return an error, but will affect 0 rows.
 	// The event emission logic should still capture this as a 'failed' update if 0 rows are affected.
-	failedDocUpdate := data.Document{"id": "2", "name": "failed_update"}
+	failedDocUpdate := data.MustNewDocument(map[string]any{"id": "2", "name": "failed_update"})
 	failedUpdateFilter := query.NewQueryBuilder().Where("id").Eq("2").Build().Filters
 	rows, err := collection.Update(context.Background(), &base.CollectionUpdate{Set: failedDocUpdate, Filter: failedUpdateFilter})
 	assert.Equal(t, rows, 0)

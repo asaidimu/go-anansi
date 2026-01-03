@@ -149,7 +149,11 @@ func main() {
 		for _, found := range readResult.Data {
 			doc := found.Sanitize(ctx)
 			logger.Info(fmt.Sprintf("Found product: ID=%s, Name=%s, Price=%.2f, Stock=%d, Value=%s",
-				doc["id"], doc["name"], doc["price"], doc["stock"], doc["value"]))
+				doc.Must().Get("id"),
+				doc.Must().Get("name"),
+				doc.Must().Get("price"),
+				doc.Must().Get("stock"),
+				doc.Must().Get("value")))
 		}
 	} else {
 		logger.Info("No products found.")
@@ -176,7 +180,11 @@ func main() {
 		updatedProduct := readP001Result.Data[0]
 		updatedProduct = updatedProduct.Sanitize(ctx)
 		logger.Info(fmt.Sprintf("Updated Laptop: ID=%s, Name=%s, Price=%.2f, Stock=%d, Value=%s",
-			updatedProduct["id"], updatedProduct["name"], updatedProduct["price"], updatedProduct["stock"], updatedProduct["value"]))
+			updatedProduct.ID(),
+			updatedProduct.Must().Get("name"),
+			updatedProduct.Must().Get("price"),
+			updatedProduct.Must().Get("stock"),
+			updatedProduct.Must().Get("value")))
 	}
 
 	// Delete Product (P002)

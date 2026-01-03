@@ -5,11 +5,10 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 )
 
-var testRecords = []data.Document{
+var testRecords = []map[string]any{
 	{"id": 1, "name": "Alice", "age": 30, "active": true, "address": map[string]any{"city": "New York"}},
 	{"id": 2, "name": "Bob", "age": 25, "active": false, "address": map[string]any{"city": "Los Angeles"}},
 	{"id": 3, "name": "Charlie", "age": 35, "active": true, "address": map[string]any{"city": "New York"}},
@@ -262,7 +261,7 @@ func TestProject(t *testing.T) {
 	testCases := []struct {
 		name            string
 		query           *query.Query
-		expectedRecords []data.Document
+		expectedRecords []map[string]any
 	}{
 		{
 			name: "include fields",
@@ -271,7 +270,7 @@ func TestProject(t *testing.T) {
 					Include: []query.ProjectionField{{Name: "name"}, {Name: "age"}},
 				},
 			},
-			expectedRecords: []data.Document{
+			expectedRecords: []map[string]any{
 				{"name": "Alice", "age": 30},
 				{"name": "Bob", "age": 25},
 				{"name": "Charlie", "age": 35},
@@ -286,7 +285,7 @@ func TestProject(t *testing.T) {
 					Exclude: []query.ProjectionField{{Name: "active"}, {Name: "address"}},
 				},
 			},
-			expectedRecords: []data.Document{
+			expectedRecords: []map[string]any{
 				{"id": 1, "name": "Alice", "age": 30},
 				{"id": 2, "name": "Bob", "age": 25},
 				{"id": 3, "name": "Charlie", "age": 35},
@@ -301,7 +300,7 @@ func TestProject(t *testing.T) {
 					Include: []query.ProjectionField{{Name: "address.city"}},
 				},
 			},
-			expectedRecords: []data.Document{
+			expectedRecords: []map[string]any{
 				{"address": map[string]any{"city": "New York"}},
 				{"address": map[string]any{"city": "Los Angeles"}},
 				{"address": map[string]any{"city": "New York"}},
@@ -332,7 +331,7 @@ func TestProject(t *testing.T) {
 
 func TestJoin(t *testing.T) {
 	// Sample data for joins
-	users := []data.Document{
+	users := []map[string]any{
 		{"id": 1, "name": "Alice", "city_id": 101},
 		{"id": 2, "name": "Bob", "city_id": 102},
 		{"id": 3, "name": "Charlie", "city_id": 101},
@@ -340,7 +339,7 @@ func TestJoin(t *testing.T) {
 		{"id": 5, "name": "Eve", "city_id": 999}, // No matching city
 	}
 
-	cities := []data.Document{
+	cities := []map[string]any{
 		{"id": 101, "name": "New York", "country": "USA"},
 		{"id": 102, "name": "Los Angeles", "country": "USA"},
 		{"id": 103, "name": "London", "country": "UK"},
@@ -348,10 +347,10 @@ func TestJoin(t *testing.T) {
 
 	testCases := []struct {
 		name            string
-		leftRecords     []data.Document
-		rightRecords    []data.Document
+		leftRecords     []map[string]any
+		rightRecords    []map[string]any
 		joinConfig      *query.JoinConfiguration
-		expectedRecords []data.Document
+		expectedRecords []map[string]any
 		expectError     bool
 	}{
 		{
@@ -371,11 +370,11 @@ func TestJoin(t *testing.T) {
 					},
 				},
 			},
-			expectedRecords: []data.Document{
-				{"user": data.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": data.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": data.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": data.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
-				{"user": data.Document{"id": 4, "name": "David", "city_id": 103}, "city": data.Document{"id": 103, "name": "London", "country": "UK"}},
+			expectedRecords: []map[string]any{
+				{"user": map[string]any{"id": 1, "name": "Alice", "city_id": 101}, "city": map[string]any{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": map[string]any{"id": 3, "name": "Charlie", "city_id": 101}, "city": map[string]any{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": map[string]any{"id": 2, "name": "Bob", "city_id": 102}, "city": map[string]any{"id": 102, "name": "Los Angeles", "country": "USA"}},
+				{"user": map[string]any{"id": 4, "name": "David", "city_id": 103}, "city": map[string]any{"id": 103, "name": "London", "country": "UK"}},
 			},
 		},
 		{
@@ -395,12 +394,12 @@ func TestJoin(t *testing.T) {
 					},
 				},
 			},
-			expectedRecords: []data.Document{
-				{"user": data.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": data.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": data.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": data.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
-				{"user": data.Document{"id": 4, "name": "David", "city_id": 103}, "city": data.Document{"id": 103, "name": "London", "country": "UK"}},
-				{"user": data.Document{"id": 5, "name": "Eve", "city_id": 999}, "city": nil},
+			expectedRecords: []map[string]any{
+				{"user": map[string]any{"id": 1, "name": "Alice", "city_id": 101}, "city": map[string]any{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": map[string]any{"id": 3, "name": "Charlie", "city_id": 101}, "city": map[string]any{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": map[string]any{"id": 2, "name": "Bob", "city_id": 102}, "city": map[string]any{"id": 102, "name": "Los Angeles", "country": "USA"}},
+				{"user": map[string]any{"id": 4, "name": "David", "city_id": 103}, "city": map[string]any{"id": 103, "name": "London", "country": "UK"}},
+				{"user": map[string]any{"id": 5, "name": "Eve", "city_id": 999}, "city": nil},
 			},
 		},
 		{
@@ -420,11 +419,11 @@ func TestJoin(t *testing.T) {
 					},
 				},
 			},
-			expectedRecords: []data.Document{
-				{"user": data.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": data.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": data.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": data.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
-				{"user": data.Document{"id": 4, "name": "David", "city_id": 103}, "city": data.Document{"id": 103, "name": "London", "country": "UK"}},
+			expectedRecords: []map[string]any{
+				{"user": map[string]any{"id": 1, "name": "Alice", "city_id": 101}, "city": map[string]any{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": map[string]any{"id": 3, "name": "Charlie", "city_id": 101}, "city": map[string]any{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": map[string]any{"id": 2, "name": "Bob", "city_id": 102}, "city": map[string]any{"id": 102, "name": "Los Angeles", "country": "USA"}},
+				{"user": map[string]any{"id": 4, "name": "David", "city_id": 103}, "city": map[string]any{"id": 103, "name": "London", "country": "UK"}},
 			},
 		},
 		{
@@ -444,12 +443,12 @@ func TestJoin(t *testing.T) {
 					},
 				},
 			},
-			expectedRecords: []data.Document{
-				{"user": data.Document{"id": 1, "name": "Alice", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": data.Document{"id": 3, "name": "Charlie", "city_id": 101}, "city": data.Document{"id": 101, "name": "New York", "country": "USA"}},
-				{"user": data.Document{"id": 2, "name": "Bob", "city_id": 102}, "city": data.Document{"id": 102, "name": "Los Angeles", "country": "USA"}},
-				{"user": data.Document{"id": 4, "name": "David", "city_id": 103}, "city": data.Document{"id": 103, "name": "London", "country": "UK"}},
-				{"user": data.Document{"id": 5, "name": "Eve", "city_id": 999}, "city": nil},
+			expectedRecords: []map[string]any{
+				{"user": map[string]any{"id": 1, "name": "Alice", "city_id": 101}, "city": map[string]any{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": map[string]any{"id": 3, "name": "Charlie", "city_id": 101}, "city": map[string]any{"id": 101, "name": "New York", "country": "USA"}},
+				{"user": map[string]any{"id": 2, "name": "Bob", "city_id": 102}, "city": map[string]any{"id": 102, "name": "Los Angeles", "country": "USA"}},
+				{"user": map[string]any{"id": 4, "name": "David", "city_id": 103}, "city": map[string]any{"id": 103, "name": "London", "country": "UK"}},
+				{"user": map[string]any{"id": 5, "name": "Eve", "city_id": 999}, "city": nil},
 			},
 		},
 		/* {
@@ -474,11 +473,11 @@ func TestJoin(t *testing.T) {
 					},
 				},
 			},
-			expectedRecords: []data.Document{
-				{"user": data.Document{"id": 1, "name": "Alice"}, "city": data.Document{"country": "USA"}},
-				{"user": data.Document{"id": 3, "name": "Charlie"}, "city": data.Document{"country": "USA"}},
-				{"user": data.Document{"id": 2, "name": "Bob"}, "city": data.Document{"country": "USA"}},
-				{"user": data.Document{"id": 4, "name": "David"}, "city": data.Document{"country": "UK"}},
+			expectedRecords: []map[string]any{
+				{"user": map[string]any{"id": 1, "name": "Alice"}, "city": map[string]any{"country": "USA"}},
+				{"user": map[string]any{"id": 3, "name": "Charlie"}, "city": map[string]any{"country": "USA"}},
+				{"user": map[string]any{"id": 2, "name": "Bob"}, "city": map[string]any{"country": "USA"}},
+				{"user": map[string]any{"id": 4, "name": "David"}, "city": map[string]any{"country": "UK"}},
 			},
 		},
 		{
@@ -565,12 +564,12 @@ func TestJoin(t *testing.T) {
 
 // --- utils ---
 
-func sortDocumentsByUserID(docs []data.Document) []data.Document {
-	sorted := make([]data.Document, len(docs))
+func sortDocumentsByUserID(docs []map[string]any) []map[string]any {
+	sorted := make([]map[string]any, len(docs))
 	copy(sorted, docs)
 	sort.Slice(sorted, func(i, j int) bool {
-		userI, okI := sorted[i]["user"].(data.Document)
-		userJ, okJ := sorted[j]["user"].(data.Document)
+		userI, okI := sorted[i]["user"].(map[string]any)
+		userJ, okJ := sorted[j]["user"].(map[string]any)
 		if okI && okJ {
 			idI, _ := userI["id"].(int)
 			idJ, _ := userJ["id"].(int)

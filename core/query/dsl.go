@@ -5,7 +5,6 @@ package query
 
 import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
@@ -227,7 +226,7 @@ type JoinConfiguration struct {
 // AggregationType specifies the type of aggregation to be performed.
 type AggregationType string
 
-type AggregateFunction func(records []data.Document, field string) (any, error)
+type AggregateFunction func(records []map[string]any, field string) (any, error)
 
 // Supported aggregation types.
 const (

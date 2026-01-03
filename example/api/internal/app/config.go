@@ -18,7 +18,7 @@ func NewConfig() *Config {
 	}
 	dbPath := os.Getenv("DB_PATH")
 	if dbPath == "" {
-		dbPath = "./data/anansi.db" // Default to a persistent SQLite file
+		dbPath = "./anansi.db" // Default to a persistent SQLite file
 	}
 
 	return &Config{

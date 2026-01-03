@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6"
+	"github.com/asaidimu/go-anansi/v6/core/common" // Import common for Issue
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
@@ -17,9 +18,8 @@ import (
 	coreutils "github.com/asaidimu/go-anansi/v6/core/utils" // For BoolPtr
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
-	"go.uber.org/zap"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
-	"github.com/asaidimu/go-anansi/v6/core/common" // Import common for Issue
+	"go.uber.org/zap"
 )
 
 // Schemas
@@ -28,7 +28,6 @@ func getUserSchema() *schema.SchemaDefinition {
 		Name:    "User",
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":    {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
 			"name":  {Name: "name", Type: "string", Required: coreutils.BoolPtr(true)},
 			"email": {Name: "email", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
 		},
@@ -40,8 +39,7 @@ func getAccountSchema() *schema.SchemaDefinition {
 		Name:    "Account",
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":     {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
-			"userId": {Name: "userId", Type: "string", Required: coreutils.BoolPtr(true)}, // Foreign key to User
+			"userId":  {Name: "userId", Type: "string", Required: coreutils.BoolPtr(true)}, // Foreign key to User
 			"balance": {Name: "balance", Type: "number", Required: coreutils.BoolPtr(true)},
 		},
 	}
@@ -52,7 +50,6 @@ func getLedgerTransactionSchema() *schema.SchemaDefinition {
 		Name:    "LedgerTransaction", // Renamed from Transaction
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":        {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
 			"accountId": {Name: "accountId", Type: "string", Required: coreutils.BoolPtr(true)}, // Foreign key to Account
 			"amount":    {Name: "amount", Type: "number", Required: coreutils.BoolPtr(true)},
 			"type":      {Name: "type", Type: "string", Required: coreutils.BoolPtr(true)}, // e.g., "deposit", "withdrawal"
@@ -65,87 +62,67 @@ func getLedgerTransactionSchema() *schema.SchemaDefinition {
 func NegativeAmountValidator(logger *zap.Logger) utils.CollectionDecorator {
 	return func(next base.Collection) base.Collection {
 		return &negativeAmountValidator{
-			next:   next,
+			Collection: next,
 			logger: logger,
 		}
 	}
 }
 
 type negativeAmountValidator struct {
-	next   base.Collection
+	base.Collection
 	logger *zap.Logger
 }
 
 // Ensure negativeAmountValidator implements base.Collection
 var _ base.Collection = (*negativeAmountValidator)(nil)
 
-func (d *negativeAmountValidator) validateAmount(doc data.Document) error {
-	if val, ok := doc["amount"]; ok {
-		if amount, isFloat := val.(float64); isFloat {
-			if amount < 0 {
-				d.logger.Warn("Attempted to create/update transaction with negative amount", zap.Float64("amount", amount))
-				return fmt.Errorf("transaction amount cannot be negative: %f", amount)
-			}
-		} else {
-			return fmt.Errorf("invalid amount type for document %v, expected float64", doc)
-		}
+func (d *negativeAmountValidator) validateAmount(doc *data.Document) error {
+	// 1. Check if the "amount" key even exists in this document/update.
+	// If it's missing, we skip validation (typical for partial updates).
+	if !doc.HasKey("amount") {
+		return nil
 	}
+
+	// 2. Since the key exists, retrieve the value using coercion.
+	// doc.GetInt is robust—it handles float64 (common from JSON) or int types.
+	amount, err := doc.GetInt("amount")
+	if err != nil {
+		// If the key is there but isn't a valid number, that's a type error.
+		return fmt.Errorf("invalid amount format for document: %w", err)
+	}
+
+	// 3. Perform the business logic check.
+	if amount < 0 {
+		d.logger.Warn("Attempted to create/update transaction with negative amount",
+			zap.Int("amount", amount))
+		return fmt.Errorf("transaction amount cannot be negative: %d", amount)
+	}
+
 	return nil
 }
 
-func (d *negativeAmountValidator) CreateOne(ctx context.Context, doc data.Document) (base.CreateResult, error) {
+func (d *negativeAmountValidator) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
 	if err := d.validateAmount(doc); err != nil {
 		return base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: []common.Issue{{Message: err.Error()}}}, err
 	}
-	return d.next.CreateOne(ctx, doc)
+	return d.Collection.CreateOne(ctx, doc)
 }
 
-func (d *negativeAmountValidator) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) {
+func (d *negativeAmountValidator) CreateMany(ctx context.Context, docs []*data.Document) ([]base.CreateResult, error) {
 	for _, doc := range docs {
 		if err := d.validateAmount(doc); err != nil {
 			return nil, err // Or return a partial result with errors
 		}
 	}
-	return d.next.CreateMany(ctx, docs)
+	return d.Collection.CreateMany(ctx, docs)
 }
 
-func (d *negativeAmountValidator) Read(ctx context.Context, query *query.Query) (*base.ReadResult, error) {
-	return d.next.Read(ctx, query)
-}
 
 func (d *negativeAmountValidator) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
 	if err := d.validateAmount(params.Set); err != nil {
 		return 0, err
 	}
-	return d.next.Update(ctx, params)
-}
-
-func (d *negativeAmountValidator) Delete(ctx context.Context, queryFilter *query.QueryFilter, unsafe bool) (int, error) {
-	return d.next.Delete(ctx, queryFilter, unsafe)
-}
-
-func (d *negativeAmountValidator) Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error) {
-	return d.next.Validate(ctx, data, loose)
-}
-
-func (d *negativeAmountValidator) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) (*base.CollectionMetadata, error) {
-	return d.next.Metadata(ctx, filter, forceRefresh)
-}
-
-func (d *negativeAmountValidator) Subscribe(ctx context.Context, options base.SubscriptionOptions) string {
-	return d.next.Subscribe(ctx, options)
-}
-
-func (d *negativeAmountValidator) Unsubscribe(ctx context.Context, id string) {
-	d.next.Unsubscribe(ctx, id)
-}
-
-func (d *negativeAmountValidator) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {
-	return d.next.Subscriptions(ctx)
-}
-
-func (d *negativeAmountValidator) Capabilities(ctx context.Context) *query.Capabilities {
-	return d.next.Capabilities(ctx)
+	return d.Collection.Update(ctx, params)
 }
 
 func main() {
@@ -187,10 +164,10 @@ func main() {
 
 	// 6. Initialize Anansi Persistence Layer
 	cfg := anansi.SetupConfig{
-		Interactor:    interactor,
-		Logger:        logger,
+		Interactor:            interactor,
+		Logger:                logger,
 		DocumentFactoryConfig: factoryConfig,
-		Decorators:    decorators,
+		Decorators:            decorators,
 	}
 	p, err := anansi.Setup(cfg)
 	if err != nil {
@@ -216,7 +193,7 @@ func main() {
 	}
 	logger.Info("Accounts collection created.")
 
-	ledgerTransactionSchema := getLedgerTransactionSchema() // Renamed
+	ledgerTransactionSchema := getLedgerTransactionSchema()                          // Renamed
 	transactionsCollection, err := p.CreateCollection(ctx, *ledgerTransactionSchema) // Renamed
 	if err != nil {
 		log.Fatalf("Failed to create transactions collection: %v", err)
@@ -227,7 +204,7 @@ func main() {
 	logger.Info("Populating data...")
 	user1 := data.MustNewDocument(map[string]any{"id": "U001", "name": "Alice", "email": "alice@example.com"})
 	user2 := data.MustNewDocument(map[string]any{"id": "U002", "name": "Bob", "email": "bob@example.com"})
-	_, err = usersCollection.CreateMany(ctx, []data.Document{user1, user2})
+	_, err = usersCollection.CreateMany(ctx, []*data.Document{user1, user2})
 	if err != nil {
 		log.Fatalf("Failed to create users: %v", err)
 	}
@@ -235,7 +212,7 @@ func main() {
 
 	account1 := data.MustNewDocument(map[string]any{"id": "A001", "userId": "U001", "balance": 1000.00})
 	account2 := data.MustNewDocument(map[string]any{"id": "A002", "userId": "U002", "balance": 500.00})
-	_, err = accountsCollection.CreateMany(ctx, []data.Document{account1, account2})
+	_, err = accountsCollection.CreateMany(ctx, []*data.Document{account1, account2})
 	if err != nil {
 		log.Fatalf("Failed to create accounts: %v", err)
 	}
@@ -244,7 +221,7 @@ func main() {
 	// Create valid transactions
 	tx1 := data.MustNewDocument(map[string]any{"id": "T001", "accountId": "A001", "amount": 200.00, "type": "deposit", "timestamp": time.Now().Unix()})
 	tx2 := data.MustNewDocument(map[string]any{"id": "T002", "accountId": "A002", "amount": 50.00, "type": "withdrawal", "timestamp": time.Now().Unix()})
-	_, err = transactionsCollection.CreateMany(ctx, []data.Document{tx1, tx2})
+	_, err = transactionsCollection.CreateMany(ctx, []*data.Document{tx1, tx2})
 	if err != nil {
 		log.Fatalf("Failed to create valid transactions: %v", err)
 	}
@@ -299,12 +276,12 @@ func main() {
 	}
 
 	logger.Info(fmt.Sprintf("Found %d transactions for Alice:", txResult.Count))
-	var aliceDocs  = txResult.Data
+	var aliceDocs = txResult.Data
 
 	for _, doc := range aliceDocs {
 		// Access nested fields using schema names as keys
-		ledgerTx := doc["LedgerTransaction"].(map[string]any)
-		user := doc["User"].(map[string]any)
+		ledgerTx := doc.Must().Get("LedgerTransaction").(map[string]any)
+		user := doc.Must().Get("User").(map[string]any)
 		logger.Info(fmt.Sprintf("  Transaction ID: %s, Amount: %.2f, Type: %s, Account ID: %s, User Name: %s",
 			ledgerTx["id"], ledgerTx["amount"], ledgerTx["type"], ledgerTx["accountId"], user["name"]))
 	}
@@ -340,7 +317,7 @@ func main() {
 		name := doc.Must().GetString("User.name")
 		email := doc.Must().GetString("User.email")
 		balance := doc.Must().GetFloat64("Account.balance")
-		logger.Info(fmt.Sprintf("Account A002 User: Name=%s, Email=%s, Balance=%.2f",name, email, balance))
+		logger.Info(fmt.Sprintf("Account A002 User: Name=%s, Email=%s, Balance=%.2f", name, email, balance))
 	} else {
 		logger.Info("No user found for Account A002.")
 	}

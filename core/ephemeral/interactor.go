@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
@@ -29,7 +28,7 @@ var _ query.DatabaseInteractor = (*EphemeralDatabaseInteractor)(nil)
 var _ query.SchemaManager = (*EphemeralDatabaseInteractor)(nil)
 
 // SelectDocuments retrieves documents from the in-memory store.
-func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]data.Document, error) {
+func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]map[string]any, error) {
 
 	if dsl.Target == nil {
 		dsl.Target = &query.QueryTarget{
@@ -56,7 +55,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 		return nil, err
 	}
 
-	var allDocs []data.Document
+	var allDocs []map[string]any
 	stream := c.data.Stream(0)
 	defer stream.Close()
 
@@ -68,7 +67,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 			}
 			return nil, err
 		}
-		record := data.Document(docResult.Data)
+		record := map[string]any(docResult.Data)
 		allDocs = append(allDocs, record)
 	}
 
@@ -87,7 +86,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 				return nil, err
 			}
 
-			var rightDocs []data.Document
+			var rightDocs []map[string]any
 			rightStream := rightCollection.data.Stream(0)
 			for {
 				docResult, err := rightStream.Next()
@@ -98,7 +97,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 					rightStream.Close()
 					return nil, err
 				}
-				rightDocs = append(rightDocs, data.Document(docResult.Data))
+				rightDocs = append(rightDocs, map[string]any(docResult.Data))
 			}
 
 			rightStream.Close()
@@ -119,7 +118,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 		if err != nil {
 			return nil, err
 		}
-		return []data.Document{aggregationResults}, nil
+		return []map[string]any{aggregationResults}, nil
 	}
 
 	// Apply projection, sorting, and pagination
@@ -142,13 +141,13 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 }
 
 // SelectStream streams documents from the in-memory store.
-func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan data.Document, <-chan error, error) {
+func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan map[string]any, <-chan error, error) {
 	c, err := i.store.getCollection(sc.Name)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	docCh := make(chan data.Document)
+	docCh := make(chan map[string]any)
 	errCh := make(chan error, 1)
 
 	go func() {
@@ -176,7 +175,7 @@ func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *sche
 					return
 				}
 
-				doc := data.Document(docResult.Data)
+				doc := map[string]any(docResult.Data)
 				docCh <- doc
 			}
 		}
@@ -214,7 +213,7 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 			return 0, err
 		}
 
-		doc := data.Document(docResult.Data)
+		doc := map[string]any(docResult.Data)
 		matches, err := queryHelper.Match(doc)
 		if err != nil {
 			stream.Close()
@@ -246,13 +245,13 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 }
 
 // InsertDocuments inserts documents into the in-memory store.
-func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, records []data.Document) ([]data.Document, error) {
+func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, records []map[string]any) ([]map[string]any, error) {
 	c, err := i.store.getCollection(schemaDef.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	var insertedDocs []data.Document
+	var insertedDocs []map[string]any
 	for _, doc := range records {
 		// Ensure nested maps are also of type map[string]any
 		utils.ConvertMaps(doc)
@@ -292,7 +291,7 @@ func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schem
 			return nil, err
 		}
 
-		insertedDoc := data.Document(retrieved.Data)
+		insertedDoc := map[string]any(retrieved.Data)
 		insertedDocs = append(insertedDocs, insertedDoc)
 	}
 
@@ -328,7 +327,7 @@ func (i *EphemeralDatabaseInteractor) DeleteDocuments(ctx context.Context, schem
 			return 0, err
 		}
 
-		doc := data.Document(docResult.Data)
+		doc := map[string]any(docResult.Data)
 		matches, err := queryHelper.Match(doc)
 		if err != nil {
 			stream.Close()

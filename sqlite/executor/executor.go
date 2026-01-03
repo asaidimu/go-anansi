@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/sqlite/types"
@@ -47,7 +46,7 @@ func newSQLiteExecutor(db *sql.DB, logger *zap.Logger, tx *sql.Tx) (native.Query
 	}, nil
 }
 
-func (s *sqliteExecutor) Query(ctx context.Context, query native.NativeQuery[types.SQLitePayload]) ([]data.Document, error) {
+func (s *sqliteExecutor) Query(ctx context.Context, query native.NativeQuery[types.SQLitePayload]) ([]map[string]any, error) {
 	q := query.Query
 	payload := q.Raw()
 	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
@@ -56,16 +55,16 @@ func (s *sqliteExecutor) Query(ctx context.Context, query native.NativeQuery[typ
 	}
 	defer rows.Close()
 
-	var results []data.Document = nil
+	var results []map[string]any = nil
 	if rows == nil {
-		return make([]data.Document, 0), nil
+		return make([]map[string]any, 0), nil
 	}
 
 	results, err = ReadRows(s.logger, query.Schema, rows)
 	return results, err
 }
 
-func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) (<-chan data.Document, <-chan error, error) {
+func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) (<-chan map[string]any, <-chan error, error) {
 	q := compiled.Query
 	payload := q.Raw()
 	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
@@ -74,7 +73,7 @@ func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.Native
 		return nil, nil, translateError(err).WithOperation("QueryStream")
 	}
 
-	docChan := make(chan data.Document)
+	docChan := make(chan map[string]any)
 	errChan := make(chan error, 1)
 
 	go func() {

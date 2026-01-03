@@ -44,7 +44,7 @@ func TestTransactionInManualGoroutine(t *testing.T) {
 			_, err := p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
 				// This inner goroutine's operation will be coordinated by the transaction.
 				tx.Async(tctx, func(ctx context.Context) (any, error) {
-					_, err := collection.CreateOne(ctx, data.Document{"name": "test3"})
+					_, err := collection.CreateOne(ctx, data.MustNewDocument(map[string]any{"name": "test3"}))
 					return nil, err
 				})
 				return nil, nil

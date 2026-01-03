@@ -36,7 +36,7 @@ var RegistryCollectionSchemaJson = fmt.Sprintf(`
       "name": "versions",
       "type": "record",
   	  "schema": {
-        "id": "SchemaVersions"
+        "id": "00209ae3-08ca-4a8a-8b16-ddf89d87d379"
   	  },
       "required": false,
       "description": "A list of legacy schemas, their physical name & their corresponding schema."

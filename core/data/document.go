@@ -14,12 +14,15 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
-// Document represents a flexible, schema-aware data structure with comprehensive utilities.
-type Document map[string]any
+// Document represents a flexible, schema-aware data structure.
+type Document struct {
+	ctx  context.Context
+	data map[string]any
+}
 
 // Constants
 const (
-	SchemaField   = "_schema_"
+	SchemaField = "_schema_"
 )
 
 // convertToDocumentMap converts various input types to map[string]any for Must* functions
@@ -31,8 +34,13 @@ func convertToDocumentMap(data any) (map[string]any, error) {
 	switch v := data.(type) {
 	case map[string]any:
 		return v, nil
+	case *Document:
+		if v == nil {
+			return make(map[string]any), nil
+		}
+		return v.data, nil
 	case Document:
-		return map[string]any(v), nil
+		return v.data, nil
 	default:
 		rv := reflect.ValueOf(data)
 		if rv.Kind() == reflect.Map && rv.Type().Key().Kind() == reflect.String {
@@ -47,21 +55,18 @@ func convertToDocumentMap(data any) (map[string]any, error) {
 }
 
 // NewDocument creates a new Document from a map[string]any.
-func NewDocument(data map[string]any) (Document, error) {
-	if data == nil {
-		data = make(map[string]any)
-	}
+func NewDocument(data map[string]any) (*Document, error) {
 	return getFactory().newDocument(context.Background(), data)
 }
 
 // MustNewDocument creates a new Document from various map forms, panics on failure.
-func MustNewDocument(data any) Document {
-	doc, err := convertToDocumentMap(data)
+func MustNewDocument(data any) *Document {
+	docMap, err := convertToDocumentMap(data)
 	if err != nil {
 		panic(err)
 	}
 
-	d, err := getFactory().newDocument(context.Background(), doc)
+	d, err := getFactory().newDocument(context.Background(), docMap)
 	if err != nil {
 		panic(err)
 	}
@@ -69,9 +74,35 @@ func MustNewDocument(data any) Document {
 	return d
 }
 
-// Get retrieves a value with detailed error information (direct key lookup only).
-func (d Document) Get(key string) (any, error) {
-	val, ok := utils.GetValueByPath(d, key)
+func Patch(data map[string]any) *Document {
+	if data == nil {
+		data = make(map[string]any)
+	}
+	// We bypass the factory.newDocument call to avoid auto-ID/Metadata
+	return &Document{
+		ctx:  context.Background(),
+		data: data,
+	}
+}
+
+// Context returns the document's context.
+func (d *Document) Context() context.Context {
+	if d.ctx == nil {
+		return context.Background()
+	}
+	return d.ctx
+}
+
+// WithContext returns a new Document with the provided context.
+func (d *Document) WithContext(ctx context.Context) *Document {
+	newDoc := d.Clone()
+	newDoc.ctx = ctx
+	return newDoc
+}
+
+// Get retrieves a value with detailed error information.
+func (d *Document) Get(key string) (any, error) {
+	val, ok := utils.GetValueByPath(d.data, key)
 	if !ok {
 		return nil, common.SystemErrorFrom(ErrKeyNotFound).WithOperation("data.Document.Get").WithPath(key)
 	}
@@ -79,16 +110,16 @@ func (d Document) Get(key string) (any, error) {
 }
 
 // GetOr retrieves a value or returns a default if not found.
-func (d Document) GetOr(key string, defaultValue any) any {
-	if val, ok := utils.GetValueByPath(d, key); ok {
+func (d *Document) GetOr(key string, defaultValue any) any {
+	if val, ok := utils.GetValueByPath(d.data, key); ok {
 		return val
 	}
 	return defaultValue
 }
 
 // MustGet retrieves a value, panics if not found.
-func (d Document) MustGet(key string) any {
-	val, ok := utils.GetValueByPath(d, key)
+func (d *Document) MustGet(key string) any {
+	val, ok := utils.GetValueByPath(d.data, key)
 	if !ok {
 		panic(common.SystemErrorFrom(ErrKeyNotFound).WithOperation("data.Document.MustGet").WithPath(key))
 	}
@@ -96,31 +127,37 @@ func (d Document) MustGet(key string) any {
 }
 
 // Set with validation support.
-func (d Document) Set(key string, value any) error {
+func (d *Document) Set(key string, value any) error {
 	if key == DocumentID {
 		return common.SystemErrorFrom(ErrReadOnlyField).WithOperation("data.Document.Set").WithPath(key).WithMessage(fmt.Sprintf("field '%s' is managed by the library and cannot be set manually", DocumentID))
 	}
 	if key == "" {
 		return common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.Set").WithPath(key)
 	}
-	d[key] = value
+	if d.data == nil {
+		d.data = make(map[string]any)
+	}
+	d.data[key] = value
 	return nil
 }
 
 // SetIfNotExists sets a value only if the key doesn't exist.
-func (d Document) SetIfNotExists(key string, value any) bool {
+func (d *Document) SetIfNotExists(key string, value any) bool {
 	if key == DocumentID {
 		return false
 	}
-	if _, exists := d[key]; !exists {
-		d[key] = value
+	if d.data == nil {
+		d.data = make(map[string]any)
+	}
+	if _, exists := d.data[key]; !exists {
+		d.data[key] = value
 		return true
 	}
 	return false
 }
 
 // GetString with comprehensive type coercion and path support.
-func (d Document) GetString(keyOrPath string) (string, error) {
+func (d *Document) GetString(keyOrPath string) (string, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(""), "GetString")
 	if err != nil {
 		return "", err
@@ -129,7 +166,7 @@ func (d Document) GetString(keyOrPath string) (string, error) {
 }
 
 // GetInt with comprehensive numeric coercion and path support.
-func (d Document) GetInt(keyOrPath string) (int, error) {
+func (d *Document) GetInt(keyOrPath string) (int, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(0), "GetInt")
 	if err != nil {
 		return 0, err
@@ -138,7 +175,7 @@ func (d Document) GetInt(keyOrPath string) (int, error) {
 }
 
 // GetFloat64 with numeric coercion and path support.
-func (d Document) GetFloat64(keyOrPath string) (float64, error) {
+func (d *Document) GetFloat64(keyOrPath string) (float64, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(0.0), "GetFloat64")
 	if err != nil {
 		return 0.0, err
@@ -147,7 +184,7 @@ func (d Document) GetFloat64(keyOrPath string) (float64, error) {
 }
 
 // GetBool with string parsing support and path support.
-func (d Document) GetBool(keyOrPath string) (bool, error) {
+func (d *Document) GetBool(keyOrPath string) (bool, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(false), "GetBool")
 	if err != nil {
 		return false, err
@@ -156,7 +193,7 @@ func (d Document) GetBool(keyOrPath string) (bool, error) {
 }
 
 // GetTime parses time from various formats with path support.
-func (d Document) GetTime(keyOrPath string) (time.Time, error) {
+func (d *Document) GetTime(keyOrPath string) (time.Time, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(time.Time{}), "GetTime")
 	if err != nil {
 		return time.Time{}, err
@@ -165,25 +202,25 @@ func (d Document) GetTime(keyOrPath string) (time.Time, error) {
 }
 
 // GetDocument retrieves a nested document with path support.
-func (d Document) GetDocument(keyOrPath string) (Document, error) {
-	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(Document{}), "GetDocument")
+func (d *Document) GetDocument(keyOrPath string) (*Document, error) {
+	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(&Document{}), "GetDocument")
 	if err != nil {
 		return nil, err
 	}
-	return val.(Document), nil
+	return val.(*Document), nil
 }
 
 // GetDocumentArray retrieves an array of documents with path support.
-func (d Document) GetDocumentArray(keyOrPath string) ([]Document, error) {
-	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]Document{}), "GetDocumentArray")
+func (d *Document) GetDocumentArray(keyOrPath string) ([]*Document, error) {
+	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]*Document{}), "GetDocumentArray")
 	if err != nil {
 		return nil, err
 	}
-	return val.([]Document), nil
+	return val.([]*Document), nil
 }
 
 // GetStringArray retrieves a slice of strings with path support.
-func (d Document) GetStringArray(keyOrPath string) ([]string, error) {
+func (d *Document) GetStringArray(keyOrPath string) ([]string, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]string{}), "GetStringArray")
 	if err != nil {
 		return nil, err
@@ -192,7 +229,7 @@ func (d Document) GetStringArray(keyOrPath string) ([]string, error) {
 }
 
 // GetIntArray retrieves a slice of integers with path support.
-func (d Document) GetIntArray(keyOrPath string) ([]int, error) {
+func (d *Document) GetIntArray(keyOrPath string) ([]int, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]int{}), "GetIntArray")
 	if err != nil {
 		return nil, err
@@ -201,7 +238,7 @@ func (d Document) GetIntArray(keyOrPath string) ([]int, error) {
 }
 
 // GetArray retrieves a generic slice ([]any) with path support.
-func (d Document) GetArray(keyOrPath string) ([]any, error) {
+func (d *Document) GetArray(keyOrPath string) ([]any, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]any{}), "GetArray")
 	if err != nil {
 		return nil, err
@@ -210,8 +247,8 @@ func (d Document) GetArray(keyOrPath string) ([]any, error) {
 }
 
 // getAndCoerce is a private helper function to retrieve a value by path and coerce it to a target type.
-func (d Document) getAndCoerce(keyOrPath string, targetType reflect.Type, operation string) (any, error) {
-	val, ok := utils.GetValueByPath(d, keyOrPath)
+func (d *Document) getAndCoerce(keyOrPath string, targetType reflect.Type, operation string) (any, error) {
+	val, ok := utils.GetValueByPath(d.data, keyOrPath)
 	if !ok {
 		return nil, common.SystemErrorFrom(ErrKeyNotFound).WithOperation("data.Document." + operation).WithPath(keyOrPath)
 	}
@@ -230,18 +267,18 @@ func (d Document) getAndCoerce(keyOrPath string, targetType reflect.Type, operat
 		coercedVal, conversionOk = utils.CoerceToPrimitiveValue[bool](val)
 	case reflect.TypeOf(time.Time{}):
 		coercedVal, conversionOk = utils.CoerceTime(val)
-	case reflect.TypeOf(Document{}):
+	case reflect.TypeOf(&Document{}):
 		coercedVal, conversionOk = AsDocument(val)
-	case reflect.TypeOf([]Document{}):
-		coercedVal, conversionOk = AsDocumentArray(val)
-		case reflect.TypeOf([]string{}):
-        coercedVal, conversionOk = utils.CoerceToSlice[string](val)
-    case reflect.TypeOf([]int{}):
-        coercedVal, conversionOk = utils.CoerceToSlice[int](val)
-    case reflect.TypeOf([]any{}):
-        if slice, ok := val.([]any); ok {
-            coercedVal, conversionOk = slice, true
-        }
+	case reflect.TypeOf([]*Document{}):
+		coercedVal, conversionOk = DocumentSlice(val)
+	case reflect.TypeOf([]string{}):
+		coercedVal, conversionOk = utils.CoerceToSlice[string](val)
+	case reflect.TypeOf([]int{}):
+		coercedVal, conversionOk = utils.CoerceToSlice[int](val)
+	case reflect.TypeOf([]any{}):
+		if slice, ok := val.([]any); ok {
+			coercedVal, conversionOk = slice, true
+		}
 	default:
 		return nil, common.SystemErrorFrom(ErrTypeConversion).WithOperation("data.Document." + operation).WithPath(keyOrPath).WithMessage(fmt.Sprintf("unsupported target type for coercion: %s", targetType.String()))
 	}
@@ -254,9 +291,12 @@ func (d Document) getAndCoerce(keyOrPath string, targetType reflect.Type, operat
 }
 
 // Keys returns all keys sorted alphabetically.
-func (d Document) Keys() []string {
-	keys := make([]string, 0, len(d))
-	for k := range d {
+func (d *Document) Keys() []string {
+	if d.data == nil {
+		return []string{}
+	}
+	keys := make([]string, 0, len(d.data))
+	for k := range d.data {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
@@ -264,36 +304,45 @@ func (d Document) Keys() []string {
 }
 
 // Values returns all values in key-sorted order.
-func (d Document) Values() []any {
+func (d *Document) Values() []any {
 	keys := d.Keys()
 	values := make([]any, len(keys))
 	for i, k := range keys {
-		values[i] = d[k]
+		values[i] = d.data[k]
 	}
 	return values
 }
 
-// Clone creates a deep copy with better nested handling.
-func (d Document) Clone() Document {
-	return d.deepClone().(Document)
+// Clone creates a deep copy of the document.
+func (d *Document) Clone() *Document {
+	if d == nil {
+		return nil
+	}
+	return &Document{
+		ctx:  d.ctx,
+		data: d.deepClone().(map[string]any),
+	}
 }
 
-func (d Document) deepClone() any {
-	// deepClone recursively clones the Document and its nested structures (maps, slices, and other Documents).
-	// It ensures that modifications to the cloned document do not affect the original, providing
-	// a truly independent copy.
-	result := make(Document)
-	for k, v := range d {
+func (d *Document) deepClone() any {
+	// deepClone recursively clones the Document's data map and its nested structures.
+	if d.data == nil {
+		return make(map[string]any)
+	}
+	result := make(map[string]any)
+	for k, v := range d.data {
 		result[k] = deepCloneValue(v)
 	}
 	return result
 }
 
 // deepCloneValue recursively clones a value, handling nested Documents, maps (map[string]any),
-// and slices ([]any, []Document). Primitive types are returned as is. This function is
-// crucial for creating deep copies of document structures to prevent unintended side effects.
+// and slices ([]any, []Document). Primitive types are returned as is.
 func deepCloneValue(v any) any {
 	switch val := v.(type) {
+	case *Document:
+		// When a Document is nested, we clone its data map.
+		return val.deepClone()
 	case Document:
 		return val.deepClone()
 	case map[string]any:
@@ -308,8 +357,8 @@ func deepCloneValue(v any) any {
 			result[i] = deepCloneValue(item)
 		}
 		return result
-	case []Document:
-		arr := make([]Document, len(val))
+	case []*Document:
+		arr := make([]*Document, len(val))
 		for i, doc := range val {
 			arr[i] = doc.Clone()
 		}
@@ -319,49 +368,65 @@ func deepCloneValue(v any) any {
 	}
 }
 
-// Merge combines multiple documents with conflict resolution.
-func (d Document) Merge(others ...Document) Document {
-	result := d.Clone()
+// Merge combines multiple documents. The receiving document is modified in place.
+func (d *Document) Merge(others ...*Document) {
 	for _, other := range others {
-		maps.Copy(result, other)
+		if other != nil && other.data != nil {
+			if d.data == nil {
+				d.data = make(map[string]any)
+			}
+			maps.Copy(d.data, other.data)
+		}
 	}
-	return result
 }
 
-// DeepMerge performs recursive merging of nested objects.
-func (d Document) DeepMerge(others ...Document) Document {
-	result := d.Clone()
+// DeepMerge performs a recursive merge of nested objects. The receiving document is modified in place.
+func (d *Document) DeepMerge(others ...*Document) {
 	for _, other := range others {
-		result.deepMergeInto(other)
+		if other != nil {
+			d.deepMergeInto(other)
+		}
 	}
-	return result
 }
 
 // deepMergeInto recursively merges the content of 'other' Document into 'd'.
-// Existing keys in 'd' are overwritten by 'other', except for nested Documents
-// and map[string]any types, which are recursively merged. This provides a way
-// to combine documents while preserving the structure of nested objects.
-func (d Document) deepMergeInto(other Document) {
-	for k, v := range other {
-		if existing, ok := d[k]; ok {
-			if existingDoc, ok := existing.(Document); ok {
+func (d *Document) deepMergeInto(other *Document) {
+	if d.data == nil {
+		d.data = make(map[string]any)
+	}
+	for k, v := range other.data {
+		if isSystemField(k) {
+			continue
+		}
+
+		if existing, ok := d.data[k]; ok {
+			// If existing value is a Document struct, recurse
+			if existingDoc, ok := existing.(*Document); ok {
 				if otherDoc, ok := AsDocument(v); ok {
 					existingDoc.deepMergeInto(otherDoc)
 					continue
 				}
-			} else if existingMap, ok := existing.(map[string]any); ok {
+			}
+			// If existing value is a map, treat it as a document and recurse
+			if existingMap, ok := existing.(map[string]any); ok {
 				if otherMap, ok := v.(map[string]any); ok {
-					Document(existingMap).deepMergeInto(Document(otherMap))
+					docToMerge := &Document{ctx: context.Background(), data: existingMap}
+					docToMerge.deepMergeInto(&Document{ctx: context.Background(), data: otherMap})
+					d.data[k] = docToMerge.data // Put the merged map back
 					continue
 				}
 			}
 		}
-		d[k] = deepCloneValue(v)
+		// Assign new or overwrite non-mergeable values
+		d.data[k] = deepCloneValue(v)
 	}
 }
 
-// String provides a readable representation.
-func (d Document) String() string {
+// String provides a readable JSON representation of the document's data.
+func (d *Document) String() string {
+	if d == nil {
+		return "Document{nil}"
+	}
 	data, err := d.ToJSON(true)
 	if err != nil {
 		return fmt.Sprintf("Document{error: %v}", err)
@@ -369,70 +434,121 @@ func (d Document) String() string {
 	return string(data)
 }
 
-// Len returns the number of key-value pairs.
-func (d Document) Len() int {
-	l := len(d)
-	if _, ok := d[MetadataField]; ok {
+// Len returns the number of key-value pairs in the document's data.
+func (d *Document) Len() int {
+	if d == nil || d.data == nil {
+		return 0
+	}
+	l := len(d.data)
+	if _, ok := d.data[MetadataField]; ok {
 		l--
 	}
 	return l
 }
 
-// IsEmpty checks if the document is empty.
-func (d Document) IsEmpty() bool {
-	return len(d) == 0
+// IsEmpty checks if the document's data map is empty.
+func (d *Document) IsEmpty() bool {
+	if d == nil {
+		return true
+	}
+
+	count := 0
+	for key := range d.data {
+		if isSystemField(key) {
+			continue
+		}
+		count += 1
+	}
+	return count == 0
 }
 
-// HasKey checks if a key exists (direct key only, not path).
-func (d Document) HasKey(key string) bool {
-	_, ok := d[key]
+// HasKey checks if a key exists in the document's data.
+func (d *Document) HasKey(key string) bool {
+	if d == nil || d.data == nil {
+		return false
+	}
+	_, ok := d.data[key]
 	return ok
 }
 
-// HasPath checks if a path exists (supports dot notation).
-func (d Document) HasPath(keyOrPath string) bool {
-	_, ok := utils.GetValueByPath(d, keyOrPath)
+// HasPath checks if a path exists in the document's data (supports dot notation).
+func (d *Document) HasPath(keyOrPath string) bool {
+	if d == nil || d.data == nil {
+		return false
+	}
+	_, ok := utils.GetValueByPath(d.data, keyOrPath)
 	return ok
 }
 
-// Equals performs deep equality comparison.
-func (d Document) Equals(other Document) bool {
-	if len(d) != len(other) {
+// Is performs deep equality comparison on the data maps of two documents, including ID and metadata.
+func (d *Document) Is(other *Document) bool {
+	if d == nil && other == nil {
+		return true
+	}
+	if d == nil || other == nil {
+		return false
+	}
+	return reflect.DeepEqual(d.data, other.data)
+}
+
+// Equals performs content-only deep equality comparison on the data maps of two documents,
+// ignoring auto-generated IDs and dynamic metadata fields.
+func (d *Document) Equals(other *Document) bool {
+	if d == nil && other == nil {
+		return true
+	}
+	if d == nil || other == nil {
 		return false
 	}
 
-	for k, v := range d {
-		otherV, ok := other[k]
-		if !ok {
-			return false
-		}
-		if !reflect.DeepEqual(v, otherV) {
-			return false
-		}
+	// Clone documents to avoid modifying originals
+	dClone := d.Clone()
+	otherClone := other.Clone()
+
+	// Strip metadata from both documents
+	dClone = dClone.StripMetadata()
+	otherClone = otherClone.StripMetadata()
+
+	// Remove ID field from both documents for content-only comparison
+	if dClone.data != nil {
+		delete(dClone.data, DocumentID)
+	}
+	if otherClone.data != nil {
+		delete(otherClone.data, DocumentID)
 	}
 
-	return true
+	return reflect.DeepEqual(dClone.data, otherClone.data)
 }
 
-// AsMap returns a deep map[string]any representation of the document.
-// Nested Documents and slices are recursively converted.
-func (d Document) AsMap() map[string]any {
-	out := make(map[string]any, len(d))
-	for k, v := range d {
+// AsMap returns a deep map[string]any representation of the document's data.
+func (d *Document) AsMap() map[string]any {
+	if d == nil || d.data == nil {
+		return nil
+	}
+	out := make(map[string]any, len(d.data))
+	for k, v := range d.data {
 		out[k] = asMapValue(v)
 	}
 	return out
 }
 
+func AsMapSlice(docs []*Document) []map[string]any {
+    // Length 0, Capacity len(docs)
+    result := make([]map[string]any, 0, len(docs))
+    for _, value := range docs {
+        result = append(result, value.AsMap())
+    }
+    return result
+}
+
 // asMapValue recursively converts a value to its map[string]any representation.
-// It handles Document, map[string]any, and slices of these types, ensuring that
-// the returned map is a standard Go map, not a Document type.
 func asMapValue(v any) any {
 	switch val := v.(type) {
+	case *Document:
+		return val.AsMap() // Recursively call AsMap on nested Document structs
 	case Document:
 		return val.AsMap()
 	case map[string]any:
-		// Convert arbitrary map[string]any (not typed as Document)
 		nested := make(map[string]any, len(val))
 		for nk, nv := range val {
 			nested[nk] = asMapValue(nv)
@@ -444,10 +560,10 @@ func asMapValue(v any) any {
 			arr[i] = asMapValue(item)
 		}
 		return arr
-	case []Document:
-		arr := make([]Document, len(val))
+	case []*Document:
+		arr := make([]map[string]any, len(val))
 		for i, doc := range val {
-			arr[i] = doc.Clone()
+			arr[i] = doc.AsMap() // Convert each Document in the slice to a map
 		}
 		return arr
 	default:
@@ -455,40 +571,54 @@ func asMapValue(v any) any {
 	}
 }
 
-func (d Document) ID() string {
-	val := d[DocumentID]
-	return val.(string)
+func (d *Document) ID() string {
+	if d == nil || d.data == nil {
+		return ""
+	}
+	if val, ok := d.data[DocumentID].(string); ok {
+		return val
+	}
+	return ""
 }
 
-// Metadata access with enhanced functionality
-func (d Document) Metadata() (map[string]any, bool) {
-    val, ok := d[MetadataField]
-    if !ok { return nil, false }
+// Metadata access with enhanced functionality.
+func (d *Document) Metadata() (map[string]any, bool) {
+	if d == nil || d.data == nil {
+		return nil, false
+	}
+	val, ok := d.data[MetadataField]
+	if !ok {
+		return nil, false
+	}
 
-    if meta, ok := val.(map[string]any); ok {
-        // Create a copy to prevent external mutation
-        newMeta := make(map[string]any, len(meta))
-        maps.Copy(newMeta, meta)
-        return newMeta, true
-    }
-    return nil, false
+	if meta, ok := val.(map[string]any); ok {
+		newMeta := make(map[string]any, len(meta))
+		maps.Copy(newMeta, meta)
+		return newMeta, true
+	}
+	return nil, false
 }
 
-func (d Document) SetMetadata(metadata map[string]any) {
-	d[MetadataField] = metadata
+func (d *Document) SetMetadata(metadata map[string]any) {
+	if d.data == nil {
+		d.data = make(map[string]any)
+	}
+	d.data[MetadataField] = metadata
 }
 
 // StripMetadata removes metadata and returns a clean copy.
-func (d Document) StripMetadata() Document {
-	doc := stripNestedMetadata(d)
-	result := doc.(Document)
-	return result
+func (d *Document) StripMetadata() *Document {
+	cleanDoc := d.Clone()
+	if cleanDoc.data != nil {
+		cleanDoc.data = stripNestedMetadata(cleanDoc.data).(map[string]any)
+	}
+	return cleanDoc
 }
 
 // --- Data Integrity ---
 
 // Hash computes and sets the HMAC-SHA256 hash of the metadata block.
-func (d Document) Hash() error {
+func (d *Document) Hash() error {
 	meta, ok := d.Metadata()
 	if !ok {
 		return common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.Document.Hash")
@@ -505,7 +635,7 @@ func (d Document) Hash() error {
 }
 
 // VerifyHash checks the integrity of the metadata block against its hash.
-func (d Document) VerifyHash() (bool, error) {
+func (d *Document) VerifyHash() (bool, error) {
 	meta, ok := d.Metadata()
 	if !ok {
 		return false, nil
@@ -525,7 +655,7 @@ func (d Document) VerifyHash() (bool, error) {
 }
 
 // Sign computes and sets the RSA signature for the entire document.
-func (d Document) Sign(privateKey *rsa.PrivateKey) error {
+func (d *Document) Sign(privateKey *rsa.PrivateKey) error {
 	signature, err := getFactory().signDocument(d, privateKey)
 	if err != nil {
 		return err
@@ -542,7 +672,7 @@ func (d Document) Sign(privateKey *rsa.PrivateKey) error {
 }
 
 // Verify checks the RSA signature of the document.
-func (d Document) Verify(publicKey *rsa.PublicKey) error {
+func (d *Document) Verify(publicKey *rsa.PublicKey) error {
 	meta, ok := d.Metadata()
 	if !ok {
 		return common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.Document.Verify")
@@ -559,7 +689,7 @@ func (d Document) Verify(publicKey *rsa.PublicKey) error {
 // --- Metadata Accessors ---
 
 // GetMetadataValue retrieves a value from the document's metadata map.
-func (d Document) GetMetadataValue(key string) (any, error) {
+func (d *Document) GetMetadataValue(key string) (any, error) {
 	meta, ok := d.Metadata()
 	if !ok {
 		return nil, common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.Document.GetMetadataValue").WithPath(key)
@@ -572,8 +702,7 @@ func (d Document) GetMetadataValue(key string) (any, error) {
 }
 
 // SetMetadataValue sets a value in the document's metadata map.
-// It prevents overwriting internal metadata keys.
-func (d Document) SetMetadataValue(key string, value any) error {
+func (d *Document) SetMetadataValue(key string, value any) error {
 	switch key {
 	case MetadataChecksum, MetadataSignature, MetadataVersion, MetadataCreated, MetadataUpdated:
 		return common.SystemErrorFrom(ErrReadOnlyField).WithOperation("data.Document.SetMetadataValue").WithPath(key).WithMessage("cannot overwrite internal metadata field")
@@ -589,7 +718,7 @@ func (d Document) SetMetadataValue(key string, value any) error {
 }
 
 // Version returns the document's version number.
-func (d Document) Version() (int, error) {
+func (d *Document) Version() (int, error) {
 	val, err := d.GetMetadataValue(MetadataVersion)
 	if err != nil {
 		return 0, err
@@ -602,7 +731,7 @@ func (d Document) Version() (int, error) {
 }
 
 // Checksum returns the document's checksum string.
-func (d Document) Checksum() (string, error) {
+func (d *Document) Checksum() (string, error) {
 	val, err := d.GetMetadataValue(MetadataChecksum)
 	if err != nil {
 		return "", err
@@ -615,7 +744,7 @@ func (d Document) Checksum() (string, error) {
 }
 
 // Signature returns the document's signature string.
-func (d Document) Signature() (string, error) {
+func (d *Document) Signature() (string, error) {
 	val, err := d.GetMetadataValue(MetadataSignature)
 	if err != nil {
 		return "", err
@@ -628,7 +757,7 @@ func (d Document) Signature() (string, error) {
 }
 
 // CreatedAt returns the document's creation timestamp.
-func (d Document) CreatedAt() (time.Time, error) {
+func (d *Document) CreatedAt() (time.Time, error) {
 	val, err := d.GetMetadataValue(MetadataCreated)
 	if err != nil {
 		return time.Time{}, err
@@ -641,7 +770,7 @@ func (d Document) CreatedAt() (time.Time, error) {
 }
 
 // UpdatedAt returns the document's last update timestamp.
-func (d Document) UpdatedAt() (time.Time, error) {
+func (d *Document) UpdatedAt() (time.Time, error) {
 	val, err := d.GetMetadataValue(MetadataUpdated)
 	if err != nil {
 		return time.Time{}, err
@@ -654,7 +783,7 @@ func (d Document) UpdatedAt() (time.Time, error) {
 }
 
 // GetMetadataString returns a metadata value as a string.
-func (d Document) GetMetadataString(key string) (string, error) {
+func (d *Document) GetMetadataString(key string) (string, error) {
 	val, err := d.GetMetadataValue(key)
 	if err != nil {
 		return "", err
@@ -667,7 +796,7 @@ func (d Document) GetMetadataString(key string) (string, error) {
 }
 
 // GetMetadataInt returns a metadata value as an int.
-func (d Document) GetMetadataInt(key string) (int, error) {
+func (d *Document) GetMetadataInt(key string) (int, error) {
 	val, err := d.GetMetadataValue(key)
 	if err != nil {
 		return 0, err
@@ -680,7 +809,7 @@ func (d Document) GetMetadataInt(key string) (int, error) {
 }
 
 // GetMetadataFloat returns a metadata value as a float64.
-func (d Document) GetMetadataFloat(key string) (float64, error) {
+func (d *Document) GetMetadataFloat(key string) (float64, error) {
 	val, err := d.GetMetadataValue(key)
 	if err != nil {
 		return 0, err
@@ -693,7 +822,7 @@ func (d Document) GetMetadataFloat(key string) (float64, error) {
 }
 
 // GetMetadataBool returns a metadata value as a bool.
-func (d Document) GetMetadataBool(key string) (bool, error) {
+func (d *Document) GetMetadataBool(key string) (bool, error) {
 	val, err := d.GetMetadataValue(key)
 	if err != nil {
 		return false, err
@@ -706,7 +835,7 @@ func (d Document) GetMetadataBool(key string) (bool, error) {
 }
 
 // GetMetadataTime returns a metadata value as a time.Time.
-func (d Document) GetMetadataTime(key string) (time.Time, error) {
+func (d *Document) GetMetadataTime(key string) (time.Time, error) {
 	val, err := d.GetMetadataValue(key)
 	if err != nil {
 		return time.Time{}, err
@@ -717,7 +846,6 @@ func (d Document) GetMetadataTime(key string) (time.Time, error) {
 	}
 	return t, nil
 }
-
 
 // compareValues compares two values for sorting.
 func compareValues(a, b any) int {

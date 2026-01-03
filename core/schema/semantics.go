@@ -51,7 +51,7 @@ func validateFieldSemantic(fieldDef *FieldDefinition, schema *SchemaDefinition, 
 
 func validateObjectFieldSemantic(fieldDef *FieldDefinition, schema *SchemaDefinition, fieldPath string) error {
 	if ref, ok := fieldDef.Schema.(NestedSchemaReference); ok {
-		if nestedSchemaDef, exists := schema.FindNestedSchema(ref.ID); exists {
+		if nestedSchemaDef, exists := schema.FindNestedSchemaById(ref.ID); exists {
 			if !nestedSchemaDef.IsStructured() {
 				return ErrObjectFieldLiteralSchemaReference.
 					WithOperation("schema.validateObjectFieldSemantic").
@@ -68,7 +68,7 @@ func validateObjectFieldSemantic(fieldDef *FieldDefinition, schema *SchemaDefini
 
 func validateRecordFieldSemantic(fieldDef *FieldDefinition, schema *SchemaDefinition, fieldPath string) error {
 	if ref, ok := fieldDef.Schema.(NestedSchemaReference); ok {
-		if _, exists := schema.FindNestedSchema(ref.ID); !exists {
+		if _, exists := schema.FindNestedSchemaById(ref.ID); !exists {
 			return ErrUnknownNestedSchemaReference.
 				WithOperation("schema.validateRecordFieldSemantic").
 				WithMessage(fmt.Sprintf("record field '%s' references unknown nested schema '%s'", fieldPath, ref.ID))

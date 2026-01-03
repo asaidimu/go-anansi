@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
@@ -15,25 +14,25 @@ import (
 )
 
 // ReadRows reads all rows from a *sql.Rows object and converts them into a slice
-// of data.Document maps. It also handles type conversions for different field types.
+// of map[string]any maps. It also handles type conversions for different field types.
 // ReadRows reads all rows from a *sql.Rows object and converts them into a slice
-// of data.Document maps. If no schema is provided, it returns raw row data without conversions.
-func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) ([]data.Document, error) {
+// of map[string]any maps. If no schema is provided, it returns raw row data without conversions.
+func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) ([]map[string]any, error) {
 	utilDocChan, utilErrChan := readRowsToDocs(rows)
 
-	var results []data.Document
+	var results []map[string]any
 
 	// Define the transformation operation dynamically
-	var processRow func(map[string]any) data.Document
+	var processRow func(map[string]any) map[string]any
 
 	if sc == nil {
 		// Fast path: schema is nil → no transformation
-		processRow = func(row map[string]any) data.Document {
+		processRow = func(row map[string]any) map[string]any {
 			return row
 		}
 	} else {
 		// Schema-aware transformation
-		processRow = func(row map[string]any) data.Document {
+		processRow = func(row map[string]any) map[string]any {
 			globalResult := make(map[string]any)
 
 			for col, value := range row {
@@ -86,8 +85,8 @@ func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 	return results, nil
 }
 
-func readRowsToDocs(rows *sql.Rows) (<-chan data.Document, <-chan error) {
-	docChan := make(chan data.Document)
+func readRowsToDocs(rows *sql.Rows) (<-chan map[string]any, <-chan error) {
+	docChan := make(chan map[string]any)
 	errChan := make(chan error, 1)
 
 	go func() {
@@ -102,7 +101,7 @@ func readRowsToDocs(rows *sql.Rows) (<-chan data.Document, <-chan error) {
 		}
 
 		for rows.Next() {
-			row := make(data.Document, len(columns))
+			row := make(map[string]any, len(columns))
 			values := make([]any, len(columns))
 			scanArgs := make([]any, len(columns))
 			for i := range values {

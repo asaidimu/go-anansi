@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -264,18 +263,18 @@ func TestSchemaFromQuery(t *testing.T) {
 		assert.Contains(t, nestedContactSchema.Fields.FieldsMap, "phone")
 
 		// Validate the schema with a sample document
-		doc := data.Document{
+		doc := map[string]any{
 			"id":      "user-123",
 			"name":    "John Doe",
 			"email":   "john.doe@example.com",
 			"age":     30,
 			"isAdmin": false,
-			"profile": data.Document{
+			"profile": map[string]any{
 				"id":         "profile-456",
 				"userId":     "user-123",
 				"contactId":  "contact-789",
 				"department": "Engineering",
-				"contact": data.Document{
+				"contact": map[string]any{
 					"id":      "contact-789",
 					"phone":   "123-456-7890",
 					"address": "123 Main St",
@@ -285,8 +284,7 @@ func TestSchemaFromQuery(t *testing.T) {
 
 		validator, err := schema.NewDocumentValidator(resultSchema, nil)
 		require.NoError(t, err)
-		docMap := doc.AsMap()
-		issues, ok := validator.Validate(docMap, false)
+		issues, ok := validator.Validate(doc, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})

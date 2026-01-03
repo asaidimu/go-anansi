@@ -211,3 +211,17 @@ func IsComplexValue(value any) bool {
 	kind := val.Kind()
 	return kind == reflect.Slice || kind == reflect.Map
 }
+
+// Helper to handle the "is not an integer" check across multiple possible types
+func IsInteger(v any) bool {
+	switch v := v.(type) {
+	case int, int32, int64, uint, uint32, uint64:
+		return true
+	case float64:
+		// Check if the float is actually a whole number (e.g., 1.0)
+		f := v
+		return f == float64(int64(f))
+	default:
+		return false
+	}
+}

@@ -43,7 +43,6 @@ func setupTestDB(t *testing.T) (*sql.DB, func()) {
 	var version string
 	err = db.QueryRow("SELECT sqlite_version()").Scan(&version)
 	require.NoError(t, err)
-	t.Logf("SQLite Version: %s", version)
 
 	return db, cleanup
 }
@@ -104,15 +103,12 @@ func TestPersistence_CreateAndGetCollection(t *testing.T) {
 
 	schema := newTestSchema("my_collection")
 
-	logger.Debug("Started create collection")
-
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	// Create the collection
 	createdCollection, err := p.CreateCollection(timeoutCtx, *schema)
 	require.NoError(t, err)
 	assert.NotNil(t, createdCollection)
-	logger.Debug("Completed create collection")
 
 	// Get the collection
 	retrievedCollection, err := p.Collection(context.Background(), "my_collection")
@@ -203,9 +199,9 @@ func TestPersistence_Transact(t *testing.T) {
 	accounts, err := p.CreateCollection(context.Background(), *sc)
 	require.NoError(t, err)
 
-	_, err = accounts.CreateMany(context.Background(), []data.Document{
-		{"name": "Alice", "balance": 100.0},
-		{"name": "Bob", "balance": 50.0},
+	_, err = accounts.CreateMany(context.Background(), []*data.Document{
+		data.MustNewDocument(map[string]any{"name": "Alice", "balance": 100.0}),
+		data.MustNewDocument(map[string]any{"name": "Bob", "balance": 50.0}),
 	})
 
 	// Perform a successful transfer within a transaction
@@ -226,7 +222,7 @@ func TestPersistence_Transact(t *testing.T) {
 		require.Equal(t, 1, aliceResult.Count)
 
 		// Subtract 20 from Alice
-		aliceDoc := data.Document{"balance": 80}
+		aliceDoc := data.MustNewDocument(map[string]any{"balance": 80})
 		filterAlice := query.NewQueryBuilder().Where("name").Eq("Alice").Build().Filters
 		_, err = acc.Update(tctx, &base.CollectionUpdate{Set: aliceDoc, Filter: filterAlice})
 		if err != nil {
@@ -240,14 +236,12 @@ func TestPersistence_Transact(t *testing.T) {
 			return nil, err
 		}
 		require.Equal(t, 1, bobResult.Count)
-		bobDoc := bobResult.Data[0]
-
 		// Add 20 to Bob
-		bobDoc["balance"] = 70.0
+		bobUpdateDoc := data.MustNewDocument(map[string]any{"balance": 70.0})
 		filterBob := query.NewQueryBuilder().Where("name").Eq("Bob").Build().Filters
-		_, err = acc.Update(tctx, &base.CollectionUpdate{Set: bobDoc, Filter: filterBob})
+		_, err = acc.Update(tctx, &base.CollectionUpdate{Set: bobUpdateDoc, Filter: filterBob})
 		if err != nil {
-			return nil, fmt.Errorf("%w, \n %v \n", err, bobDoc)
+			return nil, fmt.Errorf("%w, \n %v \n", err, bobUpdateDoc)
 		}
 
 		return nil, nil
@@ -263,7 +257,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 	balances := make(map[string]any)
 	for _, doc := range result.Data {
-		balances[doc["name"].(string)] = doc["balance"]
+		balances[doc.MustGet("name").(string)] = doc.MustGet("balance")
 	}
 
 	assert.Equal(t, 80.0, balances["Alice"])
@@ -278,18 +272,18 @@ func TestPersistence_Transact(t *testing.T) {
 			return nil, err
 		}
 		require.Equal(t, 1, aliceResult.Count)
-		aliceDoc := aliceResult.Data[0]
 
 		// Subtract 10 from Alice
-		aliceDoc["balance"] = 70.0
+		// Subtract 10 from Alice
+		aliceUpdateDoc := data.MustNewDocument(map[string]any{"balance": 90.0})
 		filterAlice := query.NewQueryBuilder().Where("name").Eq("Alice").Build().Filters
-		_, err = accounts.Update(tctx, &base.CollectionUpdate{Set: aliceDoc, Filter: filterAlice})
+		_, err = accounts.Update(tctx, &base.CollectionUpdate{Set: aliceUpdateDoc, Filter: filterAlice})
 		if err != nil {
 			return nil, err
 		}
 
 		// This will fail because of a non-existent field, causing a rollback
-		updateBob := data.Document{"non_existent_field": "error"}
+		updateBob := data.MustNewDocument(map[string]any{"non_existent_field": "error"})
 
 		// We still need metadata for the update to pass the initial check
 		bobQuery := query.NewQueryBuilder().Where("name").Eq("Bob").Build()
@@ -316,7 +310,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 	rollbackBalances := make(map[string]any)
 	for _, doc := range rollbackResult.Data {
-		rollbackBalances[doc["name"].(string)] = doc["balance"]
+		rollbackBalances[doc.MustGet("name").(string)] = doc.MustGet("balance")
 	}
 
 	assert.Equal(t, 80.0, rollbackBalances["Alice"])
@@ -443,86 +437,6 @@ func TestPersistence_MetadataOnEmptyDB(t *testing.T) {
 	assert.Len(t, meta.Schemas, 0)
 }
 
-/*
-func TestPersistence_TransactWithPanic(t *testing.T) {
-	interactor, cleanup := createNativeInteractor(t)
-	defer cleanup()
-
-	logger := zap.NewNop()
-
-	p, err := persistence.NewPersistence(interactor, logger, nil)
-	require.NoError(t, err)
-
-	sc := newTestSchema("accounts")
-	sc.Fields["balance"] = &schema.FieldDefinition{Name: "balance", Type: "number"}
-
-	accounts, err := p.CreateCollection(context.Background(), *sc)
-	require.NoError(t, err)
-
-	_, err = accounts.CreateMany(context.Background(), []data.Document{
-		{"id": "A", "name": "Alice", "balance": 100.0},
-	})
-	require.NoError(t, err)
-
-	// Perform a transaction that fails and should rollback
-	_, err = p.Transact(context.Background(), func(tx base.BasePersistence) (any, error) {
-		acc, err := tx.Collection(context.Background(), "accounts")
-		if err != nil {
-			return nil, err
-		}
-
-		// Read Alice's document
-		aliceQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
-		aliceResult, err := acc.Read(context.Background(), &aliceQuery)
-		if err != nil {
-			return nil, err
-		}
-		require.Equal(t, 1, aliceResult.Count)
-		aliceDoc := aliceResult.Data[0]
-
-		// Subtract 10 from Alice
-		aliceDoc["balance"] = 50.0
-		filterAlice := query.NewQueryBuilder().Where("id").Eq("A").Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: aliceDoc, Filter: filterAlice})
-		if err != nil {
-			return nil, err
-		}
-
-		// This will fail because of a non-existent field, causing a rollback
-		updateBob := data.Document{"non_existent_field": "error"}
-
-		// We still need metadata for the update to pass the initial check
-		bobQuery := query.NewQueryBuilder().Where("id").Eq("A").Build()
-		bobResult, err := acc.Read(context.Background(), &bobQuery)
-		if err != nil {
-			return nil, err
-		}
-		require.Equal(t, 1, bobResult.Count)
-		bobDoc := bobResult.Data.(data.Document)
-		meta, _ := bobDoc.Metadata()
-		updateBob.SetMetadata(meta)
-
-		filterBob := query.NewQueryBuilder().Where("id").Eq("B").Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Data: updateBob, Filter: filterBob})
-
-		return nil, err // Propagate the error to trigger rollback
-	})
-
-	require.Error(t, err)
-
-	// Verify that the balance was rolled back
-	finalAccounts, err := p.Collection(context.Background(), "accounts")
-	require.NoError(t, err)
-	result, err := finalAccounts.Read(context.Background(), &query.Query{})
-	require.NoError(t, err)
-	require.Equal(t, 1, result.Count)
-	doc := result.Data.(data.Document)
-	balances := make(map[string]any)
-	balances[doc["id"].(string)] = doc["balance"]
-
-	assert.Equal(t, 100.0, balances["A"])
-}
-
 func TestPersistence_Metadata(t *testing.T) {
 
 	interactor, cleanup := createNativeInteractor(t)
@@ -530,7 +444,7 @@ func TestPersistence_Metadata(t *testing.T) {
 
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// Create some collections
@@ -548,6 +462,77 @@ func TestPersistence_Metadata(t *testing.T) {
 	assert.Len(t, meta.Schemas, 2)
 }
 
+func TestPersistence_TransactWithPanic(t *testing.T) {
+	interactor, cleanup := createNativeInteractor(t)
+	defer cleanup()
+
+	logger := zap.NewNop()
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	sc := newTestSchema("accounts")
+	sc.Fields["balance"] = &schema.FieldDefinition{Name: "balance", Type: "number"}
+
+	accounts, err := p.CreateCollection(context.Background(), *sc)
+	require.NoError(t, err)
+
+	alice := data.MustNewDocument(
+		map[string]any{"name": "Alice", "balance": 100.0},
+	)
+	bob := data.MustNewDocument(
+		map[string]any{"name": "Bob", "balance": 100.0},
+	)
+	_, err = accounts.CreateMany(context.Background(), []*data.Document{alice, bob})
+
+	require.NoError(t, err)
+
+	// Perform a transaction that fails and should rollback
+	_, err = p.Transact(context.Background(), func(ctx context.Context, tx base.BasePersistence) (any, error) {
+		acc, err := tx.Collection(context.Background(), "accounts")
+		if err != nil {
+			return nil, err
+		}
+
+		// Read Alice's document
+		aliceQuery := query.NewQueryBuilder().Where("id").Eq(alice.ID()).Build()
+		aliceResult, err := acc.Read(context.Background(), &aliceQuery)
+		if err != nil {
+			return nil, err
+		}
+		require.Equal(t, 1, aliceResult.Count)
+
+		// Subtract 50 from Alice
+		filterAlice := query.NewQueryBuilder().Where("id").Eq(alice.ID()).Build().Filters
+		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Set: data.Patch(map[string]any{
+			"balance": 50,
+		}), Filter: filterAlice})
+		if err != nil {
+			return nil, err
+		}
+
+		// This will fail because of a non-existent field, causing a rollback
+		updateBob := data.Patch(map[string]any{"non_existent_field": "error"})
+
+		filterBob := query.NewQueryBuilder().Where("id").Eq(bob.ID()).Build().Filters
+		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Set: updateBob, Filter: filterBob})
+		return nil, err // Propagate the error to trigger rollback
+	})
+
+	require.Error(t, err)
+
+	// Verify that the balance was rolled back
+	finalAccounts, err := p.Collection(context.Background(), "accounts")
+	require.NoError(t, err)
+	result, err := finalAccounts.Read(context.Background(), &query.Query{})
+	require.NoError(t, err)
+	require.Equal(t, 2, result.Count)
+	doc := result.Data[0]
+
+	assert.Equal(t, 100.0, doc.Must().GetFloat64("balance"))
+}
+
+
 func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	interactor, cleanup := createNativeInteractor(t)
 	defer cleanup()
@@ -563,7 +548,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 		Name:    "users",
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
+			"uid":   {Name: "uid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
 			"name": {Name: "name", Type: schema.FieldTypeString},
 		},
 	}
@@ -578,23 +563,23 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	}
 
 	// 2. Create Collections
-	usersCollection, err := p.Create(context.Background(), userSchema)
+	usersCollection, err := p.CreateCollection(context.Background(), userSchema)
 	require.NoError(t, err)
-	profilesCollection, err := p.Create(context.Background(), profileSchema)
+	profilesCollection, err := p.CreateCollection(context.Background(), profileSchema)
 	require.NoError(t, err)
 
 	// 3. Insert Data
-	_, err = usersCollection.CreateMany(context.Background(), []data.Document{
-		{"id": "user1", "name": "Alice"},
-		{"id": "user2", "name": "Bob"},
-		{"id": "user3", "name": "Charlie"},
+	_, err = usersCollection.CreateMany(context.Background(), []*data.Document{
+		data.MustNewDocument(map[string]any{"uid": "user1", "name": "Alice"}),
+		data.MustNewDocument(map[string]any{"uid": "user2", "name": "Bob"}),
+		data.MustNewDocument(map[string]any{"uid": "user3", "name": "Charlie"}),
 	})
 
 	require.NoError(t, err)
 
-	_, err = profilesCollection.CreateMany(context.Background(), []data.Document{
-		{"user": "user1", "bio": "Loves Go programming"},
-		{"user": "user2", "bio": "Enjoys testing"},
+	_, err = profilesCollection.CreateMany(context.Background(), []*data.Document{
+		data.MustNewDocument(map[string]any{"user": "user1", "bio": "Loves Go programming"}),
+		data.MustNewDocument(map[string]any{"user": "user2", "bio": "Enjoys testing"}),
 	})
 
 	require.NoError(t, err)
@@ -604,7 +589,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 		LeftJoin("profiles"). // Logical name for the right side
 		On(query.QueryFilter{
 			Condition: &query.FilterCondition{
-				Field:    "users.id", // Physical name of left collection
+				Field:    "users.uid", // Physical name of left collection
 				Operator: query.ComparisonOperatorEq,
 				Value: query.FilterValue{
 					FieldRefVal: &query.FieldReference{
@@ -628,29 +613,30 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 
 	// Verify content
 	for _, doc := range d {
-		userData, userOk := doc["users"].(data.Document)
-		profileData, profileOk := doc["profiles"].(data.Document)
 
-		assert.True(t, userOk)
+		userData, errUser := doc.GetDocument("users")
+		require.NoError(t, errUser) // We expect "users" to always exist
 
-		switch userData["id"] {
+		profileData, errProfile := doc.GetDocument("profiles") // profileData can be nil if not found
+
+		switch userData.Must().GetString("uid") {
 		case "user1":
-			assert.True(t, profileOk)
-			assert.Equal(t, "Alice", userData["name"])
-			assert.Equal(t, "Loves Go programming", profileData["bio"])
+			assert.NoError(t, errProfile) // We expect a profile here
+			assert.Equal(t, "Alice", userData.Must().GetString("name"))
+			assert.Equal(t, "Loves Go programming", profileData.Must().GetString("bio"))
 		case "user2":
-			assert.True(t, profileOk)
-			assert.Equal(t, "Bob", userData["name"])
-			assert.Equal(t, "Enjoys testing", profileData["bio"])
+			assert.NoError(t, errProfile) // We expect a profile here
+			assert.Equal(t, "Bob", userData.Must().GetString("name"))
+			assert.Equal(t, "Enjoys testing", profileData.Must().GetString("bio"))
 		case "user3":
-			assert.False(t, profileOk)          // No profile for user3
-			assert.Nil(t, doc["user_profiles"]) // Ensure it's explicitly nil
-			assert.Equal(t, "Charlie", userData["name"])
+			assert.NoError(t, errProfile) // We expect NO profile here
+			assert.Nil(t, profileData.Must().Get("bio"))
+			assert.Equal(t, "Charlie", userData.Must().GetString("name"))
 		default:
-			t.Errorf("Unexpected user ID: %v", userData["id"])
+			t.Errorf("Unexpected user ID: %v", userData.Must().GetString("uid"))
 		}
 	}
-} */
+}
 
 func TestPersistence_RawQueryWithJoin(t *testing.T) {
 	testutils.ConfigureDocumentFactory()
@@ -703,15 +689,16 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 	// 3. Insert Data
 	usersCollection, err := p.Collection(ctx, "users")
 	require.NoError(t, err)
-	_, err = usersCollection.CreateMany(ctx, []data.Document{
+	_, err = usersCollection.CreateMany(context.Background(), []*data.Document{
 		data.MustNewDocument(map[string]any{"uid": "user1", "name": "Alice"}),
 		data.MustNewDocument(map[string]any{"uid": "user2", "name": "Bob"}),
+		data.MustNewDocument(map[string]any{"uid": "user3", "name": "Charlie"}),
 	})
 	require.NoError(t, err)
 
 	ordersCollection, err := p.Collection(ctx, "orders")
 	require.NoError(t, err)
-	_, err = ordersCollection.CreateMany(ctx, []data.Document{
+	_, err = ordersCollection.CreateMany(ctx, []*data.Document{
 		data.MustNewDocument(map[string]any{"order_id": "orderA", "user_id": "user1", "amount": 100.0}),
 		data.MustNewDocument(map[string]any{"order_id": "orderB", "user_id": "user2", "amount": 200.0}),
 		data.MustNewDocument(map[string]any{"order_id": "orderC", "user_id": "user1", "amount": 150.0}),
@@ -744,7 +731,7 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 	assert.Len(t, result.Data, 2)
 
 	// 5. Assert Results
-	joinedDocs := result.Data.([]data.Document)
+	joinedDocs := result.Data.([]map[string]any)
 
 	// Expecting two orders for Alice, sorted by amount DESC
 	assert.Equal(t, "user1", joinedDocs[0]["user_id"])
@@ -790,7 +777,7 @@ func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
 	require.NoError(t, err)
 
 	// 3. Insert Data
-	_, err = productsCollection.CreateMany(ctx, []data.Document{
+	_, err = productsCollection.CreateMany(ctx, []*data.Document{
 		data.MustNewDocument(map[string]any{"pid": "prod1", "name": "Laptop", "price": 1200.0}),
 		data.MustNewDocument(map[string]any{"pid": "prod2", "name": "Mouse", "price": 25.0}),
 		data.MustNewDocument(map[string]any{"pid": "prod3", "name": "Keyboard", "price": 75.0}),
@@ -822,15 +809,15 @@ func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
 	readDocs := result.Data
 
 	// Expecting three products, sorted by price DESC
-	assert.Equal(t, "prod1", readDocs[0]["pid"])
-	assert.Equal(t, "Laptop", readDocs[0]["name"])
-	assert.Equal(t, float64(1200.0), readDocs[0]["price"])
+	assert.Equal(t, "prod1", readDocs[0].MustGet("pid"))
+	assert.Equal(t, "Laptop", readDocs[0].MustGet("name"))
+	assert.Equal(t, float64(1200.0), readDocs[0].MustGet("price"))
 
-	assert.Equal(t, "prod4", readDocs[1]["pid"])
-	assert.Equal(t, "Monitor", readDocs[1]["name"])
-	assert.Equal(t, float64(300.0), readDocs[1]["price"])
+	assert.Equal(t, "prod4", readDocs[1].MustGet("pid"))
+	assert.Equal(t, "Monitor", readDocs[1].MustGet("name"))
+	assert.Equal(t, float64(300.0), readDocs[1].MustGet("price"))
 
-	assert.Equal(t, "prod3", readDocs[2]["pid"])
-	assert.Equal(t, "Keyboard", readDocs[2]["name"])
-	assert.Equal(t, float64(75.0), readDocs[2]["price"])
+	assert.Equal(t, "prod3", readDocs[2].MustGet("pid"))
+	assert.Equal(t, "Keyboard", readDocs[2].MustGet("name"))
+	assert.Equal(t, float64(75.0), readDocs[2].MustGet("price"))
 }

@@ -44,7 +44,7 @@ func TestConcurrentTransactions(t *testing.T) {
 
 			_, err := p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
 				docID := fmt.Sprintf("concurrent-%d", id)
-				_, err := collection.CreateOne(tctx, data.Document{"name": fmt.Sprintf("test-%s",docID)})
+				_, err := collection.CreateOne(tctx, data.MustNewDocument(map[string]any{"name": fmt.Sprintf("test-%s",docID)}))
 				return nil, err
 			})
 

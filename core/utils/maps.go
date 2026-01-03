@@ -64,7 +64,6 @@ func GetValueByPath(data any, path string) (any, bool) {
 		}
 
 		// Fast path for map[string]any, which is common.
-		// This also covers data.Document without creating an import cycle.
 		if m, ok := current.(map[string]any); ok {
 			if val, exists := m[part]; exists {
 				current = val
@@ -75,7 +74,7 @@ func GetValueByPath(data any, path string) (any, bool) {
 
 		// Fallback to reflection for other map types (e.g., map[any]any)
 		val := reflect.ValueOf(current)
-		if val.Kind() == reflect.Ptr {
+		if val.Kind() == reflect.Pointer {
 			val = val.Elem()
 		}
 

@@ -19,8 +19,8 @@ func TestDocument_TypeSafeAccessors(t *testing.T) {
 		"nested": map[string]any{"key": "value"},
 		"arr":    []any{"a", "b"},
 		"doc_arr": []data.Document{
-			data.MustNewDocument(map[string]any{"id": "1"}),
-			data.MustNewDocument(map[string]any{"id": "2"}),
+			*data.MustNewDocument(map[string]any{"id": "1"}),
+			*data.MustNewDocument(map[string]any{"id": "2"}),
 		},
 		"str_int": "123",
 		"uncoercible_int": "hello",
@@ -182,7 +182,7 @@ func TestDocument_TypeSafeAccessors(t *testing.T) {
 	// GetDocument - successful document retrieval
 	nestedDoc, err := doc.GetDocument("nested")
 	require.NoError(t, err)
-	require.Equal(t, data.Document{"key": "value"}, nestedDoc)
+	require.Equal(t, nestedDoc.Must().GetString("key"), "value")
 
 	// GetDocument - key not found
 	_, err = doc.GetDocument("non_existent")

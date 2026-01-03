@@ -11,6 +11,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"go.uber.org/zap"
@@ -187,7 +188,7 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []sc
 		// Basic validation
 		enrichedSchema := EnrichSchema(&schema)
 		if err := enrichedSchema.Validate(); err != nil {
-			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_INVALID_SCHEMA", fmt.Sprintf("invalid schema '%s' v%s", schema.Name, schema.Version))
+			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_INVALID_SCHEMA", fmt.Sprintf("invalid schema 1'%s' v%s", schema.Name, schema.Version))
 		}
 
 		// Check if collection already exists
@@ -200,7 +201,8 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []sc
 
 	// Execute in transaction
 	requiresTransaction := true
-	if _, ok := ctx.Value("github.com/asaidimu/go-anansi/__transaction__").(base.Transaction); ok {
+
+	if _, ok := transaction.GetCurrentTransaction(ctx); ok {
 		requiresTransaction = false
 	}
 
@@ -219,6 +221,7 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []sc
 			// Create physical collection
 			tempSchema := *enrichedSchema
 			tempSchema.Name = physicalName
+
 			if err := manager.CreateCollection(tctx, tempSchema); err != nil {
 				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_COLLECTION_CREATION_FAILED", fmt.Sprintf("failed to create physical collection '%s'", physicalName))
 			}
@@ -312,7 +315,7 @@ func (r *collectionRegistry) ResolvePhysicalName(ctx context.Context, name strin
 func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version string, schema *schema.SchemaDefinition, physicalName ...string) (*RegistryEntry, error) {
 	enrichedSchema := EnrichSchema(schema)
 	if err := enrichedSchema.Validate(); err != nil {
-		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INVALID_SCHEMA", fmt.Sprintf("invalid schema: %v", err))
+		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INVALID_SCHEMA", fmt.Sprintf("invalid schema 2: %v", err))
 	}
 
 	entry, err := r.GetRegistryEntry(ctx, name)
@@ -567,7 +570,7 @@ func (r *collectionRegistry) loadAllFromDatabase(ctx context.Context) ([]*Regist
 
 // Keep existing helper methods but simplified
 
-func (r *collectionRegistry) entryToDocument(entry *RegistryEntry) (data.Document, error) {
+func (r *collectionRegistry) entryToDocument(entry *RegistryEntry) (*data.Document, error) {
 	entryBytes, err := json.Marshal(entry)
 	if err != nil {
 		return data.MustNewDocument(nil), common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_MARSHAL_REGISTRY_ENTRY")
@@ -584,16 +587,15 @@ func (r *collectionRegistry) entryToDocument(entry *RegistryEntry) (data.Documen
 func (r *collectionRegistry) persistRegistryEntry(ctx context.Context, collection base.Collection, entry *RegistryEntry) (*RegistryEntry, error) {
 	doc, err := r.entryToDocument(entry)
 	if err != nil {
-		return nil, err
+		return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_DOCUMENT")
 	}
 
 	result, err := collection.CreateOne(ctx, doc)
 	if err != nil {
+		if len(result.Issues) > 0 {
+			return nil, common.NewSystemError("ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_ENTRY_WITH_ISSUES", fmt.Sprintf("%v", result.Issues))
+		}
 		return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_ENTRY")
-	}
-
-	if len(result.Issues) > 0 {
-		return nil, common.NewSystemError("ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_ENTRY_WITH_ISSUES", fmt.Sprintf("%v", result.Issues))
 	}
 
 	rentry, err := unmarshalEntry(result.Data)
