@@ -1,19 +1,14 @@
 package schema
 
 import (
-	"embed"
-	"encoding/json"
 	"fmt"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
 
-	"bytes"
-
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 )
 
 func FieldTypePtr(fd FieldType) *FieldType {
@@ -73,115 +68,6 @@ func (s *SchemaDefinition) FindField(path string) *FieldDefinition {
 	return rootField.FindNestedField(s, parts[1:])
 }
 
-//go:embed definition.json
-var schemasFS embed.FS
-
-func (s *SchemaDefinition) From(jsonSchema []byte) error {
-	if len(jsonSchema) == 0 {
-		return common.NewSystemError(
-			"ERR_SCHEMA_EMPTY_INPUT",
-			"schema definition JSON cannot be empty",
-		).WithOperation("schema.SchemaDefinition.From")
-	}
-
-	// Load the meta-schema (definition.json)
-	b, err := schemasFS.ReadFile("definition.json")
-	if err != nil {
-		return common.SystemErrorFrom(
-			err,
-			"ERR_SCHEMA_META_SCHEMA_LOAD_FAILED",
-		).WithOperation("schema.SchemaDefinition.From").
-			WithMessage("failed to load schema definition meta-schema")
-	}
-
-	r, err := jsonschema.UnmarshalJSON(bytes.NewReader(b))
-	if err != nil {
-		return common.SystemErrorFrom(
-			err,
-			"ERR_SCHEMA_META_SCHEMA_PARSE_FAILED",
-		).WithOperation("schema.SchemaDefinition.From").
-			WithMessage("failed to parse meta-schema JSON")
-	}
-
-	compiler := jsonschema.NewCompiler()
-	if err = compiler.AddResource("schema.json", r); err != nil {
-		return common.SystemErrorFrom(
-			err,
-			"ERR_SCHEMA_META_SCHEMA_COMPILE_FAILED",
-		).WithOperation("schema.SchemaDefinition.From").
-			WithMessage("failed to add meta-schema resource to compiler")
-	}
-
-	schema, err := compiler.Compile("schema.json")
-	if err != nil {
-		return common.SystemErrorFrom(
-			err,
-			"ERR_SCHEMA_META_SCHEMA_COMPILE_FAILED",
-		).WithOperation("schema.SchemaDefinition.From").
-			WithMessage("failed to compile meta-schema")
-	}
-
-	var data any
-	if err = json.Unmarshal(jsonSchema, &data); err != nil {
-		return common.NewSystemError(
-			"ERR_SCHEMA_INVALID_JSON",
-			fmt.Sprintf("invalid JSON in schema definition: %v", err),
-		).WithOperation("schema.SchemaDefinition.From")
-	}
-
-	// Validate against the JSON Schema
-	if err = schema.Validate(data); err != nil {
-		validationErr, ok := err.(*jsonschema.ValidationError)
-		if !ok {
-			return common.SystemErrorFrom(
-				err,
-				"ERR_SCHEMA_VALIDATION_FAILED",
-			).WithOperation("schema.SchemaDefinition.From").
-				WithMessage("schema definition failed validation")
-		}
-
-		// Convert jsonschema.ValidationError into structured Issues
-		issues := make([]common.Issue, 0, len(validationErr.BasicOutput().Errors))
-		for _, ve := range validationErr.BasicOutput().Errors {
-			if ve.KeywordLocation == "" && ve.Error.String() == "" {
-				continue
-			}
-			path := strings.ReplaceAll(ve.InstanceLocation, "/", ".")
-			if path != "" && path[0] == '.' {
-				path = path[1:]
-			}
-			issues = append(issues, common.Issue{
-				Code:        "VALIDATION_ERROR",
-				Message:     ve.Error.String(),
-				Path:        path,
-				Severity:    "error",
-				Description: fmt.Sprintf("JSON Schema keyword '%s' failed", ve.KeywordLocation),
-			})
-		}
-
-		sysErr := common.NewSystemError(
-			"ERR_SCHEMA_VALIDATION_FAILED",
-			"provided JSON does not conform to the schema definition meta-schema",
-		).WithOperation("schema.SchemaDefinition.From").
-			WithIssues(issues)
-
-		// Attach the original validation error as cause for debugging
-		sysErr.Cause = err
-
-		return sysErr
-	}
-
-	// If validation passes, unmarshal into the struct
-	if err = utils.FromJSON(jsonSchema, s); err != nil {
-		return common.SystemErrorFrom(
-			err,
-			"ERR_SCHEMA_UNMARSHAL_FAILED",
-		).WithOperation("schema.SchemaDefinition.From").
-			WithMessage("failed to unmarshal validated JSON into SchemaDefinition")
-	}
-
-	return nil
-}
 
 // FindNestedField finds a nested field by its path segments from the current field.
 func (fd *FieldDefinition) FindNestedField(schema *SchemaDefinition, path []string) *FieldDefinition {
