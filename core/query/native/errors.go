@@ -25,5 +25,7 @@ var (
 	ErrCouldNotBuildCreateIndexQuery = common.NewSystemError("ERR_NATIVE_COULD_NOT_BUILD_CREATE_INDEX_QUERY", "could not build query for creating index")
 	ErrCouldNotBuildDropIndexQuery   = common.NewSystemError("ERR_NATIVE_COULD_NOT_BUILD_DROP_INDEX_QUERY", "could not build query for dropping index")
 	ErrCouldNotBuildDropCollectionQuery = common.NewSystemError("ERR_NATIVE_COULD_NOT_BUILD_DROP_COLLECTION_QUERY", "could not build query for dropping collection")
+	ErrFailedToUpdateDocuments       = common.NewSystemError("ERR_NATIVE_FAILED_TO_UPDATE_DOCUMENTS", "failed to update documents")
+	ErrFailedToReadUpdatedDocuments  = common.NewSystemError("ERR_NATIVE_FAILED_TO_READ_UPDATED_DOCUMENTS", "failed to read updated documents after update")
 )
 

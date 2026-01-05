@@ -38,8 +38,8 @@ var (
 	ErrUpdateStatementNoAssignments    = common.NewSystemError("ERR_QUERY_UPDATE_STATEMENT_NO_ASSIGNMENTS", "update statement must have assignments")
 	ErrUpdateNoTargetSpecified         = common.NewSystemError("ERR_QUERY_UPDATE_NO_TARGET_SPECIFIED", "no target specified for update")
 	ErrUpdateQueryNoTarget             = common.NewSystemError("ERR_QUERY_UPDATE_QUERY_NO_TARGET", "update query must have a target")
-	ErrUpdateQueryNoDataPayload        = common.NewSystemError("ERR_QUERY_UPDATE_QUERY_NO_DATA_PAYLOAD", "update query must have data payload")
-	ErrUpdateInvalidPayloadType        = common.NewSystemError("ERR_QUERY_UPDATE_INVALID_PAYLOAD_TYPE", "invalid data type for update payload")
+	ErrUpdateQueryNoDataPayload        = common.NewSystemError("ERR_QUERY_UPDATE_QUERY_NO_DATA_PAYLOAD", "update query must have data payload for set or compute")
+	ErrBuilderInvalidUpdatePayload     = common.NewSystemError("ERR_QUERY_BUILDER_INVALID_UPDATE_PAYLOAD", "invalid data type for update payload: expected map[string]any")
 	ErrUpdateInvalidSetType            = common.NewSystemError("ERR_QUERY_UPDATE_INVALID_SET_TYPE", "invalid data type for 'set' in update")
 	ErrUpdateInvalidComputeType        = common.NewSystemError("ERR_QUERY_UPDATE_INVALID_COMPUTE_TYPE", "invalid data type for 'compute' in update")
 

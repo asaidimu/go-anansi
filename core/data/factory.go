@@ -161,6 +161,7 @@ func (f *documentFactory) getSanitizerForContext(ctx context.Context) *DocumentS
 	return f.sanitization.global
 }
 
+
 // newDocument creates a new document with injected metadata.
 func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) (*Document, error) {
 	if !f.configured {
@@ -169,12 +170,15 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 	if data == nil {
 		data = make(map[string]any)
 	}
+
 	doc := &Document{ctx: ctx, data: data}
+
+	// Ensure document has a valid ID
 	if !f.hasValidID(doc) {
-		doc.data[DocumentID] = strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
+		doc.data[DocumentIDField] = strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
 	}
 
-	// Ensure metadata field exists
+	// Get or initialize metadata - we'll build it up completely before setting
 	meta, ok := doc.Metadata()
 	if !ok {
 		meta = make(map[string]any)
@@ -185,39 +189,50 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 	if _, ok := meta[MetadataCreated]; !ok {
 		meta[MetadataCreated] = now
 	}
-	meta[MetadataUpdated] = now
+
+	if _, ok := meta[MetadataUpdated]; !ok {
+		meta[MetadataUpdated] = now
+	}
 
 	if version, ok := meta[MetadataVersion]; !ok || !utils.IsInteger(version) {
 		meta[MetadataVersion] = 1
 	}
 
-	// Apply user-defined metadata providers
+	// Copy provider configs while holding lock, then release immediately
 	f.mu.RLock()
-	defer f.mu.RUnlock()
+	providers := make([]MetadataProviderConfig, len(f.config.Providers))
+	copy(providers, f.config.Providers)
+	f.mu.RUnlock()
 
-	for _, providerConfig := range f.config.Providers {
+	// Apply user-defined metadata providers without holding the lock
+	for _, providerConfig := range providers {
 		providerMeta, err := providerConfig.Provider(ctx, doc)
 		if err != nil {
-			return nil, common.SystemErrorFrom(ErrMetadataProviderFailed).WithOperation("data.documentFactory.newDocument").WithMessage(fmt.Sprintf("metadata provider '%s' failed", providerConfig.Name)).WithCause(err)
+			return nil, common.SystemErrorFrom(ErrMetadataProviderFailed).
+				WithOperation("data.documentFactory.newDocument").
+				WithMessage(fmt.Sprintf("metadata provider '%s' failed", providerConfig.Name)).
+				WithCause(err)
 		}
 		maps.Copy(meta, providerMeta)
 	}
 
-	// Set the metadata back to the document
+	// Set metadata once before hash calculation
 	doc.SetMetadata(meta)
 
-	// Calculate and set the hash
-	hash, err := f.calculateHash(doc)
+	// Normalize and preserve context
+	normalizedDoc := doc.Normalize()
+
+	// Calculate hash based on document with complete metadata
+	err := normalizedDoc.Hash()
 	if err != nil {
 		return nil, common.SystemErrorFrom(err).WithOperation("data.documentFactory.newDocument")
 	}
-	meta[MetadataChecksum] = hash
-	doc.SetMetadata(meta)
 
-	normalizedDoc := doc.Normalize()
-	normalizedDoc.ctx = ctx // Ensure context is preserved after normalization
+	// Preserve context
+	normalizedDoc.ctx = ctx
 	return normalizedDoc, nil
 }
+
 
 // GetMetadataSchema merges all provider schemas into a single metadata schema
 // Conflicts are already handled during configuration, so simple merging is safe here
@@ -270,6 +285,7 @@ func (f *documentFactory) calculateHash(doc *Document) (string, error) {
 	}
 
 	// Create a copy of the metadata and remove the hash field itself
+	delete(meta, MetadataSignature)
 	delete(meta, MetadataChecksum)
 	dataToSign.SetMetadata(meta)
 	// Use canonicalMarshal to ensure consistent key ordering for hashing.
@@ -290,6 +306,7 @@ func (f *documentFactory) signDocument(doc *Document, privateKey *rsa.PrivateKey
 	meta, ok := docToSign.Metadata()
 	if ok {
 		delete(meta, MetadataSignature)
+		delete(meta, MetadataChecksum)
 		docToSign.SetMetadata(meta)
 	}
 
@@ -314,7 +331,7 @@ func (f *documentFactory) signDocument(doc *Document, privateKey *rsa.PrivateKey
 }
 
 func (f *documentFactory) hasValidID(doc *Document) bool {
-	i, ok := doc.data[DocumentID]
+	i, ok := doc.data[DocumentIDField]
 	if !ok {
 		return false
 	}
@@ -363,6 +380,7 @@ func (f *documentFactory) verifySignature(doc *Document, publicKey *rsa.PublicKe
 	meta, ok := docToVerify.Metadata()
 	if ok {
 		delete(meta, MetadataSignature)
+		delete(meta, MetadataChecksum)
 		docToVerify.SetMetadata(meta)
 	}
 

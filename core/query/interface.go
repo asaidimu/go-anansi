@@ -260,6 +260,8 @@ type Capabilities struct {
 	MaxWhereConditions int
 	// MaxJoinClauses specifies the maximum number of JOIN clauses allowed in a single query. 0 means no limit.
 	MaxJoinClauses int
+	// ReturnOnUpdate indicates if the interactor can return updated documents directly on update operations.
+	ReturnOnUpdate bool
 }
 
 // QueryPartitionerInterface defines the interface for splitting a query.

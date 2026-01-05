@@ -14,7 +14,7 @@ func TestTraceDocumentInsertion(t *testing.T) {
 	interactor, cleanup := createNativeInteractor(t)
 	defer cleanup()
 
-	schema := registry.EnrichSchema(newTestSchema("trace_collection"))
+	schema := registry.MustEnrichSchema(newTestSchema("trace_collection"))
 
 	// We need to create the collection schema in the database for the interactor to work
 	err := interactor.CreateCollection(context.Background(), *schema)
@@ -27,13 +27,13 @@ func TestTraceDocumentInsertion(t *testing.T) {
 		require.NoError(t, err)
 
 
-	
+
 
 
 		// Directly insert using the interactor
 
 
-		insertedDocs, err := interactor.InsertDocuments(context.Background(), schema, []map[string]any{docToCreate.AsMap()})
+		insertedDocs, err := interactor.InsertDocuments(context.Background(), schema, []map[string]any{docToCreate.ToMap()})
 	require.NoError(t, err)
 	require.Len(t, insertedDocs, 1)
 

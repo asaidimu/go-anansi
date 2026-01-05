@@ -116,9 +116,10 @@ func TestCartSimulation_Success(t *testing.T) {
 			Filter: q.Filters,
 			Set:    item,
 		}
-		updatedCount, err := inventory.Update(ctx, &update)
+		updateResult, err := inventory.Update(ctx, &update)
 		require.NoError(t, err)
-		require.Equal(t, 1, updatedCount)
+		require.NotNil(t, updateResult)
+		require.Equal(t, 1, updateResult.Count)
 
 		// 3. Create sales record
 		s, err := sales.CreateOne(ctx, data.MustNewDocument(map[string]any{"itemId": "item1", "quantity": 1}))

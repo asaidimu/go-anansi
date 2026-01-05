@@ -3,49 +3,35 @@ package data
 import "context"
 
 // AsDocument attempts to convert any value to a *Document.
-func AsDocument(v any) (*Document, bool) {
+// It also accepts an optional context for metadata injection.
+func AsDocument(v any, ctx ...context.Context) (*Document, bool) {
 	switch val := v.(type) {
 	case *Document:
 		return val, true
 	case Document:
 		return &val, true
 	case map[string]any:
-		return &Document{ctx: context.Background(), data: val}, true
+		newDoc, err := NewDocument(val, ctx...)
+		if err != nil {
+			return nil, false // Or handle error appropriately
+		}
+		return newDoc, true
 	case nil:
-		return &Document{ctx: context.Background(), data: make(map[string]any)}, true
+		newDoc, err := NewDocument(make(map[string]any), ctx...)
+		if err != nil {
+			return nil, false // Or handle error appropriately
+		}
+		return newDoc, true
 	default:
 		return nil, false
 	}
 }
 
-// DocumentSlice attempts to convert any value to []*Document.
-func DocumentSlice(v any) ([]*Document, bool) {
-	switch val := v.(type) {
-	case []*Document:
-		return val, true
-	case []Document:
-		docs := make([]*Document, len(val))
-		for i := range val {
-			docs[i] = &val[i]
-		}
-		return docs, true
-	case []any:
-		docs := make([]*Document, 0, len(val))
-		for _, item := range val {
-			if doc, ok := AsDocument(item); ok {
-				docs = append(docs, doc)
-			} else {
-				return nil, false
-			}
-		}
-		return docs, true
-	case []map[string]any:
-		docs := make([]*Document, len(val))
-		for i, m := range val {
-			docs[i] = &Document{ctx: context.Background(), data: m}
-		}
-		return docs, true
-	default:
+// Deprecated: Use NewDocumentSet instead.
+func DocumentSlice(v any, ctx ...context.Context) ([]*Document, bool) {
+	set, ok := NewDocumentSet(v, ctx...)
+	if !ok {
 		return nil, false
 	}
+	return []*Document(set), true
 }

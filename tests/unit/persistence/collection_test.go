@@ -58,12 +58,12 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 	ephemeralInteractor := ephemeral.NewEphemeral()
 	manager := ephemeralInteractor.SchemaManager()
 	logger := zap.NewNop()
-	testSchemaDef := registry.EnrichSchema(testSchema())
+	testSchemaDef := registry.MustEnrichSchema(testSchema())
 
 	validator, err := schema.NewDocumentValidator(testSchemaDef, nil)
 	assert.NoError(t, err)
 	expected := data.MustNewDocument(map[string]any{"name": "Test1"})
-	_, ok := validator.Validate(expected.AsMap(), false)
+	_, ok := validator.Validate(expected.ToMap(), false)
 	assert.True(t, ok)
 
 	err = manager.CreateCollection(context.Background(), *testSchemaDef)
@@ -240,7 +240,7 @@ func TestCollection_Update(t *testing.T) {
 		updateParamsWrongVersion := &persistence.CollectionUpdate{Set: updates, Filter: q.Filters, Version: &wrongVersion}
 		rowsAffected, err := c.Update(ctx, updateParamsWrongVersion)
 		assert.NoError(t, err)
-		assert.Equal(t, 0, rowsAffected)
+		assert.Equal(t, 0, rowsAffected.Count)
 	})
 
 	t.Run("update multiple documents without optimistic locking", func(t *testing.T) {
@@ -269,7 +269,7 @@ func TestCollection_Update(t *testing.T) {
 		// Perform the update
 		rowsAffected, err := c.Update(ctx, updateParams)
 		assert.NoError(t, err)
-		assert.Equal(t, 2, rowsAffected)
+		assert.Equal(t, 2, rowsAffected.Count)
 
 		// Verify the documents were actually updated
 		readQuery := query.NewQueryBuilder().Where("status").Eq("done").Build()
@@ -289,10 +289,9 @@ func TestCollection_Update(t *testing.T) {
 		updates := data.MustNewDocument(map[string]any{"name": "any"})
 		updateParams := &persistence.CollectionUpdate{Set: updates, Filter: q.Filters, Version: nil}
 
-		rowsAffected, err := nonExistentCollection.Update(ctx, updateParams)
+		_, err := nonExistentCollection.Update(ctx, updateParams)
 
 		assert.Error(t, err)
-		assert.Equal(t, 0, rowsAffected)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "validation failed")
 	})
@@ -521,4 +520,51 @@ func TestCollection_Capabilities(t *testing.T) {
 	assert.True(t, capabilities.SupportsDistinct)
 	assert.True(t, capabilities.SupportsNestedFields)
 	assert.Contains(t, capabilities.SupportedPaginationTypes, query.PaginationTypeOffset)
+}
+
+func TestHashConsistencyOnRead(t *testing.T) {
+	collection, _, _, _, _, ctx := setupCollection(t)
+
+	// 1. Create a document to be read
+	docToCreate := data.MustNewDocument(map[string]any{
+		"name":   "consistent_hash_test",
+		"status": "active",
+	})
+	createResult, err := collection.CreateOne(ctx, docToCreate)
+	require.NoError(t, err)
+	docID := createResult.Data.ID()
+
+	// 2. Read the document for the first time
+	query := query.NewQueryBuilder().Where("id").Eq(docID).Build()
+	readResult1, err := collection.Read(ctx, &query)
+	require.NoError(t, err)
+	require.Equal(t, 1, readResult1.Count)
+	doc1 := readResult1.Data[0]
+
+	// 3. Read the document for the second time
+	readResult2, err := collection.Read(ctx, &query)
+	require.NoError(t, err)
+	require.Equal(t, 1, readResult2.Count)
+	doc2 := readResult2.Data[0]
+
+	// 4. Assertions
+	checksum1, err := doc1.Checksum()
+	require.NoError(t, err)
+	assert.NotEmpty(t, checksum1, "Document 1 should have a checksum")
+
+	checksum2, err := doc2.Checksum()
+	require.NoError(t, err)
+	assert.NotEmpty(t, checksum2, "Document 2 should have a checksum")
+
+	// The checksums should be identical, proving the hashing process is deterministic on read.
+	assert.Equal(t, checksum1, checksum2, "Hashes from two separate reads should be consistent")
+
+	// Verify that the hash is indeed valid for both documents.
+	ok1, err := doc1.VerifyHash()
+	require.NoError(t, err)
+	assert.True(t, ok1, "Hash for doc1 should be valid")
+
+	ok2, err := doc2.VerifyHash()
+	require.NoError(t, err)
+	assert.True(t, ok2, "Hash for doc2 should be valid")
 }

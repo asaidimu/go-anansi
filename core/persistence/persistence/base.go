@@ -51,7 +51,12 @@ func newBasePersistence(
 		interactor,
 		engine,
 		logger,
-		nil,
+		func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error) {
+			if name != registrySchema.Name {
+				return "", nil, common.NewSystemError("ERR_INVALID_QUERY", "INVALID_QUERY_ON_REGISTRY")
+			}
+			return registrySchema.Name, registrySchema, nil
+		},
 		nil,
 	)
 

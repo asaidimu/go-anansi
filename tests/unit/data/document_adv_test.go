@@ -42,8 +42,8 @@ func TestDocument_DeepMerge(t *testing.T) {
 		})
 
 		// We need to remove metadata and dynamic IDs for a stable comparison in this test
-		actualMap := doc1.StripMetadata().AsMap()
-		expectedMap := expected.StripMetadata().AsMap()
+		actualMap := doc1.StripMetadata().ToMap()
+		expectedMap := expected.StripMetadata().ToMap()
 
 		// Remove dynamic IDs for comparison as they are generated
 		delete(actualMap, "id")
@@ -62,51 +62,6 @@ func TestDocument_DeepMerge(t *testing.T) {
 	})
 }
 
-func TestDocument_Flatten(t *testing.T) {
-	doc := data.MustNewDocument(map[string]any{
-		"a": 1,
-		"b": map[string]any{
-			"c": 2,
-			"d": map[string]any{"e": 3},
-		},
-		"f": []any{
-			map[string]any{"g": 4},
-			5,
-		},
-	}).StripMetadata()
-
-	flat := doc.Flatten(".")
-	expected := map[string]any{
-		"id":     doc.Must().GetString("id"), // Use Must() on the pointer
-		"a":      1,
-		"b.c":    2,
-		"b.d.e":  3,
-		"f[0].g": 4,
-		"f[1]":   5,
-	}
-
-	assert.Equal(t, expected, flat)
-}
-
-func TestUnflatten(t *testing.T) {
-	flat := map[string]any{
-		"a":     1,
-		"b.c":   2,
-		"b.d.e": 3,
-	}
-
-	doc := data.Unflatten(flat, ".")
-	expected := data.MustNewDocument(map[string]any{
-		"a": 1,
-		"b": map[string]any{
-			"c": 2,
-			"d": map[string]any{"e": 3},
-		},
-	})
-
-	// Compare stripped documents to ignore metadata and dynamic IDs
-	assert.True(t, expected.StripMetadata().Equals(doc.StripMetadata()))
-}
 
 func TestDocument_DiffAndApply(t *testing.T) {
 	doc1 := data.MustNewDocument(map[string]any{
@@ -156,8 +111,11 @@ func TestDocument_JSONPathQuery(t *testing.T) {
 				"price": 100,
 			},
 		},
-	}).StripMetadata() // Strip metadata for consistent testing
+	})
 
+	doc = doc.StripMetadata()
+	json, _ := doc.ToJSON(true)
+	t.Logf("Data %s", json)
 	// Test nested access
 	prices, err := doc.JSONPathQuery("$.store.book[*].price")
 	require.NoError(t, err)

@@ -22,22 +22,10 @@ func (q *sqliteQuery) StatementType() native.StatementType {
 	return q.stmtType
 }
 
-// sqliteNativeQueryFactory implements NativeQueryFactory[types.SQLitePayload].
-type sqliteFactory struct {
-	paramCounter int
-	aliases      map[string]string
-}
 
 // NewSQLiteFactory creates a new factory for building SQLite queries.
 func NewSQLiteFactory() native.QueryFactory[types.SQLitePayload] {
 	return newSQLiteFactory()
-}
-
-func newSQLiteFactory() *sqliteFactory {
-	return &sqliteFactory{
-		paramCounter: 0,
-		aliases:      make(map[string]string),
-	}
 }
 
 func (x *sqliteFactory) Build(
@@ -60,7 +48,15 @@ func (x *sqliteFactory) Build(
 	case native.StmtSelect:
 		sqlTree, err = f.buildSelectTree(q)
 	case native.StmtUpdate:
-		sqlTree, err = f.buildUpdateTree(q, extra)
+		updatePayload, ok := extra.(map[string]any)
+		if !ok {
+			return nil, ErrBuilderInvalidUpdatePayload.WithCause(fmt.Errorf("invalid update payload type: expected map[string]any, got %T", extra))
+		}
+		returnDocs := false
+		if ret, ok := updatePayload["returning"].(bool); ok {
+			returnDocs = ret
+		}
+		sqlTree, err = f.buildUpdateTree(q, updatePayload, returnDocs)
 	case native.StmtDelete:
 		sqlTree, err = f.buildDeleteTree(q)
 	case native.StmtInsert:

@@ -120,5 +120,6 @@ func (i *sqliteFactory) Capabilities() query.Capabilities {
 		SupportsNestedFields: true,  // Via JSON functions like json_extract
 		MaxWhereConditions:   0,     // SQLite has no practical limit
 		MaxJoinClauses:      63,     // SQLite has a default limit of 64 tables in a join
+		ReturnOnUpdate: true,
 	}
 }

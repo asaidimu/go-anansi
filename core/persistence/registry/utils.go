@@ -93,37 +93,42 @@ func sanitizeForDatabase(input string) string {
 }
 
 func unmarshalEntry(doc *data.Document) (*base.RegistryEntry, error) {
-	return utils.MapToStruct[*RegistryEntry](doc.AsMap())
+	return utils.MapToStruct[*RegistryEntry](doc.ToMap())
 }
 
-func EnrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
+func EnrichSchema(sc *schema.SchemaDefinition) (*schema.SchemaDefinition, error) {
 	if sc == nil {
-		return nil
+		return nil, nil
 	}
 
 	// --- Add ID Field ---
 	idField := &schema.FieldDefinition{
-		Name:     data.DocumentID,
+		Name:     data.DocumentIDField,
 		Type:     schema.FieldTypeString,
 		Required: utils.BoolPtr(true),
 		Unique:   utils.BoolPtr(true),
 	}
+
 	id_id := uuid.Must(uuid.NewV7()).String()
-	sc = sc.MustAddField(id_id, idField, nil)
+
+	sc, err := sc.AddField(id_id, idField, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	// --- Enforce ID Index ---
 	var filteredIndexes []schema.IndexOrReference
 	for _, index := range sc.Indexes {
-		if len(index.Index.Fields) == 1 && index.Index.Fields[0] == data.DocumentID {
+		if len(index.Index.Fields) == 1 && index.Index.Fields[0] == data.DocumentIDField {
 			continue // Skip user-defined index on 'id'.
 		}
 		filteredIndexes = append(filteredIndexes, index)
 	}
 	sc.Indexes = filteredIndexes
 
-	sc = sc.MustAddIndex(schema.IndexDefinition{
+	sc = sc.AddIndex(schema.IndexDefinition{
 		Name:   "pk_id",
-		Fields: []string{data.DocumentID},
+		Fields: []string{data.DocumentIDField},
 		Type:   schema.IndexTypePrimary,
 		Unique: utils.BoolPtr(true),
 	})
@@ -143,8 +148,21 @@ func EnrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
 		return msd, deps
 	}
 
-	result := sc.MustAddField(metadata_id,metadataField, provider)
+	result, err := sc.AddField(metadata_id, metadataField, provider)
+	if err != nil {
+		return nil, err
+	}
+
 	if err := result.Validate(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+// TODO: implement a non panicky enrich schema
+func MustEnrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
+	result, err := EnrichSchema(sc)
+	if err != nil {
 		panic(err)
 	}
 	return  result

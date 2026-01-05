@@ -185,63 +185,153 @@ func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *sche
 }
 
 // UpdateDocuments updates documents in the in-memory store.
-func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, updates map[string]any, computedUpdates map[string]query.Query,  filters *query.QueryFilter) (int64, error) {
+
+func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, updates map[string]any, computedUpdates map[string]query.Query, filters *query.QueryFilter, returnDocs bool) ([]map[string]any, int64, error) {
+
 	c, err := i.store.getCollection(schemaDef.Name)
+
 	if err != nil {
-		return 0, err
+
+		return nil, 0, err
+
 	}
+
 	queryHelper, err := query.NewQueryHelper(&query.Query{
+
 		Target: &query.QueryTarget{
+
 			Name: schemaDef.Name,
+
 		},
+
 		Filters: filters,
+
 	}, nil, nil, nil)
+
 	if err != nil {
-		return 0, err
+
+		return nil, 0, err
+
 	}
+
+
 
 	var updatedCount int64
+
+	var updatedDocuments []map[string]any
+
 	var idsToUpdate []string
+
+	
+
 	stream := c.data.Stream(0)
+
 	for {
+
 		docResult, err := stream.Next()
+
 		if err != nil {
+
 			if err == store.ErrStreamClosed {
+
 				break
+
 			}
+
 			stream.Close()
-			return 0, err
+
+			return nil, 0, err
+
 		}
+
+
 
 		doc := map[string]any(docResult.Data)
+
 		matches, err := queryHelper.Match(doc)
+
 		if err != nil {
+
 			stream.Close()
-			return 0, err
+
+			return nil, 0, err
+
 		}
+
+
 
 		if matches {
+
 			idsToUpdate = append(idsToUpdate, docResult.ID)
+
 		}
+
 	}
+
 	stream.Close()
 
-	for _, id := range idsToUpdate {
-		doc, err := c.data.Get(id)
-		if err != nil {
-			return 0, err
-		}
-		updatedDoc := make(map[string]any)
-		maps.Copy(updatedDoc, doc.Data)
-		maps.Copy(updatedDoc, updates)
 
-		if err := c.data.Update(id, updatedDoc); err != nil {
-			return 0, err
+
+	for _, id := range idsToUpdate {
+
+		doc, err := c.data.Get(id)
+
+		if err != nil {
+
+			return nil, 0, err
+
 		}
+
+		updatedDocData := make(map[string]any)
+
+		maps.Copy(updatedDocData, doc.Data)
+
+		maps.Copy(updatedDocData, updates)
+
+
+
+		// TODO: Apply computedUpdates logic here
+
+		// For now, only 'set' updates are handled in ephemeral interactor.
+
+
+
+		if err := c.data.Update(id, updatedDocData); err != nil {
+
+			return nil, 0, err
+
+		}
+
 		updatedCount++
+
+		if returnDocs {
+
+			// Retrieve the updated document to return it
+
+			retrievedDoc, err := c.data.Get(id)
+
+			if err != nil {
+
+				// Log error, but don't fail the update entirely if we can't retrieve for return
+
+				// Or decide if this should be a hard error based on use case.
+
+				// For now, we'll return an error.
+
+				return nil, updatedCount, err 
+
+			}
+
+			updatedDocuments = append(updatedDocuments, map[string]any(retrievedDoc.Data))
+
+		}
+
 	}
 
-	return updatedCount, nil
+
+
+	return updatedDocuments, updatedCount, nil
+
 }
 
 // InsertDocuments inserts documents into the in-memory store.

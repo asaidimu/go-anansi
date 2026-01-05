@@ -96,7 +96,7 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 		}
 		sanitized := &base.ReadResult{
 			Count: v.Count,
-			Data:  data.SanitizeValue(ctx, v.Data).([]*data.Document),
+			Data:  data.SanitizeValue(ctx, v.Data).(data.DocumentSet),
 		}
 		return sanitized
 

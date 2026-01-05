@@ -81,5 +81,5 @@ func RegistrySchema() *schema.SchemaDefinition {
 		panic(fmt.Sprintf("failed to unmarshal registry schema: %v", err))
 	}
 
-	return EnrichSchema(&def)
+	return MustEnrichSchema(&def)
 }

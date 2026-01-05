@@ -101,23 +101,51 @@ func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *schema.Schem
 }
 
 // UpdateDocuments updates documents matching the filter.
-func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, computedUpdates map[string]query.Query, filters *query.QueryFilter) (int64, error) {
+func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, computedUpdates map[string]query.Query, filters *query.QueryFilter, returnDocs bool) ([]map[string]any, int64, error) {
 	dsl := &query.Query{
 		Target:  &query.QueryTarget{Name: schema.Name, Schema: schema},
 		Filters: filters,
 	}
 
+	supportsReturning := i.qf.Capabilities().ReturnOnUpdate
+	useNativeReturning := returnDocs && supportsReturning
+
 	updatePayload := map[string]any{
-		"set":     updates,
-		"compute": computedUpdates,
+		"set":       updates,
+		"compute":   computedUpdates,
+		"returning": useNativeReturning,
 	}
 
-	compiled, err := i.b.Build(dsl, StmtUpdate, updatePayload)
+	compiled, buildErr := i.b.Build(dsl, StmtUpdate, updatePayload)
+	if buildErr != nil {
+		return nil, 0, common.SystemErrorFrom(buildErr, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.UpdateDocuments")
+	}
+
+	// State 1: User wants documents AND interactor supports returning
+	if useNativeReturning {
+		returnedDocs, err := i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: schema})
+		if err != nil {
+			return nil, 0, common.SystemErrorFrom(err, ErrFailedToUpdateDocuments.Code, ErrFailedToUpdateDocuments.Message).WithOperation("native.NativeInteractor.UpdateDocuments")
+		}
+		affectedCount := int64(len(returnedDocs))
+		return returnedDocs, affectedCount, nil
+	}
+
+	// State 2 & 3: Execute update without returning
+	affectedCount, err := i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: schema})
 	if err != nil {
-		return 0, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.UpdateDocuments")
+		return nil, 0, common.SystemErrorFrom(err, ErrFailedToUpdateDocuments.Code, ErrFailedToUpdateDocuments.Message).WithOperation("native.NativeInteractor.UpdateDocuments")
 	}
 
-	return i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: schema})
+	// State 2: User wants documents but interactor doesn't support returning
+	// Cannot reliably return updated documents without native RETURNING support
+	// because the update may have modified fields used in the filter criteria
+	if returnDocs {
+		return []map[string]any{}, affectedCount, nil
+	}
+
+	// State 3: User doesn't want documents
+	return nil, affectedCount, nil
 }
 
 // InsertDocuments inserts new documents.

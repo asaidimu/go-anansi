@@ -640,7 +640,7 @@ func (s *SchemaDefinition) AddVersionField() {
 }
 
 // MustAddIndex adds a new index to the schema definition and returns the modified schema.
-func (s *SchemaDefinition) MustAddIndex(index IndexDefinition) *SchemaDefinition {
+func (s *SchemaDefinition) AddIndex(index IndexDefinition) *SchemaDefinition {
 	if s.Indexes == nil {
 		s.Indexes = make([]IndexOrReference, 0)
 	}

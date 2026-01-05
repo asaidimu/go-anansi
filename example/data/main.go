@@ -172,13 +172,7 @@ func main() {
 	skills, _ := doc.JSONPathQuery("$.profile.skills[*]")
 	fmt.Println("Skills:", skills)
 
-	// 9. Flatten nested structure
-	flat := doc.Flatten(".")
-	fmt.Println("\nFlattened document:")
-	flatJSON, _ := json.MarshalIndent(flat, "", "  ")
-	fmt.Println(string(flatJSON))
-
-	// 10. Bind to struct
+	// 9. Bind to struct
 	type UserProfile struct {
 		Username string   `doc:"username"`
 		Email    string   `doc:"email"`
@@ -196,7 +190,7 @@ func main() {
 	fmt.Println("\nBound to struct:")
 	fmt.Printf("%+v\n", profile)
 
-	// 11. Normalization (strips nested metadata – useful before persistence)
+	// 10. Normalization (strips nested metadata – useful before persistence)
 	clean := doc.Normalize()
 	fmt.Println("\nNormalized (nested metadata stripped):")
 	pretty, _ = clean.ToJSON(true)

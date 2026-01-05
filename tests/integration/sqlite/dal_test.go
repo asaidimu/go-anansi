@@ -121,7 +121,7 @@ func TestInsert_Integration(t *testing.T) {
 		"age":        45,
 	})
 
-	nq, err := builder.Build(&q, native.StmtInsert, data.AsMap())
+	nq, err := builder.Build(&q, native.StmtInsert, data.ToMap())
 	require.NoError(t, err)
 
 	_, err = db.Exec(nq.Raw().SQL, nq.Raw().Params...)
@@ -158,7 +158,7 @@ func TestUpdate_Integration(t *testing.T) {
 	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Schema(usersSchema).Where("id").Eq("user-1")
 	q := qb.Build()
 
-	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{"set": data.StripMetadata().AsMap()})
+	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{"set": data.StripMetadata().ToMap()})
 	require.NoError(t, err)
 
 	res, err := db.Exec(nq.Raw().SQL, nq.Raw().Params...)
@@ -244,7 +244,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 	metadata := map[string]any{"author": "Augustine", "version": 2}
 	insertData := *data.MustNewDocument(map[string]any{"tags": tags, "_metadata_": metadata})
 
-	nq, err := builder.Build(&q, native.StmtInsert, insertData.AsMap())
+	nq, err := builder.Build(&q, native.StmtInsert, insertData.ToMap())
 	require.NoError(t, err)
 
 	_, err = db.Exec(nq.Raw().SQL, nq.Raw().Params...)

@@ -5,9 +5,22 @@ import (
 	"reflect"
 )
 
+// DocumentDiff represents differences between two documents.
+type DocumentDiff struct {
+	Added    map[string]any       `json:"added"`
+	Removed  map[string]any       `json:"removed"`
+	Modified map[string]DiffValue `json:"modified"`
+}
+
+// DiffValue represents a changed value.
+type DiffValue struct {
+	Old any `json:"old"`
+	New any `json:"new"`
+}
+
 // isSystemField checks if a key is a system-managed field that should be ignored during content comparison.
 func isSystemField(key string) bool {
-	return key == DocumentID || key == MetadataField
+	return key == DocumentIDField || key == MetadataField
 }
 
 // Diff computes differences between two documents.
@@ -48,19 +61,6 @@ func (d *Document) Diff(other *Document) DocumentDiff {
 	}
 
 	return diff
-}
-
-// DocumentDiff represents differences between two documents.
-type DocumentDiff struct {
-	Added    map[string]any       `json:"added"`
-	Removed  map[string]any       `json:"removed"`
-	Modified map[string]DiffValue `json:"modified"`
-}
-
-// DiffValue represents a changed value.
-type DiffValue struct {
-	Old any `json:"old"`
-	New any `json:"new"`
 }
 
 // HasChanges returns true if there are any differences.
