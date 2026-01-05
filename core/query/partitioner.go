@@ -272,7 +272,7 @@ func (p *QueryPartitioner) partitionSort(sorts []SortConfiguration) ([]SortConfi
 }
 
 func (p *QueryPartitioner) supportsPagination(pagination *PaginationOptions) bool {
-	if pagination == nil {
+	if pagination == nil || len(pagination.Type) == 0 {
 		return true
 	}
 	_, supported := p.capabilities.SupportedPaginationTypes[PaginationType(pagination.Type)]

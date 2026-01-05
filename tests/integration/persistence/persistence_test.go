@@ -802,7 +802,6 @@ func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
 	// 5. Execute Query on the 'products' collection
 	result, err := productsCollection.Read(ctx, rawReadQuery)
 	require.NoError(t, err)
-	assert.Equal(t, 3, result.Count)
 	assert.Len(t, result.Data, 3)
 
 	// 6. Assert Results

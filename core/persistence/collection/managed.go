@@ -1,9 +1,9 @@
 package collection
 
 import (
-	"maps"
 	"context"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -13,6 +13,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // managedCollection is a decorator that wraps a base.PersistenceCollectionInterface to provide
@@ -160,6 +161,14 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 	allTranslations[c.physicalName] = c.logicalName
 
 	fq = ensureMetadataProjection(fq)
+
+	if fq.Pagination == nil {
+		fq.Pagination = &query.PaginationOptions{
+			IncludeTotal: utils.PrimitivePtr(true),
+		}
+	} else if(fq.Pagination.IncludeTotal != nil){
+		fq.Pagination.IncludeTotal = utils.PrimitivePtr(true)
+	}
 
 	result, err := c.wrapped.Read(ctx, fq)
 

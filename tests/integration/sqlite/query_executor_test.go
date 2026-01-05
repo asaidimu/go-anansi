@@ -78,7 +78,7 @@ func TestInsertAndSelectIntegration(t *testing.T) {
 	resultSchema, err := query.SchemaFromQuery(&insertQuery, nil)
 	require.NoError(t, err)
 
-	insertedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
+	insertedDocs, _, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
 		Query:  nqInsert,
 		Schema: resultSchema,
 	})
@@ -100,7 +100,7 @@ func TestInsertAndSelectIntegration(t *testing.T) {
 	nqSelect, err := builder.Build(&selectQuery, native.StmtSelect, nil)
 	require.NoError(t, err)
 
-	selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
+	selectedDocs, _, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
 		Query:  nqSelect,
 		Schema: resultSchema,
 	})
@@ -131,7 +131,7 @@ func TestUpdateIntegration(t *testing.T) {
 	resultSchema, err := query.SchemaFromQuery(insertQuery, nil)
 	require.NoError(t, err)
 
-	_, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
+	_, _, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
 		Query:  nqInsert,
 		Schema: resultSchema,
 	})
@@ -179,7 +179,7 @@ func TestUpdateIntegration(t *testing.T) {
 	nqSelect, err := builder.Build(&selectQuery, native.StmtSelect, nil)
 	require.NoError(t, err)
 
-	selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
+	selectedDocs, _, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
 		Query:  nqSelect,
 		Schema: resultSchema,
 	})
@@ -213,7 +213,7 @@ func TestDeleteIntegration(t *testing.T) {
 	resultSchema, err := query.SchemaFromQuery(&insertQuery, nil)
 	require.NoError(t, err)
 
-	_, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
+	_, _, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
 		Query:  nqInsert,
 		Schema: resultSchema,
 	})
@@ -260,7 +260,7 @@ func TestDeleteIntegration(t *testing.T) {
 	resultSchema, err = query.SchemaFromQuery(&selectQuery, nil)
 	require.NoError(t, err)
 
-	selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
+	selectedDocs, _, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{
 		Query:  nqSelect,
 		Schema: resultSchema,
 	})
@@ -295,7 +295,7 @@ func TestOffsetPagination(t *testing.T) {
 	resultSchema, err := query.SchemaFromQuery(&insertQuery, nil)
 	require.NoError(t, err)
 
-	_, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{Query: nqInsert, Schema: resultSchema})
+	_, _, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{Query: nqInsert, Schema: resultSchema})
 	require.NoError(t, err)
 
 	// Helper to test offset pagination
@@ -318,7 +318,7 @@ func TestOffsetPagination(t *testing.T) {
 		resultSchema, err := query.SchemaFromQuery(&selectQuery, nil)
 		require.NoError(t, err)
 
-		selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{Query: nqSelect, Schema: resultSchema})
+		selectedDocs, _, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{Query: nqSelect, Schema: resultSchema})
 		require.NoError(t, err)
 		assert.Len(t, selectedDocs, len(expectedAges))
 
@@ -360,7 +360,7 @@ func TestCursorPagination(t *testing.T) {
 	resultSchema, err := query.SchemaFromQuery(&insertQuery, nil)
 	require.NoError(t, err)
 
-	_, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{Query: nqInsert, Schema: resultSchema})
+	_, _, err = executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{Query: nqInsert, Schema: resultSchema})
 	require.NoError(t, err)
 
 	// Test cursor pagination
@@ -389,7 +389,7 @@ func TestCursorPagination(t *testing.T) {
 	resultSchema, err = query.SchemaFromQuery(&selectQuery, nil)
 	require.NoError(t, err)
 
-	selectedDocs, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{Query: nqSelect, Schema: resultSchema})
+	selectedDocs, _, err := executor.Query(context.Background(), native.NativeQuery[types.SQLitePayload]{Query: nqSelect, Schema: resultSchema})
 	require.NoError(t, err)
 	assert.Len(t, selectedDocs, 3)
 

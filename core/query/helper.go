@@ -111,7 +111,8 @@ func (h *QueryHelper) validateQuery() error {
 	// Validate filters
 	if h.query.Filters != nil {
 		if err := h.validateQueryFilter(h.query.Filters); err != nil {
-					return common.NewSystemError("ERR_QUERY_INVALID_FILTERS", "invalid filters").WithOperation("validateQuery").WithCause(err)		}
+			return common.NewSystemError("ERR_QUERY_INVALID_FILTERS", "invalid filters").WithOperation("validateQuery").WithCause(err)
+		}
 	}
 
 	// Validate sort configurations
@@ -126,10 +127,10 @@ func (h *QueryHelper) validateQuery() error {
 
 	// Validate pagination
 	if h.query.Pagination != nil {
-		if h.query.Pagination.Type != "offset" {
+		if len(h.query.Pagination.Type) > 0 && h.query.Pagination.Type != "offset" {
 			return common.NewSystemError(ErrInvalidPaginationType.Code, fmt.Sprintf("invalid pagination type: %s", h.query.Pagination.Type)).WithOperation("validateQuery").WithCause(ErrInvalidPaginationType)
 		}
-		if h.query.Pagination.Limit <= 0 {
+		if h.query.Pagination.Limit <= 0 && !bool(*h.query.Pagination.IncludeTotal){
 			return common.NewSystemError("ERR_QUERY_PAGINATION_LIMIT_NOT_POSITIVE", "pagination limit must be greater than 0")
 		}
 		if h.query.Pagination.Offset != nil && *h.query.Pagination.Offset < 0 {
@@ -140,18 +141,21 @@ func (h *QueryHelper) validateQuery() error {
 	// Validate projection
 	if h.query.Projection != nil {
 		if err := h.validateProjectionConfiguration(h.query.Projection); err != nil {
-					return common.NewSystemError("ERR_QUERY_INVALID_PROJECTION", "invalid projection").WithOperation("validateQuery").WithCause(err)		}
+			return common.NewSystemError("ERR_QUERY_INVALID_PROJECTION", "invalid projection").WithOperation("validateQuery").WithCause(err)
+		}
 	}
 
 	// Validate aggregations
 	if h.query.Aggregations != nil {
 		if err := h.validateAggregationConfiguration(h.query.Aggregations); err != nil {
-					return common.NewSystemError("ERR_QUERY_INVALID_AGGREGATION_CONFIGURATION", "invalid aggregation configuration").WithOperation("validateQuery").WithCause(err)		}
+			return common.NewSystemError("ERR_QUERY_INVALID_AGGREGATION_CONFIGURATION", "invalid aggregation configuration").WithOperation("validateQuery").WithCause(err)
+		}
 	}
 
 	if h.query.Distinct != nil {
 		if err := h.validateDistinctConfiguration(h.query.Distinct); err != nil {
-					return common.NewSystemError("ERR_QUERY_INVALID_DISTINCT_CONFIGURATION", "invalid distinct configuration").WithOperation("validateQuery").WithCause(err)		}
+			return common.NewSystemError("ERR_QUERY_INVALID_DISTINCT_CONFIGURATION", "invalid distinct configuration").WithOperation("validateQuery").WithCause(err)
+		}
 	}
 
 	return nil
@@ -202,7 +206,8 @@ func (h *QueryHelper) validateQueryFilter(filter *QueryFilter) error {
 
 		// Basic validation for FilterValue - can be extended if needed
 		if err := h.validateFilterValue(&filter.Condition.Value); err != nil {
-					return common.NewSystemError("ERR_QUERY_INVALID_CONDITION_VALUE", "invalid condition value").WithOperation("validateQueryFilter").WithCause(err)		}
+			return common.NewSystemError("ERR_QUERY_INVALID_CONDITION_VALUE", "invalid condition value").WithOperation("validateQueryFilter").WithCause(err)
+		}
 	}
 
 	// Validate group
@@ -577,6 +582,10 @@ func (h *QueryHelper) Sort(records []map[string]any) ([]map[string]any, error) {
 // Returns a new slice with the paginated records and pagination result information.
 func (h *QueryHelper) Paginate(records []map[string]any) ([]map[string]any, *PaginationResult, error) {
 	if h.query.Pagination == nil {
+		return records, nil, nil
+	}
+
+	if len(h.query.Pagination.Type) == 0 {
 		return records, nil, nil
 	}
 

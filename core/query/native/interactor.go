@@ -71,15 +71,15 @@ func (i *NativeInteractor[T]) Close() error {
 }
 
 // SelectDocuments retrieves multiple documents matching the query.
-func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.Query) ([]map[string]any, error) {
+func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.Query) ([]map[string]any, int64, error) {
 	compiled, err := i.b.Build(dsl, StmtSelect, nil)
 	if err != nil {
-		return nil, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.SelectDocuments")
+		return nil, 0, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.SelectDocuments")
 	}
 
 	resultSchema, err := query.SchemaFromQuery(dsl, nil)
 	if err != nil {
-		return nil, common.SystemErrorFrom(err, ErrCouldNotGetResultSchema.Code, ErrCouldNotGetResultSchema.Message).WithOperation("native.NativeInteractor.SelectDocuments")
+		return nil, 0, common.SystemErrorFrom(err, ErrCouldNotGetResultSchema.Code, ErrCouldNotGetResultSchema.Message).WithOperation("native.NativeInteractor.SelectDocuments")
 	}
 
 	return i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
@@ -123,7 +123,7 @@ func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schem
 
 	// State 1: User wants documents AND interactor supports returning
 	if useNativeReturning {
-		returnedDocs, err := i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: schema})
+		returnedDocs, _, err := i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: schema})
 		if err != nil {
 			return nil, 0, common.SystemErrorFrom(err, ErrFailedToUpdateDocuments.Code, ErrFailedToUpdateDocuments.Message).WithOperation("native.NativeInteractor.UpdateDocuments")
 		}
@@ -167,7 +167,8 @@ func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *schema.Sc
 		return nil, common.SystemErrorFrom(err, ErrCouldNotGetResultSchema.Code, ErrCouldNotGetResultSchema.Message).WithOperation("native.NativeInteractor.InsertDocuments")
 	}
 
-	return i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
+	data, _, err := i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
+	return data, err
 }
 
 // DeleteDocuments deletes documents matching the filter.
@@ -272,7 +273,7 @@ func (i *NativeInteractor[T]) CollectionExists(ctx context.Context, name string)
 		return false, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.CollectionExists")
 	}
 
-	result, err := i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: &schema.SchemaDefinition{
+	result, _, err := i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: &schema.SchemaDefinition{
 		Version: "1.0.0",
 		Name:    name,
 	}})

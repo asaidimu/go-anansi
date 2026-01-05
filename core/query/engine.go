@@ -51,7 +51,7 @@ func (e *QueryEngine) RegisterFilterFunction(operator ComparisonOperator, fn Pre
 }
 
 // Query orchestrates the entire query execution process, from partitioning to final result.
-func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *Query) ([]map[string]any, error) {
+func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *Query) (*QueryResult, error) {
 	interactor, ok := GetInteractor(ctx)
 	if !ok {
 		return nil, common.NewSystemError("ERR_QUERY_INTERACTOR_NOT_FOUND", "could not get interactor").WithOperation("Query")
@@ -72,7 +72,7 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 	if dbQuery == nil { // Cache miss or no cache
 		dbQuery, postProcessingQuery, err = e.partitioner.Partition(dsl)
 		if err != nil {
-		return nil, common.NewSystemError("ERR_QUERY_PARTITIONING_FAILED", "error partitioning query").WithOperation("Query").WithCause(err)
+			return nil, common.NewSystemError("ERR_QUERY_PARTITIONING_FAILED", "error partitioning query").WithOperation("Query").WithCause(err)
 		}
 
 		if e.cache != nil {
@@ -82,16 +82,18 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 	}
 
 	// 2. Execute the database part of the query.
-	docs, err := utils.ExecuteWithContext(ctx, func() ([]map[string]any, error) {
-		return interactor.SelectDocuments(ctx, schemaDef, dbQuery)
+	result, err := utils.ExecuteWithContext(ctx, func() (*QueryResult, error) {
+		data, count, err := interactor.SelectDocuments(ctx, schemaDef, dbQuery)
+		return &QueryResult{Data: data, Count: int(count)}, err
 	})
+
 	if err != nil {
 		return nil, common.NewSystemError("ERR_QUERY_DB_EXECUTION_FAILED", "database query execution failed").WithOperation("Query").WithCause(err)
 	}
 
 	// 3. If there's no post-processing, we can return the results directly.
 	if postProcessingQuery.IsEmpty() {
-		return docs, nil
+		return result, nil
 	}
 
 	// 4. Execute the in-memory part of the query.
@@ -105,7 +107,7 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 	queryHelper.RegisterFilterFunctions(e.filterFunctions)
 
 	// 5. Apply post-processing steps.
-	processedDocs, err := e.runPostProcessing(queryHelper, docs)
+	processedDocs, err := e.runPostProcessing(queryHelper, result.Data)
 	if err != nil {
 		return nil, err // Error is already descriptive
 	}
@@ -117,7 +119,9 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 		return nil, common.NewSystemError("ERR_QUERY_FINAL_PROJECTION_FAILED", "final projection failed").WithOperation("Query").WithCause(err)
 	}
 
-	return finalDocs, nil
+	return &QueryResult{
+		Data: finalDocs, Count: result.Count,
+	}, nil
 }
 
 func (e *QueryEngine) generateCacheKey(dsl *Query) (uint64, error) {
@@ -157,11 +161,13 @@ func (e *QueryEngine) runPostProcessing(helper *QueryHelper, docs []map[string]a
 
 	processedDocs, err = helper.Sort(processedDocs)
 	if err != nil {
-					return nil, common.NewSystemError("ERR_QUERY_POST_PROCESSING_SORT_FAILED", "post-processing sort failed").WithOperation("runPostProcessing").WithCause(err)	}
+		return nil, common.NewSystemError("ERR_QUERY_POST_PROCESSING_SORT_FAILED", "post-processing sort failed").WithOperation("runPostProcessing").WithCause(err)
+	}
 
 	processedDocs, _, err = helper.Paginate(processedDocs)
 	if err != nil {
-					return nil, common.NewSystemError("ERR_QUERY_POST_PROCESSING_PAGINATION_FAILED", "post-processing pagination failed").WithOperation("runPostProcessing").WithCause(err)	}
+		return nil, common.NewSystemError("ERR_QUERY_POST_PROCESSING_PAGINATION_FAILED", "post-processing pagination failed").WithOperation("runPostProcessing").WithCause(err)
+	}
 
 	return processedDocs, nil
 }

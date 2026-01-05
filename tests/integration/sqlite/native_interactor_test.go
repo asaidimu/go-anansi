@@ -204,7 +204,7 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test 1: Select all documents
-	allDocs, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
+	allDocs, _, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target: &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 	})
 	require.NoError(t, err)
@@ -218,7 +218,7 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 			Value:    query.FilterValue{StringVal: utils.StringPtr("c1")},
 		},
 	}
-	docsC1, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
+	docsC1, _, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target:  &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 		Filters: filterC1,
 	})
@@ -250,7 +250,7 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 			},
 		},
 	}
-	docsC1Completed, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
+	docsC1Completed, _, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target:  &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 		Filters: filterC1Completed,
 	})
@@ -307,7 +307,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 	assert.Equal(t, int64(1), rowsAffected)
 
 	// Verify update
-	updatedDoc, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
+	updatedDoc, _, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target:  &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 		Filters: filterT1,
 	})
@@ -329,7 +329,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 	assert.Equal(t, int64(1), rowsAffectedAll) // Only t2 was incomplete
 
 	// Verify all are now completed
-	allDocs, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
+	allDocs, _, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target: &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 	})
 	require.NoError(t, err)
@@ -385,7 +385,7 @@ func TestNativeInteractor_DeleteDocuments(t *testing.T) {
 	assert.Equal(t, int64(1), rowsAffected)
 
 	// Verify i2 is gone
-	remainingDocs, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
+	remainingDocs, _, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target: &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 	})
 	require.NoError(t, err)
@@ -400,7 +400,7 @@ func TestNativeInteractor_DeleteDocuments(t *testing.T) {
 	assert.Equal(t, int64(2), rowsAffectedAll)
 
 	// Verify no documents left
-	finalDocs, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
+	finalDocs, _, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target: &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 	})
 	require.NoError(t, err)
@@ -598,7 +598,7 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify changes are not visible outside transaction yet
-	_, err = interactor.SelectDocuments(ctx, testSchema, &query.Query{
+	_, _, err = interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target: &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 	})
 
@@ -609,7 +609,7 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify changes are visible after commit
-	docsAfterCommit, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
+	docsAfterCommit, _, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target: &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 	})
 	require.NoError(t, err)
@@ -644,7 +644,7 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify changes are not visible after rollback
-	docsAfterRollback, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
+	docsAfterRollback, _, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target: &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 	})
 	require.NoError(t, err)
@@ -765,7 +765,7 @@ func TestNativeInteractor_RawQuery(t *testing.T) {
 	assert.Equal(t, int64(1), updateResult.AffectedRows)
 
 	// Verify the update using DSL select
-	updatedUser, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
+	updatedUser, _, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target:  &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 		Filters: &query.QueryFilter{Condition: &query.FilterCondition{Field: "id", Operator: query.ComparisonOperatorEq, Value: query.FilterValue{StringVal: utils.StringPtr(
 			selectedDocs[0]["id"].(string),

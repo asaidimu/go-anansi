@@ -45,6 +45,7 @@ const (
 
 	// StmtDropIndex represents index deletion (DROP INDEX in SQL, dropIndex in MongoDB)
 	StmtDropIndex StatementType = "DROP_INDEX"
+
 )
 
 // Query is a generic, type-safe representation of a database-native query.
@@ -114,7 +115,7 @@ type QueryExecutor[T any] interface {
 	// Suitable for queries expected to return a bounded result set.
 	//
 	// Returns a slice of documents or an error if execution fails.
-	Query(ctx context.Context, query NativeQuery[T]) ([]map[string]any, error)
+	Query(ctx context.Context, query NativeQuery[T]) ([]map[string]any, int64, error)
 
 	// ExecuteRawQuery executes a raw, templated query directly against the database.
 	// This allows for operations that are not tied to a specific collection,
