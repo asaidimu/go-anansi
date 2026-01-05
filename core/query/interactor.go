@@ -87,7 +87,7 @@ type DatabaseInteractor interface {
 	SchemaManager
 
 	// SelectDocuments retrieves documents from the database based on a QueryDSL
-	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *Query) ([]map[string]any, error)
+	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *Query) ([]map[string]any, int64, error)
 
 	// SelectStream executes a SELECT query and returns a channel of documents.
 	SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *Query) (<-chan map[string]any, <-chan error, error)

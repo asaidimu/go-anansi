@@ -90,9 +90,8 @@ func TestEphemeralDatabaseInteractor_InsertAndSelectDocuments(t *testing.T) {
 	inserted, err := interactor.InsertDocuments(context.Background(), &schemaDef, docsToInsert)
 	assert.NoError(t, err)
 	assert.Len(t, inserted, 2)
-
-	dsl := query.NewQueryBuilder().Build()
-	selected, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
+		dsl := query.NewQueryBuilder().Build()
+		selected, _, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
 	assert.NoError(t, err)
 	assert.Len(t, selected, 2)
 }
@@ -113,7 +112,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithFilter(t *testing.T) {
 	assert.NoError(t, err)
 
 	dsl := query.NewQueryBuilder().Where("age").Eq(30).Build()
-	selected, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
+	selected, _, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
 	assert.NoError(t, err)
 	assert.Len(t, selected, 2)
 }
@@ -140,7 +139,7 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments(t *testing.T) {
 	assert.Equal(t, int64(1), updatedCount)
 
 	dsl := query.NewQueryBuilder().Where("status").Eq("inactive").Build()
-	selected, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
+	selected, _, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
 	assert.NoError(t, err)
 	assert.Len(t, selected, 1)
 	assert.Equal(t, "Bob", selected[0]["name"])
@@ -166,7 +165,7 @@ func TestEphemeralDatabaseInteractor_DeleteDocuments(t *testing.T) {
 	assert.Equal(t, int64(1), deletedCount)
 
 	dsl := query.NewQueryBuilder().Build()
-	selected, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
+	selected, _, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
 	assert.NoError(t, err)
 	assert.Len(t, selected, 1)
 }
@@ -185,7 +184,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedProjection(t *tes
 	assert.NoError(t, err)
 
 	dsl := query.NewQueryBuilder().Select().Include("name", "address.city").End().Build()
-	selected, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
+	selected, _, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
 	assert.NoError(t, err)
 	assert.Len(t, selected, 1)
 	assert.Equal(t, "Alice", selected[0]["name"])
@@ -211,7 +210,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedFilter(t *testing
 	assert.NoError(t, err)
 
 	dsl := query.NewQueryBuilder().Where("address.city").Eq("London").Build()
-	selected, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
+	selected, _, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
 	assert.NoError(t, err)
 	assert.Len(t, selected, 1)
 	assert.Equal(t, "Bob", selected[0]["name"])
@@ -225,7 +224,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_EmptyResult(t *testing.T) {
 	assert.NoError(t, err)
 
 	dsl := query.NewQueryBuilder().Where("name").Eq("non-existent").Build()
-	selected, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
+	selected, _, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
 	assert.NoError(t, err)
 	assert.Len(t, selected, 0)
 }
@@ -312,7 +311,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithJoin(t *testing.T) {
 		Build()
 
 	// Execute query
-	results, err := interactor.SelectDocuments(context.Background(), &userSchema, &dsl)
+	results, _, err := interactor.SelectDocuments(context.Background(), &userSchema, &dsl)
 	assert.NoError(t, err)
 	assert.Len(t, results, 3)
 

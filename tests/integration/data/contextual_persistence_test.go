@@ -109,7 +109,7 @@ func TestContextualMetadataIsPersisted(t *testing.T) {
 	readQuery := query.NewQueryBuilder().Where("id").Eq(docID).Build()
 	readResult, err := collection.Read(context.Background(), &readQuery)
 	require.NoError(t, err)
-	require.Equal(t, 1, readResult.Count)
+	require.Equal(t, 1, len(readResult.Data))
 	readDoc := readResult.Data[0]
 
 	// 7. Assert that the contextual metadata was persisted and retrieved

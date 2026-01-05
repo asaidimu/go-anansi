@@ -47,7 +47,7 @@ func TestTraceDocumentInsertion(t *testing.T) {
 
 	// Optionally, read it back from the database to see if it changes again
 	readQuery := query.NewQueryBuilder().Alias(schema.Name).From(schema.Name).Schema(schema).Where("name").Eq("trace-doc").Build()
-	readDocs, err := interactor.SelectDocuments(context.Background(), schema, &readQuery)
+	readDocs, _, err := interactor.SelectDocuments(context.Background(), schema, &readQuery)
 	require.NoError(t, err)
 	require.Len(t, readDocs, 1)
 

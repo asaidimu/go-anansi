@@ -10,7 +10,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
-
 // SQLiteSelectProjection handles SELECT clause projection
 type SQLiteSelectProjection struct {
 	factory      *sqliteFactory
@@ -18,6 +17,7 @@ type SQLiteSelectProjection struct {
 	aggregations []query.AggregationConfiguration
 	distinct     *query.QueryDistinctConfig
 	schemas      map[string]*schema.SchemaDefinition
+	total        bool
 }
 
 func (p *SQLiteSelectProjection) Value() (string, []any, error) {
@@ -34,7 +34,16 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 		}
 	}
 
-	// Handle aggregations first
+	// 1. Optional Total Count Injection
+	// We only add the window function if this is the root query (depth 0).
+	// This ensures total_count is available for pagination at the top level
+	// but omitted in subqueries to maintain performance and compatibility.
+	includeTotal := p.factory.depth == 0 && p.total
+	if includeTotal {
+		parts = append(parts, fmt.Sprintf("COUNT(*) OVER() AS %s", query.MatchCountName))
+	}
+
+	// Handle aggregations
 	if len(p.aggregations) > 0 {
 		for _, agg := range p.aggregations {
 			if agg.Type == "" { // This is a grouping/having configuration, not a projection
@@ -130,8 +139,15 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 		}
 	}
 
-	// Default to SELECT * if no specific fields
-	if len(parts) == 0 {
+	// 2. Default Fallback Logic
+	// We calculate the threshold based on whether total_count was injected.
+	// If total_count was added, len(parts) is at least 1 even if no other fields were requested.
+	threshold := 0
+	if includeTotal {
+		threshold = 1
+	}
+
+	if len(parts) == threshold {
 		if len(p.schemas) > 0 {
 			var aliasedFields []string
 
@@ -145,12 +161,9 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 
 			for _, alias := range aliases {
 				schemaDef := p.schemas[alias]
-				// Ensure the schema definition and its fields are available
 				if schemaDef != nil && len(schemaDef.Fields) > 0 {
 					for _, field := range schemaDef.GetFields() {
-						// Qualify the field with the table alias (e.g., "u.id")
 						resolvedField := fmt.Sprintf("%s.%s", alias, field.Name)
-						// Create a unique alias for the column (e.g., "u_id")
 						fieldAlias := fmt.Sprintf("'%s.%s'", alias, field.Name)
 						aliasedFields = append(aliasedFields, fmt.Sprintf("%s AS %s", resolvedField, fieldAlias))
 					}
@@ -159,11 +172,9 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 			if len(aliasedFields) > 0 {
 				parts = append(parts, aliasedFields...)
 			} else {
-				// Fallback to '*' if schemas were present but had no fields.
 				parts = append(parts, "*")
 			}
 		} else {
-			// Fallback to SELECT * if no schemas are available at all.
 			parts = append(parts, "*")
 		}
 	}
@@ -767,7 +778,7 @@ type SQLiteLimitClause struct {
 }
 
 func (l *SQLiteLimitClause) Value() (string, []any, error) {
-	if l.pagination == nil {
+	if l.pagination == nil || len(l.pagination.Type) == 0{
 		return "", nil, nil
 	}
 
@@ -877,6 +888,7 @@ func (s *SQLiteSelectStatement) Value() (string, []any, error) {
 func (s *SQLiteSelectStatement) StatementType() string {
 	return "SELECT"
 }
+
 // buildSelectTree builds the complete query tree with proper schema context.
 // This is now recursive and handles subqueries at any depth.
 func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
@@ -913,6 +925,7 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
 		aggregations: q.Aggregations,
 		distinct:     q.Distinct,
 		schemas:      f.schemas,
+		total: q.Pagination != nil && q.Pagination.IncludeTotal != nil && *q.Pagination.IncludeTotal,
 	}
 
 	// Build target (FROM clause)

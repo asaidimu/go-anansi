@@ -28,11 +28,12 @@ type ErrorResponse struct {
 type APIError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
-	Details any `json:"details,omitempty"`
+	Details any    `json:"details,omitempty"`
 }
 
 // Meta contains metadata about the response.
 type Meta struct {
+	Count     int    `json:"count,omitempty"`
 	Timestamp string `json:"timestamp"`
 	RequestID string `json:"request"`
 }
@@ -46,10 +47,10 @@ func NewHandler() *Handler {
 }
 
 // WriteJSON writes a JSON success response to the http.ResponseWriter.
-func (h *Handler) WriteJSON(w http.ResponseWriter, status int, data any, r *http.Request) {
+func (h *Handler) WriteJSON(w http.ResponseWriter, status int, data any, r *http.Request, count ...int) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(APIResponse{Data: data, Meta: h.generateMeta(r)}); err != nil {
+	if err := json.NewEncoder(w).Encode(APIResponse{Data: data, Meta: h.generateMeta(r, count...)}); err != nil {
 		log.Printf("Error writing JSON response: %v", err)
 	}
 }
@@ -65,14 +66,18 @@ func (h *Handler) WriteError(w http.ResponseWriter, status int, apiError any, r 
 }
 
 // generateMeta creates a Meta object for responses.
-func (h *Handler) generateMeta(_ *http.Request) Meta {
+func (h *Handler) generateMeta(_ *http.Request, count ...int) Meta {
 	id := uuid.Must(uuid.NewV7())
 	// In a real application, RequestID would be generated uniquely per request
 	// and timestamp would be more precise.
-	return Meta{
+	result := Meta{
 		Timestamp: time.Now().Format(time.RFC3339),
 		RequestID: id.String(),
 	}
+	if len(count) > 0 {
+		result.Count = count[0]
+	}
+	return result
 }
 
 // TranslateError converts any Go error into a standard API response and status code.

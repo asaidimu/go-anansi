@@ -19,9 +19,10 @@ type DelayedEphemeralInteractor struct {
 	delay time.Duration
 }
 
-func (i *DelayedEphemeralInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]map[string]any, error) {
+func (i *DelayedEphemeralInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]map[string]any, int64, error) {
 	time.Sleep(i.delay)
-	return i.DatabaseInteractor.SelectDocuments(ctx, schemaDef, dsl)
+	docs, count, err := i.DatabaseInteractor.SelectDocuments(ctx, schemaDef, dsl)
+	return docs, count, err
 }
 
 func newTestSchema(name ...string) *schema.SchemaDefinition {

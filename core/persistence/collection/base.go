@@ -151,14 +151,13 @@ func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadRe
 		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_READ_DOCUMENTS_FAILED")
 	}
 
-	count := len(docs)
-	values, ok := data.NewDocumentSet(docs, ctx)
+	values, ok := data.NewDocumentSet(docs.Data, ctx)
 	if !ok {
 		return nil, common.NewSystemError("ERR_PERSISTENCE_READ_DOCUMENTS_FAILED", "Failed to convert results to documents")
 	}
 	result := base.ReadResult{
 		Data:  values,
-		Count: count,
+		Count: docs.Count,
 	}
 
 	return &result, nil
@@ -205,8 +204,8 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 			}
 
 			// Extract IDs from the documents
-			affectedIDs = make([]query.FilterValue, 0, len(idDocs))
-			for _, doc := range idDocs {
+			affectedIDs = make([]query.FilterValue, 0, idDocs.Count)
+			for _, doc := range idDocs.Data {
 				if id, exists := doc[data.DocumentIDField]; exists {
 					ids := id.(string)
 					affectedIDs = append(affectedIDs, query.FilterValue{
@@ -241,11 +240,12 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 				Schema: c.schema,
 			}
 
-			docs, err = c.engine.Query(rctx, c.schema, &fetchQuery)
+			result, err := c.engine.Query(rctx, c.schema, &fetchQuery)
 			if err != nil {
 				// Return empty docs with count - the update succeeded
 				docs = []map[string]any{}
 			}
+			docs = result.Data
 		}
 
 		return struct {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
@@ -17,27 +18,34 @@ import (
 // of map[string]any maps. It also handles type conversions for different field types.
 // ReadRows reads all rows from a *sql.Rows object and converts them into a slice
 // of map[string]any maps. If no schema is provided, it returns raw row data without conversions.
-func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) ([]map[string]any, error) {
+// Add the constant here (or import it from your constants package)
+func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) ([]map[string]any, int64, error) {
 	utilDocChan, utilErrChan := readRowsToDocs(rows)
 
 	var results []map[string]any
+	var totalMatches int64 = 0
+	countCaptured := false
 
 	// Define the transformation operation dynamically
 	var processRow func(map[string]any) map[string]any
 
 	if sc == nil {
-		// Fast path: schema is nil → no transformation
 		processRow = func(row map[string]any) map[string]any {
+			// Even without schema, we should hide the internal match count from the final map
+			delete(row, query.MatchCountName)
 			return row
 		}
 	} else {
-		// Schema-aware transformation
 		processRow = func(row map[string]any) map[string]any {
 			globalResult := make(map[string]any)
 
 			for col, value := range row {
-				var tableName, fieldName string
+				// Skip the system field so it doesn't get processed by schema logic
+				if col == query.MatchCountName {
+					continue
+				}
 
+				var tableName, fieldName string
 				if dotIndex := strings.Index(col, "."); dotIndex != -1 {
 					tableName = col[:dotIndex]
 					fieldName = col[dotIndex+1:]
@@ -72,17 +80,25 @@ func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 		}
 	}
 
-	// Generic iteration — operation applied uniformly
 	for row := range utilDocChan {
+		// Capture the total count from the first row available
+		if !countCaptured {
+			if val, ok := row[query.MatchCountName]; ok {
+				if c, ok := val.(int64); ok {
+					totalMatches = c
+				}
+				countCaptured = true
+			}
+		}
+
 		results = append(results, processRow(row))
 	}
 
-	// Check for errors from reader
 	if err := <-utilErrChan; err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return results, nil
+	return results, totalMatches, nil
 }
 
 func readRowsToDocs(rows *sql.Rows) (<-chan map[string]any, <-chan error) {

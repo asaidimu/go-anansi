@@ -28,7 +28,7 @@ var _ query.DatabaseInteractor = (*EphemeralDatabaseInteractor)(nil)
 var _ query.SchemaManager = (*EphemeralDatabaseInteractor)(nil)
 
 // SelectDocuments retrieves documents from the in-memory store.
-func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]map[string]any, error) {
+func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]map[string]any,int64, error) {
 
 	if dsl.Target == nil {
 		dsl.Target = &query.QueryTarget{
@@ -38,7 +38,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 
 	c, err := i.store.getCollection(schemaDef.Name)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Register aggregate functions with the query helper
@@ -52,7 +52,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 
 	queryHelper, err := query.NewQueryHelper(dsl, nil, aggregateFuncs, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	var allDocs []map[string]any
@@ -65,7 +65,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 			if err == store.ErrStreamClosed {
 				break
 			}
-			return nil, err
+			return nil, 0, err
 		}
 		record := map[string]any(docResult.Data)
 		allDocs = append(allDocs, record)
@@ -74,7 +74,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 	// Filter documents
 	filteredDocs, err := queryHelper.Filter(allDocs)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// Handle Joins
@@ -83,7 +83,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 		for _, join := range dsl.Joins {
 			rightCollection, err := i.store.getCollection(join.Target.Name)
 			if err != nil {
-				return nil, err
+				return nil,0,  err
 			}
 
 			var rightDocs []map[string]any
@@ -95,7 +95,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 						break
 					}
 					rightStream.Close()
-					return nil, err
+					return nil,0,  err
 				}
 				rightDocs = append(rightDocs, map[string]any(docResult.Data))
 			}
@@ -104,7 +104,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 
 			joinedDocs, err := queryHelper.Join(currentDocs, rightDocs, &join)
 			if err != nil {
-				return nil, err
+				return nil,0,  err
 			}
 
 			currentDocs = joinedDocs
@@ -116,28 +116,28 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 	if len(dsl.Aggregations) > 0 {
 		aggregationResults, err := queryHelper.ApplyAggregations(filteredDocs)
 		if err != nil {
-			return nil, err
+			return nil, 0, err
 		}
-		return []map[string]any{aggregationResults}, nil
+		return []map[string]any{aggregationResults}, 0, nil
 	}
 
 	// Apply projection, sorting, and pagination
 	projectedDocs, err := queryHelper.Project(filteredDocs)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	sortedDocs, err := queryHelper.Sort(projectedDocs)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	paginatedDocs, _, err := queryHelper.Paginate(sortedDocs)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	return paginatedDocs, nil
+	return paginatedDocs, int64(len(filteredDocs)), nil
 }
 
 // SelectStream streams documents from the in-memory store.
@@ -222,7 +222,7 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 
 	var idsToUpdate []string
 
-	
+
 
 	stream := c.data.Stream(0)
 
@@ -305,25 +305,12 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 		updatedCount++
 
 		if returnDocs {
-
-			// Retrieve the updated document to return it
-
 			retrievedDoc, err := c.data.Get(id)
 
 			if err != nil {
-
-				// Log error, but don't fail the update entirely if we can't retrieve for return
-
-				// Or decide if this should be a hard error based on use case.
-
-				// For now, we'll return an error.
-
-				return nil, updatedCount, err 
-
+				return nil, updatedCount, err
 			}
-
 			updatedDocuments = append(updatedDocuments, map[string]any(retrievedDoc.Data))
-
 		}
 
 	}

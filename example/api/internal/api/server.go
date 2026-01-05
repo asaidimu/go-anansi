@@ -264,7 +264,7 @@ func (s *APIServer) readDocuments(w http.ResponseWriter, r *http.Request, collec
 
 	s.Response.WriteJSON(w, http.StatusOK, map[string]any{
 		"documents": documents,
-	}, r)
+	}, r, result.Count)
 }
 
 // handleSingleDocument handles operations on /api/v1/collections/{collection}/documents/{id}

@@ -46,22 +46,22 @@ func newSQLiteExecutor(db *sql.DB, logger *zap.Logger, tx *sql.Tx) (native.Query
 	}, nil
 }
 
-func (s *sqliteExecutor) Query(ctx context.Context, query native.NativeQuery[types.SQLitePayload]) ([]map[string]any, error) {
+func (s *sqliteExecutor) Query(ctx context.Context, query native.NativeQuery[types.SQLitePayload]) ([]map[string]any, int64, error) {
 	q := query.Query
 	payload := q.Raw()
 	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
 	if err != nil {
-		return nil, translateError(err).WithOperation("Query")
+		return nil, 0, translateError(err).WithOperation("Query")
 	}
 	defer rows.Close()
 
 	var results []map[string]any = nil
 	if rows == nil {
-		return make([]map[string]any, 0), nil
+		return make([]map[string]any, 0), 0, nil
 	}
 
-	results, err = ReadRows(s.logger, query.Schema, rows)
-	return results, err
+	results, count, err := ReadRows(s.logger, query.Schema, rows)
+	return results, count, err
 }
 
 func (s *sqliteExecutor) QueryStream(ctx context.Context, compiled native.NativeQuery[types.SQLitePayload]) (<-chan map[string]any, <-chan error, error) {
@@ -131,7 +131,7 @@ func (s *sqliteExecutor) ExecuteQuery(ctx context.Context, compiled native.Nativ
 		}
 		defer rows.Close()
 
-		results, err := ReadRows(s.logger, compiled.Schema, rows)
+		results, _, err := ReadRows(s.logger, compiled.Schema, rows)
 		if err != nil {
 			return nil, err
 		}

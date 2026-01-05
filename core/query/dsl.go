@@ -34,6 +34,11 @@ const (
 	ComparisonOperatorNotExists   ComparisonOperator = "nexists"
 )
 
+// MatchCountName defines the alias used for the window function that calculates
+// the total number of rows matching the query criteria, ignoring LIMIT and OFFSET clauses.
+// This is used primarily for UI pagination (e.g., "Showing 10 of 500 matches").
+const MatchCountName string = "__matches__"
+
 // TextSearchType defines the type of full-text search to be performed.
 type TextSearchType string
 
@@ -144,17 +149,18 @@ const (
 )
 
 type PaginationCursor struct {
-	Field  *string `json:"field"`
+	Field  *string      `json:"field"`
 	Cursor *FilterValue `json:"cursor"`
 }
 
 // PaginationOptions defines how the query results should be paginated.
 type PaginationOptions struct {
-	Type   PaginationType      `json:"type"`             // The type of pagination.
-	Limit  int                 `json:"limit"`            // The maximum number of records to return.
-	Offset *int                `json:"offset,omitempty"` // The starting offset for offset-based pagination.
-	Cursor *PaginationCursor   `json:"cursor,omitempty"` // The cursor for cursor-based pagination, if nil starts with the first entry
-	Order  []SortConfiguration `json:"order,omitempty"`  // The fields to order by, defaults to id
+	Type         PaginationType      `json:"type"`             // The type of pagination.
+	Limit        int                `json:"limit,omitempty"`  // The maximum number of records to return.
+	Offset       *int                `json:"offset,omitempty"` // The starting offset for offset-based pagination.
+	Cursor       *PaginationCursor   `json:"cursor,omitempty"` // The cursor for cursor-based pagination, if nil starts with the first entry
+	Order        []SortConfiguration `json:"order,omitempty"`  // The fields to order by, defaults to id
+	IncludeTotal *bool                `json:"include_total"`
 }
 
 // ProjectionField defines a field to be included or excluded in the query result.
@@ -291,7 +297,7 @@ type RawQuery struct {
 
 	// Maps placeholder names in the 'Template' string to specific collection targets.
 	// This field is only relevant when 'Template' is used.
-    // TODO Review whether this should be a slice or a map
+	// TODO Review whether this should be a slice or a map
 	Collections map[string]RawQueryTarget `json:"from,omitempty"`
 
 	// Parameters are parameters for the query. Primarily for SQL.
@@ -333,12 +339,11 @@ func (q *Query) IsEmpty() bool {
 }
 
 // QueryResult represents the result of a database query.
+// TODO. Why am I not using this struct?
 type QueryResult struct {
-	Data         any               `json:"data"`
-	Count        int               `json:"count,omitempty"`      // Change to pointer and omitempty
-	Pagination   *PaginationResult `json:"pagination,omitempty"` // Add explicit tag
-	Aggregations map[string]any    `json:"aggregations,omitempty"`
-	SearchScore  *float64          `json:"search_score,omitempty"`
+	Data        []map[string]any `json:"data"`
+	Count       int              `json:"count,omitempty"`
+	SearchScore *float64         `json:"search_score,omitempty"`
 }
 
 // PaginationResult contains the pagination information for a query result.
