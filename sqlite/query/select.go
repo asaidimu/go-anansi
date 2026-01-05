@@ -10,76 +10,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
-func (f *sqliteFactory) nextParam() string {
-	f.paramCounter++
-	return fmt.Sprintf("$%d", f.paramCounter)
-}
-
-func (f *sqliteFactory) addAlias(original, alias string) {
-	f.aliases[original] = alias
-}
-
-func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[string]*schema.SchemaDefinition, qualify ...bool) (string, error) {
-	if !isValidIdentifier(fieldRef) {
-		return "", ErrSelectUnsupportedFieldReference.WithCause(fmt.Errorf("unsupported field reference: %s", fieldRef))
-	}
-
-	parts := strings.Split(fieldRef, ".")
-
-	// Case 1: Single field (e.g., "id", "name")
-	if len(parts) == 1 {
-		if qualify != nil && qualify[0] {
-			fieldName := parts[0]
-			for alias, schemaDef := range schemas {
-				if fieldDef := schemaDef.FindField(fieldName); fieldDef != nil {
-					// Return table-qualified name: "users"."id"
-					return fmt.Sprintf("%s.%s", quoteIdentifier(alias), quoteIdentifier(fieldName)), nil
-				}
-			}
-			return quoteIdentifier(fieldName), nil
-		}
-
-		return quoteIdentifier(parts[0]), nil
-	}
-
-	// Case 2: Multi-part field reference (e.g., "table.field", "_metadata_.version")
-	if len(parts) > 1 {
-		// First, check if the first part is a table/alias in our schemas
-		if schemaDef, ok := schemas[parts[0]]; ok {
-			// This is a table.field reference
-			if fieldDef := schemaDef.FindField(parts[1]); fieldDef != nil && fieldDef.Type.IsComplex() {
-				// This is a JSON field - use json_extract for nested access
-				if len(parts) > 2 {
-					jsonPath := "$." + strings.Join(parts[2:], ".")
-					return fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(parts[0])+"."+quoteIdentifier(parts[1]), jsonPath), nil
-				}
-			}
-			// Regular table.field reference
-			quotedParts := make([]string, len(parts))
-			for i, part := range parts {
-				quotedParts[i] = quoteIdentifier(part)
-			}
-			return strings.Join(quotedParts, "."), nil
-		}
-
-		// Case 3: Check if the first part is a field in any of our schemas (for single table contexts)
-		// This handles cases like "_metadata_.version" when there's only one table
-		for _, schemaDef := range schemas {
-			if fieldDef := schemaDef.FindField(parts[0]); fieldDef != nil && fieldDef.Type.IsComplex() {
-				// This is a JSON field - use json_extract for nested access
-				jsonPath := "$." + strings.Join(parts[1:], ".")
-				return fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(parts[0]), jsonPath), nil
-			}
-		}
-	}
-
-	// Default: quote all parts and join with dots
-	quotedParts := make([]string, len(parts))
-	for i, part := range parts {
-		quotedParts[i] = quoteIdentifier(part)
-	}
-	return strings.Join(quotedParts, "."), nil
-}
 
 // SQLiteSelectProjection handles SELECT clause projection
 type SQLiteSelectProjection struct {
@@ -548,16 +478,42 @@ func (p *SQLiteSelectProjection) buildFilterValue(value *query.FilterValue) (str
 	}
 	if value.SubqueryVal != nil {
 		// For subqueries, we'd need to recursively build the query
-		// This is a simplified implementation
-		return "(SELECT ...)", nil, ErrSelectSubqueryNotImplemented
+		return p.buildSubquery(value.SubqueryVal)
 	}
 	if value.ObjectVal != nil {
-		// For object values, we might serialize to JSON
+		// For object values, we serialize to JSON
 		param := p.factory.nextParam()
 		return param, []any{value.ObjectVal}, nil
 	}
 
 	return "NULL", nil, nil
+}
+
+// buildSubquery builds a complete subquery with full support for joins, nesting, etc.
+func (p *SQLiteSelectProjection) buildSubquery(subquery *query.SubqueryValue) (string, []any, error) {
+	// Check depth to prevent infinite recursion
+	if err := p.factory.checkDepth(); err != nil {
+		return "", nil, err
+	}
+
+	// Create a child factory for the subquery scope
+	childFactory := p.factory.createChildScope()
+
+	// Build the complete subquery tree
+	// This recursively handles all features: joins, nested subqueries, aggregations, etc.
+	subTree, err := childFactory.buildSelectTree(&subquery.Query)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to build subquery at depth %d: %w", childFactory.depth, err)
+	}
+
+	// Generate SQL for the subquery
+	subSQL, subParams, err := subTree.Value()
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to generate subquery SQL at depth %d: %w", childFactory.depth, err)
+	}
+
+	// Wrap in parentheses
+	return fmt.Sprintf("(%s)", subSQL), subParams, nil
 }
 
 // SQLiteFromClause handles FROM clause
@@ -921,11 +877,10 @@ func (s *SQLiteSelectStatement) Value() (string, []any, error) {
 func (s *SQLiteSelectStatement) StatementType() string {
 	return "SELECT"
 }
-
-// buildSelectTree builds the complete query tree with proper schema context
+// buildSelectTree builds the complete query tree with proper schema context.
+// This is now recursive and handles subqueries at any depth.
 func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
 	tree := &selectTree{}
-	schemas := make(map[string]*schema.SchemaDefinition)
 
 	// Collect schema from the main target and register alias
 	if q.Target != nil {
@@ -935,7 +890,7 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
 			f.addAlias(q.Target.Name, name)
 		}
 		if q.Target.Schema != nil {
-			schemas[name] = q.Target.Schema
+			f.addSchema(name, q.Target.Schema)
 		}
 	}
 
@@ -947,7 +902,7 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
 			f.addAlias(join.Target.Name, name)
 		}
 		if join.Target.Schema != nil {
-			schemas[name] = join.Target.Schema
+			f.addSchema(name, join.Target.Schema)
 		}
 	}
 
@@ -957,7 +912,7 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
 		projection:   q.Projection,
 		aggregations: q.Aggregations,
 		distinct:     q.Distinct,
-		schemas:      schemas,
+		schemas:      f.schemas,
 	}
 
 	// Build target (FROM clause)
@@ -973,7 +928,7 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
 		tree.joins = &SQLiteJoinClause{
 			factory: f,
 			joins:   q.Joins,
-			schemas: schemas,
+			schemas: f.schemas,
 		}
 	}
 
@@ -992,14 +947,14 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
 		tree.groupBy = &SQLiteGroupByClause{
 			factory:      f,
 			aggregations: q.Aggregations,
-			schemas:      schemas,
+			schemas:      f.schemas,
 		}
 
 		// Build HAVING clause for aggregation filters
 		tree.having = &SQLiteHavingClause{
 			factory:      f,
 			aggregations: q.Aggregations,
-			schemas:      schemas,
+			schemas:      f.schemas,
 		}
 	}
 
@@ -1008,7 +963,7 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
 		tree.orderBy = &SQLiteOrderByClause{
 			factory:    f,
 			sorts:      q.Sort,
-			schemas:    schemas,
+			schemas:    f.schemas,
 			pagination: q.Pagination,
 		}
 	}

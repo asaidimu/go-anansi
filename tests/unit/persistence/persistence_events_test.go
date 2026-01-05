@@ -293,7 +293,7 @@ func TestPersistence_DocumentUpdateEvents(t *testing.T) {
 	failedDocUpdate := data.MustNewDocument(map[string]any{"id": "2", "name": "failed_update"})
 	failedUpdateFilter := query.NewQueryBuilder().Where("id").Eq("2").Build().Filters
 	rows, err := collection.Update(context.Background(), &base.CollectionUpdate{Set: failedDocUpdate, Filter: failedUpdateFilter})
-	assert.Equal(t, rows, 0)
+	assert.Equal(t, rows.Count, 0)
 
 	// Allow some time for events to be processed
 	time.Sleep(100 * time.Millisecond)

@@ -22,20 +22,19 @@ func (p *QueryPartitioner) Partition(dsl *Query) (*Query, *Query, error) {
 	if dsl.Raw != nil {
 		return &Query{
 			Target: dsl.Target,
-			Raw: dsl.Raw,
+			Raw:    dsl.Raw,
 		}, &Query{}, nil
 	}
 
-	dbQuery :=
-		&Query{
-			Target: dsl.Target,
-		}
+	dbQuery := &Query{
+		Target: dsl.Target,
+	}
 
 	postProcessingQuery := &Query{
 		Target: dsl.Target,
 	}
 
-	// Partition filters
+	// Partition filters (now handles subqueries recursively)
 	dbFilters, postFilters, err := p.partitionFilters(dsl.Filters)
 	if err != nil {
 		return nil, nil, err
@@ -43,13 +42,19 @@ func (p *QueryPartitioner) Partition(dsl *Query) (*Query, *Query, error) {
 	dbQuery.Filters = dbFilters
 	postProcessingQuery.Filters = postFilters
 
-	// Partition joins
-	dbJoins, postJoins := p.partitionJoins(dsl.Joins)
+	// Partition joins (now handles subqueries in join conditions)
+	dbJoins, postJoins, err := p.partitionJoins(dsl.Joins)
+	if err != nil {
+		return nil, nil, err
+	}
 	dbQuery.Joins = dbJoins
 	postProcessingQuery.Joins = postJoins
 
-	// Partition aggregations
-	dbAggregations, postAggregations := p.partitionAggregations(dsl.Aggregations)
+	// Partition aggregations (now handles subqueries in aggregation filters)
+	dbAggregations, postAggregations, err := p.partitionAggregations(dsl.Aggregations)
+	if err != nil {
+		return nil, nil, err
+	}
 	dbQuery.Aggregations = dbAggregations
 	postProcessingQuery.Aggregations = postAggregations
 
@@ -63,6 +68,16 @@ func (p *QueryPartitioner) Partition(dsl *Query) (*Query, *Query, error) {
 		dbQuery.Pagination = dsl.Pagination
 	} else {
 		postProcessingQuery.Pagination = dsl.Pagination
+	}
+
+	// Partition unions (now handles subqueries within union queries)
+	if dsl.Union != nil {
+		dbUnion, postUnion, err := p.partitionUnion(dsl.Union)
+		if err != nil {
+			return nil, nil, err
+		}
+		dbQuery.Union = dbUnion
+		postProcessingQuery.Union = postUnion
 	}
 
 	// Dependency analysis and projection augmentation
@@ -80,10 +95,40 @@ func (p *QueryPartitioner) partitionFilters(filter *QueryFilter) (*QueryFilter, 
 
 	// Base case: we have a simple condition
 	if filter.Condition != nil {
+		// Check if the condition value contains a subquery
+		if filter.Condition.Value.SubqueryVal != nil {
+			dbSubquery, postSubquery, err := p.Partition(&filter.Condition.Value.SubqueryVal.Query)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			// If the subquery requires post-processing, the entire condition must be post-processed
+			if !postSubquery.IsEmpty() {
+				return nil, filter, nil
+			}
+
+			// Otherwise, create an optimized filter with the DB-optimized subquery
+			optimizedFilter := &QueryFilter{
+				Condition: &FilterCondition{
+					Field:    filter.Condition.Field,
+					Operator: filter.Condition.Operator,
+					Value:    filter.Condition.Value,
+				},
+			}
+			optimizedFilter.Condition.Value.SubqueryVal.Query = *dbSubquery
+
+			if p.isConditionSupported(filter.Condition) {
+				return optimizedFilter, nil, nil
+			} else {
+				return nil, optimizedFilter, nil
+			}
+		}
+
+		// No subquery, use existing logic
 		if p.isConditionSupported(filter.Condition) {
-			return filter, nil, nil // DB can handle it
+			return filter, nil, nil
 		} else {
-			return nil, filter, nil // Must be handled in post-processing
+			return nil, filter, nil
 		}
 	}
 
@@ -134,35 +179,87 @@ func (p *QueryPartitioner) partitionFilters(filter *QueryFilter) (*QueryFilter, 
 }
 
 func (p *QueryPartitioner) isConditionSupported(cond *FilterCondition) bool {
-	if _, supported := p.capabilities.SupportedComparisonOperators[cond.Operator]; supported {
-		// Further checks could be added here, e.g., for function support in filter values
+	if _, supported := p.capabilities.SupportedComparisonOperators[cond.Operator]; !supported {
+		return false
+	}
+
+	// Check if the value contains unsupported function calls
+	if cond.Value.FunctionCallVal != nil {
+		// You could add more sophisticated function support checking here
 		return true
 	}
-	return false
+
+	return true
 }
 
-func (p *QueryPartitioner) partitionJoins(joins []JoinConfiguration) ([]JoinConfiguration, []JoinConfiguration) {
+func (p *QueryPartitioner) partitionJoins(joins []JoinConfiguration) ([]JoinConfiguration, []JoinConfiguration, error) {
 	var dbJoins, postJoins []JoinConfiguration
+
 	for _, join := range joins {
-		if _, supported := p.capabilities.SupportedJoinTypes[join.Type]; supported {
-			dbJoins = append(dbJoins, join)
-		} else {
+		// Check if the join type is supported
+		if _, supported := p.capabilities.SupportedJoinTypes[join.Type]; !supported {
 			postJoins = append(postJoins, join)
+			continue
+		}
+
+		// Check if the join condition contains subqueries
+		if join.On != nil {
+			dbFilter, postFilter, err := p.partitionFilters(join.On)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			// If the join condition requires post-processing, the entire join must be post-processed
+			if postFilter != nil {
+				postJoins = append(postJoins, join)
+				continue
+			}
+
+			// Otherwise, use the optimized DB filter
+			optimizedJoin := join
+			optimizedJoin.On = dbFilter
+			dbJoins = append(dbJoins, optimizedJoin)
+		} else {
+			dbJoins = append(dbJoins, join)
 		}
 	}
-	return dbJoins, postJoins
+
+	return dbJoins, postJoins, nil
 }
 
-func (p *QueryPartitioner) partitionAggregations(aggregations []AggregationConfiguration) ([]AggregationConfiguration, []AggregationConfiguration) {
+func (p *QueryPartitioner) partitionAggregations(aggregations []AggregationConfiguration) ([]AggregationConfiguration, []AggregationConfiguration, error) {
 	var dbAggregations, postAggregations []AggregationConfiguration
+
 	for _, agg := range aggregations {
-		if _, supported := p.capabilities.SupportedAggregationFunctions[agg.Type]; supported {
-			dbAggregations = append(dbAggregations, agg)
-		} else {
+		// Check if the aggregation type is supported
+		if _, supported := p.capabilities.SupportedAggregationFunctions[agg.Type]; !supported {
 			postAggregations = append(postAggregations, agg)
+			continue
+		}
+
+		// Check if the aggregation filter contains subqueries
+		if agg.Filter != nil {
+			dbFilter, postFilter, err := p.partitionFilters(agg.Filter)
+			if err != nil {
+				return nil, nil, err
+			}
+
+			// If the filter requires post-processing, the entire aggregation must be post-processed
+			if postFilter != nil {
+				postAggregations = append(postAggregations, agg)
+				continue
+			}
+
+			// Otherwise, use the optimized DB filter
+			optimizedAgg := agg
+			optimizedAgg.Filter = dbFilter
+			dbAggregations = append(dbAggregations, optimizedAgg)
+		} else {
+			dbAggregations = append(dbAggregations, agg)
 		}
 	}
-	return dbAggregations, postAggregations
+
+	return dbAggregations, postAggregations, nil
 }
 
 func (p *QueryPartitioner) partitionSort(sorts []SortConfiguration) ([]SortConfiguration, []SortConfiguration) {
@@ -180,6 +277,35 @@ func (p *QueryPartitioner) supportsPagination(pagination *PaginationOptions) boo
 	}
 	_, supported := p.capabilities.SupportedPaginationTypes[PaginationType(pagination.Type)]
 	return supported
+}
+
+func (p *QueryPartitioner) partitionUnion(union *QueryUnion) (*QueryUnion, *QueryUnion, error) {
+	if union == nil || len(union.Queries) == 0 {
+		return nil, nil, nil
+	}
+
+	var dbQueries []Query
+
+	for _, subQuery := range union.Queries {
+		dbQuery, postQuery, err := p.Partition(&subQuery)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// If any sub-query requires post-processing, the entire union must be post-processed
+		if !postQuery.IsEmpty() {
+			// Move all queries to post-processing
+			return nil, union, nil
+		}
+
+		dbQueries = append(dbQueries, *dbQuery)
+	}
+
+	// All queries can be handled by the database
+	return &QueryUnion{
+		Queries: dbQueries,
+		Type:    union.Type,
+	}, nil, nil
 }
 
 func (p *QueryPartitioner) augmentProjection(originalQuery, dbQuery, postQuery *Query) error {
@@ -228,6 +354,9 @@ func collectDependencies(q *Query, dependencies map[string]struct{}) {
 		for _, group := range agg.Groups {
 			dependencies[group] = struct{}{}
 		}
+		if agg.Filter != nil {
+			collectDependenciesFromFilter(agg.Filter, dependencies)
+		}
 	}
 	for _, sort := range q.Sort {
 		dependencies[sort.Field] = struct{}{}
@@ -258,6 +387,13 @@ func collectDependenciesFromFilterValue(fv *FilterValue, dependencies map[string
 			collectDependenciesFromFilterValue(&arg, dependencies)
 		}
 	}
+	if fv.ArrayVal != nil {
+		for _, item := range fv.ArrayVal {
+			collectDependenciesFromFilterValue(&item, dependencies)
+		}
+	}
+	// Note: We don't need to collect dependencies from subqueries here
+	// because subqueries are self-contained and fetch their own data
 }
 
 func collectDependenciesFromComputedField(computed ProjectionComputedItem, dependencies map[string]struct{}) {

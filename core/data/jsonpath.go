@@ -9,7 +9,7 @@ import (
 )
 
 // JSONPathQuery executes a JSONPath-like query on the document.
-func (d Document) JSONPathQuery(path string) ([]any, error) {
+func (d *Document) JSONPathQuery(path string) ([]any, error) {
 	if path == "" || path == "$" {
 		return []any{d.data}, nil
 	}
@@ -24,7 +24,7 @@ func (d Document) JSONPathQuery(path string) ([]any, error) {
 }
 
 // parseJSONPath breaks down a JSONPath string into individual segments
-func (d Document) parseJSONPath(path string) ([]string, error) {
+func (d *Document) parseJSONPath(path string) ([]string, error) {
 	// Remove leading $. if present
 	path = strings.TrimPrefix(path, ".")
 	path = strings.TrimPrefix(path, "$")
@@ -82,7 +82,7 @@ func (d Document) parseJSONPath(path string) ([]string, error) {
 // executeJSONPath is a recursive helper for JSONPathQuery. It traverses the document
 // based on the provided path segments, supporting wildcard '*' and array indexing '[]'.
 // It returns a slice of all values found at the specified path.
-func (d Document) executeJSONPath(segments []string) ([]any, error) {
+func (d *Document) executeJSONPath(segments []string) ([]any, error) {
 	current := []any{d.data}
 
 	for i, segment := range segments {
@@ -107,7 +107,7 @@ func (d Document) executeJSONPath(segments []string) ([]any, error) {
 }
 
 // processSegment handles a single path segment against a current item
-func (d Document) processSegment(item any, segment string, isLastSegment bool) ([]any, error) {
+func (d *Document) processSegment(item any, segment string, isLastSegment bool) ([]any, error) {
 	// Handle bracket notation
 	if strings.HasPrefix(segment, "[") && strings.HasSuffix(segment, "]") {
 		return d.processBracketSegment(item, segment)
@@ -123,7 +123,7 @@ func (d Document) processSegment(item any, segment string, isLastSegment bool) (
 }
 
 // processBracketSegment handles bracket notation like [*], [0], [1], etc.
-func (d Document) processBracketSegment(item any, segment string) ([]any, error) {
+func (d *Document) processBracketSegment(item any, segment string) ([]any, error) {
 	inner := segment[1 : len(segment)-1] // Remove [ and ]
 
 	// Handle wildcard [*]
@@ -155,12 +155,20 @@ func (d Document) processWildcard(item any) []any {
 
 	if arr, ok := item.([]any); ok {
 		results = append(results, arr...)
-	} else if doc, ok := AsDocument(item); ok {
+	} else if itemMap, ok := item.(map[string]any); ok {
+		for _, v := range itemMap {
+			results = append(results, v)
+		}
+	} else if doc, ok := item.(Document); ok {
 		for _, v := range doc.data {
 			results = append(results, v)
 		}
+	} else if docPtr, ok := item.(*Document); ok {
+		for _, v := range docPtr.data {
+			results = append(results, v)
+		}
 	}
-
+	// For other types, wildcard on them yields no results
 	return results
 }
 
@@ -168,8 +176,18 @@ func (d Document) processWildcard(item any) []any {
 func (d Document) processFieldAccess(item any, field string, isLastSegment bool) []any {
 	var results []any
 
-	if doc, ok := AsDocument(item); ok {
-		if val, err := doc.Get(field); err == nil {
+	// Try to get a map from the item
+	var currentMap map[string]any
+	if doc, ok := item.(Document); ok {
+		currentMap = doc.data
+	} else if docPtr, ok := item.(*Document); ok {
+		currentMap = docPtr.data
+	} else if itemMap, ok := item.(map[string]any); ok {
+		currentMap = itemMap
+	}
+
+	if currentMap != nil {
+		if val, ok := currentMap[field]; ok {
 			// Special handling: if this is the last segment and the value is an array,
 			// flatten it into individual elements (for cases like $.store.book)
 			if isLastSegment {
@@ -185,8 +203,17 @@ func (d Document) processFieldAccess(item any, field string, isLastSegment bool)
 	} else if arr, ok := item.([]any); ok {
 		// Apply field access to each element in the array
 		for _, subItem := range arr {
-			if subDoc, ok := AsDocument(subItem); ok {
-				if val, err := subDoc.Get(field); err == nil {
+			var subItemMap map[string]any
+			if subDoc, ok := subItem.(Document); ok {
+				subItemMap = subDoc.data
+			} else if subDocPtr, ok := subItem.(*Document); ok {
+				subItemMap = subDocPtr.data
+			} else if subActualMap, ok := subItem.(map[string]any); ok {
+				subItemMap = subActualMap
+			}
+
+			if subItemMap != nil {
+				if val, ok := subItemMap[field]; ok {
 					results = append(results, val)
 				}
 			}

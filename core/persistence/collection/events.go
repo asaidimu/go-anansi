@@ -113,7 +113,7 @@ func (e *eventsCollection) Read(ctx context.Context, q *query.Query) (*base.Read
 
 // Update wraps the underlying collection's Update method, adding event emission
 // for the start, success, and failure of the operation.
-func (e *eventsCollection) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
+func (e *eventsCollection) Update(ctx context.Context, params *base.CollectionUpdate) (*base.ReadResult, error) {
 	config := events.OperationConfig{
 		Operation:         "update",
 		StartEventTypes:   []string{string(base.DocumentUpdateStart)},
@@ -127,10 +127,10 @@ func (e *eventsCollection) Update(ctx context.Context, params *base.CollectionUp
 	})
 
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	return result.(int), nil
+	return result.(*base.ReadResult), nil
 }
 
 // Delete wraps the underlying collection's Delete method, adding event emission

@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	DocumentID        = "id"
+	DocumentIDField        = "id"
 	MetadataField     = "_metadata_"
 	MetadataChecksum  = "checksum"
 	MetadataSignature = "signature"
@@ -51,6 +51,11 @@ func DefaultMetadataSchema() *schema.NestedSchemaDefinition {
 					Name:     MetadataChecksum,
 					Type:     schema.FieldTypeString,
 					Required: utils.BoolPtr(true),
+				},
+				"signature": {
+					Name:     MetadataSignature,
+					Type:     schema.FieldTypeString,
+					Required: utils.BoolPtr(false),
 				},
 			},
 		},

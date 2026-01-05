@@ -118,10 +118,15 @@ func (d *negativeAmountValidator) CreateMany(ctx context.Context, docs []*data.D
 }
 
 
-func (d *negativeAmountValidator) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
-	if err := d.validateAmount(params.Set); err != nil {
-		return 0, err
+func (d *negativeAmountValidator) Update(ctx context.Context, params *base.CollectionUpdate) (*base.ReadResult, error) {
+	// If params.Set is provided, validate the amount
+	if params.Set != nil {
+		if err := d.validateAmount(params.Set); err != nil {
+			// On validation failure, return an empty ReadResult and the error
+			return &base.ReadResult{Count: 0, Data: data.DocumentSet{}}, err
+		}
 	}
+	// Call the underlying collection's Update method with the new signature
 	return d.Collection.Update(ctx, params)
 }
 

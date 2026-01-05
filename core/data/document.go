@@ -14,16 +14,39 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
+// Constants
+const (
+	SchemaField = "_schema_"
+)
+
 // Document represents a flexible, schema-aware data structure.
 type Document struct {
 	ctx  context.Context
 	data map[string]any
 }
 
-// Constants
-const (
-	SchemaField = "_schema_"
-)
+// Patch represents a set of fields to be updated.
+// It is a map[string]any but signifies that it is a partial document.
+type Patch map[string]any
+
+// Document converts the Patch into a Document.
+// It uses the same logic as your existing Patch function:
+// bypassing auto-IDs and Metadata.
+func (p Patch) Document(ctx ...context.Context) *Document {
+	data := map[string]any(p)
+	if data == nil {
+		data = make(map[string]any)
+	}
+
+	dctx := context.Background()
+	if len(ctx) > 0 && ctx[0] != nil {
+		dctx = ctx[0]
+	}
+	return &Document{
+		ctx:  dctx,
+		data: data,
+	}
+}
 
 // convertToDocumentMap converts various input types to map[string]any for Must* functions
 func convertToDocumentMap(data any) (map[string]any, error) {
@@ -55,34 +78,36 @@ func convertToDocumentMap(data any) (map[string]any, error) {
 }
 
 // NewDocument creates a new Document from a map[string]any.
-func NewDocument(data map[string]any) (*Document, error) {
-	return getFactory().newDocument(context.Background(), data)
+func NewDocument(data any, ctx ...context.Context) (*Document, error) {
+	docMap, err := convertToDocumentMap(data)
+	if err != nil {
+		return nil, err
+	}
+	dctx := context.Background()
+	if len(ctx) > 0 && ctx[0] != nil {
+		dctx = ctx[0]
+	}
+	return getFactory().newDocument(dctx, docMap)
 }
 
 // MustNewDocument creates a new Document from various map forms, panics on failure.
-func MustNewDocument(data any) *Document {
+func MustNewDocument(data any, ctx ...context.Context) *Document {
 	docMap, err := convertToDocumentMap(data)
 	if err != nil {
 		panic(err)
 	}
 
-	d, err := getFactory().newDocument(context.Background(), docMap)
+	dctx := context.Background()
+	if len(ctx) > 0 && ctx[0] != nil {
+		dctx = ctx[0]
+	}
+
+	d, err := getFactory().newDocument(dctx, docMap)
 	if err != nil {
 		panic(err)
 	}
 
 	return d
-}
-
-func Patch(data map[string]any) *Document {
-	if data == nil {
-		data = make(map[string]any)
-	}
-	// We bypass the factory.newDocument call to avoid auto-ID/Metadata
-	return &Document{
-		ctx:  context.Background(),
-		data: data,
-	}
 }
 
 // Context returns the document's context.
@@ -128,8 +153,8 @@ func (d *Document) MustGet(key string) any {
 
 // Set with validation support.
 func (d *Document) Set(key string, value any) error {
-	if key == DocumentID {
-		return common.SystemErrorFrom(ErrReadOnlyField).WithOperation("data.Document.Set").WithPath(key).WithMessage(fmt.Sprintf("field '%s' is managed by the library and cannot be set manually", DocumentID))
+	if key == DocumentIDField {
+		return common.SystemErrorFrom(ErrReadOnlyField).WithOperation("data.Document.Set").WithPath(key).WithMessage(fmt.Sprintf("field '%s' is managed by the library and cannot be set manually", DocumentIDField))
 	}
 	if key == "" {
 		return common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.Set").WithPath(key)
@@ -143,7 +168,7 @@ func (d *Document) Set(key string, value any) error {
 
 // SetIfNotExists sets a value only if the key doesn't exist.
 func (d *Document) SetIfNotExists(key string, value any) bool {
-	if key == DocumentID {
+	if key == DocumentIDField {
 		return false
 	}
 	if d.data == nil {
@@ -511,17 +536,17 @@ func (d *Document) Equals(other *Document) bool {
 
 	// Remove ID field from both documents for content-only comparison
 	if dClone.data != nil {
-		delete(dClone.data, DocumentID)
+		delete(dClone.data, DocumentIDField)
 	}
 	if otherClone.data != nil {
-		delete(otherClone.data, DocumentID)
+		delete(otherClone.data, DocumentIDField)
 	}
 
 	return reflect.DeepEqual(dClone.data, otherClone.data)
 }
 
-// AsMap returns a deep map[string]any representation of the document's data.
-func (d *Document) AsMap() map[string]any {
+// ToMap returns a deep map[string]any representation of the document's data.
+func (d *Document) ToMap() map[string]any {
 	if d == nil || d.data == nil {
 		return nil
 	}
@@ -532,22 +557,13 @@ func (d *Document) AsMap() map[string]any {
 	return out
 }
 
-func AsMapSlice(docs []*Document) []map[string]any {
-    // Length 0, Capacity len(docs)
-    result := make([]map[string]any, 0, len(docs))
-    for _, value := range docs {
-        result = append(result, value.AsMap())
-    }
-    return result
-}
-
 // asMapValue recursively converts a value to its map[string]any representation.
 func asMapValue(v any) any {
 	switch val := v.(type) {
 	case *Document:
-		return val.AsMap() // Recursively call AsMap on nested Document structs
+		return val.ToMap() // Recursively call AsMap on nested Document structs
 	case Document:
-		return val.AsMap()
+		return val.ToMap()
 	case map[string]any:
 		nested := make(map[string]any, len(val))
 		for nk, nv := range val {
@@ -563,7 +579,7 @@ func asMapValue(v any) any {
 	case []*Document:
 		arr := make([]map[string]any, len(val))
 		for i, doc := range val {
-			arr[i] = doc.AsMap() // Convert each Document in the slice to a map
+			arr[i] = doc.ToMap() // Convert each Document in the slice to a map
 		}
 		return arr
 	default:
@@ -575,7 +591,7 @@ func (d *Document) ID() string {
 	if d == nil || d.data == nil {
 		return ""
 	}
-	if val, ok := d.data[DocumentID].(string); ok {
+	if val, ok := d.data[DocumentIDField].(string); ok {
 		return val
 	}
 	return ""

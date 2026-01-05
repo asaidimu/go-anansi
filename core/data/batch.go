@@ -10,9 +10,45 @@ import (
 // DocumentSet represents a collection of documents with batch operations.
 type DocumentSet []*Document
 
-// NewDocumentSet creates a new document set.
-func NewDocumentSet(docs ...*Document) DocumentSet {
-	return DocumentSet(docs)
+// NewDocumentSet creates a new DocumentSet from a variety of slice types.
+// It intelligently converts []map[string]any, []any, and []Document into a
+// consistent DocumentSet. It accepts an optional context that is passed down
+// during the creation of each new Document, allowing for contextual metadata injection.
+func NewDocumentSet(v any, ctx ...context.Context) (DocumentSet, bool) {
+	switch val := v.(type) {
+	case DocumentSet:
+		return val, true
+	case []*Document:
+		return DocumentSet(val), true
+	case []Document:
+		docs := make([]*Document, len(val))
+		for i := range val {
+			docs[i] = &val[i]
+		}
+		return DocumentSet(docs), true
+	case []any:
+		docs := make(DocumentSet, 0, len(val))
+		for _, item := range val {
+			if doc, ok := AsDocument(item, ctx...); ok {
+				docs = append(docs, doc)
+			} else {
+				return nil, false
+			}
+		}
+		return docs, true
+	case []map[string]any:
+		docs := make(DocumentSet, len(val))
+		for i, m := range val {
+			newDoc, err := NewDocument(m, ctx...)
+			if err != nil {
+				return nil, false
+			}
+			docs[i] = newDoc
+		}
+		return docs, true
+	default:
+		return nil, false
+	}
 }
 
 // Filter applies a filter to all documents in the set.
@@ -193,7 +229,7 @@ type AggregationResult struct {
 func (ds DocumentSet) ToMaps() []map[string]any {
 	result := make([]map[string]any, len(ds))
 	for i, doc := range ds {
-		result[i] = doc.AsMap()
+		result[i] = doc.ToMap()
 	}
 	return result
 }

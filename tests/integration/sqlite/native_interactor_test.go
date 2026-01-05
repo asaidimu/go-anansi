@@ -302,7 +302,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 			Value:    query.FilterValue{StringVal: utils.StringPtr("t1")},
 		},
 	}
-	rowsAffected, err := interactor.UpdateDocuments(ctx, testSchema, updates, nil, filterT1)
+	_, rowsAffected, err := interactor.UpdateDocuments(ctx, testSchema, updates, nil, filterT1, false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), rowsAffected)
 
@@ -324,7 +324,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 			Value:    query.FilterValue{BoolVal: utils.BoolPtr(false)},
 		},
 	}
-	rowsAffectedAll, err := interactor.UpdateDocuments(ctx, testSchema, updatesAll, nil, filterIncomplete)
+	_, rowsAffectedAll, err := interactor.UpdateDocuments(ctx, testSchema, updatesAll, nil, filterIncomplete, false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), rowsAffectedAll) // Only t2 was incomplete
 
@@ -587,7 +587,7 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 			Value:    query.FilterValue{StringVal: utils.StringPtr("acc1")},
 		},
 	}
-	_, err = txInteractor.UpdateDocuments(ctx, testSchema, updates, nil, filterAcc1)
+	_, _, err = txInteractor.UpdateDocuments(ctx, testSchema, updates, nil, filterAcc1, false)
 	require.NoError(t, err)
 
 	// Insert within transaction
@@ -632,7 +632,7 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 			Value:    query.FilterValue{StringVal: utils.StringPtr("acc1")},
 		},
 	}
-	_, err = txInteractor2.UpdateDocuments(ctx, testSchema, updates2, nil, filterAcc1_2)
+	_, _, err = txInteractor2.UpdateDocuments(ctx, testSchema, updates2, nil, filterAcc1_2, false)
 	require.NoError(t, err)
 	_, err = txInteractor2.InsertDocuments(ctx, testSchema, []map[string]any{
 		{"account_id": "acc4", "balance": 300.0},

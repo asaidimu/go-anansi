@@ -123,7 +123,7 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []*data.Document) 
 
 	// Insert the documents
 	inserted, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
-		values := data.AsMapSlice(docs)
+		values := data.DocumentSet(docs).ToMaps()
 		return interactor.InsertDocuments(ctx, c.schema, values)
 	})
 
@@ -152,7 +152,7 @@ func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadRe
 	}
 
 	count := len(docs)
-	values, ok := data.DocumentSlice(docs)
+	values, ok := data.NewDocumentSet(docs, ctx)
 	if !ok {
 		return nil, common.NewSystemError("ERR_PERSISTENCE_READ_DOCUMENTS_FAILED", "Failed to convert results to documents")
 	}
@@ -165,21 +165,113 @@ func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadRe
 }
 
 // Update modifies documents in the collection that match the filter in CollectionUpdate.
-func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
+func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpdate) (*base.ReadResult, error) {
 	if params == nil || params.Filter == nil {
-		return 0, base.ErrInvalidUpdateParams
+		return nil, base.ErrInvalidUpdateParams
+	}
+
+	var updatesMap map[string]any
+	if params.Set != nil {
+		updatesMap = params.Set.ToMap()
 	}
 
 	result, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
-		return interactor.UpdateDocuments(ctx, c.schema, params.Set.AsMap(), params.Compute, params.Filter)
+		var affectedIDs []query.FilterValue
+		var docs []map[string]any
+		var count int64
+
+		// If documents are requested and interactor doesn't support native RETURNING,
+		// fetch IDs before the update so we can retrieve them afterward
+		needsIDsFetch := params.ReturnDocument && !c.Capabilities(ctx).ReturnOnUpdate
+
+		if needsIDsFetch {
+			rctx := query.WithInteractor(ctx, interactor)
+			idQuery := query.NewQueryBuilder().
+				Select().
+				Include(data.DocumentIDField).
+				End().
+				AndFilter(*params.Filter).
+				Build()
+
+			idQuery.Target = &query.QueryTarget{
+				Name:   c.schema.Name,
+				Alias:  &c.name,
+				Schema: c.schema,
+			}
+
+			idDocs, queryErr := c.engine.Query(rctx, c.schema, &idQuery)
+			if queryErr != nil {
+				return nil, common.SystemErrorFrom(queryErr, "ERR_PERSISTENCE_FETCH_IDS_FAILED")
+			}
+
+			// Extract IDs from the documents
+			affectedIDs = make([]query.FilterValue, 0, len(idDocs))
+			for _, doc := range idDocs {
+				if id, exists := doc[data.DocumentIDField]; exists {
+					ids := id.(string)
+					affectedIDs = append(affectedIDs, query.FilterValue{
+						StringVal: &ids,
+					})
+				}
+			}
+		}
+
+		// Perform the update
+		docs, count, err := interactor.UpdateDocuments(ctx, c.schema, updatesMap, params.Compute, params.Filter, params.ReturnDocument)
+		if err != nil {
+			return nil, err
+		}
+
+		// If we fetched IDs beforehand and got documents back from update, fetch the updated documents
+		if needsIDsFetch && len(affectedIDs) > 0 {
+			rctx := query.WithInteractor(ctx, interactor)
+			fetchQuery := query.NewQueryBuilder().
+				AndFilter(query.QueryFilter{
+					Condition: &query.FilterCondition{
+						Field:    data.DocumentIDField,
+						Operator: query.ComparisonOperatorIn,
+						Value:    query.FilterValue{ArrayVal: affectedIDs},
+					},
+				}).
+				Build()
+
+			fetchQuery.Target = &query.QueryTarget{
+				Name:   c.schema.Name,
+				Alias:  &c.name,
+				Schema: c.schema,
+			}
+
+			docs, err = c.engine.Query(rctx, c.schema, &fetchQuery)
+			if err != nil {
+				// Return empty docs with count - the update succeeded
+				docs = []map[string]any{}
+			}
+		}
+
+		return struct {
+			Docs  []map[string]any
+			Count int64
+		}{Docs: docs, Count: count}, nil
 	})
 
 	if err != nil {
-		return 0, common.SystemErrorFrom(err, "ERR_PERSISTENCE_UPDATE_DOCUMENTS_FAILED")
+		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_UPDATE_DOCUMENTS_FAILED")
 	}
 
-	rowsAffected := result.(int64)
-	return int(rowsAffected), nil
+	updateResult := result.(struct {
+		Docs  []map[string]any
+		Count int64
+	})
+
+	documentSet, ok := data.NewDocumentSet(updateResult.Docs, ctx)
+	if !ok {
+		return nil, common.NewSystemError("ERR_PERSISTENCE_UPDATE_DOCUMENTS_FAILED", "Failed to convert updated results to documents")
+	}
+
+	return &base.ReadResult{
+		Data:  documentSet,
+		Count: int(updateResult.Count),
+	}, nil
 }
 
 // Delete removes documents from the collection that match the given query filter.
@@ -204,7 +296,7 @@ func (c *baseCollection) Delete(ctx context.Context, q *query.QueryFilter, unsaf
 // Validate checks if the given data conforms to the collection's schema.
 // The 'loose' flag allows for partial validation.
 func (c *baseCollection) Validate(ctx context.Context, data *data.Document, loose bool) (*schema.ValidationResult, error) {
-	issues, ok := c.validator.Validate(data.AsMap(), loose)
+	issues, ok := c.validator.Validate(data.ToMap(), loose)
 	return &schema.ValidationResult{
 		Valid:  ok,
 		Issues: issues,
@@ -281,4 +373,3 @@ func (c *baseCollection) getCurrentInteractor(ctx context.Context) query.Databas
 	// Not in a transaction - use base interactor with no-op cleanup
 	return c.interactor
 }
-

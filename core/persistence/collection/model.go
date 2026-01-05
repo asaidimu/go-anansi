@@ -103,7 +103,12 @@ func (mc *modelCollection[T]) UpdateMany(ctx context.Context, f *query.QueryFilt
 	if err != nil {
 		return 0, err
 	}
-	return mc.raw.Update(ctx, &base.CollectionUpdate{Filter: f, Set: upd})
+
+	result, err := mc.raw.Update(ctx, &base.CollectionUpdate{Filter: f, Set: upd})
+	if err != nil {
+		return 0, err
+	}
+	return result.Count, nil
 }
 
 func (mc *modelCollection[T]) DeleteByID(ctx context.Context, id string) error {

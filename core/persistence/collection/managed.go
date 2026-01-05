@@ -1,6 +1,7 @@
 package collection
 
 import (
+	"maps"
 	"context"
 	"fmt"
 	"strconv"
@@ -10,7 +11,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
@@ -73,22 +73,17 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []*data.Documen
 	results := make([]base.CreateResult, 0)
 	validCount := 0
 
-	for _, d := range docs {
-		doc := data.MustNewDocument(d)
+	for _, doc := range docs {
 		validationResult, err := c.Validate(ctx, doc, false)
 
 		if err != nil {
-			// If Validate itself returns an error, it's a system error, not a validation failure.
-			// We should return this error immediately.
 			return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_VALIDATION_SYSTEM_ERROR")
 		}
 
 		if !validationResult.Valid {
-			// Document is invalid, append the result with issues
 			results = append(results, base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: validationResult.Issues})
 		} else {
-			// Document is valid
-			results = append(results, base.CreateResult{Status: base.StatusCreated, Data: doc}) // Assuming it will be created
+			results = append(results, base.CreateResult{Status: base.StatusCreated, Data: doc})
 			validCount++
 		}
 	}
@@ -104,14 +99,12 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []*data.Documen
 		return results, base.ErrValidationFailed.WithIssues(allIssues).WithMessage(fmt.Sprintf("validation failed for %d documents", len(docs)-validCount))
 	}
 
-	// All documents are valid, proceed with actual creation
 	results, err := c.wrapped.CreateMany(ctx, docs)
 	if err != nil {
-		sanitizedErr := c.sanitize(ctx, err, nil)
-		// We must also sanitize errors inside the individual result objects
+		sanitizedErr := c.sanitizeError(ctx, err, nil)
 		for i := range results {
 			if results[i].Error != nil {
-				results[i].Error = c.sanitize(ctx, results[i].Error, nil).(*common.SystemError)
+				results[i].Error = c.sanitizeError(ctx, results[i].Error, nil).(*common.SystemError)
 			}
 		}
 		return results, sanitizedErr
@@ -122,88 +115,277 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []*data.Documen
 // Read fetches documents and enriches them with the metadata block for transport.
 func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
 	var fq *query.Query = q
+	var allTranslations map[string]string
 
 	if fq.Raw != nil && c.rawQueryProcessor != nil {
 		rawQuery := fq.Raw
-		// Resolve collection placeholders in the template
 		resolvedTemplate, err := c.rawQueryProcessor.ProcessRawQueryTemplate(ctx, rawQuery.Template, rawQuery.Collections)
 		if err != nil {
 			return nil, err
 		}
 
-		// Create a new RawQuery with the resolved template
 		fq.Raw = &query.RawQuery{
 			Template:    resolvedTemplate,
 			Options:     rawQuery.Options,
 			Collections: rawQuery.Collections,
 			Parameters:  rawQuery.Parameters,
 		}
-	}
-
-	if q.Joins != nil {
-		modifiedQuery, err := q.Clone()
+	} else {
+		// Clone the query first to avoid mutating the original
+		cloned, err := q.Clone()
 		if err != nil {
 			return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_CLONE_QUERY_FAILED")
 		}
-		// Translate logical join targets to physical names
-		for i, join := range modifiedQuery.Joins {
-			name := join.Target
-			if c.resolveSchema == nil {
-				return nil, schema.ErrPhysicalNameResolverNotSet
-			}
-			physicalName, schema, err := c.resolveSchema(ctx, name.Name)
 
-			if err != nil {
-				return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_RESOLVE_PHYSICAL_NAME_FAILED", fmt.Sprintf("%s for join target '%s'", base.ErrFailedToResolvePhysicalName.Error(), join.Target.Name))
-			}
-
-			modifiedQuery.Joins[i].Target.Name = physicalName
-			modifiedQuery.Joins[i].Target.Schema = schema
-
-			if join.Target.Alias == nil {
-				modifiedQuery.Joins[i].Target.Alias = &name.Name
-			}
+		// Prepare the query (resolve all join targets and subqueries)
+		prepared, translations, err := c.prepareQuery(ctx, cloned)
+		if err != nil {
+			return nil, err
 		}
-
-		fq = modifiedQuery
+		fq = prepared
+		allTranslations = translations
 	}
 
+	// Set the main target (the collection itself)
 	fq.Target = &query.QueryTarget{
 		Name:   c.physicalName,
 		Alias:  &c.logicalName,
 		Schema: c.schema,
 	}
 
+	// Add main collection translation
+	if allTranslations == nil {
+		allTranslations = make(map[string]string)
+	}
+	allTranslations[c.physicalName] = c.logicalName
+
 	fq = ensureMetadataProjection(fq)
 
 	result, err := c.wrapped.Read(ctx, fq)
 
 	if err != nil || result.Count == 0 {
-		return result, c.sanitize(ctx, err, fq)
+		return result, c.sanitizeError(ctx, err, allTranslations)
 	}
-
-	docs := result.Data
-
-	// Ensure all docs have metadata and are re-hashed
-	for i, doc := range docs {
-		if _, ok := doc.Metadata(); ok {
-			if err := docs[i].Hash(); err != nil {
-				return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_HASH_DOCUMENT_FAILED")
-			}
-		} else {
-			docs[i] = data.MustNewDocument(doc)
-		}
-	}
-
-	result.Data = docs
 
 	return result, nil
 }
 
+// prepareQuery recursively processes a query to resolve all physical names,
+// including those in subqueries and joins at any depth.
+func (c *managedCollection) prepareQuery(ctx context.Context, q *query.Query) (*query.Query, map[string]string, error) {
+	if q == nil {
+		return nil, nil, nil
+	}
+
+	// Note: Query is already cloned by Read method
+	translations := make(map[string]string)
+
+	// Resolve joins recursively
+	for i := range q.Joins {
+		// CRITICAL: Store the original logical name BEFORE resolution
+		originalLogicalName := q.Joins[i].Target.Name
+
+		physicalName, joinSchema, trans, err := c.resolveTargetWithTranslations(ctx, &q.Joins[i].Target)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		q.Joins[i].Target.Name = physicalName
+		q.Joins[i].Target.Schema = joinSchema
+
+		// Ensure alias is set to the original logical name if not provided
+		// This is critical: field references like "profiles.user" must work
+		if q.Joins[i].Target.Alias == nil {
+			q.Joins[i].Target.Alias = &originalLogicalName
+		}
+
+		maps.Copy(translations, trans)
+
+		// Recursively process subqueries in join conditions
+		if q.Joins[i].On != nil {
+			joinFilter, trans, err := c.prepareFilter(ctx, q.Joins[i].On)
+			if err != nil {
+				return nil, nil, err
+			}
+			q.Joins[i].On = joinFilter
+			maps.Copy(translations, trans)
+		}
+	}
+
+	// Recursively process subqueries in filters
+	if q.Filters != nil {
+		filter, trans, err := c.prepareFilter(ctx, q.Filters)
+		if err != nil {
+			return nil, nil, err
+		}
+		q.Filters = filter
+		maps.Copy(translations, trans)
+	}
+
+	// Recursively process subqueries in aggregation filters
+	for i := range q.Aggregations {
+		if q.Aggregations[i].Filter != nil {
+			aggFilter, trans, err := c.prepareFilter(ctx, q.Aggregations[i].Filter)
+			if err != nil {
+				return nil, nil, err
+			}
+			q.Aggregations[i].Filter = aggFilter
+			maps.Copy(translations, trans)
+		}
+	}
+
+	// Recursively process union queries
+	if q.Union != nil {
+		for i := range q.Union.Queries {
+			unionQuery, trans, err := c.prepareQuery(ctx, &q.Union.Queries[i])
+			if err != nil {
+				return nil, nil, err
+			}
+			q.Union.Queries[i] = *unionQuery
+			maps.Copy(translations, trans)
+		}
+	}
+
+	return q, translations, nil
+}
+
+// prepareFilter recursively processes filters to resolve physical names in subqueries.
+func (c *managedCollection) prepareFilter(ctx context.Context, filter *query.QueryFilter) (*query.QueryFilter, map[string]string, error) {
+	if filter == nil {
+		return nil, nil, nil
+	}
+
+	translations := make(map[string]string)
+	prepared := &query.QueryFilter{}
+
+	if filter.Condition != nil {
+		prepared.Condition = &query.FilterCondition{
+			Field:    filter.Condition.Field,
+			Operator: filter.Condition.Operator,
+		}
+
+		value, trans, err := c.prepareFilterValue(ctx, &filter.Condition.Value)
+		if err != nil {
+			return nil, nil, err
+		}
+		prepared.Condition.Value = *value
+		maps.Copy(translations, trans)
+	}
+
+	if filter.Group != nil {
+		prepared.Group = &query.FilterGroup{
+			Operator:   filter.Group.Operator,
+			Conditions: make([]query.QueryFilter, 0, len(filter.Group.Conditions)),
+		}
+
+		for _, subFilter := range filter.Group.Conditions {
+			preparedSubFilter, trans, err := c.prepareFilter(ctx, &subFilter)
+			if err != nil {
+				return nil, nil, err
+			}
+			prepared.Group.Conditions = append(prepared.Group.Conditions, *preparedSubFilter)
+			maps.Copy(translations, trans)
+		}
+	}
+
+	if filter.TextSearchQuery != nil {
+		prepared.TextSearchQuery = filter.TextSearchQuery
+	}
+
+	return prepared, translations, nil
+}
+
+// prepareFilterValue recursively processes filter values to resolve subqueries.
+func (c *managedCollection) prepareFilterValue(ctx context.Context, value *query.FilterValue) (*query.FilterValue, map[string]string, error) {
+	if value == nil {
+		return nil, nil, nil
+	}
+
+	translations := make(map[string]string)
+	prepared := &query.FilterValue{
+		StringVal: value.StringVal,
+		NumberVal: value.NumberVal,
+		BoolVal:   value.BoolVal,
+		ObjectVal: value.ObjectVal,
+	}
+
+	if value.ArrayVal != nil {
+		prepared.ArrayVal = make([]query.FilterValue, 0, len(value.ArrayVal))
+		for _, item := range value.ArrayVal {
+			preparedItem, trans, err := c.prepareFilterValue(ctx, &item)
+			if err != nil {
+				return nil, nil, err
+			}
+			prepared.ArrayVal = append(prepared.ArrayVal, *preparedItem)
+			maps.Copy(translations, trans)
+		}
+	}
+
+	if value.FieldRefVal != nil {
+		prepared.FieldRefVal = value.FieldRefVal
+	}
+
+	if value.FunctionCallVal != nil {
+		prepared.FunctionCallVal = &query.FunctionCall{
+			Function:  value.FunctionCallVal.Function,
+			Arguments: make([]query.FilterValue, 0, len(value.FunctionCallVal.Arguments)),
+		}
+
+		for _, arg := range value.FunctionCallVal.Arguments {
+			preparedArg, trans, err := c.prepareFilterValue(ctx, &arg)
+			if err != nil {
+				return nil, nil, err
+			}
+			prepared.FunctionCallVal.Arguments = append(prepared.FunctionCallVal.Arguments, *preparedArg)
+			maps.Copy(translations, trans)
+		}
+	}
+
+	if value.SubqueryVal != nil {
+		preparedSubquery, trans, err := c.prepareQuery(ctx, &value.SubqueryVal.Query)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		prepared.SubqueryVal = &query.SubqueryValue{
+			Type:  value.SubqueryVal.Type,
+			Query: *preparedSubquery,
+		}
+
+		maps.Copy(translations, trans)
+	}
+
+	return prepared, translations, nil
+}
+
+// resolveTargetWithTranslations resolves a query target and returns translation mappings.
+func (c *managedCollection) resolveTargetWithTranslations(ctx context.Context, target *query.QueryTarget) (string, *schema.SchemaDefinition, map[string]string, error) {
+	if c.resolveSchema == nil {
+		return "", nil, nil, schema.ErrPhysicalNameResolverNotSet
+	}
+
+	logicalName := target.Name
+	physicalName, targetSchema, err := c.resolveSchema(ctx, logicalName)
+	if err != nil {
+		return "", nil, nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_RESOLVE_PHYSICAL_NAME_FAILED",
+			fmt.Sprintf("failed to resolve physical name for target '%s'", logicalName))
+	}
+
+	translations := map[string]string{
+		physicalName: logicalName,
+	}
+
+	// If an alias is provided, use that for translations
+	if target.Alias != nil {
+		translations[physicalName] = *target.Alias
+	}
+
+	return physicalName, targetSchema, translations, nil
+}
+
 // Update verifies the integrity of the metadata block, performs an optimistic lock check,
 // and updates the document and its metadata.
-func (c *managedCollection) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
-	// --- helper for validation & wrapping errors ---
+func (c *managedCollection) Update(ctx context.Context, params *base.CollectionUpdate) (*base.ReadResult, error) {
 	validate := func() error {
 		result, err := c.Validate(ctx, params.Set, true)
 		if err != nil {
@@ -215,12 +397,35 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 		return nil
 	}
 
-	// --- perform validation once ---
 	if err := validate(); err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	// --- setup version computation ---
+	// Prepare compute queries to resolve subqueries
+	var allTranslations map[string]string
+	if params.Compute != nil {
+		allTranslations = make(map[string]string)
+		preparedCompute := make(map[string]query.Query)
+
+		for fieldPath, computeQuery := range params.Compute {
+			// Clone and prepare the compute query to resolve subqueries
+			cloned, err := computeQuery.Clone()
+			if err != nil {
+				return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_CLONE_COMPUTE_QUERY_FAILED")
+			}
+
+			prepared, trans, err := c.prepareQuery(ctx, cloned)
+			if err != nil {
+				return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_PREPARE_COMPUTE_QUERY_FAILED")
+			}
+
+			preparedCompute[fieldPath] = *prepared
+			maps.Copy(allTranslations, trans)
+		}
+
+		params.Compute = preparedCompute
+	}
+
 	if params.Compute == nil {
 		params.Compute = map[string]query.Query{}
 	}
@@ -232,12 +437,25 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 		End().
 		Build()
 
-	// --- optimistic lock: if Version provided, modify filter ---
+	// Prepare the filter to resolve subqueries
+	if params.Filter != nil {
+		preparedFilter, trans, err := c.prepareFilter(ctx, params.Filter)
+		if err != nil {
+			return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_PREPARE_UPDATE_FILTER_FAILED")
+		}
+		params.Filter = preparedFilter
+
+		if allTranslations == nil {
+			allTranslations = make(map[string]string)
+		}
+		maps.Copy(allTranslations, trans)
+	}
+
 	if params.Version != nil {
 		version := float64(*params.Version)
 
 		if params.Filter == nil {
-			return 0, base.ErrDangerousUpdate
+			return nil, base.ErrDangerousUpdate
 		}
 
 		versionFilter := query.QueryFilter{
@@ -257,16 +475,13 @@ func (c *managedCollection) Update(ctx context.Context, params *base.CollectionU
 		params.Filter = qb.Build().Filters
 	}
 
-	// update the updated timestamp
 	now := strconv.FormatInt(time.Now().UnixNano(), 10)
 	updatedField := data.MetadataFieldPath(data.MetadataUpdated)
-
 	params.Set.Set(updatedField, now)
-	// --- delegate actual update ---
+
 	count, err := c.wrapped.Update(ctx, params)
 	if err != nil {
-		// We use nil for query here unless you want to pass joined params
-		return count, c.sanitize(ctx, err, nil)
+		return count, c.sanitizeError(ctx, err, allTranslations)
 	}
 	return count, nil
 }
@@ -277,9 +492,21 @@ func (c *managedCollection) Delete(ctx context.Context, q *query.QueryFilter, un
 		return 0, base.ErrDangerousDelete
 	}
 
-	count, err := c.wrapped.Delete(ctx, q, unsafe)
+	var preparedFilter *query.QueryFilter
+	var allTranslations map[string]string
+	var err error
+
+	// Prepare the filter to resolve subqueries
+	if q != nil {
+		preparedFilter, allTranslations, err = c.prepareFilter(ctx, q)
+		if err != nil {
+			return 0, common.SystemErrorFrom(err, "ERR_PERSISTENCE_PREPARE_DELETE_FILTER_FAILED")
+		}
+	}
+
+	count, err := c.wrapped.Delete(ctx, preparedFilter, unsafe)
 	if err != nil {
-		return count, c.sanitize(ctx, err, nil)
+		return count, c.sanitizeError(ctx, err, allTranslations)
 	}
 
 	return count, nil
@@ -314,61 +541,40 @@ func ensureMetadataProjection(q *query.Query) *query.Query {
 		return q
 	}
 
-	// Users must not manually include metadata
 	if q.Projection.HasField(data.MetadataField) {
-		// defensive: prevent overriding system metadata
 		panic(base.ErrExplicitMetadataProjectionForbidden.Error())
 	}
 
-	// Always remove metadata from exclusions
 	if q.Projection.IsExcluded(data.MetadataField) {
 		q.Projection.RemoveExcludedField(data.MetadataField)
 	}
 
-	// Ensure metadata is added to Include
 	q.Projection.IncludeField(data.MetadataField, nil, nil)
 
 	return q
 }
-func (c *managedCollection) sanitize(_ context.Context, err error, q *query.Query) error {
+
+// sanitizeError applies translations from prepareQuery
+func (c *managedCollection) sanitizeError(_ context.Context, err error, translations map[string]string) error {
 	if err == nil {
 		return nil
 	}
 
-	// 1. Build the translation registry
-	// Start with the primary collection
-	translations := map[string]string{
-		c.physicalName: c.logicalName,
+	if translations == nil {
+		translations = make(map[string]string)
 	}
+	translations[c.physicalName] = c.logicalName
 
-	// Add any joins involved in the current query
-	if q != nil && q.Joins != nil {
-		for _, join := range q.Joins {
-			if join.Target.Alias != nil {
-				translations[join.Target.Name] = *join.Target.Alias
-			}
-		}
-	}
-
-	// 2. Define the transformation logic
 	tf := func(input string) string {
 		if input == "" {
 			return ""
 		}
 		output := input
 		for phys, log := range translations {
-			output = fmt.Sprintf("%s", output)
-			output = (func(s string) string {
-				return (func(str string) string {
-					return strings.ReplaceAll(str, phys, log)
-				})(output)
-			})(output)
+			output = strings.ReplaceAll(output, phys, log)
 		}
 		return output
 	}
 
-	// 3. Perform Deep Sanitization
-	// We use SystemErrorFrom to ensure we have a SystemError, then call the
-	// recursive Sanitize method we discussed earlier.
 	return common.SystemErrorFrom(err).Sanitize(tf)
 }

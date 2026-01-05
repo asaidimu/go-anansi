@@ -136,11 +136,11 @@ func (d *securityDecorator) Read(ctx context.Context, q *query.Query) (*base.Rea
 	return d.Collection.Read(ctx, q)
 }
 
-func (d *securityDecorator) Update(ctx context.Context, update *base.CollectionUpdate) (int, error) {
+func (d *securityDecorator) Update(ctx context.Context, update *base.CollectionUpdate) (*base.ReadResult, error) {
 	// For update, ensure the user owns the document being updated
 	userID, err := d.getUserIDFromContext(ctx)
 	if err != nil {
-		return 0, err // Unauthorized
+		return nil, err // Unauthorized
 	}
 
 	// Add a filter to ensure only documents owned by the user are updated
@@ -153,6 +153,7 @@ func (d *securityDecorator) Update(ctx context.Context, update *base.CollectionU
 		update.Filter = query.NewQueryBuilder().AndFilter(*update.Filter).AndFilter(*ownerFilter).Build().Filters
 	}
 
+	// Call the underlying collection's Update method with the new signature
 	return d.Collection.Update(ctx, update)
 }
 

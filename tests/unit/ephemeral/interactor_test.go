@@ -135,7 +135,7 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments(t *testing.T) {
 	filters := query.NewQueryBuilder().Where("name").Eq("Bob").Build().Filters
 	updates := map[string]any{"status": "inactive"}
 
-	updatedCount, err := interactor.UpdateDocuments(context.Background(), &schemaDef, updates, nil, filters)
+	_, updatedCount, err := interactor.UpdateDocuments(context.Background(), &schemaDef, updates, nil, filters, false)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), updatedCount)
 
@@ -240,7 +240,7 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments_NoMatch(t *testing.T) {
 	filters := query.NewQueryBuilder().Where("name").Eq("non-existent").Build().Filters
 	updates := map[string]any{"status": "inactive"}
 
-	updatedCount, err := interactor.UpdateDocuments(context.Background(), &schemaDef, updates, nil, filters)
+	_, updatedCount, err := interactor.UpdateDocuments(context.Background(), &schemaDef, updates, nil, filters, false)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), updatedCount)
 }

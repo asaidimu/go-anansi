@@ -3,6 +3,8 @@ package persistence_test
 import (
 	// "context"
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"database/sql"
 	"fmt"
 	"testing"
@@ -504,15 +506,15 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 
 		// Subtract 50 from Alice
 		filterAlice := query.NewQueryBuilder().Where("id").Eq(alice.ID()).Build().Filters
-		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Set: data.Patch(map[string]any{
+		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Set: data.Patch{
 			"balance": 50,
-		}), Filter: filterAlice})
+		}.Document(), Filter: filterAlice})
 		if err != nil {
 			return nil, err
 		}
 
 		// This will fail because of a non-existent field, causing a rollback
-		updateBob := data.Patch(map[string]any{"non_existent_field": "error"})
+		updateBob := data.Patch{"non_existent_field": "error"}.Document()
 
 		filterBob := query.NewQueryBuilder().Where("id").Eq(bob.ID()).Build().Filters
 		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Set: updateBob, Filter: filterBob})
@@ -532,13 +534,11 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	assert.Equal(t, 100.0, doc.Must().GetFloat64("balance"))
 }
 
-
 func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	interactor, cleanup := createNativeInteractor(t)
 	defer cleanup()
 
 	logger := zap.NewNop()
-
 
 	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
@@ -548,7 +548,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 		Name:    "users",
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
-			"uid":   {Name: "uid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
+			"uid":  {Name: "uid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
 			"name": {Name: "name", Type: schema.FieldTypeString},
 		},
 	}
@@ -820,4 +820,83 @@ func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
 	assert.Equal(t, "prod3", readDocs[2].MustGet("pid"))
 	assert.Equal(t, "Keyboard", readDocs[2].MustGet("name"))
 	assert.Equal(t, float64(75.0), readDocs[2].MustGet("price"))
+}
+
+func newIntegrityTestSchema(name ...string) *schema.SchemaDefinition {
+	sname := "integrity_test_collection"
+	if len(name) > 0 {
+		sname = name[0]
+	}
+	return &schema.SchemaDefinition{
+		Name:        sname,
+		Version:     "1.0.0",
+		Description: utils.StringPtr("A collection for testing signing and hashing"),
+		Fields: map[string]*schema.FieldDefinition{
+			"message": {Name: "message", Type: "string"},
+			"value":   {Name: "value", Type: "integer"},
+		},
+	}
+}
+
+func TestSigningAndHashingOnCreate(t *testing.T) {
+	interactor, cleanup := createNativeInteractor(t)
+	defer cleanup()
+
+	logger, err := zap.NewDevelopment()
+	require.NoError(t, err)
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	integritySchema := newIntegrityTestSchema()
+	collection, err := p.CreateCollection(context.Background(), *integritySchema)
+	require.NoError(t, err)
+
+	// 1. Generate RSA key pair
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+	publicKey := &privateKey.PublicKey
+
+	// 2. Create a document and sign it
+	doc := data.MustNewDocument(map[string]any{
+		"message": "This is a signed document.",
+		"value":   42,
+	})
+
+	err = doc.Sign(privateKey)
+	require.NoError(t, err)
+
+	// Verify signature before creation
+	err = doc.Verify(publicKey)
+	require.NoError(t, err, "Signature should be valid immediately after signing")
+
+	// 3. Create the document in the database
+	createResult, err := collection.CreateOne(context.Background(), doc)
+	require.NoError(t, err)
+	docID := createResult.Data.ID()
+
+	// 4. Read the document back
+	readQuery := query.NewQueryBuilder().Where("id").Eq(docID).Build()
+	result, err := collection.Read(context.Background(), &readQuery)
+	require.NoError(t, err)
+	require.Equal(t, 1, result.Count, "Should read back one document")
+
+	readDoc := result.Data[0]
+
+	// 5. Verify hash and signature of the read document
+	ok, err := readDoc.VerifyHash()
+	require.NoError(t, err)
+	assert.True(t, ok, "Hash of the document read from the DB should be valid")
+
+	err = readDoc.Verify(publicKey)
+	require.NoError(t, err, "RSA signature of the document read from the DB should be valid")
+
+	// 6. Test failure on tampered data
+	readDoc.Set("message", "This data has been tampered with.")
+	ok, err = readDoc.VerifyHash()
+	require.NoError(t, err)
+	assert.False(t, ok, "Hash should be invalid after tampering with the document")
+
+	err = readDoc.Verify(publicKey)
+	assert.Error(t, err, "Signature verification should fail for tampered data")
 }

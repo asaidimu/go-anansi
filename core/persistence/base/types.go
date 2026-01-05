@@ -453,6 +453,8 @@ type CollectionUpdate struct {
 
 	Filter  *query.QueryFilter `json:"filter"`
 	Version *int               `json:"version,omitempty"`
+	// ReturnDocument indicates if the updated document(s) should be returned by the update operation.
+	ReturnDocument bool `json:"returnDocument,omitempty"`
 }
 
 // Collection defines the contract for operations on a specific collection.
@@ -470,7 +472,8 @@ type Collection interface {
 	Read(ctx context.Context, query *query.Query) (*ReadResult, error)
 
 	// Update modifies documents in the collection that match the filter in CollectionUpdate.
-	Update(ctx context.Context, params *CollectionUpdate) (int, error)
+	// It returns a ReadResult containing the updated documents (if requested) and the count of modified documents, and any error that occurred.
+	Update(ctx context.Context, params *CollectionUpdate) (*ReadResult, error)
 
 	// Delete removes documents from the collection that match the given query filter.
 	// The 'unsafe' flag can be used to bypass safety checks.
@@ -503,7 +506,7 @@ type Collection interface {
 
 // ReadResult represents the result of a database query.
 type ReadResult struct {
-	Data  []*data.Document `json:"data"`
+	Data  data.DocumentSet `json:"data"`
 	Count int              `json:"count,omitempty"`
 }
 

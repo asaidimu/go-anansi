@@ -61,7 +61,7 @@ func (u *sqliteUpdateAssignments) Value() (string, []any, error) {
 	relationalParts := make(map[string]string)
 	relationalParams := make(map[string]any)
 	jsonUpdates := make(map[string]map[string]any) // parentColumn -> {jsonPath: valueOrExpr}
-	jsonParams := make(map[string][]any)          // parentColumn -> params
+	jsonParams := make(map[string][]any)           // parentColumn -> params
 
 	for _, assign := range assignments {
 		fieldParts := strings.Split(assign.fieldPath, ".")
@@ -83,7 +83,7 @@ func (u *sqliteUpdateAssignments) Value() (string, []any, error) {
 				if err != nil {
 					return "", nil, err
 				}
-				// FIX: Strip outer parentheses for expressions used inside json_set.
+				// Strip outer parentheses for expressions used inside json_set.
 				if strings.HasPrefix(expr, "(") && strings.HasSuffix(expr, ")") {
 					expr = expr[1 : len(expr)-1]
 				}
@@ -106,7 +106,8 @@ func (u *sqliteUpdateAssignments) Value() (string, []any, error) {
 				if err != nil {
 					return "", nil, err
 				}
-				// FIX: Don't add extra parentheses; the expression is already parenthesized.
+				// For relational columns, subqueries need parentheses, expressions don't
+				// The buildSetClauseExpression already wraps subqueries in parentheses
 				relationalParts[assign.fieldPath] = fmt.Sprintf("%s = %s", quoteIdentifier(assign.fieldPath), expr)
 				relationalParams[assign.fieldPath] = params
 			} else {
@@ -172,19 +173,27 @@ func (u *sqliteUpdateAssignments) Value() (string, []any, error) {
 }
 
 // buildSetClauseExpression generates the SQL expression for a computed value.
-// It no longer wraps subqueries in parentheses, allowing the caller to decide.
+// For subqueries (when q.Target != nil), it wraps them in parentheses.
+// For inline expressions, it returns them unwrapped.
 func (u *sqliteUpdateAssignments) buildSetClauseExpression(q *query.Query) (string, []any, error) {
 	// Case 1: Scalar Subquery
+	// This includes joins, filters, aggregations, and nested subqueries
 	if q.Target != nil {
 		selectTree, err := u.factory.buildSelectTree(q)
 		if err != nil {
-			return "", nil, err
+			return "", nil, fmt.Errorf("failed to build subquery in UPDATE: %w", err)
 		}
-		// Return raw subquery; caller will add parentheses if needed.
-		return selectTree.Value()
+
+		sql, params, err := selectTree.Value()
+		if err != nil {
+			return "", nil, fmt.Errorf("failed to generate subquery SQL in UPDATE: %w", err)
+		}
+
+		// Wrap subqueries in parentheses
+		return fmt.Sprintf("(%s)", sql), params, nil
 	}
 
-	// Case 2: Inline Expression
+	// Case 2: Inline Expression (e.g., field + 1, CONCAT(field, 'suffix'))
 	if q.Projection != nil && len(q.Projection.Computed) == 1 {
 		computed := q.Projection.Computed[0]
 		if computed.ComputedFieldExpression != nil {
@@ -193,7 +202,15 @@ func (u *sqliteUpdateAssignments) buildSetClauseExpression(q *query.Query) (stri
 				schemas[u.schema.Name] = u.schema
 			}
 			proj := &SQLiteSelectProjection{factory: u.factory, schemas: schemas}
-			return proj.buildFunctionCall(computed.ComputedFieldExpression.Expression)
+
+			// buildFunctionCall already returns properly formatted expressions
+			expr, params, err := proj.buildFunctionCall(computed.ComputedFieldExpression.Expression)
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to build expression in UPDATE: %w", err)
+			}
+
+			// Inline expressions don't need extra parentheses
+			return expr, params, nil
 		}
 	}
 
@@ -202,7 +219,8 @@ func (u *sqliteUpdateAssignments) buildSetClauseExpression(q *query.Query) (stri
 
 // SQLiteUpdateStatement represents a complete UPDATE statement
 type SQLiteUpdateStatement struct {
-	tree *updateTree
+	tree       *updateTree
+	returnDocs bool // Indicates if the UPDATE statement should include a RETURNING clause
 }
 
 func (s *SQLiteUpdateStatement) Value() (string, []any, error) {
@@ -233,7 +251,7 @@ func (s *SQLiteUpdateStatement) Value() (string, []any, error) {
 		allParams = append(allParams, assignmentsParams...)
 	}
 
-	// WHERE clause
+	// WHERE clause (can contain subqueries!)
 	if s.tree.filters != nil {
 		filterSQL, filterParams, err := s.tree.filters.Value()
 		if err != nil {
@@ -245,7 +263,14 @@ func (s *SQLiteUpdateStatement) Value() (string, []any, error) {
 		}
 	}
 
-	return strings.Join(sqlParts, " "), allParams, nil
+	finalSQL := strings.Join(sqlParts, " ")
+
+	// If returnDocs is true, append RETURNING *
+	if s.returnDocs {
+		finalSQL = fmt.Sprintf("%s RETURNING *", finalSQL)
+	}
+
+	return finalSQL, allParams, nil
 }
 
 func (s *SQLiteUpdateStatement) StatementType() string {
@@ -265,17 +290,9 @@ func (u *sqliteUpdateTargetClause) Value() (string, []any, error) {
 }
 
 // buildUpdateTree builds a SQLNode for an UPDATE statement.
-func (f *sqliteFactory) buildUpdateTree(q *query.Query, extra any) (SQLNode, error) {
+func (f *sqliteFactory) buildUpdateTree(q *query.Query, updatePayload map[string]any, returnDocs bool) (SQLNode, error) {
 	if q.Target == nil {
 		return nil, ErrUpdateQueryNoTarget
-	}
-	if extra == nil {
-		return nil, ErrUpdateQueryNoDataPayload
-	}
-
-	updatePayload, ok := extra.(map[string]any)
-	if !ok {
-		return nil, ErrUpdateInvalidPayloadType.WithCause(fmt.Errorf("invalid data type for update payload: expected map[string]any, got %T", extra))
 	}
 
 	var setData map[string]any
@@ -293,6 +310,9 @@ func (f *sqliteFactory) buildUpdateTree(q *query.Query, extra any) (SQLNode, err
 			return nil, ErrUpdateInvalidComputeType.WithCause(fmt.Errorf("invalid data type for 'compute' in update: %T", computeVal))
 		}
 	}
+	if len(setData) == 0 && len(computeData) == 0 {
+		return nil, ErrUpdateQueryNoDataPayload
+	}
 
 	tree := &updateTree{
 		target: &sqliteUpdateTargetClause{
@@ -306,6 +326,7 @@ func (f *sqliteFactory) buildUpdateTree(q *query.Query, extra any) (SQLNode, err
 		},
 	}
 
+	// WHERE clause supports subqueries through SQLiteWhereClause
 	if q.Filters != nil {
 		schemas := make(map[string]*schema.SchemaDefinition)
 		if q.Target.Schema != nil {
@@ -326,5 +347,5 @@ func (f *sqliteFactory) buildUpdateTree(q *query.Query, extra any) (SQLNode, err
 		}
 	}
 
-	return &SQLiteUpdateStatement{tree: tree}, nil
+	return &SQLiteUpdateStatement{tree: tree, returnDocs: returnDocs}, nil
 }

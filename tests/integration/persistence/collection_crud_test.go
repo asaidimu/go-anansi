@@ -83,12 +83,12 @@ func TestCollection_Update(t *testing.T) {
 
 	readUpdatedDoc := readUpdatedResult.Data[0]
 
-	docToUpdate := data.Patch(map[string]any{"name": "updated-doc"}) // this will update id and metadata
+	docToUpdate := data.Patch{"name": "updated-doc"}
 
 	updateQuery := query.NewQueryBuilder().Where("id").Eq(id).Build()
 
 	_, err = collection.Update(context.Background(), &base.CollectionUpdate{
-		Set:   docToUpdate,
+		Set:   docToUpdate.Document(),
 		Filter: updateQuery.Filters,
 	})
 

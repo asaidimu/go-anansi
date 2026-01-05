@@ -176,19 +176,18 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []sc
 		return []*RegistryEntry{}, nil
 	}
 
-	// Simple upfront validation
-	schemaNames := make(map[string]bool)
+	validSchemas := make(map[string]schema.SchemaDefinition)
 	for _, schema := range schemas {
 		schemaKey := fmt.Sprintf("%s@%s", schema.Name, schema.Version)
-		if schemaNames[schemaKey] {
+
+		if _, ok := validSchemas[schemaKey]; ok {
 			return nil, common.NewSystemError("ERR_REGISTRY_DUPLICATE_SCHEMA_IN_BATCH", fmt.Sprintf("duplicate schema in batch: '%s' version '%s'", schema.Name, schema.Version))
 		}
-		schemaNames[schemaKey] = true
 
 		// Basic validation
-		enrichedSchema := EnrichSchema(&schema)
-		if err := enrichedSchema.Validate(); err != nil {
-			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_INVALID_SCHEMA", fmt.Sprintf("invalid schema 1'%s' v%s", schema.Name, schema.Version))
+		enrichedSchema, err := EnrichSchema(&schema)
+		if err != nil {
+			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_INVALID_SCHEMA", fmt.Sprintf("invalid schema '%s' v%s", schema.Name, schema.Version))
 		}
 
 		// Check if collection already exists
@@ -197,6 +196,7 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []sc
 		} else if !errors.Is(err, base.ErrCollectionNotFound) {
 			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CHECK_REGISTRY_EXISTENCE")
 		}
+		validSchemas[schemaKey] = *enrichedSchema
 	}
 
 	// Execute in transaction
@@ -209,9 +209,7 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []sc
 	results, err := execute(ctx, r.executor, requiresTransaction, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) ([]*RegistryEntry, error) {
 		var createdEntries []*RegistryEntry
 
-		for _, schema := range schemas {
-			enrichedSchema := EnrichSchema(&schema)
-
+		for _, schema := range validSchemas {
 			// Generate physical name
 			physicalName, err := generatePhysicalName(&schema)
 			if err != nil {
@@ -219,7 +217,7 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []sc
 			}
 
 			// Create physical collection
-			tempSchema := *enrichedSchema
+			tempSchema := *schema.MustClone()
 			tempSchema.Name = physicalName
 
 			if err := manager.CreateCollection(tctx, tempSchema); err != nil {
@@ -313,9 +311,9 @@ func (r *collectionRegistry) ResolvePhysicalName(ctx context.Context, name strin
 
 // AddSchemaVersion - direct implementation
 func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version string, schema *schema.SchemaDefinition, physicalName ...string) (*RegistryEntry, error) {
-	enrichedSchema := EnrichSchema(schema)
-	if err := enrichedSchema.Validate(); err != nil {
-		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INVALID_SCHEMA", fmt.Sprintf("invalid schema 2: %v", err))
+	enrichedSchema, err := EnrichSchema(schema)
+	if err != nil {
+		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INVALID_SCHEMA", fmt.Sprintf("Invalid schema : %v", err))
 	}
 
 	entry, err := r.GetRegistryEntry(ctx, name)

@@ -29,9 +29,15 @@ type APIServer struct {
 // NewAPIServer creates a new APIServer instance.
 func NewAPIServer(cfg *app.Config, logger *zap.Logger, pm *app.PersistenceManager, rh *response.Handler) *APIServer {
 	router := http.NewServeMux()
+
+	// Apply LoggingMiddleware to all routes handled by this server
+	// The logger is available via s.Logger, but here we pass it explicitly.
+	// We'll set the router as the handler inside NewAPIServer
+	// handler := LoggingMiddleware(logger, router)
+
 	server := &http.Server{
 		Addr:    cfg.Port,
-		Handler: router,
+		Handler: router, // Use the middleware-wrapped handler
 	}
 
 	return &APIServer{
@@ -46,10 +52,14 @@ func NewAPIServer(cfg *app.Config, logger *zap.Logger, pm *app.PersistenceManage
 
 // SetupRoutes configures the API endpoints.
 func (s *APIServer) SetupRoutes() {
-	// Collection Data Operations
-	s.Handler.(*http.ServeMux).HandleFunc("/api/v1/collections", s.handleCollections)
-	s.Handler.(*http.ServeMux).HandleFunc("/api/v1/collections/{collection}/documents", s.handleCollectionDocuments)
-	s.Handler.(*http.ServeMux).HandleFunc("/api/v1/collections/{collection}/documents/{id}", s.handleSingleDocument)
+	mux := s.Handler.(*http.ServeMux)
+
+	// Route for collection management (no middleware needed)
+	mux.HandleFunc("/api/v1/collections", s.handleCollections)
+
+	// Apply middleware to routes that operate on a specific collection
+	mux.Handle("/api/v1/collections/{collection}/documents", CollectionContextMiddleware(http.HandlerFunc(s.handleCollectionDocuments)))
+	mux.Handle("/api/v1/collections/{collection}/documents/{id}", CollectionContextMiddleware(http.HandlerFunc(s.handleSingleDocument)))
 
 	// Add other routes as per spec.md
 }
@@ -208,7 +218,7 @@ func (s *APIServer) createDocuments(w http.ResponseWriter, r *http.Request, coll
 		return
 	}
 
-	all, ok := data.DocumentSlice(reqBody.Documents)
+	all, ok := data.NewDocumentSet(reqBody.Documents, r.Context())
 
 	if !ok {
 		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
@@ -250,7 +260,7 @@ func (s *APIServer) readDocuments(w http.ResponseWriter, r *http.Request, collec
 		}, r)
 		return
 	}
-	documents := data.DocumentSet(result.Data).Sanitize(r.Context()).ToMaps()
+	documents := result.Data.Sanitize(r.Context()).ToMaps()
 
 	s.Response.WriteJSON(w, http.StatusOK, map[string]any{
 		"documents": documents,
@@ -283,6 +293,7 @@ func (s *APIServer) handleSingleDocument(w http.ResponseWriter, r *http.Request)
 	case http.MethodGet:
 		s.readSingleDocument(w, r, collection, documentID)
 	case http.MethodPatch:
+		s.updateSingleDocument(w, r, collection, documentID)
 	case http.MethodPut:
 		s.updateSingleDocument(w, r, collection, documentID)
 	case http.MethodDelete:
@@ -297,7 +308,7 @@ func (s *APIServer) handleSingleDocument(w http.ResponseWriter, r *http.Request)
 
 // readSingleDocument handles GET /api/v1/collections/{collection}/documents/{id}
 func (s *APIServer) readSingleDocument(w http.ResponseWriter, r *http.Request, collection base.Collection, documentID string) {
-	q := query.NewQueryBuilder().Where("id").Eq(documentID).Build()
+	q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(documentID).Build()
 	result, err := collection.Read(r.Context(), &q)
 	if err != nil {
 		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
@@ -316,12 +327,24 @@ func (s *APIServer) readSingleDocument(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 
-	s.Response.WriteJSON(w, http.StatusOK, result.Data, r)
+	// The spec for read single document expects a single document directly, not an array.
+	// We assume result.Data will contain only one document if Count is 1.
+	if len(result.Data) == 0 { // Should not happen if result.Count == 0 is already checked
+		s.Response.WriteError(w, http.StatusNotFound, response.APIError{
+			Code:    "NOT_FOUND",
+			Message: "Document not found after read (internal error)",
+		}, r)
+		return
+	}
+
+	// Sanitize and return the single document as a map.
+	sanitizedDocMap := result.Data[0].Sanitize(r.Context()).ToMap()
+	s.Response.WriteJSON(w, http.StatusOK, sanitizedDocMap, r)
 }
 
 // updateSingleDocument handles PATCH /api/v1/collections/{collection}/documents/{id}
 func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request, collection base.Collection, documentID string) {
-	var updateData *data.Document
+	var updateData *data.Patch
 	if err := json.NewDecoder(r.Body).Decode(&updateData); err != nil {
 		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
 			Code:    "BAD_REQUEST",
@@ -331,37 +354,13 @@ func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	// First, retrieve the existing document to preserve its metadata
-	readQuery := query.NewQueryBuilder().Where("id").Eq(documentID).Build()
-	readResult, err := collection.Read(r.Context(), &readQuery)
-	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "READ_ERROR",
-			Message: "Failed to retrieve document for update",
-			Details: err.Error(),
-		}, r)
-		return
+	updateParams := &base.CollectionUpdate{
+		Filter: query.NewQueryBuilder().Where(data.DocumentIDField).Eq(documentID).Build().Filters,
+		Set:    updateData.Document(),
+		ReturnDocument: true, // Request the updated document
 	}
 
-	if readResult.Count == 0 {
-		s.Response.WriteError(w, http.StatusNotFound, response.APIError{
-			Code:    "NOT_FOUND",
-			Message: "Document not found for update",
-		}, r)
-		return
-	}
-
-	existingDoc := readResult.Data[0]
-
-	// Merge updateData into existingDoc
-	existingDoc.Merge(updateData)
-
-	update := &base.CollectionUpdate{
-		Filter: query.NewQueryBuilder().Where("id").Eq(documentID).Build().Filters,
-		Set:    existingDoc, // Pass the merged document with metadata
-	}
-
-	count, err := collection.Update(r.Context(), update)
+	result, err := collection.Update(r.Context(), updateParams)
 	if err != nil {
 		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
 			Code:    "UPDATE_ERROR",
@@ -371,7 +370,7 @@ func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	if count == 0 {
+	if result.Count == 0 { // Check count from ReadResult
 		s.Response.WriteError(w, http.StatusNotFound, response.APIError{
 			Code:    "NOT_FOUND",
 			Message: "Document not found or no changes applied",
@@ -379,12 +378,23 @@ func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	s.Response.WriteJSON(w, http.StatusOK, map[string]any{"updated_count": count}, r)
+	if len(result.Data) == 0 { // Ensure data is actually returned
+		s.Response.WriteError(w, http.StatusNotFound, response.APIError{
+			Code:    "NOT_FOUND",
+			Message: "Document updated but not returned (internal error)",
+		}, r)
+		return
+	}
+
+	// Sanitize and return the single document as a map.
+	// We expect only one document for updateSingleDocument
+	sanitizedDocMap := result.Data[0].Sanitize(r.Context()).ToMap()
+	s.Response.WriteJSON(w, http.StatusOK, sanitizedDocMap, r)
 }
 
 // deleteSingleDocument handles DELETE /api/v1/collections/{collection}/documents/{id}
 func (s *APIServer) deleteSingleDocument(w http.ResponseWriter, r *http.Request, collection base.Collection, documentID string) {
-	qf := query.NewQueryBuilder().Where("id").Eq(documentID).Build().Filters
+	qf := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(documentID).Build().Filters
 
 	count, err := collection.Delete(r.Context(), qf, false) // 'false' for unsafe, consider adding a query param for this
 	if err != nil {
