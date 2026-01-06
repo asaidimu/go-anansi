@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
@@ -22,22 +23,17 @@ type APIServer struct {
 	Logger      *zap.Logger
 	Persistence *app.PersistenceManager
 	Response    *response.Handler
-	Handler     http.Handler // Use http.Handler interface
-	server      *http.Server // The actual HTTP server
+	Handler     http.Handler
+	server      *http.Server
 }
 
 // NewAPIServer creates a new APIServer instance.
 func NewAPIServer(cfg *app.Config, logger *zap.Logger, pm *app.PersistenceManager, rh *response.Handler) *APIServer {
 	router := http.NewServeMux()
 
-	// Apply LoggingMiddleware to all routes handled by this server
-	// The logger is available via s.Logger, but here we pass it explicitly.
-	// We'll set the router as the handler inside NewAPIServer
-	// handler := LoggingMiddleware(logger, router)
-
 	server := &http.Server{
 		Addr:    cfg.Port,
-		Handler: router, // Use the middleware-wrapped handler
+		Handler: router,
 	}
 
 	return &APIServer{
@@ -54,14 +50,9 @@ func NewAPIServer(cfg *app.Config, logger *zap.Logger, pm *app.PersistenceManage
 func (s *APIServer) SetupRoutes() {
 	mux := s.Handler.(*http.ServeMux)
 
-	// Route for collection management (no middleware needed)
 	mux.HandleFunc("/api/v1/collections", s.handleCollections)
-
-	// Apply middleware to routes that operate on a specific collection
-	mux.Handle("/api/v1/collections/{collection}/documents", CollectionContextMiddleware(http.HandlerFunc(s.handleCollectionDocuments)))
-	mux.Handle("/api/v1/collections/{collection}/documents/{id}", CollectionContextMiddleware(http.HandlerFunc(s.handleSingleDocument)))
-
-	// Add other routes as per spec.md
+	mux.HandleFunc("/api/v1/collections/{collection}/documents", s.handleCollectionDocuments)
+	mux.HandleFunc("/api/v1/collections/{collection}/documents/{id}", s.handleSingleDocument)
 }
 
 // Start starts the HTTP server.
@@ -75,7 +66,8 @@ func (s *APIServer) Shutdown(ctx context.Context) error {
 	return s.server.Shutdown(ctx)
 }
 
-// handleCollections handles operations on /api/v1/collections
+// --- Collection Handlers ---
+
 func (s *APIServer) handleCollections(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
@@ -83,336 +75,201 @@ func (s *APIServer) handleCollections(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		s.listCollections(w, r)
 	default:
-		s.Response.WriteError(w, http.StatusMethodNotAllowed, response.APIError{
-			Code:    "METHOD_NOT_ALLOWED",
-			Message: "Method not allowed",
-		}, r)
+		s.Response.WriteError(w, http.StatusMethodNotAllowed, common.NewSystemError("METHOD_NOT_ALLOWED", "Method not allowed"), r)
 	}
 }
 
-// createCollection handles POST /api/v1/collections
 func (s *APIServer) createCollection(w http.ResponseWriter, r *http.Request) {
 	var reqBody struct {
-		Schema schema.SchemaDefinition `json:"schema"`
+		Schema json.RawMessage `json:"schema"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
-			Code:    "BAD_REQUEST",
-			Message: "Invalid request body",
-			Details: err.Error(),
-		}, r)
+		s.Response.WriteError(w, http.StatusBadRequest, common.NewSystemError("INVALID_JSON", "Malformed request body").WithCause(err), r)
 		return
 	}
 
-	_, err := s.Persistence.Anansi.CreateCollection(r.Context(), reqBody.Schema)
+	var sc schema.SchemaDefinition
+	if err := sc.From(reqBody.Schema); err != nil {
+		s.Response.WriteError(w, http.StatusBadRequest, common.SystemErrorFrom(err).WithCode("INVALID_SCHEMA"), r)
+		return
+	}
+
+	_, err := s.Persistence.Anansi.CreateCollection(r.Context(), sc)
 	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "CREATE_COLLECTION_ERROR",
-			Message: "Failed to create collection",
-			Details: err.Error(),
-		}, r)
+		sysErr := common.SystemErrorFrom(err).WithOperation("CreateCollection").WithCode("CREATE_FAILED")
+		s.Response.WriteError(w, http.StatusInternalServerError, sysErr, r)
 		return
 	}
 
-	s.Response.WriteJSON(w, http.StatusCreated, map[string]string{"name": reqBody.Schema.Name}, r)
+	s.Response.WriteJSON(w, http.StatusCreated, map[string]string{"name": sc.Name}, r)
 }
 
-// listCollections handles GET /api/v1/collections
 func (s *APIServer) listCollections(w http.ResponseWriter, r *http.Request) {
 	includeSchema := r.URL.Query().Get("include_schema") == "true"
 
-	collectionNames, err := s.Persistence.Anansi.ListCollections(r.Context())
+	names, err := s.Persistence.Anansi.ListCollections(r.Context())
 	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "LIST_COLLECTIONS_ERROR",
-			Message: "Failed to list collections",
-			Details: err.Error(),
-		}, r)
+		s.Response.WriteError(w, http.StatusInternalServerError, common.SystemErrorFrom(err), r)
 		return
 	}
 
 	var collections []map[string]any
-	for _, name := range collectionNames {
-		collection, err := s.Persistence.Anansi.Collection(r.Context(), name)
+	for _, name := range names {
+		col, _ := s.Persistence.Anansi.Collection(r.Context(), name)
+		meta, err := col.Metadata(r.Context(), nil, false)
 		if err != nil {
-			s.Logger.Error("Failed to get collection handle for metadata", zap.String("collection", name), zap.Error(err))
-			continue // Skip this collection if we can't get a handle
+			continue
 		}
 
-		metadata, err := collection.Metadata(r.Context(), nil, false) // nil filter, no force refresh
-		if err != nil {
-			s.Logger.Error("Failed to get collection metadata", zap.String("collection", name), zap.Error(err))
-			continue // Skip this collection if we can't get metadata
-		}
-
-		colData := map[string]any{
-			"name": metadata.Name,
-		}
-
+		colData := map[string]any{"name": meta.Name}
 		if includeSchema {
-			colData["schema"] = metadata.Schema // Include full schema definition
+			colData["schema"] = meta.Schema
 		}
 		collections = append(collections, colData)
 	}
 
-	s.Response.WriteJSON(w, http.StatusOK, map[string]any{
-		"collections": collections,
-		"total_count": len(collections),
-	}, r)
+	s.Response.WriteJSON(w, http.StatusOK, map[string]any{"collections": collections}, r, len(collections))
 }
 
-// handleCollectionDocuments handles operations on /api/v1/collections/{collection}/documents
+// --- Document Handlers ---
+
 func (s *APIServer) handleCollectionDocuments(w http.ResponseWriter, r *http.Request) {
 	collectionName := r.PathValue("collection")
-	if collectionName == "" {
-		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
-			Code:    "BAD_REQUEST",
-			Message: "Collection name is required",
-		}, r)
-		return
-	}
-
-	collection, err := s.Persistence.Collection(r.Context(), collectionName)
+	col, err := s.Persistence.Collection(r.Context(), collectionName)
 	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "COLLECTION_ERROR",
-			Message: fmt.Sprintf("Failed to get collection %s: %v", collectionName, err),
-		}, r)
+		s.Response.WriteError(w, http.StatusNotFound, common.NewSystemError("COLLECTION_NOT_FOUND", "Collection does not exist").WithPath(collectionName), r)
 		return
 	}
 
 	switch r.Method {
 	case http.MethodPost:
-		s.createDocuments(w, r, collection)
+		s.createDocuments(w, r, col)
 	case http.MethodGet:
-		s.readDocuments(w, r, collection)
+		s.readDocuments(w, r, col)
 	default:
-		s.Response.WriteError(w, http.StatusMethodNotAllowed, response.APIError{
-			Code:    "METHOD_NOT_ALLOWED",
-			Message: "Method not allowed",
-		}, r)
+		s.Response.WriteError(w, http.StatusMethodNotAllowed, common.NewSystemError("METHOD_NOT_ALLOWED", "Method not allowed"), r)
 	}
 }
 
-// createDocuments handles POST /api/v1/collections/{collection}/documents
 func (s *APIServer) createDocuments(w http.ResponseWriter, r *http.Request, collection base.Collection) {
 	var reqBody struct {
 		Documents []map[string]any `json:"documents"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
-			Code:    "BAD_REQUEST",
-			Message: "Invalid request body",
-			Details: err.Error(),
-		}, r)
+		s.Response.WriteError(w, http.StatusBadRequest, common.NewSystemError("INVALID_JSON", "Invalid JSON format"), r)
 		return
 	}
 
-	if len(reqBody.Documents) == 0 {
-		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
-			Code:    "BAD_REQUEST",
-			Message: "No documents provided for creation",
-		}, r)
-		return
-	}
-
-	all, ok := data.NewDocumentSet(reqBody.Documents, r.Context())
-
+	set, ok := data.NewDocumentSet(reqBody.Documents, r.Context())
 	if !ok {
-		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
-			Code:    "BAD_REQUEST",
-			Message: "Could not work with provided data",
-		}, r)
+		s.Response.WriteError(w, http.StatusBadRequest, common.NewSystemError("PARSE_ERROR", "Failed to parse documents"), r)
 		return
 	}
 
-	results, err := collection.CreateMany(r.Context(), all)
-	resultset := base.CreateResultSet(results)
+	results, err := collection.CreateMany(r.Context(), set)
+	rs := base.CreateResultSet(results)
+
 	if err != nil {
-		s.Response.WriteJSON(w, http.StatusUnprocessableEntity, map[string]any{
-			"issues": resultset.Issues(),
-			"error":  err.Error(),
-		}, r)
+		sysErr := common.SystemErrorFrom(err).WithIssues(rs.Issues()).WithCode("BATCH_CREATE_FAILED")
+		s.Response.WriteError(w, http.StatusUnprocessableEntity, sysErr, r)
 		return
 	}
 
-	documents := resultset.Documents().Sanitize(r.Context()).ToMaps()
-
-	s.Response.WriteJSON(w, http.StatusCreated, map[string]any{
-		"documents": documents,
-	}, r)
+	s.Response.WriteJSON(w, http.StatusCreated, map[string]any{"documents": rs.Documents().Sanitize(r.Context()).ToMaps()}, r)
 }
 
-// readDocuments handles GET /api/v1/collections/{collection}/documents
 func (s *APIServer) readDocuments(w http.ResponseWriter, r *http.Request, collection base.Collection) {
-	// For simplicity, not parsing query parameters for filter, sort, limit, offset, fields yet.
-	// This will be added in a later step.
-
 	q := query.NewQueryBuilder().Build()
 	result, err := collection.Read(r.Context(), &q)
 	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "READ_ERROR",
-			Message: "Failed to read documents",
-			Details: err.Error(),
-		}, r)
+		s.Response.WriteError(w, http.StatusInternalServerError, common.SystemErrorFrom(err), r)
 		return
 	}
-	documents := result.Data.Sanitize(r.Context()).ToMaps()
-
-	s.Response.WriteJSON(w, http.StatusOK, map[string]any{
-		"documents": documents,
-	}, r, result.Count)
+	s.Response.WriteJSON(w, http.StatusOK, map[string]any{"documents": result.Data.Sanitize(r.Context()).ToMaps()}, r, result.Count)
 }
 
-// handleSingleDocument handles operations on /api/v1/collections/{collection}/documents/{id}
+// --- Single Document Handlers (GET, PATCH/PUT, DELETE) ---
+
 func (s *APIServer) handleSingleDocument(w http.ResponseWriter, r *http.Request) {
 	collectionName := r.PathValue("collection")
 	documentID := r.PathValue("id")
 
-	if collectionName == "" || documentID == "" {
-		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
-			Code:    "BAD_REQUEST",
-			Message: "Collection name and document ID are required",
-		}, r)
-		return
-	}
-
-	collection, err := s.Persistence.Collection(r.Context(), collectionName)
+	col, err := s.Persistence.Collection(r.Context(), collectionName)
 	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "COLLECTION_ERROR",
-			Message: fmt.Sprintf("Failed to get collection %s: %v", collectionName, err),
-		}, r)
+		s.Response.WriteError(w, http.StatusNotFound, common.NewSystemError("COLLECTION_NOT_FOUND", "Collection not found"), r)
 		return
 	}
 
 	switch r.Method {
 	case http.MethodGet:
-		s.readSingleDocument(w, r, collection, documentID)
-	case http.MethodPatch:
-		s.updateSingleDocument(w, r, collection, documentID)
-	case http.MethodPut:
-		s.updateSingleDocument(w, r, collection, documentID)
+		s.readSingleDocument(w, r, col, documentID)
+	case http.MethodPatch, http.MethodPut:
+		s.updateSingleDocument(w, r, col, documentID)
 	case http.MethodDelete:
-		s.deleteSingleDocument(w, r, collection, documentID)
+		s.deleteSingleDocument(w, r, col, documentID)
 	default:
-		s.Response.WriteError(w, http.StatusMethodNotAllowed, response.APIError{
-			Code:    "METHOD_NOT_ALLOWED",
-			Message: "Method not allowed",
-		}, r)
+		s.Response.WriteError(w, http.StatusMethodNotAllowed, common.NewSystemError("METHOD_NOT_ALLOWED", "Method not allowed"), r)
 	}
 }
 
-// readSingleDocument handles GET /api/v1/collections/{collection}/documents/{id}
-func (s *APIServer) readSingleDocument(w http.ResponseWriter, r *http.Request, collection base.Collection, documentID string) {
-	q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(documentID).Build()
-	result, err := collection.Read(r.Context(), &q)
+func (s *APIServer) readSingleDocument(w http.ResponseWriter, r *http.Request, col base.Collection, id string) {
+	q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build()
+	result, err := col.Read(r.Context(), &q)
 	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "READ_ERROR",
-			Message: "Failed to read document",
-			Details: err.Error(),
-		}, r)
+		s.Response.WriteError(w, http.StatusInternalServerError, common.SystemErrorFrom(err), r)
 		return
 	}
 
 	if result.Count == 0 {
-		s.Response.WriteError(w, http.StatusNotFound, response.APIError{
-			Code:    "NOT_FOUND",
-			Message: "Document not found",
-		}, r)
+		s.Response.WriteError(w, http.StatusNotFound, common.NewSystemError("NOT_FOUND", "Document not found").WithPath(id), r)
 		return
 	}
 
-	// The spec for read single document expects a single document directly, not an array.
-	// We assume result.Data will contain only one document if Count is 1.
-	if len(result.Data) == 0 { // Should not happen if result.Count == 0 is already checked
-		s.Response.WriteError(w, http.StatusNotFound, response.APIError{
-			Code:    "NOT_FOUND",
-			Message: "Document not found after read (internal error)",
-		}, r)
-		return
-	}
-
-	// Sanitize and return the single document as a map.
-	sanitizedDocMap := result.Data[0].Sanitize(r.Context()).ToMap()
-	s.Response.WriteJSON(w, http.StatusOK, sanitizedDocMap, r)
+	s.Response.WriteJSON(w, http.StatusOK, result.Data[0].Sanitize(r.Context()).ToMap(), r)
 }
 
-// updateSingleDocument handles PATCH /api/v1/collections/{collection}/documents/{id}
-func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request, collection base.Collection, documentID string) {
-	var updateData *data.Patch
-	if err := json.NewDecoder(r.Body).Decode(&updateData); err != nil {
-		s.Response.WriteError(w, http.StatusBadRequest, response.APIError{
-			Code:    "BAD_REQUEST",
-			Message: "Invalid request body",
-			Details: err.Error(),
-		}, r)
+func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request, col base.Collection, id string) {
+	var patchData *data.Patch
+	if err := json.NewDecoder(r.Body).Decode(&patchData); err != nil {
+		s.Response.WriteError(w, http.StatusBadRequest, common.NewSystemError("INVALID_JSON", "Invalid patch format"), r)
 		return
 	}
 
 	updateParams := &base.CollectionUpdate{
-		Filter: query.NewQueryBuilder().Where(data.DocumentIDField).Eq(documentID).Build().Filters,
-		Set:    updateData.Document(),
-		ReturnDocument: true, // Request the updated document
+		Filter:         query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build().Filters,
+		Set:            patchData.Document(),
+		ReturnDocument: true,
 	}
 
-	result, err := collection.Update(r.Context(), updateParams)
+	result, err := col.Update(r.Context(), updateParams)
 	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "UPDATE_ERROR",
-			Message: "Failed to update document",
-			Details: err.Error(),
-		}, r)
+		s.Response.WriteError(w, http.StatusUnprocessableEntity, common.SystemErrorFrom(err).WithOperation("UpdateDocument"), r)
 		return
 	}
 
-	if result.Count == 0 { // Check count from ReadResult
-		s.Response.WriteError(w, http.StatusNotFound, response.APIError{
-			Code:    "NOT_FOUND",
-			Message: "Document not found or no changes applied",
-		}, r)
+	if result.Count == 0 {
+		s.Response.WriteError(w, http.StatusNotFound, common.NewSystemError("NOT_FOUND", "Document not found or no changes").WithPath(id), r)
 		return
 	}
 
-	if len(result.Data) == 0 { // Ensure data is actually returned
-		s.Response.WriteError(w, http.StatusNotFound, response.APIError{
-			Code:    "NOT_FOUND",
-			Message: "Document updated but not returned (internal error)",
-		}, r)
-		return
-	}
-
-	// Sanitize and return the single document as a map.
-	// We expect only one document for updateSingleDocument
-	sanitizedDocMap := result.Data[0].Sanitize(r.Context()).ToMap()
-	s.Response.WriteJSON(w, http.StatusOK, sanitizedDocMap, r)
+	s.Response.WriteJSON(w, http.StatusOK, result.Data[0].Sanitize(r.Context()).ToMap(), r)
 }
 
-// deleteSingleDocument handles DELETE /api/v1/collections/{collection}/documents/{id}
-func (s *APIServer) deleteSingleDocument(w http.ResponseWriter, r *http.Request, collection base.Collection, documentID string) {
-	qf := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(documentID).Build().Filters
+func (s *APIServer) deleteSingleDocument(w http.ResponseWriter, r *http.Request, col base.Collection, id string) {
+	qf := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build().Filters
 
-	count, err := collection.Delete(r.Context(), qf, false) // 'false' for unsafe, consider adding a query param for this
+	count, err := col.Delete(r.Context(), qf, false)
 	if err != nil {
-		s.Response.WriteError(w, http.StatusInternalServerError, response.APIError{
-			Code:    "DELETE_ERROR",
-			Message: "Failed to delete document",
-			Details: err.Error(),
-		}, r)
+		s.Response.WriteError(w, http.StatusInternalServerError, common.SystemErrorFrom(err), r)
 		return
 	}
 
 	if count == 0 {
-		s.Response.WriteError(w, http.StatusNotFound, response.APIError{
-			Code:    "NOT_FOUND",
-			Message: "Document not found",
-		}, r)
+		s.Response.WriteError(w, http.StatusNotFound, common.NewSystemError("NOT_FOUND", "Document not found"), r)
 		return
 	}
 
-	s.Response.WriteJSON(w, http.StatusNoContent, nil, r) // 204 No Content for successful delete
+	s.Response.WriteJSON(w, http.StatusNoContent, nil, r)
 }

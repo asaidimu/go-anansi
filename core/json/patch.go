@@ -4,11 +4,12 @@ package json
 
 import (
 	"encoding/json"
-	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
 	"sync"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
 // PatchOperation represents a single JSON Patch operation
@@ -33,16 +34,17 @@ func (p *Patcher) Apply(target any, operations []PatchOperation) (any, error) {
 	// Deep clone via JSON to ensure we don't mutate the input
 	data, err := json.Marshal(target)
 	if err != nil {
-		return nil, err
+		return nil, common.NewSystemError("JSON_MARSHAL_FAILED").WithCause(err)
 	}
 	var result any
 	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, err
+		return nil, common.NewSystemError("JSON_UNMARSHAL_FAILED").WithCause(err)
 	}
 
 	for _, op := range operations {
 		parts, err := p.getParts(op.Path)
 		if err != nil {
+			// This error already comes from getParts (or parseIndex) and should be a SystemError
 			return nil, err
 		}
 
@@ -59,10 +61,12 @@ func (p *Patcher) Apply(target any, operations []PatchOperation) (any, error) {
 		case "move":
 			fromParts, err := p.getParts(op.From)
 			if err != nil {
+				// This error already comes from getParts (or parseIndex) and should be a SystemError
 				return nil, err
 			}
 			val, err := p.getVal(result, fromParts)
 			if err != nil {
+				// This error already comes from getVal and should be a SystemError
 				return nil, err
 			}
 			result, err = p.remove(result, fromParts)
@@ -72,26 +76,44 @@ func (p *Patcher) Apply(target any, operations []PatchOperation) (any, error) {
 		case "copy":
 			fromParts, err := p.getParts(op.From)
 			if err != nil {
+				// This error already comes from getParts (or parseIndex) and should be a SystemError
 				return nil, err
 			}
 			val, err := p.getVal(result, fromParts)
 			if err != nil {
+				// This error already comes from getVal and should be a SystemError
 				return nil, err
 			}
 			result, err = p.add(result, parts, cloneValue(val))
 		case "test":
 			val, err := p.getVal(result, parts)
 			if err != nil || !reflect.DeepEqual(val, op.Value) {
-				return nil, fmt.Errorf("test failed: %s", op.Path)
+				// If err is already a SystemError, return it directly, otherwise create one
+				if sysErr, ok := err.(*common.SystemError); ok {
+					return nil, sysErr.WithPath(op.Path)
+				}
+				return nil, common.NewSystemError("PATCH_TEST_FAILED").
+					WithPath(op.Path).
+					WithMessagef("test failed: values at path '%s' do not match", op.Path)
 			}
 		case "removeValue":
 			result, err = p.removeValue(result, parts, op.Value)
 		default:
-			return nil, fmt.Errorf("unsupported op: %s", op.Op)
+			return nil, common.NewSystemError("UNSUPPORTED_PATCH_OPERATION").WithMessagef("unsupported operation: '%s'", op.Op)
 		}
 
 		if err != nil {
-			return nil, fmt.Errorf("op %s failed at %s: %w", op.Op, op.Path, err)
+			// If err is already a SystemError, augment it, otherwise wrap it.
+			if sysErr, ok := err.(*common.SystemError); ok {
+				return nil, sysErr.
+					WithOperation(op.Op).
+					WithPath(op.Path)
+			}
+			return nil, common.NewSystemError("PATCH_OPERATION_FAILED").
+				WithMessagef("operation '%s' failed at path '%s'", op.Op, op.Path).
+				WithOperation(op.Op).
+				WithPath(op.Path).
+				WithCause(err)
 		}
 	}
 	return result, nil
@@ -122,7 +144,7 @@ func (p *Patcher) add(node any, parts []string, val any) (any, error) {
 
 		// Validation: index cannot be greater than current length
 		if idx > len(s) {
-			return nil, fmt.Errorf("index out of bounds: %d > %d", idx, len(s))
+			return nil, common.NewSystemError("ARRAY_INDEX_OUT_OF_BOUNDS").WithMessagef("index out of bounds: %d > %d", idx, len(s))
 		}
 
 		if len(parts) == 1 {
@@ -134,7 +156,7 @@ func (p *Patcher) add(node any, parts []string, val any) (any, error) {
 
 		// For nested paths, we must be within existing bounds
 		if isEnd || idx >= len(s) {
-			return nil, fmt.Errorf("index out of bounds for nested path")
+			return nil, common.NewSystemError("ARRAY_INDEX_OUT_OF_BOUNDS_NESTED").WithMessage("index out of bounds for nested path")
 		}
 		res, err := p.add(s[idx], parts[1:], val)
 		if err != nil {
@@ -144,7 +166,7 @@ func (p *Patcher) add(node any, parts []string, val any) (any, error) {
 		return s, nil
 	}
 
-	return nil, fmt.Errorf("cannot add to primitive")
+	return nil, common.NewSystemError("CANNOT_ADD_TO_PRIMITIVE").WithMessage("cannot add to primitive type")
 }
 
 func (p *Patcher) remove(node any, parts []string) (any, error) {
@@ -155,7 +177,7 @@ func (p *Patcher) remove(node any, parts []string) (any, error) {
 	key := parts[0]
 	if m, ok := node.(map[string]any); ok {
 		if _, exists := m[key]; !exists {
-			return nil, fmt.Errorf("key not found: %s", key)
+			return nil, common.NewSystemError("OBJECT_KEY_NOT_FOUND").WithMessagef("key not found: '%s'", key)
 		}
 		if len(parts) == 1 {
 			delete(m, key)
@@ -166,13 +188,13 @@ func (p *Patcher) remove(node any, parts []string) (any, error) {
 			return nil, err
 		}
 		m[key] = res
-		return m, nil // Return the map, not the result of the recursive call
+		return m, nil
 	}
 
 	if s, ok := node.([]any); ok {
 		idx, _, err := parseIndex(key, len(s))
 		if err != nil || idx >= len(s) {
-			return nil, fmt.Errorf("index out of bounds")
+			return nil, common.NewSystemError("ARRAY_INDEX_OUT_OF_BOUNDS").WithMessagef("index out of bounds for '%s'", key)
 		}
 		if len(parts) == 1 {
 			return append(s[:idx], s[idx+1:]...), nil
@@ -184,7 +206,7 @@ func (p *Patcher) remove(node any, parts []string) (any, error) {
 		s[idx] = res
 		return s, nil
 	}
-	return nil, fmt.Errorf("path not found")
+	return nil, common.NewSystemError("PATH_NOT_FOUND").WithMessage("path not found for removal")
 }
 
 func (p *Patcher) removeValue(node any, parts []string, targetValue any) (any, error) {
@@ -260,11 +282,11 @@ func (p *Patcher) getVal(node any, parts []string) (any, error) {
 		} else if s, ok := curr.([]any); ok {
 			idx, _, err := parseIndex(part, len(s))
 			if err != nil || idx >= len(s) {
-				return nil, fmt.Errorf("invalid array index")
+				return nil, common.NewSystemError("INVALID_ARRAY_INDEX").WithMessagef("invalid array index: '%s'", part)
 			}
 			curr = s[idx]
 		} else {
-			return nil, fmt.Errorf("invalid path")
+			return nil, common.NewSystemError("INVALID_PATH_SEGMENT").WithMessagef("invalid path segment for non-object/array type: '%s'", part)
 		}
 	}
 	return curr, nil
@@ -276,7 +298,7 @@ func parseIndex(key string, length int) (int, bool, error) {
 	}
 	i, err := strconv.Atoi(key)
 	if err != nil || i < 0 {
-		return 0, false, fmt.Errorf("invalid index: %s", key)
+		return 0, false, common.NewSystemError("INVALID_ARRAY_INDEX").WithMessagef("invalid index '%s'", key)
 	}
 	return i, false, nil
 }

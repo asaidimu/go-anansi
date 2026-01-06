@@ -6,6 +6,7 @@ import (
 
 // Common errors
 var (
+
 	ErrTypeConversion                = common.NewSystemError("ERR_DATA_TYPE_CONVERSION", "type conversion error")
 	ErrNoMetadata                    = common.NewSystemError("ERR_DATA_NO_METADATA", "no metadata found")
 	ErrKeyNotFound                   = common.NewSystemError("ERR_DATA_KEY_NOT_FOUND", "key not found")

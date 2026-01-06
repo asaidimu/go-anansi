@@ -50,7 +50,6 @@ func (mc *modelCollection[T]) Create(ctx context.Context, doc T) (T, error) {
 	}
 	res, err := mc.raw.CreateOne(ctx, d)
 	if err != nil {
-		fmt.Printf("Error %v\n", common.SystemErrorFrom(err).ToIssue())
 		return out, err
 	}
 	err = res.Data.Bind().To(&out)

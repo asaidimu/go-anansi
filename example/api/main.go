@@ -26,16 +26,6 @@ func main() {
 	// 3. Setup Response Handler
 	rh := response.NewHandler()
 
-	// 4. Setup Database
-	db, err := app.NewDatabase(cfg, logger)
-	if err != nil {
-		logger.Fatal("Failed to setup database", zap.Error(err))
-	}
-	defer func() {
-		if err := db.Close(); err != nil {
-			logger.Error("Failed to close database", zap.Error(err))
-		}
-	}()
 
 	// 5. Load Schemas
 	schemaLoader, err := schema.NewSchemaLoader()
@@ -44,10 +34,11 @@ func main() {
 	}
 
 	// 6. Setup Persistence Manager
-	pm, err := app.NewPersistenceManager(db, schemaLoader, cfg, logger)
+	pm, cleanup, err := app.NewPersistenceManager(schemaLoader, cfg, logger)
 	if err != nil {
 		logger.Fatal("Failed to setup persistence manager", zap.Error(err))
 	}
+	defer cleanup()
 
 	// 7. Setup API Server
 	server := api.NewAPIServer(cfg, logger, pm, rh)

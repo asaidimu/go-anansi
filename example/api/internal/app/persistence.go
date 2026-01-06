@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/asaidimu/go-anansi/v6"
 	"github.com/asaidimu/go-anansi/v6/core/data"
@@ -18,38 +17,23 @@ type PersistenceManager struct {
 }
 
 // NewPersistenceManager sets up the Anansi persistence layer.
-func NewPersistenceManager(db *Database, schemaLoader *schema.SchemaLoader, cfg *Config, logger *zap.Logger) (*PersistenceManager, error) {
-	factoryConfig := data.DocumentFactoryConfig{
-		GlobalSanitizer: data.NewSecureDefaultConfig(),
-	}
-
-	setupCfg := anansi.SetupConfig{
-		Interactor:    db.Interactor,
-		Logger:        logger,
-		DocumentFactoryConfig: factoryConfig,
+func NewPersistenceManager(schemaLoader *schema.SchemaLoader, cfg *Config, logger *zap.Logger) (*PersistenceManager, func (), error) {
+	p, cleanup, err := anansi.Playground(anansi.PlaygroundConfig{
+		Logger: logger,
+		DBPath: cfg.DBPath,
+		EnableLogging: true,
+		EnableSanitization: true,
+		CustomSanitizerConfig: data.NewSecureDefaultConfig(),
 		Schemas:       schemaLoader.Schemas,
-	}
-	p, err := anansi.Setup(setupCfg)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to setup Anansi: %w", err)
+		return nil, nil, fmt.Errorf("failed to setup Anansi: %w", err)
 	}
 	logger.Info("Anansi persistence layer initialized successfully.")
 
-	// Create collections for the loaded schemas
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	for _, s := range schemaLoader.Schemas {
-		_, err := p.Collection(ctx, s.Name)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create collection %s: %w", s.Name, err)
-		}
-		logger.Info(fmt.Sprintf("Collection '%s' created.", s.Name))
-	}
-
 	return &PersistenceManager{
 		Anansi: p,
-	}, nil
+	}, cleanup, nil
 }
 
 // Collection retrieves a collection by name.

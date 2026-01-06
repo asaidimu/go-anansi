@@ -63,7 +63,6 @@ func (c *managedCollection) CreateOne(ctx context.Context, doc *data.Document) (
 	}
 
 	if err != nil {
-		fmt.Printf("Error %v\n", common.SystemErrorFrom(err).ToIssue())
 		return result, err
 	}
 
@@ -80,7 +79,7 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []*data.Documen
 		if err != nil {
 			issue := common.SystemErrorFrom(err).ToIssue()
 			results = append(results, base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: []common.Issue{
-				{Message: "Could not parse document", Cause: &issue},
+				{Message: "Could not parse document", Cause: &common.Issues{issue}},
 			}})
 			continue
 		}
@@ -100,28 +99,19 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []*data.Documen
 	}
 
 	if validCount != len(docs) {
-		var allIssues []common.Issue
-		for _, res := range results {
-			if res.Status == base.StatusFailedValidation && len(res.Issues) > 0 {
-				allIssues = append(allIssues, res.Issues...)
-			}
-		}
+		rs := base.CreateResultSet(results)
+		groupedIssues := rs.Issues()
+		err := base.ErrValidationFailed.
+			WithIssues(groupedIssues).
+			WithMessage(fmt.Sprintf("validation failed for %d documents", len(docs)-validCount))
 
-		err := base.ErrValidationFailed.WithIssues(allIssues).WithMessage(fmt.Sprintf("validation failed for %d documents", len(docs)-validCount))
-
-		fmt.Printf("Issues %+v\n", err.Issues)
-		return results, err
+		return rs, err
 	}
 
 	results, err := c.wrapped.CreateMany(ctx, docs)
 	if err != nil {
 		sanitizedErr := c.sanitizeError(ctx, err, nil)
-		for i := range results {
-			if results[i].Error != nil {
-				results[i].Error = c.sanitizeError(ctx, results[i].Error, nil).(*common.SystemError)
-			}
-		}
-		return results, sanitizedErr
+		return nil, sanitizedErr
 	}
 	return results, nil
 }
@@ -179,7 +169,7 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 		fq.Pagination = &query.PaginationOptions{
 			IncludeTotal: utils.PrimitivePtr(true),
 		}
-	} else if(fq.Pagination.IncludeTotal != nil){
+	} else if fq.Pagination.IncludeTotal != nil {
 		fq.Pagination.IncludeTotal = utils.PrimitivePtr(true)
 	}
 

@@ -5,10 +5,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/asaidimu/go-anansi/v6/core/json"
 )
 
 // Helper function to create a compiler from schema string
@@ -30,17 +30,17 @@ func assertInvalid(t *testing.T, compiler *json.Compiler, dataJSON string, expec
 	require.Error(t, err, "Expected validation to fail")
 
 	if len(expectedCode) > 0 {
-		validationErr, ok := err.(*json.ValidationError)
-		require.True(t, ok, "Expected ValidationError type")
+		var sysErr *common.SystemError
+		require.ErrorAs(t, err, &sysErr, "Expected SystemError type")
 
 		found := false
-		for _, issue := range validationErr.Issues {
+		for _, issue := range sysErr.Issues {
 			if issue.Code == expectedCode[0] {
 				found = true
 				break
 			}
 		}
-		assert.True(t, found, "Expected error code %s, got issues: %v", expectedCode[0], validationErr.Issues)
+		assert.True(t, found, "Expected error code %s, got issues: %v", expectedCode[0], sysErr.Issues)
 	}
 }
 
@@ -915,21 +915,21 @@ func TestDeepNesting(t *testing.T) {
 	}`
 
 	compiler := newCompiler(t, schema)
-	err := compiler.Validate([]byte(deep))
-
-	// Should hit max depth limit
-	assert.Error(t, err)
-	validationErr, ok := err.(*json.ValidationError)
-	require.True(t, ok)
-
-	hasDepthError := false
-	for _, issue := range validationErr.Issues {
-		if issue.Code == "MAX_DEPTH_EXCEEDED" {
-			hasDepthError = true
-			break
+		err := compiler.Validate([]byte(deep))
+	
+		// Should hit max depth limit
+		assert.Error(t, err)
+		var sysErr *common.SystemError
+		require.ErrorAs(t, err, &sysErr)
+	
+		hasDepthError := false
+		for _, issue := range sysErr.Issues {
+			if issue.Code == "MAX_DEPTH_EXCEEDED" {
+				hasDepthError = true
+				break
+			}
 		}
-	}
-	assert.True(t, hasDepthError, "Should have depth exceeded error")
+		assert.True(t, hasDepthError, "Should have depth exceeded error")
 }
 
 // TestConcurrency tests thread-safety
@@ -1300,11 +1300,11 @@ func TestValidationErrorDetails(t *testing.T) {
 	err := compiler.Validate([]byte(`{"nested": {"value": 5}}`))
 
 	require.Error(t, err)
-	validationErr, ok := err.(*json.ValidationError)
-	require.True(t, ok)
+	var sysErr *common.SystemError
+	require.ErrorAs(t, err, &sysErr)
 
-	assert.Len(t, validationErr.Issues, 1)
-	issue := validationErr.Issues[0]
+	assert.Len(t, sysErr.Issues, 1)
+	issue := sysErr.Issues[0]
 
 	assert.Equal(t, "VALUE_TOO_SMALL", issue.Code)
 	assert.Contains(t, issue.Path, "/nested/value")
@@ -1327,11 +1327,11 @@ func TestMultipleErrors(t *testing.T) {
 	err := compiler.Validate([]byte(`{"a": 123, "b": "not-a-number"}`))
 
 	require.Error(t, err)
-	validationErr, ok := err.(*json.ValidationError)
-	require.True(t, ok)
+	var sysErr *common.SystemError
+	require.ErrorAs(t, err, &sysErr)
 
 	// Should have at least 3 errors: wrong type for 'a', wrong type for 'b', missing 'c'
-	assert.GreaterOrEqual(t, len(validationErr.Issues), 3)
+	assert.GreaterOrEqual(t, len(sysErr.Issues), 3)
 }
 
 // BenchmarkSimpleValidation benchmarks basic validation
