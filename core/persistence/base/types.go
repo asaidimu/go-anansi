@@ -547,6 +547,8 @@ type Transaction interface {
 // It acts as a bridge between the untyped persistence layer and the domain models,
 // enabling robust business logic while maintaining strict type safety.
 type ModelCollection[T any] interface {
+	// Constructor
+	New(doc T, ctx ...context.Context) (T, error)
 	// --- State Management (CRUD) ---
 
 	// Create persists a new model and returns the hydrated version (with IDs/timestamps).

@@ -19,6 +19,29 @@ func NewModelCollection[T any](raw base.Collection) base.ModelCollection[T] {
 	return &modelCollection[T]{raw: raw}
 }
 
+func (mc *modelCollection[T]) New(doc T, ctx ...context.Context) (T, error) {
+	var out T
+
+	// Convert struct → document
+	p, err := data.FromStructWithTags(doc)
+	if err != nil {
+		return out, err
+	}
+
+	// Ensure id and metadata
+	d, err := data.NewDocument(p, ctx...)
+	if err != nil {
+		return out, err
+	}
+
+	// Bind back to model
+	if err := d.Bind().To(&out); err != nil {
+		return out, err
+	}
+
+	return out, nil
+}
+
 func (mc *modelCollection[T]) Create(ctx context.Context, doc T) (T, error) {
 	var out T
 	d, err := data.FromStructWithTags(doc)
@@ -27,6 +50,7 @@ func (mc *modelCollection[T]) Create(ctx context.Context, doc T) (T, error) {
 	}
 	res, err := mc.raw.CreateOne(ctx, d)
 	if err != nil {
+		fmt.Printf("Error %v\n", common.SystemErrorFrom(err).ToIssue())
 		return out, err
 	}
 	err = res.Data.Bind().To(&out)
