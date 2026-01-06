@@ -395,11 +395,11 @@ type Persistence interface {
 	BasePersistence
 
 	// CreateCollection creates a new collection based on the provided schema definition.
-	CreateCollection(ctx context.Context, sc schema.SchemaDefinition) (Collection, error)
+	CreateCollection(ctx context.Context, sc *schema.SchemaDefinition) (Collection, error)
 
 	// CreateCollections creates multiple new collections based on the provided schema definitions.
 	// It returns a slice of Collection interfaces for the successfully created collections.
-	CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) error
+	CreateCollections(ctx context.Context, schemas []*schema.SchemaDefinition) error
 
 	// HasCollection checks if a collection with the given name exists.
 	HasCollection(ctx context.Context, name string) (bool, error)

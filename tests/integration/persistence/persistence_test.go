@@ -108,7 +108,7 @@ func TestPersistence_CreateAndGetCollection(t *testing.T) {
 	timeoutCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 	// Create the collection
-	createdCollection, err := p.CreateCollection(timeoutCtx, *schema)
+	createdCollection, err := p.CreateCollection(timeoutCtx, schema)
 	require.NoError(t, err)
 	assert.NotNil(t, createdCollection)
 
@@ -133,7 +133,7 @@ func TestPersistence_DeleteCollection(t *testing.T) {
 	schema := newTestSchema("my_collection")
 
 	// Create the collection
-	_, err = p.CreateCollection(context.Background(), *schema)
+	_, err = p.CreateCollection(context.Background(), schema)
 	require.NoError(t, err)
 
 	// Delete the collection
@@ -173,7 +173,7 @@ func TestPersistence_Subscriptions(t *testing.T) {
 	assert.Len(t, subs, 1)
 
 	// Trigger an event
-	_, err = p.CreateCollection(context.Background(), *newTestSchema("another_collection"))
+	_, err = p.CreateCollection(context.Background(), newTestSchema("another_collection"))
 	require.NoError(t, err)
 
 	// Unregister the subscription
@@ -198,7 +198,7 @@ func TestPersistence_Transact(t *testing.T) {
 	sc.Fields["balance"] = &schema.FieldDefinition{Name: "balance", Type: "number"}
 
 	// Create the collection and some initial data outside the transaction
-	accounts, err := p.CreateCollection(context.Background(), *sc)
+	accounts, err := p.CreateCollection(context.Background(), sc)
 	require.NoError(t, err)
 
 	_, err = accounts.CreateMany(context.Background(), []*data.Document{
@@ -331,7 +331,7 @@ func TestPersistence_Schema(t *testing.T) {
 	// Create a schema and a collection based on it
 	testSchema := newTestSchema("my_schema_collection")
 	testSchema.Version = "1.0.0"
-	_, err = p.CreateCollection(context.Background(), *testSchema)
+	_, err = p.CreateCollection(context.Background(), testSchema)
 	require.NoError(t, err)
 
 	// Retrieve the schema by ID
@@ -387,7 +387,7 @@ func TestPersistence_Close(t *testing.T) {
 	p.Close(context.Background())
 
 	// Attempt an operation after closing, it should return an error
-	_, err = p.CreateCollection(context.Background(), *newTestSchema("closed_collection"))
+	_, err = p.CreateCollection(context.Background(), newTestSchema("closed_collection"))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "persistence instance is closed") // Assuming the event bus closure causes subsequent errors
 }
@@ -417,7 +417,7 @@ func TestPersistence_CreateWithInvalidSchema(t *testing.T) {
 
 	// Create an invalid schema (e.g., missing name)
 	invalidSchema := newTestSchema("")
-	_, err = p.CreateCollection(context.Background(), *invalidSchema)
+	_, err = p.CreateCollection(context.Background(), invalidSchema)
 	assert.Error(t, err)
 }
 
@@ -450,9 +450,9 @@ func TestPersistence_Metadata(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create some collections
-	_, err = p.CreateCollection(context.Background(), *newTestSchema("coll1"))
+	_, err = p.CreateCollection(context.Background(), newTestSchema("coll1"))
 	require.NoError(t, err)
-	_, err = p.CreateCollection(context.Background(), *newTestSchema("coll2"))
+	_, err = p.CreateCollection(context.Background(), newTestSchema("coll2"))
 	require.NoError(t, err)
 
 	// Get metadata
@@ -476,7 +476,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	sc := newTestSchema("accounts")
 	sc.Fields["balance"] = &schema.FieldDefinition{Name: "balance", Type: "number"}
 
-	accounts, err := p.CreateCollection(context.Background(), *sc)
+	accounts, err := p.CreateCollection(context.Background(), sc)
 	require.NoError(t, err)
 
 	alice := data.MustNewDocument(
@@ -563,9 +563,9 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	}
 
 	// 2. Create Collections
-	usersCollection, err := p.CreateCollection(context.Background(), userSchema)
+	usersCollection, err := p.CreateCollection(context.Background(), &userSchema)
 	require.NoError(t, err)
-	profilesCollection, err := p.CreateCollection(context.Background(), profileSchema)
+	profilesCollection, err := p.CreateCollection(context.Background(), &profileSchema)
 	require.NoError(t, err)
 
 	// 3. Insert Data
@@ -681,9 +681,9 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 	ctx := context.Background()
 
 	// 2. Create Collections
-	_, err = p.CreateCollection(ctx, userSchema)
+	_, err = p.CreateCollection(ctx, &userSchema)
 	require.NoError(t, err)
-	_, err = p.CreateCollection(ctx, orderSchema)
+	_, err = p.CreateCollection(ctx, &orderSchema)
 	require.NoError(t, err)
 
 	// 3. Insert Data
@@ -773,7 +773,7 @@ func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
 	ctx := context.Background()
 
 	// 2. Create Collection
-	productsCollection, err := p.CreateCollection(ctx, productSchema)
+	productsCollection, err := p.CreateCollection(ctx, &productSchema)
 	require.NoError(t, err)
 
 	// 3. Insert Data
@@ -848,7 +848,7 @@ func TestSigningAndHashingOnCreate(t *testing.T) {
 	require.NoError(t, err)
 
 	integritySchema := newIntegrityTestSchema()
-	collection, err := p.CreateCollection(context.Background(), *integritySchema)
+	collection, err := p.CreateCollection(context.Background(), integritySchema)
 	require.NoError(t, err)
 
 	// 1. Generate RSA key pair

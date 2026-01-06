@@ -151,8 +151,8 @@ func (p *basePersistence) ListCollections(ctx context.Context) ([]string, error)
 	return names, nil
 }
 
-func (p *basePersistence) CreateCollection(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
-	_, err := p.registry.CreateCollection(ctx, &sc)
+func (p *basePersistence) CreateCollection(ctx context.Context, sc *schema.SchemaDefinition) (base.Collection, error) {
+	_, err := p.registry.CreateCollection(ctx, sc)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +160,7 @@ func (p *basePersistence) CreateCollection(ctx context.Context, sc schema.Schema
 	return p.Collection(ctx, sc.Name)
 }
 
-func (p *basePersistence) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) error {
+func (p *basePersistence) CreateCollections(ctx context.Context, schemas []*schema.SchemaDefinition) error {
 	_, err := (p.registry).CreateCollections(ctx, schemas)
 	if err != nil {
 		return nil

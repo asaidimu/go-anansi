@@ -27,7 +27,7 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	sc := newTestSchema("test_collection")
-	collection, err := p.CreateCollection(context.Background(), *sc)
+	collection, err := p.CreateCollection(context.Background(), sc)
 	require.NoError(t, err)
 
 	var mu sync.Mutex
@@ -144,7 +144,7 @@ func TestPersistence_CollectionEvents(t *testing.T) {
 
 	// Test Collection Create
 	sc := newTestSchema("new_test_collection")
-	_, err = p.CreateCollection(context.Background(), *sc)
+	_, err = p.CreateCollection(context.Background(), sc)
 	require.NoError(t, err)
 
 	// Test Collection Delete
@@ -238,7 +238,7 @@ func TestPersistence_DocumentUpdateEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	sc := newTestSchema("update_collection")
-	collection, err := p.CreateCollection(context.Background(), *sc)
+	collection, err := p.CreateCollection(context.Background(), sc)
 	require.NoError(t, err)
 
 	// Create a document to update
@@ -346,7 +346,7 @@ func TestPersistence_PersistenceLifecycleAndReadEvents(t *testing.T) {
 	p.Close(context.Background())
 
 	// Test failed Persistence Lifecycle (attempting operation on closed persistence)
-	_, err = p.CreateCollection(context.Background(), *newTestSchema("closed_collection"))
+	_, err = p.CreateCollection(context.Background(), newTestSchema("closed_collection"))
 	require.Error(t, err) // Expecting an error because persistence is closed
 
 	// Allow some time for events to be processed

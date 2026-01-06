@@ -37,35 +37,36 @@ func getMetaCompiler() (*json.Compiler, error) {
 
 // From validates a raw JSON byte slice against the meta-schema and
 // unmarshals it into the SchemaDefinition receiver.
-func (s *SchemaDefinition) From(jsonSchema []byte) error {
+func From(jsonSchema []byte) (*SchemaDefinition, error) {
+	var s SchemaDefinition
 	op := "schema.SchemaDefinition.From"
 
 	// 1. Basic validation
 	if len(jsonSchema) == 0 {
-		return ErrSchemaEmptyInput.WithOperation(op)
+		return nil, ErrSchemaEmptyInput.WithOperation(op)
 	}
 
 	// 2. Load compiled meta-schema
 	compiler, err := getMetaCompiler()
 	if err != nil {
-		return ErrSchemaInternalInitFailed.
+		return nil, ErrSchemaInternalInitFailed.
 			WithOperation(op).
 			WithCause(err)
 	}
 
 	// 3. Validate input against meta-schema rules
 	if err := compiler.Validate(jsonSchema); err != nil {
-		return ErrSchemaValidationFailed.
+		return nil, ErrSchemaValidationFailed.
 			WithOperation(op).
 			WithCause(err)
 	}
 
 	// 4. Unmarshal into the Go struct
-	if err := utils.FromJSON(jsonSchema, s); err != nil {
-		return ErrSchemaUnmarshalFailed.
+	if err := utils.FromJSON(jsonSchema, &s); err != nil {
+		return nil, ErrSchemaUnmarshalFailed.
 			WithOperation(op).
 			WithCause(err)
 	}
 
-	return nil
+	return &s, nil
 }

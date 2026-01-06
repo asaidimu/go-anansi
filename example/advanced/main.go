@@ -185,21 +185,21 @@ func main() {
 
 	// 7. Create Collections
 	userSchema := getUserSchema()
-	usersCollection, err := p.CreateCollection(ctx, *userSchema)
+	usersCollection, err := p.CreateCollection(ctx, userSchema)
 	if err != nil {
 		log.Fatalf("Failed to create users collection: %v", err)
 	}
 	logger.Info("Users collection created.")
 
 	accountSchema := getAccountSchema()
-	accountsCollection, err := p.CreateCollection(ctx, *accountSchema)
+	accountsCollection, err := p.CreateCollection(ctx, accountSchema)
 	if err != nil {
 		log.Fatalf("Failed to create accounts collection: %v", err)
 	}
 	logger.Info("Accounts collection created.")
 
 	ledgerTransactionSchema := getLedgerTransactionSchema()                          // Renamed
-	transactionsCollection, err := p.CreateCollection(ctx, *ledgerTransactionSchema) // Renamed
+	transactionsCollection, err := p.CreateCollection(ctx, ledgerTransactionSchema) // Renamed
 	if err != nil {
 		log.Fatalf("Failed to create transactions collection: %v", err)
 	}

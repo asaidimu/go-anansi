@@ -26,7 +26,7 @@ func TestTransactionWithGoroutine(t *testing.T) {
 	require.NoError(t, err)
 
 	schema := newTestSchema("goroutine_test")
-	collection, err := p.CreateCollection(context.Background(), *schema)
+	collection, err := p.CreateCollection(context.Background(), schema)
 	require.NoError(t, err)
 
 	t.Run("Successful transaction with goroutine", func(t *testing.T) {
@@ -90,7 +90,7 @@ func TestTransactionWithNestedGoroutine(t *testing.T) {
 	require.NoError(t, err)
 
 	schema := newTestSchema("nested_goroutine_test")
-	_, err = p.CreateCollection(context.Background(), *schema)
+	_, err = p.CreateCollection(context.Background(), schema)
 	require.NoError(t, err)
 
 	_, err = p.Transact(context.Background(), func(tctx context.Context, tx1 base.BasePersistence) (any, error) {

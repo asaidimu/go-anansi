@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"sync"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 )
 
@@ -13,16 +14,16 @@ import (
 var schemasFS embed.FS
 
 var (
-	schemas     []schema.SchemaDefinition
+	schemas     []*schema.SchemaDefinition
 	schemasOnce sync.Once
 	schemasErr  error
 )
 
 // GetSchemas returns all schema definitions, loading them from the embedded filesystem on the first call.
-func GetSchemas() ([]schema.SchemaDefinition, error) {
+func GetSchemas() ([]*schema.SchemaDefinition, error) {
 	schemasOnce.Do(func() {
-		loadedSchemas := []schema.SchemaDefinition{}
-		err := walkSchemas(func(def schema.SchemaDefinition) error {
+		loadedSchemas := []*schema.SchemaDefinition{}
+		err := walkSchemas(func(def *schema.SchemaDefinition) error {
 			loadedSchemas = append(loadedSchemas, def)
 			return nil
 		})
@@ -37,7 +38,7 @@ func GetSchemas() ([]schema.SchemaDefinition, error) {
 	return schemas, schemasErr
 }
 
-func walkSchemas(callback func(schema.SchemaDefinition) error) error {
+func walkSchemas(callback func(*schema.SchemaDefinition) error) error {
 	dir, err := schemasFS.ReadDir("models")
 	if err != nil {
 		return err
@@ -48,20 +49,16 @@ func walkSchemas(callback func(schema.SchemaDefinition) error) error {
 			continue
 		}
 		name := fmt.Sprintf("models/%s", entry.Name())
-		var schemaDef schema.SchemaDefinition
 		bytes, err := fs.ReadFile(schemasFS, name)
 
 		if err != nil {
-			return fmt.Errorf("failed to read %s: %w", name, err)
+			return common.SystemErrorFrom(err).WithMessagef("Failed to read %s", name).WithPath(name)
 		}
-		if err := schemaDef.From(bytes); err != nil {
-			return fmt.Errorf("failed to unmarshal schema in %s: %w", name, err)
+		schemaDef, err := schema.From(bytes);
+		if err != nil {
+			return common.SystemErrorFrom(err).WithPath(name)
 		}
 
-		def := &schemaDef
-		if err := def.Validate(); err != nil {
-			return fmt.Errorf("failed to validate schema in %s: %w", name, err)
-		}
 		if err := callback(schemaDef); err != nil {
 			return err
 		}

@@ -89,7 +89,7 @@ func TestContextualMetadataIsPersisted(t *testing.T) {
 			"field": {Name: "field", Type: "string"},
 		},
 	}
-	collection, err := p.CreateCollection(context.Background(), *testSchema)
+	collection, err := p.CreateCollection(context.Background(), testSchema)
 	require.NoError(t, err)
 
 	// 3. Create a context with the traceID

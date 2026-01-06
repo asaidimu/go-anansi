@@ -8,6 +8,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/validator"
 )
 
 func TestConstraintPropagation(t *testing.T) {
@@ -109,10 +110,10 @@ func TestConstraintPropagation(t *testing.T) {
 				},
 			},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{"age": 10}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -131,10 +132,10 @@ func TestConstraintPropagation(t *testing.T) {
 				},
 			},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{"age": -5}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "CONSTRAINT_VIOLATION", issues[0].Code)
@@ -171,12 +172,12 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 			NestedSchemas: map[string]*schema.NestedSchemaDefinition{"address": addressSchema},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{
 			"homeAddress": map[string]any{"street": "123 Main St", "city": "Anytown"},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -208,12 +209,12 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 			NestedSchemas: map[string]*schema.NestedSchemaDefinition{"address": addressSchema},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{
 			"homeAddress": map[string]any{"street": "123 Main St", "city": "Zebulon"},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "CONSTRAINT_VIOLATION", issues[0].Code)
@@ -237,10 +238,10 @@ func TestConstraintPropagation(t *testing.T) {
 				},
 			},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{"tag": "sho"}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "CONSTRAINT_VIOLATION", issues[0].Code)
@@ -273,12 +274,12 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 			NestedSchemas: map[string]*schema.NestedSchemaDefinition{"person": personSchema},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{
 			"user": map[string]any{"firstName": "John", "lastName": "Doee"},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -307,12 +308,12 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 			NestedSchemas: map[string]*schema.NestedSchemaDefinition{"person": personSchema},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{
 			"user": map[string]any{"firstName": "Jane", "lastName": "Smit"},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -330,10 +331,10 @@ func TestConstraintPropagation(t *testing.T) {
 				},
 			},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{"globalCheckField": "globalValue"}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -350,10 +351,10 @@ func TestConstraintPropagation(t *testing.T) {
 				},
 			},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{"globalCheckField": "wrongValue"}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "CONSTRAINT_VIOLATION", issues[0].Code)
@@ -385,12 +386,12 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 			NestedSchemas: map[string]*schema.NestedSchemaDefinition{"constrainedObject": constrainedObjectSchema},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{
 			"item": map[string]any{"id": "badId", "data": "some data"},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "CONSTRAINT_VIOLATION", issues[0].Code)
@@ -465,7 +466,7 @@ func TestConstraintPropagation(t *testing.T) {
 				},
 			},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{
 			"username": "longusername",
@@ -479,7 +480,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 			"globalCheckField": "globalValue",
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -550,7 +551,7 @@ func TestConstraintPropagation(t *testing.T) {
 				},
 			},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{
 			"username": "ben", // Fails usernameLongEnough
@@ -563,7 +564,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 			"globalCheckField": "wrongValue", // Fails globalCheck
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 4)
 		// Check specific errors
@@ -596,12 +597,12 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 			NestedSchemas: map[string]*schema.NestedSchemaDefinition{"constrainedObject": constrainedObjectSchema},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{
 			"item": map[string]any{"id": "A1234", "data": "some data"},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -640,7 +641,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 			NestedSchemas: map[string]*schema.NestedSchemaDefinition{"conditionalSchema": conditionalSchema},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 
 		data := map[string]any{
@@ -649,7 +650,7 @@ func TestConstraintPropagation(t *testing.T) {
 				"emailAddress": "test@example.com", // Long enough, should be included because type is email
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -688,7 +689,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 			NestedSchemas: map[string]*schema.NestedSchemaDefinition{"conditionalSchema": conditionalSchema},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 
 		data := map[string]any{
@@ -697,7 +698,7 @@ func TestConstraintPropagation(t *testing.T) {
 				"emailAddress": "two", // Not long enough, should be 5 or more
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "CONSTRAINT_VIOLATION", issues[0].Code)
@@ -738,7 +739,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 			NestedSchemas: map[string]*schema.NestedSchemaDefinition{"conditionalSchema": conditionalSchema},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 
 		data := map[string]any{
@@ -747,7 +748,7 @@ func TestConstraintPropagation(t *testing.T) {
 				"emailAddress": "short", // Constraint will be applied, expects type to be email
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok) // Should not pass because constraint is applied
 		require.Len(t, issues, 2)
 		assert.Equal(t, "CONDITIONAL_FIELD_PRESENT", issues[0].Code)
@@ -789,18 +790,18 @@ func TestConstraintPropagation(t *testing.T) {
 				"constrainedInteger": constrainedIntegerType,
 			},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 
 		// Test case 1: String that passes constraint
 		data1 := map[string]any{"value": "long_string"}
-		issues1, ok1 := validator.Validate(data1, false)
+		issues1, ok1 := v.Validate(data1, false)
 		assert.True(t, ok1)
 		assert.Empty(t, issues1)
 
 		// Test case 2: Integer that passes constraint
 		data2 := map[string]any{"value": 100}
-		issues2, ok2 := validator.Validate(data2, false)
+		issues2, ok2 := v.Validate(data2, false)
 		assert.True(t, ok2)
 		assert.Empty(t, issues2)
 	})
@@ -839,12 +840,12 @@ func TestConstraintPropagation(t *testing.T) {
 				"constrainedInteger": constrainedIntegerType,
 			},
 		}
-		validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+		v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 		require.NoError(t, err)
 
 		// Test case 1: String that fails constraint
 		data1 := map[string]any{"value": "two"}
-		issues1, ok1 := validator.Validate(data1, false)
+		issues1, ok1 := v.Validate(data1, false)
 		assert.False(t, ok1)
 		require.Len(t, issues1, 1)
 		assert.Equal(t, "CONSTRAINT_VIOLATION", issues1[0].Code)
@@ -853,7 +854,7 @@ func TestConstraintPropagation(t *testing.T) {
 
 		// Test case 2: Integer that fails constraint
 		data2 := map[string]any{"value": -5}
-		issues2, ok2 := validator.Validate(data2, false)
+		issues2, ok2 := v.Validate(data2, false)
 		assert.False(t, ok2)
 		require.Len(t, issues2, 1)
 		assert.Equal(t, "CONSTRAINT_VIOLATION", issues2[0].Code)

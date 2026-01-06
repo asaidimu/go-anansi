@@ -8,6 +8,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/validator"
 )
 
 func TestValidator_Validate_Extended(t *testing.T) {
@@ -156,7 +157,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 		},
 	}
 
-	validator, err := schema.NewDocumentValidator(userSchemaDef, &fmap)
+	v, err := validator.NewDocumentValidator(userSchemaDef, &fmap)
 	require.NoError(t, err)
 
 	t.Run("Valid complex data", func(t *testing.T) {
@@ -175,7 +176,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 				"posts":  5,
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -190,7 +191,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 				},
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "REQUIRED_FIELD_MISSING", issues[0].Code)
@@ -207,7 +208,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 				},
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 2)
 		assert.Equal(t, "CONSTRAINT_GROUP_VIOLATION", issues[0].Code)
@@ -223,7 +224,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 				},
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "ENUM_VIOLATION", issues[0].Code)
@@ -241,7 +242,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 				"logins": "ten", // should be an integer
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -256,10 +257,10 @@ func TestValidator_Validate_Extended(t *testing.T) {
 			"unionField": "some string value",
 		}
 
-		_, ok := validator.Validate(dataWithString, false)
+		_, ok := v.Validate(dataWithString, false)
 		assert.True(t, ok)
 
-		_, ok = validator.Validate(dataWithNumber, false)
+		_, ok = v.Validate(dataWithNumber, false)
 		assert.True(t, ok)
 	})
 
@@ -271,7 +272,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 				"item2": map[string]any{"name": "second", "value": 2},
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -283,7 +284,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 				"item1": map[string]any{"value": 1}, // missing 'name'
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "REQUIRED_FIELD_MISSING", issues[0].Code)

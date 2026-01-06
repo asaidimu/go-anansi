@@ -5,6 +5,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/validator"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -282,9 +283,9 @@ func TestSchemaFromQuery(t *testing.T) {
 			},
 		}
 
-		validator, err := schema.NewDocumentValidator(resultSchema, nil)
+		v, err := validator.NewDocumentValidator(resultSchema, nil)
 		require.NoError(t, err)
-		issues, ok := validator.Validate(doc, false)
+		issues, ok := v.Validate(doc, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})

@@ -10,6 +10,13 @@ func (schema *SchemaDefinition) Validate() error {
 	return schema.validateSchemaSemanticRecursive(basePath)
 }
 
+func buildPath(basePath, fieldName string) string {
+	if basePath == "" {
+		return fieldName
+	}
+	return basePath + "." + fieldName
+}
+
 func (schema *SchemaDefinition) validateSchemaSemanticRecursive(basePath string) error {
 	for fieldId, fieldDef := range schema.Fields {
 		fieldPath := buildPath(basePath, fieldId)

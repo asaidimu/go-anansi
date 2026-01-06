@@ -1,7 +1,6 @@
 package common
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -104,10 +103,10 @@ const (
 //	// Array-level issue (index only, no path)
 //	Issue{Index: intPtr(1), Code: "DOCUMENT_CREATION_FAILED"}
 type Issue struct {
-	Code          string  `json:"code,omitempty"`        // Machine-readable identifier (e.g., "RESOURCE_LOCKED").
+	Code string `json:"code,omitempty"` // Machine-readable identifier (e.g., "RESOURCE_LOCKED").
 	// Message is the rendered error message. This field is populated by WithMessagef
-    // and should not be modified directly if you plan to use Translate(), as the
-    // translation uses the stored format string and arguments, not this field.
+	// and should not be modified directly if you plan to use Translate(), as the
+	// translation uses the stored format string and arguments, not this field.
 	Message       string  `json:"message,omitempty"`     // Human-readable description.
 	Path          string  `json:"path,omitempty"`        // Field path (e.g., "email", "user.name").
 	Index         *int    `json:"index,omitempty"`       // Array index if applicable (e.g., 0, 1, 2).
@@ -140,18 +139,6 @@ func normalizePath(path string) string {
 	// Convert all forward slashes to dots
 	normalized = strings.ReplaceAll(normalized, "/", ".")
 	return normalized
-}
-
-// MarshalJSON implements custom JSON marshaling to normalize paths.
-func (i Issue) MarshalJSON() ([]byte, error) {
-	type Alias Issue
-	return json.Marshal(&struct {
-		Path string `json:"path,omitempty"`
-		*Alias
-	}{
-		Path:  i.NormalizedPath(),
-		Alias: (*Alias)(&i),
-	})
 }
 
 // String implements the fmt.Stringer interface for a single Issue.
@@ -273,6 +260,14 @@ func (is Issues) String() string {
 		}
 	}
 	return sb.String()
+}
+
+// NormalizePaths Converts both JSON Pointer style (/fields/name) and mixed formats to dot notation.
+func (is Issues) NormalizePaths() Issues {
+	for _,iss := range is {
+		iss.Path = iss.NormalizedPath()
+	}
+	return is
 }
 
 // HasErrors returns true if any issue in the collection has error severity.
