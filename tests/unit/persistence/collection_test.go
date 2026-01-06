@@ -1,8 +1,8 @@
 package persistence_test
 
 import (
-	"slices"
 	"context"
+	"slices"
 
 	"os"
 	"testing"
@@ -17,6 +17,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/validator"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 	"github.com/asaidimu/go-events"
@@ -60,7 +61,7 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 	logger := zap.NewNop()
 	testSchemaDef := registry.MustEnrichSchema(testSchema())
 
-	validator, err := schema.NewDocumentValidator(testSchemaDef, nil)
+	validator, err := validator.NewDocumentValidator(testSchemaDef, nil)
 	assert.NoError(t, err)
 	expected := data.MustNewDocument(map[string]any{"name": "Test1"})
 	_, ok := validator.Validate(expected.ToMap(), false)

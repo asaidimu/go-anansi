@@ -9,6 +9,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
+	"github.com/asaidimu/go-anansi/v6/core/schema/validator"
 
 	"github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/query"
@@ -27,7 +28,7 @@ type baseCollection struct {
 	logger        *zap.Logger
 	subscriptions map[string]*base.SubscriptionInfo // To store unsubscribe functions
 	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
-	validator     *schema.DocumentValidator
+	validator     *validator.DocumentValidator
 	metadata      *base.CollectionMetadata
 }
 
@@ -50,7 +51,7 @@ func newBaseCollection(
 		return nil, schema.ErrInvalidSchema.WithMessage("Collection access requires a valid schema").WithCause(err)
 	}
 
-	validator, err := schema.NewDocumentValidator(sc, nil)
+	validator, err := validator.NewDocumentValidator(sc, nil)
 	if err != nil {
 		return nil, err
 	}

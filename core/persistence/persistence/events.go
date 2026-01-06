@@ -33,7 +33,7 @@ _ *zap.Logger) base.Persistence {
 }
 
 // CreateCollection wraps the underlying persistence's CreateCollection method, adding event emission.
-func (e *eventsPersistence) CreateCollection(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
+func (e *eventsPersistence) CreateCollection(ctx context.Context, sc *schema.SchemaDefinition) (base.Collection, error) {
 	config := events.OperationConfig{
 		Operation:         "createCollection",
 		StartEventTypes:   []string{string(base.CollectionCreateStart)},
@@ -53,7 +53,7 @@ func (e *eventsPersistence) CreateCollection(ctx context.Context, sc schema.Sche
 	return result.(base.Collection), nil
 }
 
-func (e *eventsPersistence) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) error {
+func (e *eventsPersistence) CreateCollections(ctx context.Context, schemas []*schema.SchemaDefinition) error {
 	config := events.OperationConfig{
 		Operation:         "createManyCollections",
 		StartEventTypes:   []string{string(base.CollectionCreateStart)},

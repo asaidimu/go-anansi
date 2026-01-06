@@ -7,6 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/validator"
 )
 
 func TestValidator_Validate(t *testing.T) {
@@ -46,7 +47,7 @@ func TestValidator_Validate(t *testing.T) {
 		},
 	}
 
-	validator, err := schema.NewDocumentValidator(schemaDef, &fmap)
+	v, err := validator.NewDocumentValidator(schemaDef, &fmap)
 	require.NoError(t, err)
 
 	t.Run("Valid data", func(t *testing.T) {
@@ -55,7 +56,7 @@ func TestValidator_Validate(t *testing.T) {
 			"age":   30,
 			"email": "john.doe@example.com",
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -64,7 +65,7 @@ func TestValidator_Validate(t *testing.T) {
 		data := map[string]any{
 			"age": 30,
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "REQUIRED_FIELD_MISSING", issues[0].Code)
@@ -75,7 +76,7 @@ func TestValidator_Validate(t *testing.T) {
 		data := map[string]any{
 			"age": 30,
 		}
-		issues, ok := validator.Validate(data, true)
+		issues, ok := v.Validate(data, true)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -85,7 +86,7 @@ func TestValidator_Validate(t *testing.T) {
 			"name": "Jane Doe",
 			"age":  "thirty", // incorrect type
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "TYPE_MISMATCH", issues[0].Code)
@@ -97,7 +98,7 @@ func TestValidator_Validate(t *testing.T) {
 			"name":    "Jane Doe",
 			"address": "123 Main St", // unexpected field
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "UNEXPECTED_FIELD", issues[0].Code)
@@ -109,7 +110,7 @@ func TestValidator_Validate(t *testing.T) {
 			"name":  "Jane Doe",
 			"email": "not-an-email",
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "CONSTRAINT_VIOLATION", issues[0].Code)
@@ -121,7 +122,7 @@ func TestValidator_Validate(t *testing.T) {
 			"name": "Test User",
 			"age":  "42",
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -135,12 +136,12 @@ func TestValidator_Validate(t *testing.T) {
 				},
 			},
 		}
-		validatorWithBool, err := schema.NewDocumentValidator(schemaDefWithBool, &fmap)
+		vWithBool, err := validator.NewDocumentValidator(schemaDefWithBool, &fmap)
 		require.NoError(t, err)
 		data := map[string]any{
 			"isActive": "true",
 		}
-		issues, ok := validatorWithBool.Validate(data, false)
+		issues, ok := vWithBool.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -218,7 +219,7 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 		},
 	}
 
-	validator, err := schema.NewDocumentValidator(schemaDef, nil)
+	v, err := validator.NewDocumentValidator(schemaDef, nil)
 	require.NoError(t, err)
 
 	t.Run("Nested object validation success", func(t *testing.T) {
@@ -228,7 +229,7 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 				"city":   "Anytown",
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -239,7 +240,7 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 				"city": "Anytown", // street is missing
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "REQUIRED_FIELD_MISSING", issues[0].Code)
@@ -250,7 +251,7 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 		data := map[string]any{
 			"tags": []any{"go", "testing"},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -259,7 +260,7 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 		data := map[string]any{
 			"tags": []any{"go", 123}, // 123 is not a string
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "TYPE_MISMATCH", issues[0].Code)
@@ -270,7 +271,7 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 		data := map[string]any{
 			"contacts": []any{"one", "two"},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -279,7 +280,7 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 		data := map[string]any{
 			"contacts": []any{"one", "one"},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "SET_DUPLICATE", issues[0].Code)
@@ -293,7 +294,7 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 				"city":   "Otherville",
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -305,7 +306,7 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 				"phone": "555-1234",
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})
@@ -316,7 +317,7 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 				"name": "Just a name",
 			},
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.False(t, ok)
 		require.Len(t, issues, 1)
 		assert.Equal(t, "UNION_NO_MATCH", issues[0].Code)
@@ -327,7 +328,7 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 		data := map[string]any{
 			"nullableField": "null",
 		}
-		issues, ok := validator.Validate(data, false)
+		issues, ok := v.Validate(data, false)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})

@@ -16,7 +16,7 @@ func main() {
 	app := NewApp()
 	cleanup, err := app.Init()
 	if err != nil {
-		log.Fatalf("Failed to start application: %v", err)
+		log.Fatalf("Failed to start application: %v", common.SystemErrorFrom(err).ToIssue())
 	}
 	defer cleanup()
 

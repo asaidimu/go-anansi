@@ -241,21 +241,21 @@ func main() {
 	}
 
 	// 6. Load Schemas from embedded JSON files
-	var userSchemaDef schema.SchemaDefinition
 	userSchemaBytes, err := fs.ReadFile(schemasFS, "schemas/user.json")
 	if err != nil {
 		log.Fatalf("Failed to read user.json: %v", err)
 	}
-	if err := userSchemaDef.From(userSchemaBytes); err != nil {
+	userSchemaDef, err := schema.From(userSchemaBytes)
+	if err != nil {
 		log.Fatalf("Failed to unmarshal user.json: %v", err)
 	}
 
-	var documentSchemaDef schema.SchemaDefinition
 	documentSchemaBytes, err := fs.ReadFile(schemasFS, "schemas/document.json")
 	if err != nil {
 		log.Fatalf("Failed to read document.json: %v", err)
 	}
-	if err := documentSchemaDef.From(documentSchemaBytes); err != nil {
+	documentSchemaDef, err := schema.From(documentSchemaBytes)
+	if err != nil {
 		log.Fatalf("Failed to unmarshal document.json: %v", err)
 	}
 
@@ -265,7 +265,7 @@ func main() {
 		Logger:                logger,
 		DocumentFactoryConfig: factoryConfig,
 		Decorators:            decorators,
-		Schemas: []schema.SchemaDefinition{
+		Schemas: []*schema.SchemaDefinition{
 			userSchemaDef,
 			documentSchemaDef,
 		},

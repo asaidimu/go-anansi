@@ -48,7 +48,7 @@ func setupCartTest(t *testing.T) (base.Persistence, *data.Document, func()) {
 	}
 
 	for _, s := range schemas {
-		_, err := p.CreateCollection(context.Background(), *s)
+		_, err := p.CreateCollection(context.Background(), s)
 
 		if err != nil {
 			var sysErr *common.SystemError

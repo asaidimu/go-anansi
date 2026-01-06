@@ -89,13 +89,13 @@ func (s *APIServer) createCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var sc schema.SchemaDefinition
-	if err := sc.From(reqBody.Schema); err != nil {
+	sc, err := schema.From(reqBody.Schema);
+	if err != nil {
 		s.Response.WriteError(w, http.StatusBadRequest, common.SystemErrorFrom(err).WithCode("INVALID_SCHEMA"), r)
 		return
 	}
 
-	_, err := s.Persistence.Anansi.CreateCollection(r.Context(), sc)
+	_, err = s.Persistence.Anansi.CreateCollection(r.Context(), sc)
 	if err != nil {
 		sysErr := common.SystemErrorFrom(err).WithOperation("CreateCollection").WithCode("CREATE_FAILED")
 		s.Response.WriteError(w, http.StatusInternalServerError, sysErr, r)

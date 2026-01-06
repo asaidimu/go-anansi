@@ -105,7 +105,7 @@ func main() {
 
 	// 5. Create "users" collection (Users table must exist for benchmarks)
 	userSchema := getUserSchema()
-	usersCollection, err := p.CreateCollection(ctx, *userSchema)
+	usersCollection, err := p.CreateCollection(ctx, userSchema)
 	if err != nil {
 		log.Fatalf("Failed to create users collection: %v", err)
 	}

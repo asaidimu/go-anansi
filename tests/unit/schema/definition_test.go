@@ -127,8 +127,7 @@ func TestNestedSchemaDefinition_UnmarshalJSON(t *testing.T) {
   }
 		}`
 
-		var nsd schema.SchemaDefinition
-		err := nsd.From([]byte(jsonData))
+		nsd, err := schema.From([]byte(jsonData))
 		assert.NoError(t, err)
 		assert.Equal(t, "OrganisationalUnit", nsd.Name)
 	})
@@ -234,8 +233,8 @@ func TestNestedSchemaDefinition_MarshalJSON(t *testing.T) {
 	t.Run("should marshal literal nested schema", func(t *testing.T) {
 		stringType := schema.FieldTypeString
 		nsd := schema.NestedSchemaDefinition{
-			Name:         "tag_schema",
-			Type:         &stringType,
+			Name: "tag_schema",
+			Type: &stringType,
 		}
 
 		data, err := json.Marshal(nsd)

@@ -63,14 +63,14 @@ func (m *managedPersistence) ListCollections(ctx context.Context) ([]string, err
 }
 
 // CreateCollection delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) CreateCollection(ctx context.Context, sc schema.SchemaDefinition) (base.Collection, error) {
+func (m *managedPersistence) CreateCollection(ctx context.Context, sc *schema.SchemaDefinition) (base.Collection, error) {
 	if err := m.checkClosed(); err != nil {
 		return nil, err
 	}
 	return m.wrapped.CreateCollection(ctx, sc)
 }
 
-func (m *managedPersistence) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) error {
+func (m *managedPersistence) CreateCollections(ctx context.Context, schemas []*schema.SchemaDefinition) error {
 	if err := m.checkClosed(); err != nil {
 		return err
 	}

@@ -33,7 +33,7 @@ func TestPersistence_RawQuery_Update(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	productsCollection, err := p.CreateCollection(ctx, productSchema)
+	productsCollection, err := p.CreateCollection(ctx, &productSchema)
 	require.NoError(t, err)
 
 	_, err = productsCollection.CreateMany(ctx, []*data.Document{
@@ -90,9 +90,9 @@ func TestPersistence_RawQuery_LeftJoin(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	usersCollection, err := p.CreateCollection(ctx, userSchema)
+	usersCollection, err := p.CreateCollection(ctx, &userSchema)
 	require.NoError(t, err)
-	profilesCollection, err := p.CreateCollection(ctx, profileSchema)
+	profilesCollection, err := p.CreateCollection(ctx, &profileSchema)
 	require.NoError(t, err)
 
 	_, err = usersCollection.CreateMany(ctx, []*data.Document{
@@ -173,7 +173,7 @@ func TestPersistence_RawQuery_Delete(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	productsCollection, err := p.CreateCollection(ctx, productSchema)
+	productsCollection, err := p.CreateCollection(ctx, &productSchema)
 	require.NoError(t, err)
 
 	_, err = productsCollection.CreateMany(ctx, []*data.Document{
@@ -222,7 +222,7 @@ func TestPersistence_RawQuery_GroupConcat(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	ordersCollection, err := p.CreateCollection(ctx, orderSchema)
+	ordersCollection, err := p.CreateCollection(ctx, &orderSchema)
 	require.NoError(t, err)
 
 	_, err = ordersCollection.CreateMany(ctx, []*data.Document{
@@ -298,7 +298,7 @@ func TestPersistence_RawQuery_CollectionRead(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	productsCollection, err := p.CreateCollection(ctx, productSchema)
+	productsCollection, err := p.CreateCollection(ctx, &productSchema)
 	require.NoError(t, err)
 
 	_, err = productsCollection.CreateMany(ctx, []*data.Document{

@@ -85,8 +85,7 @@ func TestSchemaDefinition_From(t *testing.T) {
 				"name": { "type": "string", "name": "example" }
 			}
 		}`)
-		var schemaDef schema.SchemaDefinition
-		err := schemaDef.From(jsonData)
+		schemaDef, err := schema.From(jsonData)
 		assert.NoError(t, err)
 		assert.Equal(t, "test_schema", schemaDef.Name)
 		assert.Len(t, schemaDef.Fields, 1)
@@ -100,8 +99,7 @@ func TestSchemaDefinition_From(t *testing.T) {
 				"name": { "type": "string", "name": "example" }
 			}
 		}`)
-		var schemaDef schema.SchemaDefinition
-		err := schemaDef.From(jsonData)
+		_, err := schema.From(jsonData)
 		assert.Error(t, err)
 	})
 }

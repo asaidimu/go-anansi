@@ -16,8 +16,7 @@ func TestSchemaDefinition_JsonSchema(t *testing.T) {
 
 		// Helper function to validate a JSON string
 		validateJSON := func(t *testing.T, jsonStr string, shouldPass bool) {
-			var sc schema.SchemaDefinition
-			err := sc.From([]byte(jsonStr))
+			_, err := schema.From([]byte(jsonStr))
 			if shouldPass {
 				assert.NoError(t, err)
 			} else {

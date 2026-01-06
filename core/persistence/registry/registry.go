@@ -163,7 +163,7 @@ func (r *collectionRegistry) warmCache(ctx context.Context) error {
 
 // CreateCollection - simplified implementation
 func (r *collectionRegistry) CreateCollection(ctx context.Context, sc *schema.SchemaDefinition) (*RegistryEntry, error) {
-	results, err := r.CreateCollections(ctx, []schema.SchemaDefinition{*sc})
+	results, err := r.CreateCollections(ctx, []*schema.SchemaDefinition{sc})
 	if err != nil {
 		return nil, err
 	}
@@ -171,7 +171,7 @@ func (r *collectionRegistry) CreateCollection(ctx context.Context, sc *schema.Sc
 }
 
 // CreateCollections - streamlined without complex preparation phase
-func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) ([]*RegistryEntry, error) {
+func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*schema.SchemaDefinition) ([]*RegistryEntry, error) {
 	if len(schemas) == 0 {
 		return []*RegistryEntry{}, nil
 	}
@@ -185,7 +185,7 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []sc
 		}
 
 		// Basic validation
-		enrichedSchema, err := EnrichSchema(&schema)
+		enrichedSchema, err := EnrichSchema(schema)
 		if err != nil {
 			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_INVALID_SCHEMA", fmt.Sprintf("invalid schema '%s' v%s", schema.Name, schema.Version))
 		}

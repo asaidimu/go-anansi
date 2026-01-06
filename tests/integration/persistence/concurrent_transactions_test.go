@@ -31,7 +31,7 @@ func TestConcurrentTransactions(t *testing.T) {
 	require.NoError(t, err)
 
 	schema := newTestSchema("concurrent_test")
-	collection, err := p.CreateCollection(context.Background(), *schema)
+	collection, err := p.CreateCollection(context.Background(), schema)
 	require.NoError(t, err)
 
 	numConcurrent := 5

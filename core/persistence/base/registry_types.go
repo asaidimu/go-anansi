@@ -45,7 +45,7 @@ type CollectionRegistry interface {
 	// the entire operation fails without creating any collections. Each collection
 	// gets its first version ("1.0.0"), is marked as active, and has its underlying
 	// physical collection provisioned in the database.
-	CreateCollections(ctx context.Context, schemas []schema.SchemaDefinition) ([]*RegistryEntry, error)
+	CreateCollections(ctx context.Context, schemas []*schema.SchemaDefinition) ([]*RegistryEntry, error)
 
 	// DropCollection removes a collection's entire schema history from the registry.
 	// The options force the caller to be explicit about deleting the underlying physical data.

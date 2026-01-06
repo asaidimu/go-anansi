@@ -31,7 +31,7 @@ func TestTransactionInManualGoroutine(t *testing.T) {
 	require.NoError(t, err)
 
 	schema := newTestSchema("manual_goroutine_test")
-	collection, err := p.CreateCollection(context.Background(), *schema)
+	collection, err := p.CreateCollection(context.Background(), schema)
 	require.NoError(t, err)
 
 	t.Run("Successful transaction in a manual goroutine", func(t *testing.T) {
