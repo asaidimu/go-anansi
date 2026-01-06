@@ -457,7 +457,7 @@ func canonicalize(v any) any {
 func canonicalMarshal(v any) ([]byte, error) {
 	data, err := json.Marshal(canonicalize(v))
 	if err != nil {
-		return nil, common.SystemErrorFrom(err).WithOperation("data.canonicalMarshal").WithCode(common.ErrFailedToMarshalInput.Code).WithMessage("failed to marshal canonicalized data to JSON")
+		return nil, ErrFailedToMarshalJSON.WithMessage("failed to marshal canonicalized data to JSON")
 	}
 	return data, nil
 }

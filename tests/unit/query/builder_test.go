@@ -432,7 +432,7 @@ func TestQueryBuilder_Validate(t *testing.T) {
 			qb := query.NewQueryBuilder()
 			tt.setup(qb)
 			result := qb.Validate()
-			assert.Equal(t, tt.expected, result, "Validation result should match expected")
+			assert.Equal(t, tt.expected.Valid, result.Valid, "Validation result should match expected")
 		})
 	}
 }

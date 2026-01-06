@@ -145,6 +145,10 @@ func Setup(config SetupConfig) (base.Persistence, error) {
 
 // PlaygroundConfig controls the dev-only environment.
 type PlaygroundConfig struct {
+	// Logger is a *zap.Logger used throughout the framework.  Production
+	// code should supply a configured logger (JSON, stackdriver, etc.).
+	Logger *zap.Logger
+
 	// DBPath is the SQLite DSN.
 	//   * ":memory:"  -> in-memory (default)
 	//   * "file.db"   -> persistent file on disk
@@ -186,13 +190,15 @@ func Playground(cfg PlaygroundConfig) (base.Persistence, func(), error) {
 	// -----------------------------------------------------------------
 	//  Logger
 	// -----------------------------------------------------------------
-	var logger *zap.Logger = zap.NewNop()
-	if cfg.EnableLogging {
+	var logger *zap.Logger = cfg.Logger
+	if cfg.EnableLogging && logger == nil {
 		l, err := zap.NewDevelopment()
 		if err != nil {
 			return nil, nil, fmt.Errorf("playground: logger creation failed: %w", err)
 		}
 		logger = l
+	} else {
+		logger = zap.NewNop()
 	}
 
 	// -----------------------------------------------------------------

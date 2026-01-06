@@ -192,7 +192,7 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []sc
 
 		// Check if collection already exists
 		if _, err := r.GetRegistryEntry(ctx, schema.Name); err == nil {
-			return nil, base.ErrCollectionAlreadyExists.WithMessage(fmt.Sprintf("collection already exists: '%s'", schema.Name))
+			return nil, base.ErrCollectionAlreadyExists.WithMessage(fmt.Sprintf("collection '%s' already exists", schema.Name))
 		} else if !errors.Is(err, base.ErrCollectionNotFound) {
 			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CHECK_REGISTRY_EXISTENCE")
 		}

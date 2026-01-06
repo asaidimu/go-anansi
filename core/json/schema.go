@@ -453,13 +453,12 @@ func (c *Compiler) Schema(ref string) (*Schema, bool) {
 
 func (c *Compiler) ValidateValue(instance any) error {
 	if err := c.checkInstanceDepth(instance, 0, "#"); err != nil {
-		return &ValidationError{
-			Issues: []common.Issue{{
+		return common.NewSystemError("VALIDATION_FAILED").
+			WithIssue(common.Issue{
 				Code:    "MAX_DEPTH_EXCEEDED",
 				Message: err.Error(),
 				Path:    "#",
-			}},
-		}
+			})
 	}
 
 	ctx := &validationContext{
@@ -477,7 +476,10 @@ func (c *Compiler) ValidateValue(instance any) error {
 	c.validateSchema(ctx, root, instance, "")
 
 	if len(ctx.issues) > 0 {
-		return &ValidationError{Issues: ctx.issues}
+		return common.NewSystemError("VALIDATION_FAILED").
+			WithMessagef("validation failed with %d issues", len(ctx.issues)).
+			WithOperation("ValidateJSONSchema").
+			WithIssues(ctx.issues)
 	}
 	return nil
 }
@@ -492,17 +494,6 @@ type validationContext struct {
 	issues   []common.Issue
 	depth    int
 	visited  map[validationKey]bool
-}
-
-type ValidationError struct {
-	Issues []common.Issue
-}
-
-func (e *ValidationError) Error() string {
-	if len(e.Issues) == 1 {
-		return fmt.Sprintf("validation failed at %s: %s", e.Issues[0].Path, e.Issues[0].Message)
-	}
-	return fmt.Sprintf("validation failed with %d error(s)", len(e.Issues))
 }
 
 func (ctx *validationContext) addIssue(code, message, path, description string) {
