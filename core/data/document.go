@@ -420,7 +420,7 @@ func (d *Document) deepMergeInto(other *Document) {
 		d.data = make(map[string]any)
 	}
 	for k, v := range other.data {
-		if isSystemField(k) {
+		if ReservedSystemField(k) {
 			continue
 		}
 
@@ -479,7 +479,7 @@ func (d *Document) IsEmpty() bool {
 
 	count := 0
 	for key := range d.data {
-		if isSystemField(key) {
+		if ReservedSystemField(key) {
 			continue
 		}
 		count += 1

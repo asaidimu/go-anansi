@@ -167,6 +167,7 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 	if !f.configured {
 		return nil, ErrFactoryNotConfigured
 	}
+
 	if data == nil {
 		data = make(map[string]any)
 	}

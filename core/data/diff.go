@@ -18,8 +18,8 @@ type DiffValue struct {
 	New any `json:"new"`
 }
 
-// isSystemField checks if a key is a system-managed field that should be ignored during content comparison.
-func isSystemField(key string) bool {
+// ReservedSystemField checks if a key is a system-managed field that should be ignored during content comparison.
+func ReservedSystemField(key string) bool {
 	return key == DocumentIDField || key == MetadataField
 }
 
@@ -38,7 +38,7 @@ func (d *Document) Diff(other *Document) DocumentDiff {
 
 	// Find added and modified
 	for k, v := range other.data {
-		if isSystemField(k) {
+		if ReservedSystemField(k) {
 			continue
 		}
 		if existing, ok := d.data[k]; ok {
@@ -52,7 +52,7 @@ func (d *Document) Diff(other *Document) DocumentDiff {
 
 	// Find removed
 	for k, v := range d.data {
-		if isSystemField(k) {
+		if ReservedSystemField(k) {
 			continue
 		}
 		if _, ok := other.data[k]; !ok {

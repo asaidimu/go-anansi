@@ -63,6 +63,7 @@ func (c *managedCollection) CreateOne(ctx context.Context, doc *data.Document) (
 	}
 
 	if err != nil {
+		fmt.Printf("Error %v\n", common.SystemErrorFrom(err).ToIssue())
 		return result, err
 	}
 
@@ -75,7 +76,16 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []*data.Documen
 	validCount := 0
 
 	for _, doc := range docs {
-		validationResult, err := c.Validate(ctx, doc, false)
+		d, err := data.NewDocument(doc)
+		if err != nil {
+			issue := common.SystemErrorFrom(err).ToIssue()
+			results = append(results, base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: []common.Issue{
+				{Message: "Could not parse document", Cause: &issue},
+			}})
+			continue
+		}
+
+		validationResult, err := c.Validate(ctx, d, false)
 
 		if err != nil {
 			return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_VALIDATION_SYSTEM_ERROR")
@@ -97,7 +107,10 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []*data.Documen
 			}
 		}
 
-		return results, base.ErrValidationFailed.WithIssues(allIssues).WithMessage(fmt.Sprintf("validation failed for %d documents", len(docs)-validCount))
+		err := base.ErrValidationFailed.WithIssues(allIssues).WithMessage(fmt.Sprintf("validation failed for %d documents", len(docs)-validCount))
+
+		fmt.Printf("Issues %+v\n", err.Issues)
+		return results, err
 	}
 
 	results, err := c.wrapped.CreateMany(ctx, docs)
