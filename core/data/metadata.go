@@ -61,3 +61,12 @@ func DefaultMetadataSchema() *schema.NestedSchemaDefinition {
 		},
 	}
 }
+
+func isReservedMetadataField(key string) bool {
+	switch key {
+	case MetadataCreated, MetadataUpdated, MetadataVersion, MetadataChecksum, MetadataSignature:
+		return true
+	default:
+		return false
+	}
+}

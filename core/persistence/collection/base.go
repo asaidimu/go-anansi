@@ -73,7 +73,7 @@ func newBaseCollection(
 			ID:             name,
 			SchemaVersion:  sc.Version,
 			Name:           name,
-			CollectionName: name,
+			CollectionName: sc.Name,
 			Description:    description,
 			Status:         "active",
 			CreatedAt:      fmt.Sprintf("%d", 0), // get this from the registry

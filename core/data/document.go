@@ -61,8 +61,14 @@ func convertToDocumentMap(data any) (map[string]any, error) {
 		if v == nil {
 			return make(map[string]any), nil
 		}
+		if v.data == nil {
+			return make(map[string]any), nil
+		}
 		return v.data, nil
 	case Document:
+		if v.data == nil {
+			return make(map[string]any), nil
+		}
 		return v.data, nil
 	default:
 		rv := reflect.ValueOf(data)

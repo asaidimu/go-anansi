@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"maps"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
@@ -568,7 +567,8 @@ func ensureMetadataProjection(q *query.Query) *query.Query {
 
 // sanitizeError applies translations from prepareQuery
 func (c *managedCollection) sanitizeError(_ context.Context, err error, translations map[string]string) error {
-	if err == nil {
+	return err
+	/* if err == nil {
 		return nil
 	}
 
@@ -588,5 +588,5 @@ func (c *managedCollection) sanitizeError(_ context.Context, err error, translat
 		return output
 	}
 
-	return common.SystemErrorFrom(err).Sanitize(tf)
+	return common.SystemErrorFrom(err).Sanitize(tf) */
 }

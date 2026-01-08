@@ -959,7 +959,6 @@ func (r *RollbackGenerator) rollbackModifyField(change schema.SchemaChange, oldS
 		}
 	}
 
-	// Note: Nested rollback changes would need to be handled separately
 	return result
 }
 

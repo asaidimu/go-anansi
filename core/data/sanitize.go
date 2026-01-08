@@ -13,7 +13,7 @@ import (
 )
 
 // TODO convert plain errors to system errors
-// MaskedFieldPolicy defines how a field should be treated during event emission
+// MaskedFieldPolicy defines how a field should be treated during sanitization
 type MaskedFieldPolicy string
 
 const (
@@ -309,9 +309,9 @@ func (ds *DocumentSanitizer) sanitizeMetadata(metadata map[string]any) map[strin
 
 	// System metadata fields that should always be preserved
 	systemFields := map[string]bool{
-		"version":   true,
-		"created":   true,
-		"updated":   true,
+		"version": true,
+		"created": true,
+		"updated": true,
 	}
 
 	for key, value := range metadata {
@@ -395,21 +395,27 @@ func (ds *DocumentSanitizer) SanitizeID(id string) string {
 }
 
 // Sanitize returns a sanitized copy of the document using context-aware sanitization.
-func (d *Document) Sanitize(ctx context.Context) *Document {
-	sanitizer := getFactory().getSanitizerForContext(ctx)
+func (d *Document) Sanitize(ctx ...context.Context) *Document {
+	sctx := d.ctx
+	if len(ctx) > 0 && ctx[0] != nil {
+		sctx = ctx[0]
+	}
+	sanitizer := getFactory().getSanitizerForContext(sctx)
 	if sanitizer == nil {
 		// No sanitization configured - return clone to maintain immutability
 		return d.Clone()
 	}
 
 	sanitized := sanitizer.SanitizeDocumentDeep(d.data)
-	return &Document{ctx: d.ctx, data: sanitized}
+	doc := MustNewDocument(sanitized, sctx)
+	doc.Hash()
+	return doc
 }
 
 // SafeString returns a sanitized string representation suitable for logging.
 // Uses context to determine appropriate sanitization rules.
-func (d *Document) SafeString(ctx context.Context) string {
-	sanitized := d.Sanitize(ctx)
+func (d *Document) SafeString(ctx ...context.Context) string {
+	sanitized := d.Sanitize(ctx...)
 	return sanitized.String()
 }
 

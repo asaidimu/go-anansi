@@ -6,12 +6,12 @@ import (
 
 // Common errors
 var (
-
 	ErrTypeConversion                = common.NewSystemError("ERR_DATA_TYPE_CONVERSION", "type conversion error")
 	ErrNoMetadata                    = common.NewSystemError("ERR_DATA_NO_METADATA", "no metadata found")
 	ErrKeyNotFound                   = common.NewSystemError("ERR_DATA_KEY_NOT_FOUND", "key not found")
 	ErrTypeMismatch                  = common.NewSystemError("ERR_DATA_TYPE_MISMATCH", "type mismatch")
 	ErrInvalidPath                   = common.NewSystemError("ERR_DATA_INVALID_PATH", "invalid path")
+	ErrInvalidMetadata               = common.NewSystemError("ERR_DATA_INVALID_METADATA", "invalid metadata")
 	ErrInvalidQuery                  = common.NewSystemError("ERR_DATA_INVALID_QUERY", "invalid query")
 	ErrFailedToUnmarshalJSON         = common.NewSystemError("ERR_DATA_FAILED_TO_UNMARSHAL_JSON", "failed to unmarshal JSON")
 	ErrKeyEmpty                      = common.NewSystemError("ERR_DATA_KEY_EMPTY", "key cannot be empty")
@@ -48,4 +48,3 @@ var (
 	ErrFailedToParsePublicKey        = common.NewSystemError("ERR_DATA_FAILED_TO_PARSE_PUBLIC_KEY", "failed to parse public key")
 	ErrNotRSAPublicKey               = common.NewSystemError("ERR_DATA_NOT_RSA_PUBLIC_KEY", "key is not an RSA public key")
 )
-

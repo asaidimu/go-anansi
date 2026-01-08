@@ -673,7 +673,7 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 		Indexes: []schema.IndexOrReference{
 			{
 				Index: &schema.IndexDefinition{
-					Name: "order_id_pk", Fields: []string{"order_id"}, Type: schema.IndexTypePrimary},
+					Name: "order_id_pk", Fields: []string{"order_id"}, Type: schema.IndexTypeUnique},
 			},
 		},
 	}

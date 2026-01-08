@@ -43,13 +43,13 @@ func getUserSchema() *schema.SchemaDefinition {
 			"active": {Name: "active", Type: "boolean", Required: coreutils.BoolPtr(true)},
 		},
 	}
-	sc = sc.AddIndex(schema.IndexDefinition{
+	sc,_ = sc.WithIndex(&schema.IndexDefinition{
 		Name:   "key_ida",
 		Fields: []string{"ida"},
 		Type:   schema.IndexTypeNormal,
 		Unique: coreutils.BoolPtr(true),
 	})
-	sc = sc.AddIndex(schema.IndexDefinition{
+	sc,_ = sc.WithIndex(&schema.IndexDefinition{
 		Name:   "key_age",
 		Fields: []string{"age"},
 		Type:   schema.IndexTypeNormal,

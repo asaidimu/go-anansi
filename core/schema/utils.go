@@ -38,22 +38,6 @@ func (s *SchemaDefinition) FindNestedSchemaById(id string) (*NestedSchemaDefinit
 	return found, ok
 }
 
-// In definition.go
-/* func (s *SchemaDefinition) FindNestedSchemaById(id string) (*NestedSchemaDefinition, error) {
-    if s.NestedSchemas == nil {
-        return nil, common.NewSystemError("ERR_NESTED_SCHEMA_NOT_FOUND").
-            WithMessagef("nested schema %s not found", id)
-    }
-
-    nested, exists := s.NestedSchemas[id]
-    if !exists {
-        return nil, common.NewSystemError("ERR_NESTED_SCHEMA_NOT_FOUND").
-            WithMessagef("nested schema %s not found", id)
-    }
-
-    return nested, nil
-} */
-
 // FindNestedSchema finds a nested schema by it's name
 func (s *SchemaDefinition) FindNestedSchema(name string) (*NestedSchemaDefinition, bool) {
 	if s.NestedSchemas == nil {
@@ -283,22 +267,6 @@ func (s *SchemaDefinition) GetFields() []*FieldDefinition {
 	return fields
 }
 
-func (s *SchemaDefinition) ToJSON() (string, error) {
-	return utils.ToJSON(s)
-}
-
-func (s *SchemaDefinition) ToJSONBytes() ([]byte, error) {
-	return utils.ToJSONBytes(s)
-}
-
-func (s *SchemaDefinition) MustToJSON() string {
-	jsonStr, err := s.ToJSON()
-	if err != nil {
-		panic(fmt.Sprintf("MustToJSON failed: %v", err))
-	}
-	return jsonStr
-}
-
 func (s *SchemaDefinition) Clone() (*SchemaDefinition, error) {
 	var newSchema SchemaDefinition
 	if err := utils.Clone(*s, &newSchema); err != nil {
@@ -316,76 +284,5 @@ func (s *SchemaDefinition) MustClone() *SchemaDefinition {
 	return clone
 }
 
-// AddField adds a field to the schema along with any required nested schemas.
-// Returns an error if a field with the same name already exists.
-// The provider function receives the current schema state and supplies the primary nested schema and its dependencies.
-// This allows the provider to be intelligent about reusing existing nested schemas.
-func (s *SchemaDefinition) AddField(id string, field *FieldDefinition, provider func(*SchemaDefinition) (*NestedSchemaDefinition, []*NestedSchemaDefinition)) (*SchemaDefinition, error) {
-	if s == nil || field == nil {
-		return nil, ErrInvalidSchema.WithOperation("schema.SchemaDefinition.AddField").
-			WithMessage("schema or field cannot be nil when adding a field")
-	}
 
-	clone := s.MustClone()
 
-	// Ensure Fields map is initialized
-	if clone.Fields == nil {
-		clone.Fields = make(map[string]*FieldDefinition)
-	}
-
-	// Check if field already exists
-	if _, exists := clone.Fields[id]; exists {
-		return nil, ErrFieldAlreadyExists.WithOperation("schema.SchemaDefinition.AddField").
-			WithMessage(fmt.Sprintf("field '%s' already exists in schema", id))
-	}
-
-	// Add the field
-	clone.Fields[id] = field
-
-	// If a provider is given, add the nested schemas
-	if provider != nil {
-		primary, dependencies := provider(clone)
-
-		getId := func(nsd *NestedSchemaDefinition) string {
-			var id string
-			if primary.ID != nil {
-				id = *nsd.ID
-			} else {
-				id = nsd.Name
-			}
-			return id
-		}
-		// Ensure NestedSchemas map is initialized
-		if clone.NestedSchemas == nil {
-			clone.NestedSchemas = make(map[string]*NestedSchemaDefinition)
-		}
-
-		// Add primary nested schema if provided and not already present
-		if primary != nil {
-			primaryId := getId(primary)
-			clone.NestedSchemas[primaryId] = primary
-		}
-
-		// Add dependencies if not already present
-		for _, dep := range dependencies {
-			if dep != nil {
-				depId := getId(dep)
-				clone.NestedSchemas[depId] = dep
-			}
-		}
-	}
-
-	return clone, nil
-}
-
-// MustAddField adds a field to the schema along with any required nested schemas.
-// Panics if a field with the same name already exists.
-// The provider function receives the current schema state and supplies the primary nested schema and its dependencies.
-// This allows the provider to be intelligent about reusing existing nested schemas.
-func (s *SchemaDefinition) MustAddField(id string, field *FieldDefinition, provider func(*SchemaDefinition) (*NestedSchemaDefinition, []*NestedSchemaDefinition)) *SchemaDefinition {
-	result, err := s.AddField(id, field, provider)
-	if err != nil {
-		panic(err)
-	}
-	return result
-}

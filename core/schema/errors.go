@@ -41,3 +41,70 @@ var (
 	ErrSchemaValidationFailed                     = common.NewSystemError("ERR_SCHEMA_VALIDATION_FAILED", "schema definition does not match required structure")
 	ErrSchemaUnmarshalFailed                      = common.NewSystemError("ERR_SCHEMA_UNMARSHAL_FAILED", "failed to parse schema definition")
 )
+
+
+// NewFieldNotFoundError creates an error for when a field is not found
+func NewFieldNotFoundError(id string) *common.SystemError {
+	return common.NewSystemError("ERR_FIELD_NOT_FOUND").
+		WithMessagef("field with ID '%s' not found", id)
+}
+
+// NewFieldNameNotFoundError creates an error for when a field name is not found
+func NewFieldNameNotFoundError(name string) *common.SystemError {
+	return common.NewSystemError("ERR_FIELD_NAME_NOT_FOUND").
+		WithMessagef("field with name '%s' not found", name)
+}
+
+// NewFieldAlreadyExistsError creates an error for when a field already exists
+func NewFieldAlreadyExistsError(id string) *common.SystemError {
+	return common.NewSystemError("ERR_FIELD_ALREADY_EXISTS").
+		WithMessagef("field with ID '%s' already exists", id)
+}
+
+// NewFieldNameAlreadyExistsError creates an error for when a field name already exists
+func NewFieldNameAlreadyExistsError(name string) *common.SystemError {
+	return common.NewSystemError("ERR_FIELD_NAME_ALREADY_EXISTS").
+		WithMessagef("field with name '%s' already exists", name)
+}
+
+// NewIndexNotFoundError creates an error for when an index is not found
+func NewIndexNotFoundError(name string) *common.SystemError {
+	return common.NewSystemError("ERR_INDEX_NOT_FOUND").
+		WithMessagef("index with name '%s' not found", name)
+}
+
+// NewIndexAlreadyExistsError creates an error for when an index already exists
+func NewIndexAlreadyExistsError(name string) *common.SystemError {
+	return common.NewSystemError("ERR_INDEX_ALREADY_EXISTS").
+		WithMessagef("index with name '%s' already exists", name)
+}
+
+// NewConstraintNotFoundError creates an error for when a constraint is not found
+func NewConstraintNotFoundError(name string) *common.SystemError {
+	return common.NewSystemError("ERR_CONSTRAINT_NOT_FOUND").
+		WithMessagef("constraint with name '%s' not found", name)
+}
+
+// NewConstraintAlreadyExistsError creates an error for when a constraint already exists
+func NewConstraintAlreadyExistsError(name string) *common.SystemError {
+	return common.NewSystemError("ERR_CONSTRAINT_ALREADY_EXISTS").
+		WithMessagef("constraint with name '%s' already exists", name)
+}
+
+// NewNestedSchemaNotFoundError creates an error for when a nested schema is not found
+func NewNestedSchemaNotFoundError(id string) *common.SystemError {
+	return common.NewSystemError("ERR_NESTED_SCHEMA_NOT_FOUND").
+		WithMessagef("nested schema with ID '%s' not found", id)
+}
+
+// NewNestedSchemaNameNotFoundError creates an error for when a nested schema name is not found
+func NewNestedSchemaNameNotFoundError(name string) *common.SystemError {
+	return common.NewSystemError("ERR_NESTED_SCHEMA_NAME_NOT_FOUND").
+		WithMessagef("nested schema with name '%s' not found", name)
+}
+
+// NewNestedSchemaAlreadyExistsError creates an error for when a nested schema already exists
+func NewNestedSchemaAlreadyExistsError(id string) *common.SystemError {
+	return common.NewSystemError("ERR_NESTED_SCHEMA_ALREADY_EXISTS").
+		WithMessagef("nested schema with ID '%s' already exists", id)
+}
