@@ -38,7 +38,7 @@ func TestStructBinder_To(t *testing.T) {
 	require.NoError(t, err)
 
 	var user User
-	err = doc.Bind().To(&user)
+	err = doc.BindTo(&user)
 	require.NoError(t, err)
 
 	require.Equal(t, 123, user.ID)
@@ -51,7 +51,7 @@ func TestStructBinder_To(t *testing.T) {
 	// Test with context cancellation
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	err = doc.Bind().ToWithContext(ctx, &user)
+	err = doc.BindToWithContext(ctx, &user)
 	require.Error(t, err)
 }
 
@@ -67,7 +67,8 @@ func TestBindTo_Generic(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	product, err := data.BindTo[Product](doc)
+	var product Product
+	err = doc.BindTo(&product)
 	require.NoError(t, err)
 	require.Equal(t, "ABC-123", product.SKU)
 	require.Equal(t, 99.99, product.Price)

@@ -452,7 +452,8 @@ func (vu *VersioningUtil) checkMinorFieldChanges(oldField *schema.FieldDefinitio
 	}
 
 	// Field made optional
-	if (oldField.Required != nil && *oldField.Required) && (changes.Required != nil && !*changes.Required) {
+	if (oldField.Required != nil && *oldField.Required) &&
+		((changes.Required != nil && !*changes.Required) || containsString(changes.Unset, "required")) {
 		return "minor"
 	}
 

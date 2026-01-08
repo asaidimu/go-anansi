@@ -183,7 +183,7 @@ func main() {
 	}
 
 	var profile UserProfile
-	if err := doc.Bind().To(&profile); err != nil {
+	if err := doc.BindTo(&profile); err != nil {
 		log.Fatal(err)
 	}
 

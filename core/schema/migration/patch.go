@@ -21,6 +21,10 @@ type PatchConverter struct {
 	schema *schema.SchemaDefinition
 }
 
+func NewPatchConverter(schema *schema.SchemaDefinition) *PatchConverter {
+	return &PatchConverter{schema}
+}
+
 // Convert converts a schema change to patch operations.
 func (pc *PatchConverter) Convert(change schema.SchemaChange) ([]scjson.PatchOperation, error) {
 	switch change.Type {
@@ -379,7 +383,6 @@ func (pc *PatchConverter) convertModifyConstraint(change schema.SchemaChange) ([
 	if changes.ErrorMessage != nil {
 		patches = append(patches, pc.createReplacePatch(constraintPath, "errorMessage", *changes.ErrorMessage))
 	}
-	// FIX: Add operator handling for constraint groups
 	if changes.Operator != nil {
 		patches = append(patches, pc.createReplacePatch(constraintPath, "operator", *changes.Operator))
 	}
@@ -503,27 +506,63 @@ func (pc *PatchConverter) convertModifySchema(change schema.SchemaChange) ([]scj
 // convertModifySchemaReference handles schema reference modification patches.
 func (pc *PatchConverter) convertModifySchemaReference(change schema.SchemaChange) ([]scjson.PatchOperation, error) {
 	if change.SchemaChangeModifySchemaReferencePayload == nil {
-		return nil, common.NewSystemError("ERR_CREATE_MIGRATION_PATCH").
-			WithMessage("missing modifySchemaReference payload")
-	}
-	if change.SchemaChangeModifySchemaReferencePayload.Field == "" {
-		return nil, common.NewSystemError("ERR_CREATE_MIGRATION_PATCH").
-			WithMessage("missing field name")
+		return nil, common.NewSystemError("ERR_CREATE_MIGRATION_PATCH").WithMessage("missing modifySchemaReference payload")
 	}
 
-	fieldPath := fmt.Sprintf("/fields/%s", change.SchemaChangeModifySchemaReferencePayload.Field)
+	fieldName := change.SchemaChangeModifySchemaReferencePayload.Field
+	field, exists := pc.schema.Fields[fieldName]
+	if !exists {
+		return nil, common.NewSystemError("ERR_CREATE_MIGRATION_PATCH").WithMessagef("field %s not found", fieldName)
+	}
+
+	var targetRef *schema.NestedSchemaReference
+	schemaSubPath := "/schema" // Default for Object/Record
+
+	// Handle the 'any' Schema type and resolve the correct path/reference
+	switch s := field.Schema.(type) {
+	case schema.NestedSchemaReference:
+		targetRef = &s
+	case []schema.NestedSchemaReference:
+		// Logic for FieldTypeUnion
+		payloadID := ""
+		if change.SchemaChangeModifySchemaReferencePayload.ID != nil {
+			payloadID = *change.SchemaChangeModifySchemaReferencePayload.ID
+		}
+		for i := range s {
+			if s[i].ID == payloadID {
+				targetRef = &s[i]
+				schemaSubPath = fmt.Sprintf("/schema/%d", i)
+				break
+			}
+		}
+	}
+
+	if targetRef == nil {
+		return nil, common.NewSystemError("ERR_CREATE_MIGRATION_PATCH").
+			WithMessagef("could not resolve schema reference for field %s", fieldName)
+	}
+
+	// Create context for the nested changes
+	// Note: NestedSchemaReference doesn't have Fields, so we only provide Indexes/Constraints
+	tempSchema := &schema.SchemaDefinition{
+		Indexes:     targetRef.Indexes,
+		Constraints: targetRef.Constraints,
+		// If you expect to modify fields inside a reference, you would need to
+		// resolve the actual definition from a Registry (not currently in your struct).
+	}
+
+	nestedConverter := &PatchConverter{schema: tempSchema}
 	patches := make([]scjson.PatchOperation, 0)
 
-	// Apply nested changes to the field's schema property
 	for _, nestedChange := range change.SchemaChangeModifySchemaReferencePayload.Changes {
-		nestedPatches, err := pc.Convert(nestedChange)
+		nestedPatches, err := nestedConverter.Convert(nestedChange)
 		if err != nil {
 			return nil, err
 		}
 
 		for _, p := range nestedPatches {
-			// Modify the path to reflect it's within the field's schema
-			p.Path = fmt.Sprintf("%s/schema%s", fieldPath, p.Path)
+			// Combine: /fields/{name} + /schema[/index] + {nestedPath}
+			p.Path = fmt.Sprintf("/fields/%s%s%s", fieldName, schemaSubPath, p.Path)
 			patches = append(patches, p)
 		}
 	}

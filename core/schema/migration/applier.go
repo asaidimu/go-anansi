@@ -1,7 +1,6 @@
 package migration
 
 import (
-	"encoding/json"
 	"slices"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
@@ -37,7 +36,7 @@ func (m *MigrationApplier) ApplyMigration(
 		return nil, err
 	}
 
-	target, err := deepCloneSchema(source)
+	target, err := source.DeepClone()
 	if err != nil {
 		return nil, common.NewSystemError("ERR_SCHEMA_CLONE_FAILED").
 			WithMessage("failed to clone schema").
@@ -52,7 +51,8 @@ func (m *MigrationApplier) ApplyMigration(
 	}
 
 	if m.options.CleanupOrphans {
-		if err := m.cleanupOrphanedReferences(target); err != nil {
+		target, _, err = target.WithAllOrphansRemoved()
+		if err != nil {
 			return nil, common.NewSystemError("ERR_CLEANUP_ORPHANS_FAILED").
 				WithMessage("failed to cleanup orphaned references").
 				WithCause(err).
@@ -61,11 +61,10 @@ func (m *MigrationApplier) ApplyMigration(
 	}
 
 	if m.options.ValidateResult {
-		if err := m.validateResultingSchema(target); err != nil {
+		if issues := target.ValidateAll(); len(issues) > 0 {
 			return nil, common.NewSystemError("ERR_RESULTING_SCHEMA_INVALID").
 				WithMessage("resulting schema is invalid").
-				WithCause(err).
-				WithOperation("MigrationApplier.ApplyMigration")
+				WithOperation("MigrationApplier.ApplyMigration").WithIssues(issues)
 		}
 	}
 
@@ -204,7 +203,7 @@ func (m *MigrationApplier) applyAddField(target *schema.SchemaDefinition, change
 	}
 
 	fieldDef := change.SchemaChangeAddFieldPayload.Definition
-	clonedField, err := deepCloneFieldDefinition(&fieldDef)
+	clonedField, err := fieldDef.DeepClone()
 	if err != nil {
 		return common.NewSystemError("ERR_FIELD_CLONE_FAILED").
 			WithMessage("failed to clone field definition").
@@ -271,8 +270,7 @@ func (m *MigrationApplier) applyModifyField(target *schema.SchemaDefinition, cha
 			WithOperation(op)
 	}
 
-	applyPartialFieldChanges(field, &change.SchemaChangeModifyFieldPayload.Changes)
-	return nil
+	return field.ApplyPartialChanges(&change.SchemaChangeModifyFieldPayload.Changes)
 }
 
 // applyAddIndex adds a new index to the schema.
@@ -304,7 +302,7 @@ func (m *MigrationApplier) applyAddIndex(target *schema.SchemaDefinition, change
 		target.Indexes = make([]schema.IndexOrReference, 0)
 	}
 
-	clonedIndex, err := deepCloneIndexDefinition(&indexDef)
+	clonedIndex, err := indexDef.DeepClone()
 	if err != nil {
 		return common.NewSystemError("ERR_INDEX_CLONE_FAILED").
 			WithMessage("failed to clone index definition").
@@ -352,8 +350,7 @@ func (m *MigrationApplier) applyModifyIndex(target *schema.SchemaDefinition, cha
 			WithOperation(op)
 	}
 
-	applyPartialIndexChanges(targetIndex, &change.SchemaChangeModifyIndexPayload.Changes)
-	return nil
+	return targetIndex.ApplyPartialChanges(&change.SchemaChangeModifyIndexPayload.Changes)
 }
 
 // applyAddConstraint adds a new constraint to the schema.
@@ -367,7 +364,7 @@ func (m *MigrationApplier) applyAddConstraint(target *schema.SchemaDefinition, c
 	}
 
 	constraintRule := change.SchemaChangeAddConstraintPayload.Constraint
-	constraintName := getConstraintRuleName(&constraintRule)
+	constraintName := constraintRule.GetName()
 
 	if constraintName == "" {
 		return common.NewSystemError("ERR_INVALID_CONSTRAINT_RULE").
@@ -392,7 +389,7 @@ func (m *MigrationApplier) applyAddConstraint(target *schema.SchemaDefinition, c
 		target.Constraints = make(schema.SchemaConstraint, 0)
 	}
 
-	clonedRule, err := deepCloneConstraintRule(&constraintRule)
+	clonedRule, err := constraintRule.DeepClone()
 	if err != nil {
 		return common.NewSystemError("ERR_CONSTRAINT_CLONE_FAILED").
 			WithMessage("failed to clone constraint rule").
@@ -434,7 +431,6 @@ func (m *MigrationApplier) applyModifyConstraint(target *schema.SchemaDefinition
 
 	constraintName := *change.Name
 
-	// FIX: Parse hierarchical constraint names
 	nameParts := parseHierarchicalName(constraintName)
 	targetRule := m.findConstraintByNameParts(target.Constraints, nameParts, 0)
 
@@ -444,7 +440,7 @@ func (m *MigrationApplier) applyModifyConstraint(target *schema.SchemaDefinition
 			WithOperation(op)
 	}
 
-	return m.applyPartialConstraintChanges(targetRule, &change.SchemaChangeModifyConstraintPayload.Changes)
+	return targetRule.ApplyPartialChanges(&change.SchemaChangeModifyConstraintPayload.Changes)
 }
 
 // applyAddSchema adds a new schema to the registry.
@@ -475,7 +471,7 @@ func (m *MigrationApplier) applyAddSchema(target *schema.SchemaDefinition, chang
 	}
 
 	nestedSchema := change.SchemaChangeAddSchemaPayload.Definition
-	clonedSchema, err := deepCloneNestedSchemaDefinition(&nestedSchema)
+	clonedSchema, err := nestedSchema.DeepClone()
 	if err != nil {
 		return common.NewSystemError("ERR_SCHEMA_CLONE_FAILED").
 			WithMessage("failed to clone nested schema definition").
@@ -551,13 +547,9 @@ func (m *MigrationApplier) applyModifySchema(target *schema.SchemaDefinition, ch
 	// Convert to temporary schema for change application
 	tempSchema := nestedSchemaToTempSchema(nestedSchema)
 
-	for i, nestedChange := range change.SchemaChangeModifySchemaPayload.Changes {
-		if err := m.applyChange(tempSchema, nestedChange); err != nil {
-			return common.NewSystemError("ERR_APPLY_NESTED_CHANGE_FAILED").
-				WithMessagef("failed to apply nested change %d", i).
-				WithCause(err).
-				WithOperation(op)
-		}
+	changes := change.SchemaChangeModifySchemaPayload.Changes
+	if err := m.applyChanges(tempSchema, changes); err != nil {
+		return err
 	}
 
 	// Convert back
@@ -588,20 +580,27 @@ func (m *MigrationApplier) applyModifySchemaReference(target *schema.SchemaDefin
 			WithOperation(op)
 	}
 
-	// Ensure the field's schema is a NestedSchemaReference
-	currentSchema, ok := field.Schema.(schema.NestedSchemaReference)
-	if !ok {
-		return common.NewSystemError("ERR_INVALID_SCHEMA_REFERENCE_TYPE").
-			WithMessagef("field %s schema is not a NestedSchemaReference", fieldName).
-			WithOperation(op)
+	var currentSchema *schema.NestedSchemaReference
+
+	switch s := field.Schema.(type) {
+	case schema.NestedSchemaReference:
+		currentSchema = &s
+	case []schema.NestedSchemaReference:
+		payloadID := ""
+		if change.SchemaChangeModifySchemaReferencePayload.ID != nil {
+			payloadID = *change.SchemaChangeModifySchemaReferencePayload.ID
+		}
+		for i := range s {
+			if s[i].ID == payloadID {
+				currentSchema = &s[i]
+				break
+			}
+		}
+	default:
 	}
 
-	if change.SchemaChangeModifySchemaReferencePayload.ID != nil &&
-		*change.SchemaChangeModifySchemaReferencePayload.ID != currentSchema.ID {
-		return common.NewSystemError("ERR_SCHEMA_REFERENCE_ID_MISMATCH").
-			WithMessagef("schema reference ID mismatch for field %s: expected %s, got %s",
-				fieldName, currentSchema.ID, *change.SchemaChangeModifySchemaReferencePayload.ID).
-			WithOperation(op)
+	if currentSchema == nil {
+		return common.NewSystemError("ERR_SCHEMA_REF_NOT_FOUND").WithMessage("could not resolve schema reference").WithOperation(op)
 	}
 
 	// Apply nested changes to the schema reference
@@ -667,7 +666,6 @@ func (m *MigrationApplier) removeConstraintByName(target *schema.SchemaDefinitio
 		return nil
 	}
 
-	// FIX: Handle hierarchical names
 	nameParts := parseHierarchicalName(name)
 	newConstraints, found := removeConstraintByNameParts(target.Constraints, nameParts, 0)
 
@@ -695,7 +693,7 @@ func (m *MigrationApplier) findConstraintByNameParts(
 
 	for i := range rules {
 		rule := &rules[i]
-		ruleName := getConstraintRuleName(rule)
+		ruleName := rule.GetName()
 
 		if ruleName == targetName {
 			// Found matching name at this level
@@ -713,329 +711,6 @@ func (m *MigrationApplier) findConstraintByNameParts(
 	return nil
 }
 
-// applyPartialConstraintChanges applies partial changes to a constraint rule.
-func (m *MigrationApplier) applyPartialConstraintChanges(
-	rule *schema.ConstraintRule,
-	partial *schema.PartialConstraint,
-) error {
-	op := "MigrationApplier.applyPartialConstraintChanges"
-
-	if rule.IsConstraint() {
-		applyPartialConstraintDefinitionChanges(rule.Constraint, partial)
-		return nil
-	}
-
-	if rule.IsConstraintGroup() {
-		// FIX: Handle operator changes correctly - use partial.Operator directly
-		if partial.Operator != nil {
-			rule.ConstraintGroup.Operator = *partial.Operator
-		}
-		return nil
-	}
-
-	return common.NewSystemError("ERR_INVALID_CONSTRAINT_RULE_TYPE").
-		WithMessage("invalid constraint rule type").
-		WithOperation(op)
-}
-
-// cleanupOrphanedReferences removes references that point to non-existent resources.
-func (m *MigrationApplier) cleanupOrphanedReferences(_ *schema.SchemaDefinition) error {
-	// Placeholder for future implementation
-	return nil
-}
-
-// validateResultingSchema validates the resulting schema for consistency.
-func (m *MigrationApplier) validateResultingSchema(target *schema.SchemaDefinition) error {
-	op := "MigrationApplier.validateResultingSchema"
-
-	// Check that all index fields exist
-	for _, ior := range target.Indexes {
-		if ior.IsIndex() {
-			for _, fieldName := range ior.Index.Fields {
-				if _, exists := target.Fields[fieldName]; !exists {
-					return common.NewSystemError("ERR_INDEX_REFERENCES_NON_EXISTENT_FIELD").
-						WithMessagef("index %s references non-existent field %s", ior.Index.Name, fieldName).
-						WithOperation(op)
-				}
-			}
-		}
-	}
-
-	// Check that all constraint fields exist
-	if err := validateConstraintFields(target.Constraints, target.Fields); err != nil {
-		return common.SystemErrorFrom(err).WithOperation(op)
-	}
-
-	return nil
-}
-
-// Deep cloning functions
-
-func deepCloneSchema(source *schema.SchemaDefinition) (*schema.SchemaDefinition, error) {
-	op := "deepCloneSchema"
-	data, err := json.Marshal(source)
-	if err != nil {
-		return nil, common.NewSystemError("ERR_SCHEMA_MARSHAL").
-			WithMessage("failed to marshal schema for cloning").
-			WithCause(err).
-			WithOperation(op)
-	}
-
-	var target schema.SchemaDefinition
-	if err := json.Unmarshal(data, &target); err != nil {
-		return nil, common.NewSystemError("ERR_SCHEMA_UNMARSHAL").
-			WithMessage("failed to unmarshal schema for cloning").
-			WithCause(err).
-			WithOperation(op)
-	}
-
-	return &target, nil
-}
-
-func deepCloneFieldDefinition(source *schema.FieldDefinition) (*schema.FieldDefinition, error) {
-	op := "deepCloneFieldDefinition"
-	data, err := json.Marshal(source)
-	if err != nil {
-		return nil, common.NewSystemError("ERR_FIELD_MARSHAL").
-			WithMessage("failed to marshal field definition for cloning").
-			WithCause(err).
-			WithOperation(op)
-	}
-
-	var target schema.FieldDefinition
-	if err := json.Unmarshal(data, &target); err != nil {
-		return nil, common.NewSystemError("ERR_FIELD_UNMARSHAL").
-			WithMessage("failed to unmarshal field definition for cloning").
-			WithCause(err).
-			WithOperation(op)
-	}
-
-	return &target, nil
-}
-
-func deepCloneIndexDefinition(source *schema.IndexDefinition) (*schema.IndexDefinition, error) {
-	op := "deepCloneIndexDefinition"
-	data, err := json.Marshal(source)
-	if err != nil {
-		return nil, common.NewSystemError("ERR_INDEX_MARSHAL").
-			WithMessage("failed to marshal index definition for cloning").
-			WithCause(err).
-			WithOperation(op)
-	}
-
-	var target schema.IndexDefinition
-	if err := json.Unmarshal(data, &target); err != nil {
-		return nil, common.NewSystemError("ERR_INDEX_UNMARSHAL").
-			WithMessage("failed to unmarshal index definition for cloning").
-			WithCause(err).
-			WithOperation(op)
-	}
-
-	return &target, nil
-}
-
-func deepCloneConstraintRule(source *schema.ConstraintRule) (*schema.ConstraintRule, error) {
-	op := "deepCloneConstraintRule"
-	data, err := json.Marshal(source)
-	if err != nil {
-		return nil, common.NewSystemError("ERR_CONSTRAINT_MARSHAL").
-			WithMessage("failed to marshal constraint rule for cloning").
-			WithCause(err).
-			WithOperation(op)
-	}
-
-	var target schema.ConstraintRule
-	if err := json.Unmarshal(data, &target); err != nil {
-		return nil, common.NewSystemError("ERR_CONSTRAINT_UNMARSHAL").
-			WithMessage("failed to unmarshal constraint rule for cloning").
-			WithCause(err).
-			WithOperation(op)
-	}
-
-	return &target, nil
-}
-
-func deepCloneNestedSchemaDefinition(source *schema.NestedSchemaDefinition) (*schema.NestedSchemaDefinition, error) {
-	op := "deepCloneNestedSchemaDefinition"
-	data, err := json.Marshal(source)
-	if err != nil {
-		return nil, common.NewSystemError("ERR_NESTED_SCHEMA_MARSHAL").
-			WithMessage("failed to marshal nested schema definition for cloning").
-			WithCause(err).
-			WithOperation(op)
-	}
-
-	var target schema.NestedSchemaDefinition
-	if err := json.Unmarshal(data, &target); err != nil {
-		return nil, common.NewSystemError("ERR_NESTED_SCHEMA_UNMARSHAL").
-			WithMessage("failed to unmarshal nested schema definition for cloning").
-			WithCause(err).
-			WithOperation(op)
-	}
-
-	return &target, nil
-}
-
-// Partial application functions
-
-func applyPartialFieldChanges(field *schema.FieldDefinition, partial *schema.PartialFieldDefinition) {
-	if partial.Type != nil {
-		field.Type = *partial.Type
-	}
-	if partial.Required != nil {
-		field.Required = partial.Required
-	}
-	if partial.Unique != nil {
-		field.Unique = partial.Unique
-	}
-	if partial.Description != nil {
-		field.Description = partial.Description
-	}
-	if partial.Default != nil {
-		field.Default = partial.Default
-	}
-	if partial.ItemsType != nil {
-		field.ItemsType = partial.ItemsType
-	}
-	if partial.Values != nil {
-		field.Values = partial.Values
-	}
-	if partial.Schema != nil {
-		field.Schema = partial.Schema
-	}
-	if partial.Constraints != nil {
-		field.Constraints = partial.Constraints
-	}
-	if partial.Hint != nil {
-		field.Hint = partial.Hint
-	}
-	if partial.Deprecated != nil {
-		field.Deprecated = partial.Deprecated
-	}
-	if partial.Name != nil {
-		field.Name = *partial.Name
-	}
-
-	// Handle unset operations
-	for _, unsetField := range partial.Unset {
-		switch unsetField {
-		case "required":
-			field.Required = nil
-		case "unique":
-			field.Unique = nil
-		case "description":
-			field.Description = nil
-		case "default":
-			field.Default = nil
-		case "itemsType":
-			field.ItemsType = nil
-		case "values":
-			field.Values = nil
-		case "schema":
-			field.Schema = nil
-		case "constraints":
-			field.Constraints = nil
-		case "hint":
-			field.Hint = nil
-		case "deprecated":
-			field.Deprecated = nil
-		}
-	}
-}
-
-func applyPartialIndexChanges(index *schema.IndexDefinition, partial *schema.PartialIndexDefinition) {
-	if partial.Type != nil {
-		index.Type = *partial.Type
-	}
-	if partial.Fields != nil {
-		index.Fields = partial.Fields
-	}
-	if partial.Unique != nil {
-		index.Unique = partial.Unique
-	}
-	if partial.Description != nil {
-		index.Description = partial.Description
-	}
-	if partial.Order != nil {
-		index.Order = partial.Order
-	}
-	if partial.Partial != nil {
-		index.Partial = partial.Partial
-	}
-	if partial.Name != nil {
-		index.Name = *partial.Name
-	}
-
-	// Handle unset operations
-	for _, unsetField := range partial.Unset {
-		switch unsetField {
-		case "fields":
-			index.Fields = nil
-		case "unique":
-			index.Unique = nil
-		case "description":
-			index.Description = nil
-		case "order":
-			index.Order = nil
-		case "partial":
-			index.Partial = nil
-		}
-	}
-}
-
-func applyPartialConstraintDefinitionChanges(constraint *schema.Constraint, partial *schema.PartialConstraint) {
-	if partial.Predicate != nil {
-		constraint.Predicate = *partial.Predicate
-	}
-	if partial.Field != nil {
-		constraint.Field = partial.Field
-	}
-	if partial.Fields != nil {
-		constraint.Fields = partial.Fields
-	}
-	if partial.Parameters != nil {
-		constraint.Parameters = partial.Parameters
-	}
-	if partial.Description != nil {
-		constraint.Description = partial.Description
-	}
-	if partial.ErrorMessage != nil {
-		constraint.ErrorMessage = partial.ErrorMessage
-	}
-	if partial.Name != nil {
-		constraint.Name = *partial.Name
-	}
-
-	// Handle unset operations
-	for _, unsetField := range partial.Unset {
-		switch unsetField {
-		case "field":
-			constraint.Field = nil
-		case "fields":
-			constraint.Fields = nil
-		case "parameters":
-			constraint.Parameters = nil
-		case "description":
-			constraint.Description = nil
-		case "errorMessage":
-			constraint.ErrorMessage = nil
-		}
-	}
-}
-
-// Utility functions
-
-// getConstraintRuleName returns the name of a constraint rule.
-func getConstraintRuleName(rule *schema.ConstraintRule) string {
-	if rule.IsConstraint() {
-		return rule.Constraint.Name
-	}
-	if rule.IsConstraintGroup() {
-		return rule.ConstraintGroup.Name
-	}
-	return ""
-}
-
 // indexExists checks if an index with the given name exists.
 func indexExists(indexes []schema.IndexOrReference, name string) bool {
 	for _, ior := range indexes {
@@ -1050,7 +725,7 @@ func indexExists(indexes []schema.IndexOrReference, name string) bool {
 func constraintExists(constraints schema.SchemaConstraint, name string) bool {
 	for i := range constraints {
 		rule := &constraints[i]
-		if getConstraintRuleName(rule) == name {
+		if rule.GetName() == name {
 			return true
 		}
 		if rule.IsConstraintGroup() {
@@ -1094,7 +769,7 @@ func removeConstraintByNameParts(
 
 	for i := range rules {
 		rule := &rules[i]
-		ruleName := getConstraintRuleName(rule)
+		ruleName := rule.GetName()
 
 		if ruleName == targetName {
 			// Found matching name at this level
@@ -1185,40 +860,6 @@ func filterConstraintsByField(constraints schema.SchemaConstraint, fieldName str
 	return result
 }
 
-// validateConstraintFields validates that all constraint field references exist.
-func validateConstraintFields(constraints schema.SchemaConstraint, fields map[string]*schema.FieldDefinition) error {
-	op := "validateConstraintFields"
-
-	for i := range constraints {
-		rule := &constraints[i]
-
-		if rule.IsConstraint() {
-			if rule.Constraint.Field != nil {
-				if _, exists := fields[*rule.Constraint.Field]; !exists {
-					return common.NewSystemError("ERR_CONSTRAINT_REFERENCES_NON_EXISTENT_FIELD").
-						WithMessagef("constraint %s references non-existent field %s",
-							rule.Constraint.Name, *rule.Constraint.Field).
-						WithOperation(op)
-				}
-			}
-
-			for _, fieldName := range rule.Constraint.Fields {
-				if _, exists := fields[fieldName]; !exists {
-					return common.NewSystemError("ERR_CONSTRAINT_REFERENCES_NON_EXISTENT_FIELD").
-						WithMessagef("constraint %s references non-existent field %s",
-							rule.Constraint.Name, fieldName).
-						WithOperation(op)
-				}
-			}
-		} else if rule.IsConstraintGroup() {
-			if err := validateConstraintFields(rule.ConstraintGroup.Rules, fields); err != nil {
-				return common.SystemErrorFrom(err).WithOperation(op)
-			}
-		}
-	}
-
-	return nil
-}
 
 // convertToStringPtr converts various types to *string.
 func convertToStringPtr(value any) *string {

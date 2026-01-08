@@ -156,20 +156,6 @@ func (cr ConstraintRule) MarshalJSON() ([]byte, error) {
 	return nil, fmt.Errorf("ConstraintRule has no active variant")
 }
 
-// IsConstraint returns true if this rule is a Constraint.
-func (cr *ConstraintRule) IsConstraint() bool {
-	return cr.Constraint != nil
-}
-
-// IsConstraintGroup returns true if this rule is a ConstraintGroup.
-func (cr *ConstraintRule) IsConstraintGroup() bool {
-	return cr.ConstraintGroup != nil
-}
-
-// IsReference returns true if this rule is a ResourceReference.
-func (cr *ConstraintRule) IsReference() bool {
-	return cr.Reference != nil
-}
 
 // SchemaConstraint represents a collection of constraint rules.
 type SchemaConstraint []ConstraintRule
@@ -210,16 +196,6 @@ func (ior IndexOrReference) MarshalJSON() ([]byte, error) {
 		return json.Marshal(ior.Index)
 	}
 	return nil, fmt.Errorf("IndexOrReference has no active variant")
-}
-
-// IsIndex returns true if this is an IndexDefinition.
-func (ior *IndexOrReference) IsIndex() bool {
-	return ior.Index != nil
-}
-
-// IsReference returns true if this is a ResourceReference.
-func (ior *IndexOrReference) IsReference() bool {
-	return ior.Reference != nil
 }
 
 // NestedSchemaReference defines a reference to a nested schema.
@@ -373,16 +349,6 @@ func (nsf NestedSchemaFields) MarshalJSON() ([]byte, error) {
 		return json.Marshal(nsf.FieldsArray)
 	}
 	return nil, fmt.Errorf("NestedSchemaFields has no active variant")
-}
-
-// IsMap returns true if fields are represented as a map.
-func (nsf *NestedSchemaFields) IsMap() bool {
-	return nsf.FieldsMap != nil
-}
-
-// IsArray returns true if fields are represented as a conditional array.
-func (nsf *NestedSchemaFields) IsArray() bool {
-	return nsf.FieldsArray != nil
 }
 
 // NestedSchemaDefinition represents a reusable, nested schema structure.
@@ -539,16 +505,6 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 	return json.Marshal(m)
 }
 
-// IsStructured returns true if this is a structured schema (has fields).
-func (nsd *NestedSchemaDefinition) IsStructured() bool {
-	return nsd.Fields != nil
-}
-
-// IsTyped returns true if this is a typed schema (has type).
-func (nsd *NestedSchemaDefinition) IsTyped() bool {
-	return nsd.Type != nil
-}
-
 // ConstraintOrGroup represents a discriminated union for registry constraints.
 // Exactly one field should be non-nil at any time.
 type ConstraintOrGroup struct {
@@ -590,16 +546,6 @@ func (cog ConstraintOrGroup) MarshalJSON() ([]byte, error) {
 	return nil, fmt.Errorf("ConstraintOrGroup has no active variant")
 }
 
-// IsConstraint returns true if this is a Constraint.
-func (cog *ConstraintOrGroup) IsConstraint() bool {
-	return cog.Constraint != nil
-}
-
-// IsConstraintGroup returns true if this is a ConstraintGroup.
-func (cog *ConstraintOrGroup) IsConstraintGroup() bool {
-	return cog.ConstraintGroup != nil
-}
-
 // Registry contains reusable schema components.
 type Registry struct {
 	Schemas     map[string]*NestedSchemaDefinition `json:"schemas,omitempty"`
@@ -612,7 +558,7 @@ type SchemaDefinition struct {
 	Name        string                      `json:"name"`
 	Description *string                     `json:"description,omitempty"`
 	Version     string                      `json:"version"`
-	Fields      map[string]*FieldDefinition `json:"fields"`
+	Fields      map[string]*FieldDefinition `json:"fields,omitempty"`
 	// Registry      *Registry
 	// `json:"registry,omitempty"` TODO IMPLEMENT LATER
 	Indexes       []IndexOrReference                 `json:"indexes,omitempty"`
@@ -623,29 +569,6 @@ type SchemaDefinition struct {
 
 	Metadata map[string]any               `json:"metadata,omitempty"`
 	Mock     func(faker any) (any, error) `json:"-"`
-}
-
-// AddVersionField adds the versioning field to the schema's fields if it doesn't already exist.
-func (s *SchemaDefinition) AddVersionField() {
-	if s.Fields == nil {
-		s.Fields = make(map[string]*FieldDefinition)
-	}
-	if _, ok := s.Fields[VersionFieldName]; !ok {
-		s.Fields[VersionFieldName] = &FieldDefinition{
-			Name:     VersionFieldName,
-			Type:     FieldTypeInteger,
-			Required: utils.BoolPtr(false),
-		}
-	}
-}
-
-// MustAddIndex adds a new index to the schema definition and returns the modified schema.
-func (s *SchemaDefinition) AddIndex(index IndexDefinition) *SchemaDefinition {
-	if s.Indexes == nil {
-		s.Indexes = make([]IndexOrReference, 0)
-	}
-	s.Indexes = append(s.Indexes, IndexOrReference{Index: &index})
-	return s
 }
 
 // SchemaChangeType defines the type of change in a migration.

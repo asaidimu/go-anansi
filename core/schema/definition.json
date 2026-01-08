@@ -12,7 +12,6 @@
     "concrete": { "type": "boolean" },
     "fields": {
       "type": "object",
-      "propertyNames": { "not": { "enum": ["id", "_metadata_"] } },
       "additionalProperties": { "$ref": "#/$defs/rootFieldDefinition" }
     },
     "registry": {
@@ -80,8 +79,7 @@
       "additionalProperties": false,
       "properties": {
         "name": {
-          "type": "string",
-          "not": { "enum": ["id", "_metadata_"] }
+          "type": "string"
         },
         "type": { "$ref": "#/$defs/fieldType" },
         "required": { "type": "boolean" },

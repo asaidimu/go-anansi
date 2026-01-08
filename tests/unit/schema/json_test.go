@@ -342,34 +342,6 @@ func TestSchemaDefinition_JsonSchema(t *testing.T) {
 			validateJSON(t, jsonStr, false)
 		})
 
-		t.Run("invalid - fields with reserved name id", func(t *testing.T) {
-			jsonStr := `{
-				"name": "Invalid",
-				"version": "1.0.0",
-				"fields": {
-					"id": {
-						"name": "id",
-						"type": "string"
-					}
-				}
-			}`
-			validateJSON(t, jsonStr, false)
-		})
-
-		t.Run("invalid - fields with reserved name _metadata_", func(t *testing.T) {
-			jsonStr := `{
-				"name": "Invalid",
-				"version": "1.0.0",
-				"fields": {
-					"_metadata_": {
-						"name": "_metadata_",
-						"type": "string"
-					}
-				}
-			}`
-			validateJSON(t, jsonStr, false)
-		})
-
 		t.Run("invalid - field missing name", func(t *testing.T) {
 			jsonStr := `{
 				"name": "Invalid",

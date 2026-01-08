@@ -9,9 +9,9 @@ import (
 )
 
 // ConfigureDocumentFactory sets up the document factory with a default secret for tests.
-func ConfigureDocumentFactory() {
-	config := data.DocumentFactoryConfig{
-		Providers: []data.MetadataProviderConfig{
+func ConfigureDocumentFactory(providers ...data.MetadataProviderConfig) {
+	if providers == nil {
+		providers = []data.MetadataProviderConfig{
 			{
 				Name: "custom",
 				Schema: &schema.NestedSchemaDefinition{
@@ -28,9 +28,13 @@ func ConfigureDocumentFactory() {
 					return map[string]any{"custom_field": "custom_value"}, nil
 				},
 			},
-		},
+		}
+	}
+	config := data.DocumentFactoryConfig{
+		Providers: providers,
 	}
 	// This might be called by multiple test packages, but the factory is a singleton
 	// and is designed to be configured only once.
 	_ = data.ConfigureDocumentFactory(config, nil)
 }
+

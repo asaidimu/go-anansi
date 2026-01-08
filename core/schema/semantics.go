@@ -4,7 +4,9 @@ import (
 	"fmt"
 )
 
+// TODO: Re-think these functionality
 
+// Deprecated
 func (schema *SchemaDefinition) Validate() error {
 	basePath := ""
 	return schema.validateSchemaSemanticRecursive(basePath)

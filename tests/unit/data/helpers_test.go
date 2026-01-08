@@ -89,20 +89,6 @@ func TestMustHelper(t *testing.T) {
 	})
 }
 
-
-
-/* func TestFluentQuery_Limit(t *testing.T) {
-	docs,_ := data.NewDocumentSet(
-		[]*data.Document{
-		data.MustNewDocument(map[string]any{}).StripMetadata(),
-		data.MustNewDocument(map[string]any{}).StripMetadata(),
-		data.MustNewDocument(map[string]any{}).StripMetadata(),
-	})
-
-	limitedDocs := data.Query(docs).Limit(1).Execute()
-	assert.Len(t, limitedDocs, 1)
-} */
-
 func TestStructBinder(t *testing.T) {
 	type User struct {
 		Name    string `doc:"name"`
@@ -128,7 +114,7 @@ func TestStructBinder(t *testing.T) {
 	})
 
 	var user User
-	err := doc.Bind().To(&user)
+	err := doc.BindTo(&user)
 	require.NoError(t, err)
 
 	assert.Equal(t, "Alice", user.Name)
@@ -145,16 +131,11 @@ func TestStructBinder(t *testing.T) {
 		// age is missing
 	})
 	var userMissing User
-	err = docMissing.Bind().To(&userMissing)
+	err = docMissing.BindTo(&userMissing)
 	assert.Error(t, err)
 	sysErr, ok := err.(*common.SystemError)
 	assert.True(t,ok)
 	assert.Equal(t, sysErr.Code, data.ErrRequiredFieldNotFound.Code)
-
-	// Test BindTo generic helper
-	userFromGeneric, err := data.BindTo[User](doc)
-	require.NoError(t, err)
-	assert.Equal(t, "Alice", userFromGeneric.Name)
 }
 
 func TestFromStructWithTags(t *testing.T) {
@@ -174,7 +155,7 @@ func TestFromStructWithTags(t *testing.T) {
 		Desc:  "A great laptop",
 	}
 
-	doc, err := data.FromStructWithTags(product)
+	doc, err := data.NewDocumentFromStruct(product)
 	require.NoError(t, err)
 
 	assert.Equal(t, "P001", doc.Must().Get("product_id"))
@@ -190,7 +171,7 @@ func TestFromStructWithTags(t *testing.T) {
 		Price: 25.0,
 		Stock: 0, // Zero value, should be omitted
 	}
-	docNoStock, err := data.FromStructWithTags(productNoStock)
+	docNoStock, err := data.NewDocumentFromStruct(productNoStock)
 	require.NoError(t, err)
 	assert.False(t, docNoStock.HasKey("stock"))
 }

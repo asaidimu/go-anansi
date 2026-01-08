@@ -496,7 +496,7 @@ func (graph *ValidationGraph) buildFieldTypeNodes(fieldDef *schema.FieldDefiniti
 		node, err = graph.buildUnionNode(fieldDef, fieldPath, currentDeps, sc)
 
 	case schema.FieldTypeObject:
-		objectNodes, err := graph.buildObjectFieldNodes(fieldDef, fieldPath, currentDeps, sc)
+		objectNodes, err := graph.buildObjectFieldNodes(fieldDef, fieldPath, sc)
 		if err != nil {
 			return nil, err
 		}
@@ -524,47 +524,15 @@ func (graph *ValidationGraph) buildFieldTypeNodes(fieldDef *schema.FieldDefiniti
 	return nodes, nil
 }
 
-func (graph *ValidationGraph) buildObjectFieldNodes(fieldDef *schema.FieldDefinition, fieldPath string, currentDeps []string, sc *schema.SchemaDefinition) ([]*baseNode, error) {
+func (graph *ValidationGraph) buildObjectFieldNodes(fieldDef *schema.FieldDefinition, fieldPath string, sc *schema.SchemaDefinition) ([]*baseNode, error) {
 	var nodes []*baseNode
 
-	ref, ok := fieldDef.Schema.(schema.NestedSchemaReference)
-	if !ok {
-		return nil, schema.ErrInvalidSchema.WithMessage("Could not find a nested reference")
+	resolved, err := sc.ResolveFieldSchema(fieldDef)
+	if err != nil || len(resolved) == 0 {
+		return nil, schema.ErrInvalidSchema.WithMessage("Could not resolve nested schema")
 	}
-
-	nestedSchemaDef, exists := sc.FindNestedSchemaById(ref.ID)
-	if !exists || !nestedSchemaDef.IsStructured() {
-		return nil, schema.ErrInvalidSchema.WithMessage(fmt.Sprintf("Could not resolve nested schema with reference id `%s`", ref.ID))
-	}
-
-	// Build reference constraints
-	refConstraintIDs := graph.buildFromConstraints(ref.Constraints, fieldPath, currentDeps, nil, make(map[string]bool))
-	if len(refConstraintIDs) > 0 {
-		currentDeps = append(currentDeps, refConstraintIDs...)
-	}
-
-	// Build structured schema
-	tempSchema := &schema.SchemaDefinition{
-		Name:          nestedSchemaDef.Name,
-		Fields:        make(map[string]*schema.FieldDefinition),
-		NestedSchemas: sc.NestedSchemas,
-		Constraints:   nestedSchemaDef.Constraints,
-	}
-
-	// Handle structured fields
-	if nestedSchemaDef.Fields.FieldsArray != nil {
-		for _, structuredFieldEntry := range nestedSchemaDef.Fields.FieldsArray {
-			for _, def := range structuredFieldEntry.Fields {
-				tempSchema.Fields[def.Name] = def
-			}
-		}
-	} else if nestedSchemaDef.Fields.FieldsMap != nil {
-		for _, def := range nestedSchemaDef.Fields.FieldsMap {
-			tempSchema.Fields[def.Name] = def
-		}
-	}
-
-	nestedNodes, err := graph.buildFromSchema(tempSchema, fieldPath, nil, make(map[string]bool), nestedSchemaDef)
+	effectiveSchema := resolved[0]
+	nestedNodes, err := graph.buildFromSchema(effectiveSchema.Schema, fieldPath, nil, make(map[string]bool), effectiveSchema.Source)
 
 	if err != nil {
 		return nil, err

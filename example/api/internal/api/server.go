@@ -187,7 +187,8 @@ func (s *APIServer) readDocuments(w http.ResponseWriter, r *http.Request, collec
 		s.Response.WriteError(w, http.StatusInternalServerError, common.SystemErrorFrom(err), r)
 		return
 	}
-	s.Response.WriteJSON(w, http.StatusOK, map[string]any{"documents": result.Data.Sanitize(r.Context()).ToMaps()}, r, result.Count)
+	docs := result.Data.Sanitize(r.Context()).ToMaps()
+	s.Response.WriteJSON(w, http.StatusOK, map[string]any{"documents": docs}, r, result.Count)
 }
 
 // --- Single Document Handlers (GET, PATCH/PUT, DELETE) ---

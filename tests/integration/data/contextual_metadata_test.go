@@ -6,14 +6,10 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.uber.org/zap"
 )
-
-type contextKey string
-
-const traceIDKey contextKey = "traceID"
 
 // TestContextualMetadataProvider verifies that a metadata provider can inject
 // data from the context into a document's metadata upon its creation.
@@ -30,7 +26,7 @@ func TestContextualMetadataProvider(t *testing.T) {
 			},
 		},
 		Provider: func(ctx context.Context, _ *data.Document) (map[string]any, error) {
-			if traceID, ok := ctx.Value(traceIDKey).(string); ok {
+			if traceID, ok := ctx.Value(testutils.TraceIDKey).(string); ok {
 				return map[string]any{"trace_id": traceID}, nil
 			}
 			return nil, nil
@@ -38,23 +34,11 @@ func TestContextualMetadataProvider(t *testing.T) {
 	}
 
 	// 2. Configure the DocumentFactory with this provider
-	// We do this specifically for this test to ensure isolation.
-	config := data.DocumentFactoryConfig{
-		Providers: []data.MetadataProviderConfig{contextualProvider},
-	}
-	logger, _ := zap.NewDevelopment()
-	err := data.ConfigureDocumentFactory(config, logger)
-	// We expect an error if the factory is already configured by another test package's TestMain.
-	// This is acceptable, as the factory is a singleton and we can't re-configure it.
-	// The key is that a provider is configured. We assume the test runner runs this test
-	// in a context where a compatible configuration is active.
-	if err != nil && err != data.ErrFactoryAlreadyConfigured {
-		require.NoError(t, err)
-	}
+	testutils.ConfigureDocumentFactory(contextualProvider)
 
 	// 3. Create a context with a traceID
 	expectedTraceID := "trace-id-12345"
-	ctx := context.WithValue(context.Background(), traceIDKey, expectedTraceID)
+	ctx := context.WithValue(context.Background(), testutils.TraceIDKey, expectedTraceID)
 
 	// 4. Create a new document, passing the context directly.
 	// The document factory will now use this context to run the providers.

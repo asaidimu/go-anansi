@@ -66,7 +66,7 @@ var RegistryCollectionSchemaJson = fmt.Sprintf(`
     {
       "name": "name_index",
       "fields": ["name"],
-      "type": "primary",
+      "type": "normal",
       "description": "Index on schema name for quick lookup."
     }
   ]

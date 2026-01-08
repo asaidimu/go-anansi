@@ -14,7 +14,6 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -96,15 +95,10 @@ func getFactory() *documentFactory {
 // It must be called once at application startup.
 func ConfigureDocumentFactory(config DocumentFactoryConfig, logger *zap.Logger) error {
 	var err error
-
 	configureOnce.Do(func() {
 		f := getFactory()
 		f.mu.Lock()
 		defer f.mu.Unlock()
-		if f.configured {
-			err = ErrFactoryAlreadyConfigured
-			return
-		}
 
 		// Initialize sanitization state
 		f.sanitization = &sanitizationState{
@@ -124,17 +118,7 @@ func ConfigureDocumentFactory(config DocumentFactoryConfig, logger *zap.Logger) 
 		f.configured = true
 	})
 
-	if err != nil {
-		return err
-	}
-
-	// If called multiple times, configureOnce ensures the block doesn't run again,
-	// but we should still signal that the factory is already configured.
-	if !getFactory().configured {
-		return ErrConfigurationNotApplied
-	}
-
-	return nil
+	return err
 }
 
 // getSanitizerForContext returns the appropriate sanitizer based on context.
@@ -161,7 +145,6 @@ func (f *documentFactory) getSanitizerForContext(ctx context.Context) *DocumentS
 	return f.sanitization.global
 }
 
-
 // newDocument creates a new document with injected metadata.
 func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) (*Document, error) {
 	if !f.configured {
@@ -172,17 +155,21 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 		data = make(map[string]any)
 	}
 
-	doc := &Document{ctx: ctx, data: data}
+	docData := make(map[string]any, len(data))
+	maps.Copy(docData, data)
+
+	doc := &Document{ctx: ctx, data: docData}
 
 	// Ensure document has a valid ID
 	if !f.hasValidID(doc) {
 		doc.data[DocumentIDField] = strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
 	}
 
-	// Get or initialize metadata - we'll build it up completely before setting
-	meta, ok := doc.Metadata()
-	if !ok {
-		meta = make(map[string]any)
+	meta := make(map[string]any)
+
+	// Copy existing metadata if present
+	if existingMeta, ok := doc.Metadata(); ok {
+		maps.Copy(meta, existingMeta)
 	}
 
 	// Inject system metadata
@@ -214,6 +201,18 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 				WithMessage(fmt.Sprintf("metadata provider '%s' failed", providerConfig.Name)).
 				WithCause(err)
 		}
+		if providerMeta == nil {
+			continue // Skip nil results
+		}
+
+		// Validate provider doesn't overwrite reserved fields
+		for key := range providerMeta {
+			if isReservedMetadataField(key) {
+				return nil, common.SystemErrorFrom(ErrInvalidMetadata).
+					WithOperation("data.documentFactory.newDocument").
+					WithMessage(fmt.Sprintf("provider '%s' attempted to set reserved field '%s'", providerConfig.Name, key))
+			}
+		}
 		maps.Copy(meta, providerMeta)
 	}
 
@@ -229,18 +228,18 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 		return nil, common.SystemErrorFrom(err).WithOperation("data.documentFactory.newDocument")
 	}
 
-	// Preserve context
-	normalizedDoc.ctx = ctx
 	return normalizedDoc, nil
 }
-
 
 // GetMetadataSchema merges all provider schemas into a single metadata schema
 // Conflicts are already handled during configuration, so simple merging is safe here
 func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchemaDefinition) {
 	f := getFactory()
+	// Copy provider configs while holding lock
 	f.mu.RLock()
-	defer f.mu.RUnlock()
+	providers := make([]MetadataProviderConfig, len(f.config.Providers))
+	copy(providers, f.config.Providers)
+	f.mu.RUnlock()
 
 	mergedSchema := DefaultMetadataSchema()
 	dependencies := make([]*schema.NestedSchemaDefinition, 0)
@@ -257,7 +256,7 @@ func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchema
 		mergedSchema.Fields.FieldsMap = make(map[string]*schema.FieldDefinition)
 	}
 
-	for _, providerConfig := range f.config.Providers {
+	for _, providerConfig := range providers {
 		// Add dependencies to the list of unique dependencies
 		for _, dep := range providerConfig.Dependencies {
 			if _, ok := dependencyNames[dep.Name]; !ok {
@@ -323,7 +322,7 @@ func (f *documentFactory) signDocument(doc *Document, privateKey *rsa.PrivateKey
 	hashed := hasher.Sum(nil)
 
 	// Sign the hash
-	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA256, hashed)
+	signature, err := rsa.SignPSS(rand.Reader, privateKey, crypto.SHA256, hashed, nil)
 	if err != nil {
 		return "", common.SystemErrorFrom(ErrSignDocumentFailed).WithOperation("data.documentFactory.signDocument").WithCause(err)
 	}
@@ -371,7 +370,7 @@ func (f *documentFactory) hasValidID(doc *Document) bool {
 // verifySignature verifies the signature of a document against a public key.
 func (f *documentFactory) verifySignature(doc *Document, publicKey *rsa.PublicKey, signature string) error {
 	// Decode the signature
-	sigBytes, err := base64.StdEncoding.DecodeString(signature)
+	signedBytes, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
 		return common.SystemErrorFrom(ErrVerifySignatureDecodeFailed).WithOperation("data.documentFactory.verifySignature").WithCause(err)
 	}
@@ -397,7 +396,7 @@ func (f *documentFactory) verifySignature(doc *Document, publicKey *rsa.PublicKe
 	hashed := hasher.Sum(nil)
 
 	// Verify the signature
-	err = rsa.VerifyPKCS1v15(publicKey, crypto.SHA256, hashed, sigBytes)
+	err = rsa.VerifyPSS(publicKey, crypto.SHA256, hashed, signedBytes, nil)
 	if err != nil {
 		return common.SystemErrorFrom(ErrSignatureVerificationFailed).WithOperation("data.documentFactory.verifySignature").WithCause(errors.Join(ErrSignatureInvalid, err))
 	}
@@ -405,7 +404,6 @@ func (f *documentFactory) verifySignature(doc *Document, publicKey *rsa.PublicKe
 	return nil
 }
 
-// canonicalize recursively sorts slices and maps to ensure a consistent hash.
 func canonicalize(v any) any {
 	switch val := v.(type) {
 	case *Document:
@@ -430,23 +428,30 @@ func canonicalize(v any) any {
 		}
 		return newSlice
 	case float64:
-		// If a float64 represents a whole number, convert it to int64
 		if val == float64(int64(val)) {
 			return int64(val)
 		}
 		return val
-	case float32:
-		// If a float32 represents a whole number, convert it to int64
-		if val == float32(int64(val)) {
-			return int64(val)
-		}
+	case int:
+		return int64(val)
+	case int8:
+		return int64(val)
+	case int16:
+		return int64(val)
+	case int32:
+		return int64(val)
+	case int64:
 		return val
-	case int, int8, int16, int32, int64:
-		// Convert all integer types to int64 for consistency
-		return reflect.ValueOf(val).Int()
-	case uint, uint8, uint16, uint32, uint64:
-		// Convert all unsigned integer types to uint64 for consistency
-		return reflect.ValueOf(val).Uint()
+	case uint:
+		return uint64(val)
+	case uint8:
+		return uint64(val)
+	case uint16:
+		return uint64(val)
+	case uint32:
+		return uint64(val)
+	case uint64:
+		return val
 	default:
 		return v
 	}
@@ -503,4 +508,12 @@ func LoadPublicKey(pemBytes []byte) (*rsa.PublicKey, error) {
 	}
 
 	return nil, common.SystemErrorFrom(ErrNotRSAPublicKey).WithOperation("data.LoadPublicKey")
+}
+
+// ResetFactoryForTesting resets the singleton document factory and its configuration.
+// This is intended for use in tests only, to ensure a clean state between test runs.
+func ResetFactoryForTesting() {
+	factory = nil
+	factoryOnce = sync.Once{}
+	configureOnce = sync.Once{}
 }

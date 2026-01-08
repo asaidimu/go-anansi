@@ -10,7 +10,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
-	"github.com/google/uuid"
 )
 
 // generatePhysicalName creates a database-safe identifier from schema name and version
@@ -96,6 +95,8 @@ func unmarshalEntry(doc *data.Document) (*base.RegistryEntry, error) {
 	return utils.MapToStruct[*RegistryEntry](doc.ToMap())
 }
 
+// EnrichSchema adds system fields (id, metadata) to a schema
+// This example shows how to use the new utility methods
 func EnrichSchema(sc *schema.SchemaDefinition) (*schema.SchemaDefinition, error) {
 	if sc == nil {
 		return nil, nil
@@ -109,55 +110,64 @@ func EnrichSchema(sc *schema.SchemaDefinition) (*schema.SchemaDefinition, error)
 		Unique:   utils.BoolPtr(true),
 	}
 
-	id_id := uuid.Must(uuid.NewV7()).String()
-
-	sc, err := sc.AddField(id_id, idField, nil)
+	// Ensure the ID field exists with exact properties
+	// This will add it if missing, or replace it if it exists with different properties
+	sc, _, _, err := sc.WithFieldEnsured(idField, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	// --- Enforce ID Index ---
-	var filteredIndexes []schema.IndexOrReference
-	for _, index := range sc.Indexes {
-		if len(index.Index.Fields) == 1 && index.Index.Fields[0] == data.DocumentIDField {
-			continue // Skip user-defined index on 'id'.
-		}
-		filteredIndexes = append(filteredIndexes, index)
+	// --- Remove any user-defined indexes on 'id' field ---
+	sc, _, err = sc.WithoutIndexesReferencingField(data.DocumentIDField)
+	if err != nil {
+		return nil, err
 	}
-	sc.Indexes = filteredIndexes
 
-	sc = sc.AddIndex(schema.IndexDefinition{
+	// --- Add primary key index ---
+	pkIndex := &schema.IndexDefinition{
 		Name:   "pk_id",
 		Fields: []string{data.DocumentIDField},
 		Type:   schema.IndexTypePrimary,
 		Unique: utils.BoolPtr(true),
-	})
+	}
 
-	metadata_id := uuid.Must(uuid.NewV7()).String()
+	// Ensure the primary key index exists (replaces if already there)
+	sc, pkModified, err := sc.WithIndexEnsured(pkIndex)
+	if err != nil {
+		return nil, err
+	}
 
-	msd, deps := data.GetMetadataSchema()
+	_ = pkModified // We know if it was added or replaced
 
 	// --- Add Metadata Field ---
+	msd, deps := data.GetMetadataSchema()
 	metadataField := &schema.FieldDefinition{
 		Name:   data.MetadataField,
 		Type:   schema.FieldTypeObject,
 		Schema: schema.NestedSchemaReference{ID: *msd.ID},
 	}
 
+	// Provider function for nested schemas
 	provider := func(sc *schema.SchemaDefinition) (*schema.NestedSchemaDefinition, []*schema.NestedSchemaDefinition) {
 		return msd, deps
 	}
 
-	result, err := sc.AddField(metadata_id, metadataField, provider)
+	// Ensure metadata field exists with exact properties
+	result, _, _, err := sc.WithFieldEnsured(metadataField, provider)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := result.Validate(); err != nil {
-		return nil, err
+	// Validate the final schema
+	validationErrors := result.ValidateAll()
+	if len(validationErrors) > 0 {
+		fmt.Printf("Issues: %v\n", validationErrors)
+		return nil, common.NewSystemError("INVALID_SCHEMA").WithIssues(validationErrors)
 	}
+
 	return result, nil
 }
+
 
 // TODO: implement a non panicky enrich schema
 func MustEnrichSchema(sc *schema.SchemaDefinition) *schema.SchemaDefinition {
