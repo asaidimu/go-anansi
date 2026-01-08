@@ -3,6 +3,7 @@ package schema
 import (
 	"embed"
 	"sync"
+
 	"github.com/asaidimu/go-anansi/v6/core/json"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )

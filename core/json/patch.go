@@ -3,7 +3,7 @@
 package json
 
 import (
-	"encoding/json"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -29,22 +29,152 @@ func NewPatcher() *Patcher {
 	return &Patcher{cache: make(map[string][]string)}
 }
 
-// Apply applies a sequence of patches to a target object.
+// CreatePatch creates a sequence of JSON Patch operations that transform one object into another
+func (p *Patcher) CreatePatch(oldObj, newObj any) ([]PatchOperation, error) {
+	patches := make([]PatchOperation, 0)
+	if err := p.generatePatches(oldObj, newObj, "", &patches); err != nil {
+		return nil, err
+	}
+	return patches, nil
+}
+
+// generatePatches recursively generates patch operations for nested objects
+func (p *Patcher) generatePatches(oldObj, newObj any, path string, patches *[]PatchOperation) error {
+	if deepEqual(oldObj, newObj) {
+		return nil
+	}
+
+	oldType := fmt.Sprintf("%T", oldObj)
+	newType := fmt.Sprintf("%T", newObj)
+
+	if oldType != newType {
+		*patches = append(*patches, PatchOperation{
+			Op:    "replace",
+			Path:  path,
+			Value: newObj,
+		})
+		return nil
+	}
+
+	switch oldVal := oldObj.(type) {
+	case map[string]any:
+		newVal, ok := newObj.(map[string]any)
+		if !ok {
+			*patches = append(*patches, PatchOperation{
+				Op:    "replace",
+				Path:  path,
+				Value: newObj,
+			})
+			return nil
+		}
+		return p.handleObjects(oldVal, newVal, path, patches)
+
+	case []any:
+		newVal, ok := newObj.([]any)
+		if !ok {
+			*patches = append(*patches, PatchOperation{
+				Op:    "replace",
+				Path:  path,
+				Value: newObj,
+			})
+			return nil
+		}
+		return p.handleArrays(oldVal, newVal, path, patches)
+
+	default:
+		if !deepEqual(oldObj, newObj) {
+			*patches = append(*patches, PatchOperation{
+				Op:    "replace",
+				Path:  path,
+				Value: newObj,
+			})
+		}
+	}
+
+	return nil
+}
+
+
+// handleArrays generates patch operations for array differences
+func (p *Patcher) handleArrays(oldArr, newArr []any, path string, patches *[]PatchOperation) error {
+	maxLen := max(len(newArr), len(oldArr))
+
+	for i := range maxLen {
+		currentPath := fmt.Sprintf("%s/%d", path, i)
+
+		if i >= len(oldArr) {
+			*patches = append(*patches, PatchOperation{
+				Op:    "add",
+				Path:  fmt.Sprintf("%s/-", path),
+				Value: newArr[i],
+			})
+		} else if i >= len(newArr) {
+			*patches = append(*patches, PatchOperation{
+				Op:   "remove",
+				Path: currentPath,
+			})
+		} else {
+			if err := p.generatePatches(oldArr[i], newArr[i], currentPath, patches); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// handleObjects generates patch operations for object differences
+func (p *Patcher) handleObjects(oldObj, newObj map[string]any, path string, patches *[]PatchOperation) error {
+	seen := make(map[string]bool)
+
+	// Check for removed and modified keys
+	for key := range oldObj {
+		escapedKey := escapeJsonPointer(key)
+		currentPath := path + "/" + escapedKey
+		if path == "" {
+			currentPath = "/" + escapedKey
+		}
+
+		if _, exists := newObj[key]; !exists {
+			*patches = append(*patches, PatchOperation{
+				Op:   "remove",
+				Path: currentPath,
+			})
+		} else {
+			if err := p.generatePatches(oldObj[key], newObj[key], currentPath, patches); err != nil {
+				return err
+			}
+			seen[key] = true
+		}
+	}
+
+	// Check for added keys
+	for key := range newObj {
+		if !seen[key] {
+			escapedKey := escapeJsonPointer(key)
+			currentPath := path + "/" + escapedKey
+			if path == "" {
+				currentPath = "/" + escapedKey
+			}
+			*patches = append(*patches, PatchOperation{
+				Op:    "add",
+				Path:  currentPath,
+				Value: newObj[key],
+			})
+		}
+	}
+
+	return nil
+}
+
+// Apply now performs a deep copy only once and uses improved navigation
 func (p *Patcher) Apply(target any, operations []PatchOperation) (any, error) {
-	// Deep clone via JSON to ensure we don't mutate the input
-	data, err := json.Marshal(target)
-	if err != nil {
-		return nil, common.NewSystemError("JSON_MARSHAL_FAILED").WithCause(err)
-	}
-	var result any
-	if err := json.Unmarshal(data, &result); err != nil {
-		return nil, common.NewSystemError("JSON_UNMARSHAL_FAILED").WithCause(err)
-	}
+	// 1. Initial Deep Copy (Improved)
+	result := deepCopy(target)
 
 	for _, op := range operations {
 		parts, err := p.getParts(op.Path)
 		if err != nil {
-			// This error already comes from getParts (or parseIndex) and should be a SystemError
 			return nil, err
 		}
 
@@ -54,52 +184,27 @@ func (p *Patcher) Apply(target any, operations []PatchOperation) (any, error) {
 		case "remove":
 			result, err = p.remove(result, parts)
 		case "replace":
+			// Replace is logically remove + add
 			result, err = p.remove(result, parts)
 			if err == nil {
 				result, err = p.add(result, parts, op.Value)
 			}
 		case "move":
-			fromParts, err := p.getParts(op.From)
-			if err != nil {
-				// This error already comes from getParts (or parseIndex) and should be a SystemError
-				return nil, err
-			}
+			fromParts, _ := p.getParts(op.From)
 			val, err := p.getVal(result, fromParts)
-			if err != nil {
-				// This error already comes from getVal and should be a SystemError
-				return nil, err
-			}
+			if err != nil { return nil, err }
+
 			result, err = p.remove(result, fromParts)
 			if err == nil {
 				result, err = p.add(result, parts, val)
 			}
-		case "copy":
-			fromParts, err := p.getParts(op.From)
-			if err != nil {
-				// This error already comes from getParts (or parseIndex) and should be a SystemError
-				return nil, err
-			}
-			val, err := p.getVal(result, fromParts)
-			if err != nil {
-				// This error already comes from getVal and should be a SystemError
-				return nil, err
-			}
-			result, err = p.add(result, parts, cloneValue(val))
 		case "test":
-			val, err := p.getVal(result, parts)
-			if err != nil || !reflect.DeepEqual(val, op.Value) {
-				// If err is already a SystemError, return it directly, otherwise create one
-				if sysErr, ok := err.(*common.SystemError); ok {
-					return nil, sysErr.WithPath(op.Path)
-				}
-				return nil, common.NewSystemError("PATCH_TEST_FAILED").
-					WithPath(op.Path).
-					WithMessagef("test failed: values at path '%s' do not match", op.Path)
+			val, _ := p.getVal(result, parts)
+			if !reflect.DeepEqual(val, op.Value) {
+				return nil, common.NewSystemError("PATCH_TEST_FAILED").WithPath(op.Path)
 			}
 		case "removeValue":
 			result, err = p.removeValue(result, parts, op.Value)
-		default:
-			return nil, common.NewSystemError("UNSUPPORTED_PATCH_OPERATION").WithMessagef("unsupported operation: '%s'", op.Op)
 		}
 
 		if err != nil {
@@ -251,29 +356,6 @@ func (p *Patcher) removeValue(node any, parts []string, targetValue any) (any, e
 
 // --- Helpers ---
 
-func (p *Patcher) getParts(path string) ([]string, error) {
-	p.mu.RLock()
-	cached, ok := p.cache[path]
-	p.mu.RUnlock()
-	if ok {
-		return cached, nil
-	}
-
-	if path == "" || path == "/" {
-		return []string{}, nil
-	}
-	segments := strings.Split(strings.TrimPrefix(path, "/"), "/")
-	for i, s := range segments {
-		s = strings.ReplaceAll(s, "~1", "/")
-		segments[i] = strings.ReplaceAll(s, "~0", "~")
-	}
-
-	p.mu.Lock()
-	p.cache[path] = segments
-	p.mu.Unlock()
-	return segments, nil
-}
-
 func (p *Patcher) getVal(node any, parts []string) (any, error) {
 	curr := node
 	for _, part := range parts {
@@ -303,9 +385,45 @@ func parseIndex(key string, length int) (int, bool, error) {
 	return i, false, nil
 }
 
-func cloneValue(v any) any {
-	b, _ := json.Marshal(v)
-	var res any
-	json.Unmarshal(b, &res)
-	return res
+func (p *Patcher) getParts(path string) ([]string, error) {
+	if path == "" { return []string{}, nil }
+	if path == "/" { return []string{""}, nil }
+
+	p.mu.RLock()
+	cached, ok := p.cache[path]
+	p.mu.RUnlock()
+	if ok { return cached, nil }
+
+	// RFC 6901: must start with /
+	if !strings.HasPrefix(path, "/") {
+		return nil, common.NewSystemError("INVALID_PATH").WithMessage("path must start with /")
+	}
+
+	segments := strings.Split(path[1:], "/")
+	for i, s := range segments {
+		s = strings.ReplaceAll(s, "~1", "/")
+		segments[i] = strings.ReplaceAll(s, "~0", "~")
+	}
+
+	p.mu.Lock()
+	p.cache[path] = segments
+	p.mu.Unlock()
+	return segments, nil
+}
+
+func deepCopy(v any) any {
+	if v == nil { return nil }
+
+	switch t := v.(type) {
+	case map[string]any:
+		cp := make(map[string]any, len(t))
+		for k, val := range t { cp[k] = deepCopy(val) }
+		return cp
+	case []any:
+		cp := make([]any, len(t))
+		for i, val := range t { cp[i] = deepCopy(val) }
+		return cp
+	default:
+		return v // Primitive types are immutable in Go
+	}
 }

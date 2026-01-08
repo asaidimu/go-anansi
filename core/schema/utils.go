@@ -38,6 +38,22 @@ func (s *SchemaDefinition) FindNestedSchemaById(id string) (*NestedSchemaDefinit
 	return found, ok
 }
 
+// In definition.go
+/* func (s *SchemaDefinition) FindNestedSchemaById(id string) (*NestedSchemaDefinition, error) {
+    if s.NestedSchemas == nil {
+        return nil, common.NewSystemError("ERR_NESTED_SCHEMA_NOT_FOUND").
+            WithMessagef("nested schema %s not found", id)
+    }
+
+    nested, exists := s.NestedSchemas[id]
+    if !exists {
+        return nil, common.NewSystemError("ERR_NESTED_SCHEMA_NOT_FOUND").
+            WithMessagef("nested schema %s not found", id)
+    }
+
+    return nested, nil
+} */
+
 // FindNestedSchema finds a nested schema by it's name
 func (s *SchemaDefinition) FindNestedSchema(name string) (*NestedSchemaDefinition, bool) {
 	if s.NestedSchemas == nil {

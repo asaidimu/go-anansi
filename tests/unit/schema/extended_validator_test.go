@@ -117,14 +117,14 @@ func TestValidator_Validate_Extended(t *testing.T) {
 				},
 			},
 		},
-		Constraints: schema.SchemaConstraint[schema.FieldType]{
-			schema.ConstraintRule[schema.FieldType]{
-				ConstraintGroup: &schema.ConstraintGroup[schema.FieldType]{
+		Constraints: schema.SchemaConstraint{
+			schema.ConstraintRule{
+				ConstraintGroup: &schema.ConstraintGroup{
 					Name:     "user_constraints",
 					Operator: common.LogicalAnd,
-					Rules: []schema.ConstraintRule[schema.FieldType]{
+					Rules: []schema.ConstraintRule{
 						{
-							Constraint: &schema.Constraint[schema.FieldType]{
+							Constraint: &schema.Constraint{
 								Name:      "username_availability",
 								Predicate: "isUsernameAvailable",
 								Field:     &[]string{"username"}[0],

@@ -26,9 +26,9 @@ func TestValidator_Validate(t *testing.T) {
 			"email": {
 				Name: "email",
 				Type: schema.FieldTypeString,
-				Constraints: []schema.ConstraintRule[schema.FieldType]{
+				Constraints: []schema.ConstraintRule{
 					{
-						Constraint: &schema.Constraint[schema.FieldType]{
+						Constraint: &schema.Constraint{
 							Predicate: "isEmail",
 						},
 					},

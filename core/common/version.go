@@ -89,6 +89,14 @@ type Version struct {
 }
 
 
+func MustNewVersion(version string) (*Version) {
+	v, err := NewVersion(version)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
 // NewVersion parses a string using the immutable global strategy.
 func NewVersion(version string) (*Version, error) {
 	v := &Version{TagType: RankStable}
@@ -163,6 +171,7 @@ func (v *Version) ToUint64() uint64 {
 }
 
 // --- 4. LOGIC & UTILITIES ---
+
 
 func (v *Version) Compare(other *Version) int {
 	valA, valB := v.ToUint64(), other.ToUint64()
