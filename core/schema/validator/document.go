@@ -141,12 +141,12 @@ type UnionValidationNode struct {
 
 type ConstraintNode struct {
 	baseNode
-	constraint schema.Constraint[schema.FieldType]
+	constraint schema.Constraint
 }
 
 type ConstraintGroupNode struct {
 	baseNode
-	group     schema.ConstraintGroup[schema.FieldType]
+	group     schema.ConstraintGroup
 	memberIDs []string
 }
 
@@ -582,7 +582,7 @@ func (graph *ValidationGraph) buildObjectFieldNodes(fieldDef *schema.FieldDefini
 	return nodes, nil
 }
 
-func (graph *ValidationGraph) buildFromConstraints(constraints schema.SchemaConstraint[schema.FieldType], path string, deps []string, dataContext any, addedConstraints map[string]bool) []string {
+func (graph *ValidationGraph) buildFromConstraints(constraints schema.SchemaConstraint, path string, deps []string, dataContext any, addedConstraints map[string]bool) []string {
 	var ruleDepIDs []string
 	for _, rule := range constraints {
 		rules := graph.buildFromConstraintRule(rule, path, deps, dataContext, addedConstraints)
@@ -739,7 +739,7 @@ func (graph *ValidationGraph) buildUnionNode(fieldDef *schema.FieldDefinition, f
 	}, nil
 }
 
-func (graph *ValidationGraph) buildFromConstraintRule(rule schema.ConstraintRule[schema.FieldType], path string, deps []string, dataContext any, addedConstraints map[string]bool) []string {
+func (graph *ValidationGraph) buildFromConstraintRule(rule schema.ConstraintRule, path string, deps []string, dataContext any, addedConstraints map[string]bool) []string {
 	var ruleDepIDs []string
 	if rule.Constraint != nil {
 		r := rule.Constraint

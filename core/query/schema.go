@@ -398,7 +398,7 @@ func cloneSchemaDefinition(original *schema.SchemaDefinition) *schema.SchemaDefi
 		Description: original.Description,
 		Fields:      make(map[string]*schema.FieldDefinition),
 		Indexes:     make([]schema.IndexOrReference, len(original.Indexes)),
-		Constraints: make(schema.SchemaConstraint[schema.FieldType], len(original.Constraints)),
+		Constraints: make(schema.SchemaConstraint, len(original.Constraints)),
 	}
 
 	// Clone fields
@@ -437,7 +437,7 @@ func cloneFieldDefinition(original *schema.FieldDefinition) *schema.FieldDefinit
 		Default:     original.Default,
 		Schema:      original.Schema,
 		Values:      make([]any, len(original.Values)),
-		Constraints: make(schema.SchemaConstraint[schema.FieldType], len(original.Constraints)),
+		Constraints: make(schema.SchemaConstraint, len(original.Constraints)),
 	}
 
 	// Clone pointer fields
@@ -523,7 +523,7 @@ func cloneNestedSchemaDefinition(original *schema.NestedSchemaDefinition) *schem
 
 	// Clone constraints
 	if original.Constraints != nil {
-		clone.Constraints = make(schema.SchemaConstraint[schema.FieldType], len(original.Constraints))
+		clone.Constraints = make(schema.SchemaConstraint, len(original.Constraints))
 		copy(clone.Constraints, original.Constraints)
 	}
 

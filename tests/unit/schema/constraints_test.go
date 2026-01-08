@@ -102,9 +102,9 @@ func TestConstraintPropagation(t *testing.T) {
 			Fields: map[string]*schema.FieldDefinition{
 				"age": {
 					Name: "age", Type: schema.FieldTypeInteger,
-					Constraints: schema.SchemaConstraint[schema.FieldType]{
-						schema.ConstraintRule[schema.FieldType]{
-							Constraint: &schema.Constraint[schema.FieldType]{Name: "positiveAge", Predicate: "isPositive"},
+					Constraints: schema.SchemaConstraint{
+						schema.ConstraintRule{
+							Constraint: &schema.Constraint{Name: "positiveAge", Predicate: "isPositive"},
 						},
 					},
 				},
@@ -124,9 +124,9 @@ func TestConstraintPropagation(t *testing.T) {
 			Fields: map[string]*schema.FieldDefinition{
 				"age": {
 					Name: "age", Type: schema.FieldTypeInteger,
-					Constraints: schema.SchemaConstraint[schema.FieldType]{
-						schema.ConstraintRule[schema.FieldType]{
-							Constraint: &schema.Constraint[schema.FieldType]{Name: "positiveAge", Predicate: "isPositive"},
+					Constraints: schema.SchemaConstraint{
+						schema.ConstraintRule{
+							Constraint: &schema.Constraint{Name: "positiveAge", Predicate: "isPositive"},
 						},
 					},
 				},
@@ -162,9 +162,9 @@ func TestConstraintPropagation(t *testing.T) {
 					Name: "homeAddress", Type: schema.FieldTypeObject,
 					Schema: schema.NestedSchemaReference{
 						ID: "address",
-						Constraints: schema.SchemaConstraint[schema.FieldType]{
-							schema.ConstraintRule[schema.FieldType]{
-								Constraint: &schema.Constraint[schema.FieldType]{Name: "cityStartsWithA", Predicate: "startsWithA", Field: &[]string{"city"}[0]},
+						Constraints: schema.SchemaConstraint{
+							schema.ConstraintRule{
+								Constraint: &schema.Constraint{Name: "cityStartsWithA", Predicate: "startsWithA", Field: &[]string{"city"}[0]},
 							},
 						},
 					},
@@ -199,9 +199,9 @@ func TestConstraintPropagation(t *testing.T) {
 					Name: "homeAddress", Type: schema.FieldTypeObject,
 					Schema: schema.NestedSchemaReference{
 						ID: "address",
-						Constraints: schema.SchemaConstraint[schema.FieldType]{
-							schema.ConstraintRule[schema.FieldType]{
-								Constraint: &schema.Constraint[schema.FieldType]{Name: "cityStartsWithA", Predicate: "startsWithA", Field: &[]string{"city"}[0]},
+						Constraints: schema.SchemaConstraint{
+							schema.ConstraintRule{
+								Constraint: &schema.Constraint{Name: "cityStartsWithA", Predicate: "startsWithA", Field: &[]string{"city"}[0]},
 							},
 						},
 					},
@@ -230,9 +230,9 @@ func TestConstraintPropagation(t *testing.T) {
 				"tag": {
 					Name: "tag",
 					Type: schema.FieldTypeString,
-					Constraints: schema.SchemaConstraint[schema.FieldType]{
-						schema.ConstraintRule[schema.FieldType]{
-							Constraint: &schema.Constraint[schema.FieldType]{Name: "isLongEnough", Predicate: "isLongEnough"},
+					Constraints: schema.SchemaConstraint{
+						schema.ConstraintRule{
+							Constraint: &schema.Constraint{Name: "isLongEnough", Predicate: "isLongEnough"},
 						},
 					},
 				},
@@ -258,9 +258,9 @@ func TestConstraintPropagation(t *testing.T) {
 					"firstName": {Name: "firstName", Type: schema.FieldTypeString, Required: &trueBool},
 					"lastName": {
 						Name: "lastName", Type: schema.FieldTypeString,
-						Constraints: schema.SchemaConstraint[schema.FieldType]{
-							schema.ConstraintRule[schema.FieldType]{
-								Constraint: &schema.Constraint[schema.FieldType]{Name: "hasEvenLength", Predicate: "hasEvenLength"},
+						Constraints: schema.SchemaConstraint{
+							schema.ConstraintRule{
+								Constraint: &schema.Constraint{Name: "hasEvenLength", Predicate: "hasEvenLength"},
 							},
 						},
 					},
@@ -292,9 +292,9 @@ func TestConstraintPropagation(t *testing.T) {
 					"firstName": {Name: "firstName", Type: schema.FieldTypeString, Required: &trueBool},
 					"lastName": {
 						Name: "lastName", Type: schema.FieldTypeString,
-						Constraints: schema.SchemaConstraint[schema.FieldType]{
-							schema.ConstraintRule[schema.FieldType]{
-								Constraint: &schema.Constraint[schema.FieldType]{Name: "hasEvenLength", Predicate: "hasEvenLength"},
+						Constraints: schema.SchemaConstraint{
+							schema.ConstraintRule{
+								Constraint: &schema.Constraint{Name: "hasEvenLength", Predicate: "hasEvenLength"},
 							},
 						},
 					},
@@ -325,9 +325,9 @@ func TestConstraintPropagation(t *testing.T) {
 			Fields: map[string]*schema.FieldDefinition{
 				"globalCheckField": {Name: "globalCheckField", Type: schema.FieldTypeString},
 			},
-			Constraints: schema.SchemaConstraint[schema.FieldType]{
-				schema.ConstraintRule[schema.FieldType]{
-					Constraint: &schema.Constraint[schema.FieldType]{Name: "globaldation", Predicate: "isGlobalValid"},
+			Constraints: schema.SchemaConstraint{
+				schema.ConstraintRule{
+					Constraint: &schema.Constraint{Name: "globaldation", Predicate: "isGlobalValid"},
 				},
 			},
 		}
@@ -345,9 +345,9 @@ func TestConstraintPropagation(t *testing.T) {
 			Fields: map[string]*schema.FieldDefinition{
 				"globalCheckField": {Name: "globalCheckField", Type: schema.FieldTypeString},
 			},
-			Constraints: schema.SchemaConstraint[schema.FieldType]{
-				schema.ConstraintRule[schema.FieldType]{
-					Constraint: &schema.Constraint[schema.FieldType]{Name: "globaldation", Predicate: "isGlobalValid"},
+			Constraints: schema.SchemaConstraint{
+				schema.ConstraintRule{
+					Constraint: &schema.Constraint{Name: "globaldation", Predicate: "isGlobalValid"},
 				},
 			},
 		}
@@ -373,9 +373,9 @@ func TestConstraintPropagation(t *testing.T) {
 					"data": {Name: "data", Type: schema.FieldTypeString},
 				},
 			},
-			Constraints: schema.SchemaConstraint[schema.FieldType]{
-				schema.ConstraintRule[schema.FieldType]{
-					Constraint: &schema.Constraint[schema.FieldType]{Name: "idStartsWithA", Predicate: "startsWithA", Field: &[]string{"id"}[0]},
+			Constraints: schema.SchemaConstraint{
+				schema.ConstraintRule{
+					Constraint: &schema.Constraint{Name: "idStartsWithA", Predicate: "startsWithA", Field: &[]string{"id"}[0]},
 				},
 			},
 		}
@@ -412,9 +412,9 @@ func TestConstraintPropagation(t *testing.T) {
 			Fields: &schema.NestedSchemaFields{
 				FieldsMap: map[string]*schema.FieldDefinition{
 					"resource": {Name: "resource", Type: schema.FieldTypeString, Required: &trueBool,
-						Constraints: schema.SchemaConstraint[schema.FieldType]{
-							schema.ConstraintRule[schema.FieldType]{
-								Constraint: &schema.Constraint[schema.FieldType]{Name: "resourceLongEnough", Predicate: "isLongEnough"},
+						Constraints: schema.SchemaConstraint{
+							schema.ConstraintRule{
+								Constraint: &schema.Constraint{Name: "resourceLongEnough", Predicate: "isLongEnough"},
 							},
 						},
 					},
@@ -437,9 +437,9 @@ func TestConstraintPropagation(t *testing.T) {
 			Name: "test", Version: "1.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"username": {Name: "username", Type: schema.FieldTypeString, Required: &trueBool,
-					Constraints: schema.SchemaConstraint[schema.FieldType]{
-						schema.ConstraintRule[schema.FieldType]{
-							Constraint: &schema.Constraint[schema.FieldType]{Name: "usernameLongEnough", Predicate: "isLongEnough"},
+					Constraints: schema.SchemaConstraint{
+						schema.ConstraintRule{
+							Constraint: &schema.Constraint{Name: "usernameLongEnough", Predicate: "isLongEnough"},
 						},
 					},
 				},
@@ -447,9 +447,9 @@ func TestConstraintPropagation(t *testing.T) {
 					Name: "account", Type: schema.FieldTypeObject,
 					Schema: schema.NestedSchemaReference{
 						ID: "account",
-						Constraints: schema.SchemaConstraint[schema.FieldType]{
-							schema.ConstraintRule[schema.FieldType]{
-								Constraint: &schema.Constraint[schema.FieldType]{Name: "accountCityStartsWithA", Predicate: "startsWithA", Field: &[]string{"city"}[0]},
+						Constraints: schema.SchemaConstraint{
+							schema.ConstraintRule{
+								Constraint: &schema.Constraint{Name: "accountCityStartsWithA", Predicate: "startsWithA", Field: &[]string{"city"}[0]},
 							},
 						},
 					},
@@ -460,9 +460,9 @@ func TestConstraintPropagation(t *testing.T) {
 				"permission": permissionSchema,
 				"account":    accountSchema,
 			},
-			Constraints: schema.SchemaConstraint[schema.FieldType]{
-				schema.ConstraintRule[schema.FieldType]{
-					Constraint: &schema.Constraint[schema.FieldType]{Name: "globalCheck", Predicate: "isGlobalValid"},
+			Constraints: schema.SchemaConstraint{
+				schema.ConstraintRule{
+					Constraint: &schema.Constraint{Name: "globalCheck", Predicate: "isGlobalValid"},
 				},
 			},
 		}
@@ -497,9 +497,9 @@ func TestConstraintPropagation(t *testing.T) {
 			Fields: &schema.NestedSchemaFields{
 				FieldsMap: map[string]*schema.FieldDefinition{
 					"resource": {Name: "resource", Type: schema.FieldTypeString, Required: &trueBool,
-						Constraints: schema.SchemaConstraint[schema.FieldType]{
-							schema.ConstraintRule[schema.FieldType]{
-								Constraint: &schema.Constraint[schema.FieldType]{Name: "resourceLongEnough", Predicate: "isLongEnough"},
+						Constraints: schema.SchemaConstraint{
+							schema.ConstraintRule{
+								Constraint: &schema.Constraint{Name: "resourceLongEnough", Predicate: "isLongEnough"},
 							},
 						},
 					},
@@ -522,9 +522,9 @@ func TestConstraintPropagation(t *testing.T) {
 			Name: "test", Version: "1.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"username": {Name: "username", Type: schema.FieldTypeString, Required: &trueBool,
-					Constraints: schema.SchemaConstraint[schema.FieldType]{
-						schema.ConstraintRule[schema.FieldType]{
-							Constraint: &schema.Constraint[schema.FieldType]{Name: "usernameLongEnough", Predicate: "isLongEnough"},
+					Constraints: schema.SchemaConstraint{
+						schema.ConstraintRule{
+							Constraint: &schema.Constraint{Name: "usernameLongEnough", Predicate: "isLongEnough"},
 						},
 					},
 				},
@@ -532,9 +532,9 @@ func TestConstraintPropagation(t *testing.T) {
 					Name: "account", Type: schema.FieldTypeObject,
 					Schema: schema.NestedSchemaReference{
 						ID: "account",
-						Constraints: schema.SchemaConstraint[schema.FieldType]{
-							schema.ConstraintRule[schema.FieldType]{
-								Constraint: &schema.Constraint[schema.FieldType]{Name: "accountCityStartsWithA", Predicate: "startsWithA", Field: &[]string{"city"}[0]},
+						Constraints: schema.SchemaConstraint{
+							schema.ConstraintRule{
+								Constraint: &schema.Constraint{Name: "accountCityStartsWithA", Predicate: "startsWithA", Field: &[]string{"city"}[0]},
 							},
 						},
 					},
@@ -545,9 +545,9 @@ func TestConstraintPropagation(t *testing.T) {
 				"permission": permissionSchema,
 				"account":    accountSchema,
 			},
-			Constraints: schema.SchemaConstraint[schema.FieldType]{
-				schema.ConstraintRule[schema.FieldType]{
-					Constraint: &schema.Constraint[schema.FieldType]{Name: "globalCheck", Predicate: "isGlobalValid"},
+			Constraints: schema.SchemaConstraint{
+				schema.ConstraintRule{
+					Constraint: &schema.Constraint{Name: "globalCheck", Predicate: "isGlobalValid"},
 				},
 			},
 		}
@@ -584,9 +584,9 @@ func TestConstraintPropagation(t *testing.T) {
 					"data": {Name: "data", Type: schema.FieldTypeString},
 				},
 			},
-			Constraints: schema.SchemaConstraint[schema.FieldType]{
-				schema.ConstraintRule[schema.FieldType]{
-					Constraint: &schema.Constraint[schema.FieldType]{Name: "idStartsWithA", Predicate: "startsWithA", Field: &[]string{"id"}[0]},
+			Constraints: schema.SchemaConstraint{
+				schema.ConstraintRule{
+					Constraint: &schema.Constraint{Name: "idStartsWithA", Predicate: "startsWithA", Field: &[]string{"id"}[0]},
 				},
 			},
 		}
@@ -623,9 +623,9 @@ func TestConstraintPropagation(t *testing.T) {
 						Fields: map[string]*schema.FieldDefinition{
 							"emailAddress": {
 								Name: "emailAddress", Type: schema.FieldTypeString,
-								Constraints: schema.SchemaConstraint[schema.FieldType]{
-									schema.ConstraintRule[schema.FieldType]{
-										Constraint: &schema.Constraint[schema.FieldType]{Name: "isLongEnough", Predicate: "isLongEnough"},
+								Constraints: schema.SchemaConstraint{
+									schema.ConstraintRule{
+										Constraint: &schema.Constraint{Name: "isLongEnough", Predicate: "isLongEnough"},
 									},
 								},
 							},
@@ -671,9 +671,9 @@ func TestConstraintPropagation(t *testing.T) {
 						Fields: map[string]*schema.FieldDefinition{
 							"emailAddress": {
 								Name: "emailAddress", Type: schema.FieldTypeString,
-								Constraints: schema.SchemaConstraint[schema.FieldType]{
-									schema.ConstraintRule[schema.FieldType]{
-										Constraint: &schema.Constraint[schema.FieldType]{Name: "isLongEnough", Predicate: "isLongEnough"},
+								Constraints: schema.SchemaConstraint{
+									schema.ConstraintRule{
+										Constraint: &schema.Constraint{Name: "isLongEnough", Predicate: "isLongEnough"},
 									},
 								},
 							},
@@ -721,9 +721,9 @@ func TestConstraintPropagation(t *testing.T) {
 						Fields: map[string]*schema.FieldDefinition{
 							"emailAddress": {
 								Name: "emailAddress", Type: schema.FieldTypeString,
-								Constraints: schema.SchemaConstraint[schema.FieldType]{
-									schema.ConstraintRule[schema.FieldType]{
-										Constraint: &schema.Constraint[schema.FieldType]{Name: "isLongEnough", Predicate: "isLongEnough"},
+								Constraints: schema.SchemaConstraint{
+									schema.ConstraintRule{
+										Constraint: &schema.Constraint{Name: "isLongEnough", Predicate: "isLongEnough"},
 									},
 								},
 							},
@@ -759,17 +759,17 @@ func TestConstraintPropagation(t *testing.T) {
 	t.Run("Union Field with Literal Nested Schema Constraint - Pass", func(t *testing.T) {
 		constrainedStringType := &schema.NestedSchemaDefinition{
 			Name: "constrainedString", Type: &stringType,
-			Constraints: schema.SchemaConstraint[schema.FieldType]{
-				schema.ConstraintRule[schema.FieldType]{
-					Constraint: &schema.Constraint[schema.FieldType]{Name: "isLongEnough", Predicate: "isLongEnough"},
+			Constraints: schema.SchemaConstraint{
+				schema.ConstraintRule{
+					Constraint: &schema.Constraint{Name: "isLongEnough", Predicate: "isLongEnough"},
 				},
 			},
 		}
 		constrainedIntegerType := &schema.NestedSchemaDefinition{
 			Name: "constrainedInteger", Type: &integerType,
-			Constraints: schema.SchemaConstraint[schema.FieldType]{
-				schema.ConstraintRule[schema.FieldType]{
-					Constraint: &schema.Constraint[schema.FieldType]{Name: "isPositive", Predicate: "isPositive"},
+			Constraints: schema.SchemaConstraint{
+				schema.ConstraintRule{
+					Constraint: &schema.Constraint{Name: "isPositive", Predicate: "isPositive"},
 				},
 			},
 		}
@@ -809,17 +809,17 @@ func TestConstraintPropagation(t *testing.T) {
 	t.Run("Union Field with Literal Nested Schema Constraint - Fail", func(t *testing.T) {
 		constrainedStringType := &schema.NestedSchemaDefinition{
 			Name: "constrainedString", Type: &stringType,
-			Constraints: schema.SchemaConstraint[schema.FieldType]{
-				schema.ConstraintRule[schema.FieldType]{
-					Constraint: &schema.Constraint[schema.FieldType]{Name: "isLongEnough", Predicate: "isLongEnough"},
+			Constraints: schema.SchemaConstraint{
+				schema.ConstraintRule{
+					Constraint: &schema.Constraint{Name: "isLongEnough", Predicate: "isLongEnough"},
 				},
 			},
 		}
 		constrainedIntegerType := &schema.NestedSchemaDefinition{
 			Name: "constrainedInteger", Type: &integerType,
-			Constraints: schema.SchemaConstraint[schema.FieldType]{
-				schema.ConstraintRule[schema.FieldType]{
-					Constraint: &schema.Constraint[schema.FieldType]{Name: "isPositive", Predicate: "isPositive"},
+			Constraints: schema.SchemaConstraint{
+				schema.ConstraintRule{
+					Constraint: &schema.Constraint{Name: "isPositive", Predicate: "isPositive"},
 				},
 			},
 		}
