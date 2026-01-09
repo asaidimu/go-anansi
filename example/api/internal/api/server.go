@@ -25,15 +25,15 @@ type APIServer struct {
 	Response    *response.Handler
 	Handler     http.Handler
 	server      *http.Server
+	mux         *http.ServeMux
 }
 
 // NewAPIServer creates a new APIServer instance.
 func NewAPIServer(cfg *app.Config, logger *zap.Logger, pm *app.PersistenceManager, rh *response.Handler) *APIServer {
-	router := http.NewServeMux()
+	mux := http.NewServeMux()
 
 	server := &http.Server{
-		Addr:    cfg.Port,
-		Handler: router,
+		Addr: cfg.Port,
 	}
 
 	return &APIServer{
@@ -41,18 +41,251 @@ func NewAPIServer(cfg *app.Config, logger *zap.Logger, pm *app.PersistenceManage
 		Logger:      logger,
 		Persistence: pm,
 		Response:    rh,
-		Handler:     router,
 		server:      server,
+		mux:         mux,
 	}
 }
 
 // SetupRoutes configures the API endpoints.
 func (s *APIServer) SetupRoutes() {
-	mux := s.Handler.(*http.ServeMux)
+	// 1. Create the middleware-wrapped versions of the handlers
+	docsHandler := CollectionContextMiddleware(http.HandlerFunc(s.handleCollectionDocuments))
+	singleDocHandler := CollectionContextMiddleware(http.HandlerFunc(s.handleSingleDocument))
 
-	mux.HandleFunc("/api/v1/collections", s.handleCollections)
-	mux.HandleFunc("/api/v1/collections/{collection}/documents", s.handleCollectionDocuments)
-	mux.HandleFunc("/api/v1/collections/{collection}/documents/{id}", s.handleSingleDocument)
+	// Existing routes...
+	s.mux.HandleFunc("/api/v1/collections", s.handleCollections)
+	s.mux.Handle("/api/v1/collections/{collection}/documents", docsHandler)
+	s.mux.Handle("/api/v1/collections/{collection}/documents/{id}", singleDocHandler)
+
+	// NEW: Sanitization policy management
+	s.mux.HandleFunc("GET /api/v1/sanitization/global", s.getGlobalSanitizationPolicy)
+	s.mux.HandleFunc("PUT /api/v1/sanitization/global", s.setGlobalSanitizationPolicy)
+	s.mux.HandleFunc("DELETE /api/v1/sanitization/global", s.deleteGlobalSanitizationPolicy)
+
+	s.mux.HandleFunc("GET /api/v1/sanitization/scopes", s.listSanitizationScopes)
+	s.mux.HandleFunc("GET /api/v1/sanitization/scopes/{scope}", s.getSanitizationPolicy)
+	s.mux.HandleFunc("PUT /api/v1/sanitization/scopes/{scope}", s.setSanitizationPolicy)
+	s.mux.HandleFunc("DELETE /api/v1/sanitization/scopes/{scope}", s.deleteSanitizationPolicy)
+
+	s.mux.HandleFunc("POST /api/v1/sanitization/import", s.importSanitizationPolicies)
+	s.mux.HandleFunc("GET /api/v1/sanitization/export", s.exportSanitizationPolicies)
+
+	finalHandler := CollectionContextMiddleware(s.mux)
+	s.server.Handler = finalHandler
+	s.Handler = finalHandler
+}
+
+// --- Sanitization Policy Handlers ---
+
+// Global policy handlers
+func (s *APIServer) getGlobalSanitizationPolicy(w http.ResponseWriter, r *http.Request) {
+	registry := data.GetSanitizationRegistry()
+
+	if !registry.HasGlobal() {
+		s.Response.WriteError(w, http.StatusNotFound,
+			common.NewSystemError("NOT_FOUND", "No global sanitization policy configured"), r)
+		return
+	}
+
+	configs, err := registry.Export()
+	if err != nil {
+		s.Response.WriteError(w, http.StatusInternalServerError,
+			common.SystemErrorFrom(err).WithCode("EXPORT_FAILED"), r)
+		return
+	}
+
+	// Find global config (scope == "")
+	for _, config := range configs {
+		if config.Scope == "" {
+			s.Response.WriteJSON(w, http.StatusOK, config, r)
+			return
+		}
+	}
+
+	s.Response.WriteError(w, http.StatusNotFound,
+		common.NewSystemError("NOT_FOUND", "Global policy not found in export"), r)
+}
+
+func (s *APIServer) setGlobalSanitizationPolicy(w http.ResponseWriter, r *http.Request) {
+	var config data.FieldMaskConfig
+	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+		s.Response.WriteError(w, http.StatusBadRequest,
+			common.NewSystemError("INVALID_JSON", "Invalid JSON format").WithCause(err), r)
+		return
+	}
+
+	registry := data.GetSanitizationRegistry()
+	if err := registry.SetGlobal(&config); err != nil {
+		s.Response.WriteError(w, http.StatusBadRequest,
+			common.SystemErrorFrom(err).WithCode("VALIDATION_FAILED"), r)
+		return
+	}
+
+	s.Response.WriteJSON(w, http.StatusOK, map[string]string{
+		"message": "Global sanitization policy updated",
+	}, r)
+}
+
+func (s *APIServer) deleteGlobalSanitizationPolicy(w http.ResponseWriter, r *http.Request) {
+	registry := data.GetSanitizationRegistry()
+
+	// SetGlobal with nil would be ideal, but current API doesn't allow it
+	// So we'll need to add a ClearGlobal method or use Clear selectively
+	// For now, return the configs minus global and re-import
+	configs, _ := registry.Export()
+	scopedOnly := make([]*data.FieldMaskConfig, 0)
+	for _, cfg := range configs {
+		if cfg.Scope != "" {
+			scopedOnly = append(scopedOnly, cfg)
+		}
+	}
+
+	if err := registry.Import(scopedOnly); err != nil {
+		s.Response.WriteError(w, http.StatusInternalServerError,
+			common.SystemErrorFrom(err).WithCode("DELETE_FAILED"), r)
+		return
+	}
+
+	s.Response.WriteJSON(w, http.StatusNoContent, nil, r)
+}
+
+// Scoped policy handlers
+func (s *APIServer) listSanitizationScopes(w http.ResponseWriter, r *http.Request) {
+	registry := data.GetSanitizationRegistry()
+	scopes := registry.List()
+
+	s.Response.WriteJSON(w, http.StatusOK, map[string]any{
+		"scopes":      scopes,
+		"count":       registry.Count(),
+		"has_global":  registry.HasGlobal(),
+	}, r, len(scopes))
+}
+
+func (s *APIServer) getSanitizationPolicy(w http.ResponseWriter, r *http.Request) {
+	scopeID := r.PathValue("scope")
+	if scopeID == "" {
+		s.Response.WriteError(w, http.StatusBadRequest,
+			common.NewSystemError("INVALID_SCOPE", "Scope identifier is required"), r)
+		return
+	}
+
+	registry := data.GetSanitizationRegistry()
+	if !registry.Has(scopeID) {
+		s.Response.WriteError(w, http.StatusNotFound,
+			common.NewSystemError("NOT_FOUND", "Sanitization policy not found").
+				WithPath(scopeID), r)
+		return
+	}
+
+	// Export and find the specific scope
+	configs, err := registry.Export()
+	if err != nil {
+		s.Response.WriteError(w, http.StatusInternalServerError,
+			common.SystemErrorFrom(err).WithCode("EXPORT_FAILED"), r)
+		return
+	}
+
+	for _, config := range configs {
+		if config.Scope == scopeID {
+			s.Response.WriteJSON(w, http.StatusOK, config, r)
+			return
+		}
+	}
+
+	s.Response.WriteError(w, http.StatusNotFound,
+		common.NewSystemError("NOT_FOUND", "Policy not found in export").
+			WithPath(scopeID), r)
+}
+
+func (s *APIServer) setSanitizationPolicy(w http.ResponseWriter, r *http.Request) {
+	scopeID := r.PathValue("scope")
+	if scopeID == "" {
+		s.Response.WriteError(w, http.StatusBadRequest,
+			common.NewSystemError("INVALID_SCOPE", "Scope identifier is required"), r)
+		return
+	}
+
+	var config data.FieldMaskConfig
+	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
+		s.Response.WriteError(w, http.StatusBadRequest,
+			common.NewSystemError("INVALID_JSON", "Invalid JSON format").WithCause(err), r)
+		return
+	}
+
+	registry := data.GetSanitizationRegistry()
+	if err := registry.Register(scopeID, &config); err != nil {
+		s.Response.WriteError(w, http.StatusBadRequest,
+			common.SystemErrorFrom(err).WithCode("VALIDATION_FAILED"), r)
+		return
+	}
+
+	statusCode := http.StatusOK
+	if !registry.Has(scopeID) {
+		statusCode = http.StatusCreated
+	}
+
+	s.Response.WriteJSON(w, statusCode, map[string]string{
+		"message": fmt.Sprintf("Sanitization policy for scope '%s' updated", scopeID),
+		"scope":   scopeID,
+	}, r)
+}
+
+func (s *APIServer) deleteSanitizationPolicy(w http.ResponseWriter, r *http.Request) {
+	scopeID := r.PathValue("scope")
+	if scopeID == "" {
+		s.Response.WriteError(w, http.StatusBadRequest,
+			common.NewSystemError("INVALID_SCOPE", "Scope identifier is required"), r)
+		return
+	}
+
+	registry := data.GetSanitizationRegistry()
+	if err := registry.Unregister(scopeID); err != nil {
+		s.Response.WriteError(w, http.StatusInternalServerError,
+			common.SystemErrorFrom(err).WithCode("DELETE_FAILED"), r)
+		return
+	}
+
+	s.Response.WriteJSON(w, http.StatusNoContent, nil, r)
+}
+
+// Bulk operations
+func (s *APIServer) exportSanitizationPolicies(w http.ResponseWriter, r *http.Request) {
+	registry := data.GetSanitizationRegistry()
+	configs, err := registry.Export()
+	if err != nil {
+		s.Response.WriteError(w, http.StatusInternalServerError,
+			common.SystemErrorFrom(err).WithCode("EXPORT_FAILED"), r)
+		return
+	}
+
+	s.Response.WriteJSON(w, http.StatusOK, map[string]any{
+		"policies": configs,
+		"count":    len(configs),
+	}, r)
+}
+
+func (s *APIServer) importSanitizationPolicies(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Policies []*data.FieldMaskConfig `json:"policies"`
+	}
+
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.Response.WriteError(w, http.StatusBadRequest,
+			common.NewSystemError("INVALID_JSON", "Invalid JSON format").WithCause(err), r)
+		return
+	}
+
+	registry := data.GetSanitizationRegistry()
+	if err := registry.Import(req.Policies); err != nil {
+		s.Response.WriteError(w, http.StatusBadRequest,
+			common.SystemErrorFrom(err).WithCode("IMPORT_FAILED"), r)
+		return
+	}
+
+	s.Response.WriteJSON(w, http.StatusOK, map[string]any{
+		"message": "Sanitization policies imported successfully",
+		"count":   len(req.Policies),
+	}, r)
 }
 
 // Start starts the HTTP server.
@@ -84,12 +317,13 @@ func (s *APIServer) createCollection(w http.ResponseWriter, r *http.Request) {
 		Schema json.RawMessage `json:"schema"`
 	}
 
+
 	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
 		s.Response.WriteError(w, http.StatusBadRequest, common.NewSystemError("INVALID_JSON", "Malformed request body").WithCause(err), r)
 		return
 	}
 
-	sc, err := schema.From(reqBody.Schema);
+	sc, err := schema.From(reqBody.Schema)
 	if err != nil {
 		s.Response.WriteError(w, http.StatusBadRequest, common.SystemErrorFrom(err).WithCode("INVALID_SCHEMA"), r)
 		return
@@ -117,11 +351,7 @@ func (s *APIServer) listCollections(w http.ResponseWriter, r *http.Request) {
 	var collections []map[string]any
 	for _, name := range names {
 		col, _ := s.Persistence.Anansi.Collection(r.Context(), name)
-		meta, err := col.Metadata(r.Context(), nil, false)
-		if err != nil {
-			continue
-		}
-
+		meta := col.Metadata(r.Context(), nil, false)
 		colData := map[string]any{"name": meta.Name}
 		if includeSchema {
 			colData["schema"] = meta.Schema
@@ -135,7 +365,11 @@ func (s *APIServer) listCollections(w http.ResponseWriter, r *http.Request) {
 // --- Document Handlers ---
 
 func (s *APIServer) handleCollectionDocuments(w http.ResponseWriter, r *http.Request) {
-	collectionName := r.PathValue("collection")
+	collectionName, ok := common.CollectionNameFromContext(r.Context())
+	if !ok || collectionName == "" {
+		s.Response.WriteError(w, http.StatusBadRequest, common.NewSystemError("COLLECTION_NAME_MISSING", "Collection name not found in context"), r)
+		return
+	}
 	col, err := s.Persistence.Collection(r.Context(), collectionName)
 	if err != nil {
 		s.Response.WriteError(w, http.StatusNotFound, common.NewSystemError("COLLECTION_NOT_FOUND", "Collection does not exist").WithPath(collectionName), r)
@@ -177,7 +411,13 @@ func (s *APIServer) createDocuments(w http.ResponseWriter, r *http.Request, coll
 		return
 	}
 
-	s.Response.WriteJSON(w, http.StatusCreated, map[string]any{"documents": rs.Documents().Sanitize(r.Context()).ToMaps()}, r)
+	docs, err := rs.Documents().Sanitize(r.Context())
+	if err != nil {
+		sysErr := common.SystemErrorFrom(err).WithCode("SANITIZATION_ERROR")
+		s.Response.WriteError(w, http.StatusInternalServerError, sysErr, r)
+		return
+	}
+	s.Response.WriteJSON(w, http.StatusCreated, map[string]any{"documents": docs.ToMaps()}, r)
 }
 
 func (s *APIServer) readDocuments(w http.ResponseWriter, r *http.Request, collection base.Collection) {
@@ -187,14 +427,24 @@ func (s *APIServer) readDocuments(w http.ResponseWriter, r *http.Request, collec
 		s.Response.WriteError(w, http.StatusInternalServerError, common.SystemErrorFrom(err), r)
 		return
 	}
-	docs := result.Data.Sanitize(r.Context()).ToMaps()
-	s.Response.WriteJSON(w, http.StatusOK, map[string]any{"documents": docs}, r, result.Count)
+
+	docs, err := result.Data.Sanitize(r.Context())
+	if err != nil {
+		sysErr := common.SystemErrorFrom(err).WithCode("SANITIZATION_ERROR")
+		s.Response.WriteError(w, http.StatusInternalServerError, sysErr, r)
+		return
+	}
+	s.Response.WriteJSON(w, http.StatusOK, map[string]any{"documents": docs.ToMaps()}, r, result.Count)
 }
 
 // --- Single Document Handlers (GET, PATCH/PUT, DELETE) ---
 
 func (s *APIServer) handleSingleDocument(w http.ResponseWriter, r *http.Request) {
-	collectionName := r.PathValue("collection")
+	collectionName, ok := common.CollectionNameFromContext(r.Context())
+	if !ok || collectionName == "" {
+		s.Response.WriteError(w, http.StatusBadRequest, common.NewSystemError("COLLECTION_NAME_MISSING", "Collection name not found in context"), r)
+		return
+	}
 	documentID := r.PathValue("id")
 
 	col, err := s.Persistence.Collection(r.Context(), collectionName)
@@ -228,7 +478,13 @@ func (s *APIServer) readSingleDocument(w http.ResponseWriter, r *http.Request, c
 		return
 	}
 
-	s.Response.WriteJSON(w, http.StatusOK, result.Data[0].Sanitize(r.Context()).ToMap(), r)
+	doc, err := result.Data[0].Sanitize(r.Context())
+	if err != nil {
+		sysErr := common.SystemErrorFrom(err).WithCode("SANITIZATION_ERROR")
+		s.Response.WriteError(w, http.StatusInternalServerError, sysErr, r)
+		return
+	}
+	s.Response.WriteJSON(w, http.StatusOK, doc.ToMap(), r)
 }
 
 func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request, col base.Collection, id string) {
@@ -255,7 +511,13 @@ func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	s.Response.WriteJSON(w, http.StatusOK, result.Data[0].Sanitize(r.Context()).ToMap(), r)
+	doc, err := result.Data[0].Sanitize(r.Context())
+	if err != nil {
+		sysErr := common.SystemErrorFrom(err).WithCode("SANITIZATION_ERROR")
+		s.Response.WriteError(w, http.StatusInternalServerError, sysErr, r)
+		return
+	}
+	s.Response.WriteJSON(w, http.StatusOK, doc.ToMap(), r)
 }
 
 func (s *APIServer) deleteSingleDocument(w http.ResponseWriter, r *http.Request, col base.Collection, id string) {

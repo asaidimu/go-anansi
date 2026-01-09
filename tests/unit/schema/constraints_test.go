@@ -98,7 +98,7 @@ func TestConstraintPropagation(t *testing.T) {
 	// --- 1. Field-Level Constraints ---
 	t.Run("Field-Level Constraint - Pass", func(t *testing.T) {
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"age": {
 					Name: "age", Type: schema.FieldTypeInteger,
@@ -120,7 +120,7 @@ func TestConstraintPropagation(t *testing.T) {
 
 	t.Run("Field-Level Constraint - Fail", func(t *testing.T) {
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"age": {
 					Name: "age", Type: schema.FieldTypeInteger,
@@ -156,7 +156,7 @@ func TestConstraintPropagation(t *testing.T) {
 		}
 
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"homeAddress": {
 					Name: "homeAddress", Type: schema.FieldTypeObject,
@@ -193,7 +193,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 		}
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"homeAddress": {
 					Name: "homeAddress", Type: schema.FieldTypeObject,
@@ -225,7 +225,7 @@ func TestConstraintPropagation(t *testing.T) {
 	// --- 3. Nested Schema Definition Constraints (Literal Type) ---
 	t.Run("Field Constraint (Literal) - Fail", func(t *testing.T) {
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"tag": {
 					Name: "tag",
@@ -268,7 +268,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 		}
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"user": {Name: "user", Type: schema.FieldTypeObject, Schema: schema.NestedSchemaReference{ID: "person"}},
 			},
@@ -302,7 +302,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 		}
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"user": {Name: "user", Type: schema.FieldTypeObject, Schema: schema.NestedSchemaReference{ID: "person"}},
 			},
@@ -321,7 +321,7 @@ func TestConstraintPropagation(t *testing.T) {
 	// --- 5. Schema-Level Constraints ---
 	t.Run("Schema-Level Constraint - Pass", func(t *testing.T) {
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"globalCheckField": {Name: "globalCheckField", Type: schema.FieldTypeString},
 			},
@@ -341,7 +341,7 @@ func TestConstraintPropagation(t *testing.T) {
 
 	t.Run("Schema-Level Constraint - Fail", func(t *testing.T) {
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"globalCheckField": {Name: "globalCheckField", Type: schema.FieldTypeString},
 			},
@@ -380,7 +380,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 		}
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"item": {Name: "item", Type: schema.FieldTypeObject, Schema: schema.NestedSchemaReference{ID: "constrainedObject"}},
 			},
@@ -434,7 +434,7 @@ func TestConstraintPropagation(t *testing.T) {
 		}
 
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"username": {Name: "username", Type: schema.FieldTypeString, Required: &trueBool,
 					Constraints: schema.SchemaConstraint{
@@ -519,7 +519,7 @@ func TestConstraintPropagation(t *testing.T) {
 		}
 
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"username": {Name: "username", Type: schema.FieldTypeString, Required: &trueBool,
 					Constraints: schema.SchemaConstraint{
@@ -591,7 +591,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 		}
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"item": {Name: "item", Type: schema.FieldTypeObject, Schema: schema.NestedSchemaReference{ID: "constrainedObject"}},
 			},
@@ -635,7 +635,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 		}
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"contact": {Name: "contact", Type: schema.FieldTypeObject, Schema: schema.NestedSchemaReference{ID: "conditionalSchema"}},
 			},
@@ -683,7 +683,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 		}
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"contact": {Name: "contact", Type: schema.FieldTypeObject, Schema: schema.NestedSchemaReference{ID: "conditionalSchema"}},
 			},
@@ -733,7 +733,7 @@ func TestConstraintPropagation(t *testing.T) {
 			},
 		}
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"contact": {Name: "contact", Type: schema.FieldTypeObject, Schema: schema.NestedSchemaReference{ID: "conditionalSchema"}},
 			},
@@ -775,7 +775,7 @@ func TestConstraintPropagation(t *testing.T) {
 		}
 
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"value": {
 					Name: "value", Type: schema.FieldTypeUnion,
@@ -811,7 +811,7 @@ func TestConstraintPropagation(t *testing.T) {
 			Name: "constrainedString", Type: &stringType,
 			Constraints: schema.SchemaConstraint{
 				schema.ConstraintRule{
-					Constraint: &schema.Constraint{Name: "isLongEnough", Predicate: "isLongEnough"},
+					Constraint: &schema.Constraint{Name: "isLongEnough", Predicate: "isLongEnough", },
 				},
 			},
 		}
@@ -825,7 +825,7 @@ func TestConstraintPropagation(t *testing.T) {
 		}
 
 		schemaDef := &schema.SchemaDefinition{
-			Name: "test", Version: "1.0",
+			Name: "test", Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"value": {
 					Name: "value", Type: schema.FieldTypeUnion,

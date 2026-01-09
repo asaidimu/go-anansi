@@ -83,7 +83,7 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 // setupNonExistentCollection is a helper function to set up a collection with a non-existent schema for testing error cases.
 func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *zap.Logger, *schema.SchemaDefinition, *events.TypedEventBus[persistence.PersistenceEvent], context.Context) {
 	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())
-	nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent"}
+		nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent", Version: "1.0.0", Fields: map[string]*schema.FieldDefinition{} }
 	ephemeralInteractor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 	engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
@@ -192,7 +192,7 @@ func TestCollection_Read(t *testing.T) {
 	t.Run("read documents error - non-existent collection", func(t *testing.T) {
 		// Create a new collection instance with a non-existent schema name
 		_, ephemeralInteractor, logger, _, bus, ctx := setupCollection(t)
-		nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent"}
+		nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent", Version: "1.0.0", Fields: map[string]*schema.FieldDefinition{} }
 		engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
 		factory := pevents.NewPersistenceEventFactory(nonExistentSchema.Name, logger)
 		eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
@@ -428,8 +428,7 @@ func TestCollection_Metadata(t *testing.T) {
 	collection, _, _, testSchema, _, ctx := setupCollection(t)
 
 	t.Run("metadata success", func(t *testing.T) {
-		metadata, err := collection.Metadata(ctx, nil, false) // No filter, no force refresh
-		assert.NoError(t, err)
+		metadata := collection.Metadata(ctx, nil, false) // No filter, no force refresh
 		assert.NotNil(t, metadata)
 		assert.Equal(t, testSchema.Name, metadata.Name)
 	})

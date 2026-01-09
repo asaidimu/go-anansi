@@ -297,7 +297,7 @@ func (r *collectionRegistry) GetSchema(ctx context.Context, name string, version
 		return nil, common.NewSystemError("ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION", fmt.Sprintf("version '%s' not found for collection '%s'", resolvedVersion, name))
 	}
 
-	return &versionRecord.Schema, nil
+	return versionRecord.Schema.MustClone(), nil
 }
 
 // ResolvePhysicalName - simplified

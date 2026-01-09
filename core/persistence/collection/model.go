@@ -10,19 +10,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/query"
 )
 
-// ============================================================================
-// Predefined Errors
-// ============================================================================
-
-var (
-	// ErrRecordNotFound indicates the requested record was not found
-	ErrRecordNotFound = common.NewSystemError("ERR_COLLECTION_RECORD_NOT_FOUND").
-				WithMessage("record not found")
-
-	// ErrNoRecordsAffected indicates an update/delete operation affected no records
-	ErrNoRecordsAffected = common.NewSystemError("ERR_COLLECTION_NO_RECORDS_AFFECTED").
-				WithMessage("no records were affected by the operation")
-)
 
 // ============================================================================
 // Model Collection Implementation
@@ -37,7 +24,7 @@ type modelCollection[T any] struct {
 
 // NewModelCollection creates a type-safe wrapper around a raw collection.
 func NewModelCollection[T any](raw base.Collection) base.ModelCollection[T] {
-	metadata, _ := raw.Metadata(context.Background(), nil, false)
+	metadata := raw.Metadata(context.Background(), nil, false)
 	return &modelCollection[T]{raw: raw, collectionName: metadata.Name}
 }
 
@@ -47,14 +34,10 @@ func NewModelCollection[T any](raw base.Collection) base.ModelCollection[T] {
 
 // New creates a new model instance with auto-generated ID and metadata.
 // This is useful when you want to generate an ID before actually persisting.
-func (mc *modelCollection[T]) New(doc T, ctx ...context.Context) (T, error) {
+func (mc *modelCollection[T]) New(doc T) (T, error) {
 	var zero T
 
-	var ictx context.Context = context.Background()
-	if len(ctx) > 0 && ctx[0] != nil {
-		ictx = ctx[0]
-	}
-	ictx = context.WithValue(ictx, common.CollectionNameContextKey, mc.collectionName)
+	ictx := common.ContextWithCollectionName(context.Background(), mc.collectionName)
 	// Convert struct → document with full metadata
 	d, err := data.NewDocumentFromStruct(doc, ictx)
 	if err != nil {
@@ -78,7 +61,7 @@ func (mc *modelCollection[T]) New(doc T, ctx ...context.Context) (T, error) {
 func (mc *modelCollection[T]) Create(ctx context.Context, doc T) (T, error) {
 	var zero T
 
-	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	d, err := data.NewDocumentFromStruct(doc, ctx)
 	if err != nil {
 		return zero, common.SystemErrorFrom(err).
@@ -104,7 +87,7 @@ func (mc *modelCollection[T]) Create(ctx context.Context, doc T) (T, error) {
 
 // CreateMany inserts multiple models into the collection.
 func (mc *modelCollection[T]) CreateMany(ctx context.Context, docs []T) ([]T, error) {
-	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	if len(docs) == 0 {
 		return []T{}, nil
 	}
@@ -178,7 +161,7 @@ func (mc *modelCollection[T]) FindByID(ctx context.Context, id string) (T, error
 
 // Read retrieves multiple models matching the query.
 func (mc *modelCollection[T]) Read(ctx context.Context, q *query.Query) ([]T, error) {
-	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	res, err := mc.raw.Read(ctx, q)
 	if err != nil {
 		return nil, common.SystemErrorFrom(err).
@@ -213,7 +196,7 @@ func (mc *modelCollection[T]) Read(ctx context.Context, q *query.Query) ([]T, er
 // Update updates a single model by ID and returns the updated model.
 // Only non-zero fields in the update model are applied (partial update).
 func (mc *modelCollection[T]) Update(ctx context.Context, id string, update T) (T, error) {
-	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	var zero T
 
 	// Create partial document (only non-zero fields)
@@ -232,6 +215,7 @@ func (mc *modelCollection[T]) Update(ctx context.Context, id string, update T) (
 	result, err := mc.raw.Update(ctx, &base.CollectionUpdate{
 		Filter: filter,
 		Set:    d,
+		ReturnDocument: true,
 	})
 	if err != nil {
 		return zero, common.SystemErrorFrom(err).
@@ -246,14 +230,16 @@ func (mc *modelCollection[T]) Update(ctx context.Context, id string, update T) (
 			WithMessagef("record with id '%s' not found", id)
 	}
 
+	doc := result.Data[0]
+	doc.BindTo(&zero)
 	// Fetch and return the updated model
-	return mc.FindByID(ctx, id)
+	return zero, nil
 }
 
 // UpdateMany updates multiple models matching the filter.
 // Returns the count of updated records.
 func (mc *modelCollection[T]) UpdateMany(ctx context.Context, f *query.QueryFilter, update T) (int, error) {
-	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	// Create partial document (only non-zero fields)
 	d, err := data.NewPartialDocumentFromStruct(update, ctx)
 	if err != nil {
@@ -277,7 +263,7 @@ func (mc *modelCollection[T]) UpdateMany(ctx context.Context, f *query.QueryFilt
 // Replace replaces an entire model by ID (all fields, not partial).
 // Use Update for partial updates.
 func (mc *modelCollection[T]) Replace(ctx context.Context, id string, replacement T) (T, error) {
-	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	var zero T
 
 	// Create full document
@@ -346,7 +332,7 @@ func (mc *modelCollection[T]) DeleteByID(ctx context.Context, id string) error {
 // Returns the count of deleted records.
 // Set unsafe=true to allow deleting without filters (deletes all).
 func (mc *modelCollection[T]) DeleteMany(ctx context.Context, f *query.QueryFilter, unsafe bool) (int, error) {
-	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	count, err := mc.raw.Delete(ctx, f, unsafe)
 	if err != nil {
 		return 0, common.SystemErrorFrom(err).
@@ -362,7 +348,7 @@ func (mc *modelCollection[T]) DeleteMany(ctx context.Context, f *query.QueryFilt
 // Validate validates a model against the collection's schema.
 // Set loose=true for partial validation (allows missing optional fields).
 func (mc *modelCollection[T]) Validate(ctx context.Context, doc T, loose bool) error {
-	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	d, err := data.NewDocumentFromStruct(doc, ctx)
 	if err != nil {
 		return common.SystemErrorFrom(err).
@@ -382,7 +368,7 @@ func (mc *modelCollection[T]) Validate(ctx context.Context, doc T, loose bool) e
 // ValidatePartial validates a partial model (only non-zero fields).
 // Useful for validating updates before applying them.
 func (mc *modelCollection[T]) ValidatePartial(ctx context.Context, doc T) error {
-	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	d, err := data.NewPartialDocumentFromStruct(doc, ctx)
 	if err != nil {
 		return common.SystemErrorFrom(err).
@@ -406,22 +392,12 @@ func (mc *modelCollection[T]) ValidatePartial(ctx context.Context, doc T) error 
 // Subscribe creates a subscription for real-time updates.
 // Returns a subscription ID that can be used to unsubscribe.
 func (mc *modelCollection[T]) Subscribe(ctx context.Context, opt base.SubscriptionOptions) string {
-	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	return mc.raw.Subscribe(ctx, opt)
 }
 
 // Unsubscribe removes a subscription by ID.
 func (mc *modelCollection[T]) Unsubscribe(ctx context.Context, id string) {
-	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	mc.raw.Unsubscribe(ctx, id)
-}
-
-// ============================================================================
-// Raw Access
-// ============================================================================
-
-// Raw returns the underlying raw collection for advanced operations.
-// Use this when you need direct access to document-level operations.
-func (mc *modelCollection[T]) Raw() base.Collection {
-	return mc.raw
 }

@@ -235,10 +235,15 @@ func (ds DocumentSet) ToMaps() []map[string]any {
 }
 
 // Sanitize applies context-aware masking to every document in the set.
-func (ds DocumentSet) Sanitize(ctx context.Context) DocumentSet {
+func (ds DocumentSet) Sanitize(ctx ...context.Context) (DocumentSet, error) {
 	result := make(DocumentSet, len(ds))
 	for i, doc := range ds {
-		result[i] = doc.Sanitize(ctx)
+		res, err := doc.Sanitize(ctx...)
+		if err != nil {
+			return nil, err
+		}
+		result[i] = res
 	}
-	return result
+
+	return result, nil
 }

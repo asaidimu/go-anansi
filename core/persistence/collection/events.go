@@ -6,10 +6,10 @@ package collection
 import (
 	"context"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"go.uber.org/zap"
@@ -51,7 +51,7 @@ func (e *eventsCollection) CreateOne(ctx context.Context, doc *data.Document) (b
 	}
 
 	result, err := e.eventEmitter.WithEventEmission(
-		utils.ContextWithCollectionName(ctx, e.name),
+		common.ContextWithCollectionName(ctx, e.name),
 		config, func() (any, error) {
 			return e.collection.CreateOne(ctx, doc)
 		})
@@ -78,7 +78,7 @@ func (e *eventsCollection) CreateMany(ctx context.Context, docs []*data.Document
 		Input:             docs,
 	}
 
-	result, err := e.eventEmitter.WithEventEmission(utils.ContextWithCollectionName(ctx, e.name), config, func() (any, error) {
+	result, err := e.eventEmitter.WithEventEmission(common.ContextWithCollectionName(ctx, e.name), config, func() (any, error) {
 		return e.collection.CreateMany(ctx, docs)
 	})
 
@@ -100,7 +100,7 @@ func (e *eventsCollection) Read(ctx context.Context, q *query.Query) (*base.Read
 		Input:             q,
 	}
 
-	result, err := e.eventEmitter.WithEventEmission(utils.ContextWithCollectionName(ctx, e.name), config, func() (any, error) {
+	result, err := e.eventEmitter.WithEventEmission(common.ContextWithCollectionName(ctx, e.name), config, func() (any, error) {
 		return e.collection.Read(ctx, q)
 	})
 
@@ -122,7 +122,7 @@ func (e *eventsCollection) Update(ctx context.Context, params *base.CollectionUp
 		Input:             params,
 	}
 
-	result, err := e.eventEmitter.WithEventEmission(utils.ContextWithCollectionName(ctx, e.name), config, func() (any, error) {
+	result, err := e.eventEmitter.WithEventEmission(common.ContextWithCollectionName(ctx, e.name), config, func() (any, error) {
 		return e.collection.Update(ctx, params)
 	})
 
@@ -144,7 +144,7 @@ func (e *eventsCollection) Delete(ctx context.Context, filter *query.QueryFilter
 		Input:             filter,
 	}
 
-	result, err := e.eventEmitter.WithEventEmission(utils.ContextWithCollectionName(ctx, e.name), config, func() (any, error) {
+	result, err := e.eventEmitter.WithEventEmission(common.ContextWithCollectionName(ctx, e.name), config, func() (any, error) {
 		return e.collection.Delete(ctx, filter, unsafe)
 	})
 
@@ -167,7 +167,7 @@ func (e *eventsCollection) Metadata(
 	ctx context.Context,
 	filter *base.MetadataFilter,
 	forceRefresh bool,
-) (*base.CollectionMetadata, error) {
+) *base.CollectionMetadata {
 	return e.collection.Metadata(ctx, filter, forceRefresh)
 }
 

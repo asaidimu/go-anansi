@@ -1,9 +1,5 @@
 package common
 
-// ContextKey is a type for context keys to avoid collisions
-type ContextKey string
-
-const CollectionNameContextKey ContextKey = "anansi.collection.name"
 
 // LogicalOperator defines the logical operators that can be used to combine conditions
 // in constraints and filters.
@@ -22,7 +18,6 @@ const (
 
 // FunctionMap is a map of function names to generic functions.
 type FunctionMap map[string]any
-
 
 
 // Future represents the result of an asynchronous operation.

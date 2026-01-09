@@ -7,7 +7,6 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"go.uber.org/zap"
 )
 
@@ -82,7 +81,7 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinit
 	}
 
 	// 2. Execute the database part of the query.
-	result, err := utils.ExecuteWithContext(ctx, func() (*QueryResult, error) {
+	result, err := common.ExecuteWithContext(ctx, func() (*QueryResult, error) {
 		data, count, err := interactor.SelectDocuments(ctx, schemaDef, dbQuery)
 		return &QueryResult{Data: data, Count: int(count)}, err
 	})

@@ -490,13 +490,6 @@ func validateConstraintStructures(rules SchemaConstraint, basePath string, error
 			hasField := rule.Constraint.Field != nil && *rule.Constraint.Field != ""
 			hasFields := len(rule.Constraint.Fields) > 0
 
-			if !hasField && !hasFields {
-				*errors = append(*errors, common.Issue{
-					Path:    currentPath,
-					Message: "constraint must reference at least one field (either 'field' or 'fields')",
-				})
-			}
-
 			if hasField && hasFields {
 				*errors = append(*errors, common.Issue{
 					Path:    currentPath,

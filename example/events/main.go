@@ -145,9 +145,16 @@ func main() {
 		log.Fatalf("Failed to read all products: %v", err)
 	}
 
+	// Apply collection-specific sanitization context
+	sanitizationCtx := common.ContextWithCollectionName(ctx, productSchema.Name)
+
 	if readResult.Count > 0 {
 		for _, found := range readResult.Data {
-			doc := found.Sanitize(ctx)
+			doc, err := found.Sanitize(sanitizationCtx)
+			if err != nil {
+				logger.Error("Failed to sanitize document", zap.Error(err))
+				continue 
+			}
 			logger.Info(fmt.Sprintf("Found product: ID=%s, Name=%s, Price=%.2f, Stock=%d, Value=%s",
 				doc.Must().Get("id"),
 				doc.Must().Get("name"),
@@ -178,7 +185,12 @@ func main() {
 	}
 	if readP001Result.Count > 0 {
 		updatedProduct := readP001Result.Data[0]
-		updatedProduct = updatedProduct.Sanitize(ctx)
+		sanitizedProduct, err := updatedProduct.Sanitize(sanitizationCtx)
+		if err != nil {
+			logger.Error("Failed to sanitize updated product", zap.Error(err))
+			sanitizedProduct = updatedProduct 
+		}
+		updatedProduct = sanitizedProduct
 		logger.Info(fmt.Sprintf("Updated Laptop: ID=%s, Name=%s, Price=%.2f, Stock=%d, Value=%s",
 			updatedProduct.ID(),
 			updatedProduct.Must().Get("name"),

@@ -65,7 +65,7 @@ func newBasePersistence(
 	}
 
 	p := &basePersistence{
-		eventEmitter: eventEmitter,
+		eventEmitter:       eventEmitter,
 		engine:             engine,
 		interactor:         interactor,
 		subscriptions:      make(map[string]*base.SubscriptionInfo),
@@ -111,6 +111,9 @@ func (p *basePersistence) Collection(ctx context.Context, name string) (base.Col
 		return nil, err
 	}
 
+	if issues := sc.ValidateAll(); len(issues) > 0 {
+		return nil, common.NewSystemError("ERR_INVALID_SCHEMA").WithIssues(issues)
+	}
 	newCollection, err := collection.NewCollection(
 		p.eventEmitter,
 		name,
@@ -171,8 +174,9 @@ func (p *basePersistence) CreateCollections(ctx context.Context, schemas []*sche
 func (p *basePersistence) HasCollection(ctx context.Context, name string) (bool, error) {
 	_, err := (p.registry).GetRegistryEntry(ctx, name)
 	if err != nil {
-		        if errors.Is(err, base.ErrCollectionNotFound) {
-		            return false, nil		}
+		if errors.Is(err, base.ErrCollectionNotFound) {
+			return false, nil
+		}
 		return false, err
 	}
 	return true, nil
@@ -389,7 +393,6 @@ func (p *basePersistence) Async(ctx context.Context, f func(ctx context.Context)
 	return fut
 }
 
-
 func (p *basePersistence) Query(ctx context.Context, rawQuery *query.RawQuery) (*query.RawQueryResult, error) {
 	// Resolve collection placeholders in the template
 	resolvedTemplate, err := p.rawQueryProcessor.ProcessRawQueryTemplate(ctx, rawQuery.Template, rawQuery.Collections)
@@ -399,12 +402,11 @@ func (p *basePersistence) Query(ctx context.Context, rawQuery *query.RawQuery) (
 
 	// Create a new RawQuery with the resolved template
 	processedRawQuery := &query.RawQuery{
-		Template:   resolvedTemplate,
-		Options:    rawQuery.Options,
+		Template:    resolvedTemplate,
+		Options:     rawQuery.Options,
 		Collections: rawQuery.Collections,
-		Parameters: rawQuery.Parameters,
+		Parameters:  rawQuery.Parameters,
 	}
 
 	return p.interactor.Query(ctx, &query.Query{Raw: processedRawQuery})
 }
-
