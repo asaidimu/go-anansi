@@ -8,6 +8,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/example/api/schema"
+	"github.com/asaidimu/go-anansi/v6/utils"
 	"go.uber.org/zap"
 )
 
@@ -17,19 +18,27 @@ type PersistenceManager struct {
 }
 
 // NewPersistenceManager sets up the Anansi persistence layer.
-func NewPersistenceManager(schemaLoader *schema.SchemaLoader, cfg *Config, logger *zap.Logger) (*PersistenceManager, func (), error) {
+func NewPersistenceManager(schemaLoader *schema.SchemaLoader, cfg *Config, logger *zap.Logger) (*PersistenceManager, func(), error) {
 	p, cleanup, err := anansi.Playground(anansi.PlaygroundConfig{
-		Logger: logger,
-		DBPath: cfg.DBPath,
-		EnableLogging: true,
-		EnableSanitization: true,
+		Logger:                logger,
+		DBPath:                cfg.DBPath,
+		EnableLogging:         true,
+		EnableSanitization:    true,
 		CustomSanitizerConfig: data.NewSecureDefaultConfig(),
-		Schemas:       schemaLoader.Schemas,
+		Schemas:               schemaLoader.Schemas,
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to setup Anansi: %w", err)
 	}
 	logger.Info("Anansi persistence layer initialized successfully.")
+
+	sanitizationPolicyStore := utils.NewSanitizationPolicyStore(p, logger)
+	reg := data.GetSanitizationRegistry()
+	reg.SetPersistence(sanitizationPolicyStore)
+	err = reg.LoadFromPersistence(context.Background())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to setup Anansi: %w", err)
+	}
 
 	return &PersistenceManager{
 		Anansi: p,

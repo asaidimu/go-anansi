@@ -366,11 +366,13 @@ type NestedSchemaDefinition struct {
 	// Structured variant (has fields)
 	Fields *NestedSchemaFields `json:"fields,omitempty"`
 
-	// Typed variant (primitive or has type)
+	// Typed variant (primitive or has type) TODO Add Values to properly support
+	// enums
 	Type      *FieldType `json:"type,omitempty"`
 	Default   any        `json:"default,omitempty"`
 	Schema    any        `json:"schema,omitempty"`
 	ItemsType *FieldType `json:"itemsType,omitempty"`
+
 }
 
 func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {

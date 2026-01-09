@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
@@ -153,7 +154,7 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 	fq.Target = &query.QueryTarget{
 		Name:   c.physicalName,
 		Alias:  &c.logicalName,
-		Schema: c.schema,
+		Schema: c.schema.MustDeepClone(),
 	}
 
 	// Add main collection translation
@@ -527,7 +528,7 @@ func (c *managedCollection) Validate(ctx context.Context, data *data.Document, l
 	return c.wrapped.Validate(ctx, data, loose)
 }
 
-func (c *managedCollection) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) (*base.CollectionMetadata, error) {
+func (c *managedCollection) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) *base.CollectionMetadata {
 	return c.wrapped.Metadata(ctx, filter, forceRefresh)
 }
 
@@ -567,8 +568,7 @@ func ensureMetadataProjection(q *query.Query) *query.Query {
 
 // sanitizeError applies translations from prepareQuery
 func (c *managedCollection) sanitizeError(_ context.Context, err error, translations map[string]string) error {
-	return err
-	/* if err == nil {
+	if err == nil {
 		return nil
 	}
 
@@ -588,5 +588,5 @@ func (c *managedCollection) sanitizeError(_ context.Context, err error, translat
 		return output
 	}
 
-	return common.SystemErrorFrom(err).Sanitize(tf) */
+	return common.SystemErrorFrom(err).Sanitize(tf)
 }

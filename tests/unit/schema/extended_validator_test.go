@@ -59,7 +59,7 @@ func TestValidator_Validate_Extended(t *testing.T) {
 	// Define a complex schema for a user profile
 	userSchemaDef := &schema.SchemaDefinition{
 		Name:    "user",
-		Version: "1.0",
+		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
 			"6015dde0-e015-4369-8fd3-8ea37282daaf": {
 				Name:     "username",

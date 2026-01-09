@@ -13,6 +13,8 @@ import (
 func TestValidator_Validate(t *testing.T) {
 	trueBool := true
 	schemaDef := &schema.SchemaDefinition{
+		Name: "test",
+		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
 			"4d160d45-9aee-4d71-96dd-3fe83e9d6e6c": { // the key of the map is supposed to be a uuid
 				Name:     "name", // and this is the actual name of the field
@@ -129,6 +131,8 @@ func TestValidator_Validate(t *testing.T) {
 
 	t.Run("Coercion from string to boolean", func(t *testing.T) {
 		schemaDefWithBool := &schema.SchemaDefinition{
+		Name: "test",
+		Version: "1.0.0",
 			Fields: map[string]*schema.FieldDefinition{
 				"isActive": {
 					Name: "isActive",
@@ -184,6 +188,8 @@ func TestValidator_Validate_Advanced(t *testing.T) {
 	}
 
 	schemaDef := &schema.SchemaDefinition{
+		Name: "test",
+		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
 			"profile": {
 				Name:   "profile",

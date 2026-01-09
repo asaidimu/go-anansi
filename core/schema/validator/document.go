@@ -827,8 +827,9 @@ func (graph *ValidationGraph) traverse(fmap *schema.FunctionMap, document map[st
 
 func NewDocumentValidator(sc *schema.SchemaDefinition, fmap *schema.FunctionMap) (*DocumentValidator, error) {
 	// Validate schema before building the graph
-	if err := sc.Validate(); err != nil {
-		return nil, schema.ErrValidatorSchemaValidationFailed.WithCause(err).
+	if issues := sc.ValidateAll(); len(issues) > 0 {
+		fmt.Printf("Issues\n %s \n", common.Issues(issues).String())
+		return nil, schema.ErrValidatorSchemaValidationFailed.WithIssues(issues).
 			WithOperation("schema.NewDocumentValidator").
 			WithMessage("schema validation failed during validator creation")
 	}
@@ -1033,12 +1034,22 @@ func (n *EnumValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 	if !exists {
 		return &NodeResult{Success: true}
 	}
+
+	valStr := fmt.Sprintf("%v", value)
 	for _, allowedValue := range n.fieldDef.Values {
-		if reflect.DeepEqual(value, allowedValue) {
+		if valStr == fmt.Sprintf("%v", allowedValue) {
 			return &NodeResult{Success: true}
 		}
 	}
-	return &NodeResult{Success: false, Issues: []common.Issue{{Code: "ENUM_VIOLATION", Message: fmt.Sprintf("Value must be one of: %v", n.fieldDef.Values), Path: n.path}}}
+
+	return &NodeResult{
+		Success: false,
+		Issues: []common.Issue{{
+			Code:    "ENUM_VIOLATION",
+			Message: fmt.Sprintf("Value must be one of: %v, found %v", n.fieldDef.Values, value),
+			Path:    n.path,
+		}},
+	}
 }
 
 func (n *ArrayValidationNode) Execute(ctx *ValidationContext) *NodeResult {

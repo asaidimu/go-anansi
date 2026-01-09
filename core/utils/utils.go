@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
 // StructToMap converts a Go struct into a map[string]any.
@@ -21,21 +23,21 @@ func StructToMap[T any](record T) (map[string]any, error) {
 
 	// Handle nil interface input directly (e.g., if `record` is `nil any`)
 	if !val.IsValid() {
-		return nil, &UtilityError{Operation: "StructToMap", Message: ErrInputNil.Error()}
+		return nil, common.SystemErrorFrom(ErrInputNil).WithOperation("StructToMap")
 	}
 
 	// If the input is a pointer, dereference it to get the underlying value
 	if val.Kind() == reflect.Ptr {
 		// If it's a nil pointer, return an error
 		if val.IsNil() {
-			return nil, &UtilityError{Operation: "StructToMap", Message: ErrInputNilPointer.Error()}
+			return nil, common.SystemErrorFrom(ErrInputNilPointer).WithOperation("StructToMap")
 		}
 		val = val.Elem()
 	}
 
 	// Validate that the underlying value is a struct
 	if val.Kind() != reflect.Struct {
-		return nil, &UtilityError{Operation: "StructToMap", Message: fmt.Sprintf("%s, got %s", ErrInputNotStruct.Error(), val.Kind())}
+		return nil, common.SystemErrorFrom(ErrInputNotStruct).WithOperation("StructToMap")
 	}
 
 	// Marshal the input struct into JSON bytes.
@@ -43,7 +45,7 @@ func StructToMap[T any](record T) (map[string]any, error) {
 	// and correctly serializes all nested structs into their JSON object forms.
 	jsonBytes, err := ToJSONBytes(record)
 	if err != nil {
-		return nil, &UtilityError{Operation: "StructToMap", Message: ErrMarshalJSON.Error(), Cause: err}
+		return nil, common.SystemErrorFrom(ErrMarshalJSON).WithOperation("StructToMap")
 	}
 
 	// Unmarshal these JSON bytes into a map[string]any directly.
@@ -51,7 +53,7 @@ func StructToMap[T any](record T) (map[string]any, error) {
 	// map[string]any values by the `encoding/json` package.
 	var resultMap map[string]any
 	if err := FromJSON(jsonBytes, &resultMap); err != nil {
-		return nil, &UtilityError{Operation: "StructToMap", Message: ErrUnmarshalJSON.Error(), Cause: err}
+		return nil, common.SystemErrorFrom(ErrUnmarshalJSON).WithOperation("StructToMap")
 	}
 
 	return resultMap, nil
@@ -76,7 +78,7 @@ func MapToStruct[T any](input map[string]any) (T, error) {
 	var zero T // Represents the zero value of type T, used for error returns
 
 	if input == nil {
-		return zero, &UtilityError{Operation: "MapToStruct", Message: ErrMapToStructInputNil.Error()}
+		return zero, common.SystemErrorFrom(ErrMapToStructInputNil).WithOperation("MapToStruct")
 	}
 
 	// Validate that `T` is a struct type (or a pointer to a struct).
@@ -85,7 +87,7 @@ func MapToStruct[T any](input map[string]any) (T, error) {
 		typ = typ.Elem()
 	}
 	if typ.Kind() != reflect.Struct {
-		return zero, &UtilityError{Operation: "MapToStruct", Message: fmt.Sprintf("%s, got %s", ErrMapToStructTargetNotStruct.Error(), typ.Kind())}
+		return zero, common.SystemErrorFrom(ErrMapToStructTargetNotStruct).WithOperation("MapToStruct")
 	}
 
 	// Marshal the input `map[string]any` into JSON bytes.
@@ -93,13 +95,13 @@ func MapToStruct[T any](input map[string]any) (T, error) {
 	// into nested JSON objects.
 	jsonBytes, err := ToJSONBytes(input)
 	if err != nil {
-		return zero, &UtilityError{Operation: "MapToStruct", Message: ErrMarshalJSON.Error(), Cause: err}
+		return zero, common.SystemErrorFrom(ErrMarshalJSON).WithOperation("MapToStruct")
 	}
 
 	// Unmarshal these JSON bytes into a new instance of `T`.
 	var result T
 	if err := FromJSON(jsonBytes, &result); err != nil {
-		return zero, &UtilityError{Operation: "MapToStruct", Message: ErrUnmarshalJSON.Error(), Cause: err}
+		return zero, common.SystemErrorFrom(ErrUnmarshalJSON).WithOperation("MapToStruct")
 	}
 
 	return result, nil
@@ -110,19 +112,19 @@ func PrimitivePtr[T any](t T) *T {
 }
 
 // StringPtr is a helper function that returns a pointer to a string.
-// @deprecated
+// Deprecated
 func StringPtr(s string) *string {
 	return &s
 }
 
 // Int64Ptr is a helper function that returns a pointer to an int64.
-// @deprecated
+// Deprecated
 func Int64Ptr(i int64) *int64 {
 	return &i
 }
 
 // BoolPtr is a helper function that returns a pointer to a bool.
-// @deprecated
+// Deprecated
 func BoolPtr(b bool) *bool {
 	return &b
 }

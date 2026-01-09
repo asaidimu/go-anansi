@@ -91,7 +91,6 @@ func TestMaskObscure(t *testing.T) {
 			PrefixLength: 2,
 			SuffixLength: 2,
 			Replacement:  "*",
-			MinLength:    6,
 		},
 	}
 
@@ -196,7 +195,7 @@ func TestCustomPatternPriority(t *testing.T) {
 		Fields: map[string]data.MaskedFieldPolicy{
 			"password":data.MaskObscure, // Explicit: obscure
 		},
-		Patterns: []data.FieldMaskPattern{
+		Patterns: []data.PatternRule{
 			data.MustCompilePattern(`(?i)password`,data.MaskRedact), // Pattern: redact
 		},
 		DefaultPolicy:data.MaskPreserve,
@@ -337,7 +336,7 @@ func TestDefaultPolicy(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			config :=&data.FieldMaskConfig{
 				Fields:        make(map[string]data.MaskedFieldPolicy),
-				Patterns:      []data.FieldMaskPattern{},
+				Patterns:      []data.PatternRule{},
 				DefaultPolicy: tt.defaultPolicy,
 			}
 
@@ -370,7 +369,7 @@ func TestCommonSecurityPatterns(t *testing.T) {
 
 	// Verify all patterns compile
 	for _, pattern := range patterns {
-		assert.NotNil(t, pattern.Regex)
+		assert.NotNil(t, pattern.Pattern)
 		assert.NotEmpty(t, pattern.Policy)
 	}
 }

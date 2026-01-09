@@ -284,5 +284,9 @@ func (s *SchemaDefinition) MustClone() *SchemaDefinition {
 	return clone
 }
 
-
-
+func buildPath(basePath, fieldName string) string {
+	if basePath == "" {
+		return fieldName
+	}
+	return basePath + "." + fieldName
+}

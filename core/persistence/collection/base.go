@@ -47,10 +47,6 @@ func newBaseCollection(
 		return nil, schema.ErrInvalidSchema.WithMessage("Collection access requires a non nil schema")
 	}
 
-	if err := sc.Validate(); err != nil {
-		return nil, schema.ErrInvalidSchema.WithMessage("Collection access requires a valid schema").WithCause(err)
-	}
-
 	validator, err := validator.NewDocumentValidator(sc, nil)
 	if err != nil {
 		return nil, err
@@ -144,7 +140,7 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []*data.Document) 
 // Read retrieves documents from the collection that match the given QueryDSL.
 func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
 	rctx := query.WithInteractor(ctx, c.getCurrentInteractor(ctx))
-	docs, err := c.engine.Query(rctx, c.schema, q)
+	docs, err := c.engine.Query(rctx, c.schema.MustClone(), q)
 	if err != nil {
 		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_READ_DOCUMENTS_FAILED")
 	}
@@ -193,7 +189,7 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 			idQuery.Target = &query.QueryTarget{
 				Name:   c.schema.Name,
 				Alias:  &c.name,
-				Schema: c.schema,
+				Schema: c.schema.MustClone(),
 			}
 
 			idDocs, queryErr := c.engine.Query(rctx, c.schema, &idQuery)
@@ -235,7 +231,7 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 			fetchQuery.Target = &query.QueryTarget{
 				Name:   c.schema.Name,
 				Alias:  &c.name,
-				Schema: c.schema,
+				Schema: c.schema.MustClone(),
 			}
 
 			result, err := c.engine.Query(rctx, c.schema, &fetchQuery)
@@ -303,11 +299,13 @@ func (c *baseCollection) Validate(ctx context.Context, data *data.Document, loos
 
 // Metadata retrieves metadata specifically for this collection, with an option to
 // force a refresh of the data.
-func (c *baseCollection) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) (*base.CollectionMetadata, error) {
+func (c *baseCollection) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) *base.CollectionMetadata {
 	// TODO improve this method
 	metadata := *c.metadata
-	metadata.Schema.Name = metadata.Name
-	return &metadata, nil
+	schema := *metadata.Schema
+	schema.Name = metadata.Name
+	metadata.Schema = &schema
+	return &metadata
 }
 
 // Subscribe registers a subscription for an event that is specific to this collection.

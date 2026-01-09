@@ -4,16 +4,12 @@ import (
 	"context"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
-	putils "github.com/asaidimu/go-anansi/v6/core/persistence/utils"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"go.uber.org/zap"
 )
-
-// PersitenceEventContextData manages the context data for persistence events.
-var PersistenceEventContextData = utils.NewContextData("persistence_event_context", nil)
 
 // PersistenceEventFactory creates persistence events.
 type PersistenceEventFactory struct {
@@ -42,10 +38,9 @@ func (f *PersistenceEventFactory) CreateEvent(
 	extra map[string]any,
 ) base.PersistenceEvent {
 	transactionID := f.extractTransactionID(ctx)
-	contextMap := PersistenceEventContextData.Data(ctx)
 
 	var collectionName *string
-	if name, ok := putils.CollectionNameFromContext(ctx); ok {
+	if name, ok := common.CollectionNameFromContext(ctx); ok {
 		collectionName = &name
 	}
 
@@ -60,7 +55,6 @@ func (f *PersistenceEventFactory) CreateEvent(
 		Error:         errorMsg,
 		TransactionID: transactionID,
 		Duration:      duration,
-		Context:       contextMap,
 	}
 
 	return event
@@ -94,17 +88,33 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 		if v == nil {
 			return nil
 		}
+		d, err := data.SanitizeValue(ctx, v.Data)
+		if err != nil {
+			return err
+		}
+		res, ok := d.(data.DocumentSet)
+		if !ok {
+			return nil
+		}
 		sanitized := &base.ReadResult{
 			Count: v.Count,
-			Data:  data.SanitizeValue(ctx, v.Data).(data.DocumentSet),
+			Data:  res,
 		}
 		return sanitized
 
 	// Special case: CreateResult contains a document
 	case base.CreateResult:
+		d, err := data.SanitizeValue(ctx, v.Data)
+		if err != nil {
+			return err
+		}
+		res, ok := d.(*data.Document)
+		if !ok {
+			return nil
+		}
 		sanitized := base.CreateResult{
 			Status: v.Status,
-			Data:   data.SanitizeValue(ctx, v.Data).(*data.Document),
+			Data:   res,
 			Issues: v.Issues,
 			Error:  v.Error,
 		}
@@ -113,11 +123,20 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 	case []base.CreateResult:
 		sanitized := make([]base.CreateResult, len(v))
 		for _, result := range v {
+			d, err := data.SanitizeValue(ctx, result.Data)
+			if err != nil {
+				return err
+			}
+			res, ok := d.(*data.Document)
+			if !ok {
+				return nil
+			}
+
 			sanitized = append(sanitized,
 				base.CreateResult{
 					Status: result.Status,
 					Issues: result.Issues,
-					Data:   data.SanitizeValue(ctx, result.Data).(*data.Document),
+					Data:   res,
 					Error:  result.Error,
 				})
 		}
@@ -126,6 +145,10 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 	default:
 		// Scalar or unknown type - preserve as-is
 		// This includes query filters, schema definitions, etc.
-		return data.SanitizeValue(ctx, value)
+		d, err := data.SanitizeValue(ctx, v)
+		if err != nil {
+			return err
+		}
+		return d
 	}
 }

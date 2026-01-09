@@ -12,7 +12,6 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
-	"fmt"
 	"maps"
 	"sort"
 	"strconv"
@@ -27,10 +26,14 @@ import (
 	"go.uber.org/zap"
 )
 
+// ============================================================================
+// Metadata Provider Types
+// ============================================================================
+
 // MetadataProvider is a function that returns metadata to be merged into a document.
 type MetadataProvider func(ctx context.Context, doc *Document) (map[string]any, error)
 
-// MetadataProviderConfig holds a  nested schema, its dependencies and its corresponding provider.
+// MetadataProviderConfig holds a nested schema, its dependencies and its corresponding provider.
 type MetadataProviderConfig struct {
 	Name         string
 	Schema       *schema.NestedSchemaDefinition
@@ -38,44 +41,47 @@ type MetadataProviderConfig struct {
 	Provider     MetadataProvider
 }
 
+// ============================================================================
+// Factory Configuration
+// ============================================================================
+
 // DocumentFactoryConfig holds the complete configuration for the document factory.
-// TODO, we need a way to configure the sanitizers at runtime to
-// accomodate schema changes
 type DocumentFactoryConfig struct {
 	Providers []MetadataProviderConfig
-	// GlobalSanitizer configures field-level data sanitization for events.
+
+	// GlobalSanitizer configures field-level data sanitization for all documents.
 	// When set, all events emitted by the persistence layer will have their
 	// Input and Output fields sanitized according to the specified policies.
-	// This prevents sensitive data from appearing in logs and event subscribers.
 	//
 	// If nil, no sanitization is applied (NOT recommended for production).
 	// Use data.NewSecureDefaultConfig() for sensible defaults.
 	GlobalSanitizer *FieldMaskConfig
-	// CollectionSanitizers allows per-collection sanitization overrides.
-	// Keys are collection names, values are the sanitization config to use
-	// for that specific collection. If a collection is not found in this map,
-	// the global Sanitizer Config is used.
+
+	// ScopedSanitizers allows scope-specific sanitization overrides.
+	// Keys are scope identifiers (e.g., collection names, API paths, tenant IDs).
+	// Values are the sanitization config to use for that specific scope.
+	// If a scope is not found in this map, the GlobalSanitizer is used.
 	//
 	// Example:
-	//   CollectionSanitizers: map[string]data.FieldMaskConfig{
-	//     "credentials": strictConfig,  // Stricter rules for credentials
-	//     "users":       moderateConfig, // Moderate rules for users
+	//   ScopedSanitizers: map[string]*FieldMaskConfig{
+	//     "credentials":     strictConfig,  // Stricter rules for credentials
+	//     "public_profiles": lenientConfig, // More lenient for public data
+	//     "api/v1/auth":     authConfig,    // Scope by API path
 	//   }
-	CollectionSanitizers map[string]*FieldMaskConfig
+	ScopedSanitizers map[string]*FieldMaskConfig
 }
 
-// Sanitization state in the factory
-type sanitizationState struct {
-	global     *DocumentSanitizer
-	collection map[string]*DocumentSanitizer
-}
+// ============================================================================
+// Factory Internal State
+// ============================================================================
 
 // documentFactory is a singleton responsible for creating and managing documents.
 type documentFactory struct {
-	mu           sync.RWMutex
-	config       DocumentFactoryConfig
-	sanitization *sanitizationState
-	configured   bool
+	mu                     sync.RWMutex
+	config                 DocumentFactoryConfig
+	sanitizationRegistry   *SanitizationRegistry
+	logger                 *zap.Logger
+	configured             bool
 }
 
 var (
@@ -91,6 +97,10 @@ func getFactory() *documentFactory {
 	return factory
 }
 
+// ============================================================================
+// Factory Configuration
+// ============================================================================
+
 // ConfigureDocumentFactory sets up the document factory singleton.
 // It must be called once at application startup.
 func ConfigureDocumentFactory(config DocumentFactoryConfig, logger *zap.Logger) error {
@@ -100,18 +110,39 @@ func ConfigureDocumentFactory(config DocumentFactoryConfig, logger *zap.Logger) 
 		f.mu.Lock()
 		defer f.mu.Unlock()
 
-		// Initialize sanitization state
-		f.sanitization = &sanitizationState{
-			collection: make(map[string]*DocumentSanitizer),
+		// Store logger
+		if logger == nil {
+			logger = zap.NewNop()
 		}
+		f.logger = logger
 
+		// Initialize sanitization registry
+		f.sanitizationRegistry = NewSanitizationRegistry(logger)
+
+		// Set global sanitizer
 		if config.GlobalSanitizer != nil {
-			f.sanitization.global = NewDocumentSanitizer(*config.GlobalSanitizer, logger)
+			if regErr := f.sanitizationRegistry.SetGlobal(config.GlobalSanitizer); regErr != nil {
+				err = common.SystemErrorFrom(regErr).
+					WithOperation("ConfigureDocumentFactory").
+					WithMessage("failed to set global sanitizer")
+				return
+			}
 		}
 
-		for collectionName, collectionConfig := range config.CollectionSanitizers {
-			mergedConfig := mergeConfigs(config.GlobalSanitizer, *collectionConfig)
-			f.sanitization.collection[collectionName] = NewDocumentSanitizer(mergedConfig, logger)
+		// Register scoped sanitizers
+		for scopeID, scopedConfig := range config.ScopedSanitizers {
+			if scopedConfig == nil {
+				logger.Warn("Skipping nil scoped sanitizer config",
+					zap.String("scope", scopeID))
+				continue
+			}
+
+			if regErr := f.sanitizationRegistry.Register(scopeID, scopedConfig); regErr != nil {
+				err = common.SystemErrorFrom(regErr).
+					WithOperation("ConfigureDocumentFactory").
+					WithMessagef("failed to register scope %q", scopeID)
+				return
+			}
 		}
 
 		f.config = config
@@ -121,34 +152,91 @@ func ConfigureDocumentFactory(config DocumentFactoryConfig, logger *zap.Logger) 
 	return err
 }
 
-// getSanitizerForContext returns the appropriate sanitizer based on context.
-// If the context contains a collection name, it returns the collection-specific
-// sanitizer (which is already merged with global config). Otherwise, it returns
-// the global sanitizer.
-func (f *documentFactory) getSanitizerForContext(ctx context.Context) *DocumentSanitizer {
-	f.mu.RLock()
-	defer f.mu.RUnlock()
+// ============================================================================
+// Dynamic Scope Management
+// ============================================================================
 
-	if f.sanitization == nil {
-		return nil // No sanitization configured
+// RegisterScopedSanitizer registers sanitization rules for a specific scope.
+// The scope can be a collection name, API path, tenant ID, or any identifier
+// that makes sense in your application context.
+//
+// This method is thread-safe and can be called after factory initialization.
+//
+// Returns error if:
+//   - Factory not configured
+//   - Scope ID is empty
+//   - Config is nil
+//   - Pattern compilation fails
+func RegisterScopedSanitizer(scopeID string, config *FieldMaskConfig) error {
+	f := getFactory()
+	if !f.configured {
+		return common.SystemErrorFrom(ErrFactoryNotConfigured).
+			WithOperation("data.RegisterScopedSanitizer")
 	}
 
-	// Try to get collection name from context
-	if collectionName, ok := ctx.Value(common.CollectionNameContextKey).(string); ok && collectionName != "" {
-		// Check for collection-specific sanitizer
-		if sanitizer, exists := f.sanitization.collection[collectionName]; exists {
-			return sanitizer
-		}
-	}
-
-	// Fall back to global sanitizer
-	return f.sanitization.global
+	return f.sanitizationRegistry.Register(scopeID, config)
 }
+
+// UnregisterScopedSanitizer removes sanitization rules for a specific scope.
+// After removal, documents in that scope will fall back to global sanitizer.
+//
+// Returns error if factory not configured.
+// Returns nil if scope doesn't exist (idempotent).
+func UnregisterScopedSanitizer(scopeID string) error {
+	f := getFactory()
+	if !f.configured {
+		return common.SystemErrorFrom(ErrFactoryNotConfigured).
+			WithOperation("data.UnregisterScopedSanitizer")
+	}
+
+	return f.sanitizationRegistry.Unregister(scopeID)
+}
+
+// ListScopedSanitizers returns all registered scope identifiers.
+// Useful for introspection and debugging.
+func ListScopedSanitizers() []string {
+	f := getFactory()
+	if !f.configured || f.sanitizationRegistry == nil {
+		return nil
+	}
+
+	return f.sanitizationRegistry.List()
+}
+
+// GetSanitizationRegistry returns the registry for advanced operations.
+// Returns nil if factory not configured.
+func GetSanitizationRegistry() *SanitizationRegistry {
+	f := getFactory()
+	if !f.configured {
+		return nil
+	}
+
+	return f.sanitizationRegistry
+}
+
+// ============================================================================
+// Sanitizer Retrieval
+// ============================================================================
+
+// getSanitizersForContexts returns sanitizers for all contexts in order.
+// Returns error if any explicitly specified scope is not found (fail-fast).
+func (f *documentFactory) getSanitizersForContexts(ctx context.Context,contexts ...context.Context) (*DocumentSanitizer, error) {
+	if f.sanitizationRegistry == nil {
+		return nil, nil
+	}
+
+	return f.sanitizationRegistry.GetForContext(ctx, contexts...)
+}
+
+// ============================================================================
+// Document Creation
+// ============================================================================
 
 // newDocument creates a new document with injected metadata.
 func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) (*Document, error) {
 	if !f.configured {
-		return nil, ErrFactoryNotConfigured
+		return nil, common.SystemErrorFrom(ErrFactoryNotConfigured).
+			WithOperation("data.documentFactory.newDocument")
 	}
 
 	if data == nil {
@@ -198,7 +286,7 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 		if err != nil {
 			return nil, common.SystemErrorFrom(ErrMetadataProviderFailed).
 				WithOperation("data.documentFactory.newDocument").
-				WithMessage(fmt.Sprintf("metadata provider '%s' failed", providerConfig.Name)).
+				WithMessagef("metadata provider %q failed", providerConfig.Name).
 				WithCause(err)
 		}
 		if providerMeta == nil {
@@ -210,7 +298,7 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 			if isReservedMetadataField(key) {
 				return nil, common.SystemErrorFrom(ErrInvalidMetadata).
 					WithOperation("data.documentFactory.newDocument").
-					WithMessage(fmt.Sprintf("provider '%s' attempted to set reserved field '%s'", providerConfig.Name, key))
+					WithMessagef("provider %q attempted to set reserved field %q", providerConfig.Name, key)
 			}
 		}
 		maps.Copy(meta, providerMeta)
@@ -231,8 +319,11 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 	return normalizedDoc, nil
 }
 
+// ============================================================================
+// Metadata Schema
+// ============================================================================
+
 // GetMetadataSchema merges all provider schemas into a single metadata schema
-// Conflicts are already handled during configuration, so simple merging is safe here
 func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchemaDefinition) {
 	f := getFactory()
 	// Copy provider configs while holding lock
@@ -273,6 +364,10 @@ func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchema
 
 	return mergedSchema, dependencies
 }
+
+// ============================================================================
+// Hash and Signature Operations
+// ============================================================================
 
 // calculateHash computes the SHA256 hash of the document,
 // excluding the 'checksum' field itself, to ensure a consistent and verifiable identifier.
@@ -404,6 +499,10 @@ func (f *documentFactory) verifySignature(doc *Document, publicKey *rsa.PublicKe
 	return nil
 }
 
+// ============================================================================
+// Canonicalization
+// ============================================================================
+
 func canonicalize(v any) any {
 	switch val := v.(type) {
 	case *Document:
@@ -458,16 +557,19 @@ func canonicalize(v any) any {
 }
 
 // canonicalMarshal marshals a value into a canonical JSON byte slice.
-// It uses the canonicalize helper to ensure consistent key ordering for hashing.
 func canonicalMarshal(v any) ([]byte, error) {
 	data, err := json.Marshal(canonicalize(v))
 	if err != nil {
-		return nil, ErrFailedToMarshalJSON.WithMessage("failed to marshal canonicalized data to JSON")
+		return nil, common.SystemErrorFrom(ErrFailedToMarshalJSON).
+			WithMessage("failed to marshal canonicalized data to JSON").
+			WithCause(err)
 	}
 	return data, nil
 }
 
-// --- Key Loading Helpers ---
+// ============================================================================
+// Key Loading Helpers
+// ============================================================================
 
 // LoadPrivateKey loads a PEM-encoded RSA private key.
 func LoadPrivateKey(pemBytes []byte) (*rsa.PrivateKey, error) {
@@ -509,6 +611,53 @@ func LoadPublicKey(pemBytes []byte) (*rsa.PublicKey, error) {
 
 	return nil, common.SystemErrorFrom(ErrNotRSAPublicKey).WithOperation("data.LoadPublicKey")
 }
+
+// GetSanitizationPolicy retrieves the policy for a specific scope.
+// If scopeID is empty, returns the global policy.
+func GetSanitizationPolicy(scopeID string) (*FieldMaskConfig, error) {
+	registry := GetSanitizationRegistry()
+	if registry == nil {
+		return nil, common.SystemErrorFrom(ErrFactoryNotConfigured).
+			WithOperation("data.GetSanitizationPolicy")
+	}
+
+	var sanitizer *DocumentSanitizer
+	if scopeID != "" {
+		sanitizer = registry.Get(scopeID)
+		if sanitizer == nil {
+			return nil, common.SystemErrorFrom(ErrSanitizationScopeNotFound).
+				WithOperation("data.GetSanitizationPolicy").
+				WithMessagef("scope %q not found", scopeID)
+		}
+	} else {
+		sanitizer = registry.GetGlobal()
+		if sanitizer == nil {
+			return nil, common.SystemErrorFrom(ErrSanitizationConfigInvalid).
+				WithOperation("data.GetSanitizationPolicy").
+				WithMessage("global sanitizer not configured")
+		}
+	}
+
+	config := sanitizer.config
+	config.Scope = scopeID
+	return &config, nil
+}
+
+// ListSanitizationPolicies returns all registered policies (global + scoped).
+func ListSanitizationPolicies() ([]*FieldMaskConfig, error) {
+	registry := GetSanitizationRegistry()
+	if registry == nil {
+		return nil, common.SystemErrorFrom(ErrFactoryNotConfigured).
+			WithOperation("data.ListSanitizationPolicies")
+	}
+
+	return registry.Export()
+}
+
+
+// ============================================================================
+// Testing Support
+// ============================================================================
 
 // ResetFactoryForTesting resets the singleton document factory and its configuration.
 // This is intended for use in tests only, to ensure a clean state between test runs.
