@@ -426,7 +426,7 @@ func nestedSchemaDefinitionToMap(nsd *NestedSchemaDefinition) map[string]any {
 				fieldsMap[name] = fieldDefinitionToMap(field)
 			}
 			result["fields"] = fieldsMap
-		} else if nsd.Fields.IsArray() {
+		} else if nsd.Fields.IsLegacyFieldsArray() {
 			result["fields"] = nsd.Fields.FieldsArray
 		}
 	} else if nsd.IsTyped() {

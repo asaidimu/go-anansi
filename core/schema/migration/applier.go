@@ -2,9 +2,11 @@ package migration
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // ApplierOptions configures the migration applier behavior.
@@ -166,6 +168,12 @@ func (m *MigrationApplier) applyModifyProperty(target *schema.SchemaDefinition, 
 		} else {
 			target.Metadata = nil
 		}
+	case "hint":
+		if hint, ok := change.SchemaChangeModifyPropertyPayload.Value.(*schema.SchemaHint); ok {
+			target.Hint = hint
+		} else {
+			target.Hint = nil
+		}
 	default:
 		return common.NewSystemError("ERR_UNKNOWN_PROPERTY").
 			WithMessagef("unknown property: %s", *change.ID).
@@ -190,19 +198,40 @@ func (m *MigrationApplier) applyAddField(target *schema.SchemaDefinition, change
 			WithOperation(op)
 	}
 
-	fieldName := *change.ID
+	fieldId := *change.ID
+	fieldDef := change.SchemaChangeAddFieldPayload.Definition
+	fieldName := fieldDef.Name
 
-	if _, exists := target.Fields[fieldName]; exists && m.options.StrictMode {
+	if _, exists := target.Fields[fieldId]; exists && m.options.StrictMode {
 		return common.NewSystemError("ERR_FIELD_ALREADY_EXISTS").
-			WithMessagef("field %s already exists", fieldName).
+			WithMessagef("field with ID %s already exists", fieldId).
 			WithOperation(op)
+	}
+
+	// Validate nested schema references
+	if fieldDef.Schema != nil {
+		switch s := fieldDef.Schema.(type) {
+		case schema.NestedSchemaReference:
+			if _, exists := target.NestedSchemas[s.ID]; !exists {
+				return common.NewSystemError("ERR_SCHEMA_NOT_FOUND").
+					WithMessagef("nested schema '%s' referenced by new field '%s' not found", s.ID, fieldName).
+					WithOperation(op)
+			}
+		case []schema.NestedSchemaReference:
+			for _, ref := range s {
+				if _, exists := target.NestedSchemas[ref.ID]; !exists {
+					return common.NewSystemError("ERR_SCHEMA_NOT_FOUND").
+						WithMessagef("nested schema '%s' referenced by new field '%s' not found", ref.ID, fieldName).
+						WithOperation(op)
+				}
+			}
+		}
 	}
 
 	if target.Fields == nil {
 		target.Fields = make(map[string]*schema.FieldDefinition)
 	}
 
-	fieldDef := change.SchemaChangeAddFieldPayload.Definition
 	clonedField, err := fieldDef.DeepClone()
 	if err != nil {
 		return common.NewSystemError("ERR_FIELD_CLONE_FAILED").
@@ -211,7 +240,7 @@ func (m *MigrationApplier) applyAddField(target *schema.SchemaDefinition, change
 			WithOperation(op)
 	}
 
-	target.Fields[fieldName] = clonedField
+	target.Fields[fieldId] = clonedField
 	return nil
 }
 
@@ -225,24 +254,27 @@ func (m *MigrationApplier) applyRemoveField(target *schema.SchemaDefinition, cha
 			WithOperation(op)
 	}
 
-	fieldName := *change.ID
+	fieldId := *change.ID
 
-	if _, exists := target.Fields[fieldName]; !exists {
+	field, exists := target.Fields[fieldId]
+	if !exists {
 		if m.options.StrictMode {
 			return common.NewSystemError("ERR_FIELD_NOT_FOUND").
-				WithMessagef("field %s does not exist", fieldName).
+				WithMessagef("field with ID %s does not exist", fieldId).
 				WithOperation(op)
 		}
 		return nil
 	}
 
-	delete(target.Fields, fieldName)
+	delete(target.Fields, fieldId)
 
 	// Clean up indexes referencing this field
-	target.Indexes = filterIndexesByField(target.Indexes, fieldName)
+	// Assuming field.Name is the string used in index definitions.
+	target.Indexes = filterIndexesByField(target.Indexes, field.Name)
 
 	// Clean up constraints referencing this field
-	target.Constraints = filterConstraintsByField(target.Constraints, fieldName)
+	// Assuming field.Name is the string used in constraint definitions.
+	target.Constraints = filterConstraintsByField(target.Constraints, field.Name)
 
 	return nil
 }
@@ -262,11 +294,11 @@ func (m *MigrationApplier) applyModifyField(target *schema.SchemaDefinition, cha
 			WithOperation(op)
 	}
 
-	fieldName := *change.ID
-	field, exists := target.Fields[fieldName]
+	fieldId := *change.ID
+	field, exists := target.Fields[fieldId]
 	if !exists {
 		return common.NewSystemError("ERR_FIELD_NOT_FOUND").
-			WithMessagef("field %s does not exist", fieldName).
+			WithMessagef("field with ID %s does not exist", fieldId).
 			WithOperation(op)
 	}
 
@@ -284,6 +316,22 @@ func (m *MigrationApplier) applyAddIndex(target *schema.SchemaDefinition, change
 	}
 
 	indexDef := change.SchemaChangeAddIndexPayload.Definition
+
+	// Validate that fields for the index exist by Name
+	for _, indexFieldName := range indexDef.Fields {
+		found := false
+		for _, schemaField := range target.Fields { // target.Fields is map[fieldId]*FieldDefinition
+			if schemaField.Name == indexFieldName {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return common.NewSystemError("ERR_FIELD_NOT_FOUND").
+				WithMessagef("field '%s' specified in index '%s' does not exist by name in the schema", indexFieldName, indexDef.Name).
+				WithOperation(op)
+		}
+	}
 
 	// Check for existing index with same name
 	if indexExists(target.Indexes, indexDef.Name) {
@@ -364,6 +412,12 @@ func (m *MigrationApplier) applyAddConstraint(target *schema.SchemaDefinition, c
 	}
 
 	constraintRule := change.SchemaChangeAddConstraintPayload.Constraint
+
+	// Validate that fields for the constraint exist
+	if err := m.validateConstraintFields(&constraintRule, target.Fields, op); err != nil {
+		return err
+	}
+
 	constraintName := constraintRule.GetName()
 
 	if constraintName == "" {
@@ -544,16 +598,131 @@ func (m *MigrationApplier) applyModifySchema(target *schema.SchemaDefinition, ch
 			WithOperation(op)
 	}
 
-	// Convert to temporary schema for change application
-	tempSchema := nestedSchemaToTempSchema(nestedSchema)
-
 	changes := change.SchemaChangeModifySchemaPayload.Changes
-	if err := m.applyChanges(tempSchema, changes); err != nil {
-		return err
-	}
 
-	// Convert back
-	tempSchemaToNestedSchema(tempSchema, nestedSchema)
+	if nestedSchema.IsStructured() {
+		// Handle properties unique to NestedSchemaDefinition before applying other changes.
+		remainingChanges := make([]schema.SchemaChange, 0, len(changes))
+		for _, change := range changes {
+			if change.Type == schema.SchemaChangeTypeModifyProperty && change.ID != nil {
+				propID := *change.ID
+				payload := change.SchemaChangeModifyPropertyPayload
+				if payload == nil {
+					return common.NewSystemError("ERR_MISSING_PAYLOAD").
+						WithMessage("missing modifyProperty payload for structured nested schema").
+						WithOperation(op)
+				}
+
+				switch propID {
+				case "concrete":
+					if concrete, ok := payload.Value.(bool); ok {
+						nestedSchema.Concrete = &concrete
+					}
+					continue // Change handled, do not add to remainingChanges
+				case "id":
+					if id, ok := payload.Value.(string); ok {
+						nestedSchema.ID = &id
+					}
+					continue // Change handled, do not add to remainingChanges
+				}
+			}
+			remainingChanges = append(remainingChanges, change)
+		}
+
+		if len(remainingChanges) == 0 {
+			return nil // All changes were handled
+		}
+
+		if nestedSchema.Fields != nil && nestedSchema.Fields.IsMap() {
+			tempSchema := nestedSchemaToTempSchema(nestedSchema)
+			if err := m.applyChanges(tempSchema, remainingChanges); err != nil {
+				return err
+			}
+			tempSchemaToNestedSchema(tempSchema, nestedSchema)
+		} else if nestedSchema.Fields != nil && nestedSchema.Fields.FieldSets != nil {
+			if err := m.applyChangesToNestedSchemaWithFieldSets(nestedSchema, remainingChanges); err != nil {
+				return err
+			}
+		} else if nestedSchema.Fields != nil && nestedSchema.Fields.IsLegacyFieldsArray() {
+			if err := m.applyChangesToNestedSchemaWithArrayFields(nestedSchema, remainingChanges); err != nil {
+				return err
+			}
+		} else {
+			// Structured schema but no fields defined (should not happen if IsStructured() is true)
+			return common.NewSystemError("ERR_INVALID_STRUCTURED_SCHEMA").
+				WithMessage("structured nested schema has no fields defined").
+				WithOperation(op)
+		}
+	} else {
+		// Logic for typed (primitive-like) nested schemas
+		for _, subChange := range changes {
+			switch subChange.Type {
+			case schema.SchemaChangeTypeModifyProperty:
+				payload := subChange.SchemaChangeModifyPropertyPayload
+				if payload == nil || subChange.ID == nil {
+					return common.NewSystemError("ERR_MISSING_PAYLOAD").
+						WithMessage("missing modifyProperty payload for typed nested schema").
+						WithOperation(op)
+				}
+				propID := *subChange.ID
+				switch propID {
+				case "description":
+					nestedSchema.Description = convertToStringPtr(payload.Value)
+				case "metadata":
+					if metadata, ok := payload.Value.(map[string]any); ok {
+						nestedSchema.Metadata = metadata
+					} else {
+						nestedSchema.Metadata = nil
+					}
+				case "type":
+					if typeStr, ok := payload.Value.(string); ok {
+						*nestedSchema.Type = schema.FieldType(typeStr)
+					}
+				case "default":
+					nestedSchema.Default = payload.Value
+				case "itemsType":
+					if typeStr, ok := payload.Value.(string); ok {
+						*nestedSchema.ItemsType = schema.FieldType(typeStr)
+					}
+				case "values":
+					if values, ok := payload.Value.([]any); ok {
+						nestedSchema.Values = values
+					} else {
+						nestedSchema.Values = nil
+					}
+				case "concrete":
+					if concrete, ok := payload.Value.(bool); ok {
+						nestedSchema.Concrete = utils.BoolPtr(concrete)
+					}
+				case "id":
+					if id, ok := payload.Value.(string); ok {
+						nestedSchema.ID = utils.StringPtr(id)
+					}
+				default:
+					return common.NewSystemError("ERR_UNKNOWN_PROPERTY").
+						WithMessagef("unsupported property change on typed nested schema: %s", propID).
+						WithOperation(op)
+				}
+			case schema.SchemaChangeTypeAddConstraint, schema.SchemaChangeTypeRemoveConstraint, schema.SchemaChangeTypeModifyConstraint,
+				schema.SchemaChangeTypeAddIndex, schema.SchemaChangeTypeRemoveIndex, schema.SchemaChangeTypeModifyIndex:
+				// Reuse existing applier logic by creating a temporary schema with only relevant fields
+				tempSchemaForSlices := &schema.SchemaDefinition{
+					Name:        nestedSchema.Name,
+					Indexes:     nestedSchema.Indexes,
+					Constraints: nestedSchema.Constraints,
+				}
+				if err := m.applyChange(tempSchemaForSlices, subChange); err != nil {
+					return err
+				}
+				nestedSchema.Indexes = tempSchemaForSlices.Indexes
+				nestedSchema.Constraints = tempSchemaForSlices.Constraints
+			default:
+				return common.NewSystemError("ERR_INVALID_CHANGE_ON_TYPED_SCHEMA").
+					WithMessagef("unsupported change type '%s' on typed nested schema", subChange.Type).
+					WithOperation(op)
+			}
+		}
+	}
 	return nil
 }
 
@@ -572,62 +741,435 @@ func (m *MigrationApplier) applyModifySchemaReference(target *schema.SchemaDefin
 			WithOperation(op)
 	}
 
-	fieldName := change.SchemaChangeModifySchemaReferencePayload.Field
-	field, exists := target.Fields[fieldName]
-	if !exists {
+	fieldPath := change.SchemaChangeModifySchemaReferencePayload.Field
+	field, _, found := m.findFieldInSchemaRecursive(target, fieldPath) // The parentSchema is not directly used here after field is found
+	if !found {
 		return common.NewSystemError("ERR_FIELD_NOT_FOUND").
-			WithMessagef("field %s not found for schema reference modification", fieldName).
+			WithMessagef("field %s not found for schema reference modification", fieldPath).
 			WithOperation(op)
 	}
 
-	var currentSchema *schema.NestedSchemaReference
+	// Validate field type
+	switch field.Type {
+	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeUnion, schema.FieldTypeRecord, schema.FieldTypeDynamic:
+		// These types can have schema references
+	default:
+		return common.NewSystemError("ERR_INVALID_FIELD_TYPE_FOR_SCHEMA_REF").
+			WithMessagef("field '%s' of type '%s' cannot have a schema reference modified", field.Name, field.Type).
+			WithOperation(op)
+	}
 
 	switch s := field.Schema.(type) {
 	case schema.NestedSchemaReference:
-		currentSchema = &s
+		// Create a mutable copy to modify, then assign back to field.Schema
+		tempRef := s
+		schemaRefToModify := &tempRef
+
+		// Apply nested changes to the schema reference
+		tempSchemaDef := &schema.SchemaDefinition{
+			Name:        schemaRefToModify.ID,
+			Indexes:     schemaRefToModify.Indexes,
+			Constraints: schemaRefToModify.Constraints,
+		}
+
+		for i, nestedChange := range change.SchemaChangeModifySchemaReferencePayload.Changes {
+			if err := m.applyChange(tempSchemaDef, nestedChange); err != nil {
+				return common.NewSystemError("ERR_APPLY_NESTED_SCHEMA_REFERENCE_CHANGE_FAILED").
+					WithMessagef("failed to apply nested change %d to schema reference of field %s", i, fieldPath).
+					WithCause(err).
+					WithOperation(op)
+			}
+		}
+
+		schemaRefToModify.Indexes = tempSchemaDef.Indexes
+		schemaRefToModify.Constraints = tempSchemaDef.Constraints
+		field.Schema = *schemaRefToModify // Assign the modified copy back
+
 	case []schema.NestedSchemaReference:
 		payloadID := ""
 		if change.SchemaChangeModifySchemaReferencePayload.ID != nil {
 			payloadID = *change.SchemaChangeModifySchemaReferencePayload.ID
 		}
+
+		found := false
 		for i := range s {
 			if s[i].ID == payloadID {
-				currentSchema = &s[i]
+				schemaRefToModify := &s[i] // Pointer to slice element - this directly modifies the slice element
+				found = true
+
+				// Apply nested changes to the schema reference
+				tempSchemaDef := &schema.SchemaDefinition{
+					Name:        schemaRefToModify.ID,
+					Indexes:     schemaRefToModify.Indexes,
+					Constraints: schemaRefToModify.Constraints,
+				}
+
+				for j, nestedChange := range change.SchemaChangeModifySchemaReferencePayload.Changes {
+					if err := m.applyChange(tempSchemaDef, nestedChange); err != nil {
+						return common.NewSystemError("ERR_APPLY_NESTED_SCHEMA_REFERENCE_CHANGE_FAILED").
+							WithMessagef("failed to apply nested change %d to schema reference of field %s", j, fieldPath).
+							WithCause(err).
+							WithOperation(op)
+					}
+				}
+				schemaRefToModify.Indexes = tempSchemaDef.Indexes
+				schemaRefToModify.Constraints = tempSchemaDef.Constraints
 				break
 			}
 		}
-	default:
-	}
-
-	if currentSchema == nil {
-		return common.NewSystemError("ERR_SCHEMA_REF_NOT_FOUND").WithMessage("could not resolve schema reference").WithOperation(op)
-	}
-
-	// Apply nested changes to the schema reference
-	tempSchema := &schema.SchemaDefinition{
-		Name:        currentSchema.ID,
-		Indexes:     currentSchema.Indexes,
-		Constraints: currentSchema.Constraints,
-	}
-
-	for i, nestedChange := range change.SchemaChangeModifySchemaReferencePayload.Changes {
-		if err := m.applyChange(tempSchema, nestedChange); err != nil {
-			return common.NewSystemError("ERR_APPLY_NESTED_SCHEMA_REFERENCE_CHANGE_FAILED").
-				WithMessagef("failed to apply nested change %d to schema reference of field %s", i, fieldName).
-				WithCause(err).
-				WithOperation(op)
+		if !found {
+			return common.NewSystemError("ERR_SCHEMA_REF_NOT_FOUND").WithMessage("could not resolve schema reference in slice").WithOperation(op)
 		}
-	}
+		// No need to reassign field.Schema here, as s[i] was modified directly.
 
-	// Update the field's schema with modified reference
-	currentSchema.Indexes = tempSchema.Indexes
-	currentSchema.Constraints = tempSchema.Constraints
-	field.Schema = currentSchema
+	default:
+		return common.NewSystemError("ERR_INVALID_SCHEMA_REFERENCE_TYPE").WithMessagef("unsupported schema reference type: %T", field.Schema).WithOperation(op)
+	}
 
 	return nil
 }
 
-// Helper methods
+// applyAddConditionalSet adds a new conditional set to the schema.
+func (m *MigrationApplier) applyAddConditionalSet(target *schema.SchemaDefinition, change schema.SchemaChange) error {
+	op := "MigrationApplier.applyAddConditionalSet"
+
+	if change.SchemaChangeAddConditionalSetPayload == nil {
+		return common.NewSystemError("ERR_MISSING_PAYLOAD").
+			WithMessage("missing addConditionalSet payload").
+			WithOperation(op)
+	}
+	if change.ID == nil {
+		return common.NewSystemError("ERR_MISSING_CONDITIONAL_SET_ID").
+			WithMessage("missing conditional set ID").
+			WithOperation(op)
+	}
+
+	conditionalSetID := *change.ID
+	nestedSchema, err := m.findNestedSchemaForConditionalSetChanges(target, conditionalSetID, op)
+	if err != nil {
+		return err
+	}
+
+	if nestedSchema.Fields == nil {
+		nestedSchema.Fields = &schema.NestedSchemaFields{}
+	}
+	if nestedSchema.Fields.FieldSets == nil {
+		nestedSchema.Fields.FieldSets = make(map[string]schema.ConditionalFieldSet)
+	}
+
+	if _, exists := nestedSchema.Fields.FieldSets[conditionalSetID]; exists && m.options.StrictMode {
+		return common.NewSystemError("ERR_CONDITIONAL_SET_ALREADY_EXISTS").
+			WithMessagef("conditional set with ID %s already exists", conditionalSetID).
+			WithOperation(op)
+	}
+
+	nestedSchema.Fields.FieldSets[conditionalSetID] = change.SchemaChangeAddConditionalSetPayload.Definition
+	return nil
+}
+
+// applyRemoveConditionalSet removes a conditional set from the schema.
+func (m *MigrationApplier) applyRemoveConditionalSet(target *schema.SchemaDefinition, change schema.SchemaChange) error {
+	op := "MigrationApplier.applyRemoveConditionalSet"
+
+	if change.ID == nil {
+		return common.NewSystemError("ERR_MISSING_CONDITIONAL_SET_ID").
+			WithMessage("missing conditional set ID").
+			WithOperation(op)
+	}
+
+	conditionalSetID := *change.ID
+	nestedSchema, err := m.findNestedSchemaForConditionalSetChanges(target, conditionalSetID, op)
+	if err != nil {
+		return err
+	}
+
+	if nestedSchema.Fields == nil || nestedSchema.Fields.FieldSets == nil {
+		if m.options.StrictMode {
+			return common.NewSystemError("ERR_CONDITIONAL_SET_NOT_FOUND").
+				WithMessagef("conditional set with ID %s not found", conditionalSetID).
+				WithOperation(op)
+		}
+		return nil
+	}
+
+	if _, exists := nestedSchema.Fields.FieldSets[conditionalSetID]; !exists {
+		if m.options.StrictMode {
+			return common.NewSystemError("ERR_CONDITIONAL_SET_NOT_FOUND").
+				WithMessagef("conditional set with ID %s not found", conditionalSetID).
+				WithOperation(op)
+		}
+		return nil
+	}
+
+	// Clean up indexes and constraints if needed (fields within this set are gone)
+	// This might require iterating over the fields in the set before deleting.
+	// For now, assume top-level schema will handle general cleanup.
+
+	delete(nestedSchema.Fields.FieldSets, conditionalSetID)
+	return nil
+}
+
+// applyModifyConditionalSet modifies an existing conditional set (e.g., its 'When' condition).
+func (m *MigrationApplier) applyModifyConditionalSet(target *schema.SchemaDefinition, change schema.SchemaChange) error {
+	op := "MigrationApplier.applyModifyConditionalSet"
+
+	if change.SchemaChangeModifyConditionalSetPayload == nil {
+		return common.NewSystemError("ERR_MISSING_PAYLOAD").
+			WithMessage("missing modifyConditionalSet payload").
+			WithOperation(op)
+	}
+	if change.ID == nil {
+		return common.NewSystemError("ERR_MISSING_CONDITIONAL_SET_ID").
+			WithMessage("missing conditional set ID").
+			WithOperation(op)
+	}
+
+	conditionalSetID := *change.ID
+	nestedSchema, err := m.findNestedSchemaForConditionalSetChanges(target, conditionalSetID, op)
+	if err != nil {
+		return err
+	}
+
+	if nestedSchema.Fields == nil || nestedSchema.Fields.FieldSets == nil {
+		return common.NewSystemError("ERR_CONDITIONAL_SET_NOT_FOUND").
+			WithMessagef("conditional set with ID %s not found", conditionalSetID).
+			WithOperation(op)
+	}
+
+	conditionalSet, exists := nestedSchema.Fields.FieldSets[conditionalSetID]
+	if !exists {
+		return common.NewSystemError("ERR_CONDITIONAL_SET_NOT_FOUND").
+			WithMessagef("conditional set with ID %s not found", conditionalSetID).
+			WithOperation(op)
+	}
+
+	// Apply changes from payload
+	payload := change.SchemaChangeModifyConditionalSetPayload
+	for _, unsetProp := range payload.Unset {
+		if unsetProp == "when" {
+			conditionalSet.When = nil
+		}
+	}
+	if payload.When != nil {
+		conditionalSet.When = payload.When
+	}
+
+	// Update the map entry (important for structs in maps)
+	nestedSchema.Fields.FieldSets[conditionalSetID] = conditionalSet
+	return nil
+}
+
+// applyAddConditionalField adds a field to a specific conditional set.
+func (m *MigrationApplier) applyAddConditionalField(target *schema.SchemaDefinition, change schema.SchemaChange) error {
+	op := "MigrationApplier.applyAddConditionalField"
+
+	if change.SchemaChangeAddConditionalFieldPayload == nil {
+		return common.NewSystemError("ERR_MISSING_PAYLOAD").
+			WithMessage("missing addConditionalField payload").
+			WithOperation(op)
+	}
+	if change.ID == nil {
+		return common.NewSystemError("ERR_MISSING_CONDITIONAL_SET_ID").
+			WithMessage("missing conditional set ID").
+			WithOperation(op)
+	}
+
+	conditionalSetID := *change.ID
+	fieldName := change.SchemaChangeAddConditionalFieldPayload.Field
+	fieldDef := change.SchemaChangeAddConditionalFieldPayload.Definition
+
+	nestedSchema, err := m.findNestedSchemaForConditionalSetChanges(target, conditionalSetID, op)
+	if err != nil {
+		return err
+	}
+
+	if nestedSchema.Fields == nil || nestedSchema.Fields.FieldSets == nil {
+		return common.NewSystemError("ERR_CONDITIONAL_SET_NOT_FOUND").
+			WithMessagef("conditional set with ID %s not found", conditionalSetID).
+			WithOperation(op)
+	}
+
+	conditionalSet, exists := nestedSchema.Fields.FieldSets[conditionalSetID]
+	if !exists {
+		return common.NewSystemError("ERR_CONDITIONAL_SET_NOT_FOUND").
+			WithMessagef("conditional set with ID %s not found", conditionalSetID).
+			WithOperation(op)
+	}
+
+	if conditionalSet.Fields == nil {
+		conditionalSet.Fields = make(map[string]*schema.FieldDefinition)
+	}
+
+	if _, fieldExists := conditionalSet.Fields[fieldName]; fieldExists && m.options.StrictMode {
+		return common.NewSystemError("ERR_FIELD_ALREADY_EXISTS").
+			WithMessagef("field %s already exists in conditional set %s", fieldName, conditionalSetID).
+			WithOperation(op)
+	}
+
+	clonedField, err := fieldDef.DeepClone()
+	if err != nil {
+		return common.NewSystemError("ERR_FIELD_CLONE_FAILED").
+			WithMessage("failed to clone field definition").
+			WithCause(err).
+			WithOperation(op)
+	}
+
+	conditionalSet.Fields[fieldName] = clonedField
+	nestedSchema.Fields.FieldSets[conditionalSetID] = conditionalSet
+	return nil
+}
+
+// applyRemoveConditionalField removes a field from a specific conditional set.
+func (m *MigrationApplier) applyRemoveConditionalField(target *schema.SchemaDefinition, change schema.SchemaChange) error {
+	op := "MigrationApplier.applyRemoveConditionalField"
+
+	if change.SchemaChangeRemoveConditionalFieldPayload == nil {
+		return common.NewSystemError("ERR_MISSING_PAYLOAD").
+			WithMessage("missing removeConditionalField payload").
+			WithOperation(op)
+	}
+	if change.ID == nil {
+		return common.NewSystemError("ERR_MISSING_CONDITIONAL_SET_ID").
+			WithMessage("missing conditional set ID").
+			WithOperation(op)
+	}
+
+	conditionalSetID := *change.ID
+	fieldName := change.SchemaChangeRemoveConditionalFieldPayload.Field
+
+	nestedSchema, err := m.findNestedSchemaForConditionalSetChanges(target, conditionalSetID, op)
+	if err != nil {
+		return err
+	}
+
+	if nestedSchema.Fields == nil || nestedSchema.Fields.FieldSets == nil {
+		return common.NewSystemError("ERR_CONDITIONAL_SET_NOT_FOUND").
+			WithMessagef("conditional set with ID %s not found", conditionalSetID).
+			WithOperation(op)
+	}
+
+	conditionalSet, exists := nestedSchema.Fields.FieldSets[conditionalSetID]
+	if !exists {
+		return common.NewSystemError("ERR_CONDITIONAL_SET_NOT_FOUND").
+			WithMessagef("conditional set with ID %s not found", conditionalSetID).
+			WithOperation(op)
+	}
+
+	if conditionalSet.Fields == nil {
+		if m.options.StrictMode {
+			return common.NewSystemError("ERR_FIELD_NOT_FOUND").
+				WithMessagef("field %s not found in conditional set %s", fieldName, conditionalSetID).
+				WithOperation(op)
+		}
+		return nil
+	}
+
+	if _, fieldExists := conditionalSet.Fields[fieldName]; !fieldExists {
+		if m.options.StrictMode {
+			return common.NewSystemError("ERR_FIELD_NOT_FOUND").
+				WithMessagef("field %s not found in conditional set %s", fieldName, conditionalSetID).
+				WithOperation(op)
+		}
+		return nil
+	}
+
+	// Clean up indexes and constraints referencing this field if it's the actual field name
+	// This is a bit tricky since field names can be non-unique across sets.
+	// We'll rely on the FieldDefinition's actual Name for cleanup, not the map key.
+	if field, exists := conditionalSet.Fields[fieldName]; exists {
+		if field.Name != "" { // Only cleanup if the FieldDefinition has a name
+			nestedSchema.Indexes = filterIndexesByField(nestedSchema.Indexes, field.Name)
+			nestedSchema.Constraints = filterConstraintsByField(nestedSchema.Constraints, field.Name)
+		}
+	}
+
+	delete(conditionalSet.Fields, fieldName)
+	nestedSchema.Fields.FieldSets[conditionalSetID] = conditionalSet
+	return nil
+}
+
+// applyModifyConditionalField modifies a field within a specific conditional set.
+func (m *MigrationApplier) applyModifyConditionalField(target *schema.SchemaDefinition, change schema.SchemaChange) error {
+	op := "MigrationApplier.applyModifyConditionalField"
+
+	if change.SchemaChangeModifyConditionalFieldPayload == nil {
+		return common.NewSystemError("ERR_MISSING_PAYLOAD").
+			WithMessage("missing modifyConditionalField payload").
+			WithOperation(op)
+	}
+	if change.ID == nil {
+		return common.NewSystemError("ERR_MISSING_CONDITIONAL_SET_ID").
+			WithMessage("missing conditional set ID").
+			WithOperation(op)
+	}
+
+	conditionalSetID := *change.ID
+	fieldName := change.SchemaChangeModifyConditionalFieldPayload.Field
+
+	nestedSchema, err := m.findNestedSchemaForConditionalSetChanges(target, conditionalSetID, op)
+	if err != nil {
+		return err
+	}
+
+	if nestedSchema.Fields == nil || nestedSchema.Fields.FieldSets == nil {
+		return common.NewSystemError("ERR_CONDITIONAL_SET_NOT_FOUND").
+			WithMessagef("conditional set with ID %s not found", conditionalSetID).
+			WithOperation(op)
+	}
+
+	conditionalSet, exists := nestedSchema.Fields.FieldSets[conditionalSetID]
+	if !exists {
+		return common.NewSystemError("ERR_CONDITIONAL_SET_NOT_FOUND").
+			WithMessagef("conditional set with ID %s not found", conditionalSetID).
+			WithOperation(op)
+	}
+
+	if conditionalSet.Fields == nil {
+		return common.NewSystemError("ERR_FIELD_NOT_FOUND").
+			WithMessagef("field %s not found in conditional set %s", fieldName, conditionalSetID).
+			WithOperation(op)
+	}
+
+	field, fieldExists := conditionalSet.Fields[fieldName]
+	if !fieldExists {
+		return common.NewSystemError("ERR_FIELD_NOT_FOUND").
+			WithMessagef("field %s not found in conditional set %s", fieldName, conditionalSetID).
+			WithOperation(op)
+	}
+
+	if err := field.ApplyPartialChanges(&change.SchemaChangeModifyConditionalFieldPayload.Changes); err != nil {
+		return common.NewSystemError("ERR_APPLY_PARTIAL_CHANGES_FAILED").
+			WithMessagef("failed to apply partial changes to field %s in conditional set %s", fieldName, conditionalSetID).
+			WithCause(err).
+			WithOperation(op)
+	}
+
+	nestedSchema.Fields.FieldSets[conditionalSetID] = conditionalSet
+	return nil
+}
+
+// findParentNestedSchemaForFieldSets attempts to find the nested schema definition that
+// contains the FieldSets we are trying to modify. This assumes the change ID
+// directly refers to the NestedSchemaDefinition ID.
+func (m *MigrationApplier) findNestedSchemaForConditionalSetChanges(
+	target *schema.SchemaDefinition,
+	nestedSchemaID string,
+	op string,
+) (*schema.NestedSchemaDefinition, error) {
+	if target.NestedSchemas == nil {
+		return nil, common.NewSystemError("ERR_NESTED_SCHEMAS_NOT_FOUND").
+			WithMessagef("no nested schemas defined in target for ID %s", nestedSchemaID).
+			WithOperation(op)
+	}
+
+	nestedSchema, exists := target.NestedSchemas[nestedSchemaID]
+	if !exists {
+		return nil, common.NewSystemError("ERR_NESTED_SCHEMA_NOT_FOUND").
+			WithMessagef("nested schema with ID %s not found", nestedSchemaID).
+			WithOperation(op)
+	}
+	return nestedSchema, nil
+}
 
 // removeIndexByName removes an index by name.
 func (m *MigrationApplier) removeIndexByName(target *schema.SchemaDefinition, name string) error {
@@ -874,6 +1416,334 @@ func convertToStringPtr(value any) *string {
 	}
 	return nil
 }
+
+// findFieldInSchemaRecursive attempts to find a FieldDefinition given a path like "field" or "nestedSchemaID.field".
+// It returns the found FieldDefinition, the parent SchemaDefinition (where the field resides), and a boolean indicating if it was found.
+func (m *MigrationApplier) findFieldInSchemaRecursive(
+	targetSchema *schema.SchemaDefinition,
+	fieldPath string,
+) (*schema.FieldDefinition, *schema.SchemaDefinition, bool) {
+	parts := strings.Split(fieldPath, ".")
+	currentSchema := targetSchema
+	var foundField *schema.FieldDefinition
+	var parentSchema *schema.SchemaDefinition
+
+	for i, part := range parts {
+		if i == len(parts)-1 { // Last part is the field name
+			if currentSchema.Fields == nil {
+				return nil, nil, false
+			}
+			field, exists := currentSchema.Fields[part]
+			if !exists {
+				return nil, nil, false
+			}
+			foundField = field
+			parentSchema = currentSchema
+			break
+		} else { // Intermediate part is a nested schema ID
+			if currentSchema.NestedSchemas == nil {
+				return nil, nil, false
+			}
+			nestedDef, exists := currentSchema.NestedSchemas[part]
+			if !exists {
+				return nil, nil, false
+			}
+			if !nestedDef.IsStructured() {
+				// Cannot traverse into non-structured nested schemas for fields
+				return nil, nil, false
+			}
+			// Convert NestedSchemaDefinition to SchemaDefinition for traversal
+			currentSchema = nestedSchemaToTempSchema(nestedDef)
+		}
+	}
+
+	return foundField, parentSchema, foundField != nil
+}
+
+// findFieldInConditionalSet finds a field within a ConditionalFieldSet.
+func findFieldInConditionalSet(conditionalSet *schema.ConditionalFieldSet, fieldName string) (*schema.FieldDefinition, bool) {
+	if conditionalSet == nil || conditionalSet.Fields == nil {
+		return nil, false
+	}
+	field, exists := conditionalSet.Fields[fieldName]
+	return field, exists
+}
+
+// validateConstraintFields recursively validates that fields in a constraint rule exist.
+func (m *MigrationApplier) validateConstraintFields(rule *schema.ConstraintRule, fields map[string]*schema.FieldDefinition, op string) error {
+	if rule.Constraint != nil {
+		fieldNamesToCheck := []string{}
+		if rule.Constraint.Field != nil {
+			fieldNamesToCheck = append(fieldNamesToCheck, *rule.Constraint.Field)
+		}
+		fieldNamesToCheck = append(fieldNamesToCheck, rule.Constraint.Fields...)
+
+		for _, constraintFieldName := range fieldNamesToCheck {
+			found := false
+			for _, schemaField := range fields { // fields map is keyed by fieldId
+				if schemaField.Name == constraintFieldName {
+					found = true
+					break
+				}
+			}
+			if !found {
+				return common.NewSystemError("ERR_FIELD_NOT_FOUND").
+					WithMessagef("field '%s' referenced in constraint '%s' does not exist by name in the schema", constraintFieldName, rule.Constraint.Name).
+					WithOperation(op)
+			}
+		}
+	} else if rule.ConstraintGroup != nil {
+		for i := range rule.ConstraintGroup.Rules {
+			if err := m.validateConstraintFields(&rule.ConstraintGroup.Rules[i], fields, op); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// applyChangesToNestedSchemaWithFieldSets applies changes directly to a NestedSchemaDefinition
+// that uses map-based fields (FieldSets).
+func (m *MigrationApplier) applyChangesToNestedSchemaWithFieldSets(
+	nestedSchema *schema.NestedSchemaDefinition,
+	changes []schema.SchemaChange,
+) error {
+	op := "MigrationApplier.applyChangesToNestedSchemaWithFieldSets"
+
+	if nestedSchema.Fields == nil || nestedSchema.Fields.FieldSets == nil {
+		return common.NewSystemError("ERR_INVALID_SCHEMA_FIELDS_TYPE").
+			WithMessage("nested schema does not have map-based conditional fields (FieldSets)").
+			WithOperation(op)
+	}
+
+	for _, change := range changes {
+		// The change.ID is assumed to be the ID of the NestedSchemaDefinition itself
+		// for these types of changes.
+		// The payloads contain the specific ConditionalSet ID or Field Name.
+		tempTargetSchema := nestedSchemaToTempSchema(nestedSchema) // Used for routing.
+
+		switch change.Type {
+		case schema.SchemaChangeTypeAddConditionalSet:
+			if err := m.applyAddConditionalSet(tempTargetSchema, change); err != nil {
+				return err
+			}
+		case schema.SchemaChangeTypeRemoveConditionalSet:
+			if err := m.applyRemoveConditionalSet(tempTargetSchema, change); err != nil {
+				return err
+			}
+		case schema.SchemaChangeTypeModifyConditionalSet:
+			if err := m.applyModifyConditionalSet(tempTargetSchema, change); err != nil {
+				return err
+			}
+		case schema.SchemaChangeTypeAddConditionalField:
+			if err := m.applyAddConditionalField(tempTargetSchema, change); err != nil {
+				return err
+			}
+		case schema.SchemaChangeTypeRemoveConditionalField:
+			if err := m.applyRemoveConditionalField(tempTargetSchema, change); err != nil {
+				return err
+			}
+		case schema.SchemaChangeTypeModifyConditionalField:
+			if err := m.applyModifyConditionalField(tempTargetSchema, change); err != nil {
+				return err
+			}
+		case schema.SchemaChangeTypeAddIndex, schema.SchemaChangeTypeRemoveIndex, schema.SchemaChangeTypeModifyIndex:
+			// These changes apply to the overall nested schema's indexes.
+			// Re-use existing applyChange by creating a temporary SchemaDefinition.
+			// Apply the change, then copy the modified indexes back.
+			tempSchemaForIndexes := &schema.SchemaDefinition{
+				Name:    nestedSchema.Name,
+				Indexes: nestedSchema.Indexes,
+			}
+			if err := m.applyChange(tempSchemaForIndexes, change); err != nil {
+				return err
+			}
+			nestedSchema.Indexes = tempSchemaForIndexes.Indexes
+		case schema.SchemaChangeTypeAddConstraint, schema.SchemaChangeTypeRemoveConstraint, schema.SchemaChangeTypeModifyConstraint:
+			// These changes apply to the overall nested schema's constraints.
+			// Re-use existing applyChange by creating a temporary SchemaDefinition.
+			// Apply the change, then copy the modified constraints back.
+			tempSchemaForConstraints := &schema.SchemaDefinition{
+				Name:        nestedSchema.Name,
+				Constraints: nestedSchema.Constraints,
+			}
+			if err := m.applyChange(tempSchemaForConstraints, change); err != nil {
+				return err
+			}
+			nestedSchema.Constraints = tempSchemaForConstraints.Constraints
+		default:
+			return common.NewSystemError("ERR_UNSUPPORTED_CHANGE_TYPE_FOR_FIELD_SETS").
+				WithMessagef("unsupported change type '%s' for map-based conditional fields (FieldSets)", change.Type).
+				WithOperation(op)
+		}
+	}
+	return nil
+}
+
+
+// applyChangesToNestedSchemaWithArrayFields applies changes directly to a NestedSchemaDefinition
+// that uses array-based fields (ConditionalFieldSet).
+func (m *MigrationApplier) applyChangesToNestedSchemaWithArrayFields(
+	nestedSchema *schema.NestedSchemaDefinition,
+	changes []schema.SchemaChange,
+) error {
+	op := "MigrationApplier.applyChangesToNestedSchemaWithArrayFields"
+
+	if nestedSchema.Fields == nil || !nestedSchema.Fields.IsLegacyFieldsArray() {
+		return common.NewSystemError("ERR_INVALID_SCHEMA_FIELDS_TYPE").
+			WithMessage("nested schema does not have array-based fields").
+			WithOperation(op)
+	}
+
+	for i, change := range changes {
+		switch change.Type {
+		case schema.SchemaChangeTypeAddField:
+			if change.SchemaChangeAddFieldPayload == nil {
+				return common.NewSystemError("ERR_MISSING_PAYLOAD").
+					WithMessage("missing addField payload for array-based nested schema").
+					WithOperation(op)
+			}
+			if change.ID == nil {
+				return common.NewSystemError("ERR_MISSING_FIELD_ID").
+					WithMessage("missing field ID for addField change in array-based nested schema").
+					WithOperation(op)
+			}
+
+			fieldId := *change.ID
+			fieldDef := change.SchemaChangeAddFieldPayload.Definition
+
+			// Find the base case (ConditionalFieldSet with no 'When' condition)
+			var baseCaseSet *schema.ConditionalFieldSet
+			for i := range nestedSchema.Fields.FieldsArray {
+				if nestedSchema.Fields.FieldsArray[i].When == nil {
+					baseCaseSet = &nestedSchema.Fields.FieldsArray[i]
+					break
+				}
+			}
+
+			if baseCaseSet == nil {
+				// No base case found, create a new one
+				newSet := schema.ConditionalFieldSet{
+					Fields: make(map[string]*schema.FieldDefinition),
+					When:   nil,
+				}
+				nestedSchema.Fields.FieldsArray = append(nestedSchema.Fields.FieldsArray, newSet)
+				baseCaseSet = &nestedSchema.Fields.FieldsArray[len(nestedSchema.Fields.FieldsArray)-1]
+			}
+
+			if _, exists := baseCaseSet.Fields[fieldId]; exists && m.options.StrictMode {
+				return common.NewSystemError("ERR_FIELD_ALREADY_EXISTS").
+					WithMessagef("field with ID %s already exists in the base case of array-based nested schema", fieldId).
+					WithOperation(op)
+			}
+
+			clonedField, err := fieldDef.DeepClone()
+			if err != nil {
+				return common.NewSystemError("ERR_FIELD_CLONE_FAILED").
+					WithMessage("failed to clone field definition for array-based nested schema").
+					WithCause(err).
+					WithOperation(op)
+			}
+			if baseCaseSet.Fields == nil {
+				baseCaseSet.Fields = make(map[string]*schema.FieldDefinition)
+			}
+			baseCaseSet.Fields[fieldId] = clonedField
+
+		case schema.SchemaChangeTypeRemoveField:
+			if change.ID == nil {
+				return common.NewSystemError("ERR_MISSING_FIELD_ID").
+					WithMessage("missing field ID for removeField change in array-based nested schema").
+					WithOperation(op)
+			}
+			fieldId := *change.ID
+			found := false
+			removedFieldNames := []string{}
+
+			for i := range nestedSchema.Fields.FieldsArray {
+				conditionalSet := &nestedSchema.Fields.FieldsArray[i]
+				if field, exists := conditionalSet.Fields[fieldId]; exists {
+					removedFieldNames = append(removedFieldNames, field.Name)
+					delete(conditionalSet.Fields, fieldId)
+					found = true
+				}
+			}
+
+			if !found && m.options.StrictMode {
+				return common.NewSystemError("ERR_FIELD_NOT_FOUND").
+					WithMessagef("field with ID %s not found in any conditional set of array-based nested schema", fieldId).
+					WithOperation(op)
+			}
+
+			// Clean up indexes and constraints referencing the removed field names
+			for _, fieldName := range removedFieldNames {
+				nestedSchema.Indexes = filterIndexesByField(nestedSchema.Indexes, fieldName)
+				nestedSchema.Constraints = filterConstraintsByField(nestedSchema.Constraints, fieldName)
+			}
+
+		case schema.SchemaChangeTypeModifyField:
+			if change.SchemaChangeModifyFieldPayload == nil {
+				return common.NewSystemError("ERR_MISSING_PAYLOAD").
+					WithMessage("missing modifyField payload for array-based nested schema").
+					WithOperation(op)
+			}
+			if change.ID == nil {
+				return common.NewSystemError("ERR_MISSING_FIELD_ID").
+					WithMessage("missing field ID for modifyField change in array-based nested schema").
+					WithOperation(op)
+			}
+			fieldId := *change.ID
+			found := false
+
+			for i := range nestedSchema.Fields.FieldsArray {
+				conditionalSet := &nestedSchema.Fields.FieldsArray[i]
+				if field, exists := conditionalSet.Fields[fieldId]; exists {
+					if err := field.ApplyPartialChanges(&change.SchemaChangeModifyFieldPayload.Changes); err != nil {
+						return common.NewSystemError("ERR_APPLY_PARTIAL_CHANGES_FAILED").
+							WithMessagef("failed to apply partial changes to field with ID %s", fieldId).
+							WithCause(err).
+							WithOperation(op)
+					}
+					found = true
+				}
+			}
+
+			if !found {
+				return common.NewSystemError("ERR_FIELD_NOT_FOUND").
+					WithMessagef("field with ID %s not found in any conditional set of array-based nested schema for modification", fieldId).
+					WithOperation(op)
+			}
+
+		case schema.SchemaChangeTypeAddIndex, schema.SchemaChangeTypeRemoveIndex, schema.SchemaChangeTypeModifyIndex:
+			// These changes apply to the overall nested schema's indexes, not fields within conditional sets.
+			// Temporarily convert to SchemaDefinition for index application.
+			tempSchema := &schema.SchemaDefinition{
+				Name:    nestedSchema.Name,
+				Indexes: nestedSchema.Indexes,
+			}
+			if err := m.applyChange(tempSchema, change); err != nil {
+				return err
+			}
+			nestedSchema.Indexes = tempSchema.Indexes
+		case schema.SchemaChangeTypeAddConstraint, schema.SchemaChangeTypeRemoveConstraint, schema.SchemaChangeTypeModifyConstraint:
+			// These changes apply to the overall nested schema's constraints, not fields within conditional sets.
+			// Temporarily convert to SchemaDefinition for constraint application.
+			tempSchema := &schema.SchemaDefinition{
+				Name:        nestedSchema.Name,
+				Constraints: nestedSchema.Constraints,
+			}
+			if err := m.applyChange(tempSchema, change); err != nil {
+				return err
+			}
+			nestedSchema.Constraints = tempSchema.Constraints
+		default:
+			return common.NewSystemError("ERR_UNSUPPORTED_CHANGE_TYPE_FOR_ARRAY_FIELDS").
+				WithMessagef("unsupported change type '%s' for array-based nested schema (change %d)", change.Type, i).
+				WithOperation(op)
+		}
+	}
+	return nil
+}
+
 
 // Conversion helpers for nested schema modifications
 

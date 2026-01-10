@@ -4,15 +4,24 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
-
 // IsMap returns true if fields are represented as a map.
 func (nsf *NestedSchemaFields) IsMap() bool {
 	return nsf.FieldsMap != nil
 }
 
-// IsArray returns true if fields are represented as a conditional array.
-func (nsf *NestedSchemaFields) IsArray() bool {
+// IsLegacyFieldsArray returns true if fields are represented as a conditional array using the deprecated FieldsArray.
+func (nsf *NestedSchemaFields) IsLegacyFieldsArray() bool {
 	return nsf.FieldsArray != nil
+}
+
+// IsFieldSets returns true if fields are represented as a map of conditional field sets.
+func (nsf *NestedSchemaFields) IsFieldSets() bool {
+	return nsf.FieldSets != nil
+}
+
+// IsConditionalSets returns true if the NestedSchemaFields contains any conditional field sets (either as map or array).
+func (nsf *NestedSchemaFields) IsConditionalSets() bool {
+	return nsf.FieldSets != nil || nsf.FieldsArray != nil
 }
 
 // IsStructured returns true if this is a structured schema (has fields).
@@ -24,6 +33,7 @@ func (nsd *NestedSchemaDefinition) IsStructured() bool {
 func (nsd *NestedSchemaDefinition) IsTyped() bool {
 	return nsd.Type != nil
 }
+
 // ============================================================================
 // NESTED SCHEMA DEFINITION QUERY OPERATIONS
 // ============================================================================
@@ -35,13 +45,63 @@ func (nsd *NestedSchemaDefinition) GetField(name string) (*FieldDefinition, bool
 	}
 
 	if nsd.Fields.IsMap() {
-		field, ok := nsd.Fields.FieldsMap[name]
-		return field, ok
+		for _, fielDef := range nsd.Fields.FieldsMap {
+			if fielDef.Name == name {
+				return fielDef, true
+			}
+		}
+		return nil, false
 	}
 
-	if nsd.Fields.IsArray() {
+	// Prefer FieldSets if present
+	if nsd.Fields.IsFieldSets() {
+		for _, conditionalSet := range nsd.Fields.FieldSets {
+			for _, fielDef := range conditionalSet.Fields {
+				if fielDef.Name == name {
+					return fielDef, true
+				}
+			}
+		}
+	} else if nsd.Fields.IsLegacyFieldsArray() {
 		for _, conditionalSet := range nsd.Fields.FieldsArray {
-			if field, ok := conditionalSet.Fields[name]; ok {
+			for _, fielDef := range conditionalSet.Fields {
+				if fielDef.Name == name {
+					return fielDef, true
+				}
+			}
+		}
+	}
+
+	return nil, false
+}
+
+// GetFieldByID retrieves a FieldDefinition by its ID from the nested schema's fields.
+// This method correctly handles the different internal representations of NestedSchemaFields
+// by performing a direct map lookup using the provided ID.
+func (nsd *NestedSchemaDefinition) GetFieldByID(fieldID string) (*FieldDefinition, bool) {
+	if nsd.Fields == nil {
+		return nil, false
+	}
+
+	if nsd.Fields.FieldsMap != nil {
+		if field, found := nsd.Fields.FieldsMap[fieldID]; found {
+			return field, true
+		}
+	}
+
+	// Iterate FieldSets (prefer FieldSets over FieldsArray as per deprecation)
+	if nsd.Fields.FieldSets != nil {
+		for _, conditionalSet := range nsd.Fields.FieldSets {
+			if field, found := conditionalSet.Fields[fieldID]; found {
+				return field, true
+			}
+		}
+	}
+
+	// Fallback to FieldsArray (deprecated)
+	if nsd.Fields.FieldsArray != nil {
+		for _, conditionalSet := range nsd.Fields.FieldsArray {
+			if field, found := conditionalSet.Fields[fieldID]; found {
 				return field, true
 			}
 		}
@@ -63,20 +123,33 @@ func (nsd *NestedSchemaDefinition) FieldNames() []string {
 	}
 
 	names := []string{}
+	seen := make(map[string]bool)
 
 	if nsd.Fields.IsMap() {
-		for name := range nsd.Fields.FieldsMap {
-			names = append(names, name)
+		// FIX: Don't use the map key; use the Name property from the value
+		for _, fielDef := range nsd.Fields.FieldsMap {
+			if !seen[fielDef.Name] {
+				seen[fielDef.Name] = true
+				names = append(names, fielDef.Name)
+			}
 		}
 	}
 
-	if nsd.Fields.IsArray() {
-		seen := make(map[string]bool)
+	if nsd.Fields.IsFieldSets() {
+		for _, conditionalSet := range nsd.Fields.FieldSets {
+			for _, fielDef := range conditionalSet.Fields {
+				if !seen[fielDef.Name] {
+					seen[fielDef.Name] = true
+					names = append(names, fielDef.Name)
+				}
+			}
+		}
+	} else if nsd.Fields.IsLegacyFieldsArray() {
 		for _, conditionalSet := range nsd.Fields.FieldsArray {
-			for name := range conditionalSet.Fields {
-				if !seen[name] {
-					seen[name] = true
-					names = append(names, name)
+			for _, fielDef := range conditionalSet.Fields {
+				if !seen[fielDef.Name] {
+					seen[fielDef.Name] = true
+					names = append(names, fielDef.Name)
 				}
 			}
 		}
@@ -90,13 +163,37 @@ func (nsd *NestedSchemaDefinition) FieldCount() int {
 	return len(nsd.FieldNames())
 }
 
-// GetConditionalFieldSets returns conditional field sets (if array-based)
+// GetConditionalFieldSets returns conditional field sets as a slice, prioritizing FieldSets over FieldsArray.
 func (nsd *NestedSchemaDefinition) GetConditionalFieldSets() []ConditionalFieldSet {
-	if !nsd.IsStructured() || !nsd.Fields.IsArray() {
+	if !nsd.IsStructured() {
 		return []ConditionalFieldSet{}
 	}
 
-	return nsd.Fields.FieldsArray
+	if nsd.Fields.IsFieldSets() {
+		sets := make([]ConditionalFieldSet, 0, len(nsd.Fields.FieldSets))
+		for _, set := range nsd.Fields.FieldSets {
+			sets = append(sets, set)
+		}
+		return sets
+	} else if nsd.Fields.IsLegacyFieldsArray() {
+		return nsd.Fields.FieldsArray
+	}
+
+	return []ConditionalFieldSet{}
+}
+
+// GetBaseFields returns a map of FieldID to FieldDefinition for all fields directly defined
+// in nsd.Fields.FieldsMap. This excludes fields that are part of any conditional sets.
+func (nsd *NestedSchemaDefinition) GetBaseFields() map[string]*FieldDefinition {
+	if !nsd.IsStructured() || nsd.Fields.FieldsMap == nil {
+		return map[string]*FieldDefinition{}
+	}
+	// Return a copy to prevent external modification
+	baseFields := make(map[string]*FieldDefinition, len(nsd.Fields.FieldsMap))
+	for id, field := range nsd.Fields.FieldsMap {
+		baseFields[id] = field
+	}
+	return baseFields
 }
 
 // FindFieldsForCondition returns fields that apply for the given data
@@ -109,18 +206,28 @@ func (nsd *NestedSchemaDefinition) FindFieldsForCondition(data map[string]any) m
 
 	if nsd.Fields.IsMap() {
 		// All fields apply for map-based schemas
-		for name, field := range nsd.Fields.FieldsMap {
-			result[name] = field
+		for key, field := range nsd.Fields.FieldsMap {
+			result[key] = field
 		}
 		return result
 	}
 
-	if nsd.Fields.IsArray() {
-		// Check each conditional set
+	// Prefer FieldSets if present
+	if nsd.Fields.IsFieldSets() {
+		// Check each conditional set in FieldSets
+		for _, conditionalSet := range nsd.Fields.FieldSets {
+			if conditionalSet.When == nil || conditionalSet.When.Evaluate(data) {
+				for key, field := range conditionalSet.Fields {
+					result[key] = field
+				}
+			}
+		}
+	} else if nsd.Fields.IsLegacyFieldsArray() { // Fallback to deprecated FieldsArray
+		// Check each conditional set in FieldsArray
 		for _, conditionalSet := range nsd.Fields.FieldsArray {
 			if conditionalSet.When == nil || conditionalSet.When.Evaluate(data) {
-				for name, field := range conditionalSet.Fields {
-					result[name] = field
+				for key, field := range conditionalSet.Fields {
+					result[key] = field
 				}
 			}
 		}

@@ -32,7 +32,10 @@ func NewPersistenceManager(schemaLoader *schema.SchemaLoader, cfg *Config, logge
 	}
 	logger.Info("Anansi persistence layer initialized successfully.")
 
-	sanitizationPolicyStore := utils.NewSanitizationPolicyStore(p, logger)
+	sanitizationPolicyStore, err := utils.NewSanitizationPolicyStore(p, logger)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to setup Anansi: %w", err)
+	}
 	reg := data.GetSanitizationRegistry()
 	reg.SetPersistence(sanitizationPolicyStore)
 	err = reg.LoadFromPersistence(context.Background())

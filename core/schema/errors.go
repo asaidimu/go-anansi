@@ -40,6 +40,16 @@ var (
 	ErrSchemaInternalInitFailed                   = common.NewSystemError("ERR_SCHEMA_INTERNAL_INIT_FAILED", "schema system initialization failed")
 	ErrSchemaValidationFailed                     = common.NewSystemError("ERR_SCHEMA_VALIDATION_FAILED", "schema definition does not match required structure")
 	ErrSchemaUnmarshalFailed                      = common.NewSystemError("ERR_SCHEMA_UNMARSHAL_FAILED", "failed to parse schema definition")
+
+	ErrFieldIDEmpty = common.NewSystemError("ERR_SCHEMA_FIELD_ID_EMPTY", "field ID cannot be empty")
+
+	ErrConditionalFieldsEmpty                  = common.NewSystemError("ERR_SCHEMA_CONDITIONAL_FIELDS_EMPTY", "conditional field set must define fields")
+	ErrConditionalWhenFieldEmpty               = common.NewSystemError("ERR_SCHEMA_CONDITIONAL_WHEN_FIELD_EMPTY", "conditional field 'when.field' cannot be empty")
+	ErrConditionalWhenFieldInvalidIdentifier   = common.NewSystemError("ERR_SCHEMA_CONDITIONAL_WHEN_FIELD_INVALID_IDENTIFIER", "conditional field 'when.field' must be a valid identifier")
+	ErrConditionalWhenFieldNotFound            = common.NewSystemError("ERR_SCHEMA_CONDITIONAL_WHEN_FIELD_NOT_FOUND", "conditional field 'when.field' references non-existent parent field")
+	ErrConditionalWhenFieldSelfReference       = common.NewSystemError("ERR_SCHEMA_CONDITIONAL_WHEN_FIELD_SELF_REFERENCE", "conditional field 'when.field' must not reference a field defined within the conditional field set itself")
+	ErrConditionalWhenValueTypeMismatch        = common.NewSystemError("ERR_SCHEMA_CONDITIONAL_WHEN_VALUE_TYPE_MISMATCH", "conditional field 'when.value' type is incompatible with parent field's type")
+	ErrConditionalFieldRedefinesBaseField      = common.NewSystemError("ERR_SCHEMA_CONDITIONAL_FIELD_REDEFINES_BASE_FIELD", "conditional field cannot redefine a field already present in the NestedSchemaDefinition's base fields")
 )
 
 
