@@ -33,16 +33,23 @@ type sanitizationStore struct {
 var _ data.SanitizationPersistence = (*sanitizationStore)(nil)
 
 // NewSanitizationPolicyStore creates a new Anansi-backed persistence layer.
-func NewSanitizationPolicyStore(persistence base.Persistence, logger *zap.Logger) data.SanitizationPersistence {
+func NewSanitizationPolicyStore(persistence base.Persistence, logger *zap.Logger) (data.SanitizationPersistence, error) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
 
-	return &sanitizationStore{
+	store := &sanitizationStore{
 		persistence:    persistence,
 		collectionName: SanitizationPoliciesCollection,
 		logger:         logger,
 	}
+
+	_, err := store.ensureCollection(context.Background())
+	if err != nil {
+		return nil, err
+	}
+
+	return store, nil
 }
 
 // ensureCollection ensures the sanitization policies collection exists and returns model collection
@@ -148,8 +155,8 @@ func (p *sanitizationStore) createPolicyCollectionSchema() *schema.SchemaDefinit
 }
 
 // Save persists a sanitization policy (upsert based on scope)
-func (p *sanitizationStore) Save(ctx context.Context, scope string, config *data.FieldMaskConfig) error {
-	if scope == "" {
+func (p *sanitizationStore) Save(ctx context.Context, config *data.FieldMaskConfig) error {
+	if config.Scope == "" {
 		return common.NewSystemError("INVALID_SCOPE").
 			WithOperation("sanitizationStore.Save").
 			WithMessage("scope must be non-empty")
@@ -161,7 +168,7 @@ func (p *sanitizationStore) Save(ctx context.Context, scope string, config *data
 	}
 
 	// Check if policy with this scope already exists
-	existing, err := p.findByScope(ctx, scope)
+	existing, err := p.findByScope(ctx, config.Scope)
 	isUpdate := err == nil && existing != nil
 
 	if isUpdate {
@@ -169,24 +176,16 @@ func (p *sanitizationStore) Save(ctx context.Context, scope string, config *data
 		if err != nil {
 			return common.SystemErrorFrom(err).
 				WithOperation("sanitizationStore.Save").
-				WithMessagef("failed to update policy for scope %q", scope)
+				WithMessagef("failed to update policy for scope %q", config.Scope)
 		}
-
-		p.logger.Info("Updated sanitization policy",
-			zap.String("scope", scope),
-			zap.String("doc_id", existing.ID))
 	} else {
 		// Create new document
-		result, err := col.Create(ctx, *config)
+		_, err := col.Create(ctx, *config)
 		if err != nil {
 			return common.SystemErrorFrom(err).
 				WithOperation("sanitizationStore.Save").
-				WithMessagef("failed to create policy for scope %q", scope)
+				WithMessagef("failed to create policy for scope %q", config.Scope)
 		}
-
-		p.logger.Info("Created sanitization policy",
-			zap.String("scope", scope),
-			zap.String("doc_id", result.ID))
 	}
 
 	return nil
@@ -238,7 +237,6 @@ func (p *sanitizationStore) findByScope(ctx context.Context, scope string) (*dat
 
 // LoadAll retrieves all persisted sanitization policies
 func (p *sanitizationStore) LoadAll(ctx context.Context) ([]*data.FieldMaskConfig, error) {
-	p.logger.Info("Loading scopes")
 	col, err := p.ensureCollection(ctx)
 	if err != nil {
 		return nil, err
@@ -252,7 +250,6 @@ func (p *sanitizationStore) LoadAll(ctx context.Context) ([]*data.FieldMaskConfi
 			WithMessage("failed to load all policies")
 	}
 
-	p.logger.Info("Loaded", zap.Any("Policies", results))
 	if len(results) == 0 {
 		return []*data.FieldMaskConfig{}, nil
 	}
@@ -262,9 +259,6 @@ func (p *sanitizationStore) LoadAll(ctx context.Context) ([]*data.FieldMaskConfi
 	for i := range results {
 		configs = append(configs, &results[i])
 	}
-
-	p.logger.Debug("Loaded all sanitization policies",
-		zap.Int("count", len(configs)))
 
 	return configs, nil
 }
@@ -296,10 +290,6 @@ func (p *sanitizationStore) Delete(ctx context.Context, scope string) error {
 			WithOperation("sanitizationStore.Delete").
 			WithMessagef("failed to delete policy for scope %q", scope)
 	}
-
-	p.logger.Info("Deleted sanitization policy",
-		zap.String("scope", scope),
-		zap.String("doc_id", docModel.ID))
 
 	return nil
 }

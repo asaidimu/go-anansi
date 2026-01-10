@@ -94,7 +94,7 @@ type Constraint struct {
 type ConstraintGroup struct {
 	Name     string                 `json:"name"`
 	Operator common.LogicalOperator `json:"operator"`
-	Rules    []ConstraintRule    `json:"rules"`
+	Rules    []ConstraintRule       `json:"rules"`
 }
 
 // ResourceReference defines a reference to a component in the registry.
@@ -156,7 +156,6 @@ func (cr ConstraintRule) MarshalJSON() ([]byte, error) {
 	return nil, fmt.Errorf("ConstraintRule has no active variant")
 }
 
-
 // SchemaConstraint represents a collection of constraint rules.
 type SchemaConstraint []ConstraintRule
 
@@ -200,24 +199,24 @@ func (ior IndexOrReference) MarshalJSON() ([]byte, error) {
 
 // NestedSchemaReference defines a reference to a nested schema.
 type NestedSchemaReference struct {
-	ID          string                      `json:"id"`
-	Constraints SchemaConstraint`json:"constraints,omitempty"`
-	Indexes     []IndexOrReference          `json:"indexes,omitempty"`
+	ID          string             `json:"id"`
+	Constraints SchemaConstraint   `json:"constraints,omitempty"`
+	Indexes     []IndexOrReference `json:"indexes,omitempty"`
 }
 
 // FieldDefinition defines a field within a schema.
 type FieldDefinition struct {
-	Name        string                      `json:"name"`
-	Type        FieldType                   `json:"type"`
-	Required    *bool                       `json:"required,omitempty"`
+	Name        string           `json:"name"`
+	Type        FieldType        `json:"type"`
+	Required    *bool            `json:"required,omitempty"`
 	Constraints SchemaConstraint `json:"constraints,omitempty"`
-	Default     any                         `json:"default,omitempty"`
-	Values      []any                       `json:"values,omitempty"`
-	Schema      any                         `json:"schema,omitempty"` // should be nested schema reference
-	ItemsType   *FieldType                  `json:"itemsType,omitempty"`
-	Deprecated  *bool                       `json:"deprecated,omitempty"`
-	Description *string                     `json:"description,omitempty"`
-	Unique      *bool                       `json:"unique,omitempty"`
+	Default     any              `json:"default,omitempty"`
+	Values      []any            `json:"values,omitempty"`
+	Schema      any              `json:"schema,omitempty"` // should be nested schema reference
+	ItemsType   *FieldType       `json:"itemsType,omitempty"`
+	Deprecated  *bool            `json:"deprecated,omitempty"`
+	Description *string          `json:"description,omitempty"`
+	Unique      *bool            `json:"unique,omitempty"`
 	Hint        *struct {
 		Input InputHint `json:"input"`
 	} `json:"hint,omitempty"`
@@ -315,35 +314,50 @@ type ConditionalFieldSet struct {
 }
 
 // NestedSchemaFields represents the discriminated union of field definitions.
-// Either FieldsMap or FieldsArray should be set, but not both.
+// Exactly one of FieldsMap, FieldsArray, or FieldSets should be set.
 type NestedSchemaFields struct {
-	FieldsMap   map[string]*FieldDefinition
+	FieldsMap map[string]*FieldDefinition
+
+	// FieldsArray is deprecated in favor of FieldSets, which allows for explicit keys for conditional field sets.
 	FieldsArray []ConditionalFieldSet
+
+	// FieldSets allows for addressing fields in conditional field sets by a unique key.
+	FieldSets map[string]ConditionalFieldSet
 }
 
 // UnmarshalJSON implements custom unmarshaling for NestedSchemaFields.
 func (nsf *NestedSchemaFields) UnmarshalJSON(data []byte) error {
-	// Try map form first
+	// Try map form (FieldsMap)
 	var fieldsMap map[string]*FieldDefinition
 	if err := json.Unmarshal(data, &fieldsMap); err == nil {
 		nsf.FieldsMap = fieldsMap
 		return nil
 	}
 
-	// Try array form
+	// Try map form (FieldSets)
+	var fieldSets map[string]ConditionalFieldSet
+	if err := json.Unmarshal(data, &fieldSets); err == nil {
+		nsf.FieldSets = fieldSets
+		return nil
+	}
+
+	// Try array form (FieldsArray)
 	var fieldsArray []ConditionalFieldSet
 	if err := json.Unmarshal(data, &fieldsArray); err == nil {
 		nsf.FieldsArray = fieldsArray
 		return nil
 	}
 
-	return fmt.Errorf("failed to unmarshal NestedSchemaFields: must be map or array")
+	return fmt.Errorf("failed to unmarshal NestedSchemaFields: must be a map of fields, a map of conditional sets, or an array of conditional sets")
 }
 
 // MarshalJSON implements custom marshaling for NestedSchemaFields.
 func (nsf NestedSchemaFields) MarshalJSON() ([]byte, error) {
 	if nsf.FieldsMap != nil {
 		return json.Marshal(nsf.FieldsMap)
+	}
+	if nsf.FieldSets != nil {
+		return json.Marshal(nsf.FieldSets)
 	}
 	if nsf.FieldsArray != nil {
 		return json.Marshal(nsf.FieldsArray)
@@ -360,8 +374,8 @@ type NestedSchemaDefinition struct {
 	Metadata    map[string]any `json:"metadata,omitempty"`
 	Concrete    *bool          `json:"concrete,omitempty"`
 
-	Indexes     []IndexOrReference          `json:"indexes,omitempty"`
-	Constraints SchemaConstraint `json:"constraints,omitempty"`
+	Indexes     []IndexOrReference `json:"indexes,omitempty"`
+	Constraints SchemaConstraint   `json:"constraints,omitempty"`
 
 	// Structured variant (has fields)
 	Fields *NestedSchemaFields `json:"fields,omitempty"`
@@ -372,7 +386,7 @@ type NestedSchemaDefinition struct {
 	Default   any        `json:"default,omitempty"`
 	Schema    any        `json:"schema,omitempty"`
 	ItemsType *FieldType `json:"itemsType,omitempty"`
-
+	Values    []any      `json:"values,omitempty"`
 }
 
 func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
@@ -388,6 +402,7 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 		Default     any             `json:"default"`
 		Schema      json.RawMessage `json:"schema"`
 		ItemsType   *FieldType      `json:"itemsType"`
+		Values      []any           `json:"values"`
 		Fields      json.RawMessage `json:"fields"`
 	}
 
@@ -441,6 +456,7 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 
 		nsd.Default = temp.Default
 		nsd.ItemsType = temp.ItemsType
+		nsd.Values = temp.Values
 
 		// For record/dynamic types, we don't need schema
 		if *temp.Type == FieldTypeRecord || *temp.Type == FieldTypeDynamic {
@@ -501,6 +517,9 @@ func (nsd NestedSchemaDefinition) MarshalJSON() ([]byte, error) {
 		}
 		if nsd.ItemsType != nil {
 			m["itemsType"] = *nsd.ItemsType
+		}
+		if nsd.Values != nil {
+			m["values"] = nsd.Values
 		}
 	}
 
@@ -565,7 +584,7 @@ type SchemaDefinition struct {
 	// `json:"registry,omitempty"` TODO IMPLEMENT LATER
 	Indexes       []IndexOrReference                 `json:"indexes,omitempty"`
 	Migrations    []Migration                        `json:"migrations,omitempty"`
-	Constraints   SchemaConstraint        `json:"constraints,omitempty"`
+	Constraints   SchemaConstraint                   `json:"constraints,omitempty"`
 	Hint          *SchemaHint                        `json:"hint,omitempty"`
 	NestedSchemas map[string]*NestedSchemaDefinition `json:"nestedSchemas,omitempty"` // Deprecated: Use Registry.Schemas instead
 
@@ -578,20 +597,26 @@ type SchemaChangeType string
 
 // Supported schema change types.
 const (
-	SchemaChangeTypeModifyProperty        SchemaChangeType = "modifyProperty"
-	SchemaChangeTypeAddField              SchemaChangeType = "addField"
-	SchemaChangeTypeRemoveField           SchemaChangeType = "removeField"
-	SchemaChangeTypeModifyField           SchemaChangeType = "modifyField"
-	SchemaChangeTypeAddIndex              SchemaChangeType = "addIndex"
-	SchemaChangeTypeRemoveIndex           SchemaChangeType = "removeIndex"
-	SchemaChangeTypeModifyIndex           SchemaChangeType = "modifyIndex"
-	SchemaChangeTypeAddConstraint         SchemaChangeType = "addConstraint"
-	SchemaChangeTypeRemoveConstraint      SchemaChangeType = "removeConstraint"
-	SchemaChangeTypeModifyConstraint      SchemaChangeType = "modifyConstraint"
-	SchemaChangeTypeAddSchema             SchemaChangeType = "addSchema"
-	SchemaChangeTypeRemoveSchema          SchemaChangeType = "removeSchema"
-	SchemaChangeTypeModifySchema          SchemaChangeType = "modifySchema"
-	SchemaChangeTypeModifySchemaReference SchemaChangeType = "modifySchemaReference"
+	SchemaChangeTypeModifyProperty         SchemaChangeType = "modifyProperty"
+	SchemaChangeTypeAddField               SchemaChangeType = "addField"
+	SchemaChangeTypeRemoveField            SchemaChangeType = "removeField"
+	SchemaChangeTypeModifyField            SchemaChangeType = "modifyField"
+	SchemaChangeTypeAddIndex               SchemaChangeType = "addIndex"
+	SchemaChangeTypeRemoveIndex            SchemaChangeType = "removeIndex"
+	SchemaChangeTypeModifyIndex            SchemaChangeType = "modifyIndex"
+	SchemaChangeTypeAddConstraint          SchemaChangeType = "addConstraint"
+	SchemaChangeTypeRemoveConstraint       SchemaChangeType = "removeConstraint"
+	SchemaChangeTypeModifyConstraint       SchemaChangeType = "modifyConstraint"
+	SchemaChangeTypeAddSchema              SchemaChangeType = "addSchema"
+	SchemaChangeTypeRemoveSchema           SchemaChangeType = "removeSchema"
+	SchemaChangeTypeModifySchema           SchemaChangeType = "modifySchema"
+	SchemaChangeTypeModifySchemaReference  SchemaChangeType = "modifySchemaReference"
+	SchemaChangeTypeAddConditionalSet      SchemaChangeType = "addConditionalSet"
+	SchemaChangeTypeRemoveConditionalSet   SchemaChangeType = "removeConditionalSet"
+	SchemaChangeTypeModifyConditionalSet   SchemaChangeType = "modifyConditionalSet"
+	SchemaChangeTypeAddConditionalField    SchemaChangeType = "addConditionalField"
+	SchemaChangeTypeRemoveConditionalField SchemaChangeType = "removeConditionalField"
+	SchemaChangeTypeModifyConditionalField SchemaChangeType = "modifyConditionalField"
 )
 
 // SchemaChangeModifyPropertyPayload is the payload for a ModifyProperty schema change.
@@ -610,6 +635,44 @@ type SchemaChangeModifySchemaReferencePayload struct {
 	Field   string         `json:"field,omitempty"`
 	ID      *string        `json:"id,omitempty"` // Optional: If FieldDefinition.Schema is a list, identifies the specific NestedSchemaReference to modify.
 	Changes []SchemaChange `json:"changes"`      // Changes to apply to the NestedSchemaReference's properties (constraints, indexes)
+}
+
+// SchemaChangeAddConditionalSetPayload is the payload for SchemaChangeTypeAddConditionalSet.
+type SchemaChangeAddConditionalSetPayload struct {
+	ID         string              `json:"id"`
+	Definition ConditionalFieldSet `json:"definition"`
+}
+
+// SchemaChangeRemoveConditionalSetPayload is the payload for SchemaChangeTypeRemoveConditionalSet.
+type SchemaChangeRemoveConditionalSetPayload struct {
+	ID string `json:"id"`
+}
+
+// SchemaChangeModifyConditionalSetPayload is the payload for SchemaChangeTypeModifyConditionalSet.
+type SchemaChangeModifyConditionalSetPayload struct {
+	ID    string                   `json:"id"`
+	When  *FieldInclusionCondition `json:"when,omitempty"`  // For modifying 'When'
+	Unset []string                 `json:"unset,omitempty"` // To unset the 'When' condition
+}
+
+// SchemaChangeAddConditionalFieldPayload is the payload for SchemaChangeTypeAddConditionalField.
+type SchemaChangeAddConditionalFieldPayload struct {
+	ID         string          `json:"id"`
+	Field      string          `json:"field"`
+	Definition FieldDefinition `json:"definition"`
+}
+
+// SchemaChangeRemoveConditionalFieldPayload is the payload for SchemaChangeTypeRemoveConditionalField.
+type SchemaChangeRemoveConditionalFieldPayload struct {
+	ID    string `json:"id"`
+	Field string `json:"field"`
+}
+
+// SchemaChangeModifyConditionalFieldPayload is the payload for SchemaChangeTypeModifyConditionalField.
+type SchemaChangeModifyConditionalFieldPayload struct {
+	ID      string                 `json:"id"`
+	Field   string                 `json:"field"`
+	Changes PartialFieldDefinition `json:"changes"`
 }
 
 // SchemaChangeModifyFieldPayload is the payload for a ModifyField schema change.
@@ -663,6 +726,12 @@ type SchemaChange struct {
 	*SchemaChangeAddSchemaPayload
 	*SchemaChangeModifySchemaPayload
 	*SchemaChangeModifySchemaReferencePayload
+	*SchemaChangeAddConditionalSetPayload
+	*SchemaChangeRemoveConditionalSetPayload
+	*SchemaChangeModifyConditionalSetPayload
+	*SchemaChangeAddConditionalFieldPayload
+	*SchemaChangeRemoveConditionalFieldPayload
+	*SchemaChangeModifyConditionalFieldPayload
 }
 
 func (sc *SchemaChange) UnmarshalJSON(data []byte) error {
@@ -718,6 +787,24 @@ func (sc *SchemaChange) UnmarshalJSON(data []byte) error {
 	case SchemaChangeTypeModifySchemaReference:
 		sc.SchemaChangeModifySchemaReferencePayload = &SchemaChangeModifySchemaReferencePayload{}
 		return utils.FromJSON(data, sc.SchemaChangeModifySchemaReferencePayload)
+	case SchemaChangeTypeAddConditionalSet:
+		sc.SchemaChangeAddConditionalSetPayload = &SchemaChangeAddConditionalSetPayload{}
+		return utils.FromJSON(data, sc.SchemaChangeAddConditionalSetPayload)
+	case SchemaChangeTypeRemoveConditionalSet:
+		sc.SchemaChangeRemoveConditionalSetPayload = &SchemaChangeRemoveConditionalSetPayload{}
+		return utils.FromJSON(data, sc.SchemaChangeRemoveConditionalSetPayload)
+	case SchemaChangeTypeModifyConditionalSet:
+		sc.SchemaChangeModifyConditionalSetPayload = &SchemaChangeModifyConditionalSetPayload{}
+		return utils.FromJSON(data, sc.SchemaChangeModifyConditionalSetPayload)
+	case SchemaChangeTypeAddConditionalField:
+		sc.SchemaChangeAddConditionalFieldPayload = &SchemaChangeAddConditionalFieldPayload{}
+		return utils.FromJSON(data, sc.SchemaChangeAddConditionalFieldPayload)
+	case SchemaChangeTypeRemoveConditionalField:
+		sc.SchemaChangeRemoveConditionalFieldPayload = &SchemaChangeRemoveConditionalFieldPayload{}
+		return utils.FromJSON(data, sc.SchemaChangeRemoveConditionalFieldPayload)
+	case SchemaChangeTypeModifyConditionalField:
+		sc.SchemaChangeModifyConditionalFieldPayload = &SchemaChangeModifyConditionalFieldPayload{}
+		return utils.FromJSON(data, sc.SchemaChangeModifyConditionalFieldPayload)
 	default:
 		return newUnknownSchemaChangeTypeError(sc.Type)
 	}
@@ -777,6 +864,30 @@ func (sc SchemaChange) MarshalJSON() ([]byte, error) {
 		if sc.SchemaChangeModifySchemaReferencePayload != nil {
 			payloadBytes, err = json.Marshal(sc.SchemaChangeModifySchemaReferencePayload)
 		}
+	case SchemaChangeTypeAddConditionalSet:
+		if sc.SchemaChangeAddConditionalSetPayload != nil {
+			payloadBytes, err = json.Marshal(sc.SchemaChangeAddConditionalSetPayload)
+		}
+	case SchemaChangeTypeRemoveConditionalSet:
+		if sc.SchemaChangeRemoveConditionalSetPayload != nil {
+			payloadBytes, err = json.Marshal(sc.SchemaChangeRemoveConditionalSetPayload)
+		}
+	case SchemaChangeTypeModifyConditionalSet:
+		if sc.SchemaChangeModifyConditionalSetPayload != nil {
+			payloadBytes, err = json.Marshal(sc.SchemaChangeModifyConditionalSetPayload)
+		}
+	case SchemaChangeTypeAddConditionalField:
+		if sc.SchemaChangeAddConditionalFieldPayload != nil {
+			payloadBytes, err = json.Marshal(sc.SchemaChangeAddConditionalFieldPayload)
+		}
+	case SchemaChangeTypeRemoveConditionalField:
+		if sc.SchemaChangeRemoveConditionalFieldPayload != nil {
+			payloadBytes, err = json.Marshal(sc.SchemaChangeRemoveConditionalFieldPayload)
+		}
+	case SchemaChangeTypeModifyConditionalField:
+		if sc.SchemaChangeModifyConditionalFieldPayload != nil {
+			payloadBytes, err = json.Marshal(sc.SchemaChangeModifyConditionalFieldPayload)
+		}
 	case SchemaChangeTypeRemoveField, SchemaChangeTypeRemoveIndex, SchemaChangeTypeRemoveConstraint, SchemaChangeTypeRemoveSchema:
 		return json.Marshal(m)
 	default:
@@ -800,17 +911,17 @@ func (sc SchemaChange) MarshalJSON() ([]byte, error) {
 
 // PartialFieldDefinition represents a partial definition of a field, used for modifications.
 type PartialFieldDefinition struct {
-	Name        *string                     `json:"name,omitempty"`
-	Type        *FieldType                  `json:"type,omitempty"`
-	Required    *bool                       `json:"required,omitempty"`
+	Name        *string          `json:"name,omitempty"`
+	Type        *FieldType       `json:"type,omitempty"`
+	Required    *bool            `json:"required,omitempty"`
 	Constraints SchemaConstraint `json:"constraints,omitempty"`
-	Default     any                         `json:"default,omitempty"`
-	Values      []any                       `json:"values,omitempty"`
-	Schema      any                         `json:"schema,omitempty"`
-	ItemsType   *FieldType                  `json:"itemsType,omitempty"`
-	Deprecated  *bool                       `json:"deprecated,omitempty"`
-	Description *string                     `json:"description,omitempty"`
-	Unique      *bool                       `json:"unique,omitempty"`
+	Default     any              `json:"default,omitempty"`
+	Values      []any            `json:"values,omitempty"`
+	Schema      any              `json:"schema,omitempty"`
+	ItemsType   *FieldType       `json:"itemsType,omitempty"`
+	Deprecated  *bool            `json:"deprecated,omitempty"`
+	Description *string          `json:"description,omitempty"`
+	Unique      *bool            `json:"unique,omitempty"`
 	Hint        *struct {
 		Input InputHint `json:"input"`
 	} `json:"hint,omitempty"`
@@ -912,17 +1023,18 @@ type PartialConstraint struct {
 
 // PartialNestedSchemaDefinition represents a partial definition of a nested schema, used for modifications.
 type PartialNestedSchemaDefinition struct {
-	Name        *string                     `json:"name,omitempty"`
-	Description *string                     `json:"description,omitempty"`
-	Indexes     []IndexDefinition           `json:"indexes,omitempty"`
-	Metadata    map[string]any              `json:"metadata,omitempty"`
-	Concrete    *bool                       `json:"concrete,omitempty"`
-	Fields      any                         `json:"fields,omitempty"`
-	Type        *FieldType                  `json:"type,omitempty"`
-	Constraints SchemaConstraint `json:"constraints,omitempty"`
-	Default     any                         `json:"default,omitempty"`
-	Schema      any                         `json:"schema,omitempty"`
-	ItemsType   *FieldType                  `json:"itemsType,omitempty"`
+	Name        *string           `json:"name,omitempty"`
+	Description *string           `json:"description,omitempty"`
+	Indexes     []IndexDefinition `json:"indexes,omitempty"`
+	Metadata    map[string]any    `json:"metadata,omitempty"`
+	Concrete    *bool             `json:"concrete,omitempty"`
+	Fields      any               `json:"fields,omitempty"`
+	Type        *FieldType        `json:"type,omitempty"`
+	Constraints SchemaConstraint  `json:"constraints,omitempty"`
+	Default     any               `json:"default,omitempty"`
+	Schema      any               `json:"schema,omitempty"`
+	ItemsType   *FieldType        `json:"itemsType,omitempty"`
+	Values      []any             `json:"values,omitempty"`
 }
 
 // TransformFunction defines a function for transforming data from one schema version to another.

@@ -32,7 +32,7 @@ var (
 // ============================================================================
 
 type SanitizationPersistence interface {
-	Save(ctx context.Context, scope string, config *FieldMaskConfig) error
+	Save(ctx context.Context, config *FieldMaskConfig) error
 	Load(ctx context.Context, scope string) (*FieldMaskConfig, error)
 	LoadAll(ctx context.Context) ([]*FieldMaskConfig, error)
 	Delete(ctx context.Context, scope string) error
@@ -80,6 +80,7 @@ func (r *SanitizationRegistry) SetGlobal(config *FieldMaskConfig) error {
 			WithMessage("config cannot be nil")
 	}
 
+	config.Scope =  "__global__"
 	// Validate config
 	if err := config.Validate(); err != nil {
 		return common.SystemErrorFrom(err).
@@ -97,7 +98,7 @@ func (r *SanitizationRegistry) SetGlobal(config *FieldMaskConfig) error {
 
 	// Persist if enabled
 	if persistence != nil {
-		if err := persistence.Save(context.Background(), "__global__", config); err != nil {
+		if err := persistence.Save(context.Background(), config); err != nil {
 			r.logger.Error("Failed to persist global sanitization policy",
 				zap.Error(err))
 			// Don't fail the operation - it's still in memory
@@ -140,7 +141,7 @@ func (r *SanitizationRegistry) Register(scopeID string, config *FieldMaskConfig)
 	r.mu.Unlock()
 
 	if persistence != nil {
-		if err := r.persistence.Save(context.Background(), scopeID, config); err != nil {
+		if err := r.persistence.Save(context.Background(), config); err != nil {
 			r.logger.Info("Failed to save scope\n", zap.Any("Scope", config))
 			r.logger.Error("Failed to persist sanitization policy",
 				zap.String("scope", scopeID), zap.Error(err))
@@ -237,7 +238,7 @@ func (r *SanitizationRegistry) getGlobalSanitizerLocked() *DocumentSanitizer {
 	if r.global == nil {
 		return nil
 	}
-	return NewDocumentSanitizer(*r.global, r.logger, "global")
+	return NewDocumentSanitizer(*r.global, r.logger, "__global__")
 }
 
 // GetScopesFromContext extracts all scope identifiers from a context.

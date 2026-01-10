@@ -7,10 +7,6 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
 )
 
-// ============================================================================
-// COMPREHENSIVE SEMANTIC VALIDATION
-// ============================================================================
-
 // ValidateAll runs all validation checks to ensure schema is semantically correct
 // Based on the TypeScript schema definition semantics
 func (s *SchemaDefinition) ValidateAll() []common.Issue {
@@ -117,10 +113,20 @@ func (s *SchemaDefinition) validateFields() []common.Issue {
 	return errors
 }
 
-// validateField validates a single field definition
+// ValidateField validates a single field definition
 func (s *SchemaDefinition) validateField(id string, field *FieldDefinition) []common.Issue {
 	errors := []common.Issue{}
 	basePath := fmt.Sprintf("/fields/%s", id)
+
+	if id == "" {
+		errors = append(errors, common.Issue{
+			Path:	"/",
+			Message: "field ID cannot be empty",
+			Code:	ErrFieldIDEmpty.Code,
+		})
+		// If ID is empty, further validation might be meaningless or cause panics, so return early
+		return errors
+	}
 
 	// Name is required
 	if field.Name == "" {
@@ -592,11 +598,6 @@ func validateNestedSchemaStructure(s *SchemaDefinition, id string, nsd *NestedSc
 
 	// If structured, validate fields
 	if hasFields {
-		sc, err := s.ResolveNestedSchema(id)
-		if err != nil {
-			errors = append(errors, common.SystemErrorFrom(err).ToIssue())
-		}
-		errors = append(errors, sc.validateSchemaStructure()...)
 		if nsd.Fields.IsMap() {
 			if len(nsd.Fields.FieldsMap) == 0 {
 				errors = append(errors, common.Issue{
@@ -606,26 +607,27 @@ func validateNestedSchemaStructure(s *SchemaDefinition, id string, nsd *NestedSc
 			}
 		}
 
-		if nsd.Fields.IsArray() {
-			if len(nsd.Fields.FieldsArray) == 0 {
-				errors = append(errors, common.Issue{
-					Path:    basePath + "/fields",
-					Message: "conditional field array must have at least one entry",
-				})
-			}
+		if nsd.Fields != nil {
 
-			// Check for discriminator field consistency
-			discriminatorField := ""
-			for i, cfs := range nsd.Fields.FieldsArray {
-				if cfs.When != nil {
-					if discriminatorField == "" {
-						discriminatorField = cfs.When.Field
-					} else if cfs.When.Field != discriminatorField {
-						errors = append(errors, common.Issue{
-							Path:    fmt.Sprintf("%s/fields/%d/when", basePath, i),
-							Message: fmt.Sprintf("all 'when' conditions must use the same discriminator field (found '%s' and '%s')", discriminatorField, cfs.When.Field),
-						})
-					}
+			// Prefer FieldSets if present
+			if len(nsd.Fields.FieldSets) > 0 {
+				for key, conditionalSet := range nsd.Fields.FieldSets {
+					// Apply validation logic for each conditionalSet in FieldSets
+					issues := validateConditionalFieldSet(nsd,s, fmt.Sprintf("%s.fields.fieldSets.%s", basePath, key), conditionalSet)
+					errors = append(errors, issues...)
+				}
+			} else if nsd.Fields.FieldsArray != nil { // Fallback to FieldsArray
+				if len(nsd.Fields.FieldsArray) == 0 {
+					errors = append(errors, common.Issue{
+						Code:    "validation_error",
+						Message: "conditional field sets array cannot be empty",
+						Path:    basePath + ".fields.fieldsArray",
+					})
+				}
+				for i, conditionalSet := range nsd.Fields.FieldsArray {
+					// Apply validation logic for each conditionalSet in FieldsArray
+					issues := validateConditionalFieldSet(nsd,s, fmt.Sprintf("%s.fields.fieldsArray[%d]", basePath, i), conditionalSet)
+					errors = append(errors, issues...)
 				}
 			}
 		}
@@ -695,7 +697,7 @@ func (s *SchemaDefinition) ValidateConstraintReferences() []common.Issue {
 	return errors
 }
 
-// ValidateNestedSchemaReferences checks if all nested schema references are valid
+// ValidateNestedSchemaReferences checks if all nested schema references are valid across the entire schema.
 func (s *SchemaDefinition) ValidateNestedSchemaReferences() []common.Issue {
 	errors := []common.Issue{}
 
@@ -703,30 +705,73 @@ func (s *SchemaDefinition) ValidateNestedSchemaReferences() []common.Issue {
 		return errors
 	}
 
+	// Validate references in top-level fields
 	for id, field := range s.Fields {
-		// Check single schema reference
-		if ref, ok := field.GetSchemaReference(); ok {
-			schemaID := string(ref.ID)
-			if !s.HasNestedSchema(schemaID) {
-				errors = append(errors, common.Issue{
-					Path:    fmt.Sprintf("/fields/%s/schema", id),
-					Message: fmt.Sprintf("references non-existent nested schema '%s'", ref.ID),
-				})
-			}
-		}
+		errors = append(errors, s.validateFieldSchemaReferences(fmt.Sprintf("/fields/%s", id), field)...)
+	}
 
-		// Check array of schema references (for unions)
-		if refs, ok := field.GetSchemaReferences(); ok {
-			for j, ref := range refs {
-				schemaID := string(ref.ID)
-				if !s.HasNestedSchema(schemaID) {
-					errors = append(errors, common.Issue{
-						Path:    fmt.Sprintf("/fields/%s/schema/%d", id, j),
-						Message: fmt.Sprintf("references non-existent nested schema '%s'", ref.ID),
-					})
+	// Validate references in all nested schemas
+	if s.NestedSchemas != nil {
+		for nsdID, nsd := range s.NestedSchemas {
+			if nsd.Fields != nil {
+				// Validate fields directly in NestedSchemaDefinition's FieldsMap
+				if nsd.Fields.FieldsMap != nil {
+					for fieldID, field := range nsd.Fields.FieldsMap {
+						errors = append(errors, s.validateFieldSchemaReferences(fmt.Sprintf("/nestedSchemas/%s/fields/%s", nsdID, fieldID), field)...)
+					}
+				}
+
+				// Validate fields within ConditionalFieldSets (FieldSets or FieldsArray)
+				for key, conditionalSet := range nsd.Fields.FieldSets {
+					for fieldID, field := range conditionalSet.Fields {
+						errors = append(errors, s.validateFieldSchemaReferences(fmt.Sprintf("/nestedSchemas/%s/fields.fieldSets.%s/fields/%s", nsdID, key, fieldID), field)...)
+					}
+				}
+				for i, conditionalSet := range nsd.Fields.FieldsArray {
+					for fieldID, field := range conditionalSet.Fields {
+						errors = append(errors, s.validateFieldSchemaReferences(fmt.Sprintf("/nestedSchemas/%s/fields.fieldsArray[%d]/fields/%s", nsdID, i, fieldID), field)...)
+					}
 				}
 			}
 		}
+	}
+	return errors
+}
+
+// validateFieldSchemaReferences checks the 'Schema' property of a FieldDefinition for valid NestedSchemaReferences.
+func (s *SchemaDefinition) validateFieldSchemaReferences(basePath string, field *FieldDefinition) []common.Issue {
+	errors := []common.Issue{}
+
+	if field.Schema == nil {
+		return errors
+	}
+
+	// Check single schema reference
+	if ref, ok := field.Schema.(NestedSchemaReference); ok {
+		schemaID := string(ref.ID)
+		if !s.HasNestedSchema(schemaID) {
+			errors = append(errors, common.Issue{
+				Path:    fmt.Sprintf("%s/schema", basePath),
+				Message: fmt.Sprintf("references non-existent nested schema '%s'", ref.ID),
+				Code:    ErrUnknownNestedSchemaReference.Code,
+			})
+		}
+		return errors
+	}
+
+	// Check array of schema references (for unions)
+	if refs, ok := field.Schema.([]NestedSchemaReference); ok {
+		for j, ref := range refs {
+			schemaID := string(ref.ID)
+			if !s.HasNestedSchema(schemaID) {
+				errors = append(errors, common.Issue{
+					Path:    fmt.Sprintf("%s/schema/%d", basePath, j),
+					Message: fmt.Sprintf("references non-existent nested schema '%s'", ref.ID),
+					Code:    ErrUnknownNestedSchemaReference.Code,
+				})
+			}
+		}
+		return errors
 	}
 
 	return errors
@@ -830,7 +875,27 @@ func validateConstraintRulesReferences(rules SchemaConstraint, schema *SchemaDef
 
 // WithOrphanedIndexesRemoved returns a new schema with all orphaned indexes removed
 func (s *SchemaDefinition) WithOrphanedIndexesRemoved() (*SchemaDefinition, *IndexRemovalResult, error) {
-	orphaned := s.GetOrphanedIndexes()
+	orphaned := []string{}
+
+	if s.Indexes == nil {
+		return s, &IndexRemovalResult{RemovedNames: []string{}, Count: 0}, nil
+	}
+
+	for _, ior := range s.Indexes {
+		if !ior.IsIndex() {
+			orphaned = append(orphaned, ior.Reference.ID)
+			continue
+		}
+
+		index := ior.Index
+		for _, fieldName := range index.Fields {
+			if !s.HasFieldWithName(fieldName) {
+				orphaned = append(orphaned, index.Name)
+				break
+			}
+		}
+	}
+
 	if len(orphaned) == 0 {
 		return s, &IndexRemovalResult{RemovedNames: []string{}, Count: 0}, nil
 	}
@@ -843,6 +908,9 @@ func (s *SchemaDefinition) WithOrphanedIndexesRemoved() (*SchemaDefinition, *Ind
 	newIndexes := []IndexOrReference{}
 	for _, ior := range clone.Indexes {
 		if !ior.IsIndex() {
+			if slices.Contains(orphaned, ior.Reference.ID) {
+				continue
+			}
 			newIndexes = append(newIndexes, ior)
 			continue
 		}
@@ -939,7 +1007,6 @@ func (s *SchemaDefinition) WithOrphanedNestedSchemasRemoved() (*SchemaDefinition
 
 // WithAllOrphansRemoved returns a new schema with all orphaned references removed
 
-
 func (s *SchemaDefinition) WithAllOrphansRemoved() (*SchemaDefinition, *CleanupResult, error) {
 	result := &CleanupResult{}
 
@@ -967,6 +1034,101 @@ func (s *SchemaDefinition) WithAllOrphansRemoved() (*SchemaDefinition, *CleanupR
 	return clone, result, nil
 }
 
-// ============================================================================
-// HELPER FUNCTIONS
-// ============================================================================
+// validateConditionalFieldSet performs validation specific to a ConditionalFieldSet.
+func validateConditionalFieldSet(nsd *NestedSchemaDefinition, rootSchema *SchemaDefinition, basePath string, cfs ConditionalFieldSet) []common.Issue {
+	issues := []common.Issue{}
+
+	// Rule 1: Fields map must not be empty.
+	if len(cfs.Fields) == 0 {
+		issues = append(issues, common.Issue{
+			Path:    basePath + "/fields",
+			Message: "conditional field set must define fields",
+			Code:    ErrConditionalFieldsEmpty.Code,
+		})
+	}
+
+	// Rule 2: Validate individual FieldDefinitions within cfs.Fields.
+	// Also check for name collision with existing fields in the parent NestedSchemaDefinition's base fields.
+	existingNsdFieldIDs := make(map[string]bool)
+	for fieldID := range nsd.GetBaseFields() { // Use GetBaseFields for consistency
+		existingNsdFieldIDs[fieldID] = true
+	}
+
+	for fieldID, fieldDefinition := range cfs.Fields {
+		fieldPath := fmt.Sprintf("%s/fields/%s", basePath, fieldID)
+
+		// Check for collision with existing fields in the NestedSchemaDefinition (outside this conditional set)
+		if existingNsdFieldIDs[fieldID] {
+			issues = append(issues, common.Issue{
+				Path:    fieldPath,
+				Message: fmt.Sprintf("conditional field with ID '%s' cannot redefine a field already present in the NestedSchemaDefinition's base fields", fieldID),
+				Code:    ErrConditionalFieldRedefinesBaseField.Code, // New error code
+			})
+		}
+
+		// Use rootSchema.validateField as it handles full FieldDefinition validation including nested schemas
+		fieldIssues := rootSchema.validateField(fieldID, fieldDefinition)
+		for _, issue := range fieldIssues {
+			// Adjust path for nested field issues to be relative to the conditional set
+			adjustedPath := fmt.Sprintf("%s%s", fieldPath, issue.Path)
+			issues = append(issues, common.Issue{
+				Path:    adjustedPath,
+				Message: issue.Message,
+				Code:    issue.Code,
+			})
+		}
+	}
+
+	// Rule 3: If 'When' is present, validate it.
+	if cfs.When != nil {
+		whenPath := basePath + "/when"
+
+		// Rule 3a: When.Field (FieldID) cannot be empty.
+		if cfs.When.Field == "" {
+			issues = append(issues, common.Issue{
+				Path:    whenPath + "/field",
+				Message: "conditional field 'when.field' (FieldID) cannot be empty",
+				Code:    ErrConditionalWhenFieldEmpty.Code,
+			})
+		} else if !IsValidIdentifier(cfs.When.Field) {
+			issues = append(issues, common.Issue{
+				Path:    whenPath + "/field",
+				Message: fmt.Sprintf("conditional field 'when.field' (FieldID) must be a valid identifier (alphanumeric and underscores only), got '%s'", cfs.When.Field),
+				Code:    ErrConditionalWhenFieldInvalidIdentifier.Code,
+			})
+		} else { // Only proceed if When.Field is non-empty and a valid identifier
+			// Rule 3b: When.Field (FieldID) must exist in the local NestedSchemaDefinition (nsd) base fields.
+			// The current nsd.GetFieldByID *also* looks into other conditional sets.
+			// For proper DAG, this GetFieldByID should be more precise, but for now, we rely on the self-reference check (Rule 3c).
+			parentField, found := nsd.GetFieldByID(cfs.When.Field)
+			if !found {
+				issues = append(issues, common.Issue{
+					Path:    whenPath + "/field",
+					Message: fmt.Sprintf("conditional field 'when.field' references non-existent local field ID '%s' within NestedSchemaDefinition '%s'", cfs.When.Field, nsd.Name),
+					Code:    ErrConditionalWhenFieldNotFound.Code,
+				})
+			} else {
+				// Rule 3c: When.Field should NOT refer to a field within cfs.Fields.
+				// This prevents circular dependencies within the conditional set itself.
+				if _, ok := cfs.Fields[cfs.When.Field]; ok {
+					issues = append(issues, common.Issue{
+						Path:    whenPath + "/field",
+						Message: fmt.Sprintf("conditional field 'when.field' (FieldID '%s') must not reference a field defined within the conditional field set itself", cfs.When.Field),
+						Code:    ErrConditionalWhenFieldSelfReference.Code,
+					})
+				}
+
+				// Rule 3d: The type of When.Value should be compatible with the type of the field referenced by When.Field.
+				if cfs.When.Value != nil && !parentField.ValidateType(cfs.When.Value) {
+					issues = append(issues, common.Issue{
+						Path:    whenPath + "/value",
+						Message: fmt.Sprintf("conditional field 'when.value' type is incompatible with local field ID '%s' of type '%s'", cfs.When.Field, parentField.Type),
+						Code:    ErrConditionalWhenValueTypeMismatch.Code,
+					})
+				}
+			}
+		}
+	}
+
+	return issues
+}

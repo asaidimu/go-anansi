@@ -457,46 +457,77 @@ func (pc *PatchConverter) convertModifySchema(change schema.SchemaChange) ([]scj
 	}
 
 	schemaID := *change.ID
-
-	// Get the nested schema to pass as context for nested changes
 	nestedSchema, exists := pc.schema.NestedSchemas[schemaID]
 	if !exists {
 		return nil, common.NewSystemError("ERR_CREATE_MIGRATION_PATCH").
 			WithMessagef("nested schema %s not found in parent schema", schemaID)
 	}
 
-	// Create a temporary schema definition for the nested schema
-	// to use as context for nested change conversions
-	tempSchema := &schema.SchemaDefinition{
-		Name:        nestedSchema.Name,
-		Description: nestedSchema.Description,
-		Indexes:     nestedSchema.Indexes,
-		Constraints: nestedSchema.Constraints,
-	}
-
-	// If the nested schema has fields, populate them
-	if nestedSchema.Fields != nil && nestedSchema.Fields.IsMap() {
-		tempSchema.Fields = nestedSchema.Fields.FieldsMap
-	} else {
-		tempSchema.Fields = make(map[string]*schema.FieldDefinition)
-	}
-
-	// Create a temporary converter with the nested schema context
-	nestedConverter := &PatchConverter{schema: tempSchema}
-
 	patches := make([]scjson.PatchOperation, 0)
+	basePath := fmt.Sprintf("/nestedSchemas/%s", schemaID)
 
-	// Recursively apply nested schema changes
-	for _, nestedChange := range change.SchemaChangeModifySchemaPayload.Changes {
-		nestedPatches, err := nestedConverter.Convert(nestedChange)
-		if err != nil {
-			return nil, err
+	if nestedSchema.IsStructured() {
+		// Logic for structured (object-like) nested schemas
+		tempSchema := &schema.SchemaDefinition{
+			Name:        nestedSchema.Name,
+			Description: nestedSchema.Description,
+			Indexes:     nestedSchema.Indexes,
+			Constraints: nestedSchema.Constraints,
+			Fields:      make(map[string]*schema.FieldDefinition),
+		}
+		if nestedSchema.Fields != nil && nestedSchema.Fields.IsMap() {
+			tempSchema.Fields = nestedSchema.Fields.FieldsMap
 		}
 
-		// Prefix paths with the schema ID
-		for _, p := range nestedPatches {
-			p.Path = fmt.Sprintf("/nestedSchemas/%s%s", schemaID, p.Path)
-			patches = append(patches, p)
+		nestedConverter := &PatchConverter{schema: tempSchema}
+		for _, nestedChange := range change.SchemaChangeModifySchemaPayload.Changes {
+			nestedPatches, err := nestedConverter.Convert(nestedChange)
+			if err != nil {
+				return nil, err
+			}
+			for i := range nestedPatches {
+				nestedPatches[i].Path = fmt.Sprintf("%s%s", basePath, nestedPatches[i].Path)
+			}
+			patches = append(patches, nestedPatches...)
+		}
+	} else {
+		// Logic for typed (primitive-like) nested schemas
+		for _, subChange := range change.SchemaChangeModifySchemaPayload.Changes {
+			switch subChange.Type {
+			case schema.SchemaChangeTypeModifyProperty:
+				payload := subChange.SchemaChangeModifyPropertyPayload
+				if payload == nil || subChange.ID == nil {
+					return nil, common.NewSystemError("ERR_CREATE_MIGRATION_PATCH").
+						WithMessage("missing modifyProperty payload for typed nested schema")
+				}
+				propID := *subChange.ID
+				patches = append(patches, scjson.PatchOperation{
+					Op:    "replace",
+					Path:  fmt.Sprintf("%s/%s", basePath, propID),
+					Value: payload.Value,
+				})
+
+			case schema.SchemaChangeTypeAddConstraint, schema.SchemaChangeTypeRemoveConstraint, schema.SchemaChangeTypeModifyConstraint,
+				schema.SchemaChangeTypeAddIndex, schema.SchemaChangeTypeRemoveIndex, schema.SchemaChangeTypeModifyIndex:
+				// Create a minimal temporary schema for context
+				tempSchemaForSlices := &schema.SchemaDefinition{
+					Name:        nestedSchema.Name,
+					Indexes:     nestedSchema.Indexes,
+					Constraints: nestedSchema.Constraints,
+				}
+				nestedConverter := &PatchConverter{schema: tempSchemaForSlices}
+				nestedPatches, err := nestedConverter.Convert(subChange)
+				if err != nil {
+					return nil, err
+				}
+				for i := range nestedPatches {
+					nestedPatches[i].Path = fmt.Sprintf("%s%s", basePath, nestedPatches[i].Path)
+				}
+				patches = append(patches, nestedPatches...)
+			default:
+				return nil, common.NewSystemError("ERR_CREATE_MIGRATION_PATCH").
+					WithMessagef("unsupported change type '%s' on typed nested schema", subChange.Type)
+			}
 		}
 	}
 
