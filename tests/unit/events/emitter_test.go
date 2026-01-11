@@ -27,7 +27,7 @@ type MockEventBus[T any] struct {
 	SubscribeFunc func(eventType string, handler func(ctx context.Context, event T) error, filter ...func(ctx context.Context, event T) bool) func()
 }
 
-func (m *MockEventBus[T]) Emit(eventType string, event T) {
+func (m *MockEventBus[T]) Emit(_ context.Context, eventType string, event T) {
 	if m.EmitFunc != nil {
 		m.EmitFunc(eventType, event)
 	}
@@ -59,7 +59,7 @@ func TestEventEmitter_EmitEvent(t *testing.T) {
 	emitter := anansievents.NewEventEmitter(mockBus, nil, logger)
 
 	testEvent := TestEvent{ID: "123", Message: "Hello"}
-	emitter.EmitEvent("test.event", testEvent)
+	emitter.EmitEvent(context.Background(), "test.event", testEvent)
 
 	select {
 	case emitted := <-emittedEvents:
@@ -81,7 +81,7 @@ func TestGoEventsBusAdapter_Emit(t *testing.T) {
 	})
 
 	testEvent := TestEvent{ID: "456", Message: "World"}
-	adapter.Emit("test.event", testEvent)
+	adapter.Emit(context.Background(), "test.event", testEvent)
 
 	select {
 	case emitted := <-emittedEvent:

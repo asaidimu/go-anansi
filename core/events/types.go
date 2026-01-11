@@ -6,7 +6,7 @@ import (
 
 // EventBus defines the interface for an event bus that can emit and subscribe to events of type T.
 type EventBus[T any] interface {
-	Emit(eventType string, event T)
+	Emit(ctx context.Context, eventType string, event T)
 	// Subscribe registers a handler for an event of type T, with an optional filter function.
 	// If a filter is provided, the handler will only be called if the filter returns true.
 	// Returns a function to unsubscribe.

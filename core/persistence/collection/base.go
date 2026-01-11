@@ -103,6 +103,7 @@ func (c *baseCollection) CreateOne(ctx context.Context, doc *data.Document) (bas
 	results, err := c.CreateMany(ctx, []*data.Document{doc})
 	result := base.CreateResult{}
 
+
 	if len(results) > 0 {
 		result = results[0]
 	}

@@ -20,14 +20,16 @@ const TxKey string = "github.com/asaidimu/go-anansi/__transaction__"
 // concurrent operations. It ensures that all operations complete successfully
 // before the transaction is committed.
 type transaction struct {
-	interactor query.DatabaseInteractor
-	wg         sync.WaitGroup
-	errChan    chan error
-	errOnce    sync.Once
-	mu         sync.RWMutex
-	committed  bool
-	id         string
-	logger     *zap.Logger
+	interactor      query.DatabaseInteractor
+	wg              sync.WaitGroup
+	errChan         chan error
+	errOnce         sync.Once
+	mu              sync.RWMutex
+	committed       bool
+	id              string
+	logger          *zap.Logger
+	onCommitHooks   []func() // Functions to execute after a successful commit
+	onRollbackHooks []func() // Functions to execute after a successful commit
 }
 
 // Ensures transaction implements the base.Transaction interface.
@@ -38,11 +40,26 @@ var _ base.Transaction = (*transaction)(nil)
 func newTransaction(interactor query.DatabaseInteractor, logger *zap.Logger) *transaction {
 	id := uuid.Must(uuid.NewV7())
 	return &transaction{
-		interactor: interactor,
-		errChan:    make(chan error, 1),
-		id:         id.String(),
-		logger:     logger,
+		interactor:    interactor,
+		errChan:       make(chan error, 1),
+		id:            id.String(),
+		logger:        logger,
+		onCommitHooks: make([]func(), 0),
 	}
+}
+
+// OnCommit adds a function to be executed after the transaction successfully commits.
+func (tx *transaction) OnCommit(hook func()) {
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+	tx.onCommitHooks = append(tx.onCommitHooks, hook)
+}
+
+// OnRollback adds a function to be executed after the transaction successfully commits.
+func (tx *transaction) OnRollback(hook func()) {
+	tx.mu.Lock()
+	defer tx.mu.Unlock()
+	tx.onRollbackHooks = append(tx.onRollbackHooks, hook)
 }
 
 // IsActive returns true if the transaction has not yet been committed or rolled back.
@@ -105,16 +122,30 @@ func (tx *transaction) WaitForOperations(ctx context.Context) error {
 
 // Commit commits the transaction.
 func (tx *transaction) Commit(ctx context.Context) error {
-	return tx.finalize(ctx, func(ctx context.Context, ti query.DatabaseInteractor) error {
+	err := tx.finalize(ctx, func(ctx context.Context, ti query.DatabaseInteractor) error {
 		return ti.Commit(ctx)
 	})
+	if err == nil {
+		for _, hook := range tx.onCommitHooks {
+			hook()
+		}
+		tx.onCommitHooks = nil // Clear hooks after execution
+		tx.onRollbackHooks = nil
+	}
+	return err
 }
 
 // Rollback rolls back the transaction.
 func (tx *transaction) Rollback(ctx context.Context) error {
-	return tx.finalize(ctx, func(ctx context.Context, ti query.DatabaseInteractor) error {
+	err := tx.finalize(ctx, func(ctx context.Context, ti query.DatabaseInteractor) error {
 		return ti.Rollback(ctx)
 	})
+	for _, hook := range tx.onRollbackHooks {
+		hook()
+	}
+	tx.onCommitHooks = nil // Clear hooks after execution
+	tx.onRollbackHooks = nil
+	return err
 }
 
 // GetInteractor returns the underlying transactional database interactor.

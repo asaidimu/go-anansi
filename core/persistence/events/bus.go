@@ -19,7 +19,7 @@ func NewGoEventsBusAdapter[T any](bus *goevents.TypedEventBus[T]) events.EventBu
 }
 
 // Emit publishes a persistence event to the underlying go-events.TypedEventBus.
-func (a *goEventsBusAdapter[T]) Emit(eventType string, event T) {
+func (a *goEventsBusAdapter[T]) Emit(_ context.Context, eventType string, event T) {
 	if a.bus != nil {
 		a.bus.Emit(eventType, event)
 	}

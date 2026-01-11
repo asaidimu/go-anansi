@@ -2,12 +2,12 @@ package events
 
 import (
 	"context"
-	"fmt"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"go.uber.org/zap"
 )
 
@@ -16,7 +16,7 @@ import (
 // operation instrumentation and pattern-based event subscription.
 type EventEmitter[T any] struct {
 	bus     EventBus[T]
-	factory EventFactory[T]
+	Factory EventFactory[T]
 	logger  *zap.Logger
 }
 
@@ -41,20 +41,19 @@ func NewEventEmitter[T any](bus EventBus[T], factory EventFactory[T], logger *za
 	return &EventEmitter[T]{
 		bus:     bus,
 		logger:  logger,
-		factory: factory,
+		Factory: factory,
 	}
 }
 
 // EmitEvent publishes an event to the underlying event bus.
 // Events are published to both the specific event type topic and the wildcard "*" topic
 // to support both exact and pattern-based subscriptions.
-func (e *EventEmitter[T]) EmitEvent(eventType string, event T) {
+func (e *EventEmitter[T]) EmitEvent(ctx context.Context, eventType string, event T) {
 	if e.bus != nil {
 		// Publish to specific topic for exact subscribers
-		e.bus.Emit(eventType, event)
-
+		e.bus.Emit(ctx, eventType, event)
 		// Publish to wildcard topic for pattern subscribers
-		e.bus.Emit("*", event)
+		e.bus.Emit(ctx, "*", event)
 	}
 }
 
@@ -227,7 +226,6 @@ func (e *EventEmitter[T]) Subscribe(eventType string, handler func(ctx context.C
 		subscriptionEventType = "*"
 	}
 
-	e.logger.Info(fmt.Sprintf("Subscribed to %s", subscriptionEventType))
 	// Exact match: subscribe directly (no filtering overhead)
 
 	return e.bus.Subscribe(subscriptionEventType, handler, allFilters...)
@@ -310,82 +308,101 @@ func (e *EventEmitter[T]) WithEventEmission(
 	ctx context.Context,
 	config OperationConfig,
 	fn func() (any, error),
+	actionQueue ...*utils.DeferredActionQueue,
 ) (any, error) {
-	// Skip instrumentation if no event bus is configured
 	if e.bus == nil {
 		return fn()
 	}
 
-	// Ensure wildcard events are included for discoverability
+	var deferredQueue *utils.DeferredActionQueue
+	shouldDefer := len(actionQueue) > 0
+	if shouldDefer {
+		deferredQueue = actionQueue[0]
+	}
+
 	startEventTypes := ensureWildcard(config.StartEventTypes)
 	successEventTypes := ensureWildcard(config.SuccessEventTypes)
 	failedEventTypes := ensureWildcard(config.FailedEventTypes)
 
 	startTime := time.Now()
 
-	// Emit start events with operation context
-	for _, eventType := range startEventTypes {
-		// Enrich context with event type for pattern-based filtering
-		eventCtx := context.WithValue(ctx, "eventType", eventType)
+	// Immediate event emission
+	emitImmediateEvent := func(ictx context.Context,eventType string, event T) {
+		e.EmitEvent(ictx, eventType, event)
+	}
 
-		startEvent := e.factory(
+	// Deferred event emission - queue action
+	emitDeferredEvent := func(eventType string, event T) {
+		capturedCtx := ctx
+		capturedEventType := eventType
+		capturedEvent := event
+		deferredQueue.Enqueue(func() {
+			e.EmitEvent(capturedCtx, capturedEventType, capturedEvent)
+		})
+	}
+
+	// ALWAYS emit start events immediately
+	for _, eventType := range startEventTypes {
+		eventCtx := context.WithValue(ctx, "eventType", eventType)
+		startEvent := e.Factory(
 			eventCtx,
 			eventType,
 			config.Operation,
 			config.Input,
-			nil, // No output available yet
-			nil, // No error yet
+			nil,
+			nil,
 			startTime,
-			nil, // No duration for start events
+			nil,
 			config.Extra,
 		)
-		e.EmitEvent(eventType, startEvent)
+		emitImmediateEvent(eventCtx, eventType, startEvent)
 	}
 
 	// Execute the instrumented operation
 	result, err := fn()
 
-	// Calculate operation duration in milliseconds
 	duration := time.Since(startTime).Milliseconds()
 
 	if err != nil {
-		// Emit failure events with error details and timing
+		// ALWAYS emit failure events immediately
 		errStr := err.Error()
 		for _, eventType := range failedEventTypes {
 			eventCtx := context.WithValue(ctx, "eventType", eventType)
-
-			failEvent := e.factory(
+			failEvent := e.Factory(
 				eventCtx,
 				eventType,
 				config.Operation,
 				config.Input,
-				nil, // No output on failure
+				nil,
 				&errStr,
 				startTime,
 				&duration,
 				config.Extra,
 			)
-			e.EmitEvent(eventType, failEvent)
+			emitImmediateEvent(eventCtx, eventType, failEvent)
 		}
 		return result, err
 	}
 
-	// Emit success events with results and timing
+	// Emit success events - deferred if queue provided, immediate otherwise
 	for _, eventType := range successEventTypes {
 		eventCtx := context.WithValue(ctx, "eventType", eventType)
-
-		successEvent := e.factory(
+		successEvent := e.Factory(
 			eventCtx,
 			eventType,
 			config.Operation,
 			config.Input,
-			result, // Include actual operation result
-			nil,    // No error on success
+			result,
+			nil,
 			startTime,
 			&duration,
 			config.Extra,
 		)
-		e.EmitEvent(eventType, successEvent)
+		if shouldDefer {
+			emitDeferredEvent(eventType, successEvent)
+		} else {
+			emitImmediateEvent(eventCtx, eventType, successEvent)
+		}
 	}
 
 	return result, nil
