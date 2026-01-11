@@ -106,7 +106,7 @@ func main() {
 	unsub := productsCollection.Subscribe(context.Background(), base.SubscriptionOptions{
 		Event: base.DocumentCreateSuccess,
 		Callback: func(ctx context.Context, event base.PersistenceEvent) error {
-			input, ok := data.AsDocument(event.Input)
+			input, ok := data.DocumentFrom(event.Input)
 			if ok {
 				pretty, _ := input.ToJSON(true)
 				logger.Info(fmt.Sprintf("Product created in '%s' \n %s", *event.Collection, pretty))
@@ -153,7 +153,7 @@ func main() {
 			doc, err := found.Sanitize(sanitizationCtx)
 			if err != nil {
 				logger.Error("Failed to sanitize document", zap.Error(err))
-				continue 
+				continue
 			}
 			logger.Info(fmt.Sprintf("Found product: ID=%s, Name=%s, Price=%.2f, Stock=%d, Value=%s",
 				doc.Must().Get("id"),
@@ -188,7 +188,7 @@ func main() {
 		sanitizedProduct, err := updatedProduct.Sanitize(sanitizationCtx)
 		if err != nil {
 			logger.Error("Failed to sanitize updated product", zap.Error(err))
-			sanitizedProduct = updatedProduct 
+			sanitizedProduct = updatedProduct
 		}
 		updatedProduct = sanitizedProduct
 		logger.Info(fmt.Sprintf("Updated Laptop: ID=%s, Name=%s, Price=%.2f, Stock=%d, Value=%s",

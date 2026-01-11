@@ -11,21 +11,13 @@ import (
 func TestMaskRedact(t *testing.T) {
 
 	config :=&data.FieldMaskConfig{
-
 		Fields: map[string]data.MaskedFieldPolicy{
-
 			"password": data.MaskRedact,
-
 		},
-
 		DefaultPolicy: data.MaskPreserve,
-
 	}
 
-
-
 	sanitizer :=data.NewSanitizer(*config, zap.NewNop())
-
 	doc := map[string]any{
 		"username": "admin",
 		"password": "SuperSecret123!",
@@ -418,8 +410,8 @@ func BenchmarkSanitizeDocument(b *testing.B) {
 		"is_active":        true,
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		sanitizer.SanitizeDocument(doc)
 	}
 }

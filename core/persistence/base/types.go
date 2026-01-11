@@ -541,6 +541,11 @@ type Transaction interface {
 
 	// ID returns the id of this transaction.
 	ID() string
+
+	// OnCommit adds a function to be executed after the transaction successfully commits.
+	OnCommit(hook func())
+	// OnRollback adds a function to be executed after the transaction rollbacks.
+	OnRollback(hook func())
 }
 
 // ModelCollection defines a set of type-safe operations for a specific model T.

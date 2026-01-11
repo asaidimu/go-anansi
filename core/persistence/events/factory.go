@@ -44,6 +44,7 @@ func (f *PersistenceEventFactory) CreateEvent(
 		collectionName = &name
 	}
 
+
 	// Create the complete event
 	event := base.PersistenceEvent{
 		Type:          base.PersistenceEventType(eventType),

@@ -25,7 +25,7 @@ func NewWatermillEventBus[T any](logger *zap.Logger) *WatermillEventBus[T] {
 }
 
 // Emit publishes an event to the specified event type topic
-func (eb *WatermillEventBus[T]) Emit(eventType string, event T) {
+func (eb *WatermillEventBus[T]) Emit(_ context.Context, eventType string, event T) {
 	payload, err := json.Marshal(event)
 	if err != nil {
 		eb.logger.Error("Failed to marshal event",

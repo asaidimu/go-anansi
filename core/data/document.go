@@ -299,7 +299,7 @@ func (d *Document) getAndCoerce(keyOrPath string, targetType reflect.Type, opera
 	case reflect.TypeOf(time.Time{}):
 		coercedVal, conversionOk = utils.CoerceTime(val)
 	case reflect.TypeOf(&Document{}):
-		coercedVal, conversionOk = AsDocument(val)
+		coercedVal, conversionOk = DocumentFrom(val)
 	case reflect.TypeOf([]*Document{}):
 		coercedVal, conversionOk = DocumentSlice(val)
 	case reflect.TypeOf([]string{}):
@@ -433,7 +433,7 @@ func (d *Document) deepMergeInto(other *Document) {
 		if existing, ok := d.data[k]; ok {
 			// If existing value is a Document struct, recurse
 			if existingDoc, ok := existing.(*Document); ok {
-				if otherDoc, ok := AsDocument(v); ok {
+				if otherDoc, ok := DocumentFrom(v); ok {
 					existingDoc.deepMergeInto(otherDoc)
 					continue
 				}
@@ -562,6 +562,7 @@ func (d *Document) ToMap() map[string]any {
 	}
 	return out
 }
+
 
 // asMapValue recursively converts a value to its map[string]any representation.
 func asMapValue(v any) any {

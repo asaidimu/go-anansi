@@ -10,8 +10,10 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"go.uber.org/zap"
 )
 
@@ -21,10 +23,11 @@ import (
 // This provides a mechanism for observability and for triggering side effects in a
 // decoupled manner.
 type eventsCollection struct {
-	collection   base.Collection
-	eventEmitter *events.EventEmitter[base.PersistenceEvent]
-	schema       *schema.SchemaDefinition
-	name         string
+	base.Collection // Embedded - provides all methods by default
+	eventEmitter    *events.EventEmitter[base.PersistenceEvent]
+	schema          *schema.SchemaDefinition
+	name            string
+	logger          *zap.Logger
 }
 
 var _ base.Collection = (*eventsCollection)(nil)
@@ -32,15 +35,60 @@ var _ base.Collection = (*eventsCollection)(nil)
 // newEventEmittingCollection creates a new event-emitting collection wrapper.
 // It takes a CollectionBase and returns a Collection that will emit events
 // for all of its operations.
-func newEventEmittingCollection(name string, collection base.Collection, eventEmitter *events.EventEmitter[base.PersistenceEvent], schema *schema.SchemaDefinition, _ *zap.Logger) *eventsCollection {
+func newEventEmittingCollection(name string, collection base.Collection, eventEmitter *events.EventEmitter[base.PersistenceEvent], schema *schema.SchemaDefinition, logger *zap.Logger) *eventsCollection {
 	return &eventsCollection{
-		collection:   collection,
+		Collection:   collection,
 		schema:       schema,
 		eventEmitter: eventEmitter,
 		name:         name,
+		logger: logger,
 	}
 }
 
+// withEventEmission is a helper method that handles the transaction-aware event emission pattern.
+// It checks if we're in a transaction and sets up the appropriate contexts for deferred emission.
+func (e *eventsCollection) withEventEmission(
+	ctx context.Context,
+	config events.OperationConfig,
+	op func() (any, error),
+) (any, error) {
+	tx, ok := transaction.GetCurrentTransaction(ctx)
+	if !ok {
+		// Non-transactional: emit immediately
+		return e.eventEmitter.WithEventEmission(
+			common.ContextWithCollectionName(ctx, e.name),
+			config,
+			op,
+		)
+	}
+	actionQueue, hasQueue := utils.FromContext(ctx)
+
+	if !hasQueue {
+		// First write operation in this transaction - create queue and register hooks
+		actionQueue = utils.NewDeferredActionQueue()
+		ctx = utils.AttachToContext(ctx, actionQueue)
+
+		// Register hooks with transaction
+		tx.OnCommit(func() {
+			actionQueue.ExecuteAll()
+		})
+
+		tx.OnRollback(func() {
+			actionQueue.DiscardAll()
+		})
+	}
+
+
+	return e.eventEmitter.WithEventEmission(
+		common.ContextWithCollectionName(ctx, e.name),
+		config,
+		op,
+		actionQueue,
+	)
+
+}
+
+// CreateOne overrides the embedded Collection's CreateOne to add event emission.
 func (e *eventsCollection) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
 	config := events.OperationConfig{
 		Operation:         "createOne",
@@ -50,25 +98,19 @@ func (e *eventsCollection) CreateOne(ctx context.Context, doc *data.Document) (b
 		Input:             doc,
 	}
 
-	result, err := e.eventEmitter.WithEventEmission(
-		common.ContextWithCollectionName(ctx, e.name),
-		config, func() (any, error) {
-			return e.collection.CreateOne(ctx, doc)
-		})
+	result, err := e.withEventEmission(ctx, config, func() (any, error) {
+		return e.Collection.CreateOne(ctx, doc)
+	})
 
 	r, ok := result.(base.CreateResult)
 	if !ok {
 		r = base.CreateResult{}
 	}
 
-	if err != nil {
-		return r, err
-	}
-
-	return r, nil
+	return r, err
 }
 
-// CreateMany wraps the underlying collection's CreateMany method, adding event emission.
+// CreateMany overrides the embedded Collection's CreateMany to add event emission.
 func (e *eventsCollection) CreateMany(ctx context.Context, docs []*data.Document) ([]base.CreateResult, error) {
 	config := events.OperationConfig{
 		Operation:         "createMany",
@@ -78,8 +120,8 @@ func (e *eventsCollection) CreateMany(ctx context.Context, docs []*data.Document
 		Input:             docs,
 	}
 
-	result, err := e.eventEmitter.WithEventEmission(common.ContextWithCollectionName(ctx, e.name), config, func() (any, error) {
-		return e.collection.CreateMany(ctx, docs)
+	result, err := e.withEventEmission(ctx, config, func() (any, error) {
+		return e.Collection.CreateMany(ctx, docs)
 	})
 
 	if err != nil {
@@ -89,8 +131,7 @@ func (e *eventsCollection) CreateMany(ctx context.Context, docs []*data.Document
 	return result.([]base.CreateResult), nil
 }
 
-// Read wraps the underlying collection's Read method, adding event emission
-// for the start, success, and failure of the operation.
+// Read overrides the embedded Collection's Read to add event emission.
 func (e *eventsCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
 	config := events.OperationConfig{
 		Operation:         "read",
@@ -100,8 +141,8 @@ func (e *eventsCollection) Read(ctx context.Context, q *query.Query) (*base.Read
 		Input:             q,
 	}
 
-	result, err := e.eventEmitter.WithEventEmission(common.ContextWithCollectionName(ctx, e.name), config, func() (any, error) {
-		return e.collection.Read(ctx, q)
+	result, err := e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {
+		return e.Collection.Read(ctx, q)
 	})
 
 	if err != nil {
@@ -111,8 +152,7 @@ func (e *eventsCollection) Read(ctx context.Context, q *query.Query) (*base.Read
 	return result.(*base.ReadResult), nil
 }
 
-// Update wraps the underlying collection's Update method, adding event emission
-// for the start, success, and failure of the operation.
+// Update overrides the embedded Collection's Update to add event emission.
 func (e *eventsCollection) Update(ctx context.Context, params *base.CollectionUpdate) (*base.ReadResult, error) {
 	config := events.OperationConfig{
 		Operation:         "update",
@@ -122,8 +162,8 @@ func (e *eventsCollection) Update(ctx context.Context, params *base.CollectionUp
 		Input:             params,
 	}
 
-	result, err := e.eventEmitter.WithEventEmission(common.ContextWithCollectionName(ctx, e.name), config, func() (any, error) {
-		return e.collection.Update(ctx, params)
+	result, err := e.withEventEmission(ctx, config, func() (any, error) {
+		return e.Collection.Update(ctx, params)
 	})
 
 	if err != nil {
@@ -133,8 +173,7 @@ func (e *eventsCollection) Update(ctx context.Context, params *base.CollectionUp
 	return result.(*base.ReadResult), nil
 }
 
-// Delete wraps the underlying collection's Delete method, adding event emission
-// for the start, success, and failure of the operation.
+// Delete overrides the embedded Collection's Delete to add event emission.
 func (e *eventsCollection) Delete(ctx context.Context, filter *query.QueryFilter, unsafe bool) (int, error) {
 	config := events.OperationConfig{
 		Operation:         "delete",
@@ -144,8 +183,8 @@ func (e *eventsCollection) Delete(ctx context.Context, filter *query.QueryFilter
 		Input:             filter,
 	}
 
-	result, err := e.eventEmitter.WithEventEmission(common.ContextWithCollectionName(ctx, e.name), config, func() (any, error) {
-		return e.collection.Delete(ctx, filter, unsafe)
+	result, err := e.withEventEmission(ctx, config, func() (any, error) {
+		return e.Collection.Delete(ctx, filter, unsafe)
 	})
 
 	if err != nil {
@@ -153,44 +192,4 @@ func (e *eventsCollection) Delete(ctx context.Context, filter *query.QueryFilter
 	}
 
 	return result.(int), nil
-}
-
-// Validate delegates the call to the underlying collection's Validate method.
-// No events are emitted for validation as it is a read-only operation.
-func (e *eventsCollection) Validate(ctx context.Context, data *data.Document, loose bool) (*schema.ValidationResult, error) {
-	return e.collection.Validate(ctx, data, loose)
-}
-
-// Metadata delegates the call to the underlying collection's Metadata method,
-// but also emits a telemetry event to record that metadata was requested.
-func (e *eventsCollection) Metadata(
-	ctx context.Context,
-	filter *base.MetadataFilter,
-	forceRefresh bool,
-) *base.CollectionMetadata {
-	return e.collection.Metadata(ctx, filter, forceRefresh)
-}
-
-// Subscribe wraps the underlying collection's Subscribe method,
-// emitting an event after a new subscription is successfully registered.
-func (e *eventsCollection) Subscribe(ctx context.Context, options base.SubscriptionOptions) string {
-	id := e.collection.Subscribe(ctx, options)
-	return id
-}
-
-// Unsubscribe wraps the underlying collection's Unsubscribe method,
-// emitting an event after a subscription is successfully unregistered.
-func (e *eventsCollection) Unsubscribe(ctx context.Context, id string) {
-	e.collection.Unsubscribe(ctx, id)
-}
-
-// Subscriptions delegates the call to the underlying collection's Subscriptions method.
-// No events are emitted for this operation.
-func (e *eventsCollection) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {
-	return e.collection.Subscriptions(ctx)
-}
-
-// Capabilities delegates the call to the underlying collection's Capabilities method.
-func (e *eventsCollection) Capabilities(ctx context.Context) *query.Capabilities {
-	return e.collection.Capabilities(ctx)
 }

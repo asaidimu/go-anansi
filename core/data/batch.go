@@ -29,7 +29,7 @@ func NewDocumentSet(v any, ctx ...context.Context) (DocumentSet, bool) {
 	case []any:
 		docs := make(DocumentSet, 0, len(val))
 		for _, item := range val {
-			if doc, ok := AsDocument(item, ctx...); ok {
+			if doc, ok := DocumentFrom(item, ctx...); ok {
 				docs = append(docs, doc)
 			} else {
 				return nil, false
