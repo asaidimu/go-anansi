@@ -26,7 +26,7 @@ func setupDALTestDB(t *testing.T) *sql.DB {
 	// Create users table
 	_, err = db.Exec(`
 		CREATE TABLE users_1_0_0 (
-			id TEXT PRIMARY KEY,
+		 _id_ TEXT PRIMARY KEY,
 			first_name TEXT,
 			last_name TEXT,
 			email TEXT,
@@ -41,7 +41,7 @@ func setupDALTestDB(t *testing.T) *sql.DB {
 	// Create orders table
 	_, err = db.Exec(`
 		CREATE TABLE orders_1_0_0 (
-			id TEXT PRIMARY KEY,
+		 _id_ TEXT PRIMARY KEY,
 			customer_id TEXT,
 			order_date TEXT,
 			total_amount REAL,
@@ -53,7 +53,7 @@ func setupDALTestDB(t *testing.T) *sql.DB {
 	// Create sales table
 	_, err = db.Exec(`
 		CREATE TABLE sales (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+		 _id_ INTEGER PRIMARY KEY AUTOINCREMENT,
 			region TEXT,
 			amount REAL,
 			_metadata_ TEXT
@@ -63,14 +63,14 @@ func setupDALTestDB(t *testing.T) *sql.DB {
 
 	// Insert sample data
 	_, err = db.Exec(`
-		INSERT INTO users_1_0_0 (id, first_name, last_name, email, age, status, region) VALUES
+		INSERT INTO users_1_0_0 (_id_, first_name, last_name, email, age, status, region) VALUES
 		('user-1', 'John', 'Doe', 'john.doe@example.com', 30, 'active', 'West'),
 		('user-2', 'Jane', 'Smith', 'jane.smith@example.com', 28, 'inactive', 'East')
 	`)
 	require.NoError(t, err)
 
 	_, err = db.Exec(`
-		INSERT INTO orders_1_0_0 (id, customer_id, order_date, total_amount) VALUES
+		INSERT INTO orders_1_0_0 (_id_, customer_id, order_date, total_amount) VALUES
 		('order-1', 'user-1', '2024-01-15', 150.50),
 		('order-2', 'user-1', '2024-02-20', 75.00),
 		('order-3', 'user-2', '2024-03-10', 200.00)
@@ -102,7 +102,7 @@ func TestInsert_Integration(t *testing.T) {
 	usersSchema := &schema.SchemaDefinition{
 		Name: "users_1_0_0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":         {Name: "id", Type: schema.FieldTypeString},
+			data.DocumentIDField:         {Name: data.DocumentIDField, Type: schema.FieldTypeString},
 			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
 			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
 			"email":      {Name: "email", Type: schema.FieldTypeString},
@@ -129,7 +129,7 @@ func TestInsert_Integration(t *testing.T) {
 
 	// Verify insertion
 	var count int
-	err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM users_1_0_0 WHERE id = '%s'", data.ID())).Scan(&count)
+	err = db.QueryRow(fmt.Sprintf("SELECT COUNT(*) FROM users_1_0_0 WHERE _id_ = '%s'", data.ID())).Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 }
@@ -142,7 +142,7 @@ func TestUpdate_Integration(t *testing.T) {
 	usersSchema := &schema.SchemaDefinition{
 		Name: "users_1_0_0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":         {Name: "id", Type: schema.FieldTypeString},
+			data.DocumentIDField:         {Name: data.DocumentIDField, Type: schema.FieldTypeString},
 			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
 			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
 			"email":      {Name: "email", Type: schema.FieldTypeString},
@@ -153,12 +153,12 @@ func TestUpdate_Integration(t *testing.T) {
 		},
 	}
 
-	data := data.MustNewDocument(map[string]any{"age": 31})
+	dt := data.MustNewDocument(map[string]any{"age": 31})
 
-	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Schema(usersSchema).Where("id").Eq("user-1")
+	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Schema(usersSchema).Where(data.DocumentIDField).Eq("user-1")
 	q := qb.Build()
 
-	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{"set": data.StripMetadata().ToMap()})
+	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{"set": dt.StripMetadata().ToMap()})
 	require.NoError(t, err)
 
 	res, err := db.Exec(nq.Raw().SQL, nq.Raw().Params...)
@@ -170,7 +170,7 @@ func TestUpdate_Integration(t *testing.T) {
 
 	// Verify update
 	var age int
-	err = db.QueryRow(fmt.Sprintf("SELECT age FROM users_1_0_0 WHERE id = '%s'", data.ID())).Scan(&age)
+	err = db.QueryRow(fmt.Sprintf("SELECT age FROM users_1_0_0 WHERE _id_ = '%s'", dt.ID())).Scan(&age)
 	require.NoError(t, err)
 	assert.Equal(t, 31, age)
 }
@@ -183,7 +183,7 @@ func TestDelete_Integration(t *testing.T) {
 	usersSchema := &schema.SchemaDefinition{
 		Name: "users_1_0_0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":         {Name: "id", Type: schema.FieldTypeString},
+			data.DocumentIDField:         {Name: data.DocumentIDField, Type: schema.FieldTypeString},
 			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
 			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
 			"email":      {Name: "email", Type: schema.FieldTypeString},
@@ -192,7 +192,7 @@ func TestDelete_Integration(t *testing.T) {
 			"region":     {Name: "region", Type: schema.FieldTypeString},
 		},
 	}
-	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Schema(usersSchema).Where("id").Eq("user-2")
+	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Schema(usersSchema).Where(data.DocumentIDField).Eq("user-2")
 	q := qb.Build()
 
 	nq, err := builder.Build(&q, native.StmtDelete, nil)
@@ -207,7 +207,7 @@ func TestDelete_Integration(t *testing.T) {
 
 	// Verify deletion
 	var count int
-	err = db.QueryRow("SELECT COUNT(*) FROM users_1_0_0 WHERE id = 'user-2'").Scan(&count)
+	err = db.QueryRow("SELECT COUNT(*) FROM users_1_0_0 WHERE _id_ = 'user-2'").Scan(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 0, count)
 }
@@ -218,7 +218,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 
 	_, err := db.Exec(`
 		CREATE TABLE complex_docs_01 (
-			id TEXT PRIMARY KEY,
+		 _id_ TEXT PRIMARY KEY,
 			tags TEXT,
 		    _metadata_ TEXT
 		)
@@ -230,7 +230,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 	complexDocsSchema := &schema.SchemaDefinition{
 		Name: "complex_docs_01",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":       {Name: "id", Type: schema.FieldTypeString},
+			data.DocumentIDField:       {Name: data.DocumentIDField, Type: schema.FieldTypeString},
 			"tags":     {Name: "tags", Type: schema.FieldTypeArray},
 			"metadata": {Name: "_metadata_", Type: schema.FieldTypeObject},
 		},
@@ -252,7 +252,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 
 	// Verify Insert
 	var id, rawTags string
-	err = db.QueryRow(fmt.Sprintf("SELECT id, tags FROM complex_docs_01 WHERE id = '%s'", insertData.ID())).Scan(&id, &rawTags)
+	err = db.QueryRow(fmt.Sprintf("SELECT _id_, tags FROM complex_docs_01 WHERE _id_ = '%s'", insertData.ID())).Scan(&id, &rawTags)
 	require.NoError(t, err)
 	assert.Equal(t, insertData.ID(), id)
 	assert.JSONEq(t, `["go", "sqlite", "testing"]`, rawTags)
@@ -260,7 +260,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 	// Update
 	updatedTags := []string{"go", "testing", "updated"}
 	updateData := map[string]any{"tags": updatedTags}
-	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Schema(complexDocsSchema).Where("id").Eq(insertData.ID()).Build()
+	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Schema(complexDocsSchema).Where(data.DocumentIDField).Eq(insertData.ID()).Build()
 
 	nq, err = builder.Build(&q, native.StmtUpdate, map[string]any{"set": updateData})
 	require.NoError(t, err)
@@ -269,7 +269,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify Update
-	err = db.QueryRow(fmt.Sprintf("SELECT tags FROM complex_docs_01 WHERE id = '%s'", insertData.ID())).Scan(&rawTags)
+	err = db.QueryRow(fmt.Sprintf("SELECT tags FROM complex_docs_01 WHERE _id_ = '%s'", insertData.ID())).Scan(&rawTags)
 	require.NoError(t, err)
 	assert.JSONEq(t, `["go", "testing", "updated"]`, rawTags)
 
@@ -298,7 +298,7 @@ func TestSelectComplex_Integration(t *testing.T) {
 	ordersSchema := &schema.SchemaDefinition{
 		Name: "orders_1_0_0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":           {Name: "id", Type: schema.FieldTypeString},
+			data.DocumentIDField:           {Name: data.DocumentIDField, Type: schema.FieldTypeString},
 			"customer_id":  {Name: "customer_id", Type: schema.FieldTypeString},
 			"order_date":   {Name: "order_date", Type: schema.FieldTypeString},
 			"total_amount": {Name: "total_amount", Type: schema.FieldTypeNumber},
@@ -308,7 +308,7 @@ func TestSelectComplex_Integration(t *testing.T) {
 	usersSchema := &schema.SchemaDefinition{
 		Name: "users_1_0_0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":         {Name: "id", Type: schema.FieldTypeString},
+			data.DocumentIDField:         {Name: data.DocumentIDField, Type: schema.FieldTypeString},
 			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
 			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
 			"email":      {Name: "email", Type: schema.FieldTypeString},
@@ -320,14 +320,14 @@ func TestSelectComplex_Integration(t *testing.T) {
 
 	qb := query.NewQueryBuilder().From("orders_1_0_0").Alias("orders").Schema(ordersSchema).
 		Select().
-		Include("orders.id", "total_amount").
+		Include("orders._id_", "total_amount").
 		End().
 		InnerJoin("users_1_0_0").Alias("users").Schema(usersSchema).
 		On(query.QueryFilter{
 			Condition: &query.FilterCondition{
 				Field:    "orders.customer_id",
 				Operator: query.ComparisonOperatorEq,
-				Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Field: "users.id"}},
+				Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Field: "users._id_"}},
 			},
 		}).
 		End().
@@ -352,7 +352,7 @@ func TestSelectComplex_Integration(t *testing.T) {
 		var totalAmount float64
 		err := rows.Scan(&id, &totalAmount)
 		require.NoError(t, err)
-		results = append(results, *data.MustNewDocument(map[string]any{"id": id, "total_amount": totalAmount}))
+		results = append(results, *data.MustNewDocument(map[string]any{data.DocumentIDField: id, "total_amount": totalAmount}))
 	}
 
 	require.NoError(t, rows.Err())
@@ -367,7 +367,7 @@ func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
 	// Add a profile column to the users table and insert data
 	_, err := db.Exec(`ALTER TABLE users_1_0_0 ADD COLUMN profile TEXT;`)
 	require.NoError(t, err)
-	_, err = db.Exec(`UPDATE users_1_0_0 SET profile = ? WHERE id = ?`, `{"preferences": {"theme": "dark"}, "level": 5}`, "user-1")
+	_, err = db.Exec(`UPDATE users_1_0_0 SET profile = ? WHERE _id_ = ?`, `{"preferences": {"theme": "dark"}, "level": 5}`, "user-1")
 	require.NoError(t, err)
 
 	builder := sqlite.NewSQLiteFactory()
@@ -376,7 +376,7 @@ func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
 	userSchema := &schema.SchemaDefinition{
 		Name: "users_1_0_0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":      {Name: "id", Type: schema.FieldTypeString},
+			data.DocumentIDField:      {Name: data.DocumentIDField, Type: schema.FieldTypeString},
 			"profile": {Name: "profile", Type: schema.FieldTypeRecord},
 		},
 	}
@@ -385,7 +385,7 @@ func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
 	ordersSchema := &schema.SchemaDefinition{
 		Name: "orders_1_0_0",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":           {Name: "id", Type: schema.FieldTypeString},
+			data.DocumentIDField:           {Name: data.DocumentIDField, Type: schema.FieldTypeString},
 			"customer_id":  {Name: "customer_id", Type: schema.FieldTypeString},
 			"order_date":   {Name: "order_date", Type: schema.FieldTypeString},
 			"total_amount": {Name: "total_amount", Type: schema.FieldTypeNumber},
@@ -401,7 +401,7 @@ func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
 			Condition: &query.FilterCondition{
 				Field:    "o.customer_id",
 				Operator: query.ComparisonOperatorEq,
-				Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Field: "u.id"}},
+				Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Field: "u._id_"}},
 			},
 		}).
 		End().
@@ -431,7 +431,7 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 	// Create a table with a JSON column
 	_, err := db.Exec(`
 		CREATE TABLE docs (
-			id TEXT PRIMARY KEY,
+		 _id_ TEXT PRIMARY KEY,
 			_metadata_ TEXT,
 			status TEXT
 		)
@@ -440,7 +440,7 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 
 	// Insert sample data
 	_, err = db.Exec(`
-		INSERT INTO docs (id, _metadata_, status) VALUES
+		INSERT INTO docs (_id_, _metadata_, status) VALUES
 		('doc-1', '{"version": 1, "author": "John"}', 'pending'),
 		('doc-2', '{"version": 2, "author": "Jane"}', 'pending')
 	`)
@@ -452,7 +452,7 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 	docSchema := &schema.SchemaDefinition{
 		Name: "docs",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":       {Name: "id", Type: schema.FieldTypeString},
+			data.DocumentIDField:       {Name: data.DocumentIDField, Type: schema.FieldTypeString},
 			"metadata": {Name: "_metadata_", Type: schema.FieldTypeObject},
 			"status":   {Name: "status", Type: schema.FieldTypeString},
 		},
@@ -480,12 +480,12 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 
 	// Verify the update
 	var status string
-	err = db.QueryRow("SELECT status FROM docs WHERE id = 'doc-2'").Scan(&status)
+	err = db.QueryRow("SELECT status FROM docs WHERE _id_ = 'doc-2'").Scan(&status)
 	require.NoError(t, err)
 	assert.Equal(t, "approved", status)
 
 	// Verify the other document was not updated
-	err = db.QueryRow("SELECT status FROM docs WHERE id = 'doc-1'").Scan(&status)
+	err = db.QueryRow("SELECT status FROM docs WHERE _id_ = 'doc-1'").Scan(&status)
 	require.NoError(t, err)
 	assert.Equal(t, "pending", status)
 }
@@ -499,7 +499,7 @@ func TestSelectWithAggregations_Integration(t *testing.T) {
 	salesSchema := &schema.SchemaDefinition{
 		Name: "sales",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":     {Name: "id", Type: schema.FieldTypeInteger},
+			data.DocumentIDField:     {Name: data.DocumentIDField, Type: schema.FieldTypeInteger},
 			"region": {Name: "region", Type: schema.FieldTypeString},
 			"amount": {Name: "amount", Type: schema.FieldTypeNumber},
 		},
@@ -565,7 +565,7 @@ func TestComputedFieldTranslation(t *testing.T) {
 	docSchema := &schema.SchemaDefinition{
 		Name: "docs",
 		Fields: map[string]*schema.FieldDefinition{
-			"id":       {Name: "id", Type: schema.FieldTypeString},
+			data.DocumentIDField:       {Name: data.DocumentIDField, Type: schema.FieldTypeString},
 			"metadata": {Name: "metadata", Type: schema.FieldTypeObject},
 		},
 	}

@@ -90,7 +90,7 @@ func TestSelectiveMetadataInjection(t *testing.T) {
 	require.NoError(t, err)
 
 	// 4. Assert sensitive document metadata
-	q := query.NewQueryBuilder().Where("id").Eq(sensitiveResult.Data.ID()).Build()
+	q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(sensitiveResult.Data.ID()).Build()
 	retrievedSensitiveDoc, err := sensitiveCollection.Read(context.Background(), &q)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(retrievedSensitiveDoc.Data))
@@ -109,7 +109,7 @@ func TestSelectiveMetadataInjection(t *testing.T) {
 	require.NoError(t, err)
 
 	// 6. Assert audited document metadata
-	q = query.NewQueryBuilder().Where("id").Eq(auditedResult.Data.ID()).Build()
+	q = query.NewQueryBuilder().Where(data.DocumentIDField).Eq(auditedResult.Data.ID()).Build()
 	retrievedAuditedDoc, err := auditedCollection.Read(context.Background(), &q)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(retrievedAuditedDoc.Data))
@@ -128,7 +128,7 @@ func TestSelectiveMetadataInjection(t *testing.T) {
 	require.NoError(t, err)
 
 	// 8. Assert normal document metadata
-	q = query.NewQueryBuilder().Where("id").Eq(normalResult.Data.ID()).Build()
+	q = query.NewQueryBuilder().Where(data.DocumentIDField).Eq(normalResult.Data.ID()).Build()
 	retrievedNormalDoc, err := normalCollection.Read(context.Background(), &q)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(retrievedNormalDoc.Data))

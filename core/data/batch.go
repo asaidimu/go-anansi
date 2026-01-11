@@ -51,6 +51,38 @@ func NewDocumentSet(v any, ctx ...context.Context) (DocumentSet, bool) {
 	}
 }
 
+// MapDocumentSet transforms each document into a value of type T.
+// This is the generic, type-safe implementation of map.
+func MapDocumentSet[T any](ds DocumentSet, transformer func(*Document) T) []T {
+	result := make([]T, len(ds))
+	for i, doc := range ds {
+		result[i] = transformer(doc)
+	}
+	return result
+}
+
+// Map applies a transformation to all documents in the set.
+// This is the non-generic version that returns []any for backwards compatibility.
+func (ds DocumentSet) Map(transformer func(*Document) any) []any {
+	return MapDocumentSet(ds, transformer)
+}
+
+// ReduceDocumentSet accumulates all documents into a single value of type T.
+// This is the generic, type-safe implementation of reduce.
+func ReduceDocumentSet[T any](ds DocumentSet, initial T, reducer func(T, *Document) T) T {
+	result := initial
+	for _, doc := range ds {
+		result = reducer(result, doc)
+	}
+	return result
+}
+
+// Reduce applies a reducer function to all documents.
+// This is the non-generic version that works with any for backwards compatibility.
+func (ds DocumentSet) Reduce(initial any, reducer func(any, *Document) any) any {
+	return ReduceDocumentSet(ds, initial, reducer)
+}
+
 // Filter applies a filter to all documents in the set.
 func (ds DocumentSet) Filter(predicate func(*Document) bool) DocumentSet {
 	result := make(DocumentSet, 0)
@@ -58,15 +90,6 @@ func (ds DocumentSet) Filter(predicate func(*Document) bool) DocumentSet {
 		if predicate(doc) {
 			result = append(result, doc)
 		}
-	}
-	return result
-}
-
-// Map applies a transformation to all documents in the set.
-func (ds DocumentSet) Map(transformer func(*Document) *Document) DocumentSet {
-	result := make(DocumentSet, len(ds))
-	for i, doc := range ds {
-		result[i] = transformer(doc)
 	}
 	return result
 }
@@ -145,15 +168,6 @@ func (ds DocumentSet) GroupBy(key string) map[string]DocumentSet {
 	}
 
 	return groups
-}
-
-// Reduce applies a reducer function to all documents.
-func (ds DocumentSet) Reduce(reducer func(acc, current *Document) *Document, initial *Document) *Document {
-	result := initial.Clone()
-	for _, doc := range ds {
-		result = reducer(result, doc)
-	}
-	return result
 }
 
 // Aggregate performs common aggregation operations.

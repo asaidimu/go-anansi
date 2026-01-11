@@ -132,13 +132,13 @@ func TestPersistence_Transact(t *testing.T) {
 	}
 	require.NoError(t, err)
 
-	ida := r[0].Data.Must().GetString("id")
-	idb := r[1].Data.Must().GetString("id")
+	ida := r[0].Data.ID()
+	idb := r[1].Data.ID()
 
 	// Perform a successful transfer within a transaction
 	_, err = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
 		// Read Alice's document to get metadata
-		aliceQuery := query.NewQueryBuilder().Where("id").Eq(ida).Build()
+		aliceQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(ida).Build()
 		aliceResult, err := accounts.Read(tctx, &aliceQuery)
 		if err != nil {
 			return nil, err
@@ -149,7 +149,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 		// Subtract 20 from Alice
 		aliceDoc.Set("balance", 80.0)
-		filterAlice := query.NewQueryBuilder().Where("id").Eq(ida).Build().Filters
+		filterAlice := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(ida).Build().Filters
 
 		// we can nest transactions, but don't
 		_, err = p.Transact(tctx, func(ctx context.Context, p base.BasePersistence) (any, error) {
@@ -163,7 +163,7 @@ func TestPersistence_Transact(t *testing.T) {
 		// or run methods asynchronously
 		tx.Async(tctx, func(ctx context.Context) (any, error) { // this runs in a go function
 			// Read Bob's document to get metadata
-			bobQuery := query.NewQueryBuilder().Where("id").Eq(idb).Build()
+			bobQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(idb).Build()
 			bobResult, err := accounts.Read(ctx, &bobQuery)
 			if err != nil {
 				return nil, err
@@ -173,7 +173,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 			// Add 20 to Bob
 			bobDoc.Set("balance", 70.0)
-			filterBob := query.NewQueryBuilder().Where("id").Eq(idb).Build().Filters
+			filterBob := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(idb).Build().Filters
 			_, err = accounts.Update(ctx, &base.CollectionUpdate{Set: bobDoc, Filter: filterBob})
 			if err != nil {
 				return nil, err
@@ -194,7 +194,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 	balances := make(map[string]any)
 	for _, doc := range result.Data {
-		balances[doc.Must().GetString("id")] = doc.Must().GetFloat64("balance")
+		balances[doc.ID()] = doc.Must().GetFloat64("balance")
 	}
 
 	assert.Equal(t, 80.0, balances[ida])
@@ -208,7 +208,7 @@ func TestPersistence_Transact(t *testing.T) {
 		}
 
 		// Read Alice's document to get metadata
-		aliceQuery := query.NewQueryBuilder().Where("id").Eq(ida).Build()
+		aliceQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(ida).Build()
 		aliceResult, err := acc.Read(tctx, &aliceQuery)
 		if err != nil {
 			return nil, err
@@ -218,7 +218,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 		// Subtract 10 from Alice
 		aliceDoc.Set("balance", 70.0)
-		filterAlice := query.NewQueryBuilder().Where("id").Eq(ida).Build().Filters
+		filterAlice := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(ida).Build().Filters
 		_, err = acc.Update(tctx, &base.CollectionUpdate{Set: aliceDoc, Filter: filterAlice})
 		if err != nil {
 			return nil, err
@@ -228,17 +228,17 @@ func TestPersistence_Transact(t *testing.T) {
 		updateBob := data.MustNewDocument(map[string]any{"non_existent_field": "error"})
 
 		// We still need metadata for the update to pass the initial check
-		bobQuery := query.NewQueryBuilder().Where("id").Eq(idb).Build()
+		bobQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(idb).Build()
 		bobResult, err := acc.Read(tctx, &bobQuery)
 		if err != nil {
 			return nil, err
 		}
 		require.Equal(t, 1, bobResult.Count)
 		bobDoc := bobResult.Data[0]
-		meta, _ := bobDoc.Metadata()
+		meta := bobDoc.Metadata()
 		updateBob.SetMetadata(meta)
 
-		filterBob := query.NewQueryBuilder().Where("id").Eq(idb).Build().Filters
+		filterBob := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(idb).Build().Filters
 		_, err = acc.Update(tctx, &base.CollectionUpdate{Set: updateBob, Filter: filterBob})
 
 		return nil, err // Propagate the error to trigger rollback
@@ -252,7 +252,7 @@ func TestPersistence_Transact(t *testing.T) {
 
 	rollbackBalances := make(map[string]any)
 	for _, doc := range rollbackResult.Data {
-		rollbackBalances[doc.Must().GetString("id")] = doc.Must().GetFloat64("balance")
+		rollbackBalances[doc.ID()] = doc.Must().GetFloat64("balance")
 	}
 
 	assert.Equal(t, 80.0, rollbackBalances[ida])
@@ -388,7 +388,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	}
 	require.NoError(t, err)
 
-	id := r[0].Data.Must().GetString("id")
+	id := r[0].Data.ID()
 	// Perform a transaction that panics
 	assert.Panics(t, func() {
 		_, _ = p.Transact(context.Background(), func(tctx context.Context, tx base.BasePersistence) (any, error) {
@@ -398,7 +398,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 			}
 
 			// Read Alice's document
-			aliceQuery := query.NewQueryBuilder().Where("id").Eq(id).Build()
+			aliceQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build()
 			aliceResult, err := acc.Read(context.Background(), &aliceQuery)
 			if err != nil {
 				return nil, err
@@ -408,7 +408,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 
 			// Update Alice's balance
 			aliceDoc.Set("balance", 50.0)
-			filterAlice := query.NewQueryBuilder().Where("id").Eq(id).Build().Filters
+			filterAlice := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build().Filters
 			_, err = acc.Update(tctx, &base.CollectionUpdate{Set: aliceDoc, Filter: filterAlice})
 			if err != nil {
 				return nil, err
@@ -427,7 +427,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	require.Equal(t, 1, result.Count)
 	doc := result.Data[0]
 	balances := make(map[string]any)
-	balances[doc.Must().GetString("id")] = doc.Must().GetFloat64("balance")
+	balances[doc.ID()] = doc.Must().GetFloat64("balance")
 
 	assert.Equal(t, 100.0, balances[id])
 }

@@ -14,15 +14,50 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
-// Constants
-const (
-	SchemaField = "_schema_"
-)
-
 // Document represents a flexible, schema-aware data structure.
+//
+// A Document consists of three distinct parts:
+//
+//  1. ID (string): Immutable system-generated identifier
+//     - Access via: ID()
+//     - Cannot be modified after creation
+//
+//  2. Data (map[string]any): User-managed fields
+//     - Access via: Get(key), Set(key, value), GetString(key), etc.
+//     - This is YOUR data - all Get/Set operations work on this
+//
+//  3. Metadata (map[string]any): System and custom metadata
+//     - Access via: Metadata(), SetMetadataValue(key, value)
+//     - Contains: version, timestamps, checksums, signatures
+//     - Reserved fields are managed by the system
+//
+// # Serialization vs. Access
+//
+// ToMap() returns a complete serializable representation including
+// _id and _metadata_ fields for persistence. However, Get/Set operations
+// work ONLY on the user data portion:
+//
+//	doc := MustNewDocument(map[string]any{"name": "John"})
+//
+//	// Access user data
+//	name, _ := doc.Get("name")           // ✓ Works
+//	doc.Set("age", 30)                   // ✓ Works
+//
+//	// Access system fields via dedicated methods
+//	id := doc.ID()                       // ✓ Correct way
+//	version, _ := doc.Version()          // ✓ Correct way
+//
+//	// Get/Set do NOT work on system fields
+//	id, _ := doc.Get("_id")              // ✗ Error: key not found
+//	doc.Set("_id", "custom")             // ✗ Does nothing (not in user data)
+//
+//	// Serialization includes everything
+//	m := doc.ToMap()                     // ✓ Contains _id, _metadata_, name, age
 type Document struct {
-	ctx  context.Context
-	data map[string]any
+	id       string
+	ctx      context.Context
+	data     map[string]any
+	metadata map[string]any
 }
 
 // Patch represents a set of fields to be updated.
@@ -61,15 +96,9 @@ func convertToDocumentMap(data any) (map[string]any, error) {
 		if v == nil {
 			return make(map[string]any), nil
 		}
-		if v.data == nil {
-			return make(map[string]any), nil
-		}
-		return v.data, nil
+		return v.ToMap(), nil
 	case Document:
-		if v.data == nil {
-			return make(map[string]any), nil
-		}
-		return v.data, nil
+		return v.ToMap(), nil
 	default:
 		rv := reflect.ValueOf(data)
 		if rv.Kind() == reflect.Map && rv.Type().Key().Kind() == reflect.String {
@@ -131,7 +160,18 @@ func (d *Document) WithContext(ctx context.Context) *Document {
 	return newDoc
 }
 
-// Get retrieves a value with detailed error information.
+// Get retrieves a value from the document's user data with detailed error information.
+//
+// Only user-defined fields are accessible via Get. To access system fields:
+//   - Use ID() for the document identifier
+//   - Use Metadata() or specific methods like Version() for metadata
+//
+// Example:
+//
+//	doc := MustNewDocument(map[string]any{"name": "John"})
+//
+//	name, err := doc.Get("name")  // ✓ Works - user data
+//	id, err := doc.Get("_id")     // ✗ Error - use ID() instead
 func (d *Document) Get(key string) (any, error) {
 	val, ok := utils.GetValueByPath(d.data, key)
 	if !ok {
@@ -157,10 +197,21 @@ func (d *Document) MustGet(key string) any {
 	return val
 }
 
-// Set with validation support.
+// Set updates a value in the document's user data.
+//
+// Only user-defined fields can be set. System fields (_id, _metadata_)
+// are not accessible via Set:
+//   - _id is immutable after document creation
+//   - Use SetMetadataValue() to add custom metadata fields
+//
+// Example:
+//
+//	doc.Set("name", "John")              // ✓ Works
+//	doc.Set("_id", "custom")             // ✗ Does nothing - not in user data
+//	doc.SetMetadataValue("author", "me") // ✓ Correct way for metadata
 func (d *Document) Set(key string, value any) error {
-	if key == DocumentIDField {
-		return common.SystemErrorFrom(ErrReadOnlyField).WithOperation("data.Document.Set").WithPath(key).WithMessage(fmt.Sprintf("field '%s' is managed by the library and cannot be set manually", DocumentIDField))
+	if ReservedSystemField(key) {
+		return ErrReadOnlyField.WithPath(key).WithMessage("Attempting to set read only value on a document").WithOperation("data.Document.Set")
 	}
 	if key == "" {
 		return common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.Set").WithPath(key)
@@ -174,9 +225,6 @@ func (d *Document) Set(key string, value any) error {
 
 // SetIfNotExists sets a value only if the key doesn't exist.
 func (d *Document) SetIfNotExists(key string, value any) bool {
-	if key == DocumentIDField {
-		return false
-	}
 	if d.data == nil {
 		d.data = make(map[string]any)
 	}
@@ -321,7 +369,10 @@ func (d *Document) getAndCoerce(keyOrPath string, targetType reflect.Type, opera
 	return coercedVal, nil
 }
 
-// Keys returns all keys sorted alphabetically.
+// Keys returns all user data keys sorted alphabetically.
+// System fields (_id, _metadata_) are NOT included.
+//
+// To access all fields including system fields, use ToMap().
 func (d *Document) Keys() []string {
 	if d.data == nil {
 		return []string{}
@@ -334,7 +385,8 @@ func (d *Document) Keys() []string {
 	return keys
 }
 
-// Values returns all values in key-sorted order.
+// Values returns all user data values in key-sorted order.
+// System fields are NOT included.
 func (d *Document) Values() []any {
 	keys := d.Keys()
 	values := make([]any, len(keys))
@@ -350,32 +402,25 @@ func (d *Document) Clone() *Document {
 		return nil
 	}
 	return &Document{
-		ctx:  d.ctx,
-		data: d.deepClone().(map[string]any),
+		id:       d.id,
+		ctx:      d.ctx,
+		data:     deepCloneValue(d.data).(map[string]any),
+		metadata: deepCloneValue(d.metadata).(map[string]any),
 	}
-}
-
-func (d *Document) deepClone() any {
-	// deepClone recursively clones the Document's data map and its nested structures.
-	if d.data == nil {
-		return make(map[string]any)
-	}
-	result := make(map[string]any)
-	for k, v := range d.data {
-		result[k] = deepCloneValue(v)
-	}
-	return result
 }
 
 // deepCloneValue recursively clones a value, handling nested Documents, maps (map[string]any),
 // and slices ([]any, []Document). Primitive types are returned as is.
 func deepCloneValue(v any) any {
+	if v == nil {
+		return nil
+	}
+
 	switch val := v.(type) {
 	case *Document:
-		// When a Document is nested, we clone its data map.
-		return val.deepClone()
+		return val.Clone()
 	case Document:
-		return val.deepClone()
+		return val.Clone()
 	case map[string]any:
 		result := make(map[string]any)
 		for k, subV := range val {
@@ -426,10 +471,6 @@ func (d *Document) deepMergeInto(other *Document) {
 		d.data = make(map[string]any)
 	}
 	for k, v := range other.data {
-		if ReservedSystemField(k) {
-			continue
-		}
-
 		if existing, ok := d.data[k]; ok {
 			// If existing value is a Document struct, recurse
 			if existingDoc, ok := existing.(*Document); ok {
@@ -465,35 +506,24 @@ func (d *Document) String() string {
 	return string(data)
 }
 
-// Len returns the number of key-value pairs in the document's data.
+// Len returns the number of user data fields in the document.
+// System fields (_id, _metadata_) are NOT counted.
 func (d *Document) Len() int {
 	if d == nil || d.data == nil {
 		return 0
 	}
-	l := len(d.data)
-	if _, ok := d.data[MetadataField]; ok {
-		l--
-	}
-	return l
+	return len(d.data)
 }
 
-// IsEmpty checks if the document's data map is empty.
+// IsEmpty checks if the document has no user data fields.
+// System fields (_id, _metadata_) are NOT considered.
 func (d *Document) IsEmpty() bool {
-	if d == nil {
-		return true
-	}
-
-	count := 0
-	for key := range d.data {
-		if ReservedSystemField(key) {
-			continue
-		}
-		count += 1
-	}
-	return count == 0
+	return d == nil || len(d.data) == 0
 }
 
-// HasKey checks if a key exists in the document's data.
+// HasKey checks if a key exists in the document's user data.
+// System fields (_id, _metadata_) will return false.
+// Use ID() and Metadata() to check for system fields.
 func (d *Document) HasKey(key string) bool {
 	if d == nil || d.data == nil {
 		return false
@@ -502,7 +532,8 @@ func (d *Document) HasKey(key string) bool {
 	return ok
 }
 
-// HasPath checks if a path exists in the document's data (supports dot notation).
+// HasPath checks if a path exists in the document's user data (supports dot notation).
+// System fields are NOT accessible via paths.
 func (d *Document) HasPath(keyOrPath string) bool {
 	if d == nil || d.data == nil {
 		return false
@@ -511,8 +542,22 @@ func (d *Document) HasPath(keyOrPath string) bool {
 	return ok
 }
 
-// Is performs deep equality comparison on the data maps of two documents, including ID and metadata.
+// Is performs deep equality comparison on two documents, including ID and metadata.
 func (d *Document) Is(other *Document) bool {
+	if d == nil && other == nil {
+		return true
+	}
+	if d == nil || other == nil {
+		return false
+	}
+	return d.id == other.id &&
+		reflect.DeepEqual(d.data, other.data) &&
+		reflect.DeepEqual(d.metadata, other.metadata)
+}
+
+// Equals performs content-only deep equality comparison on the user data,
+// ignoring auto-generated IDs and metadata.
+func (d *Document) Equals(other *Document) bool {
 	if d == nil && other == nil {
 		return true
 	}
@@ -522,53 +567,76 @@ func (d *Document) Is(other *Document) bool {
 	return reflect.DeepEqual(d.data, other.data)
 }
 
-// Equals performs content-only deep equality comparison on the data maps of two documents,
-// ignoring auto-generated IDs and dynamic metadata fields.
-func (d *Document) Equals(other *Document) bool {
-	if d == nil && other == nil {
-		return true
-	}
-	if d == nil || other == nil {
-		return false
-	}
-
-	// Clone documents to avoid modifying originals
-	dClone := d.Clone()
-	otherClone := other.Clone()
-
-	// Strip metadata from both documents
-	dClone = dClone.StripMetadata()
-	otherClone = otherClone.StripMetadata()
-
-	// Remove ID field from both documents for content-only comparison
-	if dClone.data != nil {
-		delete(dClone.data, DocumentIDField)
-	}
-	if otherClone.data != nil {
-		delete(otherClone.data, DocumentIDField)
-	}
-
-	return reflect.DeepEqual(dClone.data, otherClone.data)
-}
-
-// ToMap returns a deep map[string]any representation of the document's data.
+// ToMap returns a complete map representation of the document suitable
+// for serialization and persistence.
+//
+// The returned map includes:
+//   - "_id": the document's unique identifier
+//   - "_metadata_": system and custom metadata
+//   - All user-defined fields
+//
+// Note: This method is for serialization. To work with document data,
+// use Get/Set for user fields and dedicated methods for system fields.
+//
+// Example:
+//
+//	doc := MustNewDocument(map[string]any{"name": "John"})
+//
+//	m := doc.ToMap()
+//	// m = {
+//	//   "_id": "abc123...",
+//	//   "_metadata_": {...},
+//	//   "name": "John"
+//	// }
+//
+//	json.Marshal(m)  // Serialize complete document
 func (d *Document) ToMap() map[string]any {
-	if d == nil || d.data == nil {
+	if d == nil {
 		return nil
 	}
-	out := make(map[string]any, len(d.data))
-	for k, v := range d.data {
-		out[k] = asMapValue(v)
+
+	result := make(map[string]any, len(d.data)+2)
+	if len(d.id) > 0 {
+		result[DocumentIDField] = d.id
 	}
-	return out
+	if d.metadata != nil {
+		result[MetadataField] = d.metadata
+	}
+
+	for k, v := range d.data {
+		result[k] = asMapValue(v)
+	}
+	return result
 }
 
+// Data returns a copy of the document's user data only, excluding
+// system fields (_id and _metadata_).
+//
+// Use this when you need just the business data without system fields.
+//
+// Example:
+//
+//	doc := MustNewDocument(map[string]any{"name": "John", "age": 30})
+//
+//	data := doc.Data()
+//	// data = {"name": "John", "age": 30}
+//	// No _id or _metadata_ included
+func (d *Document) Data() map[string]any {
+	if d == nil || d.data == nil {
+		return make(map[string]any)
+	}
+	result := make(map[string]any, len(d.data))
+	for k, v := range d.data {
+		result[k] = asMapValue(v)
+	}
+	return result
+}
 
 // asMapValue recursively converts a value to its map[string]any representation.
 func asMapValue(v any) any {
 	switch val := v.(type) {
 	case *Document:
-		return val.ToMap() // Recursively call AsMap on nested Document structs
+		return val.ToMap() // Recursively call ToMap on nested Document structs
 	case Document:
 		return val.ToMap()
 	case map[string]any:
@@ -594,77 +662,85 @@ func asMapValue(v any) any {
 	}
 }
 
+// ID returns the document's unique identifier.
+//
+// The ID is automatically generated during document creation and is immutable.
+// It cannot be changed after the document is created.
 func (d *Document) ID() string {
-	if d == nil || d.data == nil {
+	if d == nil {
 		return ""
 	}
-	if val, ok := d.data[DocumentIDField].(string); ok {
-		return val
-	}
-	return ""
+	return d.id
 }
 
-// Metadata access with enhanced functionality.
-func (d *Document) Metadata() (map[string]any, bool) {
-	if d == nil || d.data == nil {
-		return nil, false
+// Metadata returns a copy of the document's metadata map.
+//
+// The metadata includes both system-managed fields (version, timestamps,
+// checksums) and custom fields set via SetMetadataValue().
+//
+// System-managed fields:
+//   - _version: document version number
+//   - _created: creation timestamp
+//   - _updated: last update timestamp
+//   - _checksum: HMAC-SHA256 hash
+//   - _signature: RSA signature (if signed)
+func (d *Document) Metadata() map[string]any {
+	if d == nil || d.metadata == nil {
+		return make(map[string]any)
 	}
-	val, ok := d.data[MetadataField]
-	if !ok {
-		return nil, false
-	}
-
-	if meta, ok := val.(map[string]any); ok {
-		newMeta := make(map[string]any, len(meta))
-		maps.Copy(newMeta, meta)
-		return newMeta, true
-	}
-	return nil, false
+	result := make(map[string]any, len(d.metadata))
+	maps.Copy(result, d.metadata)
+	return result
 }
 
+// SetMetadata replaces the entire metadata map.
+// This is primarily used internally by the factory.
+// For adding custom metadata, use SetMetadataValue() instead.
 func (d *Document) SetMetadata(metadata map[string]any) {
-	if d.data == nil {
-		d.data = make(map[string]any)
+	if d.metadata == nil {
+		d.metadata = make(map[string]any)
+	} else {
+		// Clear existing metadata
+		for k := range d.metadata {
+			delete(d.metadata, k)
+		}
 	}
-	d.data[MetadataField] = metadata
+	maps.Copy(d.metadata, metadata)
 }
 
 // StripMetadata removes metadata and returns a clean copy.
 func (d *Document) StripMetadata() *Document {
-	cleanDoc := d.Clone()
-	if cleanDoc.data != nil {
-		cleanDoc.data = stripNestedMetadata(cleanDoc.data).(map[string]any)
+	return &Document{
+		id:   d.id,
+		ctx:  d.ctx,
+		data: deepCloneValue(d.data).(map[string]any),
+		// metadata intentionally omitted
 	}
-	return cleanDoc
 }
 
 // --- Data Integrity ---
 
 // Hash computes and sets the HMAC-SHA256 hash of the metadata block.
 func (d *Document) Hash() error {
-	meta, ok := d.Metadata()
-	if !ok {
-		return common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.Document.Hash")
-	}
-
 	hash, err := getFactory().calculateHash(d)
 	if err != nil {
 		return err
 	}
 
-	meta[MetadataChecksum] = hash
-	d.SetMetadata(meta)
+	if d.metadata == nil {
+		d.metadata = make(map[string]any)
+	}
+	d.metadata[MetadataChecksum] = hash
 	return nil
 }
 
 // VerifyHash checks the integrity of the metadata block against its hash.
 func (d *Document) VerifyHash() (bool, error) {
-	meta, ok := d.Metadata()
-	if !ok {
+	if d.metadata == nil {
 		return false, nil
 	}
 
-	providedHash, ok := meta[MetadataChecksum].(string)
+	providedHash, ok := d.metadata[MetadataChecksum].(string)
 	if !ok {
 		return false, nil
 	}
@@ -684,24 +760,20 @@ func (d *Document) Sign(privateKey *rsa.PrivateKey) error {
 		return err
 	}
 
-	meta, ok := d.Metadata()
-	if !ok {
-		meta = make(map[string]any)
+	if d.metadata == nil {
+		d.metadata = make(map[string]any)
 	}
-
-	meta[MetadataSignature] = signature
-	d.SetMetadata(meta)
+	d.metadata[MetadataSignature] = signature
 	return nil
 }
 
 // Verify checks the RSA signature of the document.
 func (d *Document) Verify(publicKey *rsa.PublicKey) error {
-	meta, ok := d.Metadata()
-	if !ok {
+	if d.metadata == nil {
 		return common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.Document.Verify")
 	}
 
-	signature, ok := meta[MetadataSignature].(string)
+	signature, ok := d.metadata[MetadataSignature].(string)
 	if !ok {
 		return common.SystemErrorFrom(ErrSignatureInvalid).WithOperation("data.Document.Verify").WithMessage("no signature found in metadata")
 	}
@@ -713,30 +785,35 @@ func (d *Document) Verify(publicKey *rsa.PublicKey) error {
 
 // GetMetadataValue retrieves a value from the document's metadata map.
 func (d *Document) GetMetadataValue(key string) (any, error) {
-	meta, ok := d.Metadata()
-	if !ok {
+	if d.metadata == nil {
 		return nil, common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.Document.GetMetadataValue").WithPath(key)
 	}
-	val, ok := meta[key]
+	val, ok := d.metadata[key]
 	if !ok {
 		return nil, common.SystemErrorFrom(ErrKeyNotFound).WithOperation("data.Document.GetMetadataValue").WithPath(key)
 	}
 	return val, nil
 }
 
-// SetMetadataValue sets a value in the document's metadata map.
+// SetMetadataValue sets a custom metadata field.
+//
+// Reserved system fields (_version, _created, _updated, _checksum, _signature)
+// cannot be set manually and will return an error.
+//
+// Example:
+//
+//	doc.SetMetadataValue("author", "John Doe")
+//	doc.SetMetadataValue("department", "Engineering")
 func (d *Document) SetMetadataValue(key string, value any) error {
 	switch key {
 	case MetadataChecksum, MetadataSignature, MetadataVersion, MetadataCreated, MetadataUpdated:
-		return common.SystemErrorFrom(ErrReadOnlyField).WithOperation("data.Document.SetMetadataValue").WithPath(key).WithMessage("cannot overwrite internal metadata field")
+		return common.SystemErrorFrom(ErrReadOnlyField).WithOperation("data.Document.SetMetadataValue").WithPath(key).WithMessage("cannot overwrite system-managed metadata field")
 	}
 
-	meta, ok := d.Metadata()
-	if !ok {
-		meta = make(map[string]any)
+	if d.metadata == nil {
+		d.metadata = make(map[string]any)
 	}
-	meta[key] = value
-	d.SetMetadata(meta)
+	d.metadata[key] = value
 	return nil
 }
 

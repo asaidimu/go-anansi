@@ -57,7 +57,7 @@ func TestContextualMetadataIsPersisted(t *testing.T) {
 	docID := createResult.Data.ID()
 
 	// 5. Read the document back from the database
-	readQuery := query.NewQueryBuilder().Where("id").Eq(docID).Build()
+	readQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(docID).Build()
 	readResult, err := collection.Read(context.Background(), &readQuery)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(readResult.Data))
@@ -89,7 +89,7 @@ func TestContextIsPropagatedOnRead(t *testing.T) {
 	readCtx := context.WithValue(context.Background(), key, "my-read-op")
 
 	// 4. Read the document back from the database with the specific context
-	readQuery := query.NewQueryBuilder().Where("id").Eq(docID).Build()
+	readQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(docID).Build()
 	readResult, err := collection.Read(readCtx, &readQuery)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(readResult.Data))
@@ -124,7 +124,7 @@ func TestContextIsPropagatedOnUpdateWithReturning(t *testing.T) {
 
 	// 4. Perform an update with returning
 	updateParams := &base.CollectionUpdate{
-		Filter: query.NewQueryBuilder().Where("id").Eq(docID).Build().Filters,
+		Filter: query.NewQueryBuilder().Where(data.DocumentIDField).Eq(docID).Build().Filters,
 		Set:    data.Patch{"name": "updated_name"}.Document(),
 		ReturnDocument: true, // Crucial for this test
 	}
@@ -141,7 +141,7 @@ func TestContextIsPropagatedOnUpdateWithReturning(t *testing.T) {
 	}
 
 	// 6. Verify that the document in the database was actually updated
-	readQuery := query.NewQueryBuilder().Where("id").Eq(docID).Build()
+	readQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(docID).Build()
 	readResult, err := collection.Read(context.Background(), &readQuery)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(readResult.Data))

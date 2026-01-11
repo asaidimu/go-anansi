@@ -545,7 +545,7 @@ func (graph *ValidationGraph) buildObjectFieldNodes(fieldDef *schema.FieldDefini
 
 	resolved, err := sc.ResolveFieldSchema(fieldDef)
 	if err != nil || len(resolved) == 0 {
-		return nil, schema.ErrInvalidSchema.WithMessage("Could not resolve nested schema")
+		return nil, schema.ErrInvalidSchema.WithMessage("Could not resolve nested schema").WithPath(fieldPath).WithCause(err)
 	}
 	effectiveSchema := resolved[0]
 	nestedNodes, err := graph.buildFromSchema(effectiveSchema.Schema, fieldPath, nil, make(map[string]bool), effectiveSchema.Source)

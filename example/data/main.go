@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -63,29 +62,6 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Println("\nBio:", bio)
-
-	// 4. Transform: pick only certain fields and map values
-	transformed := doc.Transform().
-		Pick("username", "email", "profile").
-		Map(func(key string, value any) any {
-			if key == "email" {
-				return "redacted@example.com" // anonymize
-			}
-			return value
-		}).
-		Execute()
-
-	fmt.Println("\nTransformed (anonymized):")
-	pretty, _ = transformed.ToJSON(true)
-	fmt.Println(string(pretty))
-
-	// 5. Diff between original and transformed
-	diff := doc.Diff(transformed)
-	if diff.HasChanges() {
-		fmt.Println("\nDiff detected:")
-		diffJSON, _ := json.MarshalIndent(diff, "", "  ")
-		fmt.Println(string(diffJSON))
-	}
 
 	// 6. In-memory query on a set of documents
 	// Build three documents correctly handling SetNested errors

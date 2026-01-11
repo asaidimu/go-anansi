@@ -36,12 +36,6 @@ func (db *DocumentBuilder) SetNested(path string, value any) (*DocumentBuilder, 
 
 // WithMetadata adds metadata.
 func (db *DocumentBuilder) WithMetadata(metadata map[string]any) (*DocumentBuilder, error) {
-	meta, ok := db.doc.Metadata()
-	if !ok {
-		// If no metadata exists, create it.
-		meta = make(map[string]any)
-		db.doc.SetMetadata(meta)
-	}
 	for key, value := range metadata {
 		if err := db.doc.SetMetadataValue(key, value); err != nil {
 			// No need to revert, as SetMetadataValue prevents overwrite of critical fields.

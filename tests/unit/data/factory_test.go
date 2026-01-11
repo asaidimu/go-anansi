@@ -24,8 +24,7 @@ func TestNewDocument_WithUserProvidedMetadata(t *testing.T) {
 	doc, err := data.NewDocument(map[string]any{"field": "value"})
 	require.NoError(t, err)
 
-	meta, ok := doc.Metadata()
-	require.True(t, ok)
+	meta  := doc.Metadata()
 	require.Contains(t, meta, "custom_field")
 	require.Equal(t, "custom_value", meta["custom_field"])
 }

@@ -471,8 +471,10 @@ type Collection interface {
 	// Read retrieves documents from the collection that match the given QueryDSL.
 	Read(ctx context.Context, query *query.Query) (*ReadResult, error)
 
-	// Update modifies documents in the collection that match the filter in CollectionUpdate.
-	// It returns a ReadResult containing the updated documents (if requested) and the count of modified documents, and any error that occurred.
+	// Update performs an update operation. When ReturnDocument is true, it attempts
+	// to return the updated documents. However, if the final fetch fails, it returns
+	// a result with Count > 0 but empty Data, indicating that the update succeeded
+	// but document retrieval failed. Callers should check both Count and len(Data).
 	Update(ctx context.Context, params *CollectionUpdate) (*ReadResult, error)
 
 	// Delete removes documents from the collection that match the given query filter.
@@ -551,11 +553,7 @@ type Transaction interface {
 // ModelCollection defines a set of type-safe operations for a specific model T.
 // It acts as a bridge between the untyped persistence layer and the domain models,
 // enabling robust business logic while maintaining strict type safety.
-type ModelCollection[T any] interface {
-	// Constructor
-	New(doc T) (T, error)
-	// --- State Management (CRUD) ---
-
+type ModelCollection[T any, P any] interface {
 	// Create persists a new model and returns the hydrated version (with IDs/timestamps).
 	Create(ctx context.Context, doc T) (T, error)
 

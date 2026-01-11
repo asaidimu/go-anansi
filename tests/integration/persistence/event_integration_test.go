@@ -155,7 +155,7 @@ func TestPersistenceEvents(t *testing.T) {
 
 		// Update the document
 		updatePatch := data.Patch{"name": "updated_name", "value": 200}.Document()
-		filter := query.NewQueryBuilder().Where("id").Eq(initialDocID).Build().Filters
+		filter := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(initialDocID).Build().Filters
 		_, err = collection.Update(context.Background(), &base.CollectionUpdate{Set: updatePatch, Filter: filter, ReturnDocument: true})
 		require.NoError(t, err)
 
@@ -204,7 +204,7 @@ func TestPersistenceEvents(t *testing.T) {
 		defer unsubscribe()
 
 		// Delete the document
-		filter := query.NewQueryBuilder().Where("id").Eq(deletedDocID).Build().Filters
+		filter := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(deletedDocID).Build().Filters
 		_, err = collection.Delete(context.Background(), filter, false) // false for not deleting physical data
 		require.NoError(t, err)
 
@@ -270,7 +270,7 @@ func TestPersistenceEvents(t *testing.T) {
 
 			// Update the existing document within the transaction
 			updatePatch := data.Patch{"value": 25}.Document()
-			filter := query.NewQueryBuilder().Where("id").Eq(existingDocID).Build().Filters
+			filter := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(existingDocID).Build().Filters
 			_, err = txCollection.Update(tctx, &base.CollectionUpdate{Set: updatePatch, Filter: filter, ReturnDocument: true})
 			require.NoError(t, err)
 
@@ -330,7 +330,7 @@ func TestPersistenceEvents(t *testing.T) {
 		assert.Equal(t, float64(25), updateInputDoc.Must().GetFloat64("value"))
 
 		// Verify the final state of the existing document in the DB
-		readQuery := query.NewQueryBuilder().Where("id").Eq(existingDocID).Build()
+		readQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(existingDocID).Build()
 		readResult, err := collection.Read(context.Background(), &readQuery)
 		require.NoError(t, err)
 		require.Equal(t, 1, readResult.Count)
@@ -379,7 +379,7 @@ func TestPersistenceEvents(t *testing.T) {
 
 			// Update the existing document within the transaction
 			updatePatch := data.Patch{"value": 25}.Document()
-			filter := query.NewQueryBuilder().Where("id").Eq(existingDocID).Build().Filters
+			filter := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(existingDocID).Build().Filters
 			_, err = txCollection.Update(tctx, &base.CollectionUpdate{Set: updatePatch, Filter: filter})
 			require.NoError(t, err)
 
@@ -398,7 +398,7 @@ func TestPersistenceEvents(t *testing.T) {
 		}
 
 		// Verify the original document's state in the DB is unchanged
-		readQuery := query.NewQueryBuilder().Where("id").Eq(existingDocID).Build()
+		readQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(existingDocID).Build()
 		readResult, err := collection.Read(context.Background(), &readQuery)
 		require.NoError(t, err)
 		require.Equal(t, 1, readResult.Count)

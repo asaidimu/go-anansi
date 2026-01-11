@@ -101,7 +101,7 @@ func TestCartSimulation_Success(t *testing.T) {
 		require.NoError(t, err)
 
 		// 1. Check inventory
-		q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
+		q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(d.ID()).Build()
 		readResult, err := inventory.Read(ctx, &q)
 		require.NoError(t, err)
 		require.Equal(t, 1, readResult.Count)
@@ -151,19 +151,19 @@ func TestCartSimulation_Success(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check inventory
-	q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
+	q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(d.ID()).Build()
 	readResult, err := inventory.Read(context.Background(), &q)
 	require.NoError(t, err)
 	assert.Equal(t, int(9), readResult.Data[0].Must().GetInt("quantity"))
 
 	// Check sales record
-	q = query.NewQueryBuilder().Where("id").Eq(sale.Must().GetString("id")).Build()
+	q = query.NewQueryBuilder().Where(data.DocumentIDField).Eq(sale.ID()).Build()
 	readResult, err = sales.Read(context.Background(), &q)
 	require.NoError(t, err)
 	assert.Equal(t, 1, readResult.Count)
 
 	// Check payment record
-	q = query.NewQueryBuilder().Where("id").Eq(payment.Must().GetString("id")).Build()
+	q = query.NewQueryBuilder().Where(data.DocumentIDField).Eq(payment.ID()).Build()
 	readResult, err = payments.Read(context.Background(), &q)
 	require.NoError(t, err)
 	assert.Equal(t, 1, readResult.Count)
@@ -179,7 +179,7 @@ func TestCartSimulation_InsufficientInventory(t *testing.T) {
 		require.NoError(t, err)
 
 		// Attempt to buy 20 items when only 10 are in stock
-		q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
+		q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(d.ID()).Build()
 		readResult, err := inventory.Read(ctx, &q)
 		require.NoError(t, err)
 		item := readResult.Data[0]
@@ -205,7 +205,7 @@ func TestCartSimulation_InsufficientInventory(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check inventory is unchanged
-	q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
+	q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(d.ID()).Build()
 	readResult, err := inventory.Read(context.Background(), &q)
 	require.NoError(t, err)
 
@@ -236,7 +236,7 @@ func TestCartSimulation_PaymentFailure(t *testing.T) {
 		require.NoError(t, err)
 
 		// 1. Decrement inventory
-		q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
+		q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(d.ID()).Build()
 		readResult, err := inventory.Read(ctx, &q)
 		require.NoError(t, err)
 		item := readResult.Data[0]
@@ -253,7 +253,7 @@ func TestCartSimulation_PaymentFailure(t *testing.T) {
 		require.NoError(t, err)
 
 		// 2. Create sales record
-		_, err = sales.CreateOne(ctx, data.MustNewDocument(map[string]any{"id": "sale1", "itemId": "item1", "quantity": 1}))
+		_, err = sales.CreateOne(ctx, data.MustNewDocument(map[string]any{data.DocumentIDField: "sale1", "itemId": "item1", "quantity": 1}))
 		if err != nil {
 			t.Logf("Error creating sales record in payment failure test: %v", err)
 		}
@@ -275,7 +275,7 @@ func TestCartSimulation_PaymentFailure(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check inventory is unchanged
-	q := query.NewQueryBuilder().Where("id").Eq(d.Must().GetString("id")).Build()
+	q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(d.ID()).Build()
 
 	readResult, err := inventory.Read(context.Background(), &q)
 	require.NoError(t, err)

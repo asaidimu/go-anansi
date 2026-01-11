@@ -10,7 +10,8 @@ func (d *Document) MarshalJSON() ([]byte, error) {
 	if d == nil || d.data == nil {
 		return []byte("null"), nil
 	}
-	return json.Marshal(d.data)
+	val := d.ToMap()
+	return json.Marshal(val)
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
@@ -21,5 +22,9 @@ func (d *Document) UnmarshalJSON(data []byte) error {
 	if d.data == nil {
 		d.data = make(map[string]any)
 	}
-	return json.Unmarshal(data, &d.data)
+	var val map[string]any
+	json.Unmarshal(data, &val)
+	doc, err := NewDocument(val)
+	d = doc
+	return err
 }

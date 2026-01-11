@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 )
@@ -11,7 +12,7 @@ const ProductsCollectionName = "Products"
 
 // Product represents a product entity with type-safe fields
 type Product struct {
-	ID    string  `doc:"id,omitempty"`
+	data.DocumentModel
 	Name  string  `doc:"name"`
 	Price float64 `doc:"price"`
 	Stock int     `doc:"stock"`
@@ -19,7 +20,7 @@ type Product struct {
 
 // Products wraps a base Collection to provide type-safe operations
 type Products struct {
-	base.ModelCollection[Product]
+	base.ModelCollection[Product, *Product]
 }
 
 // CreateProduct creates a single product and returns it with auto-generated ID

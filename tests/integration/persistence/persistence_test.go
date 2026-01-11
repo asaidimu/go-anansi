@@ -295,7 +295,7 @@ func TestPersistence_Transact(t *testing.T) {
 		}
 		require.Equal(t, 1, bobResult.Count)
 		bobDoc := bobResult.Data[0]
-		meta, _ := bobDoc.Metadata()
+		meta := bobDoc.Metadata()
 		updateBob.SetMetadata(meta)
 
 		filterBob := query.NewQueryBuilder().Where("name").Eq("Bob").Build().Filters
@@ -497,7 +497,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 		}
 
 		// Read Alice's document
-		aliceQuery := query.NewQueryBuilder().Where("id").Eq(alice.ID()).Build()
+		aliceQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(alice.ID()).Build()
 		aliceResult, err := acc.Read(context.Background(), &aliceQuery)
 		if err != nil {
 			return nil, err
@@ -505,7 +505,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 		require.Equal(t, 1, aliceResult.Count)
 
 		// Subtract 50 from Alice
-		filterAlice := query.NewQueryBuilder().Where("id").Eq(alice.ID()).Build().Filters
+		filterAlice := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(alice.ID()).Build().Filters
 		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Set: data.Patch{
 			"balance": 50,
 		}.Document(), Filter: filterAlice})
@@ -516,7 +516,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 		// This will fail because of a non-existent field, causing a rollback
 		updateBob := data.Patch{"non_existent_field": "error"}.Document()
 
-		filterBob := query.NewQueryBuilder().Where("id").Eq(bob.ID()).Build().Filters
+		filterBob := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(bob.ID()).Build().Filters
 		_, err = acc.Update(context.Background(), &base.CollectionUpdate{Set: updateBob, Filter: filterBob})
 		return nil, err // Propagate the error to trigger rollback
 	})
@@ -875,7 +875,7 @@ func TestSigningAndHashingOnCreate(t *testing.T) {
 	docID := createResult.Data.ID()
 
 	// 4. Read the document back
-	readQuery := query.NewQueryBuilder().Where("id").Eq(docID).Build()
+	readQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(docID).Build()
 	result, err := collection.Read(context.Background(), &readQuery)
 	require.NoError(t, err)
 	require.Equal(t, 1, result.Count, "Should read back one document")

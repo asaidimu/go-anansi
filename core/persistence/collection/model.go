@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	"go.uber.org/zap"
+
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
@@ -16,49 +18,31 @@ import (
 // ============================================================================
 
 // modelCollection provides type-safe operations on a raw collection.
-// It automatically handles struct ↔ document conversions.
-type modelCollection[T any] struct {
-	raw            base.Collection
-	collectionName string
+// It automatically handles struct <-> document conversions.
+type modelCollection[T any, P data.DocumentModelProvider] struct {
+    raw            base.Collection
+    collectionName string
+    logger         *zap.Logger
 }
 
 // NewModelCollection creates a type-safe wrapper around a raw collection.
-func NewModelCollection[T any](raw base.Collection) base.ModelCollection[T] {
-	metadata := raw.Metadata(context.Background(), nil, false)
-	return &modelCollection[T]{raw: raw, collectionName: metadata.Name}
+func NewModelCollection[T any, P interface {
+    *T
+    data.DocumentModelProvider
+}](raw base.Collection, logger *zap.Logger) *modelCollection[T, P] {
+    metadata := raw.Metadata(context.Background(), nil, false)
+    return &modelCollection[T, P]{
+        raw:            raw,
+        collectionName: metadata.Name,
+        logger:         logger,
+    }
 }
-
 // ============================================================================
 // Create Operations
 // ============================================================================
 
-// New creates a new model instance with auto-generated ID and metadata.
-// This is useful when you want to generate an ID before actually persisting.
-func (mc *modelCollection[T]) New(doc T) (T, error) {
-	var zero T
-
-	ictx := common.ContextWithCollectionName(context.Background(), mc.collectionName)
-	// Convert struct → document with full metadata
-	d, err := data.NewDocumentFromStruct(doc, ictx)
-	if err != nil {
-		return zero, common.SystemErrorFrom(err).
-			WithOperation("ModelCollection.New").
-			WithMessage("failed to create document from struct")
-	}
-
-	// Bind back to model to get ID and metadata
-	err = d.BindToWithContext(ictx, &zero)
-	if err != nil {
-		return zero, common.SystemErrorFrom(err).
-			WithOperation("ModelCollection.New").
-			WithMessage("failed to bind document back to model")
-	}
-
-	return zero, nil
-}
-
 // Create inserts a single model into the collection.
-func (mc *modelCollection[T]) Create(ctx context.Context, doc T) (T, error) {
+func (mc *modelCollection[T,P]) Create(ctx context.Context, doc T) (T, error) {
 	var zero T
 
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
@@ -86,7 +70,7 @@ func (mc *modelCollection[T]) Create(ctx context.Context, doc T) (T, error) {
 }
 
 // CreateMany inserts multiple models into the collection.
-func (mc *modelCollection[T]) CreateMany(ctx context.Context, docs []T) ([]T, error) {
+func (mc *modelCollection[T,P]) CreateMany(ctx context.Context, docs []T) ([]T, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	if len(docs) == 0 {
 		return []T{}, nil
@@ -134,11 +118,11 @@ func (mc *modelCollection[T]) CreateMany(ctx context.Context, docs []T) ([]T, er
 // ============================================================================
 
 // FindByID retrieves a single model by its ID.
-func (mc *modelCollection[T]) FindByID(ctx context.Context, id string) (T, error) {
+func (mc *modelCollection[T,P]) FindByID(ctx context.Context, id string) (T, error) {
 	var zero T
 
 	q := query.NewQueryBuilder().
-		Where("id").Eq(id).
+		Where(data.DocumentIDField).Eq(id).
 		Limit(1).
 		Build()
 
@@ -160,7 +144,7 @@ func (mc *modelCollection[T]) FindByID(ctx context.Context, id string) (T, error
 }
 
 // Read retrieves multiple models matching the query.
-func (mc *modelCollection[T]) Read(ctx context.Context, q *query.Query) ([]T, error) {
+func (mc *modelCollection[T,P]) Read(ctx context.Context, q *query.Query) ([]T, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	res, err := mc.raw.Read(ctx, q)
 	if err != nil {
@@ -195,7 +179,7 @@ func (mc *modelCollection[T]) Read(ctx context.Context, q *query.Query) ([]T, er
 
 // Update updates a single model by ID and returns the updated model.
 // Only non-zero fields in the update model are applied (partial update).
-func (mc *modelCollection[T]) Update(ctx context.Context, id string, update T) (T, error) {
+func (mc *modelCollection[T,P]) Update(ctx context.Context, id string, update T) (T, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	var zero T
 
@@ -209,7 +193,7 @@ func (mc *modelCollection[T]) Update(ctx context.Context, id string, update T) (
 	}
 
 	filter := query.NewQueryBuilder().
-		Where("id").Eq(id).
+		Where(data.DocumentIDField).Eq(id).
 		Build().Filters
 
 	result, err := mc.raw.Update(ctx, &base.CollectionUpdate{
@@ -238,7 +222,7 @@ func (mc *modelCollection[T]) Update(ctx context.Context, id string, update T) (
 
 // UpdateMany updates multiple models matching the filter.
 // Returns the count of updated records.
-func (mc *modelCollection[T]) UpdateMany(ctx context.Context, f *query.QueryFilter, update T) (int, error) {
+func (mc *modelCollection[T,P]) UpdateMany(ctx context.Context, f *query.QueryFilter, update T) (int, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	// Create partial document (only non-zero fields)
 	d, err := data.NewPartialDocumentFromStruct(update, ctx)
@@ -262,7 +246,7 @@ func (mc *modelCollection[T]) UpdateMany(ctx context.Context, f *query.QueryFilt
 
 // Replace replaces an entire model by ID (all fields, not partial).
 // Use Update for partial updates.
-func (mc *modelCollection[T]) Replace(ctx context.Context, id string, replacement T) (T, error) {
+func (mc *modelCollection[T,P]) Replace(ctx context.Context, id string, replacement T) (T, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	var zero T
 
@@ -276,7 +260,7 @@ func (mc *modelCollection[T]) Replace(ctx context.Context, id string, replacemen
 	}
 
 	filter := query.NewQueryBuilder().
-		Where("id").Eq(id).
+		Where(data.DocumentIDField).Eq(id).
 		Build().Filters
 
 	result, err := mc.raw.Update(ctx, &base.CollectionUpdate{
@@ -305,9 +289,9 @@ func (mc *modelCollection[T]) Replace(ctx context.Context, id string, replacemen
 // ============================================================================
 
 // DeleteByID deletes a single model by ID.
-func (mc *modelCollection[T]) DeleteByID(ctx context.Context, id string) error {
+func (mc *modelCollection[T,P]) DeleteByID(ctx context.Context, id string) error {
 	filter := query.NewQueryBuilder().
-		Where("id").Eq(id).
+		Where(data.DocumentIDField).Eq(id).
 		Build().Filters
 
 	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
@@ -331,7 +315,7 @@ func (mc *modelCollection[T]) DeleteByID(ctx context.Context, id string) error {
 // DeleteMany deletes multiple models matching the filter.
 // Returns the count of deleted records.
 // Set unsafe=true to allow deleting without filters (deletes all).
-func (mc *modelCollection[T]) DeleteMany(ctx context.Context, f *query.QueryFilter, unsafe bool) (int, error) {
+func (mc *modelCollection[T,P]) DeleteMany(ctx context.Context, f *query.QueryFilter, unsafe bool) (int, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	count, err := mc.raw.Delete(ctx, f, unsafe)
 	if err != nil {
@@ -347,7 +331,7 @@ func (mc *modelCollection[T]) DeleteMany(ctx context.Context, f *query.QueryFilt
 
 // Validate validates a model against the collection's schema.
 // Set loose=true for partial validation (allows missing optional fields).
-func (mc *modelCollection[T]) Validate(ctx context.Context, doc T, loose bool) error {
+func (mc *modelCollection[T,P]) Validate(ctx context.Context, doc T, loose bool) error {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	d, err := data.NewDocumentFromStruct(doc, ctx)
 	if err != nil {
@@ -367,7 +351,7 @@ func (mc *modelCollection[T]) Validate(ctx context.Context, doc T, loose bool) e
 
 // ValidatePartial validates a partial model (only non-zero fields).
 // Useful for validating updates before applying them.
-func (mc *modelCollection[T]) ValidatePartial(ctx context.Context, doc T) error {
+func (mc *modelCollection[T,P]) ValidatePartial(ctx context.Context, doc T) error {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	d, err := data.NewPartialDocumentFromStruct(doc, ctx)
 	if err != nil {
@@ -391,13 +375,13 @@ func (mc *modelCollection[T]) ValidatePartial(ctx context.Context, doc T) error 
 
 // Subscribe creates a subscription for real-time updates.
 // Returns a subscription ID that can be used to unsubscribe.
-func (mc *modelCollection[T]) Subscribe(ctx context.Context, opt base.SubscriptionOptions) string {
+func (mc *modelCollection[T,P]) Subscribe(ctx context.Context, opt base.SubscriptionOptions) string {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	return mc.raw.Subscribe(ctx, opt)
 }
 
 // Unsubscribe removes a subscription by ID.
-func (mc *modelCollection[T]) Unsubscribe(ctx context.Context, id string) {
+func (mc *modelCollection[T,P]) Unsubscribe(ctx context.Context, id string) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	mc.raw.Unsubscribe(ctx, id)
 }
