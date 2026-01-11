@@ -42,12 +42,8 @@ func TestDocument_DeepMerge(t *testing.T) {
 		})
 
 		// We need to remove metadata and dynamic IDs for a stable comparison in this test
-		actualMap := doc1.StripMetadata().ToMap()
-		expectedMap := expected.StripMetadata().ToMap()
-
-		// Remove dynamic IDs for comparison as they are generated
-		delete(actualMap, "id")
-		delete(expectedMap, "id")
+		actualMap := doc1.Data()
+		expectedMap := expected.Data()
 
 		assert.Equal(t, expectedMap, actualMap)
 	})
@@ -199,13 +195,13 @@ func TestDocument_Normalize(t *testing.T) {
 	require.NotNil(t, normalized)
 
 	// Check that top-level metadata is preserved
-	_, hasMeta := normalized.Metadata()
-	assert.True(t, hasMeta, "top-level metadata should be preserved")
+	meta := normalized.Metadata()
+	assert.NotNil(t, meta, "top-level metadata should be preserved")
 
 	// Check that nested metadata is removed
 	level1, err := normalized.GetDocument("level1")
 	require.NoError(t, err)
 	require.NotNil(t, level1)
-	_, hasNestedMeta := level1.Metadata()
-	assert.False(t, hasNestedMeta, "nested metadata should be removed")
+	nestedMeta := level1.Metadata()
+	assert.Empty(t, nestedMeta, "nested metadata should be removed")
 }

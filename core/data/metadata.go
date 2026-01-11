@@ -9,7 +9,7 @@ import (
 )
 
 const (
-	DocumentIDField        = "id"
+	DocumentIDField   = "_id_"
 	MetadataField     = "_metadata_"
 	MetadataChecksum  = "checksum"
 	MetadataSignature = "signature"
@@ -28,7 +28,7 @@ func MetadataFieldPath(field string) string {
 // to its Fields map before passing it into the EnrichmentOptions.
 func DefaultMetadataSchema() *schema.NestedSchemaDefinition {
 	return &schema.NestedSchemaDefinition{
-		ID: utils.StringPtr(uuid.Must(uuid.NewV7()).String()),
+		ID:   utils.StringPtr(uuid.Must(uuid.NewV7()).String()),
 		Name: MetadataField,
 		Fields: &schema.NestedSchemaFields{
 			FieldsMap: map[string]*schema.FieldDefinition{

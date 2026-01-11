@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	_ "github.com/mattn/go-sqlite3"
@@ -48,12 +49,21 @@ func main() {
 
 	// --- CRUD Operations with Type Safety ---
 
-	// Create single product
-	p1, err := products.CreateProduct(ctx, Product{
+	p1 := data.New(Product{
 		Name:  "Laptop",
 		Price: 1200.00,
 		Stock: 50,
 	})
+
+	logger.Info("Created product",
+		zap.String("id", p1.ID),
+		zap.String("name", p1.Name),
+		zap.Float64("price", p1.Price),
+		zap.Int("stock", p1.Stock),
+	)
+
+	// Create single product
+	p1, err = products.CreateProduct(ctx, p1)
 	if err != nil {
 		out := common.SystemErrorFrom(err)
 		log.Fatalf("Failed to create Laptop: %v", out.ToIssue())

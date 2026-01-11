@@ -110,7 +110,7 @@ func TestDocument_DeleteNested_NonMapParent(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = doc.DeleteNested("user.name.first")
+	err = doc.Delete("user.name.first")
 	require.Error(t, err)
 	var sysErr *common.SystemError
 	require.ErrorAs(t, err, &sysErr)
@@ -133,7 +133,7 @@ func TestDocument_DeleteNested(t *testing.T) {
 	// Test case 1: Delete top-level field
 	t.Run("Delete top-level field", func(t *testing.T) {
 		doc := initialDoc.Clone()
-		err := doc.DeleteNested("product")
+		err := doc.Delete("product")
 		require.NoError(t, err)
 		_, err = doc.Get("product")
 		require.Error(t, err)
@@ -145,7 +145,7 @@ func TestDocument_DeleteNested(t *testing.T) {
 	// Test case 2: Delete nested field
 	t.Run("Delete nested field", func(t *testing.T) {
 		doc := initialDoc.Clone()
-		err := doc.DeleteNested("user.address.city")
+		err := doc.Delete("user.address.city")
 		require.NoError(t, err)
 		_, err = doc.GetNested("user.address.city")
 		require.Error(t, err)
@@ -162,14 +162,14 @@ func TestDocument_DeleteNested(t *testing.T) {
 	// Test case 3: Delete non-existent field
 	t.Run("Delete non-existent field", func(t *testing.T) {
 		doc := initialDoc.Clone()
-		err := doc.DeleteNested("user.address.zip")
+		err := doc.Delete("user.address.zip")
 		require.NoError(t, err)
 	})
 
 	// Test case 4: Delete with empty path
 	t.Run("Delete with empty path", func(t *testing.T) {
 		doc := initialDoc.Clone()
-		err := doc.DeleteNested("")
+		err := doc.Delete("")
 		require.Error(t, err)
 		var sysErr *common.SystemError
 		require.ErrorAs(t, err, &sysErr)
@@ -179,7 +179,7 @@ func TestDocument_DeleteNested(t *testing.T) {
 	// Test case 5: Delete from non-map parent
 	t.Run("Delete from non-map parent", func(t *testing.T) {
 		doc := initialDoc.Clone()
-		err := doc.DeleteNested("user.name.first")
+		err := doc.Delete("user.name.first")
 		require.Error(t, err)
 		var sysErr *common.SystemError
 		require.ErrorAs(t, err, &sysErr)
@@ -191,12 +191,12 @@ func TestDocument_SetID_ReturnsError(t *testing.T) {
 	doc, err := data.NewDocument(nil)
 	require.NoError(t, err)
 
-	err = doc.Set("id", "some-value")
+	err = doc.Set(data.DocumentIDField, "some-value")
 	require.Error(t, err)
 
 	var sysErr *common.SystemError
 	require.ErrorAs(t, err, &sysErr)
 	require.Equal(t, "data.Document.Set", sysErr.Operation)
-	require.Equal(t, "id", sysErr.Path)
+	require.Equal(t, data.DocumentIDField, sysErr.Path)
 	require.Equal(t, data.ErrReadOnlyField.Code, sysErr.Code)
 }

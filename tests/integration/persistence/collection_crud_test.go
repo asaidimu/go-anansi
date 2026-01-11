@@ -2,8 +2,10 @@ package persistence_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	pevents "github.com/asaidimu/go-anansi/v6/core/persistence/events"
@@ -27,7 +29,14 @@ func setupCollectionTest(t *testing.T) (base.Collection, func()) {
 	require.NoError(t, err)
 
 	schema := newTestSchema("crud_collection")
+	issues := schema.ValidateAll()
+	if len(issues) > 0{
+		fmt.Printf("Issues, %v", issues)
+	}
 	collection, err := p.CreateCollection(context.Background(), schema)
+	if err != nil {
+		fmt.Printf("Issues, %v", common.SystemErrorFrom(err).ToIssue())
+	}
 	require.NoError(t, err)
 
 	return collection, cleanup
@@ -51,7 +60,7 @@ func TestCollection_Read(t *testing.T) {
 	collection, cleanup := setupCollectionTest(t)
 	defer cleanup()
 
-	docToCreate := data.MustNewDocument(map[string]any{"id": "1", "name": "test-doc"})
+	docToCreate := data.MustNewDocument(map[string]any{"name": "test-doc"})
 	_, err := collection.CreateOne(context.Background(), docToCreate)
 	require.NoError(t, err)
 
@@ -73,7 +82,7 @@ func TestCollection_Update(t *testing.T) {
 
 	id := docToCreate.ID()
 
-	readQuery := query.NewQueryBuilder().Where("id").Eq(id).Build()
+	readQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build()
 
 	readUpdatedResult, err := collection.Read(context.Background(), &readQuery)
 	require.NotNil(t, readUpdatedResult)
@@ -85,7 +94,7 @@ func TestCollection_Update(t *testing.T) {
 
 	docToUpdate := data.Patch{"name": "updated-doc"}
 
-	updateQuery := query.NewQueryBuilder().Where("id").Eq(id).Build()
+	updateQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build()
 
 	_, err = collection.Update(context.Background(), &base.CollectionUpdate{
 		Set:   docToUpdate.Document(),
@@ -107,7 +116,7 @@ func TestCollection_Delete(t *testing.T) {
 	collection, cleanup := setupCollectionTest(t)
 	defer cleanup()
 
-	docToCreate := data.MustNewDocument(map[string]any{"id": "1", "name": "test-doc"})
+	docToCreate := data.MustNewDocument(map[string]any{"name": "test-doc"})
 	_, err := collection.CreateOne(context.Background(), docToCreate)
 	require.NoError(t, err)
 

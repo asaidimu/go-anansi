@@ -15,6 +15,7 @@ var (
 	ErrTransactionAsyncOperationFailed               = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_ASYNC_OPERATION_FAILED", "transaction failed due to an async operation")
 	ErrTransactionCommitFailed                       = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_COMMIT_FAILED", "failed to commit transaction")
 	ErrTransactionFailed                             = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_FAILED", "the transaction failed")
+	ErrImmutableFieldModification                    = common.NewSystemError("ERR_PERSISTENCE_IMMUTABLE_FIELD_MODIFICATION", "attempted to modify an immutable field")
 	ErrCollectionAlreadyExists                       = common.NewSystemError("ERR_PERSISTENCE_COLLECTION_ALREADY_EXISTS", "collection already exists")
 	ErrFailedToCreateIndex                           = common.NewSystemError("ERR_PERSISTENCE_FAILED_TO_CREATE_INDEX", "failed to create index")
 	ErrFailedToReadDocuments                         = common.NewSystemError("ERR_PERSISTENCE_FAILED_TO_READ_DOCUMENTS", "failed to read documents")

@@ -161,7 +161,6 @@ func EnrichSchema(sc *schema.SchemaDefinition) (*schema.SchemaDefinition, error)
 	// Validate the final schema
 	validationErrors := result.ValidateAll()
 	if len(validationErrors) > 0 {
-		fmt.Printf("Issues: %v\n", validationErrors)
 		return nil, common.NewSystemError("INVALID_SCHEMA").WithIssues(validationErrors)
 	}
 

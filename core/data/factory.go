@@ -77,11 +77,11 @@ type DocumentFactoryConfig struct {
 
 // documentFactory is a singleton responsible for creating and managing documents.
 type documentFactory struct {
-	mu                     sync.RWMutex
-	config                 DocumentFactoryConfig
-	sanitizationRegistry   *SanitizationRegistry
-	logger                 *zap.Logger
-	configured             bool
+	mu                   sync.RWMutex
+	config               DocumentFactoryConfig
+	sanitizationRegistry *SanitizationRegistry
+	logger               *zap.Logger
+	configured           bool
 }
 
 var (
@@ -220,7 +220,7 @@ func GetSanitizationRegistry() *SanitizationRegistry {
 
 // getSanitizersForContexts returns sanitizers for all contexts in order.
 // Returns error if any explicitly specified scope is not found (fail-fast).
-func (f *documentFactory) getSanitizersForContexts(ctx context.Context,contexts ...context.Context) (*DocumentSanitizer, error) {
+func (f *documentFactory) getSanitizersForContexts(ctx context.Context, contexts ...context.Context) (*DocumentSanitizer, error) {
 	if f.sanitizationRegistry == nil {
 		return nil, nil
 	}
@@ -233,47 +233,102 @@ func (f *documentFactory) getSanitizersForContexts(ctx context.Context,contexts 
 // ============================================================================
 
 // newDocument creates a new document with injected metadata.
-func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) (*Document, error) {
+//
+// This method:
+//  1. Extracts _id from input data (or generates new one)
+//  2. Extracts _metadata_ from input data (or creates new)
+//  3. Separates user data from system fields
+//  4. Applies metadata providers
+//  5. Normalizes and hashes the document
+func (f *documentFactory) newDocument(ctx context.Context, inputData map[string]any) (*Document, error) {
 	if !f.configured {
 		return nil, common.SystemErrorFrom(ErrFactoryNotConfigured).
 			WithOperation("data.documentFactory.newDocument")
 	}
 
-	if data == nil {
-		data = make(map[string]any)
+	if inputData == nil {
+		inputData = make(map[string]any)
 	}
 
-	docData := make(map[string]any, len(data))
-	maps.Copy(docData, data)
+	// Step 1: Extract or generate ID
+	id := f.extractOrGenerateID(inputData)
 
-	doc := &Document{ctx: ctx, data: docData}
+	// Step 2: Extract or create metadata
+	metadata := f.extractOrCreateMetadata(inputData)
 
-	// Ensure document has a valid ID
-	if !f.hasValidID(doc) {
-		doc.data[DocumentIDField] = strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
+	// Step 3: Separate user data from system fields
+	userData := make(map[string]any)
+	for k, v := range inputData {
+		if !ReservedSystemField(k) {
+			userData[k] = v
+		}
 	}
 
-	meta := make(map[string]any)
-
-	// Copy existing metadata if present
-	if existingMeta, ok := doc.Metadata(); ok {
-		maps.Copy(meta, existingMeta)
+	// Step 4: Create document with clean separation
+	doc := &Document{
+		id:       id,
+		ctx:      ctx,
+		data:     userData,
+		metadata: metadata,
 	}
 
-	// Inject system metadata
+	// Step 5: Apply metadata providers
+	if err := f.applyMetadataProviders(ctx, doc); err != nil {
+		return nil, err
+	}
+
+	// Step 6: Normalize and preserve context
+	normalizedDoc := doc.Normalize()
+
+	// Step 7: Calculate hash based on document with complete metadata
+	if err := normalizedDoc.Hash(); err != nil {
+		return nil, common.SystemErrorFrom(err).WithOperation("data.documentFactory.newDocument")
+	}
+
+	return normalizedDoc, nil
+}
+
+// extractOrGenerateID extracts the ID from input data or generates a new one.
+func (f *documentFactory) extractOrGenerateID(data map[string]any) string {
+	if idVal, ok := data[DocumentIDField]; ok {
+		if id, ok := idVal.(string); ok && f.isValidID(id) {
+			return id
+		}
+	}
+	// Generate new UUIDv7 without dashes
+	return strings.ReplaceAll(uuid.Must(uuid.NewV7()).String(), "-", "")
+}
+
+// extractOrCreateMetadata extracts metadata from input data or creates new metadata.
+func (f *documentFactory) extractOrCreateMetadata(data map[string]any) map[string]any {
+	metadata := make(map[string]any)
+
+	// Extract existing metadata if present
+	if metaVal, ok := data[MetadataField]; ok {
+		if existingMeta, ok := metaVal.(map[string]any); ok {
+			maps.Copy(metadata, existingMeta)
+		}
+	}
+
+	// Inject system metadata defaults
 	now := strconv.FormatInt(time.Now().UnixNano(), 10)
-	if _, ok := meta[MetadataCreated]; !ok {
-		meta[MetadataCreated] = now
+	if _, ok := metadata[MetadataCreated]; !ok {
+		metadata[MetadataCreated] = now
 	}
 
-	if _, ok := meta[MetadataUpdated]; !ok {
-		meta[MetadataUpdated] = now
+	if _, ok := metadata[MetadataUpdated]; !ok {
+		metadata[MetadataUpdated] = now
 	}
 
-	if version, ok := meta[MetadataVersion]; !ok || !utils.IsInteger(version) {
-		meta[MetadataVersion] = 1
+	if version, ok := metadata[MetadataVersion]; !ok || !utils.IsInteger(version) {
+		metadata[MetadataVersion] = 1
 	}
 
+	return metadata
+}
+
+// applyMetadataProviders applies all configured metadata providers to the document.
+func (f *documentFactory) applyMetadataProviders(ctx context.Context, doc *Document) error {
 	// Copy provider configs while holding lock, then release immediately
 	f.mu.RLock()
 	providers := make([]MetadataProviderConfig, len(f.config.Providers))
@@ -284,8 +339,8 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 	for _, providerConfig := range providers {
 		providerMeta, err := providerConfig.Provider(ctx, doc)
 		if err != nil {
-			return nil, common.SystemErrorFrom(ErrMetadataProviderFailed).
-				WithOperation("data.documentFactory.newDocument").
+			return common.SystemErrorFrom(ErrMetadataProviderFailed).
+				WithOperation("data.documentFactory.applyMetadataProviders").
 				WithMessagef("metadata provider %q failed", providerConfig.Name).
 				WithCause(err)
 		}
@@ -296,27 +351,48 @@ func (f *documentFactory) newDocument(ctx context.Context, data map[string]any) 
 		// Validate provider doesn't overwrite reserved fields
 		for key := range providerMeta {
 			if isReservedMetadataField(key) {
-				return nil, common.SystemErrorFrom(ErrInvalidMetadata).
-					WithOperation("data.documentFactory.newDocument").
+				return common.SystemErrorFrom(ErrInvalidMetadata).
+					WithOperation("data.documentFactory.applyMetadataProviders").
 					WithMessagef("provider %q attempted to set reserved field %q", providerConfig.Name, key)
 			}
 		}
-		maps.Copy(meta, providerMeta)
+
+		// Merge provider metadata
+		if doc.metadata == nil {
+			doc.metadata = make(map[string]any)
+		}
+		maps.Copy(doc.metadata, providerMeta)
 	}
 
-	// Set metadata once before hash calculation
-	doc.SetMetadata(meta)
+	return nil
+}
 
-	// Normalize and preserve context
-	normalizedDoc := doc.Normalize()
+// isValidID checks if a string is a valid UUIDv7 without dashes.
+func (f *documentFactory) isValidID(id string) bool {
+	// UUID without dashes must be exactly 32 hex characters
+	if len(id) != 32 {
+		return false
+	}
 
-	// Calculate hash based on document with complete metadata
-	err := normalizedDoc.Hash()
+	// Reconstruct dashed UUID
+	var b strings.Builder
+	b.Grow(36)
+	b.WriteString(id[0:8])
+	b.WriteByte('-')
+	b.WriteString(id[8:12])
+	b.WriteByte('-')
+	b.WriteString(id[12:16])
+	b.WriteByte('-')
+	b.WriteString(id[16:20])
+	b.WriteByte('-')
+	b.WriteString(id[20:])
+
+	u, err := uuid.Parse(b.String())
 	if err != nil {
-		return nil, common.SystemErrorFrom(err).WithOperation("data.documentFactory.newDocument")
+		return false
 	}
 
-	return normalizedDoc, nil
+	return u.Version() == 7
 }
 
 // ============================================================================
@@ -372,43 +448,43 @@ func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchema
 // calculateHash computes the SHA256 hash of the document,
 // excluding the 'checksum' field itself, to ensure a consistent and verifiable identifier.
 func (f *documentFactory) calculateHash(doc *Document) (string, error) {
-	dataToSign := doc.Clone()
-	meta, ok := dataToSign.Metadata()
+	// Clone document to avoid modifying original
+	dataToHash := doc.Clone()
 
-	if !ok {
-		return "", common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.documentFactory.calculateHash")
+	// Remove checksum and signature from metadata for hash calculation
+	if dataToHash.metadata != nil {
+		delete(dataToHash.metadata, MetadataSignature)
+		delete(dataToHash.metadata, MetadataChecksum)
 	}
 
-	// Create a copy of the metadata and remove the hash field itself
-	delete(meta, MetadataSignature)
-	delete(meta, MetadataChecksum)
-	dataToSign.SetMetadata(meta)
-	// Use canonicalMarshal to ensure consistent key ordering for hashing.
-	toSign, err := canonicalMarshal(dataToSign)
+	// Use canonicalMarshal to ensure consistent key ordering for hashing
+	toHash, err := canonicalMarshal(dataToHash)
 	if err != nil {
-		return "", common.SystemErrorFrom(ErrFailedToMarshalMetadata).WithOperation("data.documentFactory.calculateHash").WithCause(err)
+		return "", common.SystemErrorFrom(ErrFailedToMarshalMetadata).
+			WithOperation("data.documentFactory.calculateHash").
+			WithCause(err)
 	}
 
 	h := sha256.New()
-	h.Write(toSign)
+	h.Write(toHash)
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // signDocument signs the entire document (excluding the signature itself) using a private key.
 func (f *documentFactory) signDocument(doc *Document, privateKey *rsa.PrivateKey) (string, error) {
-	// Create a copy of the document and remove the signature field
+	// Clone document and remove signature/checksum
 	docToSign := doc.Clone()
-	meta, ok := docToSign.Metadata()
-	if ok {
-		delete(meta, MetadataSignature)
-		delete(meta, MetadataChecksum)
-		docToSign.SetMetadata(meta)
+	if docToSign.metadata != nil {
+		delete(docToSign.metadata, MetadataSignature)
+		delete(docToSign.metadata, MetadataChecksum)
 	}
 
 	// Marshal the document to a canonical byte slice
 	canonicalBytes, err := canonicalMarshal(docToSign)
 	if err != nil {
-		return "", common.SystemErrorFrom(ErrSignDocumentMarshalFailed).WithOperation("data.documentFactory.signDocument").WithCause(err)
+		return "", common.SystemErrorFrom(ErrSignDocumentMarshalFailed).
+			WithOperation("data.documentFactory.signDocument").
+			WithCause(err)
 	}
 
 	// Hash the canonical bytes
@@ -419,47 +495,12 @@ func (f *documentFactory) signDocument(doc *Document, privateKey *rsa.PrivateKey
 	// Sign the hash
 	signature, err := rsa.SignPSS(rand.Reader, privateKey, crypto.SHA256, hashed, nil)
 	if err != nil {
-		return "", common.SystemErrorFrom(ErrSignDocumentFailed).WithOperation("data.documentFactory.signDocument").WithCause(err)
+		return "", common.SystemErrorFrom(ErrSignDocumentFailed).
+			WithOperation("data.documentFactory.signDocument").
+			WithCause(err)
 	}
 
 	return base64.StdEncoding.EncodeToString(signature), nil
-}
-
-func (f *documentFactory) hasValidID(doc *Document) bool {
-	i, ok := doc.data[DocumentIDField]
-	if !ok {
-		return false
-	}
-
-	id, ok := i.(string)
-	if !ok {
-		return false
-	}
-
-	// UUID without dashes must be exactly 32 hex characters
-	if len(id) != 32 {
-		return false
-	}
-
-	// Reconstruct dashed UUID
-	var b strings.Builder
-	b.Grow(36)
-	b.WriteString(id[0:8])
-	b.WriteByte('-')
-	b.WriteString(id[8:12])
-	b.WriteByte('-')
-	b.WriteString(id[12:16])
-	b.WriteByte('-')
-	b.WriteString(id[16:20])
-	b.WriteByte('-')
-	b.WriteString(id[20:])
-
-	u, err := uuid.Parse(b.String())
-	if err != nil {
-		return false
-	}
-
-	return u.Version() == 7
 }
 
 // verifySignature verifies the signature of a document against a public key.
@@ -467,22 +508,24 @@ func (f *documentFactory) verifySignature(doc *Document, publicKey *rsa.PublicKe
 	// Decode the signature
 	signedBytes, err := base64.StdEncoding.DecodeString(signature)
 	if err != nil {
-		return common.SystemErrorFrom(ErrVerifySignatureDecodeFailed).WithOperation("data.documentFactory.verifySignature").WithCause(err)
+		return common.SystemErrorFrom(ErrVerifySignatureDecodeFailed).
+			WithOperation("data.documentFactory.verifySignature").
+			WithCause(err)
 	}
 
-	// Create a copy of the document and remove the signature field
+	// Clone document and remove signature/checksum
 	docToVerify := doc.Clone()
-	meta, ok := docToVerify.Metadata()
-	if ok {
-		delete(meta, MetadataSignature)
-		delete(meta, MetadataChecksum)
-		docToVerify.SetMetadata(meta)
+	if docToVerify.metadata != nil {
+		delete(docToVerify.metadata, MetadataSignature)
+		delete(docToVerify.metadata, MetadataChecksum)
 	}
 
 	// Marshal the document to a canonical byte slice
 	canonicalBytes, err := canonicalMarshal(docToVerify)
 	if err != nil {
-		return common.SystemErrorFrom(ErrVerifyDocumentMarshalFailed).WithOperation("data.documentFactory.verifySignature").WithCause(err)
+		return common.SystemErrorFrom(ErrVerifyDocumentMarshalFailed).
+			WithOperation("data.documentFactory.verifySignature").
+			WithCause(err)
 	}
 
 	// Hash the canonical bytes
@@ -493,7 +536,9 @@ func (f *documentFactory) verifySignature(doc *Document, publicKey *rsa.PublicKe
 	// Verify the signature
 	err = rsa.VerifyPSS(publicKey, crypto.SHA256, hashed, signedBytes, nil)
 	if err != nil {
-		return common.SystemErrorFrom(ErrSignatureVerificationFailed).WithOperation("data.documentFactory.verifySignature").WithCause(errors.Join(ErrSignatureInvalid, err))
+		return common.SystemErrorFrom(ErrSignatureVerificationFailed).
+			WithOperation("data.documentFactory.verifySignature").
+			WithCause(errors.Join(ErrSignatureInvalid, err))
 	}
 
 	return nil
@@ -503,12 +548,38 @@ func (f *documentFactory) verifySignature(doc *Document, publicKey *rsa.PublicKe
 // Canonicalization
 // ============================================================================
 
+// canonicalize recursively normalizes a value for consistent serialization.
+// For Documents, it creates a canonical representation with id, metadata, and data.
 func canonicalize(v any) any {
 	switch val := v.(type) {
 	case *Document:
-		return canonicalize(val.data)
+		if val == nil {
+			return nil
+		}
+		// Create canonical document representation
+		canonical := make(map[string]any, 3)
+		canonical[DocumentIDField] = val.id
+		if val.metadata != nil {
+			canonical[MetadataField] = canonicalize(val.metadata)
+		}
+		// Add all user data fields
+		for k, v := range val.data {
+			canonical[k] = canonicalize(v)
+		}
+		// Sort keys for consistent ordering
+		keys := make([]string, 0, len(canonical))
+		for k := range canonical {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		sorted := make(map[string]any, len(canonical))
+		for _, k := range keys {
+			sorted[k] = canonical[k]
+		}
+		return sorted
 	case Document:
-		return canonicalize(val.data)
+		// Handle value type by converting to pointer
+		return canonicalize(&val)
 	case map[string]any:
 		newMap := make(map[string]any, len(val))
 		keys := make([]string, 0, len(val))
@@ -653,7 +724,6 @@ func ListSanitizationPolicies() ([]*FieldMaskConfig, error) {
 
 	return registry.Export()
 }
-
 
 // ============================================================================
 // Testing Support

@@ -20,12 +20,11 @@ func TestDocumentHashing(t *testing.T) {
 	err := doc.Hash()
 	require.NoError(t, err)
 
-	meta, ok := doc.Metadata()
-	require.True(t, ok)
+	meta := doc.Metadata()
 	_, hashExists := meta[data.MetadataChecksum]
 	assert.True(t, hashExists, "checksum should exist in metadata after Hash() call")
 
-	ok, err = doc.VerifyHash()
+	ok, err := doc.VerifyHash()
 	assert.True(t, ok, "initial hash verification should succeed")
 	require.NoError(t, err)
 
@@ -63,8 +62,7 @@ func TestDocumentSigning(t *testing.T) {
 	err = doc.Sign(privateKey)
 	require.NoError(t, err)
 
-	meta, ok := doc.Metadata()
-	require.True(t, ok)
+	meta := doc.Metadata()
 	_, sigExists := meta[data.MetadataSignature]
 	assert.True(t, sigExists, "signature should exist in metadata after Sign() call")
 
@@ -84,7 +82,7 @@ func TestDocumentSigning(t *testing.T) {
 	require.NoError(t, err, "signature should be valid after re-signing")
 
 	// Now, modify the metadata
-	meta, _ = doc.Metadata()
+	meta = doc.Metadata()
 	meta[data.MetadataVersion] = 5
 	doc.SetMetadata(meta)
 	err = doc.Verify(publicKey)

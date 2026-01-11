@@ -38,9 +38,6 @@ func (d *Document) Diff(other *Document) DocumentDiff {
 
 	// Find added and modified
 	for k, v := range other.data {
-		if ReservedSystemField(k) {
-			continue
-		}
 		if existing, ok := d.data[k]; ok {
 			if !reflect.DeepEqual(existing, v) {
 				diff.Modified[k] = DiffValue{Old: existing, New: v}
@@ -52,9 +49,6 @@ func (d *Document) Diff(other *Document) DocumentDiff {
 
 	// Find removed
 	for k, v := range d.data {
-		if ReservedSystemField(k) {
-			continue
-		}
 		if _, ok := other.data[k]; !ok {
 			diff.Removed[k] = v
 		}

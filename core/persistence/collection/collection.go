@@ -26,12 +26,15 @@ func NewCollection(
 		return nil, err
 	}
 
-	// Decorate the base collection with the managed collection for metadata and versioning.
+	// Decorate the base collection with polyfills for missing database features.
+	polyfilled := newPolyfillCollection(base, interactor, logger)
+
+	// Decorate the polyfilled collection with the managed collection for metadata and versioning.
 	managed, err := newManagedCollection(
 		sc,
 		name,
 		sc.Name,
-		base,
+		polyfilled,
 		resolveSchema,
 		processor,
 	)

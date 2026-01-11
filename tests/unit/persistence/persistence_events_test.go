@@ -56,16 +56,16 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	}
 
 	// Test Create
-	docToCreate := data.MustNewDocument(map[string]any{"id": "1", "name": "value"})
+	docToCreate := data.MustNewDocument(map[string]any{"name": "value"})
 	d, err := collection.CreateOne(context.Background(), docToCreate)
 	if err != nil {
 		t.Logf("Error creating docToCreate document: %v", err)
 	}
 	require.NoError(t, err)
 
-	id := d.Data.Must().GetString("id")
+	id := d.Data.ID()
 	// Test Read
-	readQuery := query.NewQueryBuilder().Where("id").Eq(id).Build()
+	readQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build()
 	result, err := collection.Read(context.Background(), &readQuery)
 	assert.Equal(t, 1, result.Count)
 	require.NoError(t, err)
@@ -73,12 +73,12 @@ func TestPersistence_DocumentEvents(t *testing.T) {
 	// Test Update
 	docToUpdate := result.Data[0]
 	docToUpdate.Set("name", "new_value")
-	updateFilter := query.NewQueryBuilder().Where("id").Eq(id).Build().Filters
+	updateFilter := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build().Filters
 	_, err = collection.Update(context.Background(), &base.CollectionUpdate{Set: docToUpdate, Filter: updateFilter})
 	require.NoError(t, err)
 
 	// Test Delete
-	deleteFilter := query.NewQueryBuilder().Where("id").Eq(id).Build().Filters
+	deleteFilter := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build().Filters
 	_, err = collection.Delete(context.Background(), deleteFilter, false)
 	require.NoError(t, err)
 
@@ -249,7 +249,7 @@ func TestPersistence_DocumentUpdateEvents(t *testing.T) {
 	}
 	require.NoError(t, err)
 
-	id := d.Data.Must().GetString("id")
+	id := d.Data.ID()
 	var mu sync.Mutex
 	receivedEvents := make(map[base.PersistenceEventType][]base.PersistenceEvent)
 
@@ -274,7 +274,7 @@ func TestPersistence_DocumentUpdateEvents(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	// Test successful update
-	readQuery := query.NewQueryBuilder().Where("id").Eq(id).Build()
+	readQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build()
 	readResult, err := collection.Read(context.Background(), &readQuery)
 	require.NoError(t, err)
 	originalDoc := readResult.Data[0]
@@ -283,15 +283,15 @@ func TestPersistence_DocumentUpdateEvents(t *testing.T) {
 	updateDoc := originalDoc.Clone()
 	updateDoc.Set("name", "updated")
 
-	updateFilter := query.NewQueryBuilder().Where("id").Eq(id).Build().Filters
+	updateFilter := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build().Filters
 	_, err = collection.Update(context.Background(), &base.CollectionUpdate{Set: updateDoc, Filter: updateFilter})
 	require.NoError(t, err)
 
 	// Test failed update (e.g., trying to update a non-existent document with a filter that doesn't match)
 	// For ephemeral, an update to a non-existent document will not return an error, but will affect 0 rows.
 	// The event emission logic should still capture this as a 'failed' update if 0 rows are affected.
-	failedDocUpdate := data.MustNewDocument(map[string]any{"id": "2", "name": "failed_update"})
-	failedUpdateFilter := query.NewQueryBuilder().Where("id").Eq("2").Build().Filters
+	failedDocUpdate := data.MustNewDocument(map[string]any{data.DocumentIDField: "2", "name": "failed_update"})
+	failedUpdateFilter := query.NewQueryBuilder().Where(data.DocumentIDField).Eq("2").Build().Filters
 	rows, err := collection.Update(context.Background(), &base.CollectionUpdate{Set: failedDocUpdate, Filter: failedUpdateFilter})
 	assert.Equal(t, rows.Count, 0)
 

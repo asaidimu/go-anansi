@@ -170,77 +170,9 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 	}
 
 	result, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
-		var affectedIDs []query.FilterValue
-		var docs []map[string]any
-		var count int64
-
-		// If documents are requested and interactor doesn't support native RETURNING,
-		// fetch IDs before the update so we can retrieve them afterward
-		needsIDsFetch := params.ReturnDocument && !c.Capabilities(ctx).ReturnOnUpdate
-
-		if needsIDsFetch {
-			rctx := query.WithInteractor(ctx, interactor)
-			idQuery := query.NewQueryBuilder().
-				Select().
-				Include(data.DocumentIDField).
-				End().
-				AndFilter(*params.Filter).
-				Build()
-
-			idQuery.Target = &query.QueryTarget{
-				Name:   c.schema.Name,
-				Alias:  &c.name,
-				Schema: c.schema.MustClone(),
-			}
-
-			idDocs, queryErr := c.engine.Query(rctx, c.schema, &idQuery)
-			if queryErr != nil {
-				return nil, common.SystemErrorFrom(queryErr, "ERR_PERSISTENCE_FETCH_IDS_FAILED")
-			}
-
-			// Extract IDs from the documents
-			affectedIDs = make([]query.FilterValue, 0, idDocs.Count)
-			for _, doc := range idDocs.Data {
-				if id, exists := doc[data.DocumentIDField]; exists {
-					ids := id.(string)
-					affectedIDs = append(affectedIDs, query.FilterValue{
-						StringVal: &ids,
-					})
-				}
-			}
-		}
-
-		// Perform the update
 		docs, count, err := interactor.UpdateDocuments(ctx, c.schema, updatesMap, params.Compute, params.Filter, params.ReturnDocument)
 		if err != nil {
 			return nil, err
-		}
-
-		// If we fetched IDs beforehand and got documents back from update, fetch the updated documents
-		if needsIDsFetch && len(affectedIDs) > 0 {
-			rctx := query.WithInteractor(ctx, interactor)
-			fetchQuery := query.NewQueryBuilder().
-				AndFilter(query.QueryFilter{
-					Condition: &query.FilterCondition{
-						Field:    data.DocumentIDField,
-						Operator: query.ComparisonOperatorIn,
-						Value:    query.FilterValue{ArrayVal: affectedIDs},
-					},
-				}).
-				Build()
-
-			fetchQuery.Target = &query.QueryTarget{
-				Name:   c.schema.Name,
-				Alias:  &c.name,
-				Schema: c.schema.MustClone(),
-			}
-
-			result, err := c.engine.Query(rctx, c.schema, &fetchQuery)
-			if err != nil {
-				// Return empty docs with count - the update succeeded
-				docs = []map[string]any{}
-			}
-			docs = result.Data
 		}
 
 		return struct {

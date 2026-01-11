@@ -116,7 +116,7 @@ func TestCollection_Create(t *testing.T) {
 		assert.Equal(t, actual.Must().GetString("name"), expected.Must().GetString("name"))
 
 		// Verify the document was actually inserted by reading it back
-		readQuery := query.NewQueryBuilder().Where("id").Eq(result.Data.Must().GetString("id")).Build()
+		readQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(result.Data.ID()).Build()
 		readResult, err := collection.Read(ctx, &readQuery)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, readResult.Count)
@@ -137,9 +137,9 @@ func TestCollection_Create(t *testing.T) {
 		assert.Len(t, result, 2)
 
 		// Verify the documents were actually inserted by reading them back
-		readQuery := query.NewQueryBuilder().Where("id").In(
-			result[0].Data.Must().GetString("id"),
-			result[1].Data.Must().GetString("id")).Build()
+		readQuery := query.NewQueryBuilder().Where(data.DocumentIDField).In(
+			result[0].Data.ID(),
+			result[1].Data.ID()).Build()
 		readResult, err := collection.Read(ctx, &readQuery)
 		assert.NoError(t, err)
 		assert.Equal(t, 2, readResult.Count)
@@ -216,7 +216,7 @@ func TestCollection_Update(t *testing.T) {
 	}
 	require.NoError(t, err)
 
-	q := query.NewQueryBuilder().Where("id").Eq(r.Data.Must().GetString("id")).Build()
+	q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(r.Data.ID()).Build()
 	result, err := c.Read(ctx, &q)
 	require.NoError(t, err)
 	require.Equal(t, 1, result.Count)
@@ -226,10 +226,8 @@ func TestCollection_Update(t *testing.T) {
 		"name": "UpdatedName",
 	})
 
-	metadata, ok := d.Metadata()
-	require.True(t, ok)
+	metadata := d.Metadata()
 	updates.SetMetadata(metadata)
-
 
 	t.Run("update document with wrong version should not update", func(t *testing.T) {
 		// We need to read the document again to get the latest version
@@ -313,7 +311,7 @@ func TestCollection_Delete(t *testing.T) {
 	}
 	assert.NoError(t, err)
 
-	filters := query.NewQueryBuilder().Where("id").Eq(r.Data.Must().GetString("id")).Build().Filters
+	filters := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(r.Data.ID()).Build().Filters
 
 	t.Run("delete documents success", func(t *testing.T) {
 		rowsAffected, err := collection.Delete(ctx, filters, false)
@@ -322,7 +320,7 @@ func TestCollection_Delete(t *testing.T) {
 		assert.Equal(t, 1, rowsAffected)
 
 		// Verify the document was actually deleted
-		readQuery := query.NewQueryBuilder().Where("id").Eq(r.Data.Must().GetString("id")).Build()
+		readQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(r.Data.ID()).Build()
 		readResult, err := collection.Read(ctx, &readQuery)
 		assert.NoError(t, err)
 		assert.Equal(t, 0, readResult.Count)
@@ -390,7 +388,7 @@ func TestCollection_Validate(t *testing.T) {
 	collection, _, _, _, _, ctx := setupCollection(t)
 
 	t.Run("valid document", func(t *testing.T) {
-		doc := data.MustNewDocument(map[string]any{"id": "1", "name": "Valid Name"})
+		doc := data.MustNewDocument(map[string]any{data.DocumentIDField: "1", "name": "Valid Name"})
 		result, err := collection.Validate(ctx, doc, false)
 		assert.NoError(t, err)
 		assert.True(t, result.Valid)
@@ -398,7 +396,7 @@ func TestCollection_Validate(t *testing.T) {
 	})
 
 	t.Run("invalid document - missing required field", func(t *testing.T) {
-		doc := data.MustNewDocument(map[string]any{"id": "1"}) // Missing 'name'
+		doc := data.MustNewDocument(map[string]any{data.DocumentIDField: "1"}) // Missing 'name'
 		result, err := collection.Validate(ctx, doc, false)
 		assert.NoError(t, err) // Validation itself should not return an error, but a result with issues
 		assert.False(t, result.Valid)
@@ -407,7 +405,7 @@ func TestCollection_Validate(t *testing.T) {
 	})
 
 	t.Run("invalid document - wrong type", func(t *testing.T) {
-		doc := data.MustNewDocument(map[string]any{"id": "1", "name": 123}) // Name should be string
+		doc := data.MustNewDocument(map[string]any{data.DocumentIDField: "1", "name": 123}) // Name should be string
 		result, err := collection.Validate(ctx, doc, false)
 		assert.NoError(t, err)
 		assert.False(t, result.Valid)
@@ -416,7 +414,7 @@ func TestCollection_Validate(t *testing.T) {
 	})
 
 	t.Run("loose validation - missing required field allowed", func(t *testing.T) {
-		doc := data.MustNewDocument(map[string]any{"id": "1"})                    // Missing 'name'
+		doc := data.MustNewDocument(map[string]any{data.DocumentIDField: "1"})                    // Missing 'name'
 		result, err := collection.Validate(ctx, doc, true) // Loose validation
 		assert.NoError(t, err)
 		assert.True(t, result.Valid) // Should be valid in loose mode for missing required
@@ -535,7 +533,7 @@ func TestHashConsistencyOnRead(t *testing.T) {
 	docID := createResult.Data.ID()
 
 	// 2. Read the document for the first time
-	query := query.NewQueryBuilder().Where("id").Eq(docID).Build()
+	query := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(docID).Build()
 	readResult1, err := collection.Read(ctx, &query)
 	require.NoError(t, err)
 	require.Equal(t, 1, readResult1.Count)

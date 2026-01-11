@@ -100,10 +100,11 @@ type ObscureConfig struct {
 	MaxLength int `json:"max_length,omitempty"`
 }
 
+
+
 // FieldMaskConfigDoc wraps FieldMaskConfig with proper document binding tags
 type FieldMaskConfig struct {
-	// Document ID (auto-generated)
-	ID string `json:"id,omitempty" doc:"id,omitempty"`
+	DocumentModel
 
 	// Version for forward compatibility
 	Version string `json:"version,omitempty" doc:"version,omitempty"`
@@ -796,10 +797,21 @@ func (d *Document) Sanitize(ctx ...context.Context) (*Document, error) {
 		return d.Clone(), nil
 	}
 
-	// Apply sanitization once with the pre-composed sanitizer
-	sanitized := sanitizer.SanitizeDocumentDeep(d.data)
+	// Sanitize user data
+	sanitizedData := sanitizer.SanitizeDocumentDeep(d.data)
 
-	doc := MustNewDocument(sanitized, d.ctx)
+	// Sanitize metadata (preserving system fields)
+	sanitizedMetadata := sanitizer.sanitizeMetadata(d.metadata)
+
+	// Create new document with sanitized data
+	doc := &Document{
+		id:       d.id,              // ID is never sanitized
+		ctx:      d.ctx,             // Preserve original context
+		data:     sanitizedData,     // Sanitized user data
+		metadata: sanitizedMetadata, // Sanitized metadata
+	}
+
+	// Recalculate hash for sanitized document
 	if err := doc.Hash(); err != nil {
 		return nil, common.SystemErrorFrom(err).
 			WithOperation("data.Document.Sanitize").
@@ -901,23 +913,31 @@ func SanitizeValue(ctx context.Context, value any) (any, error) {
 		return SanitizeDocumentArray(docs)
 
 	case map[string]any:
-		// Treat as document
-		doc, err := (&Document{ctx: ctx, data: v}).Sanitize(ctx)
+		// Treat as raw document data - create temporary document
+		tempDoc := &Document{
+			ctx:  ctx,
+			data: v,
+		}
+		sanitized, err := tempDoc.Sanitize(ctx)
 		if err != nil {
 			return nil, err
 		}
-		return doc.data, nil
+		return sanitized.data, nil
 
 	case []map[string]any:
 		sanitized := make([]map[string]any, len(v))
 		for i, m := range v {
-			doc, err := (&Document{ctx: ctx, data: m}).Sanitize(ctx)
+			tempDoc := &Document{
+				ctx:  ctx,
+				data: m,
+			}
+			sanitizedDoc, err := tempDoc.Sanitize(ctx)
 			if err != nil {
 				return nil, common.SystemErrorFrom(err).
 					WithOperation("data.SanitizeValue").
 					WithMessagef("failed to sanitize map at index %d", i)
 			}
-			sanitized[i] = doc.data
+			sanitized[i] = sanitizedDoc.data
 		}
 		return sanitized, nil
 
@@ -958,3 +978,4 @@ func GetScopedSanitizer(scopeID string) *DocumentSanitizer {
 
 	return registry.Get(scopeID)
 }
+

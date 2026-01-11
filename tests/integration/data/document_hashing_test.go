@@ -32,7 +32,7 @@ func TestDocumentHashingIntegrity(t *testing.T) {
 	createdDoc := resultSet.Documents()[0]
 
 	// 3. Retrieve the document from the database
-	q := query.NewQueryBuilder().Where("id").Eq(createdDoc.ID()).Build()
+	q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(createdDoc.ID()).Build()
 	readResultSet, err := col.Read(ctx, &q)
 	require.NoError(t, err)
 	require.Len(t, readResultSet.Data, 1)
@@ -49,8 +49,8 @@ func TestDocumentHashingIntegrity(t *testing.T) {
 	require.Equal(t, createdDoc.MustGet("age"), retrievedDoc.MustGet("age"))
 
 	// Verify metadata fields that should be preserved and updated
-	initialMeta, _ := createdDoc.Metadata()
-	retrievedMeta, _ := retrievedDoc.Metadata()
+	initialMeta := createdDoc.Metadata()
+	retrievedMeta := retrievedDoc.Metadata()
 
 	require.Equal(t, initialMeta[data.MetadataChecksum], retrievedMeta[data.MetadataChecksum])
 	require.Equal(t, initialMeta[data.MetadataVersion], retrievedMeta[data.MetadataVersion])

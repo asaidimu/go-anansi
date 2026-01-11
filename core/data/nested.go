@@ -23,7 +23,10 @@ func (d Document) GetNested(path string) (any, error) {
 }
 
 // SetNested with path validation and intermediate map creation.
-func (d Document) SetNested(path string, value any) error {
+func (d *Document) SetNested(path string, value any) error {
+	if path == DocumentIDField {
+		return common.SystemErrorFrom(ErrReadOnlyField).WithOperation("data.Document.SetNested").WithPath(path).WithMessage(fmt.Sprintf("field '%s' is managed by the library and cannot be set manually", DocumentIDField))
+	}
 	if path == "" {
 		return common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.SetNested").WithPath(path)
 	}
@@ -55,8 +58,8 @@ func (d Document) SetNested(path string, value any) error {
 	return nil
 }
 
-// DeleteNested removes a value at a nested path.
-func (d Document) DeleteNested(path string) error {
+// Delete removes a value at a nested path.
+func (d *Document) Delete(path string) error {
 	if path == "" {
 		return common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.DeleteNested").WithPath(path)
 	}

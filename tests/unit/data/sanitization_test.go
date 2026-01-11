@@ -482,8 +482,8 @@ func TestMetadataSanitization(t *testing.T) {
 		t.Fatalf("Sanitize failed: %v", err)
 	}
 
-	meta, ok := sanitized.Metadata()
-	if !ok {
+	meta := sanitized.Metadata()
+	if len(meta) == 0 {
 		t.Fatal("Expected metadata in sanitized document")
 	}
 

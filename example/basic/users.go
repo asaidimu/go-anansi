@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 )
@@ -10,13 +11,13 @@ import (
 const UsersCollectionName = "Users"
 
 type User struct {
-	ID       string `doc:"id,omitempty"`
+	data.DocumentModel
 	Username string `doc:"username"`
 	Email    string `doc:"email"`
 }
 
 type Users struct {
-	base.ModelCollection[User]
+	base.ModelCollection[User, *User]
 }
 
 func (us *Users) CreateUser(ctx context.Context, user User) (User, error) {
