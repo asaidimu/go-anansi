@@ -12,27 +12,24 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
-// VersionFieldName is the reserved name for the field used in optimistic concurrency control.
-const VersionFieldName = "_version_"
-
 // FieldType represents the data type of a field in a schema.
 type FieldType string
 
 // Supported field types.
 const (
-	FieldTypeString  FieldType = "string"
-	FieldTypeNumber  FieldType = "number"
-	FieldTypeInteger FieldType = "integer"
-	FieldTypeDecimal FieldType = "decimal"
-	FieldTypeBoolean FieldType = "boolean"
-	FieldTypeArray   FieldType = "array"
-	FieldTypeSet     FieldType = "set"
-	FieldTypeEnum    FieldType = "enum"
-	FieldTypeObject  FieldType = "object"
-	FieldTypeRecord  FieldType = "record"
-	FieldTypeUnion   FieldType = "union"
-	FieldTypeUnknown FieldType = "unknown"
-	FieldTypeDynamic FieldType = "dynamic" // Deprecated: Use FieldTypeRecord instead
+	FieldTypeString   FieldType = "string"
+	FieldTypeNumber   FieldType = "number"
+	FieldTypeInteger  FieldType = "integer"
+	FieldTypeDecimal  FieldType = "decimal"
+	FieldTypeBoolean  FieldType = "boolean"
+	FieldTypeArray    FieldType = "array"
+	FieldTypeSet      FieldType = "set"
+	FieldTypeEnum     FieldType = "enum"
+	FieldTypeObject   FieldType = "object"
+	FieldTypeRecord   FieldType = "record"
+	FieldTypeUnion    FieldType = "union"
+	FieldTypeUnknown  FieldType = "unknown"
+	FieldTypeGeometry FieldType = "geometry"
 )
 
 // IndexType represents the type of an index, which is used to optimize database queries.
@@ -240,14 +237,10 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 	fd.Type = temp.Type
 
 	// Normalize deprecated "dynamic" to "record"
-	if fd.Type == FieldTypeDynamic {
-		fd.Type = FieldTypeRecord
-	}
-
 	if temp.Schema != nil {
 		handled := false
 		switch temp.Type {
-		case FieldTypeObject, FieldTypeArray, FieldTypeRecord, FieldTypeDynamic:
+		case FieldTypeObject, FieldTypeArray, FieldTypeRecord:
 			var singleSchema NestedSchemaReference
 			if err := utils.FromJSON(temp.Schema, &singleSchema); err == nil {
 				if singleSchema.ID != "" {
@@ -264,7 +257,7 @@ func (fd *FieldDefinition) UnmarshalJSON(data []byte) error {
 		}
 
 		if !handled {
-			if temp.Type != FieldTypeObject && temp.Type != FieldTypeArray && temp.Type != FieldTypeRecord && temp.Type != FieldTypeDynamic && temp.Type != FieldTypeUnion {
+			if temp.Type != FieldTypeObject && temp.Type != FieldTypeArray && temp.Type != FieldTypeRecord && temp.Type != FieldTypeUnion {
 				return ErrFieldTypeCannotHaveSchemaReference.WithOperation("schema.FieldDefinition.UnmarshalJSON").
 					WithMessage(fmt.Sprintf("field of type '%s' cannot have a 'schema' reference", temp.Type))
 			}
@@ -450,18 +443,10 @@ func (nsd *NestedSchemaDefinition) UnmarshalJSON(data []byte) error {
 		nsd.Type = temp.Type
 
 		// Normalize deprecated "dynamic" to "record"
-		if *nsd.Type == FieldTypeDynamic {
-			*nsd.Type = FieldTypeRecord
-		}
 
 		nsd.Default = temp.Default
 		nsd.ItemsType = temp.ItemsType
 		nsd.Values = temp.Values
-
-		// For record/dynamic types, we don't need schema
-		if *temp.Type == FieldTypeRecord || *temp.Type == FieldTypeDynamic {
-			return nil
-		}
 
 		if temp.Schema != nil {
 			var singleSchema NestedSchemaReference
@@ -574,7 +559,7 @@ type Registry struct {
 	Indexes     map[string]*IndexDefinition        `json:"indexes,omitempty"`
 }
 
-// SchemaDefinition defines a complete schema for a collection.
+// SchemaDefinition defines a complete schema for a collection. OLD
 type SchemaDefinition struct {
 	Name        string                      `json:"name"`
 	Description *string                     `json:"description,omitempty"`
@@ -947,11 +932,8 @@ func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
 
 	if temp.Type != nil {
 		fd.Type = temp.Type
-		// Normalize deprecated "dynamic" to "record"
-		if *fd.Type == FieldTypeDynamic {
-			*fd.Type = FieldTypeRecord
-		}
 	}
+
 	if temp.Unset != nil {
 		fd.Unset = temp.Unset
 	}
@@ -959,7 +941,7 @@ func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
 	if temp.Schema != nil && temp.Type != nil {
 		handled := false
 		switch *temp.Type {
-		case FieldTypeObject, FieldTypeArray, FieldTypeRecord, FieldTypeDynamic:
+		case FieldTypeObject, FieldTypeArray, FieldTypeRecord:
 			var singleSchema NestedSchemaReference
 			if err := utils.FromJSON(temp.Schema, &singleSchema); err == nil {
 				if singleSchema.ID != "" { // Check ID similar to FieldDefinition
@@ -976,7 +958,7 @@ func (fd *PartialFieldDefinition) UnmarshalJSON(data []byte) error {
 		}
 
 		if !handled {
-			if *temp.Type != FieldTypeObject && *temp.Type != FieldTypeArray && *temp.Type != FieldTypeRecord && *temp.Type != FieldTypeDynamic && *temp.Type != FieldTypeUnion {
+			if *temp.Type != FieldTypeObject && *temp.Type != FieldTypeArray && *temp.Type != FieldTypeRecord && *temp.Type != FieldTypeUnion {
 				return ErrFieldTypeCannotHaveSchemaReference.WithOperation("schema.PartialFieldDefinition.UnmarshalJSON").
 					WithMessage(fmt.Sprintf("field of type '%s' cannot have a 'schema' reference", *temp.Type))
 			}

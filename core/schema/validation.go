@@ -240,8 +240,8 @@ func validateFieldTypeSemantics(basePath string, field *FieldDefinition) []commo
 		}
 
 	case FieldTypeRecord: // records are very permissive
-	case FieldTypeDynamic:
-		//Dynamic should not have schema
+	case FieldTypeUnknown:
+		//Unknown should not have schema
 		if field.Schema != nil {
 			errors = append(errors, common.Issue{
 				Path:    basePath + "/schema",
@@ -514,7 +514,7 @@ func validateConstraintStructures(rules SchemaConstraint, basePath string, error
 			}
 
 			// Operator is required
-			if rule.ConstraintGroup.Operator == "" {
+			if rule.ConstraintGroup.Operator == 0 {
 				*errors = append(*errors, common.Issue{
 					Path:    currentPath + "/operator",
 					Message: "constraint group operator is required",

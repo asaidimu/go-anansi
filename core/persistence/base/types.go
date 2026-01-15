@@ -246,24 +246,19 @@ type TransformationMetadata struct {
 // It includes descriptive information, schema details, usage statistics, and
 // associated operational data like migrations and subscriptions.
 type CollectionMetadata struct {
-	ID               string                   `json:"id"`                         // ID is the unique identifier for the collection.
-	SchemaVersion    string                   `json:"schemaVersion"`              // SchemaVersion is the version of the schema currently used by the collection.
-	Name             string                   `json:"name"`                       // Name is the logical name of the collection.
-	CollectionName   string                   `json:"collectionName"`             // CollectionName is the physical name of the collection in the database.
-	Description      string                   `json:"description"`                // Description is a human-readable summary of the collection's purpose.
-	Status           string                   `json:"status"`                     // Status indicates the current state of the collection (e.g., "active", "archived").
-	CreatedAt        string                   `json:"createdAt"`                  // CreatedAt is the timestamp when the collection was created.
-	CreatedBy        string                   `json:"createdBy"`                  // CreatedBy identifies the user or process that created the collection.
-	RecordCount      int64                    `json:"recordCount"`                // RecordCount is the number of records currently in the collection.
-	DataSizeBytes    int64                    `json:"dataSizeBytes"`              // DataSizeBytes is the total size of the data in the collection, in bytes.
-	Schema           *schema.SchemaDefinition `json:"schema"`                     // Schema is the schema definition associated with this collection.
-	LastModified     int64                    `json:"lastModified"`               // LastModified is the timestamp of the last operation on the collection (Unix milliseconds).
-	ConnectionStatus *string                  `json:"connectionStatus,omitempty"` // ConnectionStatus indicates the health of the connection to the collection (e.g., "connected", "disconnected", "error").
-	ConnectionError  *string                  `json:"connectionError,omitempty"`  // ConnectionError contains an error message if the connection is in an error state.
-	Labels           []string                 `json:"labels,omitempty"`           // Labels are tags associated with the collection for organization and filtering.
-	Migrations       []MigrationMetadata      `json:"migrations,omitempty"`       // Migrations is a list of all schema migrations that have been applied to this collection.
-	Transformations  []TransformationMetadata `json:"transformations,omitempty"`  // Transformations is a list of all data transformations that have been applied to this collection.
-	Subscriptions    []SubscriptionInfo       `json:"subscriptions"`              // Subscriptions is a list of all active event subscriptions for this collection.
+	Name            string                   `json:"name"`                      // Name is the logical name of the collection.
+	Version         string                   `json:"version"`                   // Version is the version of the schema currently used by the collection.
+	Description     string                   `json:"description"`               // Description is a human-readable summary of the collection's purpose.
+	Collection      string                   `json:"collection"`                // Collection is the physical name of the collection in the database.
+	Status          string                   `json:"status"`                    // Status indicates the current state of the collection (e.g., "active", "archived").
+	Records         int64                    `json:"records"`                   // Records is the number of records currently in the collection.
+	Size            int64                    `json:"size"`                      // Size is the total size of the data in the collection, in bytes.
+	Created         int64                    `json:"created"`                   // Created is the timestamp when the collection was created.
+	Updated         int64                    `json:"updated"`                   // Updated is the timestamp of the last operation on the collection (Unix milliseconds).
+	Schema          *schema.SchemaDefinition `json:"schema"`                    // Schema is the schema definition associated with this collection.
+	Migrations      []MigrationMetadata      `json:"migrations,omitempty"`      // Migrations is a list of all schema migrations that have been applied to this collection.
+	Transformations []TransformationMetadata `json:"transformations,omitempty"` // Transformations is a list of all data transformations that have been applied to this collection.
+	Subscriptions   []SubscriptionInfo       `json:"subscriptions"`             // Subscriptions is a list of all active event subscriptions for this collection.
 }
 
 // Metadata represents the overall metadata for the entire persistence layer.

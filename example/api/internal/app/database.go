@@ -25,6 +25,11 @@ func NewDatabase(cfg *Config, logger *zap.Logger) (*Database, error) {
 		return nil, fmt.Errorf("failed to open database: %w", err)
 	}
 
+	_, err = db.Exec("PRAGMA journal_mode=WAL;")
+	if err != nil {
+		return nil, err
+	}
+
 	executor, err := sqliteExecutor.NewSQLiteExecutor(db, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SQLite interactor: %w", err)

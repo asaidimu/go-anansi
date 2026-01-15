@@ -114,7 +114,7 @@ func (cr *ConstraintRule) GetOperator() (common.LogicalOperator, bool) {
 	if cr.IsConstraintGroup() {
 		return cr.ConstraintGroup.Operator, true
 	}
-	return "", false
+	return 0, false
 }
 
 // RuleCount returns the number of rules if this is a group (0 otherwise)

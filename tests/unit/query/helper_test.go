@@ -5,6 +5,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 )
 
@@ -75,7 +76,7 @@ func TestFilter(t *testing.T) {
 			query: &query.Query{
 				Filters: &query.QueryFilter{
 					Group: &query.FilterGroup{
-						Operator: "and",
+						Operator: common.LogicalAnd,
 						Conditions: []query.QueryFilter{
 							{Condition: &query.FilterCondition{Field: "age", Operator: query.ComparisonOperatorGte, Value: query.FilterValue{NumberVal: floatPtr(30)}}},
 							{Condition: &query.FilterCondition{Field: "active", Operator: query.ComparisonOperatorEq, Value: query.FilterValue{BoolVal: boolPtr(true)}}},
@@ -90,7 +91,7 @@ func TestFilter(t *testing.T) {
 			query: &query.Query{
 				Filters: &query.QueryFilter{
 					Group: &query.FilterGroup{
-						Operator: "or",
+						Operator: common.LogicalOr,
 						Conditions: []query.QueryFilter{
 							{Condition: &query.FilterCondition{Field: "age", Operator: query.ComparisonOperatorEq, Value: query.FilterValue{NumberVal: floatPtr(25)}}},
 							{Condition: &query.FilterCondition{Field: "active", Operator: query.ComparisonOperatorEq, Value: query.FilterValue{BoolVal: boolPtr(true)}}},
@@ -120,7 +121,7 @@ func TestFilter(t *testing.T) {
 			query: &query.Query{
 				Filters: &query.QueryFilter{
 					Group: &query.FilterGroup{
-						Operator: "not",
+						Operator: common.LogicalNot,
 						Conditions: []query.QueryFilter{
 							{Condition: &query.FilterCondition{Field: "active", Operator: query.ComparisonOperatorEq, Value: query.FilterValue{BoolVal: boolPtr(true)}}},
 						},

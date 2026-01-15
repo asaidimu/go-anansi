@@ -19,17 +19,21 @@ type PersistenceManager struct {
 
 // NewPersistenceManager sets up the Anansi persistence layer.
 func NewPersistenceManager(schemaLoader *schema.SchemaLoader, cfg *Config, logger *zap.Logger) (*PersistenceManager, func(), error) {
-	p, cleanup, err := anansi.Playground(anansi.PlaygroundConfig{
-		Logger:                logger,
-		DBPath:                cfg.DBPath,
-		EnableLogging:         true,
-		EnableSanitization:    true,
-		CustomSanitizerConfig: data.NewSecureDefaultConfig(),
-		Schemas:               schemaLoader.Schemas,
-	})
+	db, err := NewDatabase(cfg, logger)
+
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to setup Anansi: %w", err)
 	}
+	p, err := anansi.Setup(anansi.SetupConfig{
+		Logger:  logger,
+		Schemas: schemaLoader.Schemas,
+		Interactor: db.Interactor,
+	})
+
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to setup Anansi: %w", err)
+	}
+
 	logger.Info("Anansi persistence layer initialized successfully.")
 
 	sanitizationPolicyStore, err := utils.NewSanitizationPolicyStore(p, logger)
@@ -45,7 +49,7 @@ func NewPersistenceManager(schemaLoader *schema.SchemaLoader, cfg *Config, logge
 
 	return &PersistenceManager{
 		Anansi: p,
-	}, cleanup, nil
+	}, func() { db.Close() }, nil
 }
 
 // Collection retrieves a collection by name.
