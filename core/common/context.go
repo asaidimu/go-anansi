@@ -16,8 +16,8 @@ const SanitizationScopeContextKey ContextKey = "anansi.sanitization.scope"
 
 // ContextWithSanitizationScope adds a sanitization scope identifier to the context.
 // This determines which scoped sanitizer (if any) will be used for documents.
-// If multiple scopes are added, they are all considered for sanitization (most restrictive policy wins).
-// Scopes are deduplicated.
+// If multiple scopes are added, they are all considered for sanitization and
+// the most restrictive policy wins.
 func ContextWithSanitizationScope(ctx context.Context, scopeID string) context.Context {
 	if scopeID == "" {
 		return ctx
@@ -30,10 +30,7 @@ func ContextWithSanitizationScope(ctx context.Context, scopeID string) context.C
 		}
 	}
 
-	// Deduplicate and append
-	found := slices.Contains(existingScopes, scopeID)
-
-	if !found {
+	if found := slices.Contains(existingScopes, scopeID); !found {
 		newScopes := make([]string, len(existingScopes)+1)
 		copy(newScopes, existingScopes)
 		newScopes[len(existingScopes)] = scopeID
@@ -50,6 +47,18 @@ func ContextWithCollectionName(ctx context.Context, collectionName string) conte
 		context.WithValue(ctx, CollectionNameContextKey, collectionName),
 		collectionName,
 	)
+}
+
+// SanitizationScopesFromContext retrieves scopes from the context, if present.
+func SanitizationScopesFromContext(ctx context.Context) ([]string) {
+
+	if val := ctx.Value(SanitizationScopeContextKey); val != nil {
+		if s, ok := val.([]string); ok {
+			return s
+		}
+	}
+
+	return make([]string, 0)
 }
 
 // CollectionNameFromContext retrieves the collection name from the context, if present.

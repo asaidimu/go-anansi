@@ -264,7 +264,7 @@ func (is Issues) String() string {
 
 // NormalizePaths Converts both JSON Pointer style (/fields/name) and mixed formats to dot notation.
 func (is Issues) NormalizePaths() Issues {
-	for _,iss := range is {
+	for _, iss := range is {
 		iss.Path = iss.NormalizedPath()
 	}
 	return is

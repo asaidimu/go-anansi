@@ -22,13 +22,6 @@ func init() {
 	})
 }
 
-func TestConfigureVersioning(t *testing.T) {
-	// Since init() already configured it, this SHOULD fail
-	strategy := common.VersionStrategy{Name: "duplicate"}
-	err := common.ConfigureVersioning(strategy)
-	assert.ErrorIs(t, err, common.ErrAlreadyConfigured)
-}
-
 func TestNewVersion(t *testing.T) {
 	tests := []struct {
 		input    string

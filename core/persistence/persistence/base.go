@@ -219,9 +219,8 @@ func (p *basePersistence) Metadata(ctx context.Context, filter *base.MetadataFil
 		sc := entry.Versions[entry.ActiveVersion].Schema
 		schemas[i] = &sc
 		collections[i] = &base.CollectionMetadata{
-			ID:            entry.Name,
 			Name:          entry.Name,
-			SchemaVersion: entry.ActiveVersion,
+			Version: entry.ActiveVersion,
 			Description:   entry.Description,
 			Schema:        &sc,
 		}

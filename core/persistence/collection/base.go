@@ -2,7 +2,6 @@ package collection
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
@@ -66,19 +65,17 @@ func newBaseCollection(
 		subscriptions: make(map[string]*base.SubscriptionInfo),
 		validator:     validator,
 		metadata: &base.CollectionMetadata{
-			ID:             name,
-			SchemaVersion:  sc.Version,
-			Name:           name,
-			CollectionName: sc.Name,
-			Description:    description,
-			Status:         "active",
-			CreatedAt:      fmt.Sprintf("%d", 0), // get this from the registry
-			CreatedBy:      "system",             // this field is being used wrong
-			RecordCount:    0,                    // For this and the next two below, we should have methods in the interactor to expose these
-			DataSizeBytes:  0,                    // Not directly available from interactor yet
-			LastModified:   0,                    // Placehold
-			Schema:         sc,
-			Subscriptions:  []base.SubscriptionInfo{}, // Collection-specific subscriptions not managed here yet
+			Version:       sc.Version,
+			Name:          name,
+			Collection:    sc.Name,
+			Description:   description,
+			Status:        "active",
+			Created:       0, // get this from the registry
+			Records:       0, // For this and the next two below, we should have methods in the interactor to expose these
+			Size:          0, // Not directly available from interactor yet
+			Updated:       0, // Placehold
+			Schema:        sc,
+			Subscriptions: []base.SubscriptionInfo{}, // Collection-specific subscriptions not managed here yet
 		},
 	}
 
@@ -102,7 +99,6 @@ func (c *baseCollection) withTransaction(
 func (c *baseCollection) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
 	results, err := c.CreateMany(ctx, []*data.Document{doc})
 	result := base.CreateResult{}
-
 
 	if len(results) > 0 {
 		result = results[0]

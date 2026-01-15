@@ -751,7 +751,7 @@ func (m *MigrationApplier) applyModifySchemaReference(target *schema.SchemaDefin
 
 	// Validate field type
 	switch field.Type {
-	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeUnion, schema.FieldTypeRecord, schema.FieldTypeDynamic:
+	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeUnion, schema.FieldTypeRecord:
 		// These types can have schema references
 	default:
 		return common.NewSystemError("ERR_INVALID_FIELD_TYPE_FOR_SCHEMA_REF").
@@ -1402,7 +1402,6 @@ func filterConstraintsByField(constraints schema.SchemaConstraint, fieldName str
 	return result
 }
 
-
 // convertToStringPtr converts various types to *string.
 func convertToStringPtr(value any) *string {
 	if value == nil {
@@ -1580,7 +1579,6 @@ func (m *MigrationApplier) applyChangesToNestedSchemaWithFieldSets(
 	return nil
 }
 
-
 // applyChangesToNestedSchemaWithArrayFields applies changes directly to a NestedSchemaDefinition
 // that uses array-based fields (ConditionalFieldSet).
 func (m *MigrationApplier) applyChangesToNestedSchemaWithArrayFields(
@@ -1743,7 +1741,6 @@ func (m *MigrationApplier) applyChangesToNestedSchemaWithArrayFields(
 	}
 	return nil
 }
-
 
 // Conversion helpers for nested schema modifications
 
