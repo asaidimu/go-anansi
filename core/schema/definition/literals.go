@@ -424,3 +424,22 @@ func isTypeLiteral(t reflect.Type) bool {
 		return false
 	}
 }
+
+func MustNewLiteralValue[T LiteralValueType](value T) LiteralValue {
+	val, err := NewLiteralValue(value)
+	if err != nil {
+		panic(err)
+	}
+	return val
+}
+
+func init(){
+	_ = literalTypeZero
+	_ = LiteralTypeString
+	_ = LiteralTypeInteger
+	_ = LiteralTypeFloat
+	_ = LiteralTypeBoolean
+	_ = LiteralTypeObject
+	_ = LiteralTypeArray
+	_ = LiteralTypeNull
+}

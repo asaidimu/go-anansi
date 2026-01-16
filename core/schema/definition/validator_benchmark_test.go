@@ -1,97 +1,178 @@
 package definition_test
 
 import (
-	"encoding/json"
+	"fmt"
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
-const (
-	PoolSize = 50
-)
-
-func runBenchDocumentValidator(b *testing.B, name string, schemaDepth int, schemaWidth int) {
-	// 1. Generate a complex, valid Schema using GenerateFuzzyData on MetaSchema
-	// The depth and width parameters for schema generation are passed to FuzzyConfig
-	schemaFuzzyConfig := definition.FuzzyConfig{
-		MaxDepth:            3,   // Very small depth for debugging
-		ContinueProbability: 0.1, // Very low probability for debugging
-		ErrorRate:           0.0, // CRUCIAL: Schema itself must be valid
+// Helper to generate a complex schema for stress testing
+func generateComplexSchema(depth, fieldsPerLevel, arrayLength int) *definition.Schema {
+	schema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name:    "ComplexRoot",
+			Fields:  make(map[definition.FieldId]definition.Field),
+			Indexes: make(map[definition.IndexId]definition.Index),
+		},
+		Schemas: make(map[definition.SchemaId]definition.NestedSchema),
+		Version: *common.MustNewVersion("1.0.0"),
 	}
 
-	// Generate schema definition as map[string]any
-	generatedSchemaMap := definition.GenerateFuzzyData(&definition.MetaSchema, schemaFuzzyConfig)
-	// Manually set a valid version, as GenerateFuzzyData might produce an invalid string for FieldTypeString
-	generatedSchemaMap["version"] = "1.0.0"
+	// Create a nested schema for recursion or object fields
+	createNestedSchema := func(currentDepth int) definition.NestedSchema {
+		ns := definition.NestedSchema{
+			BaseSchema: definition.BaseSchema{
+				Fields: make(map[definition.FieldId]definition.Field),
+			},
+		}
 
-	// Marshal and Unmarshal to get a proper definition.Schema object
-	generatedSchemaJSON, err := json.Marshal(generatedSchemaMap)
-	if err != nil {
-		return
-	}
+		for i := 0; i < fieldsPerLevel; i++ {
+			fieldName := definition.FieldName(fmt.Sprintf("field%d", i))
+			fieldId := definition.FieldId(fmt.Sprintf("field%d_id", i))
+			fieldType := definition.FieldTypeString
 
-	var fullSchema definition.Schema
-	err = json.Unmarshal(generatedSchemaJSON, &fullSchema)
-	if err != nil {
-		return
-	}
+			if i%3 == 0 { // String
+				fieldType = definition.FieldTypeString
+			} else if i%3 == 1 { // Integer
+				fieldType = definition.FieldTypeInteger
+			} else { // Boolean
+				fieldType = definition.FieldTypeBoolean
+			}
 
-	// Ensure the generated schema is actually valid according to MetaSchema
-	metaValidator, err := definition.NewDocumentValidator(&definition.MetaSchema, mockPredicates())
-	if err != nil {
-		b.Fatalf("Failed to create MetaSchema validator: %v", err) // Indicates a problem with MetaSchema itself
-	}
-	metaIssues, isMetaValid := metaValidator.Validate(generatedSchemaMap)
-	if !isMetaValid {
-		b.Skipf("Skipping %s: Generated schema is NOT valid according to MetaSchema. Issues: %v\nJSON: %s", name, metaIssues, string(generatedSchemaJSON))
-		return
-	}
-
-	// 2. Setup Validator for the generated schema
-	validator, err := definition.NewDocumentValidator(&fullSchema, mockPredicates())
-	if err != nil {
-		b.Skipf("Skipping %s: Failed to create validator for generated schema: %v\nSchema JSON: %s", name, err, string(generatedSchemaJSON))
-		return
+			// Add a simple field
+			ns.Fields[fieldId] = definition.Field{
+				Name: fieldName,
+				FieldProperties: definition.FieldProperties{
+					Type: fieldType,
+				},
+			}
+		}
+		return ns
 	}
 
-	// 3. Pre-bake Data using the generated schema
-	validData := make([]map[string]any, PoolSize)
-	dataFuzzyConfig := definition.FuzzyConfig{
-		MaxDepth:            schemaDepth,
-		ContinueProbability: float64(schemaWidth) / 10.0, // Data might be wider/deeper than schema
-		ErrorRate:           0.0, // Data must be valid for the generated schema
-	}
-	for i := 0; i < PoolSize; i++ {
-		validData[i] = definition.GenerateFuzzyData(&fullSchema, dataFuzzyConfig)
+	// Create root level fields
+	for i := 0; i < fieldsPerLevel; i++ {
+		fieldName := definition.FieldName(fmt.Sprintf("rootField%d", i))
+		fieldId := definition.FieldId(fmt.Sprintf("rootField%d_id", i))
+
+		if i == 0 && depth > 0 { // Nested object
+			nestedSchemaID := definition.SchemaId(fmt.Sprintf("NestedSchemaDepth%d", depth))
+			nestedSchema := createNestedSchema(depth - 1)
+			schema.Schemas[nestedSchemaID] = nestedSchema
+			schema.BaseSchema.Fields[fieldId] = definition.Field{
+				Name: fieldName,
+				FieldProperties: definition.FieldProperties{
+					Type:   definition.FieldTypeObject,
+					Schema: definition.NewSchemaReference(definition.SchemaReference{ID: nestedSchemaID}),
+				},
+			}
+		} else if i == 1 && arrayLength > 0 { // Array of strings
+			arrayItemSchemaID := definition.SchemaId("ArrayItemSchema")
+			schema.Schemas[arrayItemSchemaID] = definition.NestedSchema{
+				FieldProperties: definition.FieldProperties{
+					Type: definition.FieldTypeString,
+				},
+			}
+			schema.BaseSchema.Fields[fieldId] = definition.Field{
+				Name: fieldName,
+				FieldProperties: definition.FieldProperties{
+					Type:   definition.FieldTypeArray,
+					Schema: definition.NewSchemaReference(definition.SchemaReference{ID: arrayItemSchemaID}),
+				},
+			}
+		} else { // Simple fields
+			fieldType := definition.FieldTypeString
+			if i%2 == 0 {
+				fieldType = definition.FieldTypeInteger
+			}
+			schema.BaseSchema.Fields[fieldId] = definition.Field{
+				Name: fieldName,
+				FieldProperties: definition.FieldProperties{
+					Type: fieldType,
+				},
+			}
+		}
 	}
 
-	b.ReportAllocs()
+	return schema
+}
+
+// Helper to generate complex data for stress testing
+func generateComplexData(depth, fieldsPerLevel, arrayLength int) map[string]any {
+	data := make(map[string]any)
+
+	for i := 0; i < fieldsPerLevel; i++ {
+		fieldName := fmt.Sprintf("rootField%d", i)
+
+		if i == 0 && depth > 0 { // Nested object
+			nestedData := make(map[string]any)
+			for j := 0; j < fieldsPerLevel; j++ {
+				innerFieldName := fmt.Sprintf("field%d", j)
+				if j%3 == 0 { // String
+					nestedData[innerFieldName] = fmt.Sprintf("value%d-%d", i, j)
+				} else if j%3 == 1 { // Integer
+					nestedData[innerFieldName] = j
+				} else { // Boolean
+					nestedData[innerFieldName] = (j%2 == 0)
+				}
+			}
+			data[fieldName] = nestedData
+		} else if i == 1 && arrayLength > 0 { // Array of strings
+			arr := make([]any, arrayLength)
+			for j := 0; j < arrayLength; j++ {
+				arr[j] = fmt.Sprintf("arrayItem%d-%d", i, j)
+			}
+			data[fieldName] = arr
+		} else { // Simple fields
+			if i%2 == 0 {
+				data[fieldName] = i
+			} else {
+				data[fieldName] = fmt.Sprintf("rootValue%d", i)
+			}
+		}
+	}
+	return data
+}
+
+func BenchmarkValidator_ComplexSchema(b *testing.B) {
+	// Parameters for the complex schema and data
+	const (
+		schemaDepth      = 10   // Increased from 5
+		fieldsPerLevel   = 20   // Increased from 10
+		arrayLength      = 500  // Increased from 100
+		numSchemasInRepo = 500  // Increased from 100
+	)
+
+	// Generate a complex schema once for the benchmark setup
+	complexSchema := generateComplexSchema(schemaDepth, fieldsPerLevel, arrayLength)
+
+	// Add more nested schemas to simulate a larger schema repository
+	for i := 0; i < numSchemasInRepo; i++ {
+		schemaID := definition.SchemaId(fmt.Sprintf("AuxNestedSchema%d", i))
+		complexSchema.Schemas[schemaID] = definition.NestedSchema{
+			BaseSchema: definition.BaseSchema{
+				Name: fmt.Sprintf("AuxNestedSchema%d", i),
+				Fields: map[definition.FieldId]definition.Field{
+					definition.FieldId("auxField1"): {Name: "auxField1", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				},
+			},
+		}
+	}
+
+	// Generate complex data once for the benchmark setup
+	complexData := generateComplexData(schemaDepth, fieldsPerLevel, arrayLength)
+
+	// No predicates needed for this benchmark, use an empty map
+	predicates := make(definition.PredicateMap)
+
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, _ = validator.Validate(validData[i%PoolSize])
-	}
-}
-
-func BenchmarkDocumentValidator_Robust_Small_Flat(b *testing.B) {
-	runBenchDocumentValidator(b, "Small_Flat", 1, 10)
-}
-
-func BenchmarkDocumentValidator_Robust_Deep_Stress(b *testing.B) {
-	runBenchDocumentValidator(b, "Deep_Stress", 20, 2)
-}
-
-func BenchmarkDocumentValidator_Robust_Wide_Stress(b *testing.B) {
-	runBenchDocumentValidator(b, "Wide_Stress", 2, 50)
-}
-
-func BenchmarkDocumentValidator_Robust_Industrial_Complex(b *testing.B) {
-	runBenchDocumentValidator(b, "Industrial_Complex", 8, 5)
-}
-
-func mockPredicates() definition.PredicateMap {
-	return definition.PredicateMap{
-		"is_positive": func(p definition.PredicateParams) []common.Issue { return nil },
+		validator, err := definition.NewDocumentValidator(complexSchema, predicates)
+		if err != nil {
+			b.Fatalf("Failed to create validator: %v", err)
+		}
+		_, _ = validator.Validate(complexData)
 	}
 }

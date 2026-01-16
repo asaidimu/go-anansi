@@ -181,7 +181,7 @@ var MetaSchema = definition.Schema{
 					"name": {
 						Name:        "name",
 						Description: "The name of the nested schema",
-						Required:    true, // FIXED: Changed from false to true
+						Required:    true,
 						FieldProperties: definition.FieldProperties{
 							Type: definition.FieldTypeString,
 						},
@@ -235,7 +235,7 @@ var MetaSchema = definition.Schema{
 						Required:    false,
 						FieldProperties: definition.FieldProperties{
 							Type:   definition.FieldTypeEnum,
-							Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "definition.FieldTypeEnum"}),
+							Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "FieldTypeEnum"}),
 						},
 					},
 					"default": {
@@ -252,7 +252,7 @@ var MetaSchema = definition.Schema{
 						Required:    false,
 						FieldProperties: definition.FieldProperties{
 							Type:   definition.FieldTypeArray,
-							Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "UnknownArray"}),
+							Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "Unknown"}),
 						},
 					},
 					"schema": {
@@ -262,6 +262,14 @@ var MetaSchema = definition.Schema{
 						FieldProperties: definition.FieldProperties{
 							Type:   definition.FieldTypeUnion,
 							Schema: definition.NewSchemaReference([]definition.SchemaReference{{ID: "SchemaReference"}, {ID: "SchemaReferenceArray"}}),
+						},
+					},
+					"concrete": {
+						Name:        "concrete",
+						Description: "Whether this schema should map to a physical collection",
+						Required:    false,
+						FieldProperties: definition.FieldProperties{
+							Type: definition.FieldTypeBoolean,
 						},
 					},
 				},
@@ -310,7 +318,7 @@ var MetaSchema = definition.Schema{
 						Required:    true,
 						FieldProperties: definition.FieldProperties{
 							Type:   definition.FieldTypeArray,
-							Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "StringArray"}),
+							Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "String"}),
 						},
 					},
 					"unique": {
@@ -408,6 +416,7 @@ var MetaSchema = definition.Schema{
 
 		// IndexConditionUnion - for array elements
 		"IndexConditionUnion": {
+			BaseSchema: definition.BaseSchema{ Name:"IndexConditionUnion" },
 			FieldProperties: definition.FieldProperties{
 				Type:   definition.FieldTypeUnion,
 				Schema: definition.NewSchemaReference([]definition.SchemaReference{{ID: "IndexCondition"}, {ID: "IndexConditionGroup"}}),
@@ -416,6 +425,7 @@ var MetaSchema = definition.Schema{
 
 		// Constraint definition - composite of metadata + union of rule/group
 		"Constraint": {
+			BaseSchema: definition.BaseSchema{ Name:"Constraint" },
 			FieldProperties: definition.FieldProperties{
 				Type:   definition.FieldTypeComposite,
 				Schema: definition.NewSchemaReference([]definition.SchemaReference{{ID: "ConstraintMetadata"}, {ID: "ConstraintUnion"}}),
@@ -450,6 +460,7 @@ var MetaSchema = definition.Schema{
 
 		// ConstraintUnion - for the union part
 		"ConstraintUnion": {
+			BaseSchema: definition.BaseSchema{ Name:"ConstraintUnion" },
 			FieldProperties: definition.FieldProperties{
 				Type:   definition.FieldTypeUnion,
 				Schema: definition.NewSchemaReference([]definition.SchemaReference{{ID: "ConstraintRule"}, {ID: "ConstraintGroup"}}),
@@ -468,7 +479,7 @@ var MetaSchema = definition.Schema{
 						Required:    false,
 						FieldProperties: definition.FieldProperties{
 							Type:   definition.FieldTypeArray,
-							Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "StringArray"}),
+							Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "String"}),
 						},
 					},
 					"predicate": {
@@ -557,19 +568,22 @@ var MetaSchema = definition.Schema{
 
 		// Array types
 		"SchemaReferenceArray": {
+			BaseSchema: definition.BaseSchema{ Name:"SchemaReferenceArray" },
 			FieldProperties: definition.FieldProperties{
 				Type:   definition.FieldTypeArray,
 				Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "SchemaReference"}),
 			},
 		},
 
-		"StringArray": {
+		"String": {
+			BaseSchema: definition.BaseSchema{ Name:"String" },
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
 			},
 		},
 
-		"UnknownArray": {
+		"Unknown": {
+			BaseSchema: definition.BaseSchema{ Name:"Unknown" },
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeUnknown,
 			},
@@ -577,6 +591,7 @@ var MetaSchema = definition.Schema{
 
 		// Enum definitions
 		"FieldTypeEnum": {
+			BaseSchema: definition.BaseSchema{ Name:"FieldTypeEnum" },
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
 			},
@@ -599,6 +614,7 @@ var MetaSchema = definition.Schema{
 		},
 
 		"IndexTypeEnum": {
+			BaseSchema: definition.BaseSchema{ Name:"IndexTypeEnum" },
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
 			},
@@ -612,6 +628,7 @@ var MetaSchema = definition.Schema{
 		},
 
 		"LogicalOperatorEnum": {
+			BaseSchema: definition.BaseSchema{ Name:"LogicalOperatorEnum" },
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
 			},
@@ -627,6 +644,7 @@ var MetaSchema = definition.Schema{
 		},
 
 		"IndexOrderEnum": {
+			BaseSchema: definition.BaseSchema{ Name:"IndexOrderEnum" },
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
 			},
@@ -637,6 +655,7 @@ var MetaSchema = definition.Schema{
 		},
 
 		"ComparisonOperatorEnum": {
+			BaseSchema: definition.BaseSchema{ Name:"ComparisonOperatorEnum" },
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
 			},

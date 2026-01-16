@@ -62,13 +62,10 @@ func (t FieldType) String() string {
 	if s, ok := fieldTypeToString[t]; ok {
 		return s
 	}
-	return "unknown"
+	return ""
 }
 
 func (t FieldType) MarshalJSON() ([]byte, error) {
-	if t == 0 {
-		return json.Marshal(nil)
-	}
 	val, err := json.Marshal(t.String())
 	if err != nil {
 		return nil, ErrMarshalFailed.WithCause(err).WithOperation("FieldType.MarshalJSON")
@@ -102,4 +99,22 @@ func (t FieldType) IsContainer() bool {
 	default:
 		return false
 	}
+}
+
+
+func init() {
+	_ = FieldTypeUnknown
+	_ = FieldTypeString
+	_ = FieldTypeNumber
+	_ = FieldTypeInteger
+	_ = FieldTypeDecimal
+	_ = FieldTypeBoolean
+	_ = FieldTypeArray
+	_ = FieldTypeSet
+	_ = FieldTypeEnum
+	_ = FieldTypeObject
+	_ = FieldTypeRecord
+	_ = FieldTypeUnion
+	_ = FieldTypeComposite
+	_ = FieldTypeGeometry
 }
