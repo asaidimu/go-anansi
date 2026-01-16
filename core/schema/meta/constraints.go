@@ -8,19 +8,19 @@ import "github.com/asaidimu/go-anansi/v6/core/schema/definition"
 var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 	// Constraint 1: Primitives (string, number, integer, decimal, boolean, geometry) cannot have schema property
 	"primitives_no_schema": {
-		Name:        "primitives_no_schema",
-		Description: "Primitive types (string, number, integer, decimal, boolean, geometry) must not have a schema reference",
+		Name: "primitives_no_schema",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "primitives_prohibit_schema",
+			Fields:    []definition.FieldName{"type", "schema"},
 		}),
 	},
-
 	// Constraint 2: Enums must have schema reference
 	"enums_require_schema": {
 		Name:        "enums_require_schema",
 		Description: "Enum types must have a schema reference",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "enum_requires_schema",
+			Fields:    []definition.FieldName{"type", "schema"},
 		}),
 	},
 
@@ -30,6 +30,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "Array and set types must have a schema reference",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "collection_requires_schema",
+			Fields:    []definition.FieldName{"type", "schema"},
 		}),
 	},
 
@@ -39,6 +40,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "Object types must have a schema reference",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "object_requires_schema",
+			Fields:    []definition.FieldName{"type", "schema"},
 		}),
 	},
 
@@ -48,6 +50,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "Union types must have an array of schema references (at least 2)",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "union_requires_multiple_schemas",
+			Fields:    []definition.FieldName{"type", "schema"},
 		}),
 	},
 
@@ -57,6 +60,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "Composite types must have an array of schema references (at least 2)",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "composite_requires_multiple_schemas",
+			Fields:    []definition.FieldName{"type", "schema"},
 		}),
 	},
 
@@ -66,6 +70,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "NestedSchemas used for enum element types must have a non-empty values array",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "enum_schema_requires_values",
+			Fields:    []definition.FieldName{"type", "values"},
 		}),
 	},
 
@@ -75,6 +80,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "NestedSchema must use either BaseSchema fields (for objects) OR FieldProperties (for element types), not both or neither",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "nested_schema_exclusive_mode",
+			Fields:    []definition.FieldName{"fields", "indexes", "constraints", "type", "default", "values", "schema"},
 		}),
 	},
 
@@ -84,6 +90,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "Constraint must have either (predicate) OR (operator+rules), never both or neither",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "constraint_type_exclusive",
+			Fields:    []definition.FieldName{"predicate", "operator", "rules"},
 		}),
 	},
 
@@ -93,6 +100,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "If constraint is a ConstraintRule (has predicate), predicate field must not be empty",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "required_string_predicate",
+			Fields:    []definition.FieldName{"predicate"},
 		}),
 	},
 
@@ -102,6 +110,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "If constraint is a ConstraintGroup (has operator), both operator and rules must be present and valid",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "constraint_group_complete",
+			Fields:    []definition.FieldName{"operator", "rules"},
 		}),
 	},
 
@@ -111,6 +120,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "IndexCondition must have either (field+operator+value) OR (conditions+operator), never both",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "index_condition_type_exclusive",
+			Fields:    []definition.FieldName{"field", "operator", "value", "conditions"},
 		}),
 	},
 
@@ -120,6 +130,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "Schema name must be a non-empty string",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "schema_name_required",
+			Fields:    []definition.FieldName{"name"},
 		}),
 	},
 
@@ -129,6 +140,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "Field name must be a non-empty string",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "field_name_required",
+			Fields:    []definition.FieldName{"name"},
 		}),
 	},
 
@@ -138,6 +150,7 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "Index must reference at least one field",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "index_fields_not_empty",
+			Fields:    []definition.FieldName{"fields"},
 		}),
 	},
 
@@ -147,6 +160,77 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Description: "SchemaReference must have a non-empty ID",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "schema_reference_id_required",
+			Fields:    []definition.FieldName{"id"},
+		}),
+	},
+
+	// NEW CONSTRAINT: Records allow optional single schema
+	"records_allow_optional_schema": {
+		Name:        "records_allow_optional_schema",
+		Description: "Record types can have zero or one schema reference (not array)",
+		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
+			Predicate: "record_schema_cardinality",
+			Fields:    []definition.FieldName{"type", "schema"},
+		}),
+	},
+
+	// NEW CONSTRAINT: Enum values must match declared type
+	"enum_values_match_type": {
+		Name:        "enum_values_match_type",
+		Description: "Enum schema values must match the declared type (string or numeric)",
+		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
+			Predicate: "enum_values_type_match",
+			Fields:    []definition.FieldName{"type", "values"},
+		}),
+	},
+
+	// RULE 15: Schema Reference Integrity - All schema references must resolve to existing schemas
+	"schema_reference_integrity": {
+		Name:        "schema_reference_integrity",
+		Description: "All schema references must resolve to existing schemas in the schema hierarchy",
+		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
+			Predicate: "schema_reference_exists",
+			Fields:    []definition.FieldName{"schema"},
+		}),
+	},
+
+	// RULE 16: Default Value Type Matching - Default values must match field types
+	"default_value_type_match": {
+		Name:        "default_value_type_match",
+		Description: "Default values must match the declared field type",
+		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
+			Predicate: "default_matches_type",
+			Fields:    []definition.FieldName{"type", "default"},
+		}),
+	},
+
+	// RULE 12: Index Field References - Index fields must reference existing field IDs
+	"index_fields_exist": {
+		Name:        "index_fields_exist",
+		Description: "Index fields must reference existing field IDs in the schema",
+		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
+			Predicate: "index_fields_reference_valid",
+			Fields:    []definition.FieldName{"fields"},
+		}),
+	},
+
+	// RULE 14: Constraint Field References - Constraint field paths must resolve to existing fields
+	"constraint_fields_exist": {
+		Name:        "constraint_fields_exist",
+		Description: "Constraint field paths must resolve to existing fields",
+		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
+			Predicate: "constraint_fields_reference_valid",
+			Fields:    []definition.FieldName{"fields"},
+		}),
+	},
+
+	// RULE 13: Index Condition Value Type Matching
+	"index_condition_value_type_match": {
+		Name:        "index_condition_value_type_match",
+		Description: "Index condition values must match the referenced field's type",
+		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
+			Predicate: "index_condition_value_matches_field_type",
+			Fields:    []definition.FieldName{"field", "value"},
 		}),
 	},
 }

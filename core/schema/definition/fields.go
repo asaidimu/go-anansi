@@ -38,7 +38,7 @@ func (f Field) MarshalJSON() ([]byte, error) {
 		Alias: Alias(f),
 	}
 
-	if !f.Default.IsZero() && !f.Default.IsNull(){
+	if !f.Default.IsZero() && !f.Default.IsNull() {
 		proxy.Default = &f.FieldProperties.Default
 	}
 
@@ -48,4 +48,3 @@ func (f Field) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(proxy)
 }
-

@@ -205,9 +205,18 @@ An `enum` field:
 ### **Rule 5: Composite Field Semantics**
 
 A `composite` field:
-- **Must** reference multiple schemas (`[]SchemaReference`)
-- Data **must match ALL** referenced schemas (logical AND)
-- **All referenced schemas must be in Schema mode** (i.e., have `Fields` defined - must be objects)
+- Must reference multiple schemas ([]SchemaReference)
+- Data must match ALL referenced schemas (logical AND)
+- Each referenced schema must effectively represent an object type:
+
+- Schema mode: Schema has Fields defined (explicit object), OR
+- Type mode with Object: Type is FieldTypeObject, OR
+- Type mode with Record: Type is FieldTypeRecord, OR
+- Type mode with Union: Type is FieldTypeUnion AND all union variants are themselves effectively objects
+
+
+
+The rationale is that composition only makes semantic sense when merging object structures. You can compose `{a, b}` AND `{c, d}` into `{a, b, c, d}`, but you cannot meaningfully compose `{a, b}` AND `"string"`.
 
 **Example:**
 ```json

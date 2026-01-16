@@ -27,6 +27,22 @@ type Index struct {
 	Unique      bool                `json:"unique,omitempty"`
 }
 
+func (i Index) MarshalJSON() ([]byte, error) {
+	type Alias Index
+	proxy := struct {
+		Alias
+		Condition *IndexConditionUnion `json:"condition,omitempty"`
+	}{
+		Alias: Alias(i),
+	}
+
+	if !i.Condition.IsZero() {
+		proxy.Condition = &i.Condition
+	}
+
+	return json.Marshal(proxy)
+}
+
 type IndexCondition struct {
 	Field    FieldId                   `json:"field"`
 	Value    LiteralValue              `json:"value"`
@@ -83,7 +99,7 @@ func (icu *IndexConditionUnion) UnmarshalJSON(data []byte) error {
 
 func (icu IndexConditionUnion) MarshalJSON() ([]byte, error) {
 	if icu.payload == nil {
-		return json.Marshal(nil)
+		return []byte("null"), nil
 	}
 
 	val, err := json.Marshal(icu.payload)

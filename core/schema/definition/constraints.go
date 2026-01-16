@@ -166,7 +166,7 @@ func (c Constraint) MarshalJSON() ([]byte, error) {
 
 func (cu ConstraintUnion) MarshalJSON() ([]byte, error) {
 	if cu.payload == nil {
-		return json.Marshal(nil)
+		return []byte("null"), nil
 	}
 
 	switch cu.kind {

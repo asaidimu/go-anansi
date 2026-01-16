@@ -2,6 +2,7 @@ package meta
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
@@ -654,4 +655,658 @@ var MetaSchemaPredicates = definition.PredicateMap{
 
 		return nil
 	},
+
+	// Predicate 17: Record schema cardinality validation
+	"record_schema_cardinality": func(params definition.PredicateParams) []common.Issue {
+		data, ok := params.Data.(map[string]any)
+		if !ok {
+			return []common.Issue{{
+				Code:    "INVALID_DATA_TYPE",
+				Message: "Expected object data",
+			}}
+		}
+
+		typeVal, hasType := data["type"]
+		schemaVal, hasSchema := data["schema"]
+
+		if hasType {
+			if typeStr, ok := typeVal.(string); ok {
+				if typeStr == "record" {
+					if hasSchema && schemaVal != nil {
+						// Check if schema is an array (which is invalid for record)
+						if _, isArray := schemaVal.([]any); isArray {
+							return []common.Issue{{
+								Code:     "RECORD_SCHEMA_ARRAY",
+								Message:  "Record type must have zero or one schema reference, not an array",
+								Severity: "error",
+							}}
+						}
+					}
+				}
+			}
+		}
+
+		return nil
+	},
+
+	// Predicate 18: Enum values must match declared type
+	"enum_values_type_match": func(params definition.PredicateParams) []common.Issue {
+		data, ok := params.Data.(map[string]any)
+		if !ok {
+			return []common.Issue{{
+				Code:    "INVALID_DATA_TYPE",
+				Message: "Expected object data",
+			}}
+		}
+
+		typeVal, hasType := data["type"]
+		valuesVal, hasValues := data["values"]
+
+		// Only validate if both type and values are present
+		if !hasType || !hasValues || valuesVal == nil {
+			return nil
+		}
+
+		typeStr, ok := typeVal.(string)
+		if !ok {
+			return nil
+		}
+
+		// Only check for types that can be used in enums
+		numericTypes := map[string]bool{"number": true, "integer": true, "decimal": true}
+		isNumeric := numericTypes[typeStr]
+		isString := typeStr == "string"
+
+		// If type is neither string nor numeric, skip validation
+		if !isString && !isNumeric {
+			return nil
+		}
+
+		valuesArray, ok := valuesVal.([]any)
+		if !ok {
+			return nil
+		}
+
+		var issues []common.Issue
+		for i, value := range valuesArray {
+			if value == nil {
+				continue
+			}
+
+			if isString {
+				if _, ok := value.(string); !ok {
+					issues = append(issues, common.Issue{
+						Code:     "ENUM_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Enum value at index %d must be string (declared type is 'string'), got %T", i, value),
+						Path:     fmt.Sprintf("values[%d]", i),
+						Severity: "error",
+					})
+				}
+			} else if isNumeric {
+				// Check if value is a numeric type
+				switch value.(type) {
+				case int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8, float64, float32:
+					// Valid numeric type
+				default:
+					issues = append(issues, common.Issue{
+						Code:     "ENUM_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Enum value at index %d must be numeric (declared type is '%s'), got %T", i, typeStr, value),
+						Path:     fmt.Sprintf("values[%d]", i),
+						Severity: "error",
+					})
+				}
+			}
+		}
+
+		return issues
+	},
+
+	// Predicate 19 (Rule 15): Schema Reference Integrity
+	"schema_reference_exists": func(params definition.PredicateParams) []common.Issue {
+		rootData, ok := params.Data.(map[string]any)
+		if !ok {
+			return nil
+		}
+
+		// Get the schemas map from root
+		schemas, ok := rootData["schemas"].(map[string]any)
+		if !ok {
+			return nil
+		}
+
+		// Navigate to the field containing the schema reference
+		// params.Keys tells us which field to check (e.g., ["schema"])
+		if len(params.Keys) == 0 {
+			return nil
+		}
+
+		// Get the schema field value from the current context
+		// For Field validation, we need to look at fields.*.schema
+		// The actual path depends on where this constraint is applied
+
+		// Helper to validate a single schema reference
+		validateRef := func(ref any, index int) []common.Issue {
+			refMap, ok := ref.(map[string]any)
+			if !ok {
+				return nil
+			}
+
+			idVal, hasID := refMap["id"]
+			if !hasID {
+				return nil
+			}
+
+			idStr, ok := idVal.(string)
+			if !ok {
+				return nil
+			}
+
+			if _, exists := schemas[idStr]; !exists {
+				path := "schema"
+				if index >= 0 {
+					path = fmt.Sprintf("schema[%d]", index)
+				}
+				return []common.Issue{{
+					Code:     "SCHEMA_REFERENCE_NOT_FOUND",
+					Message:  fmt.Sprintf("Schema reference '%s' does not exist in schema hierarchy", idStr),
+					Path:     path,
+					Severity: "error",
+				}}
+			}
+			return nil
+		}
+
+		// This is tricky - we need to find all schema references in the document
+		// For now, let's implement a recursive search
+		var issues []common.Issue
+
+		var checkSchemaRefs func(data any, path string)
+		checkSchemaRefs = func(data any, path string) {
+			switch v := data.(type) {
+			case map[string]any:
+				// Check if this is a schema reference
+				if schemaVal, hasSchema := v["schema"]; hasSchema && schemaVal != nil {
+					// Check if it's an array of references
+					if refArray, ok := schemaVal.([]any); ok {
+						for i, ref := range refArray {
+							issues = append(issues, validateRef(ref, i)...)
+						}
+					} else {
+						// Single reference
+						issues = append(issues, validateRef(schemaVal, -1)...)
+					}
+				}
+
+				// Recurse into nested maps
+				for key, val := range v {
+					newPath := path
+					if newPath == "" {
+						newPath = key
+					} else {
+						newPath = path + "." + key
+					}
+					checkSchemaRefs(val, newPath)
+				}
+
+			case []any:
+				for i, item := range v {
+					checkSchemaRefs(item, fmt.Sprintf("%s[%d]", path, i))
+				}
+			}
+		}
+
+		checkSchemaRefs(rootData, "")
+		return issues
+	},
+
+	// Predicate 20 (Rule 16): Default Value Type Matching
+	"default_matches_type": func(params definition.PredicateParams) []common.Issue {
+		data, ok := params.Data.(map[string]any)
+		if !ok {
+			return nil
+		}
+
+		// This predicate is applied to Field definitions
+		// We need to check all fields in the schema
+		var issues []common.Issue
+
+		var checkField func(fieldData map[string]any, fieldPath string)
+		checkField = func(fieldData map[string]any, fieldPath string) {
+			typeVal, hasType := fieldData["type"]
+			defaultVal, hasDefault := fieldData["default"]
+
+			if !hasType || !hasDefault || defaultVal == nil {
+				return
+			}
+
+			typeStr, ok := typeVal.(string)
+			if !ok {
+				return
+			}
+
+			// Validate based on type
+			switch typeStr {
+			case "string":
+				if _, ok := defaultVal.(string); !ok {
+					issues = append(issues, common.Issue{
+						Code:     "DEFAULT_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Default value must be string, got %T", defaultVal),
+						Path:     fieldPath + ".default",
+						Severity: "error",
+					})
+				}
+
+			case "boolean":
+				if _, ok := defaultVal.(bool); !ok {
+					issues = append(issues, common.Issue{
+						Code:     "DEFAULT_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Default value must be boolean, got %T", defaultVal),
+						Path:     fieldPath + ".default",
+						Severity: "error",
+					})
+				}
+
+			case "integer":
+				switch defaultVal.(type) {
+				case int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8:
+					// Valid
+				default:
+					issues = append(issues, common.Issue{
+						Code:     "DEFAULT_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Default value must be integer, got %T", defaultVal),
+						Path:     fieldPath + ".default",
+						Severity: "error",
+					})
+				}
+
+			case "number", "decimal":
+				switch defaultVal.(type) {
+				case int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8, float64, float32:
+					// Valid
+				default:
+					issues = append(issues, common.Issue{
+						Code:     "DEFAULT_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Default value must be numeric, got %T", defaultVal),
+						Path:     fieldPath + ".default",
+						Severity: "error",
+					})
+				}
+
+			case "array", "set":
+				if _, ok := defaultVal.([]any); !ok {
+					issues = append(issues, common.Issue{
+						Code:     "DEFAULT_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Default value must be array, got %T", defaultVal),
+						Path:     fieldPath + ".default",
+						Severity: "error",
+					})
+				}
+
+			case "object", "record":
+				if _, ok := defaultVal.(map[string]any); !ok {
+					issues = append(issues, common.Issue{
+						Code:     "DEFAULT_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Default value must be object, got %T", defaultVal),
+						Path:     fieldPath + ".default",
+						Severity: "error",
+					})
+				}
+
+			case "geometry":
+				outerArray, ok := defaultVal.([]any)
+				if !ok {
+					issues = append(issues, common.Issue{
+						Code:     "DEFAULT_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Default value for geometry must be array of arrays, got %T", defaultVal),
+						Path:     fieldPath + ".default",
+						Severity: "error",
+					})
+					return
+				}
+
+				for i, inner := range outerArray {
+					innerArray, ok := inner.([]any)
+					if !ok {
+						issues = append(issues, common.Issue{
+							Code:     "DEFAULT_VALUE_TYPE_MISMATCH",
+							Message:  fmt.Sprintf("Geometry inner element at index %d must be array, got %T", i, inner),
+							Path:     fmt.Sprintf("%s.default[%d]", fieldPath, i),
+							Severity: "error",
+						})
+						return
+					}
+
+					for j, elem := range innerArray {
+						switch elem.(type) {
+						case int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8, float64, float32:
+							// Valid
+						default:
+							issues = append(issues, common.Issue{
+								Code:     "DEFAULT_VALUE_TYPE_MISMATCH",
+								Message:  fmt.Sprintf("Geometry element at [%d][%d] must be numeric, got %T", i, j, elem),
+								Path:     fmt.Sprintf("%s.default[%d][%d]", fieldPath, i, j),
+								Severity: "error",
+							})
+						}
+					}
+				}
+			}
+		}
+
+		// Check all fields
+		if fields, ok := data["fields"].(map[string]any); ok {
+			for fieldID, fieldData := range fields {
+				if fieldMap, ok := fieldData.(map[string]any); ok {
+					checkField(fieldMap, "fields."+fieldID)
+				}
+			}
+		}
+
+		// Check nested schemas
+		if schemas, ok := data["schemas"].(map[string]any); ok {
+			for schemaID, schemaData := range schemas {
+				if schemaMap, ok := schemaData.(map[string]any); ok {
+					// Check if nested schema has fields
+					if nestedFields, ok := schemaMap["fields"].(map[string]any); ok {
+						for fieldID, fieldData := range nestedFields {
+							if fieldMap, ok := fieldData.(map[string]any); ok {
+								checkField(fieldMap, fmt.Sprintf("schemas.%s.fields.%s", schemaID, fieldID))
+							}
+						}
+					}
+					// Check if nested schema has default (type mode)
+					checkField(schemaMap, "schemas."+schemaID)
+				}
+			}
+		}
+
+		return issues
+	},
+
+	// Predicate 21 (Rule 12): Index Field References
+	"index_fields_reference_valid": func(params definition.PredicateParams) []common.Issue {
+		rootData, ok := params.Data.(map[string]any)
+		if !ok {
+			return nil
+		}
+
+		// Get schema fields
+		schemaFields, ok := rootData["fields"].(map[string]any)
+		if !ok {
+			return nil
+		}
+
+		var issues []common.Issue
+
+		// Check all indexes in the schema
+		if indexes, ok := rootData["indexes"].(map[string]any); ok {
+			for indexID, indexData := range indexes {
+				indexMap, ok := indexData.(map[string]any)
+				if !ok {
+					continue
+				}
+
+				fieldsVal, ok := indexMap["fields"]
+				if !ok {
+					continue
+				}
+
+				fieldsArray, ok := fieldsVal.([]any)
+				if !ok {
+					continue
+				}
+
+				for i, fieldRef := range fieldsArray {
+					fieldID, ok := fieldRef.(string)
+					if !ok {
+						continue
+					}
+
+					if _, exists := schemaFields[fieldID]; !exists {
+						issues = append(issues, common.Issue{
+							Code:     "INDEX_FIELD_NOT_FOUND",
+							Message:  fmt.Sprintf("Index '%s' references non-existent field '%s'", indexID, fieldID),
+							Path:     fmt.Sprintf("indexes.%s.fields[%d]", indexID, i),
+							Severity: "error",
+						})
+					}
+				}
+			}
+		}
+
+		return issues
+	},
+
+	// Predicate 22 (Rule 14): Constraint Field References
+	"constraint_fields_reference_valid": func(params definition.PredicateParams) []common.Issue {
+		rootData, ok := params.Data.(map[string]any)
+		if !ok {
+			return nil
+		}
+
+		var issues []common.Issue
+
+		// Helper to resolve a field path
+		resolveFieldPath := func(path string, contextFields map[string]any) bool {
+			parts := strings.Split(path, ".")
+			current := contextFields
+
+			for i, part := range parts {
+				if field, exists := current[part]; exists {
+					if i == len(parts)-1 {
+						// Last part - found it
+						return true
+					}
+
+					// Need to follow nested structure
+					fieldMap, ok := field.(map[string]any)
+					if !ok {
+						return false
+					}
+
+					// Check if field has schema reference for nested object
+					typeVal, hasType := fieldMap["type"]
+					if hasType && typeVal == "object" {
+						if schemaRef, hasSchema := fieldMap["schema"].(map[string]any); hasSchema {
+							if schemaID, ok := schemaRef["id"].(string); ok {
+								if schemas, ok := rootData["schemas"].(map[string]any); ok {
+									if nestedSchema, exists := schemas[schemaID]; exists {
+										nestedMap := nestedSchema.(map[string]any)
+										if nestedFields, ok := nestedMap["fields"].(map[string]any); ok {
+											current = nestedFields
+											continue
+										}
+									}
+								}
+							}
+						}
+					}
+					return false
+				}
+				return false
+			}
+			return false
+		}
+
+		// Check constraints
+		var checkConstraints func(constraints map[string]any, contextFields map[string]any, basePath string)
+		checkConstraints = func(constraints map[string]any, contextFields map[string]any, basePath string) {
+			for constraintID, constraintData := range constraints {
+				constraintMap, ok := constraintData.(map[string]any)
+				if !ok {
+					continue
+				}
+
+				// Check if it's a constraint rule (has predicate and fields)
+				if predicateVal, hasPredicate := constraintMap["predicate"]; hasPredicate && predicateVal != nil {
+					if fieldsVal, hasFields := constraintMap["fields"]; hasFields {
+						if fieldsArray, ok := fieldsVal.([]any); ok {
+							for i, fieldPath := range fieldsArray {
+								pathStr, ok := fieldPath.(string)
+								if !ok {
+									continue
+								}
+
+								if !resolveFieldPath(pathStr, contextFields) {
+									constraintPath := basePath + "constraints." + constraintID
+									issues = append(issues, common.Issue{
+										Code:     "CONSTRAINT_FIELD_NOT_FOUND",
+										Message:  fmt.Sprintf("Constraint '%s' references non-existent field path '%s'", constraintID, pathStr),
+										Path:     fmt.Sprintf("%s.fields[%d]", constraintPath, i),
+										Severity: "error",
+									})
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+
+		// Check top-level constraints
+		if constraints, ok := rootData["constraints"].(map[string]any); ok {
+			if fields, ok := rootData["fields"].(map[string]any); ok {
+				checkConstraints(constraints, fields, "")
+			}
+		}
+
+		// Check nested schema constraints
+		if schemas, ok := rootData["schemas"].(map[string]any); ok {
+			for schemaID, schemaData := range schemas {
+				schemaMap, ok := schemaData.(map[string]any)
+				if !ok {
+					continue
+				}
+
+				if constraints, ok := schemaMap["constraints"].(map[string]any); ok {
+					if fields, ok := schemaMap["fields"].(map[string]any); ok {
+						basePath := fmt.Sprintf("schemas.%s.", schemaID)
+						checkConstraints(constraints, fields, basePath)
+					}
+				}
+			}
+		}
+
+		return issues
+	},
+
+	// Predicate 23 (Rule 13): Index Condition Value Type Matching
+	"index_condition_value_matches_field_type": func(params definition.PredicateParams) []common.Issue {
+		rootData, ok := params.Data.(map[string]any)
+		if !ok {
+			return nil
+		}
+
+		schemaFields, ok := rootData["fields"].(map[string]any)
+		if !ok {
+			return nil
+		}
+
+		var issues []common.Issue
+
+		// Helper to get field type
+		getFieldType := func(fieldID string) string {
+			if field, exists := schemaFields[fieldID]; exists {
+				if fieldMap, ok := field.(map[string]any); ok {
+					if typeVal, hasType := fieldMap["type"]; hasType {
+						if typeStr, ok := typeVal.(string); ok {
+							return typeStr
+						}
+					}
+				}
+			}
+			return ""
+		}
+
+		// Helper to validate condition value matches type
+		validateCondition := func(condition map[string]any, indexPath string) {
+			fieldVal, hasField := condition["field"]
+			valueVal, hasValue := condition["value"]
+
+			if !hasField || !hasValue {
+				return
+			}
+
+			fieldID, ok := fieldVal.(string)
+			if !ok {
+				return
+			}
+
+			fieldType := getFieldType(fieldID)
+			if fieldType == "" {
+				return // Field not found, will be caught by Rule 12
+			}
+
+			// Validate value matches field type
+			switch fieldType {
+			case "string":
+				if _, ok := valueVal.(string); !ok {
+					issues = append(issues, common.Issue{
+						Code:     "INDEX_CONDITION_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Condition value for field '%s' must be string, got %T", fieldID, valueVal),
+						Path:     indexPath + ".value",
+						Severity: "error",
+					})
+				}
+
+			case "boolean":
+				if _, ok := valueVal.(bool); !ok {
+					issues = append(issues, common.Issue{
+						Code:     "INDEX_CONDITION_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Condition value for field '%s' must be boolean, got %T", fieldID, valueVal),
+						Path:     indexPath + ".value",
+						Severity: "error",
+					})
+				}
+
+			case "integer":
+				switch valueVal.(type) {
+				case int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8:
+					// Valid
+				default:
+					issues = append(issues, common.Issue{
+						Code:     "INDEX_CONDITION_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Condition value for field '%s' must be integer, got %T", fieldID, valueVal),
+						Path:     indexPath + ".value",
+						Severity: "error",
+					})
+				}
+
+			case "number", "decimal":
+				switch valueVal.(type) {
+				case int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8, float64, float32:
+					// Valid
+				default:
+					issues = append(issues, common.Issue{
+						Code:     "INDEX_CONDITION_VALUE_TYPE_MISMATCH",
+						Message:  fmt.Sprintf("Condition value for field '%s' must be numeric, got %T", fieldID, valueVal),
+						Path:     indexPath + ".value",
+						Severity: "error",
+					})
+				}
+			}
+		}
+
+		// Check all indexes with conditions
+		if indexes, ok := rootData["indexes"].(map[string]any); ok {
+			for indexID, indexData := range indexes {
+				indexMap, ok := indexData.(map[string]any)
+				if !ok {
+					continue
+				}
+
+				if conditionVal, hasCondition := indexMap["condition"]; hasCondition && conditionVal != nil {
+					if conditionMap, ok := conditionVal.(map[string]any); ok {
+						indexPath := fmt.Sprintf("indexes.%s.condition", indexID)
+						validateCondition(conditionMap, indexPath)
+
+						// TODO: Handle nested condition groups recursively
+					}
+				}
+			}
+		}
+
+		return issues
+	},
 }
+
