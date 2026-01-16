@@ -60,6 +60,15 @@ func (lv LiteralValue) Type() (LiteralType, error) {
 	return lv.kind, nil
 }
 
+func (lv LiteralValue) IsSimple() bool {
+	switch lv.kind {
+	case LiteralTypeString, LiteralTypeInteger, LiteralTypeFloat, LiteralTypeBoolean:
+		return true
+	default:
+		return false
+	}
+}
+
 // Value returns the underlying value as an any type
 func (lv LiteralValue) Value() any {
 	if lv.IsNull() || lv.IsZero() {
@@ -236,7 +245,7 @@ func convertNumbers(v any) any {
 }
 
 type LiteralValueType interface {
-	string | int64 | float64 | bool | map[string]any | []any
+	string | int64 | float64 | bool | map[string]any | []any | float32| int| int8| int16| int32| uint| uint8| uint16| uint32| uint64
 }
 
 // NewLiteralValueStrict creates a LiteralValue

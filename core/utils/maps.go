@@ -48,54 +48,6 @@ func GetScopedPath(path string) string {
 	return strings.Join(parts[:len(parts)-1], ".")
 }
 
-// GetValueByPath retrieves a value from a nested structure using a dot-separated path.
-// It provides an efficient path for map[string]any and handles other map types via reflection.
-func GetValueByPath(data any, path string) (any, bool) {
-	if path == "" {
-		return data, true
-	}
-
-	parts := strings.Split(path, ".")
-	current := data
-
-	for _, part := range parts {
-		if current == nil {
-			return nil, false
-		}
-
-		// Fast path for map[string]any, which is common.
-		if m, ok := current.(map[string]any); ok {
-			if val, exists := m[part]; exists {
-				current = val
-				continue
-			}
-			return nil, false
-		}
-
-		// Fallback to reflection for other map types (e.g., map[any]any)
-		val := reflect.ValueOf(current)
-		if val.Kind() == reflect.Pointer {
-			val = val.Elem()
-		}
-
-		if val.Kind() != reflect.Map {
-			return nil, false // Not a map, cannot traverse further
-		}
-
-		// Use reflection to get the map value
-		keyValue := reflect.ValueOf(part)
-		mapValue := val.MapIndex(keyValue)
-
-		if !mapValue.IsValid() {
-			return nil, false // Key does not exist
-		}
-
-		current = mapValue.Interface()
-	}
-
-	return current, true
-}
-
 func GetMapStringAny(value any) (map[string]any, bool) {
 	if value == nil {
 		return nil, false
@@ -122,3 +74,51 @@ func GetMapStringAny(value any) (map[string]any, bool) {
 	return resultMap, true
 }
 
+// GetValueByPath - wrapper for backward compatibility
+func GetValueByPath(data any, path string) (any, bool) {
+    if path == "" {
+        return data, true
+    }
+    parts := strings.Split(path, ".")
+    return GetValueByParts(data, parts)
+}
+
+// GetValueByParts retrieves a value from a nested map using pre-split keys.
+func GetValueByParts(data any, parts []string) (any, bool) {
+	if len(parts) == 0 {
+		return data, true
+	}
+
+	current := data
+	for _, part := range parts {
+		if current == nil {
+			return nil, false
+		}
+
+		// Direct type assertion is significantly faster than reflection
+		if m, ok := current.(map[string]any); ok {
+			val, exists := m[part]
+			if !exists {
+				return nil, false
+			}
+			current = val
+			continue
+		}
+
+		// Fallback for non-standard maps (e.g., from external decoders)
+		val := reflect.ValueOf(current)
+		if val.Kind() == reflect.Pointer {
+			val = val.Elem()
+		}
+		if val.Kind() != reflect.Map {
+			return nil, false
+		}
+		mapValue := val.MapIndex(reflect.ValueOf(part))
+		if !mapValue.IsValid() {
+			return nil, false
+		}
+		current = mapValue.Interface()
+	}
+
+	return current, true
+}

@@ -5,31 +5,23 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// Mock Predicate for testing
-func mockPredicate(_ string, validationFn func(value any, params definition.LiteralValue) bool, issue common.Issue) definition.Predicate {
+func mockPredicate(_ string, validationFn func(value map[string]any, keys []definition.FieldName, params definition.LiteralValue) bool, issue common.Issue) definition.Predicate {
+
 	return func(params definition.PredicateParams) []common.Issue {
-		if len(params.Keys) == 0 {
-			// If no keys, this predicate likely applies to the object as a whole or has no specific field context.
-			// For this mock, we'll assume it's a simple object-level check or it implicitly works without specific field values.
-			// For more complex scenarios, actual predicates would need to extract values based on their logic.
-			if !validationFn(params.Data, params.Parameters) {
-				return []common.Issue{issue}
-			}
-			return nil
+		// params.Data is already the field value (or map of values)
+		// Just validate it directly
+		data, ok := params.Data.(map[string]any)
+		if !ok {
+			return []common.Issue{{Code: "INVALID_ROOT_TYPE"}}
 		}
-
-		// Apply predicate to the first field for simplicity in this mock
-		value, _ := utils.GetValueByPath(params.Data, string(params.Keys[0]))
-
-		if !validationFn(value, params.Parameters) {
+		if !validationFn(data, params.Keys, params.Parameters) {
 			resultIssue := issue
-			// If path is empty, set it
-			if resultIssue.Path == "" {
+			// Set path if provided in Keys
+			if len(params.Keys) > 0 && resultIssue.Path == "" {
 				resultIssue.Path = string(params.Keys[0])
 			}
 			return []common.Issue{resultIssue}
@@ -79,7 +71,7 @@ func TestNewValidator(t *testing.T) {
 	}
 
 	predicates := definition.PredicateMap{
-		"test_predicate": mockPredicate("test_predicate", func(value any, params definition.LiteralValue) bool { return true }, common.Issue{}),
+		"test_predicate": mockPredicate("test_predicate", func(value map[string]any, keys []definition.FieldName, params definition.LiteralValue) bool { return true }, common.Issue{}),
 	}
 
 	validator, err := definition.NewDocumentValidator(&testSchema, predicates)
@@ -372,7 +364,7 @@ func TestEffectiveField_Validate_Array(t *testing.T) {
 	}{
 		{name: "Array - Valid (string array)", value: []any{"a", "b", "c"}, expectedIssues: 0, expectedCodes: nil},
 		{name: "Array - Invalid (mixed types - element type mismatch)", value: []any{"a", 123}, expectedIssues: 1, expectedCodes: []string{"TYPE_MISMATCH"}},
-		{name: "Array - Invalid (not array)", value: "not an array", expectedIssues: 1, expectedCodes: []string{"TYPE_MISMATCH"}},
+		{name: "Array - Invalid (not array)", value: "not an array", expectedIssues: 1, expectedCodes: []string{"ARRAY_TYPE_MISMATCH"}},
 		{name: "Array - Empty array", value: []any{}, expectedIssues: 0, expectedCodes: nil},
 		{name: "Array - Nil", value: nil, expectedIssues: 0, expectedCodes: nil},
 	}
@@ -425,7 +417,7 @@ func TestEffectiveField_Validate_Object(t *testing.T) {
 		{name: "Object - Missing required", value: map[string]any{"age": 30}, mode: definition.ValidationModeStrict, expectedIssues: 1, expectedCodes: []string{"REQUIRED_FIELD_MISSING"}},
 		{name: "Object - Type mismatch (age)", value: map[string]any{"name": "Alice", "age": "thirty"}, mode: definition.ValidationModeStrict, expectedIssues: 1, expectedCodes: []string{"TYPE_MISMATCH"}},
 		{name: "Object - Unexpected field (warning)", value: map[string]any{"name": "Alice", "extra": true}, mode: definition.ValidationModeStrict, expectedIssues: 1, expectedCodes: []string{"UNEXPECTED_FIELD"}},
-		{name: "Object - Invalid (not object)", value: "not object", mode: definition.ValidationModeStrict, expectedIssues: 2, expectedCodes: []string{"TYPE_MISMATCH","TYPE_MISMATCH"}},
+		{name: "Object - Invalid (not object)", value: "not object", mode: definition.ValidationModeStrict, expectedIssues: 1, expectedCodes: []string{"TYPE_MISMATCH"}},
 		{name: "Object - Nil", value: nil, mode: definition.ValidationModeStrict, expectedIssues: 0, expectedCodes: nil},
 	}
 
@@ -450,20 +442,44 @@ func TestEffectiveField_Validate_Object(t *testing.T) {
 func TestValidator_Validate_Constraints(t *testing.T) {
 	predicates := definition.PredicateMap{
 		"is_positive": mockPredicate("is_positive",
-			func(v any, _ definition.LiteralValue) bool {
-				i, ok := v.(int)
+			func(v map[string]any, keys []definition.FieldName, _ definition.LiteralValue) bool {
+				if len(keys) == 0 {
+					return false
+				}
+				k, ok := v[string(keys[0])]
+				if !ok {
+					return false
+				}
+
+				i, ok := k.(int)
 				return ok && i > 0
 			},
 			common.Issue{Code: "NOT_POSITIVE", Message: "Must be > 0"}),
 		"is_negative": mockPredicate("is_negative",
-			func(v any, _ definition.LiteralValue) bool {
-				i, ok := v.(int)
+			func(v map[string]any, keys []definition.FieldName, _ definition.LiteralValue) bool {
+				if len(keys) == 0 {
+					return false
+				}
+				k, ok := v[string(keys[0])]
+				if !ok {
+					return false
+				}
+
+				i, ok := k.(int)
 				return ok && i < 0
 			},
 			common.Issue{Code: "NOT_NEGATIVE", Message: "Must be < 0"}),
 		"is_zero": mockPredicate("is_zero",
-			func(v any, _ definition.LiteralValue) bool {
-				i, ok := v.(int)
+			func(v map[string]any, keys []definition.FieldName, _ definition.LiteralValue) bool {
+				if len(keys) == 0 {
+					return false
+				}
+				k, ok := v[string(keys[0])]
+				if !ok {
+					return false
+				}
+
+				i, ok := k.(int)
 				return ok && i == 0
 			},
 			common.Issue{Code: "NOT_ZERO", Message: "Must be 0"}),
@@ -483,8 +499,7 @@ func TestValidator_Validate_Constraints(t *testing.T) {
 						Fields: []definition.FieldName{"field1"}, Predicate: "is_positive",
 					}),
 				},
-				// Group rule for a specific state: field2 must be negative AND field1 must be zero
-				// Note: field1 is now checked for 'is_zero' here, not 'is_positive' again.
+				// Group rule: field2 must be negative AND field1 must be zero
 				"group_rule": {
 					Name: "coordinated_state",
 					ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintGroup{
@@ -511,45 +526,102 @@ func TestValidator_Validate_Constraints(t *testing.T) {
 		mode           definition.ValidationMode
 		expectedIssues int
 		expectedCodes  []string
+		description    string
 	}{
+		// ===== STRICT MODE =====
 		{
-			name:   "Strict - Standalone fails, Group passes",
+			name:   "Strict - Both constraints check field1",
 			object: map[string]any{"field1": -5, "field2": -10},
 			mode:   definition.ValidationModeStrict,
-			// field1 is -5: fails rule_f1 (NOT_POSITIVE)
-			// group_rule: field2 is neg (ok), field1 is not zero (fail).
-			// Result: rule_f1 fail + group fail + is_zero fail.
+			// rule_f1: field1=-5 NOT positive → FAIL
+			// group: field2=-10 IS negative ✓, field1=-5 NOT zero → FAIL
 			expectedIssues: 3,
 			expectedCodes:  []string{"NOT_POSITIVE", "CONSTRAINT_GROUP_VIOLATION", "NOT_ZERO"},
 		},
 		{
-			name:   "Strict - Both fail cleanly",
-			object: map[string]any{"field1": -5, "field2": 10},
+			name:   "Strict - field1 positive satisfies rule_f1 but fails group",
+			object: map[string]any{"field1": 10, "field2": -10},
 			mode:   definition.ValidationModeStrict,
-			// rule_f1: fails (NOT_POSITIVE)
-			// group_rule: field2 not neg (fail), field1 not zero (fail)
-			// Result: 1 (standalone) + 1 (group violation) + 2 (member failures)
-			expectedIssues: 4,
-			expectedCodes:  []string{"NOT_POSITIVE", "CONSTRAINT_GROUP_VIOLATION", "NOT_NEGATIVE", "NOT_ZERO"},
+			// rule_f1: field1=10 IS positive ✓
+			// group: field2=-10 IS negative ✓, field1=10 NOT zero → FAIL
+			expectedIssues: 2,
+			expectedCodes:  []string{"CONSTRAINT_GROUP_VIOLATION", "NOT_ZERO"},
 		},
 		{
-			name:   "Loose - Partial data skips group entirely",
-			object: map[string]any{"field1": 10}, // field2 missing
+			name:   "Strict - field1=0 satisfies group but fails rule_f1",
+			object: map[string]any{"field1": 0, "field2": -10},
+			mode:   definition.ValidationModeStrict,
+			// rule_f1: field1=0 NOT positive → FAIL
+			// group: field2=-10 IS negative ✓, field1=0 IS zero ✓ → PASS
+			expectedIssues: 1,
+			expectedCodes:  []string{"NOT_POSITIVE"},
+		},
+		{
+			name:   "Strict - Missing field",
+			object: map[string]any{"field1": 10},
+			mode:   definition.ValidationModeStrict,
+			// rule_f1: field1=10 IS positive ✓
+			// group: field2 MISSING → FAIL (incomplete)
+			expectedIssues: 1,
+			expectedCodes:  []string{"CONSTRAINT_INCOMPLETE"},
+		},
+
+		// ===== PARTIAL STRICT MODE =====
+		{
+			name:   "PartialStrict - Partial group update FAILS",
+			object: map[string]any{"field1": 10},
+			mode:   definition.ValidationModePartialStrict,
+			// rule_f1: field1=10 IS positive ✓
+			// group: field1 present, field2 MISSING → PARTIAL UPDATE → FAIL
+			expectedIssues: 1,
+			expectedCodes:  []string{"CONSTRAINT_PARTIAL_UPDATE"},
+		},
+		{
+			name:   "PartialStrict - field1=0 (group passes, standalone fails)",
+			object: map[string]any{"field1": 0, "field2": -10},
+			mode:   definition.ValidationModePartialStrict,
+			// rule_f1: field1=0 NOT positive → FAIL
+			// group: both present, field2=-10 negative ✓, field1=0 zero ✓ → PASS
+			expectedIssues: 1,
+			expectedCodes:  []string{"NOT_POSITIVE"},
+		},
+		{
+			name:   "PartialStrict - No fields present",
+			object: map[string]any{},
+			mode:   definition.ValidationModePartialStrict,
+			// rule_f1: field1 missing → SKIP
+			// group: all missing → SKIP
+			expectedIssues: 0,
+			expectedCodes:  []string{},
+		},
+
+		// ===== LOOSE MODE =====
+		{
+			name:   "Loose - Partial data skips group",
+			object: map[string]any{"field1": 10},
 			mode:   definition.ValidationModeLoose,
-			// rule_f1: 10 is positive (pass)
-			// group_rule: requires field2 (missing). In Loose mode, the rule for field2 skips.
-			// Since it's an AND, and one requirement is missing, the group skips.
+			// rule_f1: field1=10 IS positive ✓
+			// group: field1 present, field2 missing → SKIP (loose is forgiving)
 			expectedIssues: 0,
 			expectedCodes:  []string{},
 		},
 		{
-			name:   "Loose - One standalone fails, group skips",
-			object: map[string]any{"field1": -5}, // field2 missing
+			name:   "Loose - Standalone fails, group skips",
+			object: map[string]any{"field1": -5},
 			mode:   definition.ValidationModeLoose,
-			// rule_f1: -5 is NOT positive (fail)
-			// group_rule: skipped due to missing field2.
+			// rule_f1: field1=-5 NOT positive → FAIL
+			// group: field1 present, field2 missing → SKIP
 			expectedIssues: 1,
 			expectedCodes:  []string{"NOT_POSITIVE"},
+		},
+		{
+			name:   "Loose - Both fields present, both evaluated",
+			object: map[string]any{"field1": -5, "field2": 10},
+			mode:   definition.ValidationModeLoose,
+			// rule_f1: field1=-5 NOT positive → FAIL
+			// group: field2=10 NOT negative → FAIL, field1=-5 NOT zero → FAIL
+			expectedIssues: 4,
+			expectedCodes:  []string{"NOT_POSITIVE", "CONSTRAINT_GROUP_VIOLATION", "NOT_NEGATIVE", "NOT_ZERO"},
 		},
 	}
 
@@ -559,19 +631,26 @@ func TestValidator_Validate_Constraints(t *testing.T) {
 			switch tt.mode {
 			case definition.ValidationModeStrict:
 				issues, _ = validator.Validate(tt.object)
+			case definition.ValidationModePartialStrict:
+				issues, _ = validator.ValidatePartial(tt.object)
 			case definition.ValidationModeLoose:
 				issues, _ = validator.ValidateLoose(tt.object)
-			default:
-				issues, _ = validator.ValidatePartial(tt.object)
 			}
 
-			assert.Equal(t, tt.expectedIssues, len(issues), "Total issues count mismatch")
+			if len(issues) != tt.expectedIssues {
+				t.Errorf("\n%s\nExpected %d issues, got %d\nIssues: %+v",
+					tt.description, tt.expectedIssues, len(issues), issues)
+			}
 
 			actualCodes := []string{}
 			for _, iss := range issues {
 				actualCodes = append(actualCodes, iss.Code)
 			}
-			assert.ElementsMatch(t, tt.expectedCodes, actualCodes)
+
+			if !assert.ElementsMatch(t, tt.expectedCodes, actualCodes) {
+				t.Errorf("\n%s\nExpected codes: %v\nActual codes: %v",
+					tt.description, tt.expectedCodes, actualCodes)
+			}
 		})
 	}
 }

@@ -7,6 +7,7 @@ import (
 
 // MetaSchema is the schema that describes the structure of Schema itself
 var MetaSchema = definition.Schema{
+	Version: *common.MustNewVersion("1.0.0"),
 	BaseSchema: definition.BaseSchema{
 		Name:        "Schema",
 		Description: "Meta-schema defining the structure of schema definitions",
@@ -84,7 +85,6 @@ var MetaSchema = definition.Schema{
 		Constraints: map[definition.ConstraintId]definition.Constraint{},
 		Metadata:    map[string]any{},
 	},
-	Version: common.Version{},
 	Schemas: map[definition.SchemaId]definition.NestedSchema{
 		// Field definition
 		"Field": {
@@ -114,7 +114,7 @@ var MetaSchema = definition.Schema{
 						Required:    true,
 						FieldProperties: definition.FieldProperties{
 							Type:   definition.FieldTypeEnum,
-							Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "definition.FieldTypeEnum"}),
+							Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "FieldTypeEnum"}),
 						},
 					},
 					"default": {
@@ -127,7 +127,7 @@ var MetaSchema = definition.Schema{
 					},
 					"schema": {
 						Name:        "schema",
-						Description: "Schema reference for complex types (single SchemaReference or array for unions)",
+						Description: "Schema reference for complex types (single SchemaReference or array for unions/composites)",
 						Required:    false,
 						FieldProperties: definition.FieldProperties{
 							Type:   definition.FieldTypeUnion,
@@ -159,6 +159,16 @@ var MetaSchema = definition.Schema{
 						},
 					},
 				},
+				Constraints: map[definition.ConstraintId]definition.Constraint{
+					/* "primitives_no_schema":                MetaSchemaConstraints["primitives_no_schema"],
+					"enums_require_schema":                MetaSchemaConstraints["enums_require_schema"],
+					"arrays_require_schema":               MetaSchemaConstraints["arrays_require_schema"],
+					"objects_require_schema":              MetaSchemaConstraints["objects_require_schema"],
+					"unions_require_multiple_schemas":     MetaSchemaConstraints["unions_require_multiple_schemas"],
+					"composites_require_multiple_schemas": MetaSchemaConstraints["composites_require_multiple_schemas"],
+					"field_name_required":                 MetaSchemaConstraints["field_name_required"],
+					"records_allow_optional_schema":       MetaSchemaConstraints["records_allow_optional_schema"], */
+				},
 			},
 		},
 
@@ -171,7 +181,7 @@ var MetaSchema = definition.Schema{
 					"name": {
 						Name:        "name",
 						Description: "The name of the nested schema",
-						Required:    false,
+						Required:    true, // FIXED: Changed from false to true
 						FieldProperties: definition.FieldProperties{
 							Type: definition.FieldTypeString,
 						},
@@ -254,6 +264,11 @@ var MetaSchema = definition.Schema{
 							Schema: definition.NewSchemaReference([]definition.SchemaReference{{ID: "SchemaReference"}, {ID: "SchemaReferenceArray"}}),
 						},
 					},
+				},
+				Constraints: map[definition.ConstraintId]definition.Constraint{
+					/* "nested_schema_mode_exclusive": MetaSchemaConstraints["nested_schema_mode_exclusive"],
+					"enum_schemas_require_values":  MetaSchemaConstraints["enum_schemas_require_values"],
+					"enum_values_match_type":       MetaSchemaConstraints["enum_values_match_type"], */
 				},
 			},
 		},
@@ -543,7 +558,7 @@ var MetaSchema = definition.Schema{
 		// Array types
 		"SchemaReferenceArray": {
 			FieldProperties: definition.FieldProperties{
-				Type:   definition.FieldTypeObject,
+				Type:   definition.FieldTypeArray,
 				Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "SchemaReference"}),
 			},
 		},
@@ -561,83 +576,83 @@ var MetaSchema = definition.Schema{
 		},
 
 		// Enum definitions
-		"definition.FieldTypeEnum": {
+		"FieldTypeEnum": {
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
-				Values: []definition.LiteralValue{
-					mustNewLiteralValue("unknown"),
-					mustNewLiteralValue("string"),
-					mustNewLiteralValue("number"),
-					mustNewLiteralValue("integer"),
-					mustNewLiteralValue("decimal"),
-					mustNewLiteralValue("boolean"),
-					mustNewLiteralValue("array"),
-					mustNewLiteralValue("set"),
-					mustNewLiteralValue("enum"),
-					mustNewLiteralValue("object"),
-					mustNewLiteralValue("record"),
-					mustNewLiteralValue("union"),
-					mustNewLiteralValue("composite"),
-					mustNewLiteralValue("geometry"),
-				},
+			},
+			Values: []definition.LiteralValue{
+				mustNewLiteralValue("unknown"),
+				mustNewLiteralValue("string"),
+				mustNewLiteralValue("number"),
+				mustNewLiteralValue("integer"),
+				mustNewLiteralValue("decimal"),
+				mustNewLiteralValue("boolean"),
+				mustNewLiteralValue("array"),
+				mustNewLiteralValue("set"),
+				mustNewLiteralValue("enum"),
+				mustNewLiteralValue("object"),
+				mustNewLiteralValue("record"),
+				mustNewLiteralValue("union"),
+				mustNewLiteralValue("composite"),
+				mustNewLiteralValue("geometry"),
 			},
 		},
 
 		"IndexTypeEnum": {
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
-				Values: []definition.LiteralValue{
-					mustNewLiteralValue("normal"),
-					mustNewLiteralValue("unique"),
-					mustNewLiteralValue("primary"),
-					mustNewLiteralValue("spatial"),
-					mustNewLiteralValue("fulltext"),
-				},
+			},
+			Values: []definition.LiteralValue{
+				mustNewLiteralValue("normal"),
+				mustNewLiteralValue("unique"),
+				mustNewLiteralValue("primary"),
+				mustNewLiteralValue("spatial"),
+				mustNewLiteralValue("fulltext"),
 			},
 		},
 
 		"LogicalOperatorEnum": {
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
-				Values: []definition.LiteralValue{
-					mustNewLiteralValue("and"),
-					mustNewLiteralValue("or"),
-					mustNewLiteralValue("not"),
-					mustNewLiteralValue("nor"),
-					mustNewLiteralValue("xor"),
-					mustNewLiteralValue("nand"),
-					mustNewLiteralValue("xnor"),
-				},
+			},
+			Values: []definition.LiteralValue{
+				mustNewLiteralValue("and"),
+				mustNewLiteralValue("or"),
+				mustNewLiteralValue("not"),
+				mustNewLiteralValue("nor"),
+				mustNewLiteralValue("xor"),
+				mustNewLiteralValue("nand"),
+				mustNewLiteralValue("xnor"),
 			},
 		},
 
 		"IndexOrderEnum": {
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
-				Values: []definition.LiteralValue{
-					mustNewLiteralValue("asc"),
-					mustNewLiteralValue("desc"),
-				},
+			},
+			Values: []definition.LiteralValue{
+				mustNewLiteralValue("asc"),
+				mustNewLiteralValue("desc"),
 			},
 		},
 
 		"ComparisonOperatorEnum": {
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
-				Values: []definition.LiteralValue{
-					mustNewLiteralValue("eq"),
-					mustNewLiteralValue("neq"),
-					mustNewLiteralValue("lt"),
-					mustNewLiteralValue("lte"),
-					mustNewLiteralValue("gt"),
-					mustNewLiteralValue("gte"),
-					mustNewLiteralValue("in"),
-					mustNewLiteralValue("nin"),
-					mustNewLiteralValue("contains"),
-					mustNewLiteralValue("ncontains"),
-					mustNewLiteralValue("exists"),
-					mustNewLiteralValue("nexists"),
-				},
+			},
+			Values: []definition.LiteralValue{
+				mustNewLiteralValue("eq"),
+				mustNewLiteralValue("neq"),
+				mustNewLiteralValue("lt"),
+				mustNewLiteralValue("lte"),
+				mustNewLiteralValue("gt"),
+				mustNewLiteralValue("gte"),
+				mustNewLiteralValue("in"),
+				mustNewLiteralValue("nin"),
+				mustNewLiteralValue("contains"),
+				mustNewLiteralValue("ncontains"),
+				mustNewLiteralValue("exists"),
+				mustNewLiteralValue("nexists"),
 			},
 		},
 	},
@@ -650,4 +665,3 @@ func mustNewLiteralValue[T definition.LiteralValueType](value T) definition.Lite
 	}
 	return val
 }
-

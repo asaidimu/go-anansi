@@ -30,3 +30,4 @@ dist
 .commit-message.md
 */**/tmp
 tmp/*
+*.prof

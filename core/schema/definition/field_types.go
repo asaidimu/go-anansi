@@ -66,6 +66,9 @@ func (t FieldType) String() string {
 }
 
 func (t FieldType) MarshalJSON() ([]byte, error) {
+	if t == 0 {
+		return json.Marshal(nil)
+	}
 	val, err := json.Marshal(t.String())
 	if err != nil {
 		return nil, ErrMarshalFailed.WithCause(err).WithOperation("FieldType.MarshalJSON")
@@ -74,6 +77,10 @@ func (t FieldType) MarshalJSON() ([]byte, error) {
 }
 
 func (t *FieldType) UnmarshalJSON(data []byte) error {
+	if string(data) == "null" {
+		*t = 0
+		return nil
+	}
 	var s string
 	if err := json.Unmarshal(data, &s); err != nil {
 		return ErrUnmarshalFailed.WithCause(err).WithOperation("FieldType.UnmarshalJSON")
@@ -84,4 +91,15 @@ func (t *FieldType) UnmarshalJSON(data []byte) error {
 	}
 	*t = FieldTypeUnknown
 	return nil
+}
+
+func (t FieldType) IsContainer() bool {
+	switch t {
+	case FieldTypeArray, FieldTypeSet, FieldTypeGeometry,
+		FieldTypeRecord, FieldTypeObject, FieldTypeEnum,
+		FieldTypeUnion, FieldTypeComposite:
+		return true
+	default:
+		return false
+	}
 }
