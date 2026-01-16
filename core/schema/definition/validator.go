@@ -76,7 +76,7 @@ type ValidationContext struct {
 	FunctionMap PredicateMap
 	MaxDepth    int // Maximum allowed nesting depth
 	Mode        ValidationMode
-	Visited     common.BitState
+	Visited     common.ResultSet
 	Issues      []common.Issue
 }
 
@@ -628,7 +628,7 @@ func (graph *ValidationGraph) finalize() error {
 		return &ValidationContext{
 			// Ensure BitState is large enough for all IDs in this graph.
 			// IDs are 1-based, so size needs to be > maxID.
-			Visited: *common.NewBitState(graph.nextNodeID + 1),
+			Visited: *common.NewResultState(graph.nextNodeID + 1),
 			Issues:  make([]common.Issue, 0, 3),
 		}
 	}

@@ -320,6 +320,219 @@ func TestSchema_MarshalJSON_NullAndEmptyOmission(t *testing.T) {
 	})
 }
 
+func TestSchema_AsMap(t *testing.T) {
+	testSchema := definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name:        "UserProfileSchema",
+			Description: "Defines the structure for user profiles",
+			Fields: map[definition.FieldId]definition.Field{
+				"8ffb9dff-e32a-4d67-8eb3-da9aa7d4941e": { // UUID for "name"
+					Name:     "name",
+					Required: true,
+					FieldProperties: definition.FieldProperties{
+						Type: definition.FieldTypeString,
+					},
+				},
+				"50f9ff0f-de26-464f-9f3b-8384172d4d07": { // UUID for "age"
+					Name: "age",
+					FieldProperties: definition.FieldProperties{
+						Type: definition.FieldTypeInteger,
+					},
+				},
+				"e24d49a9-a904-4a84-d08-52cac8115098": { // UUID for "address"
+					Name: "address",
+					FieldProperties: definition.FieldProperties{
+						Type: definition.FieldTypeObject,
+						Schema: definition.NewSchemaReference(definition.SchemaReference{ID: "3cc51bb6-92d1-4dad-bb2f-d7c21db1a0a5"}), // UUID for AddressSchema
+					},
+				},
+				"7d8a65b2-0274-47b8-8496-4447c26ec7ec": { // UUID for "another"
+					Name: "another",
+					FieldProperties: definition.FieldProperties{
+						Type: definition.FieldTypeObject,
+						Schema: definition.NewSchemaReference([]definition.SchemaReference{
+							{ID: "3cc51bb6-92d1-4dad-bb2f-d7c21db1a0a5"},
+							{ID: "695fc841-1e4f-4835-843c-8be0c5a8bb08"},
+						}),
+					},
+				},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"77117b14-13e7-4dcf-91ba-f5f1f36adafb": { // UUID for "idx_name"
+					Name: "idx_name",
+					Type: definition.IndexTypeNormal,
+					Fields: []definition.FieldId{
+						"8ffb9dff-e32a-4d67-8eb3-da9aa7d4941e", // UUID for "name" field
+					},
+				},
+			},
+			Constraints: map[definition.ConstraintId]definition.Constraint{
+				"33c8b8f5-1ab2-433a-80bc-211000f47ba3": { // UUID for "age_range"
+					Name: "age_range",
+					ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
+						Fields:    []definition.FieldName{"50f9ff0f-de26-464f-9f3b-8384172d4d07"}, // UUID for "age" field
+						Predicate: "range",
+						Parameters: func() definition.LiteralValue {
+							lv, _ := definition.NewLiteralValue(map[string]any{"min": int64(0), "max": int64(150)})
+							return lv
+						}(),
+					}),
+				},
+			},
+			Metadata: map[string]any{
+				"author": "Test Author",
+			},
+		},
+		Version: *common.MustNewVersion("1.0.0"),
+		Schemas: map[definition.SchemaId]definition.NestedSchema{
+			"3cc51bb6-92d1-4dad-bb2f-d7c21db1a0a5": { // UUID for AddressSchema
+				BaseSchema: definition.BaseSchema{
+					Name: "AddressSchema",
+					Fields: map[definition.FieldId]definition.Field{
+						"1ebc9a37-d39a-4a59-9756-e671916aec62": { // UUID for "street"
+							Name: "street",
+							FieldProperties: definition.FieldProperties{
+								Type: definition.FieldTypeString,
+							},
+						},
+						"5fe0f9dd-565f-48cd-8939-abd65e2f8553": { // UUID for "zip"
+							Name: "zip",
+							FieldProperties: definition.FieldProperties{
+								Type: definition.FieldTypeString,
+							},
+							Required: true,
+						},
+					},
+				},
+			},
+			"695fc841-1e4f-4835-843c-8be0c5a8bb08": { // Another UUID for AddressSchema (used in "another" field)
+				BaseSchema: definition.BaseSchema{
+					Name: "AddressSchema",
+					Fields: map[definition.FieldId]definition.Field{
+						"1ebc9a37-d39a-4a59-9756-e671916aec62": { // UUID for "street"
+							Name: "street",
+							FieldProperties: definition.FieldProperties{
+								Type: definition.FieldTypeString,
+							},
+						},
+						"5fe0f9dd-565f-48cd-8939-abd65e2f8553": { // UUID for "zip"
+							Name: "zip",
+							FieldProperties: definition.FieldProperties{
+								Type: definition.FieldTypeString,
+							},
+							Required: true,
+						},
+					},
+				},
+			},
+			"IndexOrderEnum": {
+				BaseSchema: definition.BaseSchema{
+					Name: "IndexOrderEnum",
+				},
+				FieldProperties: definition.FieldProperties{
+					Type: definition.FieldTypeString,
+				},
+				Values: []definition.LiteralValue{
+					definition.MustNewLiteralValue("asc"),
+					definition.MustNewLiteralValue("desc"),
+				},
+			},
+		},
+	}
+
+	actualMap := testSchema.AsMap()
+
+	expectedMap := map[string]any{
+		"version": "1.0.0",
+		"name":    "UserProfileSchema",
+		"description": "Defines the structure for user profiles",
+		"fields": map[string]any{
+			"8ffb9dff-e32a-4d67-8eb3-da9aa7d4941e": map[string]any{
+				"name":     "name",
+				"required": true,
+				"type":     "string",
+			},
+			"50f9ff0f-de26-464f-9f3b-8384172d4d07": map[string]any{
+				"name": "age",
+				"type": "integer",
+			},
+			"e24d49a9-a904-4a84-d08-52cac8115098": map[string]any{
+				"name":   "address",
+				"type":   "object",
+				"schema": map[string]any{"id": "3cc51bb6-92d1-4dad-bb2f-d7c21db1a0a5"},
+			},
+			"7d8a65b2-0274-47b8-8496-4447c26ec7ec": map[string]any{
+				"name": "another",
+				"type": "object",
+				"schema": []map[string]any{
+					map[string]any{"id": "3cc51bb6-92d1-4dad-bb2f-d7c21db1a0a5"},
+					map[string]any{"id": "695fc841-1e4f-4835-843c-8be0c5a8bb08"},
+				},
+			},
+		},
+		"indexes": map[string]any{
+			"77117b14-13e7-4dcf-91ba-f5f1f36adafb": map[string]any{
+				"name":   "idx_name",
+				"type":   "normal",
+				"fields": []string{"8ffb9dff-e32a-4d67-8eb3-da9aa7d4941e"},
+			},
+		},
+		"constraints": map[string]any{
+			"33c8b8f5-1ab2-433a-80bc-211000f47ba3": map[string]any{
+				"name": "age_range",
+				"rule": map[string]any{
+					"predicate": "range",
+					"fields":    []string{"50f9ff0f-de26-464f-9f3b-8384172d4d07"},
+					"parameters": map[string]any{"min": int64(0), "max": int64(150)},
+				},
+			},
+		},
+		"metadata": map[string]any{
+			"author": "Test Author",
+		},
+		"schemas": map[string]any{
+			"3cc51bb6-92d1-4dad-bb2f-d7c21db1a0a5": map[string]any{
+				"name": "AddressSchema",
+				"fields": map[string]any{
+					"1ebc9a37-d39a-4a59-9756-e671916aec62": map[string]any{
+						"name": "street",
+						"type": "string",
+					},
+					"5fe0f9dd-565f-48cd-8939-abd65e2f8553": map[string]any{
+						"name":     "zip",
+						"type":     "string",
+						"required": true,
+					},
+				},
+			},
+			"695fc841-1e4f-4835-843c-8be0c5a8bb08": map[string]any{
+				"name": "AddressSchema",
+				"fields": map[string]any{
+					"1ebc9a37-d39a-4a59-9756-e671916aec62": map[string]any{
+						"name": "street",
+						"type": "string",
+					},
+					"5fe0f9dd-565f-48cd-8939-abd65e2f8553": map[string]any{
+						"name":     "zip",
+						"type":     "string",
+						"required": true,
+					},
+				},
+			},
+			"IndexOrderEnum": map[string]any{
+				"name": "IndexOrderEnum",
+				"type": "string",
+				"values": []any{
+					"asc",
+					"desc",
+				},
+			},
+		},
+	}
+
+	assert.Equal(t, expectedMap, actualMap, "AsMap output should match expected map")
+}
+
 func TestField_UnmarshalJSON_TypeOmitted(t *testing.T) {
 	jsonStr := `{
 		"name": "testField",
@@ -374,4 +587,54 @@ func TestNestedSchema_UnmarshalJSON_ElementType(t *testing.T) {
 	assert.Len(t, ns.Values, 2)
 	assert.Equal(t, "a", ns.Values[0].Value())
 	assert.Equal(t, "b", ns.Values[1].Value())
+}
+
+func TestNestedSchema_UnmarshalJSON_ArrayElementTypes(t *testing.T) {
+	jsonStr := `{
+		"name": "Product",
+		"fields": {
+			"tags": {
+				"name": "tags",
+				"type": "array",
+				"schema": {
+					"id": "String"
+				}
+			},
+			"attributes": {
+				"name": "attributes",
+				"type": "array",
+				"schema": [
+					{
+						"id": "AttributeString"
+					},
+					{
+						"id": "AttributeNumber"
+					}
+				]
+			}
+		}
+	}`
+	var ns definition.NestedSchema
+	err := json.Unmarshal([]byte(jsonStr), &ns)
+	require.NoError(t, err)
+
+	assert.Equal(t, "Product", ns.Name)
+	require.Contains(t, ns.Fields, definition.FieldId("tags"))
+	require.Contains(t, ns.Fields, definition.FieldId("attributes"))
+
+	tagsField := ns.Fields[definition.FieldId("tags")]
+	assert.Equal(t, definition.FieldTypeArray, tagsField.Type)
+	assert.True(t, tagsField.Schema.IsSingle())
+	singleRef, err := definition.FieldSchemaAs[definition.SchemaReference](tagsField.Schema)
+	require.NoError(t, err)
+	assert.Equal(t, definition.SchemaId("String"), singleRef.ID)
+
+	attributesField := ns.Fields[definition.FieldId("attributes")]
+	assert.Equal(t, definition.FieldTypeArray, attributesField.Type)
+	assert.True(t, attributesField.Schema.IsMultiple())
+	multiRefs, err := definition.FieldSchemaAs[[]definition.SchemaReference](attributesField.Schema)
+	require.NoError(t, err)
+	assert.Len(t, multiRefs, 2)
+	assert.Equal(t, definition.SchemaId("AttributeString"), multiRefs[0].ID)
+	assert.Equal(t, definition.SchemaId("AttributeNumber"), multiRefs[1].ID)
 }

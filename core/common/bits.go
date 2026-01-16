@@ -1,21 +1,19 @@
 package common
 
-type BitState struct {
+type ResultSet struct {
 	// data holds 2 bits per node:
 	// bit 0: hasValue (presence)
 	// bit 1: value (success/failure)
 	data []uint64
 }
 
-func NewBitState(nodeCount int) *BitState {
-	// 32 nodes per uint64 (2 bits each)
-	// +1 word intentionally keeps legacy behavior safe
-	return &BitState{
-		data: make([]uint64, ((nodeCount+31)/32)+1),
+func NewResultState(size int) *ResultSet {
+	return &ResultSet{
+		data: make([]uint64, ((size+31)/32)+1),
 	}
 }
 
-func (s *BitState) word(idx int) (int, uint, bool) {
+func (s *ResultSet) word(idx int) (int, uint, bool) {
 	if idx < 0 {
 		return 0, 0, false
 	}
@@ -28,7 +26,7 @@ func (s *BitState) word(idx int) (int, uint, bool) {
 }
 
 // HasValue returns true if the node has been processed (visited)
-func (s *BitState) HasValue(idx int) bool {
+func (s *ResultSet) HasValue(idx int) bool {
 	word, shift, ok := s.word(idx)
 	if !ok {
 		return false
@@ -38,7 +36,7 @@ func (s *BitState) HasValue(idx int) bool {
 
 // Value returns the success status of the node.
 // Only meaningful if HasValue() is true.
-func (s *BitState) Value(idx int) bool {
+func (s *ResultSet) Value(idx int) bool {
 	word, shift, ok := s.word(idx)
 	if !ok {
 		return false
@@ -47,7 +45,7 @@ func (s *BitState) Value(idx int) bool {
 }
 
 // Set updates both the presence and the success value
-func (s *BitState) Set(idx int, success bool) {
+func (s *ResultSet) Set(idx int, success bool) {
 	word, shift, ok := s.word(idx)
 	if !ok {
 		return
@@ -65,7 +63,7 @@ func (s *BitState) Set(idx int, success bool) {
 	s.data[word] |= val << shift
 }
 
-func (s *BitState) Clear() {
+func (s *ResultSet) Clear() {
 	for i := range s.data {
 		s.data[i] = 0
 	}
