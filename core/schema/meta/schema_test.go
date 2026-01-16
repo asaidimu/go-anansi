@@ -1,7 +1,6 @@
 package meta_test
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
@@ -10,18 +9,11 @@ import (
 )
 
 func TestMetaSchema_MarshalUnmarshalJSON(t *testing.T) {
-	// Marshal the schema
-	marshaledData, err := json.MarshalIndent(meta.MetaSchema, "", "  ")
-	require.NoError(t, err)
-	// Unmarshal the schema back into a new struct
-	var schemaData map[string]any
-	err = json.Unmarshal(marshaledData, &schemaData)
-	require.NoError(t, err)
-
+	mapData := meta.MetaSchema.AsMap()
 	vd, err := definition.NewDocumentValidator(&meta.MetaSchema, make(definition.PredicateMap))
 	require.NoError(t,err)
 
-	issues, ok := vd.Validate(schemaData)
+	issues, ok := vd.Validate(mapData)
 	require.True(t, ok)
 	require.Empty(t,issues)
 }
