@@ -58,3 +58,11 @@ func (t *IndexType) UnmarshalJSON(data []byte) error {
 	*t = IndexTypeNormal
 	return nil
 }
+
+func init(){
+	_ = IndexTypeNormal
+	_ = IndexTypeUnique
+	_ = IndexTypePrimary
+	_ = IndexTypeSpatial
+	_ = IndexTypeFullText
+}

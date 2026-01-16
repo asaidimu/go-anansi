@@ -13,7 +13,7 @@ type FieldId string
 type FieldProperties struct {
 	Default LiteralValue         `json:"default"`
 	Schema  FieldSchemaReference `json:"schema"`
-	Type    FieldType            `json:"type"`
+	Type    FieldType            `json:"type,omitempty"`
 }
 
 // Field defines a field within a schema.

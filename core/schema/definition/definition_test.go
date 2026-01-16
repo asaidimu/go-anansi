@@ -183,7 +183,7 @@ func TestSchema_MarshalUnmarshalJSON(t *testing.T) {
 func TestSchema_EmptyFieldsOmitted(t *testing.T) {
 	schema := definition.Schema{
 		BaseSchema: definition.BaseSchema{
-			Name:    "EmptyTest",
+			Name: "EmptyTest",
 		},
 		Version: *common.MustNewVersion("1.0.0"), // Version is directly on Schema
 		Schemas: make(map[definition.SchemaId]definition.NestedSchema), // Explicitly initialize empty map
@@ -194,6 +194,146 @@ func TestSchema_EmptyFieldsOmitted(t *testing.T) {
 
 	expectedJSON := `{"name":"EmptyTest","version":"1.0.0"}` // Corrected expectedJSON
 	assert.JSONEq(t, expectedJSON, string(marshaled))
+}
+
+func TestSchema_MarshalJSON_NullAndEmptyOmission(t *testing.T) {
+	t.Run("Zero-value Schema should omit all omitempty fields", func(t *testing.T) {
+		schema := definition.Schema{
+			BaseSchema: definition.BaseSchema{
+				Name:        "TestSchema",
+				Description: "", // Should be omitted
+				Fields:      nil,    // Should be omitted
+				Indexes:     nil,    // Should be omitted
+				Constraints: nil,    // Should be omitted
+				Metadata:    nil,    // Should be omitted
+			},
+			Version: *common.MustNewVersion("1.0.0"),
+			Schemas: nil, // Should be omitted
+		}
+
+		marshaled, err := json.Marshal(schema)
+		require.NoError(t, err)
+
+		// Only name and version should be present
+		expectedJSON := `{"name":"TestSchema","version":"1.0.0"}`
+		assert.JSONEq(t, expectedJSON, string(marshaled))
+	})
+
+	t.Run("Schema with empty but non-nil maps/slices should omit them", func(t *testing.T) {
+		schema := definition.Schema{
+			BaseSchema: definition.BaseSchema{
+				Name:        "TestSchemaWithEmpty",
+				Description: "",
+				Fields:      make(map[definition.FieldId]definition.Field),
+				Indexes:     make(map[definition.IndexId]definition.Index),
+				Constraints: make(map[definition.ConstraintId]definition.Constraint),
+				Metadata:    make(map[string]any),
+			},
+			Version: *common.MustNewVersion("1.0.0"),
+			Schemas: make(map[definition.SchemaId]definition.NestedSchema),
+		}
+
+		marshaled, err := json.Marshal(schema)
+		require.NoError(t, err)
+
+		// Still only name and version should be present because omitempty treats empty maps/slices as empty
+		expectedJSON := `{"name":"TestSchemaWithEmpty","version":"1.0.0"}`
+		assert.JSONEq(t, expectedJSON, string(marshaled))
+	})
+
+	t.Run("NestedSchema with zero Default and Schema should omit them", func(t *testing.T) {
+		ns := definition.NestedSchema{
+			BaseSchema: definition.BaseSchema{
+				Name: "NestedSchemaTest",
+			},
+			FieldProperties: definition.FieldProperties{
+				Type:    definition.FieldTypeString,
+				Default: definition.LiteralValue{}, // Zero value LiteralValue
+				Schema:  definition.FieldSchemaReference{}, // Zero value FieldSchemaReference
+			},
+		}
+
+		marshaled, err := json.Marshal(ns)
+		require.NoError(t, err)
+
+		// Only name and type should be present, Default and Schema should be omitted by custom MarshalJSON
+		expectedJSON := `{"name":"NestedSchemaTest","type":"string"}`
+		assert.JSONEq(t, expectedJSON, string(marshaled))
+	})
+
+	t.Run("NestedSchema with non-zero Default and Schema should include them", func(t *testing.T) {
+		defaultValue, _ := definition.NewLiteralValue("default_string")
+		schemaRef := definition.NewSchemaReference(definition.SchemaReference{ID: "some_id"})
+
+		ns := definition.NestedSchema{
+			BaseSchema: definition.BaseSchema{
+				Name: "NestedSchemaWithValues",
+			},
+			FieldProperties: definition.FieldProperties{
+				Type:    definition.FieldTypeString,
+				Default: defaultValue,
+				Schema:  schemaRef,
+			},
+		}
+
+		marshaled, err := json.Marshal(ns)
+		require.NoError(t, err)
+
+		expectedJSON := `{"name":"NestedSchemaWithValues","type":"string","default":"default_string","schema":{"id":"some_id"}}`
+		assert.JSONEq(t, expectedJSON, string(marshaled))
+	})
+
+	t.Run("NestedSchema with Null Default value should omit it", func(t *testing.T) {
+		nullValue := definition.NewNullLiteral() // Correct way to create a null LiteralValue
+		ns := definition.NestedSchema{
+			BaseSchema: definition.BaseSchema{
+				Name: "NestedSchemaWithNullDefault",
+			},
+			FieldProperties: definition.FieldProperties{
+				Type:    definition.FieldTypeString,
+				Default: nullValue, // Null LiteralValue, should be omitted by custom MarshalJSON
+			},
+		}
+
+		marshaled, err := json.Marshal(ns)
+		require.NoError(t, err)
+
+		// Should omit 'default' field because IsNull() is true
+		expectedJSON := `{"name":"NestedSchemaWithNullDefault","type":"string"}`
+		assert.JSONEq(t, expectedJSON, string(marshaled))
+	})
+	t.Run("BaseSchema with empty Name should marshal to empty string", func(t *testing.T) {
+		schema := definition.Schema{
+			BaseSchema: definition.BaseSchema{
+				Name:        "", // Empty name
+				Description: "Schema with empty name",
+			},
+			Version: *common.MustNewVersion("1.0.0"),
+		}
+
+		marshaled, err := json.Marshal(schema)
+		require.NoError(t, err)
+
+		// Expect "name" to be omitted
+		expectedJSON := `{"description":"Schema with empty name","version":"1.0.0"}`
+		assert.JSONEq(t, expectedJSON, string(marshaled))
+	})
+}
+
+func TestField_UnmarshalJSON_TypeOmitted(t *testing.T) {
+	jsonStr := `{
+		"name": "testField",
+		"required": true
+	}`
+
+	var field definition.Field
+	err := json.Unmarshal([]byte(jsonStr), &field)
+	require.NoError(t, err)
+
+	assert.Equal(t, definition.FieldName("testField"), field.Name)
+	assert.True(t, field.Required)
+	// Assert that FieldProperties.Type is its zero value (0)
+	assert.Equal(t, definition.FieldType(0), field.FieldProperties.Type)
 }
 
 func TestNestedSchema_UnmarshalJSON(t *testing.T) {

@@ -7,7 +7,7 @@ import (
 )
 
 type BaseSchema struct {
-	Name        string                      `json:"name"`
+	Name        string                      `json:"name,omitempty"`
 	Description string                      `json:"description,omitempty"`
 	Fields      map[FieldId]Field           `json:"fields,omitempty"`
 	Indexes     map[IndexId]Index           `json:"indexes,omitempty"`
@@ -28,7 +28,9 @@ type NestedSchema struct {
 
 	// The field definition part
 	FieldProperties
-	Values []LiteralValue `json:"values,omitempty"`
+
+	Values   []LiteralValue `json:"values,omitempty"`
+	Concrete bool           `json:"concrete,omitempty"`
 }
 
 func (ns NestedSchema) MarshalJSON() ([]byte, error) {
@@ -54,8 +56,8 @@ func (ns NestedSchema) MarshalJSON() ([]byte, error) {
 }
 
 type Schema struct {
+	Version common.Version `json:"version"`
 	BaseSchema
-	Version common.Version            `json:"version"`
 	Schemas map[SchemaId]NestedSchema `json:"schemas,omitempty"`
 }
 

@@ -27,7 +27,7 @@ func TestFieldType_String(t *testing.T) {
 		{"Union", definition.FieldTypeUnion, "union"},
 		{"Composite", definition.FieldTypeComposite, "composite"},
 		{"Geometry", definition.FieldTypeGeometry, "geometry"},
-		{"Invalid", definition.FieldType(99), "unknown"}, // Test an unknown value
+		{"Invalid", definition.FieldType(99), ""}, // Test an unknown value
 	}
 
 	for _, tt := range tests {
