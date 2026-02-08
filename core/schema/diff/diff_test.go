@@ -248,8 +248,6 @@ func TestSchemaDiff_MarshalUnmarshalJSON(t *testing.T) {
 	marshaledData, err := json.MarshalIndent(expectedDiff, "", "  ")
 	require.NoError(t, err)
 
-	t.Logf("Marshaled SchemaDiff:\n%s", string(marshaledData))
-
 	// Unmarshal the JSON back into a new SchemaDiff object
 	var unmarshaledDiff diff.SchemaDiff
 	err = json.Unmarshal(marshaledData, &unmarshaledDiff)
@@ -268,7 +266,7 @@ func TestSchemaDiff_MarshalUnmarshalJSON(t *testing.T) {
 // generateSchema creates a schema with a specified number of fields.
 func generateSchema(numFields int, versionName string) definition.Schema {
 	fields := make(map[definition.FieldId]definition.Field)
-	for i := 0; i < numFields; i++ {
+	for i := range numFields {
 		fieldID := definition.FieldId(fmt.Sprintf("field%d", i))
 		fields[fieldID] = definition.Field{
 			Name:       definition.FieldName(fmt.Sprintf("field%d", i)),
@@ -311,9 +309,9 @@ func BenchmarkDiff(b *testing.B) {
 	for _, bm := range benchmarks {
 		b.Run(bm.name, func(b *testing.B) {
 			fromSchema := generateSchema(bm.numFields, "1.0.0")
-			// toSchema := fromSchema // Start with same schema
+			toSchema := fromSchema // Start with same schema
 
-			/* switch bm.changeType {
+			switch bm.changeType {
 			case "version":
 				toSchema.Version = *MustNewVersion("1.1.0")
 			case "field":
@@ -326,15 +324,14 @@ func BenchmarkDiff(b *testing.B) {
 				}
 			case "none":
 				// No changes
-			} */
+			}
 
 			b.ResetTimer()
 			for b.Loop() {
-				/* _, err := diff.Diff(fromSchema, toSchema)
+				_, err := diff.Diff(fromSchema, toSchema)
 				if err != nil {
 					b.Fatal(err)
-				} */
-				Scmap = fromSchema.AsMap()
+				}
 			}
 		})
 	}

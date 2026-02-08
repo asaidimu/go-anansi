@@ -45,6 +45,13 @@ var stringToLogical = map[string]LogicalOperator{
 	"xnor": LogicalXnor,
 }
 
+func LogicalOperatorFrom(s string) (LogicalOperator, bool) {
+	if o, ok := stringToLogical[s]; ok {
+		return o, true
+	}
+	return 0, false
+}
+
 func (o LogicalOperator) String() string {
 	if s, ok := logicalToString[o]; ok {
 		return s

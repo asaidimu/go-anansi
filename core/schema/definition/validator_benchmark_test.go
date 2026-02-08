@@ -139,10 +139,10 @@ func generateComplexData(depth, fieldsPerLevel, arrayLength int) map[string]any 
 func BenchmarkValidator_ComplexSchema(b *testing.B) {
 	// Parameters for the complex schema and data
 	const (
-		schemaDepth      = 10   // Increased from 5
-		fieldsPerLevel   = 20   // Increased from 10
-		arrayLength      = 500  // Increased from 100
-		numSchemasInRepo = 500  // Increased from 100
+		schemaDepth      = 10  // Increased from 5
+		fieldsPerLevel   = 20  // Increased from 10
+		arrayLength      = 500 // Increased from 100
+		numSchemasInRepo = 500 // Increased from 100
 	)
 
 	// Generate a complex schema once for the benchmark setup
@@ -166,10 +166,13 @@ func BenchmarkValidator_ComplexSchema(b *testing.B) {
 
 	// No predicates needed for this benchmark, use an empty map
 	predicates := make(definition.PredicateMap)
+	validator, err := definition.NewDocumentValidator(complexSchema, predicates)
+	if err != nil {
+		b.Fatalf("Failed to create validator: %v", err)
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		validator, err := definition.NewDocumentValidator(complexSchema, predicates)
 		if err != nil {
 			b.Fatalf("Failed to create validator: %v", err)
 		}

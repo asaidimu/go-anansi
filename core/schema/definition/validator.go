@@ -274,10 +274,11 @@ type baseNode struct {
 	path      string
 	pathParts []string
 	deps      []int
+	parent    int
 }
 
+func (n *baseNode) GetPath() string        { return n.path } // builds path on demand from parents
 func (n *baseNode) GetID() int             { return n.id }
-func (n *baseNode) GetPath() string        { return n.path }
 func (n *baseNode) GetPathParts() []string { return n.pathParts }
 func (n *baseNode) GetDependencies() []int { return n.deps }
 
@@ -1871,7 +1872,7 @@ func (n *RecursionMarkerNode) Execute(ctx *ValidationContext) *NodeResult {
 
 	// Check depth limit
 	currentDepth := getPathDepth(n.pathParts)
-		if currentDepth >= ctx.MaxDepth {
+	if currentDepth >= ctx.MaxDepth {
 		return &NodeResult{
 			Success: false,
 			Issues: []common.Issue{{

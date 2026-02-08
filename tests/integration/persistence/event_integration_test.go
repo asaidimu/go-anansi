@@ -214,7 +214,6 @@ func TestPersistenceEvents(t *testing.T) {
 			assert.Equal(t, base.DocumentDeleteSuccess, receivedEvent.Type)
 			assert.Equal(t, collection.Metadata(context.Background(), nil, false).Name, *receivedEvent.Collection)
 
-			t.Logf("Received delete event input: %#v", receivedEvent.Input)
 
 			inputMap, ok := receivedEvent.Input.(map[string]any)
 			require.True(t, ok)

@@ -22,42 +22,11 @@
 
 ### 1.1 Purpose
 
-The Anansi Binary Wire Format is a schema-based, high-performance serialization format optimized for constrained environments. It supports four packet types automatically selected based on data characteristics, with full schema versioning and optional compression.
+The Anansi Binary Wire Format is a high-performance serialization format specifically optimized for `Document` instances. It serializes the flattened, primitive-typed data structure defined by the Document Specification, supporting four packet types automatically selected based on data characteristics, with full schema versioning and optional compression. This approach delegates the complexities of logical schema definitions (including recursion and validation) to the layer that constructs the `Document` object.
 
 ### 1.2 Design Principles
-
-- **Schema-driven**: All encoding decisions derived from schema definitions
-- **Zero-copy capable**: String and binary data can be accessed without copying
-- **Minimal overhead**: 2-4 bytes base overhead per message
-- **Type-safe**: Schema validation ensures correctness
-- **Performance-first**: Optimized for speed over flexibility
-
-### 1.3 Key Features
-
-- Four packet types (Dense, Sparse, Batch, Stream) chosen automatically
-- Full schema versioning (1024 versions per schema)
-- Optional compression with shared context for streams
-- Columnar encoding for large result sets
-- DAG-based decoding for zero branching
-- Field types aligned with schema definition system
-- Encryption and integrity hashing support
-
-### 1.4 Use Cases
-
-**Best for:**
-- High-frequency RPC calls
-- Real-time data streaming
-- Mobile/IoT (bandwidth constrained)
-- Low-latency services
-- Large result sets (batch/stream mode)
-
-**Not ideal for:**
-- Ad-hoc data exchange (no schema)
-- Human-readable debugging
-- Cross-language without tooling
-- Schemas changing every request
-
----
+- **Storage Inheritance:** This format is a physical manifestation of the Document Storage Spec. It inherits all hard limits and types.
+- **Self-Delineation:** Data boundaries are determined by the Schema + State Map, eliminating the need for per-row delimiter bytes.
 
 ## 2. Core Concepts
 
@@ -76,17 +45,18 @@ Byte 1: Schema Version (8 bits)
 ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
 │  7  │  6  │  5  │  4  │  3  │  2  │  1  │  0  │
 └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
-   │     │     └─────┴──── Version Epoch (bits 4-5)
-   │     │           │
-   │     │           └──────────────────────────── Encoding (bit 3)
+   │     │     │     │     │     │     │     │
+   │     │     │     │     │     │     └─────┴──── Packet Type (bits 0-1)
+   │     │     │     │     │     │
+   │     │     │     │     │     └──────────────── Compression (bit 2)
+   │     │     │     │     │
+   │     │     │     │     └────────────────────── Encoding (bit 3)
+   │     │     │     │                        
+   │     │     └─────┴──────────────────────────── Version Epoch (bits 4-5)
    │     │
    │     └──────────────────────────────────────── Encryption (bit 6)
    │
    └────────────────────────────────────────────── Hash Present (bit 7)
-      
-      └─────┴──── Packet Type (bits 0-1)
-            │
-            └──────────────────────────────────── Compression (bit 2)
 ```
 
 **Bit 0-1: Packet Type**
@@ -175,44 +145,35 @@ Examples:
 ```
 
 **Schema Registry Mapping:**
-- Each fullVersion maps to a semantic version in ordered registry
+- Each full version maps to a semantic version in an ordered registry.
 - Registry maintains version history: `{0: "1.0.0", 1: "1.1.0", 256: "2.0.0", ...}`
-- Decoders lookup schema by fullVersion
+- Decoders lookup schema by full version
 
-### 2.3 Field Ordering
+### 2.3 Field Selectors and Ordering
 
-Fields are encoded in **stable sorted order by (group, fieldKey)**:
+Fields are encoded in **stable sorted order by their `FieldSelector` value (ascending int32)**. The `FieldSelector` inherently contains type information (via its `Type` bits), which implicitly groups fields by their primitive storage type (`TypeInt`, `TypeFloat`, `TypeString`, `TypeBool`, `TypeBytes`).
 
-**Group assignment:**
-- Group 0: Booleans
-- Group 1: Enums
-- Group 2: Integers
-- Group 3: Decimals
-- Group 4: Numbers
-- Group 5: Strings
-- Group 6: Arrays
-- Group 7: Sets
-- Group 8: Objects
-- Group 9: Records (with schema reference - structured)
-- Group 10: Unions
-- Group 11: Records (without schema reference - unstructured)
+This direct reliance on `FieldSelector` ensures consistency with the `Document` structure and removes any ambiguity regarding field order, including for nested or recursive logical schemas (as these are pre-resolved and flattened into unique `FieldSelector`s during `Document` construction).
 
-Within each group, fields are sorted alphabetically by **fieldKey** (the map key in the schema definition, not `FieldDefinition.Name`).
+**Field Selector Bit Layout**:
+┌──────────────┬──────────┬───────────┬───────────┬───────────┐
+│ Reserved(2b) │ Type(3b) │ Depth(9b) │ Offset(9b)│ Index(9b) │
+└──────────────┴──────────┴───────────┴───────────┴───────────┘
 
 **Example:**
-```
-Schema fields map:
-{
-  "zulu": {name: "ZuluField", type: "string"},
-  "alpha": {name: "AlphaField", type: "integer"},
-  "beta": {name: "BetaField", type: "string"}
-}
+Assume a `Document` contains fields corresponding to the following `FieldSelector`s, derived from a logical schema. The encoding order is simply by the ascending `int32` value of these selectors.
 
-Encoding order (sorted by group, then fieldKey):
-1. alpha (Group 2: integer)
-2. beta (Group 5: string)
-3. zulu (Group 5: string)
-```
+`FieldSelector` values (example):
+- `0x00000001` (TypeBool, Depth 0, Offset 0, Index 1)
+- `0x0000000A` (TypeInt, Depth 0, Offset 0, Index 2)
+- `0x00000013` (TypeString, Depth 0, Offset 0, Index 3)
+- `0x00000020` (TypeBytes, Depth 1, Offset 1, Index 1)
+
+**Encoding order:**
+1. `FieldSelector` 0x00000001 (Boolean field)
+2. `FieldSelector` 0x0000000A (Integer field)
+3. `FieldSelector` 0x00000013 (String field)
+4. `FieldSelector` 0x00000020 (Bytes field, representing a nested object or array)
 
 ### 2.4 Varint Encoding
 
@@ -253,10 +214,9 @@ Varint encoding supports up to 64-bit values (9 bytes maximum).
 ### 2.5 Field Type Encoding
 
 #### Boolean
-```
-Packed into boolean bitfield immediately after header
-8 booleans = 1 byte
-Bit order: LSB first (bit 0 = first boolean)
+``` 
+Dense Mode: Packed into bitfields (8 bools per byte).
+Sparse Mode: Single byte (0x00 or 0x01).
 ```
 
 #### Integer
@@ -285,438 +245,136 @@ Length is byte count, not character count
 No null terminator
 ```
 
-#### Enum
+#### Bytes
 ```
-[index: varint]
-Index into schema's values array
-```
-
-#### Array
-```
-[count: varint]
-FOR EACH item:
-  [item_data] (encoded per itemsType)
-
-Note: Arrays MUST have itemsType defined in schema.
+[length: varint][bytes: Raw]
+Can contain raw binary, encoded arrays, or serializations of logical types not supported natively.
 ```
 
-#### Set
-```
-Same as Array
-Uniqueness enforced by schema validation, not wire format
-```
+### 2.6 Storage Model Inheritance
 
-#### Object
-```
-Recursively encode using nested schema
-[nested fields in nested schema order]
+The Anansi Wire Format is a physical manifestation of the `Document Storage Specification`. It implicitly inherits all hard limits of that model:
+- **Max Depth:** 511 levels. Nesting in recursive or sparse packets cannot exceed this.
+- **Max Fields:** 511 fields per level.
+- **Selector Stability:** FieldSelectors are determined by the schema and must remain stable for the life of the `schema_version`.
 
-Note: Objects MUST have schema reference.
-```
+### 2.7 Null Handling
 
-#### Record (structured - with schema)
-```
-[count: varint]
-FOR EACH entry (sorted alphabetically by key):
-  [key_length: varint]
-  [key_bytes: UTF-8]
-  [value_data] (encoded per schema reference, homogeneous values)
+The spec allows three states for a value. The wire format handles them as follows
 
-All values conform to the same schema (homogeneous).
-Keys MUST be sorted alphabetically (UTF-8 byte order).
-```
-
-#### Record (unstructured - no schema)
-```
-[count: varint]
-FOR EACH entry (sorted alphabetically by key):
-  [key_length: varint]
-  [key_bytes: UTF-8]
-  [type_tag: u8]        (value type discriminator)
-  [value_data]          (encoded per type tag)
-
-Type tags:
-- 0x00: null
-- 0x01: boolean (1 byte: 0x00 or 0x01)
-- 0x02: integer (zigzag varint)
-- 0x03: number (8 bytes, little-endian float64)
-- 0x04: decimal ([scale: u8][coefficient: varint])
-- 0x05: string ([length: varint][bytes: UTF-8])
-- 0x06: array ([count: varint] then type_tag + value for each item)
-- 0x07: nested object ([count: varint][key][type_tag][value]... recursive)
-
-Note: Unstructured records are placed in Group 11 for optimal decoding performance.
-```
-
-#### Union
-```
-[discriminator: varint] (index into union schemas array)
-[value_data] (encoded per selected schema)
-
-Union schemas are indexed in the order they appear in the schema definition.
-```
-
-### 2.6 Null Handling
-
-The null encoding strategy is determined by the packet type:
-
-**Type 1 (Dense):**
-- Optional fields use `0x00` single-byte null marker when absent
-- Marker appears at the field's position in sorted order
-- Required fields cannot be null
-
-**Type 2 (Sparse):**
-- Absent fields are indicated by omitting their field_index
-- No explicit null marker needed
-- Only present fields are encoded
-
-**Type 3 (Batch, Row-oriented):**
-- Uses `0x00` markers per row, same as Type 1 Dense
-
-**Type 3 (Batch, Columnar):**
-- Nullable fields include a null bitmap before values
-- Bitmap size: ⌈row_count / 8⌉ bytes
-- Bit order: LSB first, 0 = null, 1 = present
-- Non-nullable fields skip the bitmap
-
-**Type 4 (Stream):**
-- Follows the same rules as Type 3 based on chunk encoding mode
-
----
+|State|Document Logic|Dense Encoding|Sparse Encoding|
+|-----|--------------|--------------|---------------|
+|Has Value|positions[sel] >= 0|"Bitmask=1| Write Value"|Write [Selector] [Value]|
+|Null|positions[sel] < 0|"Bitmask=1| Write Null Marker"|Write [Selector] [NullMarker]|
+|Not Set|key not in positions|"Bitmask=0| Skip"|Skip|
 
 ## 3. Packet Type Specifications
 
 ### 3.1 Type 1: Dense Packet
 
-#### 3.1.1 When to Use
+#### 3.1.1. The Finite Eligibility Rule
+A Schema is only eligible for Dense (Type 0x00) encoding if it is Non-Recursive.
+- Eligible: A struct containing a fixed list of primitives and nested structs that eventually terminate in primitives.
+- Ineligible: A Node struct containing a Node field, or a Map field with arbitrary keys.
 
-**Encoder selects Type 1 when:**
-- Schema has ≤ 64 fields, OR
-- Field density > 25% (present_fields / total_fields)
-- Single document or homogeneous data
+#### 3.1.2. Streamlining the State Map
 
-#### 3.1.2 Wire Format
+Since we are now guaranteed a finite, pre-known field count *N* for any Dense packet, we can provide a state map as a fixed-length header bitstream that leverages the stable sorting order of FieldSelectors.
 
-```
-┌──────────────────────────────────────────────┐
-│ [flags: u8]                                  │  ← Packet type = 0b00
-│ [schema_version: u8]                         │  ← Schema version (0-255)
-├──────────────────────────────────────────────┤
-│ [field_0_data]                               │
-│ [field_1_data]                               │
-│ [field_2_data]                               │
-│ ...                                          │
-│ [field_N_data]                               │
-└──────────────────────────────────────────────┘
-```
+We use 2 bits per field to represent any of the three states allowed for a value:
+- `00` (Not Set): The field is absent. Skip.
+- `01` (Null): The field is explicitly null. Skip
+- `10` (Value): The field has data. Read from the value segment.
+- `11` (Reserved):.
 
-Fields are encoded in stable sorted order by (group, fieldKey) as defined in section 2.3.
+#### 3.1.3. Structural Layout
 
-#### 3.1.3 Example
+The values are appended in the strict order of their FieldSelector (Type → Depth → Offset → Index). Because the schema is finite, the decoder knows exactly how many "Value" states (10) it needs to read for each primitive type block.
+┌───────────────────────────────┐
+│ Header (2 Bytes)              │ Flags, Schema Version
+├───────────────────────────────┤
+│ State Map (Bitstream)         │ 2-bits per schema field
+├───────────────────────────────┤
+│ Int Value Block               │ All fields where state == 10 and Type == Int
+├───────────────────────────────┤
+│ Float Value Block             │ All fields where state == 10 and Type == Float
+├───────────────────────────────┤
+│ ... (String, Bool, Bytes)     │
+└───────────────────────────────┘
 
-**Schema:**
-```json
-{
-  "name": "User",
-  "version": "1",
-  "fields": {
-    "id": {"type": "string"},
-    "username": {"type": "string"},
-    "age": {"type": "integer"},
-    "active": {"type": "boolean"}
-  }
-}
-```
-
-**After sorting (by group, then fieldKey):**
-```
-Group 0 (Booleans):
-  Index 0: active
-
-Group 2 (Integers):
-  Index 1: age
-
-Group 5 (Strings):
-  Index 2: id
-  Index 3: username
-```
-
-**Document:**
-```json
-{
-  "id": "019b84534d097c33b603bff7d02bb65c",
-  "username": "alice",
-  "age": 25,
-  "active": true
-}
-```
-
-**Wire format:**
-```
-[0x00]                    flags (Dense, uncompressed)
-[0x01]                    schema version 1
-
-Boolean group:
-[0x01]                    active=true (bit 0 set)
-
-Integer group:
-[0x19]                    age=25 (varint)
-
-String group:
-[0x20]                    id length=32
-[32 bytes]                id bytes
-[0x05]                    username length=5
-['a']['l']['i']['c']['e'] username bytes
-
-Total: 48 bytes
-```
+#### 3.1.4. Handling Recursion
+If the data structure is recursive (like a linked list or tree), the encoder must switch to the sparse packet type:
 
 ### 3.2 Type 2: Sparse Packet
+Used for recursive structures, patches, or when field density is low. This format eliminates all bitmaps by encoding the state within the field identifier.
+In Sparse packets, the `FieldSelector` is mutated to encode the "Null" state efficiently. 
+- **Wire Value:** `(StorageSelector << 1) | NullBit`
+- **NullBit:** `0` indicates the field is set; `1` indicates the field is explicitly null.
+- **Decoding:** Parsers MUST right-shift the wire value by 1 bit to recover the actual `FieldSelector` used by the Document storage.
 
-#### 3.2.1 When to Use
-
-**Encoder selects Type 2 when:**
-- Schema has > 64 fields, AND
-- Field density ≤ 25%
-- Projection selected few fields from large schema
-
-#### 3.2.2 Wire Format
+#### 3.2.1 Wire Format
 
 ```
 ┌──────────────────────────────────────────────┐
-│ [flags: u8]                                  │  ← Packet type = 0b01
+│ [flags: u8]                                  │  <- Packet type = 0b01
 │ [schema_version: u8]                         │
 ├──────────────────────────────────────────────┤
-│ [field_count: varint]                        │  ← Number of present fields
+│ [field_count: varint]                        │  <- Number of present fields
 ├──────────────────────────────────────────────┤
 │ FOR EACH PRESENT FIELD:                      │
-│   [field_index: varint]                      │  ← Index in sorted schema
-│   [field_data]                               │  ← Encoded per type
+│   [field_selector: varint]                   │  <- FieldSelector 
+│   [field_data]                               │  <- Encoded per type
 └──────────────────────────────────────────────┘
-```
-
-#### 3.2.3 Field Index Encoding
-
-- Field index is position in sorted schema (0-based), using the same sorting as Type 1 Dense
-- Varint encoded:
-  - Indices 0-127: 1 byte
-  - Indices 128-16383: 2 bytes
-  - Indices 16384+: 3+ bytes
-
-#### 3.2.4 Field Ordering
-
-Fields **SHOULD** be encoded in ascending index order for optimal decoding, but decoders **MUST** handle any order.
-
-#### 3.2.5 Example
-
-**Schema with 200 fields, 5 present:**
-
-**Sorted field indices:**
-```
-Index 0: _metadata_.version (integer)
-Index 47: _metadata_.checksum (string)
-Index 48: _metadata_.created (string)
-Index 150: id (string)
-Index 199: username (string)
-```
-
-**Wire format:**
-```
-[0x01]              flags (Sparse, uncompressed)
-[0x01]              schema version 1
-[0x05]              5 fields present
-
-[0x00]              field index 0
-[0x1B]              version=27
-
-[0x2F]              field index 47 (1 byte varint)
-[0x40]              checksum length=64
-[64 bytes]          checksum data
-
-[0x30]              field index 48
-[0x13]              created length=19
-[19 bytes]          created data
-
-[0x96 0x01]         field index 150 (2 byte varint: 150 = 0x96 0x01)
-[0x20]              id length=32
-[32 bytes]          id data
-
-[0xC7 0x01]         field index 199 (2 byte varint: 199 = 0xC7 0x01)
-[0x08]              username length=8
-[8 bytes]           username data
-
-Total: ~137 bytes
 ```
 
 ### 3.3 Type 3: Batch Packet
+The Batch packet transmits a fixed number of records. It inherits the Schema Version from the header. The layout transitions from Field-oriented (Columnar) to Record-oriented based on the BatchFlags.
 
-#### 3.3.1 When to Use
+**Header Structure**:
 
-**Encoder selects Type 3 when:**
-- Encoding multiple rows with identical schema
-- Query results with known row count upfront
-- Bulk operations
-- Complete result set fits in memory
-- Small to medium result sets (< 1000 rows typically)
+- `record_count`: varint
+- `batch_flags`: u8
+    - Bit 0: Orientation (0 = Row-Oriented, 1 = Columnar)
+    - Bit 1: Density (0 = Dense, 1 = Sparse)
 
-#### 3.3.2 Row-Oriented Format
-
-```
-┌──────────────────────────────────────────────┐
-│ [flags: u8]                                  │  ← Packet type = 0b10, bit 3 = 0
-│ [schema_version: u8]                         │
-├──────────────────────────────────────────────┤
-│ [row_count: varint]                          │
-├──────────────────────────────────────────────┤
-│ FOR EACH ROW:                                │
-│   [field_0_data]                             │
-│   [field_1_data]                             │
-│   ...                                        │
-│   [field_N_data]                             │
-└──────────────────────────────────────────────┘
-```
-
-Each row contains all fields in schema order, encoded identically to Type 1 (Dense).
-
-**When to use:**
-- Small to medium result sets (< 100 rows)
-- Random row access needed
-- Simple iteration patterns
-
-#### 3.3.3 Columnar Format
+#### 3.3.1 Row-Oriented Dense Batch (The "Transaction" Layout) 
+Optimized for materializing full Documents. Each record is self-contained.
 
 ```
-┌──────────────────────────────────────────────┐
-│ [flags: u8]                                  │  ← Packet type = 0b10, bit 3 = 1
-│ [schema_version: u8]                         │
-├──────────────────────────────────────────────┤
-│ [row_count: varint]                          │
-├──────────────────────────────────────────────┤
-│ FOR EACH FIELD (in schema order):            │
-│   [null_bitmap: ⌈row_count/8⌉]               │  ← If field is nullable
-│   [values: packed array]                     │
-└──────────────────────────────────────────────┘
+FOR EACH RECORD (0 to record_count-1):
+  [State Map] (2 bits per field in Schema)
+  [Values Block] (Values only for fields with state '10')
 ```
 
-**Null Bitmap (nullable fields only):**
-```
-Bitmap size: ⌈row_count / 8⌉ bytes
-Bit order: LSB first
-Bit value: 0 = null, 1 = present
-```
+*Delineation*: The parser uses the Schema to know the bit-length of the State Map. Once the State Map is read, it knows exactly which values follow and their lengths. The next bit/byte is immediately the start of the next record's State Map.
 
-**Value Packing by Type:**
-
-Fixed-width types (packed tightly):
-```
-Boolean: ⌈row_count / 8⌉ bytes (bit array)
-Integer: row_count × varint (can use delta encoding)
-Number: row_count × 8 bytes
-UUID/Fixed strings: row_count × fixed_size bytes
-```
-
-Variable-width types:
-```
-String: [lengths array][concatenated data]
-  Lengths: row_count × varint
-  Data: concatenated UTF-8 bytes
-
-Array: [counts array][concatenated items]
-  Counts: row_count × varint
-  Items: all items concatenated
-```
-
-**When to use:**
-- Large result sets (100+ rows)
-- Analytics/aggregation queries
-- Compression target (columnar compresses better)
-
-#### 3.3.4 Example (Row-Oriented)
-
-**Schema:**
-```json
-{
-  "name": "UserResult",
-  "version": "1",
-  "fields": {
-    "id": {"type": "string"},
-    "username": {"type": "string"},
-    "role": {"type": "string"}
-  }
-}
-```
-
-**3 rows:**
-```json
-[
-  {"id": "id1...", "username": "alice", "role": "admin"},
-  {"id": "id2...", "username": "bob", "role": "user"},
-  {"id": "id3...", "username": "carol", "role": "admin"}
-]
-```
-
-**Wire format:**
-```
-[0x02]              flags (Batch, row-oriented, uncompressed)
-[0x01]              schema version 1
-[0x03]              3 rows
-
-Row 1:
-[0x20][32 bytes]    id
-[0x05]['a']['l']['i']['c']['e'] username
-[0x05]['a']['d']['m']['i']['n'] role
-
-Row 2:
-[0x20][32 bytes]    id
-[0x03]['b']['o']['b'] username
-[0x04]['u']['s']['e']['r'] role
-
-Row 3:
-[0x20][32 bytes]    id
-[0x05]['c']['a']['r']['o']['l'] username
-[0x05]['a']['d']['m']['i']['n'] role
-
-Total: ~146 bytes
-```
-
-#### 3.3.5 Example (Columnar)
-
-**Same data, columnar encoding:**
+#### 3.3.2 Row-Oriented Sparse Batch (The "Outlier" Layout)
+Used when records have very few fields set relative to a wide schema or are not dense suitable.
 
 ```
-[0x0A]              flags (Batch, columnar, uncompressed)
-                    (0b00001010: bits 0-1=10, bit 3=1)
-[0x01]              schema version 1
-[0x03]              3 rows
+FOR EACH RECORD (0 to record_count-1):
+  [field_count] (varint)
+  FOR EACH FIELD (0 to field_count-1):
+    [WireSelector] (varint: (StorageSelector << 1) | NullBit)
+    [Value] (If NullBit == 0)
+```
 
-Column 0 (id - all non-null, fixed 32 bytes):
-[0xFF]              null bitmap (all present, only need 1 byte for 3 rows)
-[32 bytes]          id1
-[32 bytes]          id2
-[32 bytes]          id3
+#### 3.3.3 Columnar Dense Batch (The "Analytics" Layout) 
+Optimized for scanning specific fields across many records.
 
-Column 1 (username - all non-null, variable):
-[0xFF]              null bitmap
-[0x05][0x03][0x05]  lengths: 5, 3, 5
-['a']['l']['i']['c']['e']['b']['o']['b']['c']['a']['r']['o']['l']
-
-Column 2 (role - all non-null, variable):
-[0xFF]              null bitmap
-[0x05][0x04][0x05]  lengths: 5, 4, 5
-['a']['d']['m']['i']['n']['u']['s']['e']['r']['a']['d']['m']['i']['n']
-
-Total: ~144 bytes
+```
+FOR EACH FIELD IN SCHEMA:
+  [Field Data Block]
+    IF Fixed-Width (Int/Float/Bool): 
+       [Raw bytes for all N records]
+    IF Variable-Width (String/Bytes):
+       [Length-prefixed values for all N records]
 ```
 
 ### 3.4 Type 4: Stream Packet
 
 #### 3.4.1 When to Use
-
-**Encoder selects Stream packet when:**
-- Streaming query results where total count is unknown upfront
-- Large result sets (1000+ rows) sent incrementally
-- Want to benefit from shared compression context across chunks
-- Explicit stream semantics in wire format
+Streams are sequences of "Chunks." This allows a long-lived connection to pivot between Dense and Sparse batches as the data distribution changes.
 
 #### 3.4.2 Wire Format
 
@@ -724,19 +382,19 @@ Total: ~144 bytes
 ┌──────────────────────────────────────────────┐
 │ STREAM HEADER (sent once)                    │
 ├──────────────────────────────────────────────┤
-│ [flags: u8]              (0x03)              │  ← Extended packet type
-│ [schema_version: u8]                         │  ← Schema version (0-255)
-│ [extended_type: u8]      (0x01)              │  ← Stream marker
-│ [stream_encoding: u8]                        │  ← Encoding flags
+│ [flags: u8]              (0x03)              │  <- Extended packet type
+│ [schema_version: u8]                         │  <- Schema version (0-255)
+│ [extended_type: u8]      (0x01)              │  <- Stream marker
+│ [stream_encoding: u8]                        │  <- Encoding flags
 ├──────────────────────────────────────────────┤
 │ CHUNKS (repeating)                           │
 ├──────────────────────────────────────────────┤
-│ [row_count: varint]                          │  ← Rows in this chunk
-│ [chunk_data]                                 │  ← Encoded per stream_encoding
+│ [row_count: varint]                          │  <- Rows in this chunk
+│ [chunk_data]                                 │  <- Encoded per stream_encoding
 ├──────────────────────────────────────────────┤
 │ END MARKER                                   │
 ├──────────────────────────────────────────────┤
-│ [row_count: 0]                               │  ← Stream terminator
+│ [row_count: 0]                               │  <- Stream terminator
 └──────────────────────────────────────────────┘
 ```
 
@@ -756,9 +414,9 @@ Total: ~144 bytes
 ```
 
 **Bits 0-1: Chunk Encoding**
-- `00` (0x00): Row-oriented (like Type 3 batch)
+- `00` (0x00): Reserved
 - `01` (0x01): Columnar (like Type 3 batch with bit 3 set)
-- `10` (0x02): Mixed (encoder can switch per chunk)
+- `10` (0x02): Reserved
 - `11` (0x03): Reserved
 
 **Bit 2: Compression Flag**
@@ -768,26 +426,16 @@ Total: ~144 bytes
 **Bits 3-7: Reserved**
 - Must be set to `00000`
 
-#### 3.4.4 Chunk Encoding
 
-Each chunk is encoded identically to Type 3 (Batch) packets, but **without the packet header**.
+**Adaptive Chunking**
 
-**Row-oriented chunks:**
+Every chunk repeats the Batch logic but adds a 1-byte Chunk Descriptor.
 ```
-[row_count: varint]
-FOR i = 0 to row_count-1:
-  [field_0_data]
-  [field_1_data]
-  ...
-  [field_N_data]
-```
-
-**Columnar chunks:**
-```
-[row_count: varint]
-FOR EACH FIELD (in schema order):
-  [null_bitmap: ⌈row_count/8⌉]  (if nullable)
-  [values: packed array]
+┌────────────────────────────────────────────────────────┐
+│ [Chunk Descriptor: u8] (Density & Orientation bits)    │
+│ [Chunk Row Count: varint]                              │
+│ [Payload: Logic from Section 3.3.1 - 3.3.3]            │
+└────────────────────────────────────────────────────────┘
 ```
 
 #### 3.4.5 Shared Compression Context
@@ -825,73 +473,11 @@ If stream is interrupted (network error, timeout):
 1. End marker (`row_count = 0`) is received, OR
 2. Transport signals EOF/completion
 
-#### 3.4.8 Example
-
-**Stream of 247 rows, 100-row chunks:**
-
-```
-// Stream header
-[0x03]              // flags: Extended packet type
-[0x01]              // schema version 1
-[0x01]              // extended_type: Stream
-[0x00]              // stream_encoding: row-oriented, uncompressed
-
-// Chunk 1 (100 rows)
-[0x64]              // row_count = 100
-[row₀ data]
-[row₁ data]
-...
-[row₉₉ data]
-
-// Chunk 2 (100 rows)
-[0x64]              // row_count = 100
-[row₁₀₀ data]
-...
-[row₁₉₉ data]
-
-// Chunk 3 (47 rows, final data)
-[0x2F]              // row_count = 47
-[row₂₀₀ data]
-...
-[row₂₄₆ data]
-
-// End marker
-[0x00]              // row_count = 0, stream complete
-```
-
-**Total overhead:** 4 bytes header + 3 chunk row_counts + 1 end marker = 8 bytes + data
-
-#### 3.4.9 Mixed Encoding Mode
-
-When `stream_encoding bits 0-1 = 10` (mixed mode):
-
-Encoder can **switch encoding per chunk** by prefixing each chunk with encoding byte:
-
-```
-[row_count: varint]
-[chunk_encoding: u8]     // 0x00 = row, 0x01 = columnar
-[chunk_data]
-```
-
-**Use case:** Start with row-oriented for low-latency first rows, switch to columnar once buffered enough rows.
-
-#### 3.4.10 Stream vs Batch Decision
-
-```
-Use Stream (Type 4) when:
-- Row count unknown at encoding start
-- Result set > 1000 rows
-- Want shared compression context
-- Sending incremental results
-
-Use Batch (Type 3) when:
-- Row count known upfront
-- Complete result set fits in memory
-- Small result sets (< 1000 rows)
-- Single response expected
-```
-
----
+### 3.5 Delineation and Navigation
+Anansi is a "calculative" format. To find the end of a record:
+1. **Dense:** Read the $N$-bit State Map (where $N = 2 \times \text{fields in schema}$). Sum the sizes of all fields marked '10'.
+2. **Sparse:** Read the `field_count`. For each field, read the `WireSelector` (varint). If the LSB is 0, read the value based on the type associated with that selector in the schema.
+3. **Variable Lengths:** All `TypeString` and `TypeBytes` are length-prefixed with a varint.
 
 ## 4. Advanced Features
 
@@ -1227,11 +813,11 @@ hash = BLAKE3(payload_bytes)[0..16]
 **Encoder:**
 ```
 schema.Version = "2.1.4"
-→ Lookup in registry: fullVersion = 256 (first v2.x.x)
-→ epoch = fullVersion >> 8 = 1
-→ schemaVersion = fullVersion & 0xFF = 0
-→ Set flags bits 4-5 = 01
-→ Set byte 1 = 0x00
+-> Lookup in registry: fullVersion = 256 (first v2.x.x)
+-> epoch = fullVersion >> 8 = 1
+-> schemaVersion = fullVersion & 0xFF = 0
+-> Set flags bits 4-5 = 01
+-> Set byte 1 = 0x00
 ```
 
 **Decoder:**
@@ -1239,10 +825,10 @@ schema.Version = "2.1.4"
 flags = 0x10 (bits 4-5 = 01)
 schemaVersion = 0x00
 
-→ epoch = (flags >> 4) & 0x03 = 1
-→ fullVersion = (epoch << 8) | schemaVersion = 256
-→ Lookup in registry: "2.0.0"
-→ Load compiled schema for version 256
+-> epoch = (flags >> 4) & 0x03 = 1
+-> fullVersion = (epoch << 8) | schemaVersion = 256
+-> Lookup in registry: "2.0.0"
+-> Load compiled schema for version 256
 ```
 
 #### 5.1.2 Schema Evolution
@@ -1292,9 +878,7 @@ Schemas can be distributed via:
 
 #### 5.3.1 The Schema Proliferation Myth
 
-**Argument:** "Using schemas for wire format creates schema overhead and proliferation."
-
-**Reality:** Schemas already exist in every layer of modern applications - they're just fragmented, duplicated, and not reusable.
+Schemas already exist in every layer of modern applications - they're just fragmented, duplicated, and not reusable.
 
 #### 5.3.2 Hidden Schemas in Existing Systems
 
@@ -1315,9 +899,9 @@ ALL describing the SAME data structure!
 
 #### 5.3.3 Anansi's Approach: Single Source of Truth
 
-**One schema definition generates:**
+**One schema definition can generate:**
 ```
-1. Wire format encoder/decoder (DAG-compiled)
+1. Wire format encoder/decoder
 2. Database migration
 3. ORM models
 4. TypeScript types
@@ -1327,36 +911,7 @@ ALL describing the SAME data structure!
 8. Mock data generators
 9. Test fixtures
 10. API client code
-
-ALL from the same source!
 ```
-
-#### 5.3.4 Schema Consolidation Benefits
-
-**Developer Experience:**
-```
-Before (fragmented schemas):
-- Add field → 8 files to update
-- Time: ~30 minutes per schema change
-
-After (single schema):
-- Add field → 1 schema update, regenerate
-- Time: ~2 minutes per schema change
-
-15x productivity improvement
-```
-
-**Type Safety:**
-```
-Before:
-Frontend: {email: string, age: number}
-Backend:  {email: string, age: string}  // ❌ Type mismatch!
-
-After:
-Generated from same schema → guaranteed type compatibility
-Compile-time error if types drift
-```
-
 ---
 
 ## 6. Implementation Guidelines
@@ -1384,7 +939,7 @@ func EncodeMessage(schema *Schema, data any) ([]byte, error) {
     presentCount := countPresent(data, schema)
     density := float64(presentCount) / float64(fieldCount)
     
-    if fieldCount <= 64 || density > 0.25 {
+    if (fieldCount <= 64 || density > 0.25) && schema.IsFinite() {
         return encodeDense(schema, data)
     }
     
@@ -1413,138 +968,9 @@ func EncodeMessage(schema *Schema, data any) ([]byte, error) {
 
 #### 6.3.1 Overview
 
-DAG (Directed Acyclic Graph) compilation transforms schema definitions into optimized decoder closures at compile-time or schema-load time. This eliminates runtime branching, enables zero-copy operations, and produces highly cache-friendly code.
+Compiling a schema into a DAG driven decoder optimizes decoding by eliminating runtime branching.
 
-#### 6.3.2 Compilation Process
-
-**Step 1: Schema Analysis**
-```
-1. Parse schema definition
-2. Compute field ordering (by group, then fieldKey)
-3. Identify bit-packable fields (booleans, small enums)
-4. Mark optional vs required fields
-5. Detect zero-copy candidates (fixed-length strings, UUIDs)
-6. Build field dependency graph
-```
-
-**Step 2: Code Generation**
-```
-1. Generate specialized decoder function
-2. Inline all type information (eliminate type dispatch)
-3. Unroll loops for fixed-size fields
-4. Pre-compute buffer offsets where possible
-5. Generate zero-copy accessors for strings
-6. Emit branchless code for predictable patterns
-```
-
-**Step 3: Optimization**
-```
-1. Constant propagation for field positions
-2. Dead code elimination for unused fields
-3. SIMD vectorization for bitmap operations
-4. Cache-line alignment for hot fields
-5. Prefetch hints for nested objects
-```
-
-#### 6.3.3 Example: DAG Compilation
-
-**Schema:**
-```json
-{
-  "name": "User",
-  "version": "1",
-  "fields": {
-    "id": {"type": "string"},
-    "active": {"type": "boolean"},
-    "age": {"type": "integer"},
-    "role": {"type": "enum", "values": ["user", "admin", "guest"]}
-  }
-}
-```
-
-**Generic Decoder (pseudo-code):**
-```go
-func decodeGeneric(buf []byte, schema *Schema) (any, error) {
-    offset := 2  // Skip header
-    result := make(map[string]any)
-    
-    for _, field := range schema.Fields {  // Runtime iteration
-        switch field.Type {                 // Runtime branch
-        case FieldTypeBoolean:
-            value := (buf[offset] & (1 << field.BitIndex)) != 0
-            result[field.Name] = value
-        case FieldTypeEnum:
-            index, n := readVarint(buf[offset:])  // Multiple branches
-            offset += n
-            result[field.Name] = field.Values[index]
-        // ... more cases
-        }
-    }
-    return result, nil
-}
-```
-
-**DAG-Compiled Decoder:**
-```go
-// Generated once, cached forever by schema version
-func decodeUser_v1(buf []byte) User {
-    offset := 2  // Constant
-    
-    // Group 0: Boolean (no branches)
-    active := (buf[offset] & 0x01) != 0
-    offset = 3  // Constant propagated
-    
-    // Group 1: Enum (predictable branch)
-    roleIndex := uint64(buf[offset] & 0x7F)
-    if buf[offset] >= 0x80 {  // Branch predictor learns this is rare
-        roleIndex |= uint64(buf[offset+1]&0x7F) << 7
-        offset = 5
-    } else {
-        offset = 4
-    }
-    role := Role(roleIndex)  // Direct enum conversion
-    
-    // Group 2: Integer (unrolled varint)
-    age := uint64(buf[offset] & 0x7F)
-    if buf[offset] >= 0x80 {
-        age |= uint64(buf[offset+1]&0x7F) << 7
-        offset += 2
-    } else {
-        offset += 1
-    }
-    
-    // Group 5: String (zero-copy)
-    idLen := uint64(buf[offset] & 0x7F)
-    offset += 1
-    
-    // Zero-copy string (no allocation)
-    id := unsafe.String(&buf[offset], int(idLen))
-    
-    return User{
-        ID:     id,
-        Active: active,
-        Age:    int(age),
-        Role:   role,
-    }
-}
-```
-
-**Performance comparison:**
-```
-Generic Decoder:
-  - Branches: ~15
-  - Allocations: 2
-  - CPU cycles: ~250
-
-DAG Decoder:
-  - Branches: ~3
-  - Allocations: 0
-  - CPU cycles: ~40
-
-Speedup: 6.25x
-```
-
-#### 6.3.4 Zero-Copy String Implementation
+#### 6.3.2 Zero-Copy String Implementation
 
 **Technique:** Return string descriptor pointing into original buffer
 
@@ -1569,7 +995,7 @@ func zeroCopyString(buf []byte, offset, length int) string {
 - Strings stored beyond request scope
 - User-provided content returned to client
 
-#### 6.3.5 Decoder Cache
+#### 6.3.4 Decoder Cache
 
 ```go
 type DecoderCache struct {
@@ -1701,69 +1127,14 @@ Implementations **MUST** pass:
 - Error handling tests
 - Performance benchmarks vs JSON
 
----
 
-## 7. Performance Characteristics
+## 7. Protocol Extensions
 
-### 7.1 Generic Decoder Performance
-
-**vs JSON (encoding/json):**
-- Encode: 10-20x faster
-- Decode: 5-15x faster
-- Size: 40-60% smaller
-- Memory: 70-90% fewer allocations
-
-**vs MessagePack:**
-- Encode: 3-5x faster
-- Decode: 2-4x faster
-- Size: 30-40% smaller
-
-**vs Protocol Buffers:**
-- Encode: 1-2x faster
-- Decode: 2-4x faster
-- Size: 5-15% smaller
-
-### 7.2 DAG-Compiled Decoder Performance
-
-**vs JSON (encoding/json):**
-- Encode: 30-50x faster
-- Decode: 40-60x faster
-- Size: 40-60% smaller
-- Memory: 95-100% fewer allocations (zero-copy strings)
-
-**vs Protocol Buffers:**
-- Encode: 5-10x faster
-- Decode: 10-20x faster
-- Size: 5-15% smaller
-- Memory: 80-95% fewer allocations
-
-**DAG Compilation Benefits:**
-- CPU branches: 90-95% reduction
-- Cache misses: 50-80% reduction
-- Allocations: 90-100% reduction
-- GC pressure: Near-zero
-
-### 7.3 Stream Packet Performance
-
-**vs Separate Batch Packets (10,000 rows, 100/chunk):**
-
-| Metric | Separate Batches | Stream Packet | Improvement |
-|--------|-----------------|---------------|-------------|
-| Header overhead | 200 bytes | 105 bytes | **47% less** |
-| Schema lookups | 100 | 1 | **99% less** |
-| Compression ratio | 60% | 70-80% | **15-30% better** |
-| CPU cache efficiency | Poor | Good | **~20% faster** |
-| Memory allocation | 100 buffers | 1 buffer | **Less GC pressure** |
-
----
-
-## 8. Protocol Extensions
-
-### 8.1 Protocol Envelope Encoding
+### 7.1 Protocol Envelope Encoding
 
 The wire format can encode entire protocol envelopes, not just application data. By defining schemas for request/response metadata, error handling, routing, and other protocol concerns, implementations can achieve protocol-level performance optimizations.
 
-### 8.2 API Request Envelope Example
+### 7.2 API Request Envelope Example
 
 **Schema:**
 ```json
@@ -2095,9 +1466,9 @@ Group 5 (String): name
 ```
 01 01          // flags=0x01 (Sparse), version=1
 02             // field_count=2
-05             // field_index=5
+05             // field_selector=5
 2A             // value=42
-32             // field_index=50
+32             // field_selector=50
 04 74 65 73 74 // "test"
 ```
 
@@ -2274,24 +1645,3 @@ Possible uses:
 - Partial updates/patches
 - Delta encoding
 - Multi-schema messages
-
-### Appendix E: Changelog
-
-**Version 1.0 (2025-01-10):**
-- Initial specification
-- Four packet types defined (Dense, Sparse, Batch, Stream)
-- Schema versioning support (1024 versions with epoch system)
-- Compression support with shared context for streams
-- Encryption support (AEAD recommended)
-- Integrity hashing (BLAKE3-128)
-- Varint encoding (LEB128 + zigzag)
-- Field type specifications including structured and unstructured records
-- Null handling clarifications for all packet types
-- Field ordering by (group, fieldKey)
-- DAG-based decoder implementation guidelines
-- Protocol envelope encoding patterns
-- Performance benchmarks and optimization strategies
-
----
-
-**End of Specification**

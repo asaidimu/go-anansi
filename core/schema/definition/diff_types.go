@@ -1,4 +1,4 @@
-package diff
+package definition
 
 import (
 	"encoding/json"
@@ -387,3 +387,4 @@ func (pst *PathSegmentType) UnmarshalJSON(data []byte) error {
 	}
 	return nil
 }
+
