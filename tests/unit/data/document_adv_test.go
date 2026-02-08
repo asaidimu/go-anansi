@@ -110,8 +110,6 @@ func TestDocument_JSONPathQuery(t *testing.T) {
 	})
 
 	doc = doc.StripMetadata()
-	json, _ := doc.ToJSON(true)
-	t.Logf("Data %s", json)
 	// Test nested access
 	prices, err := doc.JSONPathQuery("$.store.book[*].price")
 	require.NoError(t, err)

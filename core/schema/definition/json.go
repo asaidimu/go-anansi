@@ -621,3 +621,4 @@ func (s *Schema) ToJSON() []byte {
 	copy(result, jb.buf)
 	return result
 }
+

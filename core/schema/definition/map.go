@@ -1,49 +1,136 @@
 package definition
 
-// getMapAtPath navigates to the map at the given path, creating maps as needed
-func getMapAtPath(root map[string]any, path []string) map[string]any {
-	current := root
-	for i := 1; i < len(path); i++ { // Skip first element which is "schema"
-		segment := path[i]
-		if next, ok := current[segment].(map[string]any); ok {
-			current = next
-		} else {
-			// Create the map if it doesn't exist
-			newMap := make(map[string]any)
-			current[segment] = newMap
-			current = newMap
-		}
-	}
-	return current
+import "strings"
+
+// Skeleton holds the pre-built structure and navigation cache
+type Skeleton struct {
+	root  map[string]any
+	cache map[string]any // path -> location for O(1) navigation
 }
 
-// AsMap converts the schema to a map[string]any representation
-// This avoids json.Marshal allocations while maintaining the same structure
-func (s *Schema) AsMap() map[string]any {
-	result := make(map[string]any)
+// buildSkeleton creates the complete map structure from the index
+func buildSkeleton(index *SchemaIndex) *Skeleton {
+	skeleton := &Skeleton{
+		root:  make(map[string]any),
+		cache: make(map[string]any, len(index.nodes)),
+	}
 
-	_, _ = s.Walk(result, func(acc any, ctx *NodeContext) (any, error) {
-		root := acc.(map[string]any)
+	// Collect all paths and sort by depth to ensure parents are created first
+	type pathDepth struct {
+		path  string
+		depth int
+	}
+
+	paths := make([]pathDepth, 0, len(index.nodes))
+	for path := range index.nodes {
+		depth := strings.Count(path, "/")
+		paths = append(paths, pathDepth{path, depth})
+	}
+
+	// Simple bubble sort by depth
+	for i := 0; i < len(paths); i++ {
+		for j := i + 1; j < len(paths); j++ {
+			if paths[j].depth < paths[i].depth {
+				paths[i], paths[j] = paths[j], paths[i]
+			}
+		}
+	}
+
+	// Build structure in dependency order
+	for _, pd := range paths {
+		path := pd.path
+		info := index.nodes[path]
+
+		if path == "schema" {
+			// Root is already created
+			skeleton.cache[path] = skeleton.root
+			continue
+		}
+
+		// Get parent location
+		lastSlash := strings.LastIndex(path, "/")
+		if lastSlash == -1 {
+			continue
+		}
+
+		parentPath := path[:lastSlash]
+		parent, ok := skeleton.cache[parentPath]
+		if !ok {
+			// Parent doesn't exist yet, skip (shouldn't happen with sorted order)
+			continue
+		}
+
+		// Get the key for this node (last segment of path)
+		key := path[lastSlash+1:]
+
+		// Create the appropriate container
+		var container any
+		switch info.kind {
+		case KindMap:
+			container = make(map[string]any, info.capacity)
+			// Cache map locations for O(1) lookup
+			skeleton.cache[path] = container
+		case KindArray:
+			container = make([]any, 0, info.capacity)
+			// Arrays are not cached since we don't navigate into them
+		case KindValue:
+			// Value nodes are placeholders, will be assigned during population
+			container = nil
+		}
+
+		// Insert into parent
+		if parentMap, ok := parent.(map[string]any); ok {
+			parentMap[key] = container
+		}
+	}
+
+	return skeleton
+}
+
+// getLocation returns the map at the given path using the cache
+func (sk *Skeleton) getLocation(path []string) map[string]any {
+	pathKey := pathToString(path)
+	if loc, ok := sk.cache[pathKey]; ok {
+		return loc.(map[string]any)
+	}
+	return nil
+}
+
+// pathToString converts a path slice to a string key
+func pathToString(path []string) string {
+	return strings.Join(path, "/")
+}
+
+// AsMap converts the schema to a map[string]any
+func (s *Schema) AsMap() map[string]any {
+	// Phase 1: Build index
+	index := s.BuildIndex()
+
+	// Phase 2: Build skeleton
+	skeleton := buildSkeleton(index)
+
+	// Phase 3: Populate values
+	_, _ = s.Walk(skeleton, func(acc any, ctx *NodeContext) (any, error) {
+		sk := acc.(*Skeleton)
 
 		switch ctx.Type {
 		case NodeTypeSchema:
 			schema := ctx.Value.(*Schema)
+			root := sk.root
 			root["version"] = schema.Version.String()
 			root["name"] = schema.Name
 			if schema.Description != "" {
 				root["description"] = schema.Description
 			}
 
-		case NodeTypeFieldsMap:
-			// Boundary marker - fields map will be created as we add fields
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
-			parent["fields"] = make(map[string]any)
-
 		case NodeTypeField:
 			field := ctx.Value.(*Field)
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			fieldMap := sk.getLocation(ctx.GetPath())
+			if fieldMap == nil {
+				return sk, nil
+			}
 
-			fieldMap := make(map[string]any)
+			// Populate field properties directly into the pre-created map
 			fieldMap["name"] = string(field.Name)
 			if field.Description != "" {
 				fieldMap["description"] = field.Description
@@ -61,17 +148,13 @@ func (s *Schema) AsMap() map[string]any {
 				fieldMap["type"] = field.Type.String()
 			}
 
-			parent[ctx.Key] = fieldMap
-
-		case NodeTypeSchemasMap:
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
-			parent["schemas"] = make(map[string]any)
-
 		case NodeTypeNestedSchema:
 			ns := ctx.Value.(*NestedSchema)
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			schemaMap := sk.getLocation(ctx.GetPath())
+			if schemaMap == nil {
+				return sk, nil
+			}
 
-			schemaMap := make(map[string]any)
 			schemaMap["name"] = ns.Name
 			if ns.Description != "" {
 				schemaMap["description"] = ns.Description
@@ -83,70 +166,48 @@ func (s *Schema) AsMap() map[string]any {
 				schemaMap["type"] = ns.Type.String()
 			}
 
-			parent[ctx.Key] = schemaMap
-
-		case NodeTypeConstraintsMap:
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
-			parent["constraints"] = make(map[string]any)
-
 		case NodeTypeConstraint:
 			constraint := ctx.Value.(*Constraint)
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			constraintMap := sk.getLocation(ctx.GetPath())
+			if constraintMap == nil {
+				return sk, nil
+			}
 
-			constraintMap := make(map[string]any)
 			constraintMap["name"] = constraint.Name
 			if constraint.Description != "" {
 				constraintMap["description"] = constraint.Description
 			}
 
-			parent[ctx.Key] = constraintMap
-
 		case NodeTypeConstraintRule:
 			rule := ctx.Value.(*ConstraintRule)
-			parentConstraintMap := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1]) // This is the map for the parent Constraint
-
-			ruleMap := make(map[string]any)
-			ruleMap["predicate"] = string(rule.Predicate)
-			if len(rule.Fields) > 0 {
-				fields := make([]string, len(rule.Fields))
-				for i, f := range rule.Fields {
-					fields[i] = string(f)
-				}
-				ruleMap["fields"] = fields
+			ruleMap := sk.getLocation(ctx.GetPath())
+			if ruleMap == nil {
+				return sk, nil
 			}
-			// Parameters will be added by NodeTypeLiteralValue to this ruleMap
 
-			parentConstraintMap[ctx.GetPath()[ctx.PathLen-1]] = ruleMap
+			ruleMap["predicate"] = string(rule.Predicate)
 
 		case NodeTypeConstraintGroup:
 			group := ctx.Value.(*ConstraintGroup)
-			current := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			groupMap := sk.getLocation(ctx.GetPath())
+			if groupMap == nil {
+				return sk, nil
+			}
 
-			current["operator"] = group.Operator.String()
-			// Rules will be added as we traverse them
-			current["rules"] = make([]map[string]any, 0)
-
-		case NodeTypeIndexesMap:
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
-			parent["indexes"] = make(map[string]any)
+			groupMap["operator"] = group.Operator.String()
 
 		case NodeTypeIndex:
 			index := ctx.Value.(*Index)
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			indexMap := sk.getLocation(ctx.GetPath())
+			if indexMap == nil {
+				return sk, nil
+			}
 
-			indexMap := make(map[string]any)
 			indexMap["name"] = index.Name
 			if index.Description != "" {
 				indexMap["description"] = index.Description
 			}
 			indexMap["type"] = index.Type.String()
-			if len(index.Fields) > 0 {
-				fields := make([]string, len(index.Fields))
-				for i, f := range index.Fields {
-					fields[i] = string(f)
-				}
-				indexMap["fields"] = fields
-			}
 			if index.Order != "" {
 				indexMap["order"] = index.Order
 			}
@@ -154,49 +215,50 @@ func (s *Schema) AsMap() map[string]any {
 				indexMap["unique"] = true
 			}
 
-			parent[ctx.Key] = indexMap
-
 		case NodeTypeIndexCondition:
 			condition := ctx.Value.(*IndexCondition)
-			current := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			condMap := sk.getLocation(ctx.GetPath())
+			if condMap == nil {
+				return sk, nil
+			}
 
-			condMap := make(map[string]any)
 			condMap["field"] = string(condition.Field)
 			condMap["operator"] = condition.Operator.String()
 			if !condition.Value.IsZero() && !condition.Value.IsNull() {
 				condMap["value"] = condition.Value.Value()
 			}
 
-			current["condition"] = condMap
-
 		case NodeTypeIndexConditionGroup:
 			group := ctx.Value.(*IndexConditionGroup)
-			current := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			groupMap := sk.getLocation(ctx.GetPath())
+			if groupMap == nil {
+				return sk, nil
+			}
 
-			groupMap := make(map[string]any)
 			groupMap["operator"] = group.Operator.String()
-			groupMap["conditions"] = make([]map[string]any, 0)
-
-			current["condition"] = groupMap
 
 		case NodeTypeFieldSchema:
 			ref := ctx.Value.(FieldSchemaReference)
-			current := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			parent := sk.getLocation(ctx.GetPath()[:ctx.PathLen-1])
+			if parent == nil {
+				return sk, nil
+			}
 
 			if ref.IsSingle() {
 				sr, _ := FieldSchemaAs[SchemaReference](ref)
-				refMap := make(map[string]any)
-				refMap["id"] = string(sr.ID)
-				if len(sr.Indexes) > 0 {
-					// TODO: Properly serialize indexes
-					refMap["indexes"] = make(map[string]any)
+				// Get the pre-created schema map
+				refMap := sk.getLocation(ctx.GetPath())
+				if refMap != nil {
+					refMap["id"] = string(sr.ID)
+					if len(sr.Indexes) > 0 {
+						refMap["indexes"] = make(map[string]any)
+					}
+					if len(sr.Constraints) > 0 {
+						refMap["constraints"] = make(map[string]any)
+					}
 				}
-				if len(sr.Constraints) > 0 {
-					// TODO: Properly serialize constraints
-					refMap["constraints"] = make(map[string]any)
-				}
-				current["schema"] = refMap
 			} else if ref.IsMultiple() {
+				// Multiple references - create array inline
 				refs, _ := FieldSchemaAs[[]SchemaReference](ref)
 				refsArray := make([]map[string]any, len(refs))
 				for i, sr := range refs {
@@ -204,12 +266,15 @@ func (s *Schema) AsMap() map[string]any {
 					refMap["id"] = string(sr.ID)
 					refsArray[i] = refMap
 				}
-				current["schema"] = refsArray
+				parent["schema"] = refsArray
 			}
 
 		case NodeTypeValuesArray:
 			values := ctx.Value.([]LiteralValue)
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			parent := sk.getLocation(ctx.GetPath()[:ctx.PathLen-1])
+			if parent == nil {
+				return sk, nil
+			}
 			valuesArray := make([]any, len(values))
 			for i, lv := range values {
 				valuesArray[i] = lv.Value()
@@ -218,14 +283,20 @@ func (s *Schema) AsMap() map[string]any {
 
 		case NodeTypeConstraintParameters:
 			params := ctx.Value.(LiteralValue)
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			parent := sk.getLocation(ctx.GetPath()[:ctx.PathLen-1])
+			if parent == nil {
+				return sk, nil
+			}
 			if !params.IsZero() && !params.IsNull() {
 				parent[ctx.Key] = params.Value()
 			}
 
 		case NodeTypeConstraintFields:
 			fields := ctx.Value.([]FieldName)
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			parent := sk.getLocation(ctx.GetPath()[:ctx.PathLen-1])
+			if parent == nil {
+				return sk, nil
+			}
 			stringFields := make([]string, len(fields))
 			for i, f := range fields {
 				stringFields[i] = string(f)
@@ -234,7 +305,10 @@ func (s *Schema) AsMap() map[string]any {
 
 		case NodeTypeIndexFields:
 			fields := ctx.Value.([]FieldId)
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			parent := sk.getLocation(ctx.GetPath()[:ctx.PathLen-1])
+			if parent == nil {
+				return sk, nil
+			}
 			stringFields := make([]string, len(fields))
 			for i, f := range fields {
 				stringFields[i] = string(f)
@@ -243,7 +317,10 @@ func (s *Schema) AsMap() map[string]any {
 
 		case NodeTypeFieldDefault:
 			def := ctx.Value.(LiteralValue)
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
+			parent := sk.getLocation(ctx.GetPath()[:ctx.PathLen-1])
+			if parent == nil {
+				return sk, nil
+			}
 			if !def.IsZero() && !def.IsNull() {
 				parent[ctx.Key] = def.Value()
 			}
@@ -251,19 +328,26 @@ func (s *Schema) AsMap() map[string]any {
 		case NodeTypeLiteralValue:
 			lv := ctx.Value.(LiteralValue)
 			if !lv.IsZero() && !lv.IsNull() {
-				current := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
-				current[ctx.Key] = lv.Value()
+				parent := sk.getLocation(ctx.GetPath()[:ctx.PathLen-1])
+				if parent != nil {
+					parent[ctx.Key] = lv.Value()
+				}
 			}
-
 
 		case NodeTypeMetadataMap:
 			metadata := ctx.Value.(map[string]any)
-			parent := getMapAtPath(root, ctx.GetPath()[:ctx.PathLen-1])
-			parent["metadata"] = metadata
+			parent := sk.getLocation(ctx.GetPath()[:ctx.PathLen-1])
+			if parent != nil {
+				parent["metadata"] = metadata
+			}
+
+		// Boundary nodes don't need handling - structure already exists
+		case NodeTypeFieldsMap, NodeTypeSchemasMap, NodeTypeConstraintsMap, NodeTypeIndexesMap:
+			// Skip - structure already pre-created in skeleton
 		}
 
-		return root, nil
+		return sk, nil
 	})
 
-	return result
+	return skeleton.root
 }

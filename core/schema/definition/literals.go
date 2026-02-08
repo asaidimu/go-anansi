@@ -156,8 +156,8 @@ func (lv LiteralValue) Validate() []common.Issue {
 // It serializes the actual value directly, not the wrapper struct
 func (lv LiteralValue) MarshalJSON() ([]byte, error) {
 	if lv.IsZero() || lv.IsNull() {
-        return []byte("null"), nil
-    }
+		return []byte("null"), nil
+	}
 
 	val, err := json.Marshal(lv.value)
 	if err != nil {
@@ -245,11 +245,30 @@ func convertNumbers(v any) any {
 }
 
 type LiteralValueType interface {
-	string | int64 | float64 | bool | map[string]any | []any | float32| int| int8| int16| int32| uint| uint8| uint16| uint32| uint64
+	string |
+		int |
+		int8 |
+		int16 |
+		int32 |
+		uint |
+		uint8 |
+		uint16 |
+		uint32 |
+		uint64 |
+		int64 |
+		float64 |
+		float32 |
+		bool |
+		map[string]any |
+		[]any
 }
 
 // NewLiteralValueStrict creates a LiteralValue
 func NewLiteralValue[T LiteralValueType](val T) (LiteralValue, error) {
+	return newLiteralValue(val)
+}
+
+func newLiteralValue(val any) (LiteralValue, error) {
 	if !ValidateLiteral(val) {
 		return LiteralValue{}, ErrInvalidLiteralValue
 	}
@@ -261,9 +280,19 @@ func NewLiteralValue[T LiteralValueType](val T) (LiteralValue, error) {
 		lv.kind = LiteralTypeString
 	case bool:
 		lv.kind = LiteralTypeBoolean
-	case int64:
+
+	case int,
+		int8,
+		int16,
+		int32,
+		uint,
+		uint8,
+		uint16,
+		uint32,
+		uint64,
+		int64:
 		lv.kind = LiteralTypeInteger
-	case float64:
+	case float64,float32:
 		lv.kind = LiteralTypeFloat
 	case []any:
 		lv.kind = LiteralTypeArray
@@ -426,20 +455,12 @@ func isTypeLiteral(t reflect.Type) bool {
 }
 
 func MustNewLiteralValue[T LiteralValueType](value T) LiteralValue {
-	val, err := NewLiteralValue(value)
+	return  mustNewLiteralValue(value)
+}
+func mustNewLiteralValue(value any) LiteralValue {
+	val, err := newLiteralValue(value)
 	if err != nil {
 		panic(err)
 	}
 	return val
-}
-
-func init(){
-	_ = literalTypeZero
-	_ = LiteralTypeString
-	_ = LiteralTypeInteger
-	_ = LiteralTypeFloat
-	_ = LiteralTypeBoolean
-	_ = LiteralTypeObject
-	_ = LiteralTypeArray
-	_ = LiteralTypeNull
 }
