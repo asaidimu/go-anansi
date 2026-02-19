@@ -8,6 +8,19 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
+var primitiveTypes = map[string]bool{
+	"string": true, "number": true, "integer": true,
+	"decimal": true, "boolean": true, "geometry": true,
+}
+
+var collectionTypes = map[string]bool{"array": true, "set": true}
+
+var baseSchemaIndicators = []string{"fields", "indexes", "constraints"}
+var fieldPropsIndicators = []string{"type", "default", "values", "schema"}
+
+// Only check for types that can be used in enums
+var numericTypes = map[string]bool{"number": true, "integer": true, "decimal": true, "string": true,}
+
 // MetaSchemaPredicates contains all predicate functions needed to validate schemas
 var MetaSchemaPredicates = definition.PredicateMap{
 	// Predicate 1: Primitives cannot have schema property
@@ -18,11 +31,6 @@ var MetaSchemaPredicates = definition.PredicateMap{
 				Code:    "INVALID_DATA_TYPE",
 				Message: "Expected object data",
 			}}
-		}
-
-		primitiveTypes := map[string]bool{
-			"string": true, "number": true, "integer": true,
-			"decimal": true, "boolean": true, "geometry": true,
 		}
 
 		typeVal, hasType := data["type"]
@@ -82,8 +90,6 @@ var MetaSchemaPredicates = definition.PredicateMap{
 				Message: "Expected object data",
 			}}
 		}
-
-		collectionTypes := map[string]bool{"array": true, "set": true}
 
 		typeVal, hasType := data["type"]
 		schemaVal, hasSchema := data["schema"]
@@ -280,9 +286,6 @@ var MetaSchemaPredicates = definition.PredicateMap{
 				Message: "Expected object data",
 			}}
 		}
-
-		baseSchemaIndicators := []string{"fields", "indexes", "constraints"}
-		fieldPropsIndicators := []string{"type", "default", "values", "schema"}
 
 		hasBaseSchema := false
 		for _, key := range baseSchemaIndicators {
@@ -712,8 +715,6 @@ var MetaSchemaPredicates = definition.PredicateMap{
 			return nil
 		}
 
-		// Only check for types that can be used in enums
-		numericTypes := map[string]bool{"number": true, "integer": true, "decimal": true}
 		isNumeric := numericTypes[typeStr]
 		isString := typeStr == "string"
 
@@ -1309,4 +1310,3 @@ var MetaSchemaPredicates = definition.PredicateMap{
 		return issues
 	},
 }
-

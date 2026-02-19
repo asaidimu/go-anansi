@@ -51,7 +51,7 @@
     }
   },
   "schemas": {
-    "Unknown": { "name": "Unknown", "type": "unknown" },
+
     "IndexCondition": {
       "name": "IndexCondition",
       "description": "A single condition for a partial index",
@@ -78,7 +78,6 @@
       }
     },
     "ConstraintUnion": { "name": "ConstraintUnion", "type": "union" },
-    "String": { "name": "String", "type": "string" },
     "IndexConditionGroup": {
       "name": "IndexConditionGroup",
       "description": "A group of conditions combined with a logical operator",
@@ -144,11 +143,11 @@
         },
         "schema": {
           "name": "schema",
-          "description": "Schema reference (for complex array/set element types only)",
+          "description": "FieldSchema reference (for complex array/set element types only)",
           "type": "union",
           "schema": [
-            { "id": "SchemaReference" },
-            { "id": "SchemaReferenceArray" }
+            { "id": "FieldSchema" },
+            { "id": "FieldSchemaArray" }
           ]
         },
         "name": {
@@ -183,7 +182,7 @@
           "name": "values",
           "description": "Allowed values (for enum element types only)",
           "type": "array",
-          "schema": { "id": "Unknown" }
+          "schema": { "type": "unknown" }
         },
         "metadata": {
           "name": "metadata",
@@ -235,7 +234,7 @@
           "description": "Fields included in the index",
           "required": true,
           "type": "array",
-          "schema": { "id": "String" }
+          "schema": { "type": "string" }
         },
         "order": {
           "name": "order",
@@ -255,7 +254,59 @@
       }
     },
     "IndexConditionUnion": { "name": "IndexConditionUnion", "type": "union" },
-    "SchemaReferenceArray": { "name": "SchemaReferenceArray", "type": "array" },
+    "FieldSchemaArray": { "name": "FieldSchemaArray", "type": "array" },
+    "FieldSchema": {
+      "name": "FieldSchema",
+      "description": "Either a reference to a named schema or an inline type definition. The two shapes are mutually exclusive.",
+      "type": "union",
+      "schema": [
+        { "id": "FieldSchemaRef" },
+        { "id": "FieldSchemaInline" }
+      ]
+    },
+    "FieldSchemaRef": {
+      "name": "FieldSchemaRef",
+      "description": "A reference to a named nested schema, with optional index and constraint augmentation",
+      "fields": {
+        "id": {
+          "name": "id",
+          "description": "The ID of the referenced schema",
+          "required": true,
+          "type": "string"
+        },
+        "indexes": {
+          "name": "indexes",
+          "description": "Additional indexes for this reference",
+          "type": "record",
+          "schema": { "id": "Index" }
+        },
+        "constraints": {
+          "name": "constraints",
+          "description": "Additional constraints for this reference",
+          "type": "record",
+          "schema": { "id": "Constraint" }
+        }
+      }
+    },
+    "FieldSchemaInline": {
+      "name": "FieldSchemaInline",
+      "description": "An inline type definition for simple or enum types that do not warrant a named schema",
+      "fields": {
+        "type": {
+          "name": "type",
+          "description": "The inline type",
+          "required": true,
+          "type": "enum",
+          "schema": { "id": "FieldTypeEnum" }
+        },
+        "values": {
+          "name": "values",
+          "description": "Allowed values, for enum types only",
+          "type": "array",
+          "schema": { "type": "unknown" }
+        }
+      }
+    },
     "ComparisonOperatorEnum": {
       "name": "ComparisonOperatorEnum",
       "type": "string",
@@ -302,11 +353,11 @@
         },
         "schema": {
           "name": "schema",
-          "description": "Schema reference for complex types (single SchemaReference or array for unions/composites)",
+          "description": "FieldSchema for complex types — single FieldSchema or array for unions/composites",
           "type": "union",
           "schema": [
-            { "id": "SchemaReference" },
-            { "id": "SchemaReferenceArray" }
+            { "id": "FieldSchema" },
+            { "id": "FieldSchemaArray" }
           ]
         },
         "name": {
@@ -340,7 +391,7 @@
           "name": "fields",
           "description": "Fields this rule applies to",
           "type": "array",
-          "schema": { "id": "String" }
+          "schema": { "type": "string" }
         },
         "predicate": {
           "name": "predicate",
@@ -367,30 +418,6 @@
           "required": true,
           "type": "array",
           "schema": { "id": "ConstraintUnion" }
-        }
-      }
-    },
-    "SchemaReference": {
-      "name": "SchemaReference",
-      "description": "A reference to a nested schema",
-      "fields": {
-        "indexes": {
-          "name": "indexes",
-          "description": "Additional indexes for this reference",
-          "type": "record",
-          "schema": { "id": "Index" }
-        },
-        "constraints": {
-          "name": "constraints",
-          "description": "Additional constraints for this reference",
-          "type": "record",
-          "schema": { "id": "Constraint" }
-        },
-        "id": {
-          "name": "id",
-          "description": "The ID of the referenced schema",
-          "required": true,
-          "type": "string"
         }
       }
     },
