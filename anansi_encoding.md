@@ -1,6 +1,5 @@
-# Anansi Binary Wire Format Specification v1.0
-
----
+# Anansi Binary Wire Format Specification
+**Version: 1.0**
 
 ## Table of Contents
 
@@ -22,11 +21,17 @@
 
 ### 1.1 Purpose
 
-The Anansi Binary Wire Format is a high-performance serialization format specifically optimized for `Document` instances. It serializes the flattened, primitive-typed data structure defined by the Document Specification, supporting four packet types automatically selected based on data characteristics, with full schema versioning and optional compression. This approach delegates the complexities of logical schema definitions (including recursion and validation) to the layer that constructs the `Document` object.
+The Anansi Binary Wire Format is a high-performance serialization format specifically optimized for `Document` instances. It serializes the flattened, typed data structure defined by the Document Specification v2.0, supporting four packet types automatically selected based on data characteristics, with full schema versioning and optional compression.
+
+This format is a physical manifestation of the Document Specification. It inherits the Document's type system, field identity scheme, and null semantics directly. It delegates all schema structure (recursion, nesting, validation) to the layer that constructs `Document` objects — the wire format sees only a flat set of typed `DataPoint`→value pairs.
 
 ### 1.2 Design Principles
-- **Storage Inheritance:** This format is a physical manifestation of the Document Storage Spec. It inherits all hard limits and types.
-- **Self-Delineation:** Data boundaries are determined by the Schema + State Map, eliminating the need for per-row delimiter bytes.
+
+- **Storage Inheritance** — This format is a direct physical expression of the Document Specification v2.0. All types, limits, and field identity come from there.
+- **Self-Delineation** — Data boundaries are determined by the Schema + State Map, eliminating per-row delimiter bytes.
+- **Native Null Semantics** — The `DataPoint` null bit is the authoritative source of null state. The wire format does not inject additional null encoding on top of it.
+
+---
 
 ## 2. Core Concepts
 
@@ -50,8 +55,8 @@ Byte 1: Schema Version (8 bits)
    │     │     │     │     │     │
    │     │     │     │     │     └──────────────── Compression (bit 2)
    │     │     │     │     │
-   │     │     │     │     └────────────────────── Encoding (bit 3)
-   │     │     │     │                        
+   │     │     │     │     └────────────────────── Encoding (bit 3, Batch only)
+   │     │     │     │
    │     │     └─────┴──────────────────────────── Version Epoch (bits 4-5)
    │     │
    │     └──────────────────────────────────────── Encryption (bit 6)
@@ -59,7 +64,7 @@ Byte 1: Schema Version (8 bits)
    └────────────────────────────────────────────── Hash Present (bit 7)
 ```
 
-**Bit 0-1: Packet Type**
+**Bits 0-1: Packet Type**
 - `00` (0x00): Dense (Type 1)
 - `01` (0x01): Sparse (Type 2)
 - `10` (0x02): Batch (Type 3)
@@ -73,11 +78,11 @@ Byte 1: Schema Version (8 bits)
 - `0`: Row-oriented
 - `1`: Columnar
 
-**Bit 4-5: Version Epoch**
-- `00` (0): Epoch 0 (schema versions 0-255)
-- `01` (1): Epoch 1 (schema versions 256-511)
-- `10` (2): Epoch 2 (schema versions 512-767)
-- `11` (3): Epoch 3 (schema versions 768-1023)
+**Bits 4-5: Version Epoch**
+- `00` (0): Epoch 0 (schema versions 0–255)
+- `01` (1): Epoch 1 (schema versions 256–511)
+- `10` (2): Epoch 2 (schema versions 512–767)
+- `11` (3): Epoch 3 (schema versions 768–1023)
 
 Combined with schema version byte, provides 1024 total schema versions:
 ```
@@ -128,14 +133,13 @@ Dense, epoch 2, compressed, encrypted, hashed:
 ### 2.2 Schema Version and Epoch
 
 **Schema Version Byte (Byte 1):**
-- Range: 0-255
+- Range: 0–255
 - Combined with epoch bits (4-5) for full version
 
 **Full Version Calculation:**
 ```
-epoch = (flags >> 4) & 0x03
-schemaVersion = byte[1]
-fullVersion = (epoch << 8) | schemaVersion
+epoch       = (flags >> 4) & 0x03
+fullVersion = (epoch << 8) | byte[1]
 
 Examples:
   flags=0x00, version=0x01 → fullVersion = 1
@@ -147,33 +151,22 @@ Examples:
 **Schema Registry Mapping:**
 - Each full version maps to a semantic version in an ordered registry.
 - Registry maintains version history: `{0: "1.0.0", 1: "1.1.0", 256: "2.0.0", ...}`
-- Decoders lookup schema by full version
+- Decoders look up schema by full version.
+- A `Collection` is bound to a single full version. Documents from different versions MUST NOT be mixed in the same packet.
 
-### 2.3 Field Selectors and Ordering
+### 2.3 DataPoints and Field Ordering
 
-Fields are encoded in **stable sorted order by their `FieldSelector` value (ascending int32)**. The `FieldSelector` inherently contains type information (via its `Type` bits), which implicitly groups fields by their primitive storage type (`TypeInt`, `TypeFloat`, `TypeString`, `TypeBool`, `TypeBytes`).
+Fields are encoded in **stable sorted order by their `DataPoint` value (ascending int32)**. The `DataPoint` encodes the `DataType` in bits 1–4, so ascending sort naturally groups fields by type first, then by ID within each type. This mirrors Document v2.0's `data [16]unsafe.Pointer` layout where each slot index corresponds to a `DataType` iota value.
 
-This direct reliance on `FieldSelector` ensures consistency with the `Document` structure and removes any ambiguity regarding field order, including for nested or recursive logical schemas (as these are pre-resolved and flattened into unique `FieldSelector`s during `Document` construction).
+**DataPoint Bit Layout:**
+```
+┌──────────┬────────────┬──────────────────────────────────┐
+│ Null(1b) │  Type(4b)  │           ID(27b)                │
+└──────────┴────────────┴──────────────────────────────────┘
+     0          1–4                   5–31
+```
 
-**Field Selector Bit Layout**:
-┌──────────────┬──────────┬───────────┬───────────┬───────────┐
-│ Reserved(2b) │ Type(3b) │ Depth(9b) │ Offset(9b)│ Index(9b) │
-└──────────────┴──────────┴───────────┴───────────┴───────────┘
-
-**Example:**
-Assume a `Document` contains fields corresponding to the following `FieldSelector`s, derived from a logical schema. The encoding order is simply by the ascending `int32` value of these selectors.
-
-`FieldSelector` values (example):
-- `0x00000001` (TypeBool, Depth 0, Offset 0, Index 1)
-- `0x0000000A` (TypeInt, Depth 0, Offset 0, Index 2)
-- `0x00000013` (TypeString, Depth 0, Offset 0, Index 3)
-- `0x00000020` (TypeBytes, Depth 1, Offset 1, Index 1)
-
-**Encoding order:**
-1. `FieldSelector` 0x00000001 (Boolean field)
-2. `FieldSelector` 0x0000000A (Integer field)
-3. `FieldSelector` 0x00000013 (String field)
-4. `FieldSelector` 0x00000020 (Bytes field, representing a nested object or array)
+**Note on the null bit in field ordering:** The null bit (bit 0) participates in the int32 sort. A DataPoint representing a null field (`null bit = 1`) sorts one position higher than the same DataPoint with a value (`null bit = 0`). Encoders MUST use the canonical (non-null) DataPoint for ordering purposes, then apply null state as determined by the Document's `positions` map, not by the DataPoint's own null bit. The DataPoint null bit is informational and used during sparse encoding; it does not affect field identity or sort position in schema definition.
 
 ### 2.4 Varint Encoding
 
@@ -213,271 +206,355 @@ Varint encoding supports up to 64-bit values (9 bytes maximum).
 
 ### 2.5 Field Type Encoding
 
-#### Boolean
-``` 
-Dense Mode: Packed into bitfields (8 bools per byte).
-Sparse Mode: Single byte (0x00 or 0x01).
+The following encoding applies to each `DataType`. These map directly to the 16 types in the Document Specification.
+
+#### TypeInt (int64)
+```
+Signed varint (zigzag + LEB128)
+1–9 bytes depending on magnitude
 ```
 
-#### Integer
-```
-Varint encoding (LEB128)
-1-9 bytes depending on magnitude
-Signed integers use zigzag encoding
-```
-
-#### Number (float64)
+#### TypeFloat (float64)
 ```
 8 bytes, little-endian IEEE 754
 ```
 
-#### Decimal
-```
-[scale: u8][coefficient: varint]
-Represents: coefficient / 10^scale
-Example: 123.45 → [0x02][0x3039] (scale=2, coeff=12345)
-```
-
-#### String
+#### TypeString (string)
 ```
 [length: varint][bytes: UTF-8]
-Length is byte count, not character count
-No null terminator
+Length is byte count, not character count. No null terminator.
 ```
 
-#### Bytes
+#### TypeBool (bool)
 ```
-[length: varint][bytes: Raw]
-Can contain raw binary, encoded arrays, or serializations of logical types not supported natively.
+Dense Mode:  Packed into bitfields (8 bools per byte).
+Sparse Mode: Single byte (0x00 = false, 0x01 = true).
+```
+
+#### TypeDecimal
+```
+[scale: u8][coefficient: signed varint]
+Represents: coefficient / 10^scale
+Example: 123.45 → [0x02][zigzag(12345)]
+```
+
+#### TypeGeometry ([][]float64)
+```
+[ring_count: varint]
+FOR EACH RING:
+  [point_count: varint]
+  FOR EACH POINT:
+    [x: float64 LE][y: float64 LE]
+```
+
+#### TypeRecord (*DataContainer)
+```
+A recursively encoded Document payload.
+[payload_length: varint][anansi_packet_bytes]
+The nested packet uses the same schema version as the parent
+unless the schema defines an override.
+```
+
+#### TypeUnknown (any)
+```
+[type_tag: u8][encoded_value]
+type_tag corresponds to the DataType iota value of the actual runtime type.
+Used only when the schema genuinely cannot constrain the type at definition time.
+```
+
+#### TypeArrayInt ([]int64)
+```
+[count: varint]
+FOR EACH ELEMENT: [signed varint]
+```
+
+#### TypeArrayFloat ([]float64)
+```
+[count: varint]
+FOR EACH ELEMENT: [float64 LE]
+```
+
+#### TypeArrayString ([]string)
+```
+[count: varint]
+FOR EACH ELEMENT: [length: varint][bytes: UTF-8]
+```
+
+#### TypeArrayBool ([]bool)
+```
+[count: varint][packed bits: ceil(count/8) bytes]
+Bits packed LSB-first within each byte.
+```
+
+#### TypeArrayDecimal ([]Decimal)
+```
+[count: varint]
+FOR EACH ELEMENT: [scale: u8][coefficient: signed varint]
+```
+
+#### TypeArrayObject ([]*DataContainer)
+```
+[count: varint]
+FOR EACH ELEMENT: [payload_length: varint][anansi_packet_bytes]
+```
+
+#### TypeArrayUnknown ([]any)
+```
+[count: varint]
+FOR EACH ELEMENT: [type_tag: u8][encoded_value]
+```
+
+#### TypeArray ([][]any)
+```
+[outer_count: varint]
+FOR EACH INNER ARRAY: [count: varint] FOR EACH ELEMENT: [type_tag: u8][encoded_value]
 ```
 
 ### 2.6 Storage Model Inheritance
 
-The Anansi Wire Format is a physical manifestation of the `Document Storage Specification`. It implicitly inherits all hard limits of that model:
-- **Max Depth:** 511 levels. Nesting in recursive or sparse packets cannot exceed this.
-- **Max Fields:** 511 fields per level.
-- **Selector Stability:** FieldSelectors are determined by the schema and must remain stable for the life of the `schema_version`.
+The Anansi Wire Format inherits directly from the Document Specification v2.0:
+
+- **Type system:** Exactly 16 DataTypes, indexed 0–15 by their iota value.
+- **Field identity:** 27-bit ID space per type — up to 134,217,727 distinct field identifiers per DataType.
+- **Selector stability:** DataPoints are schema-derived and stable for the life of the full schema version.
+- **No depth/offset concept:** Nesting is flattened into the 27-bit ID space at schema definition time. The wire format sees a flat set of DataPoint→value pairs regardless of logical nesting depth.
 
 ### 2.7 Null Handling
 
-The spec allows three states for a value. The wire format handles them as follows
+The Document Specification defines three field states. The wire format handles them as follows:
 
-|State|Document Logic|Dense Encoding|Sparse Encoding|
-|-----|--------------|--------------|---------------|
-|Has Value|positions[sel] >= 0|"Bitmask=1| Write Value"|Write [Selector] [Value]|
-|Null|positions[sel] < 0|"Bitmask=1| Write Null Marker"|Write [Selector] [NullMarker]|
-|Not Set|key not in positions|"Bitmask=0| Skip"|Skip|
+| State | Document condition | Dense encoding | Sparse encoding |
+|---|---|---|---|
+| **Has Value** | `positions[point] >= 0` | State map `10`, write value | Write DataPoint (null bit = 0), write value |
+| **Null** | `positions[point] == -1` | State map `01`, skip value | Write DataPoint (null bit = 1), no value follows |
+| **Not Set** | key absent from `positions` | State map `00`, skip | Skip entirely |
+
+**Null bit in sparse packets:** In sparse encoding, the DataPoint written to the wire has its null bit (bit 0) set to `1` to signal null, and to `0` for a value-bearing field. The decoder recovers the canonical DataPoint by masking off the null bit: `canonicalPoint = DataPoint(wire & ^1)`. This is a read of the DataPoint's own null bit — no external shift-and-OR mutation is applied.
+
+**Dense state map:** 2 bits per schema field. Values:
+- `00` — Not Set. Skip.
+- `01` — Null. Skip value bytes.
+- `10` — Has Value. Read value bytes.
+- `11` — Reserved.
+
+---
 
 ## 3. Packet Type Specifications
 
 ### 3.1 Type 1: Dense Packet
 
-#### 3.1.1. The Finite Eligibility Rule
-A Schema is only eligible for Dense (Type 0x00) encoding if it is Non-Recursive.
-- Eligible: A struct containing a fixed list of primitives and nested structs that eventually terminate in primitives.
-- Ineligible: A Node struct containing a Node field, or a Map field with arbitrary keys.
+#### 3.1.1 Eligibility
 
-#### 3.1.2. Streamlining the State Map
+A schema is eligible for Dense encoding if it is **non-recursive**: all fields eventually terminate in concrete DataTypes with no self-referential `TypeContainer` cycles. Schemas with `TypeContainer` fields that reference the same schema version are recursive and MUST use Sparse encoding.
 
-Since we are now guaranteed a finite, pre-known field count *N* for any Dense packet, we can provide a state map as a fixed-length header bitstream that leverages the stable sorting order of FieldSelectors.
+Eligible example: a struct with TypeInt, TypeString, TypeContainer (where the nested schema is a different, finite schema).
+Ineligible example: a `Node` schema with a `TypeContainer` field that also uses the `Node` schema.
 
-We use 2 bits per field to represent any of the three states allowed for a value:
-- `00` (Not Set): The field is absent. Skip.
-- `01` (Null): The field is explicitly null. Skip
-- `10` (Value): The field has data. Read from the value segment.
-- `11` (Reserved):.
+#### 3.1.2 State Map
 
-#### 3.1.3. Structural Layout
+Since field count *N* is finite and known from the schema, the state map is a fixed-length bitstream of `2 × N` bits, one 2-bit entry per schema field in DataPoint-ascending order.
 
-The values are appended in the strict order of their FieldSelector (Type → Depth → Offset → Index). Because the schema is finite, the decoder knows exactly how many "Value" states (10) it needs to read for each primitive type block.
+```
+State map bit pairs:
+  00 = Not Set
+  01 = Null
+  10 = Has Value
+  11 = Reserved
+```
+
+The state map is byte-aligned (padded with `00` bits to the next byte boundary if needed).
+
+#### 3.1.3 Structural Layout
+
+```
 ┌───────────────────────────────┐
-│ Header (2 Bytes)              │ Flags, Schema Version
+│ Header (2 bytes)              │  flags, schema version
 ├───────────────────────────────┤
-│ State Map (Bitstream)         │ 2-bits per schema field
+│ State Map (bitstream)         │  2 bits per schema field, byte-aligned
 ├───────────────────────────────┤
-│ Int Value Block               │ All fields where state == 10 and Type == Int
+│ TypeInt Value Block           │  all fields where state=10 and Type=TypeInt
 ├───────────────────────────────┤
-│ Float Value Block             │ All fields where state == 10 and Type == Float
+│ TypeFloat Value Block         │  all fields where state=10 and Type=TypeFloat
 ├───────────────────────────────┤
-│ ... (String, Bool, Bytes)     │
+│ TypeString Value Block        │  ...
+├───────────────────────────────┤
+│ TypeBool Value Block          │
+├───────────────────────────────┤
+│ TypeDecimal Value Block       │
+├───────────────────────────────┤
+│ TypeGeometry Value Block      │
+├───────────────────────────────┤
+│ TypeContainer Value Block     │
+├───────────────────────────────┤
+│ TypeArray* Value Blocks       │  one block per array type, same ordering
 └───────────────────────────────┘
+```
 
-#### 3.1.4. Handling Recursion
-If the data structure is recursive (like a linked list or tree), the encoder must switch to the sparse packet type:
+Value blocks appear in DataType iota order (TypeUnknown=0 through TypeArray=15). Empty blocks occupy zero bytes. The decoder uses the schema field count per type to know exactly how many values to read from each block.
+
+#### 3.1.4 Handling Recursive Schemas
+
+If the schema is recursive (contains `TypeContainer` cycles), the encoder MUST switch to Sparse encoding. Dense encoding is undefined for recursive schemas.
+
+---
 
 ### 3.2 Type 2: Sparse Packet
-Used for recursive structures, patches, or when field density is low. This format eliminates all bitmaps by encoding the state within the field identifier.
-In Sparse packets, the `FieldSelector` is mutated to encode the "Null" state efficiently. 
-- **Wire Value:** `(StorageSelector << 1) | NullBit`
-- **NullBit:** `0` indicates the field is set; `1` indicates the field is explicitly null.
-- **Decoding:** Parsers MUST right-shift the wire value by 1 bit to recover the actual `FieldSelector` used by the Document storage.
 
-#### 3.2.1 Wire Format
+Used for recursive structures, patches, or low field density. Fields are written with their DataPoint identifier so the decoder can look up type and identity without a schema-ordered index.
+
+#### 3.2.1 Null Encoding
+
+In Sparse packets, the DataPoint's own null bit (bit 0) signals null:
+- `null bit = 0`: field has a value; value bytes follow immediately.
+- `null bit = 1`: field is null; no value bytes follow.
+
+The canonical DataPoint for a null field is recovered by the decoder as:
+```
+canonicalPoint = DataPoint(wirePoint & ^DataPoint(1))
+```
+
+No additional shift or mutation is applied to the DataPoint — the null bit is used in place.
+
+#### 3.2.2 Wire Format
 
 ```
 ┌──────────────────────────────────────────────┐
-│ [flags: u8]                                  │  <- Packet type = 0b01
+│ [flags: u8]                                  │  Packet type = 0b01
 │ [schema_version: u8]                         │
 ├──────────────────────────────────────────────┤
-│ [field_count: varint]                        │  <- Number of present fields
+│ [field_count: varint]                        │  Number of set fields (null + value)
 ├──────────────────────────────────────────────┤
-│ FOR EACH PRESENT FIELD:                      │
-│   [field_selector: varint]                   │  <- FieldSelector 
-│   [field_data]                               │  <- Encoded per type
+│ FOR EACH SET FIELD (in DataPoint order):     │
+│   [data_point: varint]                       │  Full int32(DataPoint), null bit set if null
+│   [field_data]                               │  Encoded per type; absent if null bit = 1
 └──────────────────────────────────────────────┘
 ```
 
+`field_count` includes both value-bearing and null fields. Not-set fields are omitted entirely.
+
+---
+
 ### 3.3 Type 3: Batch Packet
-The Batch packet transmits a fixed number of records. It inherits the Schema Version from the header. The layout transitions from Field-oriented (Columnar) to Record-oriented based on the BatchFlags.
 
-**Header Structure**:
+Transmits a fixed number of Documents. Inherits schema version from the header.
 
+**Header after flags/version:**
 - `record_count`: varint
 - `batch_flags`: u8
-    - Bit 0: Orientation (0 = Row-Oriented, 1 = Columnar)
-    - Bit 1: Density (0 = Dense, 1 = Sparse)
+  - Bit 0: Orientation (0 = Row-oriented, 1 = Columnar)
+  - Bit 1: Density (0 = Dense, 1 = Sparse)
 
-#### 3.3.1 Row-Oriented Dense Batch (The "Transaction" Layout) 
-Optimized for materializing full Documents. Each record is self-contained.
+#### 3.3.1 Row-Oriented Dense Batch
 
-```
-FOR EACH RECORD (0 to record_count-1):
-  [State Map] (2 bits per field in Schema)
-  [Values Block] (Values only for fields with state '10')
-```
-
-*Delineation*: The parser uses the Schema to know the bit-length of the State Map. Once the State Map is read, it knows exactly which values follow and their lengths. The next bit/byte is immediately the start of the next record's State Map.
-
-#### 3.3.2 Row-Oriented Sparse Batch (The "Outlier" Layout)
-Used when records have very few fields set relative to a wide schema or are not dense suitable.
+Each record is self-contained. Optimized for materializing full Documents.
 
 ```
 FOR EACH RECORD (0 to record_count-1):
-  [field_count] (varint)
-  FOR EACH FIELD (0 to field_count-1):
-    [WireSelector] (varint: (StorageSelector << 1) | NullBit)
-    [Value] (If NullBit == 0)
+  [State Map]    (2 bits per schema field, byte-aligned)
+  [Value Blocks] (one per DataType, values only for fields with state=10)
 ```
 
-#### 3.3.3 Columnar Dense Batch (The "Analytics" Layout) 
-Optimized for scanning specific fields across many records.
+Delineation: the schema determines the state map bit length. Once the state map is read, the decoder knows exactly which value blocks follow and their sizes.
+
+#### 3.3.2 Row-Oriented Sparse Batch
+
+Used when records have few fields set relative to a wide schema, or the schema is recursive.
 
 ```
-FOR EACH FIELD IN SCHEMA:
-  [Field Data Block]
-    IF Fixed-Width (Int/Float/Bool): 
-       [Raw bytes for all N records]
-    IF Variable-Width (String/Bytes):
-       [Length-prefixed values for all N records]
+FOR EACH RECORD (0 to record_count-1):
+  [field_count: varint]
+  FOR EACH SET FIELD:
+    [data_point: varint]   (null bit set if null)
+    [value]                (absent if null)
 ```
+
+#### 3.3.3 Columnar Dense Batch
+
+Optimized for scanning specific fields across many records. Fields are grouped by DataType.
+
+```
+FOR EACH DATATYPE (TypeUnknown=0 through TypeArray=15):
+  IF this type has any schema fields:
+    [State Map Column]   (2 bits × record_count for each field of this type)
+    FOR EACH FIELD OF THIS TYPE:
+      [Value Array]      (values for all records where state=10)
+```
+
+Fixed-width types (TypeInt, TypeFloat, TypeBool): raw bytes for all N records, no per-value length prefix.
+Variable-width types (TypeString, TypeGeometry, TypeContainer, TypeArray*): length-prefixed per value.
+
+---
 
 ### 3.4 Type 4: Stream Packet
 
-#### 3.4.1 When to Use
-Streams are sequences of "Chunks." This allows a long-lived connection to pivot between Dense and Sparse batches as the data distribution changes.
+A sequence of chunks. Allows a long-lived connection to pivot between Dense and Sparse batches as data distribution changes.
 
-#### 3.4.2 Wire Format
+#### 3.4.1 Wire Format
 
 ```
 ┌──────────────────────────────────────────────┐
 │ STREAM HEADER (sent once)                    │
 ├──────────────────────────────────────────────┤
-│ [flags: u8]              (0x03)              │  <- Extended packet type
-│ [schema_version: u8]                         │  <- Schema version (0-255)
-│ [extended_type: u8]      (0x01)              │  <- Stream marker
-│ [stream_encoding: u8]                        │  <- Encoding flags
+│ [flags: u8]              (0x03)              │  Extended packet type
+│ [schema_version: u8]                         │
+│ [extended_type: u8]      (0x01)              │  Stream marker
+│ [stream_encoding: u8]                        │  Encoding flags (see 3.4.3)
 ├──────────────────────────────────────────────┤
 │ CHUNKS (repeating)                           │
 ├──────────────────────────────────────────────┤
-│ [row_count: varint]                          │  <- Rows in this chunk
-│ [chunk_data]                                 │  <- Encoded per stream_encoding
+│ [chunk_descriptor: u8]                       │  Density & orientation for this chunk
+│ [row_count: varint]                          │  Rows in this chunk
+│ [chunk_data]                                 │  Encoded per chunk_descriptor
 ├──────────────────────────────────────────────┤
 │ END MARKER                                   │
 ├──────────────────────────────────────────────┤
-│ [row_count: 0]                               │  <- Stream terminator
+│ [row_count: 0]                               │  Stream terminator
 └──────────────────────────────────────────────┘
 ```
 
-#### 3.4.3 Stream Encoding Byte
+#### 3.4.2 Stream Encoding Byte
 
 ```
 ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐
 │  7  │  6  │  5  │  4  │  3  │  2  │  1  │  0  │
 └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘
    │                       │     │     └─────┴──── Chunk Encoding (bits 0-1)
-   │                       │     │
    │                       │     └──────────────── Compression (bit 2)
-   │                       │
    │                       └────────────────────── Reserved (bit 3)
-   │
    └────────────────────────────────────────────── Reserved (bits 4-7)
 ```
 
 **Bits 0-1: Chunk Encoding**
-- `00` (0x00): Reserved
-- `01` (0x01): Columnar (like Type 3 batch with bit 3 set)
-- `10` (0x02): Reserved
-- `11` (0x03): Reserved
+- `00`: Reserved
+- `01`: Columnar
+- `10`: Reserved
+- `11`: Reserved
 
-**Bit 2: Compression Flag**
-- `0`: Uncompressed
-- `1`: Compressed with shared context
+**Bit 2: Compression — shared context across all chunks**
 
-**Bits 3-7: Reserved**
-- Must be set to `00000`
+#### 3.4.3 Shared Compression Context
 
+When compression bit is set in `stream_encoding`, all chunks share one compression dictionary. The compressor learns patterns from early chunks and applies them to later ones. Typical improvement: 15–30% better ratio vs per-packet compression for homogeneous data.
 
-**Adaptive Chunking**
+#### 3.4.4 End Marker
 
-Every chunk repeats the Batch logic but adds a 1-byte Chunk Descriptor.
-```
-┌────────────────────────────────────────────────────────┐
-│ [Chunk Descriptor: u8] (Density & Orientation bits)    │
-│ [Chunk Row Count: varint]                              │
-│ [Payload: Logic from Section 3.3.1 - 3.3.3]            │
-└────────────────────────────────────────────────────────┘
-```
+Stream MUST terminate with `row_count = 0`.
 
-#### 3.4.5 Shared Compression Context
-
-When compression flag is set (bit 2 = 1):
-
-1. **Compression starts** after stream_encoding byte
-2. **All chunks** share the same compression dictionary
-3. **Compressor learns** patterns from early chunks, applies to later chunks
-4. **Decompressor maintains** state across all chunks until end marker
-
-**Typical compression ratio improvement:** 15-30% better than per-packet compression for homogeneous data.
-
-#### 3.4.6 End Marker
-
-Stream **MUST** terminate with `row_count = 0`:
-
-```
-[0x00]  // varint encoding of 0
-```
-
-This signals:
-- No more chunks
-- Decompressor can finalize
-- Decoder can return complete result set
-
-#### 3.4.7 Handling Partial Streams
-
-If stream is interrupted (network error, timeout):
-- Decoder receives incomplete data
-- Transport layer signals error (TCP RST, gRPC error, HTTP abort)
-- Decoder returns what was successfully decoded + error indicator
-
-**Decoders MUST NOT** assume stream is complete until:
+Decoders MUST NOT assume a stream is complete until:
 1. End marker (`row_count = 0`) is received, OR
-2. Transport signals EOF/completion
+2. Transport signals EOF/completion.
+
+---
 
 ### 3.5 Delineation and Navigation
-Anansi is a "calculative" format. To find the end of a record:
-1. **Dense:** Read the $N$-bit State Map (where $N = 2 \times \text{fields in schema}$). Sum the sizes of all fields marked '10'.
-2. **Sparse:** Read the `field_count`. For each field, read the `WireSelector` (varint). If the LSB is 0, read the value based on the type associated with that selector in the schema.
-3. **Variable Lengths:** All `TypeString` and `TypeBytes` are length-prefixed with a varint.
+
+Anansi is a calculative format. To find the end of a record:
+
+1. **Dense:** Read the `2 × N` bit State Map (N = schema field count). Sum the sizes of all fields with state `10`, using the per-type encoding rules in section 2.5.
+2. **Sparse:** Read `field_count`. For each field, read the DataPoint (varint). If null bit = 0, read the value per the type encoded in DataPoint bits 1–4.
+3. **Variable-length fields:** TypeString, TypeGeometry, TypeContainer, and all TypeArray* variants are length-prefixed with a varint.
+
+---
 
 ## 4. Advanced Features
 
@@ -485,322 +562,146 @@ Anansi is a "calculative" format. To find the end of a record:
 
 #### 4.1.1 Compression Flag
 
-When bit 2 of flags byte is set (`1`), data is compressed according to the encryption and hash flags:
+When bit 2 of the flags byte is set, data is compressed per the rules below.
 
 **No encryption, no hash:**
 ```
-All data after byte 1 (schema version) is compressed
+All data after byte 1 (schema version) is compressed.
 ```
 
 **With hash, no encryption:**
 ```
-Hash (16 bytes) is uncompressed
-All data after hash is compressed
-```
-
-**With encryption (hash optional):**
-```
-Compression happens BEFORE encryption
-Decrypt first, then decompress
-```
-
-For Stream packets, compression is indicated in the stream_encoding byte (bit 2) and follows the same rules.
-
-#### 4.1.2 Compression Algorithm
-
-**Recommended:** LZ4 or ZSTD
-
-The specification does not mandate a specific algorithm. Implementations **MUST** document which algorithm they use.
-
-#### 4.1.3 Compressed Packet Structure
-
-**Without hash or encryption:**
-```
-┌──────────────────────────────────────────────┐
-│ [flags: u8]              (bit 2 = 1)         │
-│ [schema_version: u8]     (uncompressed)      │
-├──────────────────────────────────────────────┤
-│ [uncompressed_size: varint]  (optional)      │
-├──────────────────────────────────────────────┤
-│ [compressed_data...]                         │
-└──────────────────────────────────────────────┘
-```
-
-**With hash:**
-```
-┌──────────────────────────────────────────────┐
-│ [flags: u8]              (bits 2,7 = 1)      │
-│ [schema_version: u8]     (uncompressed)      │
-├──────────────────────────────────────────────┤
-│ [hash: 16 bytes]         (uncompressed)      │
-├──────────────────────────────────────────────┤
-│ [uncompressed_size: varint]  (optional)      │
-├──────────────────────────────────────────────┤
-│ [compressed_data...]                         │
-└──────────────────────────────────────────────┘
+Hash (16 bytes) is uncompressed.
+All data after hash is compressed.
 ```
 
 **With encryption:**
 ```
-┌──────────────────────────────────────────────┐
-│ [flags: u8]              (bits 2,6 = 1)      │
-│ [schema_version: u8]     (uncompressed)      │
-├──────────────────────────────────────────────┤
-│ [encrypted_data...]      compress→encrypt    │
-└──────────────────────────────────────────────┘
+Compression happens BEFORE encryption.
+Decode order: decrypt → decompress.
 ```
 
-**Note:** `uncompressed_size` is optional but recommended for buffer pre-allocation.
+For Stream packets, compression is indicated in the `stream_encoding` byte (bit 2) and follows the same rules.
+
+#### 4.1.2 Compression Algorithm
+
+**Recommended:** LZ4 or ZSTD.
+
+The specification does not mandate a specific algorithm. Implementations MUST document which algorithm they use.
+
+#### 4.1.3 Compressed Packet Structures
+
+**Without hash or encryption:**
+```
+[flags: u8]               (bit 2 = 1)
+[schema_version: u8]      (uncompressed)
+[uncompressed_size: varint] (optional, for buffer pre-allocation)
+[compressed_data...]
+```
+
+**With hash:**
+```
+[flags: u8]               (bits 2, 7 = 1)
+[schema_version: u8]      (uncompressed)
+[hash: 16 bytes]          (uncompressed)
+[uncompressed_size: varint]
+[compressed_data...]
+```
+
+**With encryption:**
+```
+[flags: u8]               (bits 2, 6 = 1)
+[schema_version: u8]      (uncompressed)
+[encrypted_data...]       (compress → encrypt)
+```
 
 #### 4.1.4 Decompression Process
 
 **Without encryption:**
 ```
-1. Check bit 2 of flags byte
-2. If set, read schema_version (byte 1)
-3. If bit 7 set, read and verify hash (16 bytes)
-4. Optionally read uncompressed_size
-5. Decompress remaining bytes
-6. Continue decoding based on packet type
+1. Check bit 2 of flags byte.
+2. Read schema_version (byte 1).
+3. If bit 7 set, read and verify hash (16 bytes).
+4. Optionally read uncompressed_size.
+5. Decompress remaining bytes.
+6. Continue decoding based on packet type.
 ```
 
 **With encryption:**
 ```
-1. Check bits 2 and 6 of flags byte
-2. Read schema_version (byte 1)
-3. If bit 7 set, read hash (16 bytes) - hash is of plaintext
-4. Decrypt remaining bytes
-5. Decompress decrypted bytes
-6. Verify hash (if present)
-7. Continue decoding based on packet type
+1. Check bits 2 and 6 of flags byte.
+2. Read schema_version (byte 1).
+3. If bit 7 set, read hash (16 bytes) — hash is of plaintext.
+4. Decrypt remaining bytes.
+5. Decompress decrypted bytes.
+6. Verify hash (if present).
+7. Continue decoding based on packet type.
 ```
 
-**Processing order:** `encrypt(compress(data))` on encode, `decompress(decrypt(data))` on decode
+---
 
 ### 4.2 Encryption
 
-#### 4.2.1 Encryption Flag
+#### 4.2.1 Algorithm
 
-When bit 6 of flags byte is set (`1`), all data after byte 1 (schema version) or after hash (if present) is encrypted.
+**RECOMMENDED:** ChaCha20-Poly1305 or AES-256-GCM.
 
-#### 4.2.2 Encryption Algorithm
+Requirements: authenticated encryption (AEAD), resistant to timing attacks, well-audited. Implementations MUST document which algorithm(s) they support. Key management is out of scope.
 
-**RECOMMENDED:** ChaCha20-Poly1305 or AES-256-GCM
+#### 4.2.2 Encrypted Packet Structure
 
-The specification does not mandate a specific algorithm. Implementations **MUST** document which algorithm(s) they support.
-
-**Requirements for chosen algorithm:**
-- Authenticated encryption (AEAD)
-- Provides confidentiality and integrity
-- Resistant to timing attacks
-- Well-audited implementation
-
-#### 4.2.3 Key Management
-
-Key distribution and management is **out of scope** for this specification. Implementations may use:
-
-- Pre-shared keys (PSK)
-- Key derivation functions (KDF)
-- TLS session keys
-- Key exchange protocols (ECDH, etc.)
-- Hardware security modules (HSM)
-
-#### 4.2.4 Encrypted Packet Structure
-
-**Basic encrypted packet:**
+**Basic:**
 ```
-┌──────────────────────────────────────────────┐
-│ [flags: u8]              (bit 6 = 1)         │
-│ [schema_version: u8]     (plaintext)         │
-├──────────────────────────────────────────────┤
-│ [nonce/IV: N bytes]      (algorithm-specific)│
-├──────────────────────────────────────────────┤
-│ [ciphertext + auth_tag]  (encrypted payload) │
-└──────────────────────────────────────────────┘
+[flags: u8]               (bit 6 = 1)
+[schema_version: u8]      (plaintext)
+[nonce/IV: N bytes]       (algorithm-specific; 12 bytes for ChaCha20/AES-GCM)
+[ciphertext + auth_tag]
 ```
 
-**With hash (authenticated plaintext hash):**
+**With hash:**
 ```
-┌──────────────────────────────────────────────┐
-│ [flags: u8]              (bits 6,7 = 1)      │
-│ [schema_version: u8]     (plaintext)         │
-├──────────────────────────────────────────────┤
-│ [hash: 16 bytes]         (plaintext hash)    │
-├──────────────────────────────────────────────┤
-│ [nonce/IV: N bytes]                          │
-├──────────────────────────────────────────────┤
-│ [ciphertext + auth_tag]                      │
-└──────────────────────────────────────────────┘
+[flags: u8]               (bits 6, 7 = 1)
+[schema_version: u8]      (plaintext)
+[hash: 16 bytes]          (plaintext hash of unencrypted payload)
+[nonce/IV: N bytes]
+[ciphertext + auth_tag]
 ```
 
-**Nonce/IV size:**
-- ChaCha20-Poly1305: 12 bytes (96 bits)
-- AES-256-GCM: 12 bytes (96 bits recommended)
+**Order of operations:**
+- Encode: `plaintext → compress → encrypt → ciphertext`
+- Decode: `ciphertext → decrypt → decompress → plaintext`
 
-#### 4.2.5 Encryption with Compression
+**Nonce reuse:** CRITICAL — never reuse a nonce with the same key. Use counter-based or cryptographically random nonces.
 
-**Order of operations (encoding):**
-```
-plaintext → compress → encrypt → ciphertext
-```
-
-**Order of operations (decoding):**
-```
-ciphertext → decrypt → decompress → plaintext
-```
-
-**Rationale:** Compression before encryption:
-- Better compression ratio (plaintext has more patterns)
-- Standard practice (TLS, SSH, etc.)
-- Prevents compression oracle attacks when using AEAD
-
-#### 4.2.6 Decryption Process
-
-```
-1. Check bit 6 of flags byte
-2. If set, read schema_version (byte 1)
-3. If bit 7 set, read hash (16 bytes)
-4. Read nonce/IV (algorithm-specific size)
-5. Decrypt remaining bytes using algorithm + key + nonce
-6. If AEAD verification fails, reject packet (tampering)
-7. If bit 2 set, decompress decrypted data
-8. If bit 7 set, verify BLAKE3 hash
-9. Continue normal decoding
-```
-
-#### 4.2.7 Security Considerations
-
-**Nonce reuse:**
-- **CRITICAL:** Never reuse nonce with same key
-- Use counter-based nonces or cryptographically random nonces
-- For ChaCha20-Poly1305 and AES-GCM, nonce reuse breaks security
-
-**Key rotation:**
-- Implementations SHOULD support key rotation
-- Use version epoch bits to signal key version if needed
-
-**Additional Authenticated Data (AAD):**
-- Implementations MAY include flags and schema_version in AAD
-- AAD is authenticated but not encrypted
-
-**Example AAD usage:**
-```
-AAD = [flags, schema_version]
-encrypt(plaintext, key, nonce, AAD)
-```
-
-This prevents bit-flipping attacks on the header.
+---
 
 ### 4.3 Integrity Hashing
 
-#### 4.3.1 Hash Flag
+#### 4.3.1 Algorithm
 
-When bit 7 of flags byte is set (`1`), a 16-byte BLAKE3 hash is included after byte 1.
+**REQUIRED:** BLAKE3 truncated to 128 bits (16 bytes).
 
-#### 4.3.2 Hash Algorithm
+#### 4.3.2 Hash Packet Structure
 
-**REQUIRED:** BLAKE3 truncated to 128 bits (16 bytes)
-
-**Properties:**
-- Fast (faster than SHA-256, competitive with BLAKE2)
-- Cryptographically secure
-- Parallelizable
-- 128-bit truncation provides 2^64 collision resistance
-
-#### 4.3.3 Hash Packet Structure
-
-**Basic hashed packet:**
+**Basic:**
 ```
-┌──────────────────────────────────────────────┐
-│ [flags: u8]              (bit 7 = 1)         │
-│ [schema_version: u8]                         │
-├──────────────────────────────────────────────┤
-│ [hash: 16 bytes]         BLAKE3-128          │
-├──────────────────────────────────────────────┤
-│ [payload...]             (plaintext data)    │
-└──────────────────────────────────────────────┘
+[flags: u8]               (bit 7 = 1)
+[schema_version: u8]
+[hash: 16 bytes]          BLAKE3(payload)[0..16]
+[payload...]
 ```
 
-**Hash input:** All bytes starting from payload
+Hash is computed on uncompressed plaintext, not on compressed or encrypted bytes.
+
+#### 4.3.3 Verification Process
 
 ```
-hash = BLAKE3(payload_bytes)[0..16]
+1. Check bit 7 of flags byte.
+2. If set, extract hash from bytes [2..18].
+3. Process data per compression/encryption flags.
+4. Compute BLAKE3(final_plaintext)[0..16].
+5. Compare with extracted hash. If mismatch: reject packet, log, return error.
 ```
-
-#### 4.3.4 Hash with Compression
-
-**Packet structure:**
-```
-┌──────────────────────────────────────────────┐
-│ [flags: u8]              (bits 2,7 = 1)      │
-│ [schema_version: u8]                         │
-├──────────────────────────────────────────────┤
-│ [hash: 16 bytes]         (of uncompressed)   │
-├──────────────────────────────────────────────┤
-│ [compressed_data...]                         │
-└──────────────────────────────────────────────┘
-```
-
-**Hash is computed on uncompressed plaintext**, not compressed data.
-
-#### 4.3.5 Hash with Encryption
-
-**Packet structure:**
-```
-┌──────────────────────────────────────────────┐
-│ [flags: u8]              (bits 6,7 = 1)      │
-│ [schema_version: u8]                         │
-├──────────────────────────────────────────────┤
-│ [hash: 16 bytes]         (of plaintext)      │
-├──────────────────────────────────────────────┤
-│ [nonce/IV: N bytes]                          │
-├──────────────────────────────────────────────┤
-│ [ciphertext + auth_tag]                      │
-└──────────────────────────────────────────────┘
-```
-
-**Hash is computed on plaintext**, included **unencrypted**.
-
-**Benefits:**
-1. **Fast rejection:** Verify hash before decryption to detect corrupt ciphertext
-2. **Layered security:** Hash provides data integrity, AEAD provides auth
-3. **Debugging:** Can verify data integrity without keys
-
-#### 4.3.6 Verification Process
-
-```
-1. Check bit 7 of flags byte
-2. If set, extract hash from bytes [2..18]
-3. Process data according to compression/encryption flags
-4. Compute BLAKE3(final_plaintext)[0..16]
-5. Compare with extracted hash
-6. If mismatch:
-   - Reject packet
-   - Log integrity failure
-   - Return error to caller
-```
-
-#### 4.3.7 Use Cases
-
-**When to use hashing:**
-
-✅ **DO use:**
-- Mission-critical data that must not be corrupted
-- Financial transactions
-- Medical records
-- Audit logs
-- Data over unreliable networks
-- Long-term storage (detect bit rot)
-
-❌ **DON'T use:**
-- Already using AEAD encryption (redundant)
-- Extremely high-frequency, low-latency messages
-- Trusted, error-corrected channels (TCP with good NICs)
-
-**Performance impact:**
-- BLAKE3 cost: ~1-2 GB/s on modern CPUs
-- For 1KB message: ~1 microsecond overhead
-- Negligible for most use cases
 
 ---
 
@@ -813,105 +714,47 @@ hash = BLAKE3(payload_bytes)[0..16]
 **Encoder:**
 ```
 schema.Version = "2.1.4"
--> Lookup in registry: fullVersion = 256 (first v2.x.x)
--> epoch = fullVersion >> 8 = 1
--> schemaVersion = fullVersion & 0xFF = 0
--> Set flags bits 4-5 = 01
--> Set byte 1 = 0x00
+→ Lookup in registry: fullVersion = 256
+→ epoch = fullVersion >> 8 = 1
+→ schemaVersion = fullVersion & 0xFF = 0
+→ Set flags bits 4-5 = 01
+→ Set byte 1 = 0x00
 ```
 
 **Decoder:**
 ```
 flags = 0x10 (bits 4-5 = 01)
 schemaVersion = 0x00
-
--> epoch = (flags >> 4) & 0x03 = 1
--> fullVersion = (epoch << 8) | schemaVersion = 256
--> Lookup in registry: "2.0.0"
--> Load compiled schema for version 256
+→ epoch = (flags >> 4) & 0x03 = 1
+→ fullVersion = (epoch << 8) | schemaVersion = 256
+→ Lookup in registry: "2.1.4"
+→ Load compiled schema for version 256
 ```
 
 #### 5.1.2 Schema Evolution
 
-When schema changes:
-1. Increment version
-2. Define migration in schema
-3. Compile new codec graph
-4. Both old and new versions coexist
+When a schema changes:
+1. Increment the full version.
+2. Define any migration rules.
+3. Recompile codec.
+4. Old and new versions coexist in the registry.
 
-**Example:**
-```
-v1: [id, name, age]
-v2: [id, name, age, email]  ← Added field
+DataPoints are stable within a schema version. Adding a field in a new version assigns it a new DataPoint ID that did not exist in older versions. Removing a field retires its DataPoint ID — it must never be reused within the same schema lineage.
 
-Old client (v1):
-  Encodes with version=1
-  Server decodes using v1 schema
-  Migration applied to upgrade data
+#### 5.1.3 Backward / Forward Compatibility
 
-New client (v2):
-  Encodes with version=2
-  Old server (if v1 only) rejects or downgrades
-```
+**Backward compatible** (new decoder reads old data): Add optional fields only. Do not remove fields. Do not change a DataPoint's type.
 
-#### 5.1.3 Backward/Forward Compatibility
-
-**Backward compatible:** New decoder reads old data
-- Add optional fields only
-- Don't remove required fields
-- Don't change field types
-
-**Forward compatible:** Old decoder reads new data
-- Requires sparse encoding (Type 2)
-- Old decoder ignores unknown field indices
+**Forward compatible** (old decoder reads new data): Requires Sparse encoding. Old decoder ignores DataPoints it does not recognise.
 
 ### 5.2 Schema Distribution
 
-Schemas can be distributed via:
+Schemas can be distributed via: embedded (hardcoded), network (on-demand fetch by version), bundle (included in application package), or registry (central service).
 
-1. **Embedded:** Hardcode meta-schema in client
-2. **Network:** Fetch schemas on-demand by version
-3. **Bundle:** Include schemas in application package
-4. **Registry:** Central schema registry service
+### 5.3 Schema as Single Source of Truth
 
-### 5.3 Schema Reuse and Consolidation
+A single Anansi schema definition can generate: wire format encoder/decoder, database migration, ORM models, TypeScript types, validation functions, OpenAPI documentation, frontend form schemas, mock data generators, test fixtures, and API client code — replacing the 6–8 fragmented copies of the same definition found in typical full-stack applications.
 
-#### 5.3.1 The Schema Proliferation Myth
-
-Schemas already exist in every layer of modern applications - they're just fragmented, duplicated, and not reusable.
-
-#### 5.3.2 Hidden Schemas in Existing Systems
-
-**Typical full-stack application has 6-8 copies of the same schema:**
-
-```
-1. Database schema (SQL/migrations)
-2. ORM models (Prisma, TypeORM, SQLAlchemy)
-3. API types (TypeScript interfaces)
-4. API validation (Zod, class-validator)
-5. OpenAPI/Swagger documentation
-6. Frontend types (TypeScript)
-7. Form validation (Zod, Yup)
-8. Form structure (React components)
-
-ALL describing the SAME data structure!
-```
-
-#### 5.3.3 Anansi's Approach: Single Source of Truth
-
-**One schema definition can generate:**
-```
-1. Wire format encoder/decoder
-2. Database migration
-3. ORM models
-4. TypeScript types
-5. Validation functions
-6. OpenAPI documentation
-7. Frontend form schemas
-8. Mock data generators
-9. Test fixtures
-10. API client code
-```
 ---
 
 ## 6. Implementation Guidelines
@@ -919,107 +762,73 @@ ALL describing the SAME data structure!
 ### 6.1 Encoder Selection Logic
 
 ```go
-func EncodeMessage(schema *Schema, data any) ([]byte, error) {
-    // Stream detection
-    if isStream(data) {
-        return encodeStream(schema, data)
-    }
-    
-    // Batch detection
-    if isBatch(data) {
-        rowCount := len(data)
-        if rowCount >= 1000 {
-            return encodeStream(schema, data) // Use stream for large batches
-        }
-        return encodeBatch(schema, data)
-    }
-    
-    // Dense vs Sparse
-    fieldCount := len(schema.Fields)
-    presentCount := countPresent(data, schema)
+func EncodeDocument(schema *Schema, doc *Document) ([]byte, error) {
+    fieldCount := schema.FieldCount()
+    presentCount := doc.Length()
     density := float64(presentCount) / float64(fieldCount)
-    
-    if (fieldCount <= 64 || density > 0.25) && schema.IsFinite() {
-        return encodeDense(schema, data)
+
+    if schema.IsRecursive() {
+        return encodeSparse(schema, doc)
     }
-    
-    return encodeSparse(schema, data)
+    if fieldCount <= 64 || density > 0.25 {
+        return encodeDense(schema, doc)
+    }
+    return encodeSparse(schema, doc)
+}
+
+func EncodeBatch(schema *Schema, docs []*Document) ([]byte, error) {
+    if len(docs) >= 1000 {
+        return encodeStream(schema, docs)
+    }
+    return encodeBatch(schema, docs)
 }
 ```
 
-### 6.2 Decoder Optimization
+### 6.2 Decoder Optimizations
 
 **Must:**
-- Pre-compile schemas to DAG
-- Cache compiled schemas by version
-- Use jump tables for Type 1 (dense)
-- Zero-copy string decoding where possible
+- Pre-compile schemas to DAG at startup; cache by full version.
+- Use jump tables for Dense packet type dispatch.
+- Use DataPoint int32 value as the direct `positions` map key — no conversion needed.
 
 **Should:**
-- Implement field offset pre-calculation
-- Use SIMD for bitmap operations
-- Pool buffers to reduce allocations
+- Pre-calculate state map byte length from schema field count: `ceil(2 * N / 8)`.
+- Use SIMD for state map bitfield operations on wide schemas.
+- Pool decode buffers to eliminate per-request allocation.
+- Use `doc.Walk` for zero-copy deserialization directly into the Document's typed slices.
 
 **May:**
-- Implement lazy field access (Proxy pattern)
-- JIT compile decoders for hot schemas
+- Implement zero-copy string decoding (`unsafe.String` pointing into wire buffer for short-lived strings).
+- JIT-compile decoders for hot schemas.
 
-### 6.3 DAG-Based Decoder Implementation
+### 6.3 DAG-Based Decoder
 
-#### 6.3.1 Overview
+Compiling a schema into a DAG eliminates runtime branching on the hot decoding path. Each node in the DAG corresponds to a DataType block in the wire format. At compile time, the decoder pre-computes the state map bit length, the expected value count per type block, and the size of each fixed-width field. At decode time, the DAG executes without schema lookups.
 
-Compiling a schema into a DAG driven decoder optimizes decoding by eliminating runtime branching.
-
-#### 6.3.2 Zero-Copy String Implementation
-
-**Technique:** Return string descriptor pointing into original buffer
+#### 6.3.1 Zero-Copy String Decoding
 
 ```go
-// Safe zero-copy string creation
+// Safe zero-copy string: points into the wire buffer.
+// Source buffer must outlive the string.
 func zeroCopyString(buf []byte, offset, length int) string {
     return unsafe.String(&buf[offset], length)
 }
 ```
 
-**Requirements:**
-- Source buffer must remain valid for string lifetime
-- Strings are immutable (Go guarantee)
-- Safe for read-only operations
+Use for request-scoped strings (IDs, paths, method names). Do not use for strings that outlive the request or are returned to clients.
 
-**When to use:**
-- Request IDs, trace IDs (short-lived, read-only)
-- Path strings, method names
-- Log messages
-
-**When NOT to use:**
-- Strings stored beyond request scope
-- User-provided content returned to client
-
-#### 6.3.4 Decoder Cache
+#### 6.3.2 Decoder Cache
 
 ```go
 type DecoderCache struct {
-    decoders map[uint8]func([]byte) any  // version → decoder
     mu       sync.RWMutex
+    decoders map[uint16]func([]byte, *Document) error // fullVersion → decoder
 }
 
-func (c *DecoderCache) Get(version uint8) (func([]byte) any, bool) {
-    c.mu.RLock()
-    defer c.mu.RUnlock()
-    decoder, ok := c.decoders[version]
-    return decoder, ok
-}
-
-// Usage
-cache := &DecoderCache{decoders: make(map[uint8]func([]byte) any)}
-
-// Compile and cache at startup
-cache.Set(1, compileDecoder(userSchemaV1))
-cache.Set(2, compileDecoder(userSchemaV2))
-
-// Hot path (per request)
-decoder, _ := cache.Get(buf[1])  // buf[1] = schema version
-result := decoder(buf)
+// Hot path (per request):
+version := uint16((uint16(flags>>4)&0x03)<<8) | uint16(buf[1])
+decoder, _ := cache.Get(version)
+decoder(buf[2:], doc)
 ```
 
 ### 6.4 Decoding Algorithm
@@ -1027,278 +836,152 @@ result := decoder(buf)
 #### 6.4.1 Header Parsing
 
 ```
-1. Read flags byte (byte 0)
-2. Extract packet type (flags & 0x03)
-3. Extract compression flag (flags & 0x04)
-4. Extract epoch (flags >> 4 & 0x03)
-5. Extract encryption flag (flags & 0x40)
-6. Extract hash flag (flags & 0x80)
-7. Read schema version (byte 1)
-8. Calculate fullVersion = (epoch << 8) | schema_version
-9. If hash flag set, read and store hash (16 bytes)
-10. If encryption flag set, decrypt remaining bytes
-11. If compression flag set, decompress data
-12. If hash flag set, verify hash
+1.  Read flags byte (byte 0).
+2.  Extract packet type  (flags & 0x03).
+3.  Extract compression  (flags & 0x04).
+4.  Extract epoch        ((flags >> 4) & 0x03).
+5.  Extract encryption   (flags & 0x40).
+6.  Extract hash flag    (flags & 0x80).
+7.  Read schema version  (byte 1).
+8.  fullVersion = (epoch << 8) | schemaVersion.
+9.  If hash flag: read and store hash (bytes 2–17).
+10. If encryption flag: decrypt remaining bytes.
+11. If compression flag: decompress.
+12. If hash flag: verify BLAKE3(plaintext)[0..16].
 ```
 
-#### 6.4.2 Type Dispatch
+#### 6.4.2 Dense Decoding
 
 ```
-switch (packet_type) {
-  case 0x00: decode_dense()
-  case 0x01: decode_sparse()
-  case 0x02: decode_batch()
-  case 0x03: decode_stream()
-}
+1. Look up compiled schema for fullVersion.
+2. Compute state map byte length: ceil(2 * N / 8).
+3. Read state map bytes.
+4. For each DataType (iota 0–15):
+   a. For each schema field of this type, in DataPoint order:
+      - Read 2-bit state from state map.
+      - If state = 10 (Has Value): decode value, call doc.AppendXxx(point, value).
+      - If state = 01 (Null): call doc.SetNull(point).
+      - If state = 00 (Not Set): skip.
 ```
 
-#### 6.4.3 Dense Decoding
+#### 6.4.3 Sparse Decoding
 
 ```
-1. Lookup compiled schema for version
-2. Get field ordering from schema
-3. For each field in order:
-   a. Check for null marker (0x00) if optional
-   b. Decode based on field type
-   c. Advance buffer offset
-4. Return decoded object
+1. Read field_count (varint).
+2. For i = 0 to field_count-1:
+   a. Read wire DataPoint (varint).
+   b. Extract null bit = wirePoint & 1.
+   c. Recover canonical point = DataPoint(wirePoint & ^1).
+   d. If null bit = 1: call doc.SetNull(canonicalPoint).
+   e. Else: decode value by canonicalPoint.Type(), call doc.SetXxx(canonicalPoint, value).
 ```
 
-#### 6.4.4 Sparse Decoding
-
-```
-1. Read field_count (varint)
-2. Initialize result object
-3. For i = 0 to field_count-1:
-   a. Read field_index (varint)
-   b. Lookup field definition from schema
-   c. Decode field data by type
-   d. Store in result[field.name]
-4. Return result object
-```
-
-#### 6.4.5 Batch Decoding
+#### 6.4.4 Batch Decoding
 
 **Row-oriented:**
 ```
-1. Read row_count (varint)
-2. For i = 0 to row_count-1:
-   a. Decode as Dense packet (reuse dense decoder)
-   b. Append to results array
-3. Return results array
+1. Read record_count (varint).
+2. For i = 0 to record_count-1:
+   a. Acquire doc from pool.
+   b. Decode as Dense or Sparse per batch_flags.
+   c. Process doc.
+   d. Release doc to pool.
 ```
 
 **Columnar:**
 ```
-1. Read row_count (varint)
-2. For each field in schema:
-   a. Read null bitmap (if nullable)
-   b. Read values array
-   c. Store column
-3. Transpose columns to rows
-4. Return results array
+1. Read record_count (varint).
+2. For each DataType block:
+   a. Read state map column (2 bits × record_count per field).
+   b. Read value array for this type.
+   c. Distribute values across per-record Documents.
 ```
 
-#### 6.4.6 Stream Decoding
+#### 6.4.5 Stream Decoding
 
 ```
-1. Read stream header (4 bytes)
-2. Parse stream_encoding flags
-3. If compressed, initialize decompressor with shared context
-4. Initialize results array
-5. Loop:
-   a. Read row_count (varint)
-   b. If row_count == 0, break (end of stream)
-   c. Decode chunk based on stream_encoding
-   d. Append chunk to results
-6. If compressed, finalize decompressor
-7. Return results array
+1. Read stream header (4 bytes: flags, version, extended_type, stream_encoding).
+2. Parse stream_encoding flags.
+3. If compressed, initialize shared decompressor context.
+4. Loop:
+   a. Read chunk_descriptor (u8).
+   b. Read row_count (varint).
+   c. If row_count = 0: break (end of stream).
+   d. Decode chunk per chunk_descriptor.
+   e. Process decoded documents.
+5. If compressed, finalize decompressor.
 ```
 
-### 6.5 Testing Requirements
+---
 
-Implementations **MUST** pass:
-- Round-trip encoding/decoding tests
-- Schema evolution tests (v1 → v2 → v3)
-- All four packet types
-- Compression tests
-- Encryption and hashing tests
-- Stream interruption handling
-- Error handling tests
-- Performance benchmarks vs JSON
+## 7. Performance Characteristics
 
+| Operation | Complexity | Notes |
+|---|---|---|
+| Dense encode | O(N) | N = set fields; state map write is O(schema size) |
+| Dense decode | O(N) | DAG-compiled: no runtime schema lookups |
+| Sparse encode | O(M log M) | M = set fields; sort by DataPoint if not pre-sorted |
+| Sparse decode | O(M) | One map insert per field via doc.SetXxx |
+| Batch encode (row) | O(R × N) | R = records, N = fields per record |
+| Batch decode (columnar) | O(R × N) | Better cache performance for wide schemas |
+| Field access after decode | O(1) | Document.GetXxx is one map lookup |
 
-## 7. Protocol Extensions
+**Key advantages over JSON:**
+- No string key allocation or hashing per field.
+- No interface boxing per value.
+- Typed slices in DataContainer eliminate GC pressure proportional to field count.
+- Zero allocations on decode when using a pooled Document and pre-warmed capacity.
 
-### 7.1 Protocol Envelope Encoding
+---
 
-The wire format can encode entire protocol envelopes, not just application data. By defining schemas for request/response metadata, error handling, routing, and other protocol concerns, implementations can achieve protocol-level performance optimizations.
+## 8. Protocol Extensions
 
-### 7.2 API Request Envelope Example
+### 8.1 Protocol Envelope Encoding
 
-**Schema:**
-```json
-{
-  "name": "APIRequest_v1",
-  "version": "1",
-  "fields": {
-    "method": {
-      "type": "enum",
-      "values": ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"]
-    },
-    "authenticated": {"type": "boolean"},
-    "compressed": {"type": "boolean"},
-    "priority": {
-      "type": "enum",
-      "values": ["low", "normal", "high", "urgent"]
-    },
-    "requestId": {"type": "string"},
-    "path": {"type": "string"},
-    "body": {
-      "type": "union",
-      "schema": [
-        {"id": "UserCreateRequest"},
-        {"id": "OrderCreateRequest"}
-      ]
-    }
-  }
-}
+By defining Anansi schemas for request/response metadata, routing, and error handling, implementations achieve protocol-level performance. The wire format encodes envelope fields the same way it encodes data fields — there is no special envelope type.
+
+### 8.2 API Request Envelope Example
+
+**Schema (expressed as field DataPoints after schema compilation):**
+
+```
+TypeBool fields:   authenticated, compressed
+TypeInt  fields:   priority (enum as int), method (enum as int)
+TypeString fields: requestId, path
+TypeContainer:     body (nested Document, schema discriminated by method)
 ```
 
-**Wire format:**
+**Wire format (Dense):**
 ```
-[0x00][0x01]           // Dense packet, APIRequest_v1
+[0x00][0x01]            // Dense packet, schema version 1
 
-// Group 0: Booleans (bitfield)
-[0x01]                 // authenticated=true, compressed=false
+// State map: 2 bits per field, 7 fields total → 2 bytes
+[state_map: 2 bytes]
 
-// Group 1: Enums (bit-packed)
-[0xB4 0x01]            // method=POST, priority=high
+// TypeBool block (2 fields packed):
+[0x01]                  // authenticated=true, compressed=false
 
-// Group 5: Strings
-[0x20][32 bytes]       // requestId (UUID)
-[0x0D]["/api/users"]   // path
+// TypeInt block (2 fields):
+[zigzag(method)]        // e.g. POST=1 → 0x02
+[zigzag(priority)]      // e.g. high=2 → 0x04
 
-// Group 10: Union
-[0x00]                 // discriminator=0 (UserCreateRequest)
-[nested schema data]
+// TypeString block (2 fields):
+[0x20][32 bytes]        // requestId (UUID)
+[0x0D]["/api/users"]    // path
 
-Total envelope overhead: ~40 bytes
+// TypeContainer block (1 field):
+[payload_length][nested anansi bytes]
+
+Total envelope overhead: ~40 bytes vs ~200-300 bytes for HTTP headers
 ```
-
-**Compare to HTTP:**
-```
-POST /api/users HTTP/1.1
-Host: api.example.com
-Authorization: Bearer eyJhbGc...
-X-Request-ID: 019b84534d097c33b603bff7d02bb65c
-Content-Type: application/json
-Content-Length: 156
-
-Overhead: ~200-300 bytes
-```
-
-**Savings: 80-85% bandwidth reduction for envelope**
 
 ### 8.3 RPC Method Routing
 
-**Schema with bit-packed routing:**
-```json
-{
-  "name": "RPCEnvelope_v1",
-  "fields": {
-    "service": {
-      "type": "enum",
-      "values": ["UserService", "OrderService", "PaymentService", "AuthService"]
-    },
-    "method": {
-      "type": "enum",
-      "values": ["CreateUser", "GetUser", "UpdateUser", "CreateOrder", "ProcessPayment"]
-    }
-  }
-}
-```
-
-**Bit-packing:**
-- service: 2 bits (4 services)
-- method: 4 bits (16 methods)
-- Total routing: 6 bits (1 byte)
-
-**DAG-compiled router:**
-```go
-func routeRPC_v1(buf []byte) {
-    packed := buf[2]  // Skip header
-    service := Service(packed & 0x03)
-    method := Method((packed >> 2) & 0x0F)
-    
-    // Direct dispatch (no string matching!)
-    handlers[service][method](buf[3:])
-}
-
-// ~5 CPU cycles for routing decision
-```
+With enums encoded as TypeInt fields and a DAG-compiled router, method dispatch requires approximately 5 CPU cycles — no string matching, no header parsing loop.
 
 ### 8.4 Service Mesh Integration
 
-**Schema for service mesh metadata with bit-packing (24 bits total):**
-```
-sourceService:   8 bits
-targetService:   8 bits
-priority:        2 bits
-retryPolicy:     2 bits
-circuitBreaker:  1 bit
-rateLimited:     1 bit
-authenticated:   1 bit
-encrypted:       1 bit
-```
-
-**vs gRPC with Envoy:**
-```
-gRPC metadata parsing:  ~10,000 cycles
-Envoy proxy overhead:   ~40,000 cycles
-Total:                  ~50,000 cycles
-
-Anansi: ~20 cycles (2,500x faster!)
-```
-
-### 8.5 Complete Request/Response Cycle Performance
-
-**Scenario:** API endpoint receiving 1M requests/second
-
-**Traditional JSON over HTTP:**
-```
-Parse HTTP headers:     ~1,000 cycles
-JSON decode request:    ~2,500 cycles
-Process:                ~1,000 cycles
-JSON encode response:   ~3,000 cycles
-Format HTTP headers:    ~800 cycles
-Total:                  ~8,300 cycles/request
-
-Throughput: 3 GHz / 8,300 = ~361,000 req/sec/core
-Memory: ~800 bytes allocated/request = 800 MB/sec GC churn
-Bandwidth: ~400 bytes/request
-```
-
-**Anansi with DAG-compiled envelopes:**
-```
-Decode envelope (DAG):  ~50 cycles
-Decode request (DAG):   ~100 cycles
-Process:                ~1,000 cycles
-Encode response (DAG):  ~80 cycles
-Encode envelope (DAG):  ~40 cycles
-Total:                  ~1,270 cycles/request
-
-Throughput: 3 GHz / 1,270 = ~2,362,000 req/sec/core (6.5x faster)
-Memory: ~0 bytes allocated/request = 0 MB/sec GC churn
-Bandwidth: ~60 bytes/request (85% reduction)
-
-Additional benefits:
-- Zero GC pressure
-- Predictable latency
-- Better CPU cache utilization
-- Lower memory footprint
-- Higher connection density
-```
+Schema fields for service mesh metadata (sourceService, targetService, priority, retryPolicy, circuitBreaker, etc.) encode to packed TypeInt and TypeBool fields. Total metadata: 3–4 bytes. Parsing: ~20 cycles.
 
 ---
 
@@ -1306,83 +989,43 @@ Additional benefits:
 
 ### 9.1 Error Handling
 
-#### 9.1.1 Invalid Packet Type
-
-**Error:** Unknown packet type (flags & 0x03 not in {0x00, 0x01, 0x02, 0x03})
-
-**Action:** Reject packet, return error
-
-#### 9.1.2 Unknown Schema Version
-
-**Error:** Decoder doesn't have schema for version
-
-**Action:**
-- Option 1: Reject packet, request schema from server
-- Option 2: Use schema negotiation protocol
-
-#### 9.1.3 Buffer Underflow
-
-**Error:** Not enough bytes remaining for expected data
-
-**Action:** Reject packet, return error
-
-#### 9.1.4 Type Mismatch
-
-**Error:** Data doesn't match schema type expectations
-
-**Action:** Reject packet, validation failed
-
-#### 9.1.5 Compression Errors
-
-**Error:** Decompression fails
-
-**Action:** Reject packet, return error
-
-#### 9.1.6 Stream Interruption
-
-**Error:** Stream ends without end marker (row_count = 0)
-
-**Action:** Return partial results with error indicator, or reject entirely based on implementation policy
+| Error | Action |
+|---|---|
+| Unknown packet type (`flags & 0x03` not in 0–3) | Reject, return error |
+| Unknown schema version | Reject; optionally request schema from registry |
+| Buffer underflow | Reject, return error |
+| Type mismatch (DataPoint type ≠ value encoding) | Reject, validation failed |
+| Decompression failure | Reject, return error |
+| AEAD authentication failure | Reject immediately — possible tampering |
+| Hash mismatch | Reject, log integrity failure |
+| Stream ends without end marker | Return partial results + error, or reject per policy |
+| DataPoint ID outside schema | Ignore (forward compatibility) or reject per policy |
 
 ### 9.2 Security Considerations
 
 #### 9.2.1 Buffer Overflow Protection
 
-Implementations **MUST**:
-- Validate all length fields before allocation
-- Set maximum message size limits
-- Check buffer bounds before all reads
-- Reject excessive varint sizes
+Implementations MUST:
+- Validate all length fields before allocation.
+- Set a maximum message size limit.
+- Check buffer bounds before every read.
+- Reject excessive varint sizes (> 9 bytes for 64-bit values).
 
 #### 9.2.2 Compression Bombs
 
-When compression is enabled:
-- Set maximum decompressed size limit
-- Set decompression time limit
-- Reject excessive compression ratios
+When compression is enabled: set maximum decompressed size limit, set decompression time limit, reject excessive compression ratios.
 
 #### 9.2.3 Stream Resource Limits
 
-For stream packets:
-- Set maximum chunk count
-- Set maximum total rows
-- Set timeout for end marker
-- Enforce maximum stream duration
+Set maximum chunk count, maximum total rows, timeout for end marker, maximum stream duration.
 
 #### 9.2.4 Schema Validation
 
-Before decoding:
-- Validate schema version exists
-- Verify schema hash (if applicable)
-- Check schema hasn't been revoked
+Before decoding: validate schema version exists, verify schema hash if applicable, check schema has not been revoked.
 
 #### 9.2.5 Denial of Service Mitigations
 
-- Rate limit schema requests
-- Cache compiled schemas
-- Set maximum field count per schema
-- Limit nesting depth
-- Set maximum stream chunks
+Rate-limit schema requests. Cache compiled schemas. Set maximum DataPoint count per schema. Limit stream chunks and duration.
 
 ---
 
@@ -1391,28 +1034,36 @@ Before decoding:
 ### 10.1 Conformance Levels
 
 **Level 1: Basic**
-- Type 1 (Dense) support
-- Type 2 (Sparse) support
-- Unsigned varint encoding
-- All primitive types
-- Uncompressed only
+- Type 1 (Dense) and Type 2 (Sparse) support.
+- All 16 DataTypes (TypeUnknown through TypeArray).
+- Unsigned varint encoding.
+- Uncompressed only.
 
 **Level 2: Complete**
-- All four packet types (Dense, Sparse, Batch, Stream)
-- Signed integers (zigzag)
-- All field types including Record
-- Optional compression
+- All four packet types.
+- Signed integers (zigzag).
+- Compression support.
+- TypeContainer recursive encoding/decoding.
 
 **Level 3: Optimized**
-- DAG-based decoding
-- Zero-copy strings
-- Schema compilation
-- Jump table optimization
-- Shared compression context for streams
+- DAG-based decoding.
+- Zero-copy string decoding.
+- Schema compilation and caching.
+- Jump table optimization.
+- Shared compression context for streams.
+- Direct Document pool integration.
 
-### 10.2 Test Vectors
+### 10.2 Test Requirements
 
-Implementations **SHOULD** pass official test vectors (see Appendix A).
+Implementations MUST pass:
+- Round-trip encoding/decoding for all 16 DataTypes.
+- State transitions: set → null → unset → set.
+- Schema evolution tests (v1 → v2 → v3).
+- All four packet types.
+- Compression and encryption tests.
+- Stream interruption handling.
+- TypeContainer recursive encoding.
+- Conformance with Document v2.0 `Walk`-based serialization pattern.
 
 ---
 
@@ -1420,228 +1071,207 @@ Implementations **SHOULD** pass official test vectors (see Appendix A).
 
 ### Appendix A: Test Vectors
 
-#### A.1 Type 1: Dense, Simple Types
+#### A.1 Type 1: Dense, Scalar Types
 
-**Schema:**
-```json
-{
-  "name": "Simple",
-  "version": "1",
-  "fields": {
-    "count": {"type": "integer"},
-    "name": {"type": "string"},
-    "active": {"type": "boolean"}
-  }
-}
-```
+**Schema (v1):** 3 fields — `count` (TypeInt, id=1), `name` (TypeString, id=2), `active` (TypeBool, id=3)
 
-**Sorted fields (by group, then fieldKey):**
+**DataPoints in schema (canonical, null bit=0):**
 ```
-Group 0 (Boolean): active
-Group 2 (Integer): count
-Group 5 (String): name
+count:  DataPoint{TypeInt,    id=1} = 0x00000022  (TypeInt=1, id=1)
+name:   DataPoint{TypeString, id=2} = 0x00000046  (TypeString=3, id=2)
+active: DataPoint{TypeBool,   id=3} = 0x00000068  (TypeBool=4, id=3... see note)
 ```
+*(Exact bit values depend on schema-assigned IDs; shown illustratively. Ordering is ascending int32.)*
 
-**Input:**
-```json
-{"count": 42, "name": "test", "active": true}
+**Input:** `{count: 42, name: "test", active: true}`
+
+**State map:** 3 fields × 2 bits = 6 bits → 1 byte (padded to 8 bits)
+```
+Field 0 (count):  10  (Has Value)
+Field 1 (name):   10  (Has Value)
+Field 2 (active): 10  (Has Value)
+Padded: 10 10 10 00 → 0b10101000 → 0xA8
 ```
 
 **Expected wire format (hex):**
 ```
-00 01          // flags=0x00 (Dense), version=1
-01             // boolean bitfield: active=true
-2A             // count=42 (varint)
-04             // name length=4
-74 65 73 74    // "test"
+00 01       // flags=0x00 (Dense), version=1
+A8          // state map: all 3 fields present
+2A          // count=42 (TypeInt block, zigzag varint)
+04          // name length=4 (TypeString block)
+74 65 73 74 // "test"
+01          // active=true (TypeBool block, 1 byte in sparse; packed bit in dense)
 ```
 
-**Total: 10 bytes**
+**Total: 9 bytes**
 
-#### A.2 Type 2: Sparse, Large Schema
+---
 
-**Schema: 100 fields, only 2 present**
+#### A.2 Type 2: Sparse, 2 of 100 Fields Present
+
+**Input:** field at DataPoint 0x00000022 = 42, field at DataPoint 0x00000646 = "test"
 
 **Expected wire format (hex):**
 ```
-01 01          // flags=0x01 (Sparse), version=1
-02             // field_count=2
-05             // field_selector=5
-2A             // value=42
-32             // field_selector=50
+01 01       // flags=0x01 (Sparse), version=1
+02          // field_count=2
+22 00 00 00 // DataPoint (varint encoded int32) for count; null bit=0
+2A          // value=42 (zigzag varint)
+46 06 00 00 // DataPoint for name; null bit=0
 04 74 65 73 74 // "test"
 ```
 
-**Total: 12 bytes**
+*(DataPoints varint-encoded as their int32 value.)*
 
-#### A.3 Type 3: Batch, Row-Oriented
+**Total: 14 bytes**
 
-**Schema: 3 fields, 2 rows**
+---
+
+#### A.3 Type 1: Dense with Null Field
+
+**Schema (v1):** `id` (TypeString), `email` (TypeString, optional), `age` (TypeInt)
+
+**Input:** `{id: "123", age: 25}` — email is null
+
+**State map:** 3 fields; email=null (01), age=Has Value (10), id=Has Value (10)
+```
+Ordered by DataPoint ascending — assume age sorts before email, email before id:
+age:   10
+email: 01
+id:    10
+Packed: 10 01 10 00 → 0b10011000 → 0x98
+```
 
 **Expected wire format (hex):**
 ```
-02 01          // flags=0x02 (Batch, row), version=1
-02             // row_count=2
+00 01       // flags=0x00 (Dense), version=1
+98          // state map
+19          // age=25 (TypeInt block, zigzag(25)=50=0x32... varint)
+            // email: no bytes (state=01, null)
+03 31 32 33 // id="123" (TypeString block)
+```
 
-// Row 1
-01             // field 0 (boolean)
-0A             // field 1 (int=10)
-03 66 6F 6F    // field 2 (string="foo")
+**Total: 7 bytes**
+
+---
+
+#### A.4 Type 3: Batch, Row-Oriented
+
+**Schema:** 3 fields: active (TypeBool), count (TypeInt), name (TypeString). 2 rows.
+
+**Expected wire format (hex):**
+```
+02 01       // flags=0x02 (Batch, row-oriented), version=1
+02          // record_count=2
+00          // batch_flags: row-oriented (bit 0=0), dense (bit 1=0)
+
+// Row 1: state map (all present) + values
+FC          // state map: 10 11 11 00 → all 3 present (illustrative)
+01          // active=true
+0A          // count=10 (zigzag varint)
+03 66 6F 6F // name="foo"
 
 // Row 2
-00             // field 0 (boolean)
-14             // field 1 (int=20)
-03 62 61 72    // field 2 (string="bar")
+FC          // state map
+00          // active=false
+14          // count=20
+03 62 61 72 // name="bar"
 ```
 
-**Total: 18 bytes**
+**Total: ~20 bytes**
 
-#### A.4 Type 4: Stream, Row-Oriented
+---
 
-**Schema: 3 fields, 247 rows in 100-row chunks**
+#### A.5 Type 4: Stream, Row-Oriented
+
+**Schema:** 3 fields, 247 rows in chunks of 100.
 
 **Expected wire format (hex):**
 ```
-03 01          // flags=0x03 (Stream), version=1
-01             // extended_type=0x01 (Stream)
-00             // stream_encoding: row-oriented, uncompressed
+03 01       // flags=0x03 (Stream), version=1
+01          // extended_type=0x01 (Stream)
+00          // stream_encoding: row-oriented, uncompressed
 
-// Chunk 1 (100 rows)
-64             // row_count=100
-[100 rows of data...]
+// Chunk 1
+00          // chunk_descriptor: row-oriented dense
+64          // row_count=100
+[100 rows...]
 
-// Chunk 2 (100 rows)
-64             // row_count=100
-[100 rows of data...]
+// Chunk 2
+00          // chunk_descriptor
+64          // row_count=100
+[100 rows...]
 
-// Chunk 3 (47 rows)
-2F             // row_count=47
-[47 rows of data...]
+// Chunk 3
+00          // chunk_descriptor
+2F          // row_count=47
+[47 rows...]
 
 // End marker
-00             // row_count=0
+00          // row_count=0
 ```
 
-#### A.5 Type 1: Dense with Null Field
+---
 
-**Schema:**
-```json
-{
-  "name": "User",
-  "version": "1",
-  "fields": {
-    "id": {"type": "string"},
-    "email": {"type": "string", "required": false},
-    "age": {"type": "integer"}
-  }
-}
-```
+#### A.6 TypeContainer: Nested Document
 
-**Sorted fields:**
-```
-Group 2: age
-Group 5: email, id (alphabetical)
-```
+**Schema (v1):** `user` (TypeContainer, schema=UserSchema v1), `score` (TypeInt)
 
-**Input (email is null):**
-```json
-{"id": "123", "age": 25}
-```
+**Input:** `{score: 99, user: {name: "Alice", age: 30}}`
 
 **Expected wire format (hex):**
 ```
-00 01          // flags=0x00 (Dense), version=1
-19             // age=25 (varint)
-00             // email=null (null marker)
-03 31 32 33    // id="123"
+00 01           // flags=0x00 (Dense), version=1
+[state map]     // 2 fields present
+
+// TypeInt block:
+63              // score=99 (zigzag varint)
+
+// TypeContainer block:
+[length varint] // byte length of nested packet
+00 01           // nested Dense packet, UserSchema v1
+[user state map + values]  // name="Alice", age=30 encoded per UserSchema
 ```
 
-**Total: 8 bytes**
+The nested packet is a fully valid Anansi packet encoded with the referenced sub-schema version.
 
-#### A.6 Type 1: Unstructured Record
-
-**Schema:**
-```json
-{
-  "name": "Metadata",
-  "version": "1",
-  "fields": {
-    "data": {"type": "record"}
-  }
-}
-```
-
-**Input:**
-```json
-{
-  "data": {
-    "count": 42,
-    "name": "test"
-  }
-}
-```
-
-**Expected wire format (hex):**
-```
-00 01          // flags=0x00 (Dense), version=1
-02             // record count=2
-
-// Entry 1: "count" (alphabetically first)
-05             // key length=5
-63 6F 75 6E 74 // "count"
-02             // type_tag=0x02 (integer)
-2A             // value=42
-
-// Entry 2: "name"
-04             // key length=4
-6E 61 6D 65    // "name"
-05             // type_tag=0x05 (string)
-04             // string length=4
-74 65 73 74    // "test"
-```
-
-**Total: 26 bytes**
+---
 
 ### Appendix B: MIME Type
 
 **Proposed MIME type:** `application/vnd.anansi.binary`
-
 **File extension:** `.anansi` or `.anb`
+
+---
 
 ### Appendix C: Schema Definition Wire Format
 
-The meta-schema itself can be encoded using this format, enabling schema distribution:
+Schema definitions themselves can be encoded as Type 1 (Dense) packets using a hardcoded meta-schema version. This enables complete bootstrapping:
 
-```
-Schema definitions are encoded as Type 1 (Dense) packets
-using a hardcoded meta-schema version
-```
+1. Client hardcodes meta-schema codec.
+2. Server sends schemas encoded via meta-schema.
+3. Client decodes schemas, compiles DAG decoders.
+4. Data exchange begins.
 
-This enables complete bootstrapping:
-1. Client hardcodes meta-schema codec
-2. Server sends schemas encoded via meta-schema
-3. Client decodes schemas, compiles codecs
-4. Data exchange begins
+---
 
-### Appendix D: Extended Type System
+### Appendix D: Extended Packet Types
 
-The extended type byte (when flags & 0x03 == 0x03) allows for future packet types:
+When `flags & 0x03 == 0x03`, the `extended_type` byte selects the packet variant:
 
 ```
 [flags: 0x03]
 [schema_version: u8]
-[extended_type: u8]  ← Type identifier
+[extended_type: u8]
 [extended_data...]
 
 Current:
   0x01 = Stream
 
 Reserved:
-  0x02-0xFF = Future extensions
+  0x02 = Schema negotiation
+  0x03 = Partial update / patch
+  0x04 = Delta encoding
+  0x05 = Multi-schema message
+  0x06–0xFF = Future extensions
 ```
-
-Possible uses:
-- Schema negotiation
-- Partial updates/patches
-- Delta encoding
-- Multi-schema messages
