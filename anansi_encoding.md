@@ -231,11 +231,10 @@ Dense Mode:  Packed into bitfields (8 bools per byte).
 Sparse Mode: Single byte (0x00 = false, 0x01 = true).
 ```
 
-#### TypeDecimal
+#### TypeBytes ([]byte)
 ```
-[scale: u8][coefficient: signed varint]
-Represents: coefficient / 10^scale
-Example: 123.45 → [0x02][zigzag(12345)]
+[length: varint][bytes]
+Length is byte count. Raw bytes follow with no encoding.
 ```
 
 #### TypeGeometry ([][]float64)
@@ -286,10 +285,10 @@ FOR EACH ELEMENT: [length: varint][bytes: UTF-8]
 Bits packed LSB-first within each byte.
 ```
 
-#### TypeArrayDecimal ([]Decimal)
+#### TypeArrayBytes ([][]byte)
 ```
 [count: varint]
-FOR EACH ELEMENT: [scale: u8][coefficient: signed varint]
+FOR EACH ELEMENT: [length: varint][bytes]
 ```
 
 #### TypeArrayObject ([]*DataContainer)
@@ -304,17 +303,21 @@ FOR EACH ELEMENT: [payload_length: varint][anansi_packet_bytes]
 FOR EACH ELEMENT: [type_tag: u8][encoded_value]
 ```
 
-#### TypeArray ([][]any)
+#### TypeArrayGeometry ([][][]float64)
 ```
-[outer_count: varint]
-FOR EACH INNER ARRAY: [count: varint] FOR EACH ELEMENT: [type_tag: u8][encoded_value]
+[count: varint]
+FOR EACH ELEMENT:
+  [ring_count: varint]
+  FOR EACH RING:
+    [point_count: varint]
+    FOR EACH POINT: [x: float64 LE][y: float64 LE]
 ```
 
 ### 2.6 Storage Model Inheritance
 
 The Anansi Wire Format inherits directly from the Document Specification v2.0:
 
-- **Type system:** Exactly 16 DataTypes, indexed 0–15 by their iota value.
+- **Type system:** Exactly 16 DataTypes, indexed 0–15 by their iota value (TypeUnknown=0 through TypeArrayGeometry=15).
 - **Field identity:** 27-bit ID space per type — up to 134,217,727 distinct field identifiers per DataType.
 - **Selector stability:** DataPoints are schema-derived and stable for the life of the full schema version.
 - **No depth/offset concept:** Nesting is flattened into the 27-bit ID space at schema definition time. The wire format sees a flat set of DataPoint→value pairs regardless of logical nesting depth.
@@ -380,7 +383,7 @@ The state map is byte-aligned (padded with `00` bits to the next byte boundary i
 ├───────────────────────────────┤
 │ TypeBool Value Block          │
 ├───────────────────────────────┤
-│ TypeDecimal Value Block       │
+│ TypeBytes Value Block         │
 ├───────────────────────────────┤
 │ TypeGeometry Value Block      │
 ├───────────────────────────────┤
@@ -390,7 +393,7 @@ The state map is byte-aligned (padded with `00` bits to the next byte boundary i
 └───────────────────────────────┘
 ```
 
-Value blocks appear in DataType iota order (TypeUnknown=0 through TypeArray=15). Empty blocks occupy zero bytes. The decoder uses the schema field count per type to know exactly how many values to read from each block.
+Value blocks appear in DataType iota order (TypeUnknown=0 through TypeArrayGeometry=15). Empty blocks occupy zero bytes. The decoder uses the schema field count per type to know exactly how many values to read from each block.
 
 #### 3.1.4 Handling Recursive Schemas
 
@@ -473,7 +476,7 @@ FOR EACH RECORD (0 to record_count-1):
 Optimized for scanning specific fields across many records. Fields are grouped by DataType.
 
 ```
-FOR EACH DATATYPE (TypeUnknown=0 through TypeArray=15):
+FOR EACH DATATYPE (TypeUnknown=0 through TypeArrayGeometry=15):
   IF this type has any schema fields:
     [State Map Column]   (2 bits × record_count for each field of this type)
     FOR EACH FIELD OF THIS TYPE:
@@ -481,7 +484,7 @@ FOR EACH DATATYPE (TypeUnknown=0 through TypeArray=15):
 ```
 
 Fixed-width types (TypeInt, TypeFloat, TypeBool): raw bytes for all N records, no per-value length prefix.
-Variable-width types (TypeString, TypeGeometry, TypeContainer, TypeArray*): length-prefixed per value.
+Variable-width types (TypeString, TypeBytes, TypeGeometry, TypeContainer, TypeArray*): length-prefixed per value.
 
 ---
 
@@ -552,7 +555,7 @@ Anansi is a calculative format. To find the end of a record:
 
 1. **Dense:** Read the `2 × N` bit State Map (N = schema field count). Sum the sizes of all fields with state `10`, using the per-type encoding rules in section 2.5.
 2. **Sparse:** Read `field_count`. For each field, read the DataPoint (varint). If null bit = 0, read the value per the type encoded in DataPoint bits 1–4.
-3. **Variable-length fields:** TypeString, TypeGeometry, TypeContainer, and all TypeArray* variants are length-prefixed with a varint.
+3. **Variable-length fields:** TypeString, TypeBytes, TypeGeometry, TypeContainer, and all TypeArray* variants are length-prefixed with a varint.
 
 ---
 
@@ -1035,7 +1038,7 @@ Rate-limit schema requests. Cache compiled schemas. Set maximum DataPoint count 
 
 **Level 1: Basic**
 - Type 1 (Dense) and Type 2 (Sparse) support.
-- All 16 DataTypes (TypeUnknown through TypeArray).
+- All 16 DataTypes (TypeUnknown through TypeArrayGeometry).
 - Unsigned varint encoding.
 - Uncompressed only.
 
