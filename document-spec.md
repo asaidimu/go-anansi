@@ -7,7 +7,7 @@
 3. **Fast Access** — O(1) for all field operations after warmup. Arbitrarily nested fields are O(1) because nesting is flattened into the 27-bit ID space at schema definition time, not at access time.
 4. **Explicit State** — Unambiguous three-way distinction: not set, null, and has value.
 5. **Poolable by Design** — `Clear()` resets without deallocating. Pool is schema-version-bound, guaranteeing structural compatibility across reuse.
-6. **Deterministic Addressing** — DataPoints are derived deterministically from a schema. The same field path always produces the same DataPoint, enabling a path->DataPoint cache that reaches a fixed point after warmup.
+6. **Deterministic Addressing** — DataPoints are derived deterministically from a schema. The same field path always produces the same DataPoint, enabling a path -> DataPoint cache that reaches a fixed point after warmup.
 
 ---
 
@@ -31,8 +31,8 @@ These map directly with no schema-layer involvement.
 | `string` | `TypeString` | `string` |
 | `number` | `TypeFloat` | `float64` |
 | `integer` | `TypeInt` | `int64` |
-| `decimal` | `TypeDecimal` | `any` (until decimal type is finalized) |
 | `boolean` | `TypeBool` | `bool` |
+| `bytes` | `TypeBytes` | `[]byte` |
 | `geometry` | `TypeGeometry` | `[][]float64` |
 
 ---
@@ -49,18 +49,18 @@ These map directly with no schema-layer involvement.
 
 ### `enum`
 
-Enums are stored as `TypeInt`. The selected value is encoded as its **ordinal index** into the schema's `values` array (0-based). This gives fixed-size storage, cheap comparison, and 1-byte varint encoding for any enum with fewer than 64 values — which covers all practical cases. The mapping between ordinal and string label is a schema-layer concern; Document stores only the integer.
+Enums are stored as `TypeInt`. The selected value is encoded as its **ordinal index** into the schema's `values` array (0-based). This gives fixed-size storage, cheap comparison, and 1-byte varint encoding for any enum with fewer than 64 values — which covers most practical cases. The mapping between ordinal and string label is a schema-layer concern; Document stores only the integer.
 
 ```
 // Schema definition:
 status: { type: enum, values: ["draft", "published", "archived"] }
 
 // At runtime: status = "published"
--> DataPoint{TypeInt, id=N}
--> stored value: int64(1)   // ordinal index of "published"
+ -> DataPoint{TypeInt, id=N}
+ -> stored value: int64(1)  // ordinal index of "published"
 ```
 
-The schema layer is responsible for ordinal->string and string->ordinal translation before values reach Document and after they leave it.
+The schema layer is responsible for ordinal -> string and string -> ordinal translation before values reach Document and after they leave it.
 
 ---
 
@@ -71,20 +71,20 @@ A union's mapping depends on whether its variants are **structurally compatible*
 **Compatible variants** — collapse to the shared concrete type. Document stores the value directly with no boxing.
 
 ```
-integer | number   -> both TypeFloat (number widens integer) -> TypeFloat
-object A | object B -> both flattened                        -> individual DataPoints
-                      (schema layer uses a discriminator field to distinguish)
+integer | number  -> both TypeFloat (number widens integer) -> TypeFloat
+object A | object B -> both flattened             -> individual DataPoints
+           (schema layer uses a discriminator field to distinguish)
 ```
 
 **Incompatible variants** — any union where variants map to different DataTypes. The field is stored as `TypeUnknown`. The schema layer is responsible for encoding and decoding the value, including any discriminator needed to identify the variant.
 
 ```
-string | object    -> TypeString vs flattened object  -> TypeUnknown
-integer | array    -> TypeInt vs TypeArray*            -> TypeUnknown
-string | integer   -> TypeString vs TypeInt            -> TypeUnknown
+string | object   -> TypeString vs flattened object  -> TypeUnknown
+integer | array   -> TypeInt vs TypeArray*       -> TypeUnknown
+string | integer  -> TypeString vs TypeInt       -> TypeUnknown
 ```
 
-The compatibility test is applied after fully resolving each variant through all other mapping rules (including enum->TypeInt, object->flatten, etc.).
+The compatibility test is applied after fully resolving each variant through all other mapping rules (including enum -> TypeInt, object -> flatten, etc.).
 
 ---
 
@@ -99,16 +99,16 @@ A `record` is `Record<string, T>` — a map with arbitrary string keys whose val
 ```
 // record with no schema
 metadata: record
--> DataPoint{TypeUnknown, id=N}
--> value: map[string]any{...}
+ -> DataPoint{TypeUnknown, id=N}
+ -> value: map[string]any{...}
 
 // record with schema
 fields: record<Field>
--> DataPoint{TypeRecord, id=N}
--> value: map[string]*DataContainer{
-      "name": DataContainer{...Field fields...},
-      "age":  DataContainer{...Field fields...},
-  }
+ -> DataPoint{TypeRecord, id=N}
+ -> value: map[string]*DataContainer{
+   "name": DataContainer{...Field fields...},
+   "age": DataContainer{...Field fields...},
+ }
 ```
 
 `TypeRecord` exists precisely for this case. It is the only use of that slot — `object` types are always flattened and never produce a `TypeRecord` value.
@@ -125,13 +125,14 @@ Array element type determines which `TypeArray*` slot is used.
 | `number` | `TypeArrayFloat` |
 | `string` | `TypeArrayString` |
 | `boolean` | `TypeArrayBool` |
-| `decimal` | `TypeArrayDecimal` |
+| `bytes` | `TypeArrayBytes` |
 | `enum` | `TypeArrayInt` (ordinals) |
+| `geometry` | `TypeArrayGeometry` |
 | `object` (known schema) | `TypeArrayObject` |
 | `union` (compatible variants) | `TypeArray*` of the resolved type |
 | `union` (incompatible variants) | `TypeArrayUnknown` |
 | `unknown` | `TypeArrayUnknown` |
-| array of arrays | `TypeArray` |
+| array of arrays | `TypeArrayUnknown` |
 
 ---
 
@@ -157,8 +158,8 @@ Lookup within a `TypeRecord` value is O(1) Go map lookup on the string key, perf
 | `string` | — | `TypeString` |
 | `number` | — | `TypeFloat` |
 | `integer` | — | `TypeInt` |
-| `decimal` | — | `TypeDecimal` |
 | `boolean` | — | `TypeBool` |
+| `bytes` | — | `TypeBytes` |
 | `geometry` | — | `TypeGeometry` |
 | `enum` | — | `TypeInt` (ordinal index) |
 | `union` | all variants same DataType | that concrete DataType |
@@ -168,11 +169,12 @@ Lookup within a `TypeRecord` value is O(1) Go map lookup on the string key, perf
 | `set` | — | Same as `array` |
 | `record` | no schema | `TypeUnknown` (`map[string]any`) |
 | `record` | with schema `T` | `TypeRecord` (`map[string]*DataContainer`) |
-| `array` | primitive element | `TypeArrayInt/Float/String/Bool/Decimal` |
+| `array` | primitive element | `TypeArrayInt/Float/String/Bool/Bytes` |
 | `array` | enum element | `TypeArrayInt` (ordinals) |
+| `array` | geometry element | `TypeArrayGeometry` |
 | `array` | object element (known schema) | `TypeArrayObject` |
 | `array` | incompatible/open element | `TypeArrayUnknown` |
-| `array` of arrays | — | `TypeArray` |
+| array of arrays | — | `TypeArrayUnknown` |
 
 ---
 
@@ -184,22 +186,22 @@ Lookup within a `TypeRecord` value is O(1) Go map lookup on the string key, perf
 type DataType uint8
 
 const (
-    TypeUnknown        DataType = iota // any
-    TypeInt                            // int64
-    TypeFloat                          // float64
-    TypeString                         // string
-    TypeBool                           // bool
-    TypeDecimal                        // Decimal (represented as any until decimal type is finalised)
-    TypeGeometry                       // [][]float64  (GeoJSON-style coordinate rings)
-    TypeRecord                         // map[string]*DataContainer
-    TypeArrayUnknown                   // []any
-    TypeArrayInt                       // []int64
-    TypeArrayFloat                     // []float64
-    TypeArrayString                    // []string
-    TypeArrayBool                      // []bool
-    TypeArrayDecimal                   // []Decimal
-    TypeArrayObject                    // []*DataContainer
-    TypeArray                          // [][]any
+  TypeUnknown    DataType = iota // any
+  TypeInt              // int64
+  TypeFloat             // float64
+  TypeString             // string
+  TypeBool              // bool
+  TypeBytes             // []byte
+  TypeGeometry            // [][]float64 (GeoJSON-style coordinate rings)
+  TypeRecord             // map[string]*DataContainer
+  TypeArrayUnknown          // []any
+  TypeArrayInt            // []int64
+  TypeArrayFloat           // []float64
+  TypeArrayString          // []string
+  TypeArrayBool           // []bool
+  TypeArrayBytes           // [][]byte
+  TypeArrayObject          // []*DataContainer
+  TypeArrayGeometry         // [][][]float64
 )
 ```
 
@@ -212,17 +214,17 @@ const (
 | `TypeFloat` | `float64` | Covers all float widths |
 | `TypeString` | `string` | UTF-8 |
 | `TypeBool` | `bool` | |
-| `TypeDecimal` | `any` | Placeholder until a decimal type is defined |
+| `TypeBytes` | `[]byte` | Binary blobs, hashes, UUIDs, encoded payloads |
 | `TypeGeometry` | `[][]float64` | Array of coordinate rings |
 | `TypeRecord` | `map[string]*DataContainer` | Schema-typed record with arbitrary string keys |
-| `TypeArrayUnknown` | `[]any` | |
+| `TypeArrayUnknown` | `[]any` | Also covers array-of-arrays |
 | `TypeArrayInt` | `[]int64` | |
 | `TypeArrayFloat` | `[]float64` | |
 | `TypeArrayString` | `[]string` | |
 | `TypeArrayBool` | `[]bool` | |
-| `TypeArrayDecimal` | `[]any` | |
+| `TypeArrayBytes` | `[][]byte` | |
 | `TypeArrayObject` | `[]*DataContainer` | |
-| `TypeArray` | `[][]any` | Array of untyped arrays |
+| `TypeArrayGeometry` | `[][][]float64` | |
 
 The iota values map directly to slot indices in `DataContainer.data [16]unsafe.Pointer`. There are exactly 16 types and exactly 16 slots — this is intentional and must be preserved.
 
@@ -240,9 +242,9 @@ type DataPoint int32
 
 ```
 ┌──────────┬────────────┬──────────────────────────────────┐
-│ Null(1b) │  Type(4b)  │           ID(27b)                │
+│ Null(1b) │ Type(4b) │      ID(27b)        │
 └──────────┴────────────┴──────────────────────────────────┘
-     0          1–4                   5–31
+   0     1–4          5–31
 ```
 
 **Components:**
@@ -257,12 +259,12 @@ type DataPoint int32
 
 ```go
 const (
-    nullBits = 1
-    typeBits = 4
-    dataBits = nullBits + typeBits // 5 — combined shift for ID placement
+  nullBits = 1
+  typeBits = 4
+  dataBits = nullBits + typeBits // 5 — combined shift for ID placement
 
-    typeMask       DataPoint = 0xF       // 4 bits
-    identifierMask int32     = 0x7FFFFFF // 27 bits
+  typeMask    DataPoint = 0xF    // 4 bits
+  identifierMask int32   = 0x7FFFFFF // 27 bits
 )
 ```
 
@@ -270,13 +272,13 @@ const (
 
 ```go
 func NewDataPoint(typ DataType, id ...int32) (DataPoint, error) {
-    if len(id) == 0 {
-        return DataPoint(typ) << nullBits, nil
-    }
-    if id[0] > identifierMask {
-        return 0, ErrIDOutOfBounds
-    }
-    return (DataPoint(id[0]) << dataBits) | (DataPoint(typ) << nullBits), nil
+  if len(id) == 0 {
+    return DataPoint(typ) << nullBits, nil
+  }
+  if id[0] < 0 || id[0] > identifierMask {
+    return 0, ErrIDOutOfBounds
+  }
+  return (DataPoint(id[0]) << dataBits) | (DataPoint(typ) << nullBits), nil
 }
 ```
 
@@ -284,24 +286,24 @@ func NewDataPoint(typ DataType, id ...int32) (DataPoint, error) {
 
 ```go
 func (p DataPoint) Type() DataType {
-    return DataType((p >> nullBits) & typeMask)
+  return DataType((p >> nullBits) & typeMask)
 }
 
 func (p DataPoint) ID() int32 {
-    return int32(p>>dataBits) & identifierMask
+  return int32(p>>dataBits) & identifierMask
 }
 
 func (p DataPoint) IsNull() bool {
-    return p&1 == 1
+  return p&1 == 1
 }
 
 // WithID returns a new DataPoint preserving type and null bits but with a new ID.
 func (p DataPoint) WithID(id int32) (DataPoint, error) {
-    if id > identifierMask {
-        return 0, ErrIDOutOfBounds
-    }
-    base := p & DataPoint((1<<dataBits)-1) // preserve bits 0..4
-    return base | (DataPoint(id) << dataBits), nil
+  if id < 0 || id > identifierMask {
+    return 0, ErrIDOutOfBounds
+  }
+  base := p & DataPoint((1<<dataBits)-1) // preserve bits 0..4
+  return base | (DataPoint(id) << dataBits), nil
 }
 ```
 
@@ -310,7 +312,7 @@ func (p DataPoint) WithID(id int32) (DataPoint, error) {
 - **Stable** — the same field in the same schema version always produces the same DataPoint.
 - **Opaque to Document** — Document does not interpret the ID or its relationship to schema structure.
 - **Schema-derived** — generated by schema, never by Document.
-- **Deterministic** — enables a path->DataPoint cache that converges to a fixed point after warmup, after which all field addressing is a single integer map lookup regardless of nesting depth.
+- **Deterministic** — enables a path -> DataPoint cache that converges to a fixed point after warmup, after which all field addressing is a single integer map lookup regardless of nesting depth.
 
 **Positions map key:**
 The full `int32(DataPoint)` is used as the map key, including type bits. Two fields with the same ID but different types produce different keys and are entirely independent entries. This is correct because they occupy different typed slices.
@@ -328,15 +330,15 @@ dc.holes = append(dc.holes, hole)
 
 // Claiming a hole of a given type (LIFO scan, swap-and-pop removal):
 func (dc *DataContainer) claimHole(typ DataType) int32 {
-    for i := len(dc.holes) - 1; i >= 0; i-- {
-        if dc.holes[i].Type() == typ {
-            idx := dc.holes[i].ID()
-            dc.holes[i] = dc.holes[len(dc.holes)-1]
-            dc.holes = dc.holes[:len(dc.holes)-1]
-            return idx
-        }
+  for i := len(dc.holes) - 1; i >= 0; i-- {
+    if dc.holes[i].Type() == typ {
+      idx := dc.holes[i].ID()
+      dc.holes[i] = dc.holes[len(dc.holes)-1]
+      dc.holes = dc.holes[:len(dc.holes)-1]
+      return idx
     }
-    return -1
+  }
+  return -1
 }
 ```
 
@@ -353,9 +355,9 @@ func (dc *DataContainer) claimHole(typ DataType) int32 {
 
 ```go
 type DataContainer struct {
-    data      [16]unsafe.Pointer // index = DataType iota value; lazily initialised
-    positions map[int32]int32    // int32(DataPoint) -> slice index (-1 = null)
-    holes     []DataPoint        // freed slice positions available for reuse
+  data   [16]unsafe.Pointer // index = DataType iota value; lazily initialised
+  positions map[int32]int32  // int32(DataPoint) -> slice index (-1 = null)
+  holes   []DataPoint    // freed slice positions available for reuse
 }
 ```
 
@@ -364,21 +366,22 @@ type DataContainer struct {
 Each slot in `data` corresponds to a `DataType` by its iota index. The pointer stored is a pointer **to the slice header** (`*[]T`), not to the backing array. This is critical for append safety: when `append` reallocates the backing array, it updates the slice header in place. Because `data[i]` points to the header, not into the array, the pointer remains valid after any reallocation.
 
 ```
-data[TypeInt]           -> *[]int64
-data[TypeFloat]         -> *[]float64
-data[TypeString]        -> *[]string
-data[TypeBool]          -> *[]bool
-data[TypeDecimal]       -> *[]any
-data[TypeGeometry]      -> *[][][]float64
-data[TypeRecord]        -> *[]map[string]*DataContainer
+data[TypeUnknown]    -> *[]any
+data[TypeInt]      -> *[]int64
+data[TypeFloat]     -> *[]float64
+data[TypeString]     -> *[]string
+data[TypeBool]      -> *[]bool
+data[TypeBytes]     -> *[][]byte
+data[TypeGeometry]    -> *[][][]float64
+data[TypeRecord]     -> *[]map[string]*DataContainer
 data[TypeArrayUnknown]  -> *[][]any
-data[TypeArrayInt]      -> *[][]int64
-data[TypeArrayFloat]    -> *[][]float64
-data[TypeArrayString]   -> *[][]string
-data[TypeArrayBool]     -> *[][]bool
-data[TypeArrayDecimal]  -> *[][]any
-data[Type]-> *[][]*DataContainer
-data[TypeArray]         -> *[][][]any
+data[TypeArrayInt]    -> *[][]int64
+data[TypeArrayFloat]   -> *[][]float64
+data[TypeArrayString]  -> *[][]string
+data[TypeArrayBool]   -> *[][]bool
+data[TypeArrayBytes]   -> *[][][]byte
+data[TypeArrayObject]  -> *[][]*DataContainer
+data[TypeArrayGeometry] -> *[][][][]float64
 ```
 
 Slots are **lazily initialised** on first write. An untouched slot holds a nil pointer — no allocation occurs for unused types.
@@ -389,14 +392,14 @@ Slots are **lazily initialised** on first write. An untouched slot holds a nil p
 
 ```go
 func (dc *DataContainer) slot(typ DataType, initialSize ...int) unsafe.Pointer {
-    if dc.data[typ] == nil {
-        size := 8
-        if len(initialSize) > 0 {
-            size = initialSize[0]
-        }
-        dc.initSlice(typ, size)
+  if dc.data[typ] == nil {
+    size := 8
+    if len(initialSize) > 0 {
+      size = initialSize[0]
     }
-    return dc.data[typ]
+    dc.initSlice(typ, size)
+  }
+  return dc.data[typ]
 }
 ```
 
@@ -430,7 +433,7 @@ Always append through the pointer (`*ptr = append(*ptr, value)`), never through 
 
 ```go
 type Document struct {
-    DataContainer    
+  DataContainer  
 }
 ```
 
@@ -452,16 +455,16 @@ This is correct because the pool is schema-version-bound: every `Document` retur
 
 ```go
 func NewDocument() *Document {
-    return &Document{
-        DataContainer: *NewDataContainer(),
-    }
+  return &Document{
+    DataContainer: *NewDataContainer(),
+  }
 }
 
 func NewDataContainer() *DataContainer {
-    return &DataContainer{
-        positions: make(map[int32]int32),
-        holes:     make([]DataPoint, 0),
-    }
+  return &DataContainer{
+    positions: make(map[int32]int32),
+    holes:   make([]DataPoint, 0),
+  }
 }
 ```
 
@@ -482,13 +485,13 @@ A field can be in exactly one of three states:
 **State transitions:**
 
 ```
-Not Set ──Set(value)──-> Has Value
-   │                         │
-   └──SetNull()──-> Null ←───┘
-                     │
-                  Unset()
-                     │
-                  Not Set
+Not Set ──Set(value)── -> Has Value
+  │             │
+  └──SetNull()── -> Null ←───┘
+           │
+         Unset()
+           │
+         Not Set
 ```
 
 **Null semantics:** When a field transitions to null its current slice position is **immediately freed into holes**. The positions entry becomes `-1` and holds no index. The freed slot is available for reuse by any other field of the same type.
@@ -501,48 +504,48 @@ Not Set ──Set(value)──-> Has Value
 
 ```go
 func (dc *DataContainer) Clear() {
-    clear(dc.positions) // Go 1.21+ — zeroes entries, retains bucket allocation
-    dc.holes = dc.holes[:0]
+  clear(dc.positions) // Go 1.21+ — zeroes entries, retains bucket allocation
+  dc.holes = dc.holes[:0]
 
-    for i, ptr := range dc.data {
-        if ptr == nil {
-            continue
-        }
-        switch DataType(i) {
-        case TypeUnknown:
-            s := (*[]any)(ptr); *s = (*s)[:0]
-        case TypeInt:
-            s := (*[]int64)(ptr); *s = (*s)[:0]
-        case TypeFloat:
-            s := (*[]float64)(ptr); *s = (*s)[:0]
-        case TypeString:
-            s := (*[]string)(ptr); *s = (*s)[:0]
-        case TypeBool:
-            s := (*[]bool)(ptr); *s = (*s)[:0]
-        case TypeDecimal:
-            s := (*[]any)(ptr); *s = (*s)[:0]
-        case TypeGeometry:
-            s := (*[][][]float64)(ptr); *s = (*s)[:0]
-        case TypeRecord:
-            s := (*[]map[string]*DataContainer)(ptr); *s = (*s)[:0]
-        case TypeArrayUnknown:
-            s := (*[][]any)(ptr); *s = (*s)[:0]
-        case TypeArrayInt:
-            s := (*[][]int64)(ptr); *s = (*s)[:0]
-        case TypeArrayFloat:
-            s := (*[][]float64)(ptr); *s = (*s)[:0]
-        case TypeArrayString:
-            s := (*[][]string)(ptr); *s = (*s)[:0]
-        case TypeArrayBool:
-            s := (*[][]bool)(ptr); *s = (*s)[:0]
-        case TypeArrayDecimal:
-            s := (*[][]any)(ptr); *s = (*s)[:0]
-        case Type:
-            s := (*[][]*DataContainer)(ptr); *s = (*s)[:0]
-        case TypeArray:
-            s := (*[][][]any)(ptr); *s = (*s)[:0]
-        }
+  for i, ptr := range dc.data {
+    if ptr == nil {
+      continue
     }
+    switch DataType(i) {
+    case TypeUnknown:
+      s := (*[]any)(ptr); *s = (*s)[:0]
+    case TypeInt:
+      s := (*[]int64)(ptr); *s = (*s)[:0]
+    case TypeFloat:
+      s := (*[]float64)(ptr); *s = (*s)[:0]
+    case TypeString:
+      s := (*[]string)(ptr); *s = (*s)[:0]
+    case TypeBool:
+      s := (*[]bool)(ptr); *s = (*s)[:0]
+    case TypeBytes:
+      s := (*[][]byte)(ptr); *s = (*s)[:0]
+    case TypeGeometry:
+      s := (*[][][]float64)(ptr); *s = (*s)[:0]
+    case TypeRecord:
+      s := (*[]map[string]*DataContainer)(ptr); *s = (*s)[:0]
+    case TypeArrayUnknown:
+      s := (*[][]any)(ptr); *s = (*s)[:0]
+    case TypeArrayInt:
+      s := (*[][]int64)(ptr); *s = (*s)[:0]
+    case TypeArrayFloat:
+      s := (*[][]float64)(ptr); *s = (*s)[:0]
+    case TypeArrayString:
+      s := (*[][]string)(ptr); *s = (*s)[:0]
+    case TypeArrayBool:
+      s := (*[][]bool)(ptr); *s = (*s)[:0]
+    case TypeArrayBytes:
+      s := (*[][][]byte)(ptr); *s = (*s)[:0]
+    case TypeArrayObject:
+      s := (*[][]*DataContainer)(ptr); *s = (*s)[:0]
+    case TypeArrayGeometry:
+      s := (*[][][][]float64)(ptr); *s = (*s)[:0]
+    }
+  }
 }
 ```
 
@@ -558,17 +561,17 @@ The mutation is done through the stored pointer (`*s = (*s)[:0]`), not through a
 
 ```go
 func (dc *DataContainer) GetInt(point DataPoint) (int64, bool, error) {
-    if point.Type() != TypeInt {
-        return 0, false, ErrTypeMismatch
-    }
-    idx, exists := dc.positions[int32(point)]
-    if !exists {
-        return 0, false, nil  // not set
-    }
-    if idx < 0 {
-        return 0, true, nil   // null
-    }
-    return (*(*[]int64)(dc.slot(TypeInt)))[idx], true, nil
+  if point.Type() != TypeInt {
+    return 0, false, ErrTypeMismatch
+  }
+  idx, exists := dc.positions[int32(point)]
+  if !exists {
+    return 0, false, nil // not set
+  }
+  if idx < 0 {
+    return 0, true, nil  // null
+  }
+  return (*(*[]int64)(dc.slot(TypeInt)))[idx], true, nil
 }
 ```
 
@@ -586,34 +589,34 @@ All 16 types follow this identical pattern. **Complexity:** O(1) — one integer
 
 ```go
 func (dc *DataContainer) SetInt(point DataPoint, value int64) error {
-    if point.Type() != TypeInt {
-        return ErrTypeMismatch
-    }
-    key := int32(point)
-    if idx, exists := dc.positions[key]; exists && idx >= 0 {
-        // Live position — update in place, no allocation
-        (*(*[]int64)(dc.slot(TypeInt)))[idx] = value
-        return nil
-    }
-    // Try to reuse a freed position
-    if idx := dc.claimHole(TypeInt); idx >= 0 {
-        (*(*[]int64)(dc.slot(TypeInt)))[idx] = value
-        dc.positions[key] = idx
-        return nil
-    }
-    // No hole available — append to slice
-    return dc.AppendInt(point, value)
+  if point.Type() != TypeInt {
+    return ErrTypeMismatch
+  }
+  key := int32(point)
+  if idx, exists := dc.positions[key]; exists && idx >= 0 {
+    // Live position — update in place, no allocation
+    (*(*[]int64)(dc.slot(TypeInt)))[idx] = value
+    return nil
+  }
+  // Try to reuse a freed position
+  if idx := dc.claimHole(TypeInt); idx >= 0 {
+    (*(*[]int64)(dc.slot(TypeInt)))[idx] = value
+    dc.positions[key] = idx
+    return nil
+  }
+  // No hole available — append to slice
+  return dc.AppendInt(point, value)
 }
 
 func (dc *DataContainer) AppendInt(point DataPoint, value int64) error {
-    ptr := (*[]int64)(dc.slot(TypeInt))
-    idx := int32(len(*ptr))
-    if idx >= identifierMask {
-        return ErrContainerFull
-    }
-    *ptr = append(*ptr, value)
-    dc.positions[int32(point)] = idx
-    return nil
+  ptr := (*[]int64)(dc.slot(TypeInt))
+  idx := int32(len(*ptr))
+  if idx >= identifierMask {
+    return ErrContainerFull
+  }
+  *ptr = append(*ptr, value)
+  dc.positions[int32(point)] = idx
+  return nil
 }
 ```
 
@@ -622,22 +625,21 @@ func (dc *DataContainer) AppendInt(point DataPoint, value int64) error {
 - Insert, hole available: O(h), h typically < 10
 - Insert, no hole: O(1) amortised
 
-All 16 types have corresponding `Set` and `Append` methods following this pattern.
+All 16 types have corresponding `Set`, `Append`, and `Get` methods following this pattern.
 
 ---
 
 ### SetNull
 
 ```go
-func (dc *DataContainer) SetNull(point DataPoint) error {
-    key := int32(point)
-    if idx, exists := dc.positions[key]; exists && idx >= 0 {
-        // Free the current slice position immediately
-        hole, _ := NewDataPoint(point.Type(), idx)
-        dc.holes = append(dc.holes, hole)
-    }
-    dc.positions[key] = -1
-    return nil
+func (dc *DataContainer) SetNull(point DataPoint) {
+  key := int32(point)
+  if idx, exists := dc.positions[key]; exists && idx >= 0 {
+    // Free the current slice position immediately
+    hole, _ := NewDataPoint(point.Type(), idx)
+    dc.holes = append(dc.holes, hole)
+  }
+  dc.positions[key] = -1
 }
 ```
 
@@ -651,12 +653,12 @@ Setting a field null frees its slice position into holes immediately. The freed 
 
 ```go
 func (dc *DataContainer) Unset(point DataPoint) {
-    key := int32(point)
-    if idx, exists := dc.positions[key]; exists && idx >= 0 {
-        hole, _ := NewDataPoint(point.Type(), idx)
-        dc.holes = append(dc.holes, hole)
-    }
-    delete(dc.positions, key)
+  key := int32(point)
+  if idx, exists := dc.positions[key]; exists && idx >= 0 {
+    hole, _ := NewDataPoint(point.Type(), idx)
+    dc.holes = append(dc.holes, hole)
+  }
+  delete(dc.positions, key)
 }
 ```
 
@@ -670,18 +672,18 @@ Unset removes the field entirely — it becomes IsSet=false. If the field held a
 
 ```go
 func (dc *DataContainer) IsSet(point DataPoint) bool {
-    _, exists := dc.positions[int32(point)]
-    return exists
+  _, exists := dc.positions[int32(point)]
+  return exists
 }
 
 func (dc *DataContainer) IsNull(point DataPoint) bool {
-    idx, exists := dc.positions[int32(point)]
-    return exists && idx < 0
+  idx, exists := dc.positions[int32(point)]
+  return exists && idx < 0
 }
 
 func (dc *DataContainer) HasValue(point DataPoint) bool {
-    idx, exists := dc.positions[int32(point)]
-    return exists && idx >= 0
+  idx, exists := dc.positions[int32(point)]
+  return exists && idx >= 0
 }
 ```
 
@@ -695,12 +697,12 @@ func (dc *DataContainer) HasValue(point DataPoint) bool {
 
 ```go
 func (dc *DataContainer) Walk(
-    walker func(
-        positions map[int32]int32,
-        slot func(t DataType, initialSize ...int) unsafe.Pointer,
-    ) (any, error),
+  walker func(
+    positions map[int32]int32,
+    slot func(t DataType, initialSize ...int) unsafe.Pointer,
+  ) (any, error),
 ) (any, error) {
-    return walker(dc.positions, dc.slot)
+  return walker(dc.positions, dc.slot)
 }
 ```
 
@@ -708,24 +710,24 @@ func (dc *DataContainer) Walk(
 
 ```go
 result, err := doc.Walk(func(positions map[int32]int32, slot func(DataType, ...int) unsafe.Pointer) (any, error) {
-    ints := *(*[]int64)(slot(TypeInt))
-    strings := *(*[]string)(slot(TypeString))
+  ints := *(*[]int64)(slot(TypeInt))
+  strings := *(*[]string)(slot(TypeString))
 
-    for point, idx := range positions {
-        p := DataPoint(point)
-        if idx < 0 {
-            encoder.WriteNull(p)
-            continue
-        }
-        switch p.Type() {
-        case TypeInt:
-            encoder.WriteInt(p, ints[idx])
-        case TypeString:
-            encoder.WriteString(p, strings[idx])
-        // ...
-        }
+  for point, idx := range positions {
+    p := DataPoint(point)
+    if idx < 0 {
+      encoder.WriteNull(p)
+      continue
     }
-    return encoder.Bytes(), nil
+    switch p.Type() {
+    case TypeInt:
+      encoder.WriteInt(p, ints[idx])
+    case TypeString:
+      encoder.WriteString(p, strings[idx])
+    // ...
+    }
+  }
+  return encoder.Bytes(), nil
 })
 ```
 
@@ -734,18 +736,18 @@ result, err := doc.Walk(func(positions map[int32]int32, slot func(DataType, ...i
 ```go
 doc.Clear()
 doc.Walk(func(positions map[int32]int32, slot func(DataType, ...int) unsafe.Pointer) (any, error) {
-    // Pre-allocate to schema minimum counts to avoid appends during decode
-    ints := (*[]int64)(slot(TypeInt, schema.MinIntCount()))
-    for decoder.HasInt() {
-        point, value, index := decoder.NextInt()
-        if index < int32(len(*ints)) {
-            (*ints)[index] = value
-            positions[int32(point)] = index
-        } else {
-            doc.AppendInt(point, value)
-        }
+  // Pre-allocate to schema minimum counts to avoid appends during decode
+  ints := (*[]int64)(slot(TypeInt, schema.MinIntCount()))
+  for decoder.HasInt() {
+    point, value, index := decoder.NextInt()
+    if index < int32(len(*ints)) {
+      (*ints)[index] = value
+      positions[int32(point)] = index
+    } else {
+      doc.AppendInt(point, value)
     }
-    return nil, nil
+  }
+  return nil, nil
 })
 ```
 
@@ -757,21 +759,21 @@ doc.Walk(func(positions map[int32]int32, slot func(DataType, ...int) unsafe.Poin
 
 ## Collection
 
-`Collection` binds a schema to a pool of `Document` instances and maintains caches for path <-> DataPoint resolution.
+`Collection` binds a schema to a pool of `Document` instances and maintains caches for path < -> DataPoint resolution.
 
 ### Structure
 
 ```go
 type Collection struct {
-    schema interface{} // opaque schema reference
+  schema interface{} // opaque schema reference
 
-    // DataPoint computation and path resolution caches
-    // Lock-free reads via sync.Map for concurrent hot paths
-    selectors sync.Map // string path -> DataPoint
-    paths     sync.Map // DataPoint  -> string path
+  // DataPoint computation and path resolution caches
+  // Lock-free reads via sync.Map for concurrent hot paths
+  selectors sync.Map // string path -> DataPoint
+  paths   sync.Map // DataPoint  -> string path
 
-    // Document pool — schema-version-bound
-    pool sync.Pool
+  // Document pool — schema-version-bound
+  pool sync.Pool
 }
 ```
 
@@ -779,11 +781,11 @@ type Collection struct {
 
 ```go
 type Schema interface {
-    // ComputeDataPoint derives a stable DataPoint for the given field path.
-    ComputeDataPoint(path string) (DataPoint, error)
+  // ComputeDataPoint derives a stable DataPoint for the given field path.
+  ComputeDataPoint(path string) (DataPoint, error)
 
-    // FindPath resolves a DataPoint back to its field path.
-    FindPath(point DataPoint) string
+  // FindPath resolves a DataPoint back to its field path.
+  FindPath(point DataPoint) string
 }
 ```
 
@@ -795,46 +797,46 @@ Document and Collection treat the schema as fully opaque beyond this interface. 
 
 ```go
 func NewCollection(schema interface{}) *Collection {
-    c := &Collection{schema: schema}
-    c.pool.New = func() any {
-        return NewDocument("", schema)
-    }
-    return c
+  c := &Collection{schema: schema}
+  c.pool.New = func() any {
+    return NewDocument("", schema)
+  }
+  return c
 }
 
 func (c *Collection) GetDataPoint(path string) (DataPoint, error) {
-    if cached, ok := c.selectors.Load(path); ok {
-        return cached.(DataPoint), nil
-    }
-    point, err := c.schema.(Schema).ComputeDataPoint(path)
-    if err != nil {
-        return 0, err
-    }
-    c.selectors.Store(path, point)
-    c.paths.Store(point, path)
-    return point, nil
+  if cached, ok := c.selectors.Load(path); ok {
+    return cached.(DataPoint), nil
+  }
+  point, err := c.schema.(Schema).ComputeDataPoint(path)
+  if err != nil {
+    return 0, err
+  }
+  c.selectors.Store(path, point)
+  c.paths.Store(point, path)
+  return point, nil
 }
 
 func (c *Collection) GetPath(point DataPoint) string {
-    if cached, ok := c.paths.Load(point); ok {
-        return cached.(string)
-    }
-    path := c.schema.(Schema).FindPath(point)
-    c.paths.Store(point, path)
-    c.selectors.Store(path, point)
-    return path
+  if cached, ok := c.paths.Load(point); ok {
+    return cached.(string)
+  }
+  path := c.schema.(Schema).FindPath(point)
+  c.paths.Store(point, path)
+  c.selectors.Store(path, point)
+  return path
 }
 
 func (c *Collection) Acquire(id string) *Document {
-    doc := c.pool.Get().(*Document)
-    doc.Clear()      // reset DataContainer state only; schema is invariant
-    doc.id = id      // assign identity for this use
-    return doc
+  doc := c.pool.Get().(*Document)
+  doc.Clear()   // reset DataContainer state only; schema is invariant
+  doc.id = id   // assign identity for this use
+  return doc
 }
 
 func (c *Collection) Release(doc *Document) {
-    doc.Clear()
-    c.pool.Put(doc)
+  doc.Clear()
+  c.pool.Put(doc)
 }
 ```
 
@@ -854,9 +856,9 @@ func (c *Collection) Release(doc *Document) {
 
 ```go
 var (
-    ErrTypeMismatch  = errors.New("document: type mismatch")
-    ErrContainerFull = errors.New("document: container full")
-    ErrIDOutOfBounds = errors.New("document: id out of bounds")
+  ErrTypeMismatch = errors.New("document: type mismatch")
+  ErrContainerFull = errors.New("document: container full")
+  ErrIDOutOfBounds = errors.New("document: id out of bounds")
 )
 ```
 
@@ -885,21 +887,21 @@ var (
 ```go
 // Document with 3 fields: name (string), age (int), email (string, null)
 
-nameSel, _  := collection.GetDataPoint("name")   // e.g. DataPoint encoding TypeString + id=1
-ageSel, _   := collection.GetDataPoint("age")    // e.g. DataPoint encoding TypeInt   + id=2
-emailSel, _ := collection.GetDataPoint("email")  // e.g. DataPoint encoding TypeString + id=3
+nameSel, _ := collection.GetDataPoint("name")  // e.g. DataPoint encoding TypeString + id=1
+ageSel, _  := collection.GetDataPoint("age")  // e.g. DataPoint encoding TypeInt  + id=2
+emailSel, _ := collection.GetDataPoint("email") // e.g. DataPoint encoding TypeString + id=3
 
 // After: doc.SetString(nameSel, "Alice"), doc.SetInt(ageSel, 30), doc.SetNull(emailSel)
 
 doc.positions = {
-    int32(nameSel):  0,  // name  -> strings[0]
-    int32(ageSel):   0,  // age   -> ints[0]
-    int32(emailSel): -1, // email -> null, no slice position held
+  int32(nameSel): 0, // name  -> strings[0]
+  int32(ageSel):  0, // age  -> ints[0]
+  int32(emailSel): -1, // email -> null, no slice position held
 }
 
 // *(*[]string)(doc.data[TypeString]) = ["Alice"]
-// *(*[]int64)(doc.data[TypeInt])     = [30]
-// doc.holes = []  // email was set directly to null, no prior value to free
+// *(*[]int64)(doc.data[TypeInt])   = [30]
+// doc.holes = [] // email was set directly to null, no prior value to free
 ```
 
 ---
@@ -912,15 +914,15 @@ p2, _ := NewDataPoint(TypeString, 2)
 p3, _ := NewDataPoint(TypeString, 3)
 p4, _ := NewDataPoint(TypeString, 4)
 
-doc.SetString(p1, "A")  // strings[0]
-doc.SetString(p2, "B")  // strings[1]
-doc.SetString(p3, "C")  // strings[2]
+doc.SetString(p1, "A") // strings[0]
+doc.SetString(p2, "B") // strings[1]
+doc.SetString(p3, "C") // strings[2]
 
 doc.Unset(p2)
-// holes = [DataPoint{TypeString, id=1}]  ← index 1 is free
-// strings = ["A", "B", "C"]              ← backing array unchanged; B still in memory but unreachable
+// holes = [DataPoint{TypeString, id=1}] ← index 1 is free
+// strings = ["A", "B", "C"]       <- backing array unchanged; B still in memory but unreachable
 
-doc.SetString(p4, "D")  // claims hole -> strings[1]
+doc.SetString(p4, "D") // claims hole -> strings[1]
 // holes = []
 // strings = ["A", "D", "C"]
 ```
@@ -988,11 +990,11 @@ A single `Document` at steady state allocates nothing on reuse: `Clear()` resets
 
 ### Q: How does this handle nested structures?
 
-**A:** Nested fields are addressed by DataPoints whose 27-bit IDs are derived from their full path at schema definition time. From Document's perspective there is no nesting — every field is a flat integer key regardless of depth. The schema is responsible for encoding path structure into IDs. A path->DataPoint cache in `Collection` means accessing `user.address.city` is a single map lookup after warmup, identical in cost to accessing a top-level field.
+**A:** Nested fields are addressed by DataPoints whose 27-bit IDs are derived from their full path at schema definition time. From Document's perspective there is no nesting — every field is a flat integer key regardless of depth. The schema is responsible for encoding path structure into IDs. A path -> DataPoint cache in `Collection` means accessing `user.address.city` is a single map lookup after warmup, identical in cost to accessing a top-level field.
 
 ### Q: What about arrays and typed lists?
 
-**A:** Arrays are first-class types in v2.0. `TypeArrayInt` holds `[]int64` values, `TypeArrayString` holds `[]string` values, `TypeArrayObject` holds `[]*DataContainer` values, and so on for all 8 array types. There is no opaque byte encoding — arrays are stored as typed Go slices and accessed without decoding.
+**A:** Arrays are first-class types. `TypeArrayInt` holds `[]int64` values, `TypeArrayString` holds `[]string` values, `TypeArrayBytes` holds `[][]byte` values, `TypeArrayObject` holds `[]*DataContainer` values, `TypeArrayGeometry` holds `[][][]float64` values, and so on. There is no opaque byte encoding — arrays are stored as typed Go slices and accessed without decoding. Array-of-arrays schemas map to `TypeArrayUnknown`, which is the general escape hatch for element types that have no dedicated slot.
 
 ### Q: Can I mix different schema versions?
 

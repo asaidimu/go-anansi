@@ -2,19 +2,8 @@
   "version": "1.0.0",
   "name": "Schema",
   "description": "Meta-schema defining the structure of schema definitions",
+  "concrete": false,
   "fields": {
-    "constraints": {
-      "name": "constraints",
-      "description": "Map of constraint definitions",
-      "type": "record",
-      "schema": { "id": "Constraint" }
-    },
-    "schemas": {
-      "name": "schemas",
-      "description": "Map of nested schema definitions",
-      "type": "record",
-      "schema": { "id": "NestedSchema" }
-    },
     "name": {
       "name": "name",
       "description": "The name of the schema",
@@ -32,6 +21,11 @@
       "required": true,
       "type": "string"
     },
+    "concrete": {
+      "name": "concrete",
+      "description": "Whether this schema maps to a physical collection",
+      "type": "boolean"
+    },
     "metadata": {
       "name": "metadata",
       "description": "Arbitrary metadata as key-value pairs",
@@ -43,227 +37,76 @@
       "type": "record",
       "schema": { "id": "Field" }
     },
+    "schemas": {
+      "name": "schemas",
+      "description": "Map of named nested schema definitions — each entry is either an object schema (with fields) or a type schema (enum, union, composite, array)",
+      "type": "record",
+      "schema": { "id": "NestedSchemaUnion" }
+    },
     "indexes": {
       "name": "indexes",
       "description": "Map of index definitions",
       "type": "record",
       "schema": { "id": "Index" }
+    },
+    "constraints": {
+      "name": "constraints",
+      "description": "Map of constraint definitions",
+      "type": "record",
+      "schema": { "id": "Constraint" }
     }
   },
   "schemas": {
-
-    "IndexCondition": {
-      "name": "IndexCondition",
-      "description": "A single condition for a partial index",
-      "fields": {
-        "field": {
-          "name": "field",
-          "description": "The field to check",
-          "required": true,
-          "type": "string"
-        },
-        "value": {
-          "name": "value",
-          "description": "The value to compare against",
-          "required": true,
-          "type": "unknown"
-        },
-        "operator": {
-          "name": "operator",
-          "description": "Comparison operator",
-          "required": true,
-          "type": "enum",
-          "schema": { "id": "ComparisonOperatorEnum" }
-        }
-      }
-    },
-    "ConstraintUnion": { "name": "ConstraintUnion", "type": "union" },
-    "IndexConditionGroup": {
-      "name": "IndexConditionGroup",
-      "description": "A group of conditions combined with a logical operator",
-      "fields": {
-        "operator": {
-          "name": "operator",
-          "description": "Logical operator (AND, OR, NOT)",
-          "required": true,
-          "type": "enum",
-          "schema": { "id": "LogicalOperatorEnum" }
-        },
-        "conditions": {
-          "name": "conditions",
-          "description": "Array of conditions (each can be IndexCondition or IndexConditionGroup)",
-          "required": true,
-          "type": "array",
-          "schema": { "id": "IndexConditionUnion" }
-        }
-      }
-    },
-    "Constraint": { "name": "Constraint", "type": "composite" },
-    "ConstraintMetadata": {
-      "name": "ConstraintMetadata",
-      "description": "Metadata fields present in all constraints",
-      "fields": {
-        "name": {
-          "name": "name",
-          "description": "The name of the constraint",
-          "required": true,
-          "type": "string"
-        },
-        "description": {
-          "name": "description",
-          "description": "Optional description",
-          "type": "string"
-        }
-      }
-    },
-    "IndexTypeEnum": {
-      "name": "IndexTypeEnum",
-      "type": "string",
-      "values": ["normal", "unique", "primary", "spatial", "fulltext"]
-    },
-    "LogicalOperatorEnum": {
-      "name": "LogicalOperatorEnum",
-      "type": "string",
-      "values": ["and", "or", "not", "nor", "xor", "nand", "xnor"]
-    },
-    "IndexOrderEnum": {
-      "name": "IndexOrderEnum",
-      "type": "string",
-      "values": ["asc", "desc"]
-    },
-    "NestedSchema": {
-      "name": "NestedSchema",
-      "description": "Defines a nested schema - uses BaseSchema fields for objects, FieldProperties for array/enum elements",
-      "fields": {
-        "constraints": {
-          "name": "constraints",
-          "description": "Map of constraint definitions (for object types only)",
-          "type": "record",
-          "schema": { "id": "Constraint" }
-        },
-        "schema": {
-          "name": "schema",
-          "description": "FieldSchema reference (for complex array/set element types only)",
-          "type": "union",
-          "schema": [
-            { "id": "FieldSchema" },
-            { "id": "FieldSchemaArray" }
-          ]
-        },
-        "name": {
-          "name": "name",
-          "description": "The name of the nested schema",
-          "required": true,
-          "type": "string"
-        },
-        "description": {
-          "name": "description",
-          "description": "Optional description",
-          "type": "string"
-        },
-        "concrete": {
-          "name": "concrete",
-          "description": "Whether this schema should map to a physical collection",
-          "type": "boolean"
-        },
-        "indexes": {
-          "name": "indexes",
-          "description": "Map of index definitions (for object types only)",
-          "type": "record",
-          "schema": { "id": "Index" }
-        },
-        "type": {
-          "name": "type",
-          "description": "The element type (for array/set/enum element types only)",
-          "type": "enum",
-          "schema": { "id": "FieldTypeEnum" }
-        },
-        "values": {
-          "name": "values",
-          "description": "Allowed values (for enum element types only)",
-          "type": "array",
-          "schema": { "type": "unknown" }
-        },
-        "metadata": {
-          "name": "metadata",
-          "description": "Arbitrary metadata (for object types only)",
-          "type": "record"
-        },
-        "default": {
-          "name": "default",
-          "description": "Default value (for array/set/enum element types only)",
-          "type": "unknown"
-        },
-        "fields": {
-          "name": "fields",
-          "description": "Map of field definitions (for object types only)",
-          "type": "record",
-          "schema": { "id": "Field" }
-        }
-      }
-    },
-    "Index": {
-      "name": "Index",
-      "description": "Defines an index for querying",
-      "fields": {
-        "name": {
-          "name": "name",
-          "description": "The name of the index",
-          "required": true,
-          "type": "string"
-        },
-        "description": {
-          "name": "description",
-          "description": "Optional description",
-          "type": "string"
-        },
-        "unique": {
-          "name": "unique",
-          "description": "Whether the index enforces uniqueness",
-          "type": "boolean"
-        },
-        "type": {
-          "name": "type",
-          "description": "The type of index",
-          "required": true,
-          "type": "enum",
-          "schema": { "id": "IndexTypeEnum" }
-        },
-        "fields": {
-          "name": "fields",
-          "description": "Fields included in the index",
-          "required": true,
-          "type": "array",
-          "schema": { "type": "string" }
-        },
-        "order": {
-          "name": "order",
-          "description": "Sort order",
-          "type": "enum",
-          "schema": { "id": "IndexOrderEnum" }
-        },
-        "condition": {
-          "name": "condition",
-          "description": "Optional condition for partial indexes",
-          "type": "union",
-          "schema": [
-            { "id": "IndexCondition" },
-            { "id": "IndexConditionGroup" }
-          ]
-        }
-      }
-    },
-    "IndexConditionUnion": { "name": "IndexConditionUnion", "type": "union" },
-    "FieldSchemaArray": { "name": "FieldSchemaArray", "type": "array" },
-    "FieldSchema": {
-      "name": "FieldSchema",
-      "description": "Either a reference to a named schema or an inline type definition. The two shapes are mutually exclusive.",
-      "type": "union",
-      "schema": [
-        { "id": "FieldSchemaRef" },
-        { "id": "FieldSchemaInline" }
+    "FieldTypeEnum": {
+      "name": "FieldTypeEnum",
+      "type": "enum",
+      "values": [
+        "unknown",
+        "string",
+        "number",
+        "integer",
+        "boolean",
+        "bytes",
+        "array",
+        "set",
+        "enum",
+        "object",
+        "record",
+        "union",
+        "composite",
+        "geometry"
       ]
     },
+
+    "LogicalOperatorEnum": {
+      "name": "LogicalOperatorEnum",
+      "type": "enum",
+      "values": ["and", "or", "not", "nor", "xor", "nand", "xnor"]
+    },
+
+    "ComparisonOperatorEnum": {
+      "name": "ComparisonOperatorEnum",
+      "type": "enum",
+      "values": [
+        "eq", "neq", "lt", "lte", "gt", "gte",
+        "in", "nin",
+        "contains", "ncontains",
+        "exists", "nexists"
+      ]
+    },
+
+    "IndexTypeEnum": {
+      "name": "IndexTypeEnum",
+      "type": "enum",
+      "values": ["normal", "unique", "primary", "spatial", "fulltext"]
+    },
+
+    "IndexOrderEnum": {
+      "name": "IndexOrderEnum",
+      "type": "enum",
+      "values": ["asc", "desc"]
+    },
+
     "FieldSchemaRef": {
       "name": "FieldSchemaRef",
       "description": "A reference to a named nested schema, with optional index and constraint augmentation",
@@ -288,6 +131,7 @@
         }
       }
     },
+
     "FieldSchemaInline": {
       "name": "FieldSchemaInline",
       "description": "An inline type definition for simple or enum types that do not warrant a named schema",
@@ -307,59 +151,19 @@
         }
       }
     },
-    "ComparisonOperatorEnum": {
-      "name": "ComparisonOperatorEnum",
-      "type": "string",
-      "values": [
-        "eq",
-        "neq",
-        "lt",
-        "lte",
-        "gt",
-        "gte",
-        "in",
-        "nin",
-        "contains",
-        "ncontains",
-        "exists",
-        "nexists"
+    "FieldSchema": {
+      "name": "FieldSchema",
+      "description": "A single schema reference: either a named ref or an inline type definition",
+      "type": "union",
+      "schema": [
+        { "id": "FieldSchemaRef" },
+        { "id": "FieldSchemaInline" }
       ]
     },
     "Field": {
       "name": "Field",
       "description": "Defines a field within a schema",
       "fields": {
-        "required": {
-          "name": "required",
-          "description": "Whether the field is required",
-          "type": "boolean"
-        },
-        "deprecated": {
-          "name": "deprecated",
-          "description": "Whether the field is deprecated",
-          "type": "boolean"
-        },
-        "unique": {
-          "name": "unique",
-          "description": "Whether the field value must be unique",
-          "type": "boolean"
-        },
-        "type": {
-          "name": "type",
-          "description": "The type of the field",
-          "required": true,
-          "type": "enum",
-          "schema": { "id": "FieldTypeEnum" }
-        },
-        "schema": {
-          "name": "schema",
-          "description": "FieldSchema for complex types — single FieldSchema or array for unions/composites",
-          "type": "union",
-          "schema": [
-            { "id": "FieldSchema" },
-            { "id": "FieldSchemaArray" }
-          ]
-        },
         "name": {
           "name": "name",
           "description": "The name of the field",
@@ -371,6 +175,38 @@
           "description": "Optional description of the field",
           "type": "string"
         },
+        "type": {
+          "name": "type",
+          "description": "The type of the field",
+          "required": true,
+          "type": "enum",
+          "schema": { "id": "FieldTypeEnum" }
+        },
+        "schema": {
+          "name": "schema",
+          "description": "Schema for complex types. A single FieldSchema for record/array/set/enum/object; an array of FieldSchema for union/composite",
+          "type": "union",
+          "schema": [
+            { "id": "FieldSchemaRef" },
+            { "id": "FieldSchemaInline" },
+            { "id": "FieldSchemaArray" }
+          ]
+        },
+        "required": {
+          "name": "required",
+          "description": "Whether the field is required",
+          "type": "boolean"
+        },
+        "unique": {
+          "name": "unique",
+          "description": "Whether the field value must be unique",
+          "type": "boolean"
+        },
+        "deprecated": {
+          "name": "deprecated",
+          "description": "Whether the field is deprecated",
+          "type": "boolean"
+        },
         "default": {
           "name": "default",
           "description": "Default value for the field",
@@ -378,14 +214,247 @@
         }
       }
     },
+
+    "FieldSchemaArray": {
+      "name": "FieldSchemaArray",
+      "description": "An array of FieldSchema entries — used when a field is a union or composite of multiple named or inline schemas",
+      "type": "array",
+      "schema": { "id": "FieldSchema" }
+    },
+
+    "NestedSchemaObject": {
+      "name": "NestedSchemaObject",
+      "description": "A named sub-schema defining an object type with fields, indexes, and constraints",
+      "fields": {
+        "name": {
+          "name": "name",
+          "description": "The name of the nested schema",
+          "required": true,
+          "type": "string"
+        },
+        "description": {
+          "name": "description",
+          "description": "Optional description",
+          "type": "string"
+        },
+        "concrete": {
+          "name": "concrete",
+          "description": "Whether this schema maps to a physical collection",
+          "type": "boolean"
+        },
+        "metadata": {
+          "name": "metadata",
+          "description": "Arbitrary metadata",
+          "type": "record"
+        },
+        "fields": {
+          "name": "fields",
+          "description": "Map of field definitions",
+          "type": "record",
+          "schema": { "id": "Field" }
+        },
+        "indexes": {
+          "name": "indexes",
+          "description": "Map of index definitions",
+          "type": "record",
+          "schema": { "id": "Index" }
+        },
+        "constraints": {
+          "name": "constraints",
+          "description": "Map of constraint definitions",
+          "type": "record",
+          "schema": { "id": "Constraint" }
+        }
+      }
+    },
+
+    "NestedSchemaType": {
+      "name": "NestedSchemaType",
+      "description": "A named sub-schema defining a non-object type: enum (with values), union (with schema variants), composite (with schema constituents), or array (with element schema)",
+      "fields": {
+        "name": {
+          "name": "name",
+          "description": "The name of the nested schema",
+          "required": true,
+          "type": "string"
+        },
+        "description": {
+          "name": "description",
+          "description": "Optional description",
+          "type": "string"
+        },
+        "type": {
+          "name": "type",
+          "description": "The kind of type schema: enum, union, composite, or array",
+          "required": true,
+          "type": "enum",
+          "schema": { "id": "FieldTypeEnum" }
+        },
+        "values": {
+          "name": "values",
+          "description": "Allowed values — for enum types only",
+          "type": "array",
+          "schema": { "type": "unknown" }
+        },
+        "schema": {
+          "name": "schema",
+          "description": "Schema reference(s) — single FieldSchema for array/record element type; array of FieldSchema for union/composite variants",
+          "type": "union",
+          "schema": [
+            { "id": "FieldSchemaRef" },
+            { "id": "FieldSchemaInline" },
+            { "id": "FieldSchemaArray" }
+          ]
+        }
+      }
+    },
+
+    "NestedSchemaUnion": {
+      "name": "NestedSchemaUnion",
+      "description": "A named nested schema that is either an object schema (has fields) or a type schema (has type)",
+      "type": "union",
+      "schema": [
+        { "id": "NestedSchemaObject" },
+        { "id": "NestedSchemaType" }
+      ]
+    },
+
+    "Index": {
+      "name": "Index",
+      "description": "Defines an index for querying",
+      "fields": {
+        "name": {
+          "name": "name",
+          "description": "The name of the index",
+          "required": true,
+          "type": "string"
+        },
+        "description": {
+          "name": "description",
+          "description": "Optional description",
+          "type": "string"
+        },
+        "type": {
+          "name": "type",
+          "description": "The type of index",
+          "required": true,
+          "type": "enum",
+          "schema": { "id": "IndexTypeEnum" }
+        },
+        "fields": {
+          "name": "fields",
+          "description": "Fields included in the index",
+          "required": true,
+          "type": "array",
+          "schema": { "type": "string" }
+        },
+        "order": {
+          "name": "order",
+          "description": "Sort order",
+          "type": "enum",
+          "schema": { "id": "IndexOrderEnum" }
+        },
+        "unique": {
+          "name": "unique",
+          "description": "Whether the index enforces uniqueness",
+          "type": "boolean"
+        },
+        "condition": {
+          "name": "condition",
+          "description": "Optional condition for partial indexes",
+          "type": "union",
+          "schema": [
+            { "id": "IndexCondition" },
+            { "id": "IndexConditionGroup" }
+          ]
+        }
+      }
+    },
+
+    "IndexCondition": {
+      "name": "IndexCondition",
+      "description": "A single condition for a partial index",
+      "fields": {
+        "field": {
+          "name": "field",
+          "description": "The field to check",
+          "required": true,
+          "type": "string"
+        },
+        "operator": {
+          "name": "operator",
+          "description": "Comparison operator",
+          "required": true,
+          "type": "enum",
+          "schema": { "id": "ComparisonOperatorEnum" }
+        },
+        "value": {
+          "name": "value",
+          "description": "The value to compare against",
+          "required": true,
+          "type": "unknown"
+        }
+      }
+    },
+
+    "IndexConditionGroup": {
+      "name": "IndexConditionGroup",
+      "description": "A group of conditions combined with a logical operator",
+      "fields": {
+        "operator": {
+          "name": "operator",
+          "description": "Logical operator",
+          "required": true,
+          "type": "enum",
+          "schema": { "id": "LogicalOperatorEnum" }
+        },
+        "conditions": {
+          "name": "conditions",
+          "description": "Array of conditions — each is an IndexCondition or IndexConditionGroup",
+          "required": true,
+          "type": "array",
+          "schema": { "id": "IndexConditionUnion" }
+        }
+      }
+    },
+
+    "IndexConditionUnion": {
+      "name": "IndexConditionUnion",
+      "description": "A condition that is either a leaf IndexCondition or a recursive IndexConditionGroup",
+      "type": "union",
+      "schema": [
+        { "id": "IndexCondition" },
+        { "id": "IndexConditionGroup" }
+      ]
+    },
+
+    "ConstraintMetadata": {
+      "name": "ConstraintMetadata",
+      "description": "Metadata fields present in all constraints",
+      "fields": {
+        "name": {
+          "name": "name",
+          "description": "The name of the constraint",
+          "required": true,
+          "type": "string"
+        },
+        "description": {
+          "name": "description",
+          "description": "Optional description",
+          "type": "string"
+        }
+      }
+    },
+
     "ConstraintRule": {
       "name": "ConstraintRule",
       "description": "A single validation rule with a predicate",
       "fields": {
-        "parameters": {
-          "name": "parameters",
-          "description": "Parameters for the predicate",
-          "type": "unknown"
+        "predicate": {
+          "name": "predicate",
+          "description": "The predicate function name",
+          "required": true,
+          "type": "string"
         },
         "fields": {
           "name": "fields",
@@ -393,21 +462,21 @@
           "type": "array",
           "schema": { "type": "string" }
         },
-        "predicate": {
-          "name": "predicate",
-          "description": "The predicate function name",
-          "required": true,
-          "type": "string"
+        "parameters": {
+          "name": "parameters",
+          "description": "Parameters for the predicate",
+          "type": "unknown"
         }
       }
     },
+
     "ConstraintGroup": {
       "name": "ConstraintGroup",
       "description": "A group of constraints combined with a logical operator",
       "fields": {
         "operator": {
           "name": "operator",
-          "description": "Logical operator (AND, OR, NOT)",
+          "description": "Logical operator",
           "required": true,
           "type": "enum",
           "schema": { "id": "LogicalOperatorEnum" }
@@ -421,24 +490,24 @@
         }
       }
     },
-    "FieldTypeEnum": {
-      "name": "FieldTypeEnum",
-      "type": "string",
-      "values": [
-        "unknown",
-        "string",
-        "number",
-        "integer",
-        "decimal",
-        "boolean",
-        "array",
-        "set",
-        "enum",
-        "object",
-        "record",
-        "union",
-        "composite",
-        "geometry"
+
+    "ConstraintUnion": {
+      "name": "ConstraintUnion",
+      "description": "A constraint that is either a leaf ConstraintRule or a recursive ConstraintGroup",
+      "type": "union",
+      "schema": [
+        { "id": "ConstraintRule" },
+        { "id": "ConstraintGroup" }
+      ]
+    },
+
+    "Constraint": {
+      "name": "Constraint",
+      "description": "A fully-formed constraint: metadata fields merged with a rule",
+      "type": "composite",
+      "schema": [
+        { "id": "ConstraintMetadata" },
+        { "id": "ConstraintRule" }
       ]
     }
   }

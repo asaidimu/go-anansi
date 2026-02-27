@@ -20,17 +20,17 @@ const (
 	TypeFloat                        // float64                    — number
 	TypeString                       // string                     — string
 	TypeBool                         // bool                       — boolean
-	TypeDecimal                      // any (decimal placeholder)  — decimal
-	TypeGeometry                     // []float64                — geometry (coordinate rings)
+	TypeBytes                        // []byte                     — binary blobs, hashes, UUIDs, encoded payloads
+	TypeGeometry                     // [][]float64                — geometry (coordinate rings)
 	TypeRecord                       // map[string]*DataContainer  — record<T> with known schema
 	TypeArrayUnknown                 // []any                      — array of unknown/incompatible-union elements
 	TypeArrayInt                     // []int64                    — array of integer/enum
 	TypeArrayFloat                   // []float64                  — array of number
 	TypeArrayString                  // []string                   — array of string
 	TypeArrayBool                    // []bool                     — array of boolean
-	TypeArrayDecimal                 // []any                      — array of decimal
+	TypeArrayBytes                   // [][]byte                   — array of bytes
 	TypeArrayObject                  // []*DataContainer           — array of object (known schema)
-	TypeArray                        // [][]any                    — array of arrays
+	TypeArrayGeometry                // [][][]float64              — array of geometry
 )
 
 const (
@@ -54,7 +54,7 @@ func NewDataPoint(typ DataType, id ...int32) (DataPoint, error) {
 	if len(id) == 0 {
 		return DataPoint(typ) << nullBits, nil
 	}
-	if id[0] > identifierMask {
+	if id[0] < 0 || id[0] > identifierMask {
 		return 0, ErrIDOutOfBounds
 	}
 	return (DataPoint(id[0]) << dataBits) | (DataPoint(typ) << nullBits), nil
@@ -72,7 +72,7 @@ func (p DataPoint) ID() int32 {
 
 // WithID returns a new DataPoint with the same type and null bits but a different id.
 func (p DataPoint) WithID(id int32) (DataPoint, error) {
-	if id > identifierMask {
+	if id < 0 || id > identifierMask {
 		return 0, ErrIDOutOfBounds
 	}
 	base := p & DataPoint((1<<dataBits)-1) // preserve bits 0..4
@@ -104,7 +104,6 @@ type DataContainer struct {
 func NewDataContainer() *DataContainer {
 	return &DataContainer{
 		positions: make(map[int32]int32),
-		holes:     make([]DataPoint, 0),
 	}
 }
 
@@ -127,11 +126,11 @@ func (d *DataContainer) initSlice(typ DataType, size int) {
 	case TypeBool:
 		s := make([]bool, 0, size)
 		d.data[typ] = unsafe.Pointer(&s)
-	case TypeDecimal:
-		s := make([]any, 0, size)
+	case TypeBytes:
+		s := make([][]byte, 0, size)
 		d.data[typ] = unsafe.Pointer(&s)
 	case TypeGeometry:
-		s := make([][]float64, 0, size)
+		s := make([][][]float64, 0, size)
 		d.data[typ] = unsafe.Pointer(&s)
 	case TypeRecord:
 		s := make([]map[string]*DataContainer, 0, size)
@@ -151,14 +150,14 @@ func (d *DataContainer) initSlice(typ DataType, size int) {
 	case TypeArrayBool:
 		s := make([][]bool, 0, size)
 		d.data[typ] = unsafe.Pointer(&s)
-	case TypeArrayDecimal:
-		s := make([][]any, 0, size)
+	case TypeArrayBytes:
+		s := make([][][]byte, 0, size)
 		d.data[typ] = unsafe.Pointer(&s)
 	case TypeArrayObject:
 		s := make([][]*DataContainer, 0, size)
 		d.data[typ] = unsafe.Pointer(&s)
-	case TypeArray:
-		s := make([][][]any, 0, size)
+	case TypeArrayGeometry:
+		s := make([][][][]float64, 0, size)
 		d.data[typ] = unsafe.Pointer(&s)
 	}
 }
@@ -190,8 +189,13 @@ func (d *DataContainer) claimHole(typ DataType) int32 {
 }
 
 // freePosition records a freed slice index as a hole for future reuse.
+// idx is always a valid slice index bounded by identifierMask, so NewDataPoint
+// cannot return ErrIDOutOfBounds here; the panic guards against future regressions.
 func (d *DataContainer) freePosition(point DataPoint, idx int32) {
-	hole, _ := NewDataPoint(point.Type(), idx)
+	hole, err := NewDataPoint(point.Type(), idx)
+	if err != nil {
+		panic(fmt.Sprintf("document: freePosition: unexpected error encoding hole: %v", err))
+	}
 	d.holes = append(d.holes, hole)
 }
 
@@ -215,6 +219,9 @@ func (d *DataContainer) SetInt(point DataPoint, value int64) error {
 }
 
 func (d *DataContainer) AppendInt(point DataPoint, value int64) error {
+	if point.Type() != TypeInt {
+		return ErrTypeMismatch
+	}
 	ptr := (*[]int64)(d.slot(TypeInt))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
@@ -259,6 +266,9 @@ func (d *DataContainer) SetFloat(point DataPoint, value float64) error {
 }
 
 func (d *DataContainer) AppendFloat(point DataPoint, value float64) error {
+	if point.Type() != TypeFloat {
+		return ErrTypeMismatch
+	}
 	ptr := (*[]float64)(d.slot(TypeFloat))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
@@ -303,6 +313,9 @@ func (d *DataContainer) SetString(point DataPoint, value string) error {
 }
 
 func (d *DataContainer) AppendString(point DataPoint, value string) error {
+	if point.Type() != TypeString {
+		return ErrTypeMismatch
+	}
 	ptr := (*[]string)(d.slot(TypeString))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
@@ -347,6 +360,9 @@ func (d *DataContainer) SetBool(point DataPoint, value bool) error {
 }
 
 func (d *DataContainer) AppendBool(point DataPoint, value bool) error {
+	if point.Type() != TypeBool {
+		return ErrTypeMismatch
+	}
 	ptr := (*[]bool)(d.slot(TypeBool))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
@@ -371,27 +387,30 @@ func (d *DataContainer) GetBool(point DataPoint) (bool, bool, error) {
 	return (*(*[]bool)(d.slot(TypeBool)))[idx], true, nil
 }
 
-// --- Decimal (any until decimal type is finalised) ---
+// --- Bytes ([]byte — binary blobs, hashes, UUIDs, encoded payloads) ---
 
-func (d *DataContainer) SetDecimal(point DataPoint, value any) error {
-	if point.Type() != TypeDecimal {
+func (d *DataContainer) SetBytes(point DataPoint, value []byte) error {
+	if point.Type() != TypeBytes {
 		return ErrTypeMismatch
 	}
 	key := int32(point)
 	if idx, exists := d.positions[key]; exists && idx >= 0 {
-		(*(*[]any)(d.slot(TypeDecimal)))[idx] = value
+		(*(*[][]byte)(d.slot(TypeBytes)))[idx] = value
 		return nil
 	}
-	if idx := d.claimHole(TypeDecimal); idx >= 0 {
-		(*(*[]any)(d.slot(TypeDecimal)))[idx] = value
+	if idx := d.claimHole(TypeBytes); idx >= 0 {
+		(*(*[][]byte)(d.slot(TypeBytes)))[idx] = value
 		d.positions[key] = idx
 		return nil
 	}
-	return d.AppendDecimal(point, value)
+	return d.AppendBytes(point, value)
 }
 
-func (d *DataContainer) AppendDecimal(point DataPoint, value any) error {
-	ptr := (*[]any)(d.slot(TypeDecimal))
+func (d *DataContainer) AppendBytes(point DataPoint, value []byte) error {
+	if point.Type() != TypeBytes {
+		return ErrTypeMismatch
+	}
+	ptr := (*[][]byte)(d.slot(TypeBytes))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
 		return ErrBucketFull
@@ -401,8 +420,8 @@ func (d *DataContainer) AppendDecimal(point DataPoint, value any) error {
 	return nil
 }
 
-func (d *DataContainer) GetDecimal(point DataPoint) (any, bool, error) {
-	if point.Type() != TypeDecimal {
+func (d *DataContainer) GetBytes(point DataPoint) ([]byte, bool, error) {
+	if point.Type() != TypeBytes {
 		return nil, false, ErrTypeMismatch
 	}
 	idx, exists := d.positions[int32(point)]
@@ -412,30 +431,33 @@ func (d *DataContainer) GetDecimal(point DataPoint) (any, bool, error) {
 	if idx < 0 {
 		return nil, true, nil
 	}
-	return (*(*[]any)(d.slot(TypeDecimal)))[idx], true, nil
+	return (*(*[][]byte)(d.slot(TypeBytes)))[idx], true, nil
 }
 
-// --- Geometry ([]float64 — coordinate rings) ---
+// --- Geometry ([][]float64 — coordinate rings) ---
 
-func (d *DataContainer) SetGeometry(point DataPoint, value []float64) error {
+func (d *DataContainer) SetGeometry(point DataPoint, value [][]float64) error {
 	if point.Type() != TypeGeometry {
 		return ErrTypeMismatch
 	}
 	key := int32(point)
 	if idx, exists := d.positions[key]; exists && idx >= 0 {
-		(*(*[][]float64)(d.slot(TypeGeometry)))[idx] = value
+		(*(*[][][]float64)(d.slot(TypeGeometry)))[idx] = value
 		return nil
 	}
 	if idx := d.claimHole(TypeGeometry); idx >= 0 {
-		(*(*[][]float64)(d.slot(TypeGeometry)))[idx] = value
+		(*(*[][][]float64)(d.slot(TypeGeometry)))[idx] = value
 		d.positions[key] = idx
 		return nil
 	}
 	return d.AppendGeometry(point, value)
 }
 
-func (d *DataContainer) AppendGeometry(point DataPoint, value []float64) error {
-	ptr := (*[][]float64)(d.slot(TypeGeometry))
+func (d *DataContainer) AppendGeometry(point DataPoint, value [][]float64) error {
+	if point.Type() != TypeGeometry {
+		return ErrTypeMismatch
+	}
+	ptr := (*[][][]float64)(d.slot(TypeGeometry))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
 		return ErrBucketFull
@@ -445,7 +467,7 @@ func (d *DataContainer) AppendGeometry(point DataPoint, value []float64) error {
 	return nil
 }
 
-func (d *DataContainer) GetGeometry(point DataPoint) ([]float64, bool, error) {
+func (d *DataContainer) GetGeometry(point DataPoint) ([][]float64, bool, error) {
 	if point.Type() != TypeGeometry {
 		return nil, false, ErrTypeMismatch
 	}
@@ -456,7 +478,7 @@ func (d *DataContainer) GetGeometry(point DataPoint) ([]float64, bool, error) {
 	if idx < 0 {
 		return nil, true, nil
 	}
-	return (*(*[][]float64)(d.slot(TypeGeometry)))[idx], true, nil
+	return (*(*[][][]float64)(d.slot(TypeGeometry)))[idx], true, nil
 }
 
 // --- Record (map[string]*DataContainer — record<T> with known schema) ---
@@ -482,6 +504,9 @@ func (d *DataContainer) SetRecord(point DataPoint, value map[string]*DataContain
 }
 
 func (d *DataContainer) AppendRecord(point DataPoint, value map[string]*DataContainer) error {
+	if point.Type() != TypeRecord {
+		return ErrTypeMismatch
+	}
 	ptr := (*[]map[string]*DataContainer)(d.slot(TypeRecord))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
@@ -526,6 +551,9 @@ func (d *DataContainer) SetUnknown(point DataPoint, value any) error {
 }
 
 func (d *DataContainer) AppendUnknown(point DataPoint, value any) error {
+	if point.Type() != TypeUnknown {
+		return ErrTypeMismatch
+	}
 	ptr := (*[]any)(d.slot(TypeUnknown))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
@@ -570,6 +598,9 @@ func (d *DataContainer) SetArrayInt(point DataPoint, value []int64) error {
 }
 
 func (d *DataContainer) AppendArrayInt(point DataPoint, value []int64) error {
+	if point.Type() != TypeArrayInt {
+		return ErrTypeMismatch
+	}
 	ptr := (*[][]int64)(d.slot(TypeArrayInt))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
@@ -614,6 +645,9 @@ func (d *DataContainer) SetArrayFloat(point DataPoint, value []float64) error {
 }
 
 func (d *DataContainer) AppendArrayFloat(point DataPoint, value []float64) error {
+	if point.Type() != TypeArrayFloat {
+		return ErrTypeMismatch
+	}
 	ptr := (*[][]float64)(d.slot(TypeArrayFloat))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
@@ -658,6 +692,9 @@ func (d *DataContainer) SetArrayString(point DataPoint, value []string) error {
 }
 
 func (d *DataContainer) AppendArrayString(point DataPoint, value []string) error {
+	if point.Type() != TypeArrayString {
+		return ErrTypeMismatch
+	}
 	ptr := (*[][]string)(d.slot(TypeArrayString))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
@@ -702,6 +739,9 @@ func (d *DataContainer) SetArrayBool(point DataPoint, value []bool) error {
 }
 
 func (d *DataContainer) AppendArrayBool(point DataPoint, value []bool) error {
+	if point.Type() != TypeArrayBool {
+		return ErrTypeMismatch
+	}
 	ptr := (*[][]bool)(d.slot(TypeArrayBool))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
@@ -726,27 +766,30 @@ func (d *DataContainer) GetArrayBool(point DataPoint) ([]bool, bool, error) {
 	return (*(*[][]bool)(d.slot(TypeArrayBool)))[idx], true, nil
 }
 
-// --- ArrayDecimal ([]any) ---
+// --- ArrayBytes ([][]byte — array of binary values) ---
 
-func (d *DataContainer) SetArrayDecimal(point DataPoint, value []any) error {
-	if point.Type() != TypeArrayDecimal {
+func (d *DataContainer) SetArrayBytes(point DataPoint, value [][]byte) error {
+	if point.Type() != TypeArrayBytes {
 		return ErrTypeMismatch
 	}
 	key := int32(point)
 	if idx, exists := d.positions[key]; exists && idx >= 0 {
-		(*(*[][]any)(d.slot(TypeArrayDecimal)))[idx] = value
+		(*(*[][][]byte)(d.slot(TypeArrayBytes)))[idx] = value
 		return nil
 	}
-	if idx := d.claimHole(TypeArrayDecimal); idx >= 0 {
-		(*(*[][]any)(d.slot(TypeArrayDecimal)))[idx] = value
+	if idx := d.claimHole(TypeArrayBytes); idx >= 0 {
+		(*(*[][][]byte)(d.slot(TypeArrayBytes)))[idx] = value
 		d.positions[key] = idx
 		return nil
 	}
-	return d.AppendArrayDecimal(point, value)
+	return d.AppendArrayBytes(point, value)
 }
 
-func (d *DataContainer) AppendArrayDecimal(point DataPoint, value []any) error {
-	ptr := (*[][]any)(d.slot(TypeArrayDecimal))
+func (d *DataContainer) AppendArrayBytes(point DataPoint, value [][]byte) error {
+	if point.Type() != TypeArrayBytes {
+		return ErrTypeMismatch
+	}
+	ptr := (*[][][]byte)(d.slot(TypeArrayBytes))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
 		return ErrBucketFull
@@ -756,8 +799,8 @@ func (d *DataContainer) AppendArrayDecimal(point DataPoint, value []any) error {
 	return nil
 }
 
-func (d *DataContainer) GetArrayDecimal(point DataPoint) ([]any, bool, error) {
-	if point.Type() != TypeArrayDecimal {
+func (d *DataContainer) GetArrayBytes(point DataPoint) ([][]byte, bool, error) {
+	if point.Type() != TypeArrayBytes {
 		return nil, false, ErrTypeMismatch
 	}
 	idx, exists := d.positions[int32(point)]
@@ -767,10 +810,10 @@ func (d *DataContainer) GetArrayDecimal(point DataPoint) ([]any, bool, error) {
 	if idx < 0 {
 		return nil, true, nil
 	}
-	return (*(*[][]any)(d.slot(TypeArrayDecimal)))[idx], true, nil
+	return (*(*[][][]byte)(d.slot(TypeArrayBytes)))[idx], true, nil
 }
 
-// --- AyObjectrrayContainer ([]*DataContainer — ordered array of typed objects) ---
+// --- ArrayObject ([]*DataContainer — ordered array of typed objects) ---
 
 func (d *DataContainer) SetArrayObject(point DataPoint, value []*DataContainer) error {
 	if point.Type() != TypeArrayObject {
@@ -790,6 +833,9 @@ func (d *DataContainer) SetArrayObject(point DataPoint, value []*DataContainer) 
 }
 
 func (d *DataContainer) AppendArrayObject(point DataPoint, value []*DataContainer) error {
+	if point.Type() != TypeArrayObject {
+		return ErrTypeMismatch
+	}
 	ptr := (*[][]*DataContainer)(d.slot(TypeArrayObject))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
@@ -834,6 +880,9 @@ func (d *DataContainer) SetArrayUnknown(point DataPoint, value []any) error {
 }
 
 func (d *DataContainer) AppendArrayUnknown(point DataPoint, value []any) error {
+	if point.Type() != TypeArrayUnknown {
+		return ErrTypeMismatch
+	}
 	ptr := (*[][]any)(d.slot(TypeArrayUnknown))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
@@ -858,27 +907,30 @@ func (d *DataContainer) GetArrayUnknown(point DataPoint) ([]any, bool, error) {
 	return (*(*[][]any)(d.slot(TypeArrayUnknown)))[idx], true, nil
 }
 
-// --- Array ([][]any — array of arrays) ---
+// --- ArrayGeometry ([][][]float64 — array of geometry values) ---
 
-func (d *DataContainer) SetArray(point DataPoint, value [][]any) error {
-	if point.Type() != TypeArray {
+func (d *DataContainer) SetArrayGeometry(point DataPoint, value [][][]float64) error {
+	if point.Type() != TypeArrayGeometry {
 		return ErrTypeMismatch
 	}
 	key := int32(point)
 	if idx, exists := d.positions[key]; exists && idx >= 0 {
-		(*(*[][][]any)(d.slot(TypeArray)))[idx] = value
+		(*(*[][][][]float64)(d.slot(TypeArrayGeometry)))[idx] = value
 		return nil
 	}
-	if idx := d.claimHole(TypeArray); idx >= 0 {
-		(*(*[][][]any)(d.slot(TypeArray)))[idx] = value
+	if idx := d.claimHole(TypeArrayGeometry); idx >= 0 {
+		(*(*[][][][]float64)(d.slot(TypeArrayGeometry)))[idx] = value
 		d.positions[key] = idx
 		return nil
 	}
-	return d.AppendArray(point, value)
+	return d.AppendArrayGeometry(point, value)
 }
 
-func (d *DataContainer) AppendArray(point DataPoint, value [][]any) error {
-	ptr := (*[][][]any)(d.slot(TypeArray))
+func (d *DataContainer) AppendArrayGeometry(point DataPoint, value [][][]float64) error {
+	if point.Type() != TypeArrayGeometry {
+		return ErrTypeMismatch
+	}
+	ptr := (*[][][][]float64)(d.slot(TypeArrayGeometry))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
 		return ErrBucketFull
@@ -888,8 +940,8 @@ func (d *DataContainer) AppendArray(point DataPoint, value [][]any) error {
 	return nil
 }
 
-func (d *DataContainer) GetArray(point DataPoint) ([][]any, bool, error) {
-	if point.Type() != TypeArray {
+func (d *DataContainer) GetArrayGeometry(point DataPoint) ([][][]float64, bool, error) {
+	if point.Type() != TypeArrayGeometry {
 		return nil, false, ErrTypeMismatch
 	}
 	idx, exists := d.positions[int32(point)]
@@ -899,20 +951,19 @@ func (d *DataContainer) GetArray(point DataPoint) ([][]any, bool, error) {
 	if idx < 0 {
 		return nil, true, nil
 	}
-	return (*(*[][][]any)(d.slot(TypeArray)))[idx], true, nil
+	return (*(*[][][][]float64)(d.slot(TypeArrayGeometry)))[idx], true, nil
 }
 
 // --- Null / Unset / State ---
 
 // SetNull marks point as explicitly null, freeing any previously held slice position.
 // The field becomes IsSet=true, IsNull=true, HasValue=false.
-func (d *DataContainer) SetNull(point DataPoint) error {
+func (d *DataContainer) SetNull(point DataPoint) {
 	key := int32(point)
 	if idx, exists := d.positions[key]; exists && idx >= 0 {
 		d.freePosition(point, idx)
 	}
 	d.positions[key] = -1
-	return nil
 }
 
 // Unset removes point entirely, freeing any previously held slice position.
@@ -978,11 +1029,11 @@ func (d *DataContainer) Clear() {
 		case TypeBool:
 			s := (*[]bool)(ptr)
 			*s = (*s)[:0]
-		case TypeDecimal:
-			s := (*[]any)(ptr)
+		case TypeBytes:
+			s := (*[][]byte)(ptr)
 			*s = (*s)[:0]
 		case TypeGeometry:
-			s := (*[][]float64)(ptr)
+			s := (*[][][]float64)(ptr)
 			*s = (*s)[:0]
 		case TypeRecord:
 			s := (*[]map[string]*DataContainer)(ptr)
@@ -1002,14 +1053,14 @@ func (d *DataContainer) Clear() {
 		case TypeArrayBool:
 			s := (*[][]bool)(ptr)
 			*s = (*s)[:0]
-		case TypeArrayDecimal:
-			s := (*[][]any)(ptr)
+		case TypeArrayBytes:
+			s := (*[][][]byte)(ptr)
 			*s = (*s)[:0]
 		case TypeArrayObject:
 			s := (*[][]*DataContainer)(ptr)
 			*s = (*s)[:0]
-		case TypeArray:
-			s := (*[][][]any)(ptr)
+		case TypeArrayGeometry:
+			s := (*[][][][]float64)(ptr)
 			*s = (*s)[:0]
 		}
 	}
