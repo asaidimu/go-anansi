@@ -53,6 +53,14 @@ var stringToComp = map[string]ComparisonOperator{
 	"nexists":   NotExists,
 }
 
+// ParseComparisonOperator maps a string operator token to its ComparisonOperator
+// value. Returns (op, true) on success, (0, false) if the string is unrecognised.
+// This is the parse-time counterpart to ComparisonOperator.String().
+func ParseComparisonOperator(s string) (ComparisonOperator, bool) {
+	op, ok := stringToComp[s]
+	return op, ok
+}
+
 func (o ComparisonOperator) String() string {
 	if s, ok := compToString[o]; ok {
 		return s

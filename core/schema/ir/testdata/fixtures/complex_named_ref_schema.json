@@ -1,0 +1,131 @@
+{
+  "name": "User",
+  "description": "Complex user schema with named references, diverse fields, constraints, and indexes.",
+  "version": "1.0.0",
+  "concrete": true,
+  "fields": {
+    "00000000-0000-4000-8000-000000000001": {
+      "name": "id",
+      "description": "Unique user ID",
+      "required": true,
+      "type": "string",
+      "unique": true
+    },
+    "00000000-0000-4000-8000-000000000002": {
+      "name": "name",
+      "description": "User's full name",
+      "required": true,
+      "type": "string"
+    },
+    "00000000-0000-4000-8000-000000000003": {
+      "name": "age",
+      "description": "User's age",
+      "type": "integer"
+    },
+    "00000000-0000-4000-8000-000000000004": {
+      "name": "is_active",
+      "description": "Whether the user account is active",
+      "type": "boolean",
+      "default": true,
+      "required": false
+    },
+    "00000000-0000-4000-8000-000000000005": {
+      "name": "address",
+      "description": "User's address",
+      "type": "object",
+      "schema": { "id": "00000000-0000-4000-8000-0000000000F1" }
+    },
+    "00000000-0000-4000-8000-000000000006": {
+      "name": "contacts",
+      "description": "List of contact information",
+      "type": "array",
+      "schema": { "id": "00000000-0000-4000-8000-0000000000F2" }
+    },
+    "00000000-0000-4000-8000-000000000007": {
+      "name": "status",
+      "description": "User account status",
+      "type": "enum",
+      "schema": { "id": "00000000-0000-4000-8000-0000000000F3" }
+    },
+    "00000000-0000-4000-8000-000000000008": {
+      "name": "tags",
+      "description": "User-defined tags",
+      "type": "array",
+      "schema": { "id": "00000000-0000-4000-8000-0000000000F4" }
+    }
+  },
+  "schemas": {
+    "00000000-0000-4000-8000-0000000000F1": {
+      "name": "Address",
+      "description": "User's address details",
+      "fields": {
+        "00000000-0000-4000-8000-000000000101": {
+          "name": "street",
+          "type": "string"
+        },
+        "00000000-0000-4000-8000-000000000102": {
+          "name": "city",
+          "type": "string"
+        },
+        "00000000-0000-4000-8000-000000000103": {
+          "name": "zip_code",
+          "type": "string",
+          "required": true
+        }
+      }
+    },
+    "00000000-0000-4000-8000-0000000000F2": {
+      "name": "ContactInfo",
+      "description": "User's contact details",
+      "fields": {
+        "00000000-0000-4000-8000-000000000104": {
+          "name": "email",
+          "type": "string",
+          "unique": true
+        },
+        "00000000-0000-4000-8000-000000000105": {
+          "name": "phone",
+          "type": "string"
+        }
+      }
+    },
+    "00000000-0000-4000-8000-0000000000F3": {
+      "name": "OrderStatusEnum",
+      "type": "enum",
+      "values": ["pending", "shipped", "delivered", "cancelled"]
+    },
+    "00000000-0000-4000-8000-0000000000F4": {
+      "name": "StringType",
+      "type": "string"
+    }
+  },
+  "constraints": {
+    "00000000-0000-4000-8000-0000000000A1": {
+      "name": "age_range",
+      "predicate": "range",
+      "parameters": {
+        "min": 0,
+        "max": 120
+      },
+      "fields": ["age"]
+    },
+    "00000000-0000-4000-8000-0000000000A2": {
+      "name": "email_format",
+      "predicate": "pattern",
+      "parameters": "^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$",
+      "fields": ["contacts.email"]
+    }
+  },
+  "indexes": {
+    "00000000-0000-4000-8000-0000000000B1": {
+      "name": "idx_name_unique",
+      "type": "unique",
+      "fields": ["name"]
+    },
+    "00000000-0000-4000-8000-0000000000B2": {
+      "name": "idx_city_zip",
+      "type": "normal",
+      "fields": ["address.city", "address.zip_code"]
+    }
+  }
+}
