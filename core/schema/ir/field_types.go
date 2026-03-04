@@ -1,4 +1,4 @@
-package definition
+package ir
 
 import "encoding/json"
 
