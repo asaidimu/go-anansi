@@ -28,7 +28,7 @@ func TestMetaSchema_MarshalUnmarshalJSON(t *testing.T) {
 	require.NoError(t,err)
 
 	issues, ok := vd.Validate(mapData)
-	require.False(t, ok)
+	require.True(t, ok)
 	require.Empty(t,issues)
 }
 
