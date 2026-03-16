@@ -35,25 +35,33 @@
       "name": "fields",
       "description": "Map of field definitions",
       "type": "record",
-      "schema": { "id": "019ca98f-937d-7dd0-9a4d-80d81456ead1" }
+      "schema": {
+        "id": "019ca98f-937d-7dd0-9a4d-80d81456ead1"
+      }
     },
     "019ca98f-936e-7aa4-af24-73f9f7f54078": {
       "name": "schemas",
-      "description": "Map of named nested schema definitions — each entry is either an object schema (with fields) or a type schema (enum, union, composite, array)",
+      "description": "Map of named nested schema definitions \u2014 each entry is either an object schema (with fields) or a type schema (enum, union, composite, array)",
       "type": "record",
-      "schema": { "id": "019ca98f-9382-7b8b-97c7-02dacbb2a700" }
+      "schema": {
+        "id": "019ca98f-9382-7b8b-97c7-02dacbb2a700"
+      }
     },
     "019ca98f-9370-7bab-951c-00a4d4f78893": {
       "name": "indexes",
       "description": "Map of index definitions",
       "type": "record",
-      "schema": { "id": "019ca98f-9383-740f-bf51-6762ff1b82a6" }
+      "schema": {
+        "id": "019ca98f-9383-740f-bf51-6762ff1b82a6"
+      }
     },
     "019ca98f-9371-71b9-aa2b-18da05783b2f": {
       "name": "constraints",
       "description": "Map of constraint definitions",
       "type": "record",
-      "schema": { "id": "019ca98f-938d-78ec-b205-7df091e006db" }
+      "schema": {
+        "id": "019ca98f-938d-78ec-b205-7df091e006db"
+      }
     }
   },
   "schemas": {
@@ -77,91 +85,99 @@
         "geometry"
       ]
     },
-
     "019ca98f-9374-756f-8584-b2e010381fc7": {
       "name": "LogicalOperatorEnum",
       "type": "enum",
-      "values": ["and", "or", "not", "nor", "xor", "nand", "xnor"]
+      "values": [
+        "and",
+        "or",
+        "not",
+        "nor",
+        "xor",
+        "nand",
+        "xnor"
+      ]
     },
-
     "019ca98f-9375-7e5a-aac1-04f8523f1113": {
       "name": "ComparisonOperatorEnum",
       "type": "enum",
       "values": [
-        "eq", "neq", "lt", "lte", "gt", "gte",
-        "in", "nin",
-        "contains", "ncontains",
-        "exists", "nexists"
+        "eq",
+        "neq",
+        "lt",
+        "lte",
+        "gt",
+        "gte",
+        "in",
+        "nin",
+        "contains",
+        "ncontains",
+        "exists",
+        "nexists"
       ]
     },
-
     "019ca98f-9376-7f65-ac36-781705c9924b": {
       "name": "IndexTypeEnum",
       "type": "enum",
-      "values": ["normal", "unique", "primary", "spatial", "fulltext"]
+      "values": [
+        "normal",
+        "unique",
+        "primary",
+        "spatial",
+        "fulltext"
+      ]
     },
-
     "019ca98f-9379-7b6c-be07-21bb14084fb5": {
       "name": "IndexOrderEnum",
       "type": "enum",
-      "values": ["asc", "desc"]
+      "values": [
+        "asc",
+        "desc"
+      ]
     },
-
     "019ca98f-937a-7924-a711-7baba2e78303": {
-      "name": "FieldSchemaRef",
-      "description": "A reference to a named nested schema, with optional index and constraint augmentation",
+      "name": "FieldSchema",
+      "description": "A schema reference: either a named ref (via id) or an inline type definition (via type/values). id and type are mutually exclusive \u2014 never mixed. constraints and indexes apply to both forms.",
       "fields": {
         "id": {
           "name": "id",
-          "description": "The UUID v7 of the referenced schema",
-          "required": true,
+          "description": "UUID v7 of the referenced named schema. Mutually exclusive with type and values.",
           "type": "string"
         },
-        "indexes": {
-          "name": "indexes",
-          "description": "Additional indexes for this reference",
-          "type": "record",
-          "schema": { "id": "019ca98f-9383-740f-bf51-6762ff1b82a6" }
-        },
-        "constraints": {
-          "name": "constraints",
-          "description": "Additional constraints for this reference",
-          "type": "record",
-          "schema": { "id": "019ca98f-938d-78ec-b205-7df091e006db" }
-        }
-      }
-    },
-
-    "019ca98f-937b-7b1a-a5a1-8ad470fc108b": {
-      "name": "FieldSchemaInline",
-      "description": "An inline type definition for simple or enum types that do not warrant a named schema",
-      "fields": {
         "type": {
           "name": "type",
-          "description": "The inline type",
-          "required": true,
+          "description": "Inline primitive type. Mutually exclusive with id. Only primitive and record types are valid; structural types require a named schema.",
           "type": "enum",
-          "schema": { "id": "019ca98f-9372-7dc5-983e-7c40044f0f7c" }
+          "schema": {
+            "id": "019ca98f-9373-7dc5-983e-7c40044f0f7d"
+          }
         },
         "values": {
           "name": "values",
-          "description": "Allowed values, for enum types only",
+          "description": "Inline enum value set. Only valid when type is a scalar primitive (string, number, integer, decimal, boolean). Mutually exclusive with id.",
           "type": "array",
-          "schema": { "type": "unknown" }
+          "schema": {
+            "type": "unknown"
+          }
+        },
+        "indexes": {
+          "name": "indexes",
+          "description": "Additional indexes for this reference. Valid for both named and inline forms.",
+          "type": "record",
+          "schema": {
+            "id": "019ca98f-9383-740f-bf51-6762ff1b82a6"
+          }
+        },
+        "constraints": {
+          "name": "constraints",
+          "description": "Additional constraints for this reference. Valid for both named and inline forms.",
+          "type": "record",
+          "schema": {
+            "id": "019ca98f-938d-78ec-b205-7df091e006db"
+          }
         }
       }
     },
-
-    "019ca98f-937c-73c8-a36a-b24aaa80e2db": {
-      "name": "FieldSchema",
-      "description": "A single schema reference: either a named ref or an inline type definition",
-      "type": "union",
-      "schema": [
-        { "id": "019ca98f-937a-7924-a711-7baba2e78303" },
-        { "id": "019ca98f-937b-7b1a-a5a1-8ad470fc108b" }
-      ]
-    },
-
     "019ca98f-937d-7dd0-9a4d-80d81456ead1": {
       "name": "Field",
       "description": "Defines a field within a schema",
@@ -182,16 +198,21 @@
           "description": "The type of the field",
           "required": true,
           "type": "enum",
-          "schema": { "id": "019ca98f-9372-7dc5-983e-7c40044f0f7c" }
+          "schema": {
+            "id": "019ca98f-9372-7dc5-983e-7c40044f0f7c"
+          }
         },
         "schema": {
           "name": "schema",
-          "description": "Schema for complex types. A single FieldSchema for record/array/set/enum/object; an array of FieldSchema for union/composite",
+          "description": "Schema reference for this field. For array/set/record/object/enum fields: a single FieldSchema (named ref or inline). For union/composite fields: a FieldSchemaArray (named refs only). Inline and named refs must never be mixed.",
           "type": "union",
           "schema": [
-            { "id": "019ca98f-937a-7924-a711-7baba2e78303" },
-            { "id": "019ca98f-937b-7b1a-a5a1-8ad470fc108b" },
-            { "id": "019ca98f-937e-7aba-ad4b-40be64f046e2" }
+            {
+              "id": "019ca98f-937a-7924-a711-7baba2e78303"
+            },
+            {
+              "id": "019ca98f-937e-7aba-ad4b-40be64f046e2"
+            }
           ]
         },
         "required": {
@@ -216,14 +237,14 @@
         }
       }
     },
-
     "019ca98f-937e-7aba-ad4b-40be64f046e2": {
       "name": "FieldSchemaArray",
-      "description": "An array of FieldSchema entries — used when a field is a union or composite of multiple named or inline schemas",
+      "description": "An array of named FieldSchema refs \u2014 used when a field is a union or composite of multiple schemas. Only named refs (id form) are valid here; inline schemas are not permitted in arrays.",
       "type": "array",
-      "schema": { "id": "019ca98f-937c-73c8-a36a-b24aaa80e2db" }
+      "schema": {
+        "id": "019ca98f-937a-7924-a711-7baba2e78303"
+      }
     },
-
     "019ca98f-9380-7559-b7cf-b5228cb45c56": {
       "name": "NestedSchemaObject",
       "description": "A named sub-schema defining an object type with fields, indexes, and constraints",
@@ -253,23 +274,28 @@
           "name": "fields",
           "description": "Map of field definitions",
           "type": "record",
-          "schema": { "id": "019ca98f-937d-7dd0-9a4d-80d81456ead1" }
+          "schema": {
+            "id": "019ca98f-937d-7dd0-9a4d-80d81456ead1"
+          }
         },
         "indexes": {
           "name": "indexes",
           "description": "Map of index definitions",
           "type": "record",
-          "schema": { "id": "019ca98f-9383-740f-bf51-6762ff1b82a6" }
+          "schema": {
+            "id": "019ca98f-9383-740f-bf51-6762ff1b82a6"
+          }
         },
         "constraints": {
           "name": "constraints",
           "description": "Map of constraint definitions",
           "type": "record",
-          "schema": { "id": "019ca98f-938d-78ec-b205-7df091e006db" }
+          "schema": {
+            "id": "019ca98f-938d-78ec-b205-7df091e006db"
+          }
         }
       }
     },
-
     "019ca98f-9381-7e79-a46c-068c0114ae19": {
       "name": "NestedSchemaType",
       "description": "A named sub-schema defining a non-object type: enum (with values), union (with schema variants), composite (with schema constituents), or array (with element schema)",
@@ -290,37 +316,46 @@
           "description": "The kind of type schema: enum, union, composite, or array",
           "required": true,
           "type": "enum",
-          "schema": { "id": "019ca98f-9372-7dc5-983e-7c40044f0f7c" }
+          "schema": {
+            "id": "019ca98f-9372-7dc5-983e-7c40044f0f7c"
+          }
         },
         "values": {
           "name": "values",
-          "description": "Allowed values — for enum types only",
+          "description": "Allowed values \u2014 for enum types only",
           "type": "array",
-          "schema": { "type": "unknown" }
+          "schema": {
+            "type": "unknown"
+          }
         },
         "schema": {
           "name": "schema",
-          "description": "Schema reference(s) — single FieldSchema for array/record element type; array of FieldSchema for union/composite variants",
+          "description": "Schema reference(s). For array/set/record element type: a single FieldSchema (named ref or inline). For union/composite variants: a FieldSchemaArray (named refs only). Inline and named refs must never be mixed.",
           "type": "union",
           "schema": [
-            { "id": "019ca98f-937a-7924-a711-7baba2e78303" },
-            { "id": "019ca98f-937b-7b1a-a5a1-8ad470fc108b" },
-            { "id": "019ca98f-937e-7aba-ad4b-40be64f046e2" }
+            {
+              "id": "019ca98f-937a-7924-a711-7baba2e78303"
+            },
+            {
+              "id": "019ca98f-937e-7aba-ad4b-40be64f046e2"
+            }
           ]
         }
       }
     },
-
     "019ca98f-9382-7b8b-97c7-02dacbb2a700": {
       "name": "NestedSchemaUnion",
       "description": "A named nested schema that is either an object schema (has fields) or a type schema (has type)",
       "type": "union",
       "schema": [
-        { "id": "019ca98f-9380-7559-b7cf-b5228cb45c56" },
-        { "id": "019ca98f-9381-7e79-a46c-068c0114ae19" }
+        {
+          "id": "019ca98f-9380-7559-b7cf-b5228cb45c56"
+        },
+        {
+          "id": "019ca98f-9381-7e79-a46c-068c0114ae19"
+        }
       ]
     },
-
     "019ca98f-9383-740f-bf51-6762ff1b82a6": {
       "name": "Index",
       "description": "Defines an index for querying",
@@ -341,20 +376,26 @@
           "description": "The type of index",
           "required": true,
           "type": "enum",
-          "schema": { "id": "019ca98f-9376-7f65-ac36-781705c9924b" }
+          "schema": {
+            "id": "019ca98f-9376-7f65-ac36-781705c9924b"
+          }
         },
         "fields": {
           "name": "fields",
           "description": "Fields included in the index",
           "required": true,
           "type": "array",
-          "schema": { "type": "string" }
+          "schema": {
+            "type": "string"
+          }
         },
         "order": {
           "name": "order",
           "description": "Sort order",
           "type": "enum",
-          "schema": { "id": "019ca98f-9379-7b6c-be07-21bb14084fb5" }
+          "schema": {
+            "id": "019ca98f-9379-7b6c-be07-21bb14084fb5"
+          }
         },
         "unique": {
           "name": "unique",
@@ -366,13 +407,16 @@
           "description": "Optional condition for partial indexes",
           "type": "union",
           "schema": [
-            { "id": "019ca98f-9384-7593-b434-a1e05fefd77b" },
-            { "id": "019ca98f-9385-7e08-bb20-73b70de12185" }
+            {
+              "id": "019ca98f-9384-7593-b434-a1e05fefd77b"
+            },
+            {
+              "id": "019ca98f-9385-7e08-bb20-73b70de12185"
+            }
           ]
         }
       }
     },
-
     "019ca98f-9384-7593-b434-a1e05fefd77b": {
       "name": "IndexCondition",
       "description": "A single condition for a partial index",
@@ -388,7 +432,9 @@
           "description": "Comparison operator",
           "required": true,
           "type": "enum",
-          "schema": { "id": "019ca98f-9375-7e5a-aac1-04f8523f1113" }
+          "schema": {
+            "id": "019ca98f-9375-7e5a-aac1-04f8523f1113"
+          }
         },
         "value": {
           "name": "value",
@@ -398,7 +444,6 @@
         }
       }
     },
-
     "019ca98f-9385-7e08-bb20-73b70de12185": {
       "name": "IndexConditionGroup",
       "description": "A group of conditions combined with a logical operator",
@@ -408,28 +453,34 @@
           "description": "Logical operator",
           "required": true,
           "type": "enum",
-          "schema": { "id": "019ca98f-9374-756f-8584-b2e010381fc7" }
+          "schema": {
+            "id": "019ca98f-9374-756f-8584-b2e010381fc7"
+          }
         },
         "conditions": {
           "name": "conditions",
-          "description": "Array of conditions — each is an IndexCondition or IndexConditionGroup",
+          "description": "Array of conditions \u2014 each is an IndexCondition or IndexConditionGroup",
           "required": true,
           "type": "array",
-          "schema": { "id": "019ca98f-9387-7068-9011-b44a2c312d7c" }
+          "schema": {
+            "id": "019ca98f-9387-7068-9011-b44a2c312d7c"
+          }
         }
       }
     },
-
     "019ca98f-9387-7068-9011-b44a2c312d7c": {
       "name": "IndexConditionUnion",
       "description": "A condition that is either a leaf IndexCondition or a recursive IndexConditionGroup",
       "type": "union",
       "schema": [
-        { "id": "019ca98f-9384-7593-b434-a1e05fefd77b" },
-        { "id": "019ca98f-9385-7e08-bb20-73b70de12185" }
+        {
+          "id": "019ca98f-9384-7593-b434-a1e05fefd77b"
+        },
+        {
+          "id": "019ca98f-9385-7e08-bb20-73b70de12185"
+        }
       ]
     },
-
     "019ca98f-9388-7da0-a10b-9f15f3e864c6": {
       "name": "ConstraintMetadata",
       "description": "Metadata fields present in all constraints",
@@ -447,7 +498,6 @@
         }
       }
     },
-
     "019ca98f-938a-70eb-9f1c-d979c98d9995": {
       "name": "ConstraintRule",
       "description": "A single validation rule with a predicate",
@@ -462,7 +512,9 @@
           "name": "fields",
           "description": "Fields this rule applies to",
           "type": "array",
-          "schema": { "type": "string" }
+          "schema": {
+            "type": "string"
+          }
         },
         "parameters": {
           "name": "parameters",
@@ -471,7 +523,6 @@
         }
       }
     },
-
     "019ca98f-938b-76bd-b61d-6a07cada8762": {
       "name": "ConstraintGroup",
       "description": "A group of constraints combined with a logical operator",
@@ -481,35 +532,60 @@
           "description": "Logical operator",
           "required": true,
           "type": "enum",
-          "schema": { "id": "019ca98f-9374-756f-8584-b2e010381fc7" }
+          "schema": {
+            "id": "019ca98f-9374-756f-8584-b2e010381fc7"
+          }
         },
         "rules": {
           "name": "rules",
           "description": "Array of constraint rules or groups",
           "required": true,
           "type": "array",
-          "schema": { "id": "019ca98f-938c-75ab-b098-388bd405b973" }
+          "schema": {
+            "id": "019ca98f-938c-75ab-b098-388bd405b973"
+          }
         }
       }
     },
-
     "019ca98f-938c-75ab-b098-388bd405b973": {
       "name": "ConstraintUnion",
       "description": "A constraint that is either a leaf ConstraintRule or a recursive ConstraintGroup",
       "type": "union",
       "schema": [
-        { "id": "019ca98f-938a-70eb-9f1c-d979c98d9995" },
-        { "id": "019ca98f-938b-76bd-b61d-6a07cada8762" }
+        {
+          "id": "019ca98f-938a-70eb-9f1c-d979c98d9995"
+        },
+        {
+          "id": "019ca98f-938b-76bd-b61d-6a07cada8762"
+        }
       ]
     },
-
     "019ca98f-938d-78ec-b205-7df091e006db": {
       "name": "Constraint",
       "description": "A fully-formed constraint: metadata fields merged with a rule",
       "type": "composite",
       "schema": [
-        { "id": "019ca98f-9388-7da0-a10b-9f15f3e864c6" },
-        { "id": "019ca98f-938a-70eb-9f1c-d979c98d9995" }
+        {
+          "id": "019ca98f-9388-7da0-a10b-9f15f3e864c6"
+        },
+        {
+          "id": "019ca98f-938a-70eb-9f1c-d979c98d9995"
+        }
+      ]
+    },
+    "019ca98f-9373-7dc5-983e-7c40044f0f7d": {
+      "name": "InlinePrimitiveTypeEnum",
+      "description": "The restricted set of types valid in an inline schema reference. Structural types (object, array, set, union, composite) are excluded because they require fields, element schemas, or variants that an inline cannot carry.",
+      "type": "enum",
+      "values": [
+        "unknown",
+        "string",
+        "number",
+        "integer",
+        "decimal",
+        "boolean",
+        "bytes",
+        "record"
       ]
     }
   },
@@ -526,7 +602,12 @@
       "name": "uuidV7SchemaIdentifiers",
       "description": "All keys in fields, schemas, constraints, and indexes must be valid UUID v7.",
       "predicate": "requireUuidV7OnKeys",
-      "fields": ["fields", "schemas", "constraints", "indexes"]
+      "fields": [
+        "fields",
+        "schemas",
+        "constraints",
+        "indexes"
+      ]
     }
   }
 }
