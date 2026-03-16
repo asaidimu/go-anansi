@@ -316,6 +316,8 @@ func parseFieldType(s string) (FieldTypeEnum, string) {
 		return TypeNumber, ""
 	case "integer":
 		return TypeInteger, ""
+	case "decimal":
+		return TypeDecimal, ""
 	case "boolean":
 		return TypeBoolean, ""
 	case "bytes":

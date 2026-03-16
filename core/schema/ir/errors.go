@@ -12,6 +12,7 @@ type CompilePass uint8
 
 const (
 	PassParse       CompilePass = iota + 1
+	PassValidate                // Pass 1.5: semantic validation of source document
 	PassSchemaIndex
 	PassFieldIndex
 	PassDescriptor
@@ -28,6 +29,8 @@ func (p CompilePass) String() string {
 	switch p {
 	case PassParse:
 		return "parse"
+	case PassValidate:
+		return "validate"
 	case PassSchemaIndex:
 		return "schema_index"
 	case PassFieldIndex:

@@ -163,6 +163,8 @@ func serializeFieldType(ft FieldTypeEnum) string {
 		return "number"
 	case TypeInteger:
 		return "integer"
+	case TypeDecimal:
+		return "decimal"
 	case TypeBoolean:
 		return "boolean"
 	case TypeBytes:

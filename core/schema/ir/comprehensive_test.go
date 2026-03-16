@@ -36,31 +36,31 @@ func TestFullWalk_IncludesNamedTypeSchemas(t *testing.T) {
 		"name": "Custom",
 		"version": "1.0.0",
 		"fields": {
-			"f1": {
+			"019ca000-0100-7100-8000-070e151c232a": {
 				"name": "ptr",
 				"type": "object",
-				"schema": { "id": "u1" }
+				"schema": { "id": "019ca000-0110-7110-90d0-d7dee5ecf3fa" }
 			}
 		},
 		"schemas": {
-			"u1": {
+			"019ca000-0110-7110-90d0-d7dee5ecf3fa": {
 				"name": "NamedUnion",
 				"type": "union",
 				"schema": [
-					{ "id": "v1" },
-					{ "id": "v2" }
+					{ "id": "019ca000-0120-7120-a0a0-a7aeb5bcc3ca" },
+					{ "id": "019ca000-0121-7121-a1ad-b4bbc2c9d0d7" }
 				]
 			},
-			"v1": {
+			"019ca000-0120-7120-a0a0-a7aeb5bcc3ca": {
 				"name": "V1",
 				"fields": {
-					"vf1": { "name": "f1", "type": "string" }
+					"019ca000-0130-7130-b070-777e858c939a": { "name": "f1", "type": "string" }
 				}
 			},
-			"v2": {
+			"019ca000-0121-7121-a1ad-b4bbc2c9d0d7": {
 				"name": "V2",
 				"fields": {
-					"vf2": { "name": "f2", "type": "integer" }
+					"019ca000-0131-7131-b17d-848b9299a0a7": { "name": "f2", "type": "integer" }
 				}
 			}
 		}

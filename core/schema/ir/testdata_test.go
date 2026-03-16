@@ -7,30 +7,33 @@ package ir
 // ── Field UUID constants ───────────────────────────────────────────────────
 // UUIDs are real UUID v7 values. Lexicographic sort determines field_index.
 // Within each fixture the UUIDs are chosen so the sort order is explicit.
+//
+// UUID v7 format: xxxxxxxx-xxxx-7xxx-[89ab]xxx-xxxxxxxxxxxx
+// The variant nibble (first nibble of group 4) must be 8, 9, a, or b.
 
 const (
 	// flat schema field UUIDs — lex order: nameUUID < descUUID < versionUUID
-	flatNameUUID    = "019ca000-0001-7000-0000-000000000001"
-	flatDescUUID    = "019ca000-0002-7000-0000-000000000002"
-	flatVersionUUID = "019ca000-0003-7000-0000-000000000003"
+	flatNameUUID    = "019ca000-0001-7001-810d-141b22293037"
+	flatDescUUID    = "019ca000-0002-7002-821a-21282f363d44"
+	flatVersionUUID = "019ca000-0003-7003-8327-2e353c434a51"
 
 	// nested schema UUID
-	nestedAddressSchemaUUID = "019ca000-0010-7000-0000-000000000010"
+	nestedAddressSchemaUUID = "019ca000-0010-7010-90d0-d7dee5ecf3fa"
 
-	// object schema field UUIDs
-	objStreetUUID = "019ca000-0011-7000-0000-000000000011"
-	objCityUUID   = "019ca000-0012-7000-0000-000000000012"
+	// object schema field UUIDs — lex order: street < city
+	objStreetUUID = "019ca000-0011-7011-91dd-e4ebf2f90007"
+	objCityUUID   = "019ca000-0012-7012-92ea-f1f8ff060d14"
 
 	// enum schema UUID
-	enumStatusSchemaUUID = "019ca000-0020-7000-0000-000000000020"
+	enumStatusSchemaUUID = "019ca000-0020-7020-a0a0-a7aeb5bcc3ca"
 
 	// root field pointing at enum schema
-	rootStatusFieldUUID = "019ca000-0030-7000-0000-000000000030"
+	rootStatusFieldUUID = "019ca000-0030-7030-b070-777e858c939a"
 
-	// union/composite schema UUIDs
-	unionVariantAUUID = "019ca000-0040-7000-0000-000000000040"
-	unionVariantBUUID = "019ca000-0041-7000-0000-000000000041"
-	unionSchemaUUID   = "019ca000-0042-7000-0000-000000000042"
+	// union/composite schema UUIDs — lex order: A < B
+	unionVariantAUUID = "019ca000-0040-7040-8040-474e555c636a"
+	unionVariantBUUID = "019ca000-0041-7041-814d-545b62697077"
+	unionSchemaUUID   = "019ca000-0042-7042-825a-61686f767d84"
 )
 
 // ── Fixtures ───────────────────────────────────────────────────────────────
@@ -41,9 +44,9 @@ var flatSchema = []byte(`{
   "name": "Flat",
   "version": "1.0.0",
   "fields": {
-    "019ca000-0001-7000-0000-000000000001": { "name": "name",    "type": "string",  "required": true },
-    "019ca000-0002-7000-0000-000000000002": { "name": "desc",    "type": "string" },
-    "019ca000-0003-7000-0000-000000000003": { "name": "version", "type": "string",  "required": true }
+    "019ca000-0001-7001-810d-141b22293037": { "name": "name",    "type": "string",  "required": true },
+    "019ca000-0002-7002-821a-21282f363d44": { "name": "desc",    "type": "string" },
+    "019ca000-0003-7003-8327-2e353c434a51": { "name": "version", "type": "string",  "required": true }
   }
 }`)
 
@@ -54,19 +57,19 @@ var nestedObjectSchema = []byte(`{
   "name": "Person",
   "version": "1.0.0",
   "fields": {
-    "019ca000-0030-7000-0000-000000000030": {
+    "019ca000-0030-7030-b070-777e858c939a": {
       "name": "address",
       "type": "object",
       "required": true,
-      "schema": { "id": "019ca000-0010-7000-0000-000000000010" }
+      "schema": { "id": "019ca000-0010-7010-90d0-d7dee5ecf3fa" }
     }
   },
   "schemas": {
-    "019ca000-0010-7000-0000-000000000010": {
+    "019ca000-0010-7010-90d0-d7dee5ecf3fa": {
       "name": "Address",
       "fields": {
-        "019ca000-0011-7000-0000-000000000011": { "name": "street", "type": "string", "required": true },
-        "019ca000-0012-7000-0000-000000000012": { "name": "city",   "type": "string", "required": true }
+        "019ca000-0011-7011-91dd-e4ebf2f90007": { "name": "street", "type": "string", "required": true },
+        "019ca000-0012-7012-92ea-f1f8ff060d14": { "name": "city",   "type": "string", "required": true }
       }
     }
   }
@@ -78,14 +81,14 @@ var enumSchema = []byte(`{
   "name": "Order",
   "version": "1.0.0",
   "fields": {
-    "019ca000-0030-7000-0000-000000000030": {
+    "019ca000-0030-7030-b070-777e858c939a": {
       "name": "status",
       "type": "enum",
-      "schema": { "id": "019ca000-0020-7000-0000-000000000020" }
+      "schema": { "id": "019ca000-0020-7020-a0a0-a7aeb5bcc3ca" }
     }
   },
   "schemas": {
-    "019ca000-0020-7000-0000-000000000020": {
+    "019ca000-0020-7020-a0a0-a7aeb5bcc3ca": {
       "name": "StatusEnum",
       "type": "enum",
       "values": ["pending", "active", "closed"]
@@ -99,7 +102,7 @@ var inlineEnumSchema = []byte(`{
   "name": "Task",
   "version": "1.0.0",
   "fields": {
-    "019ca000-0030-7000-0000-000000000030": {
+    "019ca000-0030-7030-b070-777e858c939a": {
       "name": "priority",
       "type": "enum",
       "schema": { "type": "string", "values": ["low", "medium", "high"] }
@@ -121,22 +124,22 @@ var cycleSchema = []byte(`{
   "name": "Tree",
   "version": "1.0.0",
   "fields": {
-    "019ca000-0001-7000-0000-000000000001": { "name": "label", "type": "string" },
-    "019ca000-0030-7000-0000-000000000030": {
+    "019ca000-0001-7001-810d-141b22293037": { "name": "label", "type": "string" },
+    "019ca000-0030-7030-b070-777e858c939a": {
       "name": "node",
       "type": "object",
-      "schema": { "id": "019ca000-0010-7000-0000-000000000010" }
+      "schema": { "id": "019ca000-0010-7010-90d0-d7dee5ecf3fa" }
     }
   },
   "schemas": {
-    "019ca000-0010-7000-0000-000000000010": {
+    "019ca000-0010-7010-90d0-d7dee5ecf3fa": {
       "name": "Node",
       "fields": {
-        "019ca000-0011-7000-0000-000000000011": { "name": "value", "type": "string" },
-        "019ca000-0012-7000-0000-000000000012": {
+        "019ca000-0011-7011-91dd-e4ebf2f90007": { "name": "value", "type": "string" },
+        "019ca000-0012-7012-92ea-f1f8ff060d14": {
           "name": "next",
           "type": "object",
-          "schema": { "id": "019ca000-0010-7000-0000-000000000010" }
+          "schema": { "id": "019ca000-0010-7010-90d0-d7dee5ecf3fa" }
         }
       }
     }
@@ -149,26 +152,26 @@ var unionSchema = []byte(`{
   "name": "Event",
   "version": "1.0.0",
   "fields": {
-    "019ca000-0030-7000-0000-000000000030": {
+    "019ca000-0030-7030-b070-777e858c939a": {
       "name": "payload",
       "type": "union",
       "schema": [
-        { "id": "019ca000-0040-7000-0000-000000000040" },
-        { "id": "019ca000-0041-7000-0000-000000000041" }
+        { "id": "019ca000-0040-7040-8040-474e555c636a" },
+        { "id": "019ca000-0041-7041-814d-545b62697077" }
       ]
     }
   },
   "schemas": {
-    "019ca000-0040-7000-0000-000000000040": {
+    "019ca000-0040-7040-8040-474e555c636a": {
       "name": "VariantA",
       "fields": {
-        "019ca000-0001-7000-0000-000000000001": { "name": "typeA", "type": "string" }
+        "019ca000-0001-7001-810d-141b22293037": { "name": "typeA", "type": "string" }
       }
     },
-    "019ca000-0041-7000-0000-000000000041": {
+    "019ca000-0041-7041-814d-545b62697077": {
       "name": "VariantB",
       "fields": {
-        "019ca000-0002-7000-0000-000000000002": { "name": "typeB", "type": "integer" }
+        "019ca000-0002-7002-821a-21282f363d44": { "name": "typeB", "type": "integer" }
       }
     }
   }
@@ -180,11 +183,11 @@ var indexedSchema = []byte(`{
   "name": "Product",
   "version": "1.0.0",
   "fields": {
-    "019ca000-0001-7000-0000-000000000001": { "name": "sku",  "type": "string", "required": true },
-    "019ca000-0002-7000-0000-000000000002": { "name": "price","type": "number" }
+    "019ca000-0001-7001-810d-141b22293037": { "name": "sku",   "type": "string", "required": true },
+    "019ca000-0002-7002-821a-21282f363d44": { "name": "price", "type": "number" }
   },
   "indexes": {
-    "019ca000-0050-7000-0000-000000000050": {
+    "019ca000-0050-7050-9010-171e252c333a": {
       "name": "idx_sku",
       "type": "unique",
       "fields": ["sku"]
@@ -198,10 +201,10 @@ var constrainedSchema = []byte(`{
   "name": "Account",
   "version": "1.0.0",
   "fields": {
-    "019ca000-0001-7000-0000-000000000001": { "name": "email", "type": "string", "required": true }
+    "019ca000-0001-7001-810d-141b22293037": { "name": "email", "type": "string", "required": true }
   },
   "constraints": {
-    "019ca000-0060-7000-0000-000000000060": {
+    "019ca000-0060-7060-a0e0-e7eef5fc030a": {
       "name": "validEmail",
       "predicate": "isEmail",
       "fields": ["email"]
@@ -215,7 +218,7 @@ var defaultSchema = []byte(`{
   "name": "Config",
   "version": "1.0.0",
   "fields": {
-    "019ca000-0001-7000-0000-000000000001": { "name": "retries", "type": "integer", "default": 3 }
+    "019ca000-0001-7001-810d-141b22293037": { "name": "retries", "type": "integer", "default": 3 }
   }
 }`)
 
@@ -224,14 +227,14 @@ var defaultSchema = []byte(`{
 var invalidMissingName = []byte(`{
   "version": "1.0.0",
   "fields": {
-    "019ca000-0001-7000-0000-000000000001": { "name": "x", "type": "string" }
+    "019ca000-0001-7001-810d-141b22293037": { "name": "x", "type": "string" }
   }
 }`)
 
 var invalidMissingVersion = []byte(`{
   "name": "Broken",
   "fields": {
-    "019ca000-0001-7000-0000-000000000001": { "name": "x", "type": "string" }
+    "019ca000-0001-7001-810d-141b22293037": { "name": "x", "type": "string" }
   }
 }`)
 
@@ -239,18 +242,19 @@ var invalidUnknownFieldType = []byte(`{
   "name": "Broken",
   "version": "1.0.0",
   "fields": {
-    "019ca000-0001-7000-0000-000000000001": { "name": "x", "type": "bogustype" }
+    "019ca000-0001-7001-810d-141b22293037": { "name": "x", "type": "bogustype" }
   }
 }`)
 
+// invalidUnresolvedRef uses a valid UUID v7 that references a nonexistent schema.
 var invalidUnresolvedRef = []byte(`{
   "name": "Broken",
   "version": "1.0.0",
   "fields": {
-    "019ca000-0030-7000-0000-000000000030": {
+    "019ca000-0030-7030-b070-777e858c939a": {
       "name": "addr",
       "type": "object",
-      "schema": { "id": "deadbeef-dead-7ead-dead-deaddeadbeef" }
+      "schema": { "id": "019ca000-0999-7099-99c5-ccd3dae1e8ef" }
     }
   }
 }`)

@@ -85,7 +85,7 @@ func TestMeta_IndexOrdinalsInitialised(t *testing.T) {
 func TestMeta_ColdIndexesForwardedCorrectly(t *testing.T) {
 	cs := mustCompile(indexedSchema, nil)
 	m := cs.Meta[0]
-	cold, ok := m.Indexes["019ca000-0050-7000-0000-000000000050"]
+	cold, ok := m.Indexes["019ca000-0050-7050-9010-171e252c333a"]
 	if !ok {
 		t.Fatal("cold index not found in Meta.Indexes")
 	}
@@ -143,7 +143,7 @@ func TestResolvedIndexes_KeyPackingCorrect(t *testing.T) {
 func TestResolvedIndexes_OrdinalWrittenToMeta(t *testing.T) {
 	cs := mustCompile(indexedSchema, nil)
 	m := cs.Meta[0]
-	ordinal, ok := m.IndexOrdinals["019ca000-0050-7000-0000-000000000050"]
+	ordinal, ok := m.IndexOrdinals["019ca000-0050-7050-9010-171e252c333a"]
 	if !ok {
 		t.Fatal("index UUID not found in IndexOrdinals")
 	}

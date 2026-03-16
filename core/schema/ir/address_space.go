@@ -43,11 +43,10 @@ type CompiledAddressSpace struct {
 	// Required for name-based segment resolution in Address().
 	FieldNames [128]map[string]uint8
 
-	// BackEdgeOrdinal[schemaIdx][fieldIdx] is the position of this back-edge
-	// field among all back-edge fields targeting the same schema, in field UUID
-	// lex order. Zero for non-back-edge fields (also zero for the first
-	// back-edge field, so callers must check IsSchemaBearing+BlockBases instead
-	// of this value alone to detect back-edges).
+	// BackEdgeOrdinal[schemaIdx][fieldIdx] is 1 + the position of this back-edge
+	// among all back-edge fields targeting the same schema, in field UUID lex order.
+    // Zero means it is a standard acyclic tree edge.
+
 	BackEdgeOrdinal [128][127]uint8
 
 	// BlockBases[schemaIdx] is the base address of the back block for this
@@ -61,6 +60,12 @@ type CompiledAddressSpace struct {
 	// AcyclicSubtreeSize[schemaIdx] is the number of path nodes in the acyclic
 	// projection of this schema, including the root node of that subtree.
 	AcyclicSubtreeSize [128]uint32
+
+	// EntryOrdinal[schemaIdx] is the front ordinal of the field that first
+	// reached this schema during DFS (the tree edge). Used by Address() to
+	// normalize front ordinals within blocks: relative = global - entry + 1.
+	// Zero for the root schema (index 0).
+	EntryOrdinal [128]uint32
 
 	// FrontSize is the total number of ordinals assigned in the front region.
 	// Valid front ordinals are 1..FrontSize.

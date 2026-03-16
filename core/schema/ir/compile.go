@@ -29,6 +29,9 @@ func Parse(src []byte) (*SourceSchema, error) {
 	if len(errs) > 0 {
 		return nil, CompileErrors(errs)
 	}
+	if errs = validateSource(inner); len(errs) > 0 {
+		return nil, CompileErrors(errs)
+	}
 	return &SourceSchema{inner: inner}, nil
 }
 

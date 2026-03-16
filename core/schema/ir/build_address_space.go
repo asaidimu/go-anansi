@@ -46,6 +46,10 @@ func buildAddressSpace(cs *CompiledSchema) (*CompiledAddressSpace, []CompileErro
 	// Filled in during Phase 1 and used during Phase 2.
 	var acyclicSubtreeCounts [128]uint32
 
+	// treeEdges maps target schema index → (ownerSchema, fieldIdx) of the
+	// tree edge that first reached it during DFS.
+	var treeEdges [128]struct{ s, f uint8 }
+
 	// dfs performs a pre-order DFS. For each field (in fieldIdx order) it
 	// either records the field as an acyclic node and recurses, or records it
 	// as a back-edge and stops.
@@ -82,6 +86,8 @@ func buildAddressSpace(cs *CompiledSchema) (*CompiledAddressSpace, []CompileErro
 						fieldUUID:   fieldUUID,
 					})
 				} else {
+					// Tree edge: record and recurse.
+					treeEdges[target] = struct{ s, f uint8 }{schemaIdx, fieldIdx}
 					dfs(target)
 					// After recursion, the subtree count of target contributes
 					// to the current schema's subtree (acyclic projection only).
@@ -101,6 +107,9 @@ func buildAddressSpace(cs *CompiledSchema) (*CompiledAddressSpace, []CompileErro
 				}
 				for _, target := range targets {
 					if !visited[target] {
+						// Tree edge: for type schemas we use (schemaIdx, 255)
+						// as sentinel — they have no fields.
+						treeEdges[target] = struct{ s, f uint8 }{schemaIdx, 255}
 						dfs(target)
 						acyclicSubtreeCounts[schemaIdx] += acyclicSubtreeCounts[target]
 					}
@@ -127,6 +136,19 @@ func buildAddressSpace(cs *CompiledSchema) (*CompiledAddressSpace, []CompileErro
 		as.FieldOrdinals[n.schemaIdx][n.fieldIdx] = uint32(i + 1)
 	}
 	as.FrontSize = uint32(len(acyclicNodes))
+
+	// Populate EntryOrdinal from tree edges.
+	for target := 1; target < 128; target++ {
+		te := treeEdges[target]
+		if te.f == 255 {
+			// Target reached from a type schema (no field ordinal).
+			// Use the EntryOrdinal of the type schema itself.
+			as.EntryOrdinal[target] = as.EntryOrdinal[te.s]
+		} else {
+			// Target reached from a field — use its ordinal.
+			as.EntryOrdinal[target] = as.FieldOrdinals[te.s][te.f]
+		}
+	}
 
 	// Copy acyclic subtree sizes.
 	for i, count := range acyclicSubtreeCounts {
@@ -157,7 +179,7 @@ func buildAddressSpace(cs *CompiledSchema) (*CompiledAddressSpace, []CompileErro
 			return edges[i].fieldUUID < edges[j].fieldUUID
 		})
 		for ord, e := range edges {
-			as.BackEdgeOrdinal[e.ownerSchema][e.fieldIdx] = uint8(ord)
+			as.BackEdgeOrdinal[e.ownerSchema][e.fieldIdx] = uint8(ord+1)
 		}
 
 		backEdgeCount := uint32(len(edges))
