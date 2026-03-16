@@ -73,6 +73,7 @@
         "string",
         "number",
         "integer",
+        "decimal",
         "boolean",
         "bytes",
         "array",

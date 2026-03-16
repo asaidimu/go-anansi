@@ -258,13 +258,13 @@ func TestE2E_ErrorPropagation_MultipleErrors(t *testing.T) {
 	  "name": "Broken",
 	  "version": "1.0.0",
 	  "fields": {
-	    "019ca000-0001-7000-0000-000000000001": {
+	    "019ca000-0001-7001-810d-141b22293037": {
 	      "name": "a", "type": "object",
-	      "schema": { "id": "deadbeef-dead-7ead-dead-deaddeadbeef" }
+	      "schema": { "id": "019ca000-0f01-70f1-b13d-444b52596067" }
 	    },
-	    "019ca000-0002-7000-0000-000000000002": {
+	    "019ca000-0002-7002-821a-21282f363d44": {
 	      "name": "b", "type": "object",
-	      "schema": { "id": "deadbeef-dead-7ead-dead-deaddeadc0de" }
+	      "schema": { "id": "019ca000-0f02-70f2-b24a-51585f666d74" }
 	    }
 	  }
 	}`)

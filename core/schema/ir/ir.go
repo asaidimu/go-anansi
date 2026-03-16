@@ -21,7 +21,7 @@ const (
 // ── FieldTypeEnum ─────────────────────────────────────────────────────────────
 
 // FieldTypeEnum is the ordinal encoding of a field's type in bits 4–1 of a
-// FieldDescriptor. Values 0–13 are defined; 14–15 are reserved.
+// FieldDescriptor. Values 0–14 are defined; 15 is reserved.
 type FieldTypeEnum uint8
 
 const (
@@ -39,6 +39,7 @@ const (
 	TypeUnion                          // 11 schema-bearing (Variants)
 	TypeComposite                      // 12 schema-bearing (Variants)
 	TypeGeometry                       // 13
+	TypeDecimal                        // 14 stored as TypeInt (scaled integer)
 )
 
 // IsSchemaBearing reports whether a FieldTypeEnum requires a target_schema.
@@ -164,6 +165,8 @@ func fieldTypeToDataType(t FieldTypeEnum) document.DataType {
 		return document.TypeFloat
 	case TypeInteger:
 		return document.TypeInt
+	case TypeDecimal:
+		return document.TypeInt // stored as scaled integer
 	case TypeBoolean:
 		return document.TypeBool
 	case TypeBytes:
@@ -185,7 +188,7 @@ func fieldTypeToDataType(t FieldTypeEnum) document.DataType {
 // for storing its enum value set as a typed array in Store.
 func enumElemTypeToArrayDataType(t FieldTypeEnum) document.DataType {
 	switch t {
-	case TypeInteger:
+	case TypeInteger, TypeDecimal:
 		return document.TypeArrayInt
 	case TypeNumber:
 		return document.TypeArrayFloat

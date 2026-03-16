@@ -60,9 +60,10 @@ func (cs *CompiledSchema) resolveOrdinal(path string) (ordinal uint32, terminalF
 	segments := strings.Split(path, ".")
 
 	var (
-		schemaIdx = uint8(0)
-		blockBase = uint32(0)
-		depth     = uint32(0)
+		schemaIdx  = uint8(0)
+		blockBase  = uint32(0)
+		blockOwner = uint8(0)
+		depth      = uint32(0)
 	)
 
 	for i, segment := range segments {
@@ -79,44 +80,66 @@ func (cs *CompiledSchema) resolveOrdinal(path string) (ordinal uint32, terminalF
 		// Step 2: look up front ordinal.
 		frontOrdinal := as.FieldOrdinals[schemaIdx][fieldIdx]
 
-		// Step 3: final segment — return resolved address.
-		if i == len(segments)-1 {
+		// Step 3: Check if it's a back-edge and immediately update depth/blockBase
+		if backEdgeIdx := as.BackEdgeOrdinal[schemaIdx][fieldIdx]; backEdgeIdx > 0 {
 			fd := descriptorAt(cs, schemaIdx, fieldIdx)
-			return blockBase + frontOrdinal, fd, true
-		}
+			typ := ExtractType(fd)
+			target := ExtractTargetSchema(fd)
 
-		// Step 4: not final — must be schema-bearing.
-		fd := descriptorAt(cs, schemaIdx, fieldIdx)
-		if fd == 0 || !IsSchemaBearing(fd) {
-			return 0, 0, false
-		}
+			if typ == TypeUnion || typ == TypeComposite {
+				if i < len(segments)-1 {
+					t, resolved := cs.resolveTarget(fd, typ, segments[i+1])
+					if resolved {
+						target = t
+					}
+				} else {
+					// Fallback for terminal union back-edges
+					variants := cs.Variants[fd]
+					if len(variants) > 0 {
+						target = variants[0]
+					}
+				}
+			}
 
-		typ := ExtractType(fd)
-
-		// Step 5: resolve target schema.
-		target, resolved := cs.resolveTarget(fd, typ, schemaIdx, segments[i+1])
-		if !resolved {
-			return 0, 0, false
-		}
-
-		// Step 6: update blockBase if we cross a back-edge.
-		if as.BlockBases[target] != 0 {
-			// Cyclic target: enter the back region.
-			entryOrdinal := uint32(as.BackEdgeOrdinal[schemaIdx][fieldIdx])
+			entryOrdinal := uint32(backEdgeIdx - 1)
 			depth++
 			blockSz := as.BlockSize[target]
-			// Depth overflow check.
+
+			// Depth overflow check
 			if blockSz == 0 || depth*blockSz > as.BlockBases[target]-as.FrontSize {
 				return 0, 0, false
 			}
 			blockBase = as.BlockBases[target] -
 				(depth * blockSz) +
 				(entryOrdinal * as.AcyclicSubtreeSize[target])
-		} else {
-			// Acyclic schema-bearing field: the blockBase remains 0 for all
-			// acyclic paths. The final address is just the frontOrdinal.
-			// No accumulation needed.
-			blockBase = 0
+
+			// Track the root of the current cyclic block
+			blockOwner = target
+		}
+
+		// Step 4: final segment — apply block offset and return.
+		if i == len(segments)-1 {
+			fd := descriptorAt(cs, schemaIdx, fieldIdx)
+			var ord uint32
+			if blockBase == 0 {
+				ord = frontOrdinal
+			} else {
+				// Normalize absolute frontOrdinal to the current cyclic block
+				ord = blockBase + (frontOrdinal - as.EntryOrdinal[blockOwner])
+			}
+			return ord, fd, true
+		}
+
+		// Step 5: not final — must be schema-bearing.
+		fd := descriptorAt(cs, schemaIdx, fieldIdx)
+		if fd == 0 || !IsSchemaBearing(fd) {
+			return 0, 0, false
+		}
+
+		typ := ExtractType(fd)
+		target, resolved := cs.resolveTarget(fd, typ, segments[i+1])
+		if !resolved {
+			return 0, 0, false
 		}
 
 		schemaIdx = target
@@ -133,7 +156,7 @@ func (cs *CompiledSchema) resolveOrdinal(path string) (ordinal uint32, terminalF
 //
 // For union/composite fields: nextSegment must name a field in exactly one
 // variant of the field. Zero or multiple matches → (0, false).
-func (cs *CompiledSchema) resolveTarget(fd uint32, typ FieldTypeEnum, schemaIdx uint8, nextSegment string) (uint8, bool) {
+func (cs *CompiledSchema) resolveTarget(fd uint32, typ FieldTypeEnum, nextSegment string) (uint8, bool) {
 	if typ == TypeUnion || typ == TypeComposite {
 		// Union/composite field: resolve next segment against variants.
 		return resolveUnionTarget(cs, cs.Variants[fd], nextSegment)
