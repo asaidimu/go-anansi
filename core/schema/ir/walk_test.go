@@ -9,21 +9,21 @@ func TestWalk_Divergence(t *testing.T) {
 	  "name": "WalkTest",
 	  "version": "1.0.0",
 	  "fields": {
-	    "f1": {
+	    "019ca000-0030-7030-b070-777e858c939a": {
 	      "name": "node",
 	      "type": "object",
-	      "schema": { "id": "node" }
+	      "schema": { "id": "019ca000-0010-7010-90d0-d7dee5ecf3fa" }
 	    }
 	  },
 	  "schemas": {
-	    "node": {
+	    "019ca000-0010-7010-90d0-d7dee5ecf3fa": {
 	      "name": "Node",
 	      "fields": {
-	        "v1": { "name": "val", "type": "string" },
-	        "n1": {
+	        "019ca000-0011-7011-91dd-e4ebf2f90007": { "name": "val", "type": "string" },
+	        "019ca000-0012-7012-92ea-f1f8ff060d14": {
 	          "name": "next",
 	          "type": "object",
-	          "schema": { "id": "node" }
+	          "schema": { "id": "019ca000-0010-7010-90d0-d7dee5ecf3fa" }
 	        }
 	      }
 	    }
@@ -91,12 +91,12 @@ func TestWalk_TypeSchemaPassthrough(t *testing.T) {
 	  "name": "JumpTest",
 	  "version": "1.0.0",
 	  "fields": {
-	    "f1": { "name": "u", "type": "union", "schema": [ { "id": "v1" } ] }
+	    "019ca000-0030-7030-b070-777e858c939a": { "name": "u", "type": "union", "schema": [ { "id": "019ca000-0040-7040-8040-474e555c636a" } ] }
 	  },
 	  "schemas": {
-	    "v1": {
+	    "019ca000-0040-7040-8040-474e555c636a": {
 	      "name": "Variant1",
-	      "fields": { "vf1": { "name": "target", "type": "string" } }
+	      "fields": { "019ca000-0011-7011-91dd-e4ebf2f90007": { "name": "target", "type": "string" } }
 	    }
 	  }
 	}`)

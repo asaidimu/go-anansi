@@ -121,9 +121,9 @@ type CompiledSchema struct {
 	// contains no enum fields and no fields with defaults.
 	Store *document.DataContainer
 
-	// ResolvedConstraints maps schema index to the fully resolved constraint
-	// forest for that schema. Nil entry means the schema has no constraints.
-	ResolvedConstraints map[uint8]*ResolvedConstraintTree
+	// ResolvedConstraints is the fully resolved forest of constraints
+	// defined at the root. All field paths are absolute from the root.
+	ResolvedConstraints *ResolvedConstraintTree
 
 	// ResolvedIndexes maps a packed (schemaIndex<<8 | indexOrdinal) key to
 	// the storage-engine-ready resolved index form.
@@ -267,12 +267,12 @@ type SchemaMetadata struct {
 	Description   string
 	Concrete      bool
 	Type          FieldTypeEnum             // for type schemas (enum, union, composite, array, record, set)
+	Values        []any                     // for enum types only
 	TargetSchema  uint8                     // for single-target type schemas (array, record, set)
 	Variants      []uint8                   // for multi-target type schemas (union, composite)
 	Fields        map[uint32]FieldMeta      // descriptor value → UUID + name
 	Indexes       map[string]IndexDescriptor
 	IndexOrdinals map[string]uint8           // index UUID → ordinal within this schema
-	Constraints   *ConstraintTree
 	Metadata      map[string]any
 }
 

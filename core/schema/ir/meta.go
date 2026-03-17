@@ -31,10 +31,10 @@ func buildMeta(
 		src.Version,
 		src.Description,
 		src.Concrete,
+		nil, // values
 		src.Metadata,
 		src.Fields,
 		src.Indexes,
-		src.Constraints,
 		0,
 		fi,
 		fdLookup,
@@ -52,15 +52,15 @@ func buildMeta(
 			version     string // nested schemas do not carry a version field
 			description = nested.Description
 			concrete    = nested.Concrete
+			values      = nested.Values
 			metadata    = nested.Metadata
 			fields      = nested.Fields
 			indexes     = nested.Indexes
-			constraints = nested.Constraints
 		)
 
 		m, mErrs := buildSchemaMeta(
-			uuid, name, version, description, concrete, metadata,
-			fields, indexes, constraints,
+			uuid, name, version, description, concrete, values, metadata,
+			fields, indexes,
 			schemaIdx, fi, fdLookup,
 		)
 		for i := range mErrs {
@@ -130,10 +130,10 @@ func buildMeta(
 func buildSchemaMeta(
 	uuid, name, version, description string,
 	concrete bool,
+	values []any,
 	metadata map[string]any,
 	fields map[string]sourceField,
 	indexes map[string]sourceIndex,
-	constraints map[string]sourceConstraint,
 	schemaIdx uint8,
 	fi *fieldIndex,
 	fdLookup map[schemaFieldKey]uint32,
@@ -171,28 +171,17 @@ func buildSchemaMeta(
 		coldIndexes[idxUUID] = cold
 	}
 
-	// ── Cold constraints ──────────────────────────────────────────────────────
-	var constraintTree *ConstraintTree
-	if len(constraints) > 0 {
-		tree, treeErrs := buildConstraintTree(constraints)
-		for i := range treeErrs {
-			treeErrs[i].SchemaUUID = uuid
-		}
-		errs = append(errs, treeErrs...)
-		constraintTree = tree
-	}
-
 	m := &SchemaMetadata{
-		UUID:        uuid,
-		Name:        name,
-		Version:     version,
-		Description: description,
-		Concrete:    concrete,
-		Fields:      fieldsMeta,
-		Indexes:     coldIndexes,
+		UUID:          uuid,
+		Name:          name,
+		Version:       version,
+		Description:   description,
+		Concrete:      concrete,
+		Values:        values,
+		Fields:        fieldsMeta,
+		Indexes:       coldIndexes,
 		IndexOrdinals: make(map[string]uint8),
-		Constraints: constraintTree,
-		Metadata:    metadata,
+		Metadata:      metadata,
 	}
 
 	return m, errs
@@ -275,85 +264,6 @@ func buildIndexCondition(src *sourceIndexCondition) (IndexCondition, []CompileEr
 		Operator: op,
 		Value:    src.Value,
 	}, nil
-}
-
-// buildConstraintTree converts the flat constraints map into a ConstraintTree
-// with Roots, Index, and Ordinals. In the source, constraints is a flat map
-// of UUID → sourceConstraint. Each entry is a root of the forest; nested
-// groups are encoded in the Rules array.
-func buildConstraintTree(constraints map[string]sourceConstraint) (*ConstraintTree, []CompileError) {
-	tree := &ConstraintTree{
-		Index:    make(map[string]ConstraintNode),
-		Ordinals: make(map[string]uint16),
-	}
-	var errs []CompileError
-	var ordinal uint16
-
-	// Sort UUIDs for stable ordinal assignment.
-	uuids := sortedKeys(constraints)
-
-	for _, uuid := range uuids {
-		c := constraints[uuid]
-		node, nodeErrs := buildConstraintNode(uuid, c, tree, &ordinal)
-		errs = append(errs, nodeErrs...)
-		tree.Roots = append(tree.Roots, node)
-	}
-
-	return tree, errs
-}
-
-// buildConstraintNode recursively converts a sourceConstraint to a ConstraintNode,
-// registering each node in tree.Index and tree.Ordinals.
-func buildConstraintNode(
-	uuid string,
-	src sourceConstraint,
-	tree *ConstraintTree,
-	ordinal *uint16,
-) (ConstraintNode, []CompileError) {
-	var errs []CompileError
-
-	thisOrdinal := *ordinal
-	*ordinal++
-	tree.Ordinals[uuid] = thisOrdinal
-
-	// Group: has Operator and Rules.
-	if src.Operator != "" && len(src.Rules) > 0 {
-		op, ok := parseLogicalOperator(src.Operator)
-		if !ok {
-			errs = append(errs, CompileError{
-				Pass:    PassMeta,
-				Message: "unknown logical operator in constraint group: " + src.Operator,
-			})
-		}
-		group := ConstraintGroup{
-			UUID:        uuid,
-			Name:        src.Name,
-			Description: src.Description,
-			Operator:    op,
-		}
-		// Rules are stored inline without their own UUIDs in the source model.
-		// We generate synthetic keys for tree.Index and tree.Ordinals.
-		for i, rule := range src.Rules {
-			syntheticUUID := uuid + "/rule/" + itoa(i)
-			child, childErrs := buildConstraintNode(syntheticUUID, *rule, tree, ordinal)
-			errs = append(errs, childErrs...)
-			group.Constraints = append(group.Constraints, child)
-		}
-		tree.Index[uuid] = group
-		return group, errs
-	}
-
-	// Leaf: has Predicate.
-	leaf := Constraint{
-		UUID:        uuid,
-		Name:        src.Name,
-		Description: src.Description,
-		Predicate:   src.Predicate,
-		Fields:      src.Fields,
-		Parameters:  src.Parameters,
-	}
-	tree.Index[uuid] = leaf
-	return leaf, errs
 }
 
 // ── Enum helpers ──────────────────────────────────────────────────────────────

@@ -43,9 +43,9 @@ func TestConstraints_ComplexNesting(t *testing.T) {
 		t.Fatalf("Compile failed: %v", err)
 	}
 
-	rt, ok := cs.ResolvedConstraints[0]
-	if !ok {
-		t.Fatal("ResolvedConstraints[0] missing")
+	rt := cs.ResolvedConstraints
+	if rt == nil {
+		t.Fatal("ResolvedConstraints missing")
 	}
 
 	if len(rt.Roots) != 1 {

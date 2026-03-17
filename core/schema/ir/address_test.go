@@ -577,9 +577,9 @@ func TestAddress_IndexResolution_PopulatesFields(t *testing.T) {
 func TestAddress_ConstraintResolution_PopulatesFields(t *testing.T) {
 	cs := mustCompileWithStubPredicate(constrainedSchema, "isEmail")
 
-	rt, ok := cs.ResolvedConstraints[0]
-	if !ok || rt == nil {
-		t.Fatal("ResolvedConstraints[0] not found")
+	rt := cs.ResolvedConstraints
+	if rt == nil {
+		t.Fatal("ResolvedConstraints is nil")
 	}
 	rc, ok := rt.Roots[0].(ResolvedConstraint)
 	if !ok {

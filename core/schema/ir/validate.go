@@ -359,15 +359,11 @@ func validateNestedSchema(uuid string, ns sourceNestedSchema) []CompileError {
 		}
 		errs = append(errs, validateUUIDKeys("fields", ns.Fields)...)
 		errs = append(errs, validateUUIDKeys("indexes", ns.Indexes)...)
-		errs = append(errs, validateUUIDKeys("constraints", ns.Constraints)...)
 		for fieldUUID, f := range ns.Fields {
 			errs = append(errs, validateField(fieldUUID, f)...)
 		}
 		for idxUUID, idx := range ns.Indexes {
 			errs = append(errs, validateIndex(idxUUID, idx)...)
-		}
-		for cUUID, c := range ns.Constraints {
-			errs = append(errs, validateConstraint(cUUID, c)...)
 		}
 		return errs
 	}

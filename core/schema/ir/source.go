@@ -20,14 +20,14 @@ type sourceSchema struct {
 
 // sourceField is a field definition within a schema.
 type sourceField struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	Type        string         `json:"type"`
-	Schema      any            `json:"schema"`
-	Required    bool           `json:"required"`
-	Unique      bool           `json:"unique"`
-	Deprecated  bool           `json:"deprecated"`
-	Default     any            `json:"default"`
+	Name        string                       `json:"name"`
+	Description string                       `json:"description"`
+	Type        string                       `json:"type"`
+	Schema      any                          `json:"schema"`
+	Required    bool                         `json:"required"`
+	Unique      bool                         `json:"unique"`
+	Deprecated  bool                         `json:"deprecated"`
+	Default     any                          `json:"default"`
 }
 
 // sourceFieldRef is a FieldSchema reference — either a named ref (id) or an
@@ -53,7 +53,6 @@ type sourceNestedSchema struct {
 	Values      []any                  `json:"values"`
 	Fields      map[string]sourceField `json:"fields"`
 	Indexes     map[string]sourceIndex `json:"indexes"`
-	Constraints map[string]sourceConstraint `json:"constraints"`
 	Metadata    map[string]any         `json:"metadata"`
 	// Schema is the element/variant schema reference for type schemas (array,
 	// set, record, union, composite). Raw JSON is preserved for deferred

@@ -1,59 +1,37 @@
 package ir
 
-import "github.com/asaidimu/go-anansi/v6/core/document"
+import (
+	"github.com/asaidimu/go-anansi/v6/core/document"
+)
 
-// constraints.go implements Pass 11: resolve every schema's constraint forest
-// into the hot ResolvedConstraintTree form. Predicate names are looked up in
-// the provided PredicateMap — an unknown predicate is a compile error. Field
-// path strings are resolved via cs.Address().
+// constraints.go implements Pass 11: resolve root constraints into the hot
+// ResolvedConstraintTree form.
 //
-// Pass 11 runs after the address space is built so cs.Address() is available.
+// Constraints are defined at the root of the source document and are resolved
+// relative to the root schema using absolute field paths. Every field path
+// is converted to a document.DataPoint using cs.Address(), ensuring that
+// the 27-bit ordinal matches the key in the DataContainer exactly.
 
-// buildResolvedConstraints populates CompiledSchema.ResolvedConstraints for
-// every schema that has a ConstraintTree in its SchemaMetadata.
+// buildResolvedConstraints resolves all constraints in the source schema.
 func buildResolvedConstraints(
 	cs *CompiledSchema,
-	si *schemaIndex,
 	predicates PredicateMap,
-) (map[uint8]*ResolvedConstraintTree, []CompileError) {
-	resolved := make(map[uint8]*ResolvedConstraintTree)
-	var errs []CompileError
-
-	if m := cs.Meta[0]; m != nil && m.Constraints != nil {
-		rt, rtErrs := resolveConstraintTree(cs, m.Constraints, predicates)
-		errs = append(errs, rtErrs...)
-		resolved[0] = rt
-	}
-
-	for _, uuid := range si.order {
-		schemaIdx := si.byUUID[uuid]
-		m := cs.Meta[schemaIdx]
-		if m == nil || m.Constraints == nil {
-			continue
-		}
-		rt, rtErrs := resolveConstraintTree(cs, m.Constraints, predicates)
-		for i := range rtErrs {
-			rtErrs[i].SchemaUUID = uuid
-		}
-		errs = append(errs, rtErrs...)
-		resolved[schemaIdx] = rt
-	}
-
-	if len(errs) > 0 {
-		return nil, errs
-	}
-	return resolved, nil
-}
-
-func resolveConstraintTree(
-	cs *CompiledSchema,
-	tree *ConstraintTree,
-	predicates PredicateMap,
+	src *sourceSchema,
 ) (*ResolvedConstraintTree, []CompileError) {
+	if len(src.Constraints) == 0 {
+		return nil, nil
+	}
+
+	tree, treeErrs := buildConstraintTree(src.Constraints)
+	if tree == nil {
+		return nil, treeErrs
+	}
+
 	rt := &ResolvedConstraintTree{
 		Index: make(map[uint16]ResolvedConstraintNode, len(tree.Ordinals)),
 	}
 	var errs []CompileError
+	errs = append(errs, treeErrs...)
 
 	for _, root := range tree.Roots {
 		rn, nodeErrs := resolveConstraintNode(cs, root, tree, rt, predicates)
@@ -61,7 +39,10 @@ func resolveConstraintTree(
 		rt.Roots = append(rt.Roots, rn)
 	}
 
-	return rt, errs
+	if len(errs) > 0 {
+		return nil, errs
+	}
+	return rt, nil
 }
 
 func resolveConstraintNode(
@@ -107,7 +88,7 @@ func resolveLeafConstraint(
 		if err != nil {
 			errs = append(errs, CompileError{
 				Pass:    PassConstraints,
-				Message: "constraint " + c.Name + ": cannot resolve field " + path + ": " + err.Error(),
+				Message: "constraint " + c.Name + ": cannot resolve absolute field path " + path + ": " + err.Error(),
 			})
 			continue
 		}
@@ -117,7 +98,7 @@ func resolveLeafConstraint(
 	rc := ResolvedConstraint{
 		Predicate:  pred,
 		Fields:     fields,
-		Parameters: c.Parameters,
+		Parameters: n_parameters(c.Parameters),
 	}
 
 	if ordinal, hasOrdinal := tree.Ordinals[c.UUID]; hasOrdinal {
@@ -148,4 +129,84 @@ func resolveGroupConstraint(
 	}
 
 	return rg, errs
+}
+
+// n_parameters ensures parameters are normalized.
+func n_parameters(p any) any {
+	if p == nil {
+		return nil
+	}
+	return p
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+
+func buildConstraintTree(constraints map[string]sourceConstraint) (*ConstraintTree, []CompileError) {
+	if len(constraints) == 0 {
+		return nil, nil
+	}
+	tree := &ConstraintTree{
+		Index:    make(map[string]ConstraintNode),
+		Ordinals: make(map[string]uint16),
+	}
+	var errs []CompileError
+	var ordinal uint16
+
+	uuids := sortedKeys(constraints)
+	for _, uuid := range uuids {
+		c := constraints[uuid]
+		node, nodeErrs := buildConstraintNode(uuid, c, tree, &ordinal)
+		errs = append(errs, nodeErrs...)
+		tree.Roots = append(tree.Roots, node)
+	}
+
+	return tree, errs
+}
+
+func buildConstraintNode(
+	uuid string,
+	src sourceConstraint,
+	tree *ConstraintTree,
+	ordinal *uint16,
+) (ConstraintNode, []CompileError) {
+	var errs []CompileError
+
+	thisOrdinal := *ordinal
+	*ordinal++
+	tree.Ordinals[uuid] = thisOrdinal
+
+	if src.Operator != "" && len(src.Rules) > 0 {
+		op, ok := parseLogicalOperator(src.Operator)
+		if !ok {
+			errs = append(errs, CompileError{
+				Pass:    PassMeta,
+				Message: "unknown logical operator in constraint group: " + src.Operator,
+			})
+		}
+		group := ConstraintGroup{
+			UUID:        uuid,
+			Name:        src.Name,
+			Description: src.Description,
+			Operator:    op,
+		}
+		for i, rule := range src.Rules {
+			syntheticUUID := uuid + "/rule/" + itoa(i)
+			child, childErrs := buildConstraintNode(syntheticUUID, *rule, tree, ordinal)
+			errs = append(errs, childErrs...)
+			group.Constraints = append(group.Constraints, child)
+		}
+		tree.Index[uuid] = group
+		return group, errs
+	}
+
+	leaf := Constraint{
+		UUID:        uuid,
+		Name:        src.Name,
+		Description: src.Description,
+		Predicate:   src.Predicate,
+		Fields:      src.Fields,
+		Parameters:  src.Parameters,
+	}
+	tree.Index[uuid] = leaf
+	return leaf, errs
 }
