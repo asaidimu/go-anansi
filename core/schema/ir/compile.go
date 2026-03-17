@@ -135,7 +135,7 @@ func Compile(src *SourceSchema, predicates PredicateMap) (*CompiledSchema, error
 	cs.ResolvedIndexes = resolvedIndexes
 
 	// ── Pass 11: resolve constraints ──────────────────────────────────────────
-	resolvedConstraints, errs := buildResolvedConstraints(cs, si, predicates)
+	resolvedConstraints, errs := buildResolvedConstraints(cs, predicates, s)
 	if len(errs) > 0 {
 		return nil, CompileErrors(errs)
 	}

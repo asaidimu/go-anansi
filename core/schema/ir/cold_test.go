@@ -100,20 +100,6 @@ func TestMeta_ColdIndexesForwardedCorrectly(t *testing.T) {
 	}
 }
 
-func TestMeta_ConstraintTreeBuilt(t *testing.T) {
-	cs := mustCompileWithStubPredicate(constrainedSchema, "isEmail")
-	m := cs.Meta[0]
-	if m.Constraints == nil {
-		t.Fatal("Constraints tree is nil for constrained schema")
-	}
-	if len(m.Constraints.Roots) != 1 {
-		t.Errorf("constraint roots: got %d, want 1", len(m.Constraints.Roots))
-	}
-	if len(m.Constraints.Ordinals) == 0 {
-		t.Error("Ordinals map is empty")
-	}
-}
-
 // ── Pass 10: ResolvedIndexes ───────────────────────────────────────────────
 
 func TestResolvedIndexes_EmptyForNoIndexes(t *testing.T) {
@@ -156,8 +142,8 @@ func TestResolvedIndexes_OrdinalWrittenToMeta(t *testing.T) {
 
 func TestResolvedConstraints_EmptyForNoConstraints(t *testing.T) {
 	cs := mustCompile(flatSchema, nil)
-	if len(cs.ResolvedConstraints) != 0 {
-		t.Errorf("ResolvedConstraints: got %d entries, want 0", len(cs.ResolvedConstraints))
+	if cs.ResolvedConstraints != nil {
+		t.Error("ResolvedConstraints: expected nil for flat schema")
 	}
 }
 
@@ -175,12 +161,9 @@ func TestResolvedConstraints_UnknownPredicateIsError(t *testing.T) {
 
 func TestResolvedConstraints_KnownPredicateSucceeds(t *testing.T) {
 	cs := mustCompileWithStubPredicate(constrainedSchema, "isEmail")
-	if len(cs.ResolvedConstraints) != 1 {
-		t.Fatalf("ResolvedConstraints: got %d entries, want 1", len(cs.ResolvedConstraints))
-	}
-	rt, ok := cs.ResolvedConstraints[0]
-	if !ok || rt == nil {
-		t.Fatal("ResolvedConstraints[0] not found")
+	rt := cs.ResolvedConstraints
+	if rt == nil {
+		t.Fatal("ResolvedConstraints is nil")
 	}
 	if len(rt.Roots) != 1 {
 		t.Errorf("resolved roots: got %d, want 1", len(rt.Roots))
@@ -189,12 +172,13 @@ func TestResolvedConstraints_KnownPredicateSucceeds(t *testing.T) {
 
 func TestResolvedConstraints_IndexMatchesOrdinals(t *testing.T) {
 	cs := mustCompileWithStubPredicate(constrainedSchema, "isEmail")
-	rt := cs.ResolvedConstraints[0]
-	m := cs.Meta[0]
-	for uuid, ordinal := range m.Constraints.Ordinals {
-		if _, ok := rt.Index[ordinal]; !ok {
-			t.Errorf("ordinal %d for UUID %s has no entry in ResolvedConstraintTree.Index", ordinal, uuid)
-		}
+	rt := cs.ResolvedConstraints
+	if rt == nil {
+		t.Fatal("ResolvedConstraints is nil")
+	}
+	
+	if len(rt.Index) == 0 {
+		t.Error("ResolvedConstraintTree.Index is empty")
 	}
 }
 

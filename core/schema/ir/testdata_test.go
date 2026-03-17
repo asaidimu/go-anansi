@@ -1,4 +1,8 @@
-package ir
+package ir_test
+
+import (
+	"github.com/asaidimu/go-anansi/v6/core/schema/ir"
+)
 
 // testdata_test.go provides shared JSON fixtures and helper functions used
 // across all test files. All fixtures are valid according to meta_schema.json
@@ -264,8 +268,8 @@ var invalidBadJSON = []byte(`{ not valid json`)
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 // mustParse parses src and panics on error. For use in test setup only.
-func mustParse(src []byte) *SourceSchema {
-	ss, err := Parse(src)
+func mustParse(src []byte) *ir.SourceSchema {
+	ss, err := ir.Parse(src)
 	if err != nil {
 		panic("mustParse: " + err.Error())
 	}
@@ -274,9 +278,9 @@ func mustParse(src []byte) *SourceSchema {
 
 // mustCompile parses and compiles src with the given predicates, panicking on
 // error. For use in test setup only.
-func mustCompile(src []byte, predicates PredicateMap) *CompiledSchema {
+func mustCompile(src []byte, predicates ir.PredicateMap) *ir.CompiledSchema {
 	ss := mustParse(src)
-	cs, err := Compile(ss, predicates)
+	cs, err := ir.Compile(ss, predicates)
 	if err != nil {
 		panic("mustCompile: " + err.Error())
 	}
@@ -285,8 +289,8 @@ func mustCompile(src []byte, predicates PredicateMap) *CompiledSchema {
 
 // firstError extracts the first CompileError from an error returned by Parse
 // or Compile, or panics if the error is not a CompileErrors.
-func firstError(err error) CompileError {
-	ce, ok := err.(CompileErrors)
+func firstError(err error) ir.CompileError {
+	ce, ok := err.(ir.CompileErrors)
 	if !ok || len(ce) == 0 {
 		panic("firstError: not a CompileErrors or empty")
 	}
@@ -295,30 +299,30 @@ func firstError(err error) CompileError {
 
 // allErrors extracts all CompileErrors from an error returned by Parse or
 // Compile, or panics if the type is wrong.
-func allErrors(err error) []CompileError {
-	ce, ok := err.(CompileErrors)
+func allErrors(err error) []ir.CompileError {
+	ce, ok := err.(ir.CompileErrors)
 	if !ok {
 		panic("allErrors: not a CompileErrors")
 	}
-	return []CompileError(ce)
+	return []ir.CompileError(ce)
 }
 
 // descriptorRange returns the [start, end) descriptor positions for a schema
 // index using SchemaOffsets.
-func descriptorRange(cs *CompiledSchema, schemaIdx uint8) (start, end int) {
+func descriptorRange(cs *ir.CompiledSchema, schemaIdx uint8) (start, end int) {
 	packed := cs.SchemaOffsets[schemaIdx]
 	return int(uint16(packed)), int(uint16(packed >> 16))
 }
 
 // descriptorsFor returns the descriptor slice for one schema.
-func descriptorsFor(cs *CompiledSchema, schemaIdx uint8) []uint32 {
+func descriptorsFor(cs *ir.CompiledSchema, schemaIdx uint8) []uint32 {
 	start, end := descriptorRange(cs, schemaIdx)
 	return cs.Descriptors[start:end]
 }
 
 // findDescriptor returns the first descriptor in cs whose owner_schema ==
 // schemaIdx and whose FieldMeta.Name == fieldName, or 0 if not found.
-func findDescriptor(cs *CompiledSchema, schemaIdx uint8, fieldName string) uint32 {
+func findDescriptor(cs *ir.CompiledSchema, schemaIdx uint8, fieldName string) uint32 {
 	m, ok := cs.Meta[schemaIdx]
 	if !ok {
 		return 0

@@ -146,8 +146,8 @@ func TestValidate_InlineSchemaRejectsStructuralType(t *testing.T) {
 
 func TestValidate_SchemaRefRejectsBothIdAndType(t *testing.T) {
 	errs := parseExpectError(t, invalidSchemaRefBothIdAndType)
-	if !hasValidateError(errs, "mutually exclusive") {
-		t.Errorf("expected error mentioning 'mutually exclusive', got: %v", errs)
+	if !hasValidateError(errs, "must not have both id and type") {
+		t.Errorf("expected error mentioning 'must not have both id and type', got: %v", errs)
 	}
 }
 
