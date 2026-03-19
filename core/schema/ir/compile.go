@@ -105,7 +105,7 @@ func Compile(src *SourceSchema, predicates PredicateMap) (*Schema, error) {
 	}
 
 	// ── Pass 8: store ─────────────────────────────────────────────────────────
-	store, errs := buildStore(s, si, fi, entries, descriptors)
+	store, errs := buildStore(s, si, entries, descriptors)
 	if len(errs) > 0 {
 		return nil, CompileErrors(errs)
 	}

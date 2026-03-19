@@ -42,7 +42,7 @@ func (cs *Schema) Address(path string) (document.DataPoint, error) {
 		return 0, ErrAddressNotFound
 	}
 
-	typ := fieldTypeToDataType(ExtractType(terminalFD))
+	typ := FieldTypeToDataType(ExtractType(terminalFD))
 	dp, err := document.NewDataPoint(typ, int32(ordinal))
 	if err != nil {
 		return 0, err
@@ -79,7 +79,7 @@ func (cs *Schema) DocumentKey(path string) (document.DocumentKey, error) {
 		return 0, ErrAddressNotFound
 	}
 
-	typ := fieldTypeToDataType(ExtractType(terminalFD))
+	typ := FieldTypeToDataType(ExtractType(terminalFD))
 	dp, err := document.NewDataPoint(typ, int32(ordinal))
 	if err != nil {
 		return 0, err

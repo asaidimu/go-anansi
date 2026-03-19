@@ -14,22 +14,22 @@ type DataPoint int32
 type DataType uint8
 
 const (
-	TypeUnknown      DataType = iota // any                        — open records, unresolvable unions
-	TypeInt                          // int64                      — integer, enum (ordinal)
-	TypeFloat                        // float64                    — number
-	TypeString                       // string                     — string
-	TypeBool                         // bool                       — boolean
-	TypeBytes                        // []byte                     — binary blobs, hashes, UUIDs, encoded payloads
-	TypeGeometry                     // [][]float64                — geometry (coordinate rings)
-	TypeRecord                       // map[string]*DataContainer  — record<T> with known schema
-	TypeArrayUnknown                 // []any                      — array of unknown/incompatible-union elements
-	TypeArrayInt                     // []int64                    — array of integer/enum
-	TypeArrayFloat                   // []float64                  — array of number
-	TypeArrayString                  // []string                   — array of string
-	TypeArrayBool                    // []bool                     — array of boolean
-	TypeArrayBytes                   // [][]byte                   — array of bytes
-	TypeArrayObject                  // []*DataContainer           — array of object (known schema)
-	TypeArrayGeometry                // [][][]float64              — array of geometry
+	TypeUnknown       DataType = iota // any                        — open records, unresolvable unions
+	TypeInt                           // int64                      — integer, enum (ordinal)
+	TypeFloat                         // float64                    — number
+	TypeString                        // string                     — string
+	TypeBool                          // bool                       — boolean
+	TypeBytes                         // []byte                     — binary blobs, hashes, UUIDs, encoded payloads
+	TypeGeometry                      // [][]float64                — geometry (coordinate rings)
+	TypeRecord                        // map[string]any  — record<T> with known schema
+	TypeArrayUnknown                  // []any                      — array of unknown/incompatible-union elements
+	TypeArrayInt                      // []int64                    — array of integer/enum
+	TypeArrayFloat                    // []float64                  — array of number
+	TypeArrayString                   // []string                   — array of string
+	TypeArrayBool                     // []bool                     — array of boolean
+	TypeArrayBytes                    // [][]byte                   — array of bytes
+	TypeArrayObject                   // []*DataContainer           — array of object (known schema)
+	TypeArrayGeometry                 // [][][]float64              — array of geometry
 )
 
 const (

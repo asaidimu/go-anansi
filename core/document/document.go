@@ -94,7 +94,7 @@ func (d *Document) initSlice(typ DataType, size int) {
 		s := make([][][]float64, 0, size)
 		d.data[typ] = unsafe.Pointer(&s)
 	case TypeRecord:
-		s := make([]map[string]*Document, 0, size)
+		s := make([]map[string]any, 0, size)
 		d.data[typ] = unsafe.Pointer(&s)
 	case TypeArrayUnknown:
 		s := make([][]any, 0, size)
@@ -444,28 +444,28 @@ func (d *Document) GetGeometry(key DocumentKey) ([][]float64, bool, error) {
 
 // --- Record ---
 
-func (d *Document) SetRecord(key DocumentKey, value map[string]*Document) error {
+func (d *Document) SetRecord(key DocumentKey, value map[string]any) error {
 	if key.Type() != TypeRecord {
 		return ErrTypeMismatch
 	}
 	k := int64(key)
 	if idx, exists := d.positions[k]; exists && idx >= 0 {
-		(*(*[]map[string]*Document)(d.slot(TypeRecord)))[idx] = value
+		(*(*[]map[string]any)(d.slot(TypeRecord)))[idx] = value
 		return nil
 	}
 	if idx := d.claimHole(TypeRecord); idx >= 0 {
-		(*(*[]map[string]*Document)(d.slot(TypeRecord)))[idx] = value
+		(*(*[]map[string]any)(d.slot(TypeRecord)))[idx] = value
 		d.positions[k] = idx
 		return nil
 	}
 	return d.AppendRecord(key, value)
 }
 
-func (d *Document) AppendRecord(key DocumentKey, value map[string]*Document) error {
+func (d *Document) AppendRecord(key DocumentKey, value map[string]any) error {
 	if key.Type() != TypeRecord {
 		return ErrTypeMismatch
 	}
-	ptr := (*[]map[string]*Document)(d.slot(TypeRecord))
+	ptr := (*[]map[string]any)(d.slot(TypeRecord))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
 		return ErrBucketFull
@@ -475,7 +475,7 @@ func (d *Document) AppendRecord(key DocumentKey, value map[string]*Document) err
 	return nil
 }
 
-func (d *Document) GetRecord(key DocumentKey) (map[string]*Document, bool, error) {
+func (d *Document) GetRecord(key DocumentKey) (map[string]any, bool, error) {
 	if key.Type() != TypeRecord {
 		return nil, false, ErrTypeMismatch
 	}
@@ -486,7 +486,7 @@ func (d *Document) GetRecord(key DocumentKey) (map[string]*Document, bool, error
 	if idx < 0 {
 		return nil, true, nil
 	}
-	return (*(*[]map[string]*Document)(d.slot(TypeRecord)))[idx], true, nil
+	return (*(*[]map[string]any)(d.slot(TypeRecord)))[idx], true, nil
 }
 
 // --- Unknown ---

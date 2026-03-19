@@ -23,7 +23,6 @@ import "github.com/asaidimu/go-anansi/v6/core/document"
 func buildStore(
 	src *sourceSchema,
 	si *schemaIndex,
-	fi *fieldIndex,
 	entries []fieldEntry,
 	descriptors []uint32,
 ) (*document.Document, []CompileError) {
@@ -163,7 +162,7 @@ func storeEnumValues(fd uint32, values []any, store *document.Document) string {
 
 	elemType := inferEnumElemType(values[0])
 	arrayType := enumElemTypeToArrayDataType(elemType)
-	dk := descriptorToEnumDocumentKey(fd, arrayType)
+	dk := DescriptorToEnumDocumentKey(fd, arrayType)
 
 	switch arrayType {
 	case document.TypeArrayString:
@@ -229,7 +228,7 @@ func storeEnumValues(fd uint32, values []any, store *document.Document) string {
 
 // storeDefault writes a single field default into the store.
 func storeDefault(fd uint32, ft FieldTypeEnum, value any, store *document.Document) string {
-	dt := fieldTypeToDataType(ft)
+	dt := FieldTypeToDataType(ft)
 	dp, err := document.NewDataPoint(dt, int32((fd>>8)&0x7FFF))
 	if err != nil {
 		return "store: default DataPoint: " + err.Error()
@@ -283,22 +282,22 @@ func storeDefault(fd uint32, ft FieldTypeEnum, value any, store *document.Docume
 	return ""
 }
 
-// descriptorToEnumDocumentKey creates a DocumentKey for an enum value set using
+// DescriptorToEnumDocumentKey creates a DocumentKey for an enum value set using
 // the array DataType appropriate for the enum's element type.
-func descriptorToEnumDocumentKey(fd uint32, arrayType document.DataType) document.DocumentKey {
+func DescriptorToEnumDocumentKey(fd uint32, arrayType document.DataType) document.DocumentKey {
 	dp, _ := document.NewDataPoint(arrayType, int32((fd>>8)&0x7FFF))
 	return document.NewDocumentKey(dp, fd)
 }
 
 // inferEnumElemType infers a FieldTypeEnum from a single sample enum value.
 func inferEnumElemType(v any) FieldTypeEnum {
-	switch v.(type) {
+	switch v := v.(type) {
 	case string:
 		return TypeString
 	case bool:
 		return TypeBoolean
 	case float64:
-		f := v.(float64)
+		f := v
 		if f == float64(int64(f)) {
 			return TypeInteger
 		}

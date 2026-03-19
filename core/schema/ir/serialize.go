@@ -340,7 +340,7 @@ func getEnumValuesFromStore(cs *Schema, fd uint32) []any {
 	if cs.Store == nil {
 		return nil
 	}
-	dkStr := descriptorToEnumDocumentKey(fd, document.TypeArrayString)
+	dkStr := DescriptorToEnumDocumentKey(fd, document.TypeArrayString)
 	if val, ok, _ := cs.Store.GetArrayString(dkStr); ok {
 		res := make([]any, len(val))
 		for i, x := range val {
@@ -348,7 +348,7 @@ func getEnumValuesFromStore(cs *Schema, fd uint32) []any {
 		}
 		return res
 	}
-	dkInt := descriptorToEnumDocumentKey(fd, document.TypeArrayInt)
+	dkInt := DescriptorToEnumDocumentKey(fd, document.TypeArrayInt)
 	if val, ok, _ := cs.Store.GetArrayInt(dkInt); ok {
 		res := make([]any, len(val))
 		for i, x := range val {
@@ -356,7 +356,7 @@ func getEnumValuesFromStore(cs *Schema, fd uint32) []any {
 		}
 		return res
 	}
-	dkFlt := descriptorToEnumDocumentKey(fd, document.TypeArrayFloat)
+	dkFlt := DescriptorToEnumDocumentKey(fd, document.TypeArrayFloat)
 	if val, ok, _ := cs.Store.GetArrayFloat(dkFlt); ok {
 		res := make([]any, len(val))
 		for i, x := range val {
@@ -364,7 +364,7 @@ func getEnumValuesFromStore(cs *Schema, fd uint32) []any {
 		}
 		return res
 	}
-	dkBool := descriptorToEnumDocumentKey(fd, document.TypeArrayBool)
+	dkBool := DescriptorToEnumDocumentKey(fd, document.TypeArrayBool)
 	if val, ok, _ := cs.Store.GetArrayBool(dkBool); ok {
 		res := make([]any, len(val))
 		for i, x := range val {
@@ -372,7 +372,7 @@ func getEnumValuesFromStore(cs *Schema, fd uint32) []any {
 		}
 		return res
 	}
-	dkUnk := descriptorToEnumDocumentKey(fd, document.TypeArrayUnknown)
+	dkUnk := DescriptorToEnumDocumentKey(fd, document.TypeArrayUnknown)
 	if val, ok, _ := cs.Store.GetArrayUnknown(dkUnk); ok {
 		return val
 	}
@@ -383,7 +383,7 @@ func getDefaultFromStore(cs *Schema, fd uint32, ft FieldTypeEnum) any {
 	if cs.Store == nil {
 		return nil
 	}
-	dt := fieldTypeToDataType(ft)
+	dt := FieldTypeToDataType(ft)
 	dp, err := document.NewDataPoint(dt, int32((fd>>8)&0x7FFF))
 	if err != nil {
 		return nil

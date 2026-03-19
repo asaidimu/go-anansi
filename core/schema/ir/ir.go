@@ -155,15 +155,15 @@ type Schema struct {
 // uniquely identifies a field across all schemas because owner_schema occupies
 // the upper 8 bits of the 15-bit id and field_index occupies the lower 7 bits.
 func DescriptorToDataPoint(fd uint32) document.DataPoint {
-	typ := fieldTypeToDataType(FieldTypeEnum((fd & FDMaskType) >> 1))
+	typ := FieldTypeToDataType(FieldTypeEnum((fd & FDMaskType) >> 1))
 	id := int32((fd >> 8) & 0x7FFF)
 	p, _ := document.NewDataPoint(typ, id)
 	return p
 }
 
-// fieldTypeToDataType maps a FieldTypeEnum to the document.DataType used for
+// FieldTypeToDataType maps a FieldTypeEnum to the document.DataType used for
 // storage in Document. Used by Store population and DescriptorToDataPoint.
-func fieldTypeToDataType(t FieldTypeEnum) document.DataType {
+func FieldTypeToDataType(t FieldTypeEnum) document.DataType {
 	switch t {
 	case TypeString:
 		return document.TypeString
