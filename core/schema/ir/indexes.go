@@ -3,11 +3,11 @@ package ir
 import "github.com/asaidimu/go-anansi/v6/core/document"
 
 // indexes.go implements Pass 10: resolve every index across all schemas into
-// its hot ResolvedIndex form. Field path strings are resolved to DataPoints
-// via cs.Address(). Index ordinals are assigned and written back into
+// its hot ResolvedIndex form. Field path strings are resolved to DocumentKeys
+// via cs.DocumentKey(). Index ordinals are assigned and written back into
 // SchemaMetadata.IndexOrdinals.
 //
-// Pass 10 runs after the address space is built so cs.Address() is available.
+// Pass 10 runs after the address space is built so cs.DocumentKey() is available.
 
 // buildResolvedIndexes populates CompiledSchema.ResolvedIndexes and fills
 // SchemaMetadata.IndexOrdinals for every schema that has indexes.
@@ -72,9 +72,9 @@ func resolveSchemaIndexes(
 func resolveIndex(cs *CompiledSchema, cold IndexDescriptor) (ResolvedIndex, []CompileError) {
 	var errs []CompileError
 
-	fields := make([]document.DataPoint, 0, len(cold.Fields))
+	fields := make([]document.DocumentKey, 0, len(cold.Fields))
 	for _, path := range cold.Fields {
-		dp, err := cs.Address(path)
+		dk, err := cs.DocumentKey(path)
 		if err != nil {
 			errs = append(errs, CompileError{
 				Pass:    PassIndexes,
@@ -82,7 +82,7 @@ func resolveIndex(cs *CompiledSchema, cold IndexDescriptor) (ResolvedIndex, []Co
 			})
 			continue
 		}
-		fields = append(fields, dp)
+		fields = append(fields, dk)
 	}
 
 	var condition ResolvedCondition
@@ -108,7 +108,7 @@ func resolveIndexCondition(cs *CompiledSchema, cond IndexCondition) (ResolvedCon
 
 	switch c := cond.(type) {
 	case IndexConditionLeaf:
-		dp, err := cs.Address(c.Field)
+		dk, err := cs.DocumentKey(c.Field)
 		if err != nil {
 			return nil, []CompileError{{
 				Pass:    PassIndexes,
@@ -116,7 +116,7 @@ func resolveIndexCondition(cs *CompiledSchema, cond IndexCondition) (ResolvedCon
 			}}
 		}
 		return ResolvedConditionLeaf{
-			Field:    dp,
+			Field:    dk,
 			Operator: c.Operator,
 			Value:    c.Value,
 		}, nil

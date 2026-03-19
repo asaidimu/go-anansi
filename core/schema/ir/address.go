@@ -50,6 +50,41 @@ func (cs *CompiledSchema) Address(path string) (document.DataPoint, error) {
 	return dp, nil
 }
 
+// DocumentKey resolves a dot-separated field path to a document.DocumentKey,
+// packing the resolved DataPoint together with the terminal field descriptor
+// into a single 64-bit key. This is the primary resolution method for
+// validation — the returned key carries both the value identity (DataPoint)
+// and all field-level rules (descriptor) without any secondary lookup.
+//
+// The result is cached in cs.PathCache so that Serialize can reconstruct
+// path strings from DocumentKeys without a separate reverse-lookup pass.
+func (cs *CompiledSchema) DocumentKey(path string) (document.DocumentKey, error) {
+	as := cs.AddressSpace
+	if as == nil {
+		return 0, errors.New("address: AddressSpace not built — schema was not fully compiled")
+	}
+	if path == "" {
+		return 0, ErrAddressNotFound
+	}
+
+	ordinal, terminalFD, ok := cs.resolveOrdinal(path)
+	if !ok {
+		return 0, ErrAddressNotFound
+	}
+
+	typ := fieldTypeToDataType(ExtractType(terminalFD))
+	dp, err := document.NewDataPoint(typ, int32(ordinal))
+	if err != nil {
+		return 0, err
+	}
+
+	dk := document.NewDocumentKey(dp, terminalFD)
+	if cs.PathCache != nil {
+		cs.PathCache[dk] = path
+	}
+	return dk, nil
+}
+
 // resolveOrdinal is the core resolution algorithm from spec Section 6.4,
 // extended to also return the terminal field's descriptor so Address can
 // derive the correct document.DataType.

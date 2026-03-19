@@ -9,8 +9,8 @@ import (
 //
 // Constraints are defined at the root of the source document and are resolved
 // relative to the root schema using absolute field paths. Every field path
-// is converted to a document.DataPoint using cs.Address(), ensuring that
-// the 27-bit ordinal matches the key in the DataContainer exactly.
+// is converted to a document.DocumentKey using cs.DocumentKey(), ensuring that
+// the 64-bit key carries both the ordinal and the field descriptor.
 
 // buildResolvedConstraints resolves all constraints in the source schema.
 func buildResolvedConstraints(
@@ -82,9 +82,9 @@ func resolveLeafConstraint(
 		})
 	}
 
-	fields := make([]document.DataPoint, 0, len(c.Fields))
+	fields := make([]document.DocumentKey, 0, len(c.Fields))
 	for _, path := range c.Fields {
-		dp, err := cs.Address(path)
+		dk, err := cs.DocumentKey(path)
 		if err != nil {
 			errs = append(errs, CompileError{
 				Pass:    PassConstraints,
@@ -92,13 +92,17 @@ func resolveLeafConstraint(
 			})
 			continue
 		}
-		fields = append(fields, dp)
+		fields = append(fields, dk)
 	}
 
 	rc := ResolvedConstraint{
-		Predicate:  pred,
-		Fields:     fields,
-		Parameters: n_parameters(c.Parameters),
+		UUID:          c.UUID,
+		Name:          c.Name,
+		Description:   c.Description,
+		PredicateName: c.Predicate,
+		Predicate:     pred,
+		Fields:        fields,
+		Parameters:    n_parameters(c.Parameters),
 	}
 
 	if ordinal, hasOrdinal := tree.Ordinals[c.UUID]; hasOrdinal {
@@ -115,7 +119,12 @@ func resolveGroupConstraint(
 	rt *ResolvedConstraintTree,
 	predicates PredicateMap,
 ) (ResolvedConstraintNode, []CompileError) {
-	rg := ResolvedConstraintGroup{Operator: g.Operator}
+	rg := ResolvedConstraintGroup{
+		UUID:        g.UUID,
+		Name:        g.Name,
+		Description: g.Description,
+		Operator:    g.Operator,
+	}
 	var errs []CompileError
 
 	for _, child := range g.Constraints {

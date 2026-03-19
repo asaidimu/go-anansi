@@ -2,9 +2,9 @@ package ir
 
 import "github.com/asaidimu/go-anansi/v6/core/document"
 
-// store.go implements Pass 8: populate the Store DataContainer with:
+// store.go implements Pass 8: populate the Store Document with:
 //   - Enum value sets (one typed array per enum-typed field, keyed by that
-//     field's descriptor-derived DataPoint).
+//     field's DocumentKey).
 //   - Field defaults (one scalar value per field that carries a default).
 //
 // Store is nil if the compiled document contains no enum fields and no
@@ -13,11 +13,11 @@ import "github.com/asaidimu/go-anansi/v6/core/document"
 // Enum value sets are always stored against the *referencing field's*
 // descriptor, not the enum schema's index. This means two fields in different
 // schemas that both reference the same named enum schema each get their own
-// Store entry, keyed by their own descriptor. Consumers look up the value set
-// by the field descriptor they already hold — no indirection through the schema
+// Store entry, keyed by their own DocumentKey. Consumers look up the value set
+// by the DocumentKey they already hold — no indirection through the schema
 // index is required.
 
-// buildStore constructs the Store DataContainer.
+// buildStore constructs the Store Document.
 // entries and descriptors are parallel slices — entries[i] and descriptors[i]
 // describe the same field.
 func buildStore(
@@ -26,13 +26,13 @@ func buildStore(
 	fi *fieldIndex,
 	entries []fieldEntry,
 	descriptors []uint32,
-) (*document.DataContainer, []CompileError) {
-	var store *document.DataContainer
+) (*document.Document, []CompileError) {
+	var store *document.Document
 	var errs []CompileError
 
 	ensureStore := func() {
 		if store == nil {
-			store = document.NewDataContainer()
+			store = document.NewDocument()
 		}
 	}
 
@@ -74,7 +74,7 @@ func processStoreFields(
 	nestedSchemas map[string]sourceNestedSchema,
 	descriptors []uint32,
 	posLookup map[schemaFieldKey]int,
-	store **document.DataContainer,
+	store **document.Document,
 	ensureStore func(),
 ) []CompileError {
 	var errs []CompileError
@@ -146,7 +146,6 @@ func resolveEnumValues(f sourceField, nestedSchemas map[string]sourceNestedSchem
 	if ref.ID != "" {
 		nested, ok := nestedSchemas[ref.ID]
 		if !ok {
-			// The UUID was already validated in Pass 4; absence here is a bug.
 			return nil, "named enum schema not found: " + ref.ID + " — internal compiler error"
 		}
 		return nested.Values, ""
@@ -156,15 +155,15 @@ func resolveEnumValues(f sourceField, nestedSchemas map[string]sourceNestedSchem
 }
 
 // storeEnumValues writes an enum field's value set into the store as a typed
-// array, keyed by the DataPoint derived from the field's descriptor.
-func storeEnumValues(fd uint32, values []any, store *document.DataContainer) string {
+// array, keyed by the DocumentKey derived from the field's descriptor.
+func storeEnumValues(fd uint32, values []any, store *document.Document) string {
 	if len(values) == 0 {
 		return ""
 	}
 
 	elemType := inferEnumElemType(values[0])
 	arrayType := enumElemTypeToArrayDataType(elemType)
-	dp := descriptorToEnumDataPoint(fd, arrayType)
+	dk := descriptorToEnumDocumentKey(fd, arrayType)
 
 	switch arrayType {
 	case document.TypeArrayString:
@@ -176,7 +175,7 @@ func storeEnumValues(fd uint32, values []any, store *document.DataContainer) str
 			}
 			ss = append(ss, s)
 		}
-		if err := store.AppendArrayString(dp, ss); err != nil {
+		if err := store.AppendArrayString(dk, ss); err != nil {
 			return "store: enum string values: " + err.Error()
 		}
 
@@ -189,7 +188,7 @@ func storeEnumValues(fd uint32, values []any, store *document.DataContainer) str
 			}
 			is = append(is, n)
 		}
-		if err := store.AppendArrayInt(dp, is); err != nil {
+		if err := store.AppendArrayInt(dk, is); err != nil {
 			return "store: enum integer values: " + err.Error()
 		}
 
@@ -202,7 +201,7 @@ func storeEnumValues(fd uint32, values []any, store *document.DataContainer) str
 			}
 			fs = append(fs, f)
 		}
-		if err := store.AppendArrayFloat(dp, fs); err != nil {
+		if err := store.AppendArrayFloat(dk, fs); err != nil {
 			return "store: enum float values: " + err.Error()
 		}
 
@@ -215,12 +214,12 @@ func storeEnumValues(fd uint32, values []any, store *document.DataContainer) str
 			}
 			bs = append(bs, b)
 		}
-		if err := store.AppendArrayBool(dp, bs); err != nil {
+		if err := store.AppendArrayBool(dk, bs); err != nil {
 			return "store: enum bool values: " + err.Error()
 		}
 
 	default:
-		if err := store.AppendArrayUnknown(dp, values); err != nil {
+		if err := store.AppendArrayUnknown(dk, values); err != nil {
 			return "store: enum unknown values: " + err.Error()
 		}
 	}
@@ -229,13 +228,13 @@ func storeEnumValues(fd uint32, values []any, store *document.DataContainer) str
 }
 
 // storeDefault writes a single field default into the store.
-func storeDefault(fd uint32, ft FieldTypeEnum, value any, store *document.DataContainer) string {
+func storeDefault(fd uint32, ft FieldTypeEnum, value any, store *document.Document) string {
 	dt := fieldTypeToDataType(ft)
-	id := int32((fd >> 8) & 0x7FFF)
-	dp, err := document.NewDataPoint(dt, id)
+	dp, err := document.NewDataPoint(dt, int32((fd>>8)&0x7FFF))
 	if err != nil {
 		return "store: default DataPoint: " + err.Error()
 	}
+	dk := document.NewDocumentKey(dp, fd)
 
 	switch dt {
 	case document.TypeString:
@@ -243,7 +242,7 @@ func storeDefault(fd uint32, ft FieldTypeEnum, value any, store *document.DataCo
 		if !ok {
 			return "default value is not a string"
 		}
-		if err := store.AppendString(dp, s); err != nil {
+		if err := store.AppendString(dk, s); err != nil {
 			return "store: default string: " + err.Error()
 		}
 	case document.TypeInt:
@@ -251,7 +250,7 @@ func storeDefault(fd uint32, ft FieldTypeEnum, value any, store *document.DataCo
 		if !ok {
 			return "default value is not an integer"
 		}
-		if err := store.AppendInt(dp, n); err != nil {
+		if err := store.AppendInt(dk, n); err != nil {
 			return "store: default int: " + err.Error()
 		}
 	case document.TypeFloat:
@@ -259,7 +258,7 @@ func storeDefault(fd uint32, ft FieldTypeEnum, value any, store *document.DataCo
 		if !ok {
 			return "default value is not a number"
 		}
-		if err := store.AppendFloat(dp, f); err != nil {
+		if err := store.AppendFloat(dk, f); err != nil {
 			return "store: default float: " + err.Error()
 		}
 	case document.TypeBool:
@@ -267,15 +266,16 @@ func storeDefault(fd uint32, ft FieldTypeEnum, value any, store *document.DataCo
 		if !ok {
 			return "default value is not a boolean"
 		}
-		if err := store.AppendBool(dp, b); err != nil {
+		if err := store.AppendBool(dk, b); err != nil {
 			return "store: default bool: " + err.Error()
 		}
 	default:
-		unknownDp, err := document.NewDataPoint(document.TypeUnknown, id)
+		unknownDp, err := document.NewDataPoint(document.TypeUnknown, int32((fd>>8)&0x7FFF))
 		if err != nil {
 			return "store: default unknown DataPoint: " + err.Error()
 		}
-		if err := store.AppendUnknown(unknownDp, value); err != nil {
+		unknownDk := document.NewDocumentKey(unknownDp, fd)
+		if err := store.AppendUnknown(unknownDk, value); err != nil {
 			return "store: default unknown: " + err.Error()
 		}
 	}
@@ -283,12 +283,11 @@ func storeDefault(fd uint32, ft FieldTypeEnum, value any, store *document.DataCo
 	return ""
 }
 
-// descriptorToEnumDataPoint creates a DataPoint for an enum value set using
+// descriptorToEnumDocumentKey creates a DocumentKey for an enum value set using
 // the array DataType appropriate for the enum's element type.
-func descriptorToEnumDataPoint(fd uint32, arrayType document.DataType) document.DataPoint {
-	id := int32((fd >> 8) & 0x7FFF)
-	dp, _ := document.NewDataPoint(arrayType, id)
-	return dp
+func descriptorToEnumDocumentKey(fd uint32, arrayType document.DataType) document.DocumentKey {
+	dp, _ := document.NewDataPoint(arrayType, int32((fd>>8)&0x7FFF))
+	return document.NewDocumentKey(dp, fd)
 }
 
 // inferEnumElemType infers a FieldTypeEnum from a single sample enum value.

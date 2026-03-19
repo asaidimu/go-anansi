@@ -98,19 +98,92 @@ func buildDescriptors(
 		adj[e.schemaIdx] = append(adj[e.schemaIdx], fieldTarget{pos: pos, targets: targets})
 	}
 
-	// DFS from root. visiting[idx] is true while schema idx is on the current
-	// path — a target found in visiting is a back-edge (cycle).
+	// ── Pass 5a: discover cycle members ─────────────────────────────────────
+	//
+	// A schema is a "cycle member" if it appears on any cycle in the schema
+	// reference graph. We identify these with a standard DFS using both a
+	// permanent `visited` set and an on-path `visiting` set.
+	//
+	// When a back-edge is detected (visiting[target] == true), every schema on
+	// the current path from `target` up to the current schema is a cycle member.
+	// We propagate membership upward through a return value so that the caller
+	// can mark itself as a cycle member without needing a separate path stack.
+	//
+	// This pre-pass is necessary because eager terminal-bit assignment in a
+	// single DFS pass produces incorrect results for two-schema cycles:
+	//
+	//   schema 0 has field next → schema 1
+	//   schema 1 has field next → schema 0
+	//
+	// Without knowing schema 1 leads back to schema 0, the first DFS would mark
+	// schema-0's `next` as terminal before discovering the back-edge in schema 1.
+	isCycleMember := [128]bool{}
+	visitingCycle := [128]bool{}
+	visitedCycle  := [128]bool{}
+
+	var findCycles func(schemaIdx uint8) bool
+	findCycles = func(schemaIdx uint8) (onCycle bool) {
+		visitingCycle[schemaIdx] = true
+		defer func() { visitingCycle[schemaIdx] = false }()
+		visitedCycle[schemaIdx] = true
+
+		for _, ft := range adj[schemaIdx] {
+			for _, target := range ft.targets {
+				if visitingCycle[target] {
+					// Back-edge found: target is on the current path → cycle.
+					isCycleMember[target] = true
+					onCycle = true
+				} else if !visitedCycle[target] {
+					if findCycles(target) {
+						// Propagate: if a descendant is on a cycle and that
+						// cycle passes through the current schema (i.e. we are
+						// between the back-edge source and its target in the
+						// path), mark ourselves too.
+						onCycle = true
+					}
+				} else if isCycleMember[target] {
+					// Already-visited target is a known cycle member; if any
+					// path through it leads back to an ancestor of ours, we
+					// are also on that cycle. Conservative: mark ourselves.
+					onCycle = true
+				}
+			}
+		}
+
+		if onCycle {
+			isCycleMember[schemaIdx] = true
+		}
+		return onCycle
+	}
+
+	findCycles(0)
+	// Sweep unreachable schemas too (mirrors the address-space fallback).
+	for i := 0; i < 128; i++ {
+		if !visitedCycle[uint8(i)] && adj[uint8(i)] != nil {
+			findCycles(uint8(i))
+		}
+	}
+
+	// ── Pass 5b: assign terminal bits ────────────────────────────────────────
+	//
+	// A schema-bearing field is terminal iff none of its targets are on the
+	// current DFS path (visiting) AND none of its targets are cycle members.
+	// The second condition catches the two-schema-cycle case where the target
+	// is not yet on `visiting` at the moment the field is evaluated, but will
+	// create a cycle upon recursion.
 	visiting := [128]bool{}
+	visited  := [128]bool{}
 
 	var dfs func(schemaIdx uint8)
 	dfs = func(schemaIdx uint8) {
 		visiting[schemaIdx] = true
+		visited[schemaIdx] = true
 		defer func() { visiting[schemaIdx] = false }()
 
 		for _, ft := range adj[schemaIdx] {
 			terminal := true
 			for _, target := range ft.targets {
-				if visiting[target] {
+				if visiting[target] || isCycleMember[target] {
 					terminal = false
 					break
 				}
@@ -118,12 +191,12 @@ func buildDescriptors(
 			if terminal {
 				descriptors[ft.pos] |= FDMaskTerminal
 				for _, target := range ft.targets {
-					if !visiting[target] {
+					if !visited[target] {
 						dfs(target)
 					}
 				}
 			}
-			// Non-terminal: there is a cycle on this path; do not recurse further.
+			// Non-terminal: cycle on this path; do not recurse further.
 		}
 	}
 
