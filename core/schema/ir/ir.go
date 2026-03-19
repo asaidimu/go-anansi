@@ -119,7 +119,7 @@ type CompiledSchema struct {
 
 	// Store holds enum value sets and field defaults. Nil if the document
 	// contains no enum fields and no fields with defaults.
-	Store *document.DataContainer
+	Store *document.Document
 
 	// ResolvedConstraints is the fully resolved forest of constraints
 	// defined at the root. All field paths are absolute from the root.
@@ -139,6 +139,12 @@ type CompiledSchema struct {
 	// AddressSpace is the compiled address table for field path resolution.
 	// Required by Address(). Built during Compile alongside all other fields.
 	AddressSpace *CompiledAddressSpace
+
+	// PathCache maps a resolved DocumentKey back to the dot-separated path string
+	// that produced it. Populated lazily by DocumentKey() on each successful
+	// resolution. Used by Serialize to reconstruct constraint field paths from
+	// DocumentKeys without a separate reverse-lookup pass.
+	PathCache map[document.DocumentKey]string
 }
 
 // ── FieldDescriptor helpers ───────────────────────────────────────────────────
@@ -156,7 +162,7 @@ func DescriptorToDataPoint(fd uint32) document.DataPoint {
 }
 
 // fieldTypeToDataType maps a FieldTypeEnum to the document.DataType used for
-// storage in DataContainer. Used by Store population and DescriptorToDataPoint.
+// storage in Document. Used by Store population and DescriptorToDataPoint.
 func fieldTypeToDataType(t FieldTypeEnum) document.DataType {
 	switch t {
 	case TypeString:
@@ -315,8 +321,8 @@ type ResolvedIndex struct {
 	Type      IndexType
 	Order     IndexOrder
 	Unique    bool
-	Fields    []document.DataPoint  // resolved via Address(), same order as IndexDescriptor.Fields
-	Condition ResolvedCondition     // nil if the index has no partial condition
+	Fields    []document.DocumentKey
+	Condition ResolvedCondition
 }
 
 // ResolvedCondition is implemented by ResolvedConditionLeaf and ResolvedConditionGroup.
@@ -326,7 +332,7 @@ type ResolvedCondition interface {
 
 // ResolvedConditionLeaf is the resolved form of an IndexConditionLeaf.
 type ResolvedConditionLeaf struct {
-	Field    document.DataPoint
+	Field    document.DocumentKey
 	Operator ComparisonOperator
 	Value    any
 }
@@ -383,7 +389,7 @@ type ResolvedConstraintTree struct {
 }
 
 // Predicate is a validation function resolved from a PredicateMap at compile time.
-type Predicate func(data *document.DataContainer, fields []document.DataPoint, args any) bool
+type Predicate func(data *document.Document, fields []document.DocumentKey, args any) bool
 
 // PredicateMap is the registry of named predicate functions supplied to the compiler.
 type PredicateMap map[string]Predicate
@@ -394,14 +400,24 @@ type ResolvedConstraintNode interface {
 }
 
 // ResolvedConstraint is the validator-ready form of a single leaf constraint.
+// Identity fields are retained from the cold Constraint so that Serialize can
+// reconstruct the source document without loss.
 type ResolvedConstraint struct {
-	Predicate  Predicate
-	Fields     []document.DataPoint
-	Parameters any
+	UUID          string
+	Name          string
+	Description   string
+	PredicateName string // original string key into PredicateMap
+	Predicate     Predicate
+	Fields        []document.DocumentKey
+	Parameters    any
 }
 
 // ResolvedConstraintGroup is the validator-ready form of a constraint group.
+// Identity fields are retained from the cold ConstraintGroup for Serialize.
 type ResolvedConstraintGroup struct {
+	UUID        string
+	Name        string
+	Description string
 	Operator    LogicalOperator
 	Constraints []ResolvedConstraintNode
 }
@@ -455,7 +471,7 @@ func enqueueTargets(cs *CompiledSchema, fd uint32, typ FieldTypeEnum, visited *v
 		target := ExtractTargetSchema(fd)
 		if !visited.seen(target) {
 			visited.mark(target)
-			queue[target] = target
+			queue[tail] = target
 			tail = (tail + 1) % len(queue)
 		}
 	}
@@ -494,7 +510,12 @@ func TerminalWalk(cs *CompiledSchema, schemaIdx uint8, visit func(fd uint32)) {
 		end := uint16(cs.SchemaOffsets[idx] >> 16)
 
 		for _, fd := range cs.Descriptors[start:end] {
-			visit(fd)
+			// Only visit leaf (non-schema-bearing) fields. Schema-bearing fields
+			// are structural nodes; their leaf descendants are visited when their
+			// target schemas are dequeued.
+			if !IsSchemaBearing(fd) {
+				visit(fd)
+			}
 
 			// Only follow terminal edges. Non-terminal means a cycle was
 			// detected on this field's path during compilation — do not recurse.

@@ -36,7 +36,7 @@ func Serialize(cs *CompiledSchema) ([]byte, error) {
 	// ── Root Constraints ──────────────────────────────────────────────────────
 	if cs.ResolvedConstraints != nil {
 		for _, root := range cs.ResolvedConstraints.Roots {
-			uuid, sc := serializeConstraint(root)
+			uuid, sc := serializeConstraint(cs, root)
 			if uuid != "" {
 				src.Constraints[uuid] = sc
 			}
@@ -246,35 +246,40 @@ func serializeIndexCondition(cond IndexCondition) *sourceIndexCondition {
 	return nil
 }
 
-func serializeConstraint(node ResolvedConstraintNode) (string, sourceConstraint) {
-	// Note: ResolvedConstraint nodes do not store the original UUID or Name.
-	// In a real system, we might need a mapping back or to store the Name/UUID
-	// in the resolved node if round-trip serialization is a priority.
-	// For now, we return empty strings for UUIDs if they are lost.
-	
+func serializeConstraint(cs *CompiledSchema, node ResolvedConstraintNode) (string, sourceConstraint) {
 	switch n := node.(type) {
 	case ResolvedConstraint:
-		return "", sourceConstraint{
-			Predicate:  "", // Predicate name is also lost in ResolvedConstraint (stored as func)
-			Fields:     dataPointsToPaths(n.Fields),
-			Parameters: n.Parameters,
+		return n.UUID, sourceConstraint{
+			Name:        n.Name,
+			Description: n.Description,
+			Predicate:   n.PredicateName,
+			Fields:      dataPointsToPaths(cs, n.Fields),
+			Parameters:  n.Parameters,
 		}
 	case ResolvedConstraintGroup:
 		sc := sourceConstraint{
-			Operator: serializeLogicalOperator(n.Operator),
+			Name:        n.Name,
+			Description: n.Description,
+			Operator:    serializeLogicalOperator(n.Operator),
 		}
 		for _, child := range n.Constraints {
-			_, childSc := serializeConstraint(child)
+			_, childSc := serializeConstraint(cs, child)
 			sc.Rules = append(sc.Rules, &childSc)
 		}
-		return "", sc
+		return n.UUID, sc
 	}
 	return "", sourceConstraint{}
 }
 
-func dataPointsToPaths(dps []document.DataPoint) []string {
-	// This would require a reverse lookup from ordinal to path.
-	return nil
+func dataPointsToPaths(cs *CompiledSchema, dps []document.DocumentKey) []string {
+	if len(dps) == 0 {
+		return nil
+	}
+	paths := make([]string, len(dps))
+	for i, dk := range dps {
+		paths[i] = cs.PathCache[dk]
+	}
+	return paths
 }
 
 func serializeLogicalOperator(op LogicalOperator) string {
@@ -333,40 +338,40 @@ func getEnumValuesFromStore(cs *CompiledSchema, fd uint32) []any {
 	if cs.Store == nil {
 		return nil
 	}
-	dpStr := descriptorToEnumDataPoint(fd, document.TypeArrayString)
-	if val, ok, _ := cs.Store.GetArrayString(dpStr); ok {
+	dkStr := descriptorToEnumDocumentKey(fd, document.TypeArrayString)
+	if val, ok, _ := cs.Store.GetArrayString(dkStr); ok {
 		res := make([]any, len(val))
 		for i, x := range val {
 			res[i] = x
 		}
 		return res
 	}
-	dpInt := descriptorToEnumDataPoint(fd, document.TypeArrayInt)
-	if val, ok, _ := cs.Store.GetArrayInt(dpInt); ok {
+	dkInt := descriptorToEnumDocumentKey(fd, document.TypeArrayInt)
+	if val, ok, _ := cs.Store.GetArrayInt(dkInt); ok {
 		res := make([]any, len(val))
 		for i, x := range val {
 			res[i] = x
 		}
 		return res
 	}
-	dpFlt := descriptorToEnumDataPoint(fd, document.TypeArrayFloat)
-	if val, ok, _ := cs.Store.GetArrayFloat(dpFlt); ok {
+	dkFlt := descriptorToEnumDocumentKey(fd, document.TypeArrayFloat)
+	if val, ok, _ := cs.Store.GetArrayFloat(dkFlt); ok {
 		res := make([]any, len(val))
 		for i, x := range val {
 			res[i] = x
 		}
 		return res
 	}
-	dpBool := descriptorToEnumDataPoint(fd, document.TypeArrayBool)
-	if val, ok, _ := cs.Store.GetArrayBool(dpBool); ok {
+	dkBool := descriptorToEnumDocumentKey(fd, document.TypeArrayBool)
+	if val, ok, _ := cs.Store.GetArrayBool(dkBool); ok {
 		res := make([]any, len(val))
 		for i, x := range val {
 			res[i] = x
 		}
 		return res
 	}
-	dpUnk := descriptorToEnumDataPoint(fd, document.TypeArrayUnknown)
-	if val, ok, _ := cs.Store.GetArrayUnknown(dpUnk); ok {
+	dkUnk := descriptorToEnumDocumentKey(fd, document.TypeArrayUnknown)
+	if val, ok, _ := cs.Store.GetArrayUnknown(dkUnk); ok {
 		return val
 	}
 	return nil
@@ -377,46 +382,51 @@ func getDefaultFromStore(cs *CompiledSchema, fd uint32, ft FieldTypeEnum) any {
 		return nil
 	}
 	dt := fieldTypeToDataType(ft)
-	id := int32((fd >> 8) & 0x7FFF)
-	dp, err := document.NewDataPoint(dt, id)
+	dp, err := document.NewDataPoint(dt, int32((fd>>8)&0x7FFF))
 	if err != nil {
 		return nil
 	}
+	dk := document.NewDocumentKey(dp, fd)
 	switch dt {
 	case document.TypeString:
-		if val, ok, _ := cs.Store.GetString(dp); ok {
+		if val, ok, _ := cs.Store.GetString(dk); ok {
 			return val
 		}
 	case document.TypeInt:
-		if val, ok, _ := cs.Store.GetInt(dp); ok {
+		if val, ok, _ := cs.Store.GetInt(dk); ok {
 			return val
 		}
 	case document.TypeFloat:
-		if val, ok, _ := cs.Store.GetFloat(dp); ok {
+		if val, ok, _ := cs.Store.GetFloat(dk); ok {
 			return val
 		}
 	case document.TypeBool:
-		if val, ok, _ := cs.Store.GetBool(dp); ok {
+		if val, ok, _ := cs.Store.GetBool(dk); ok {
 			return val
 		}
 	case document.TypeBytes:
-		if val, ok, _ := cs.Store.GetBytes(dp); ok {
+		if val, ok, _ := cs.Store.GetBytes(dk); ok {
 			return val
 		}
 	case document.TypeGeometry:
-		if val, ok, _ := cs.Store.GetGeometry(dp); ok {
+		if val, ok, _ := cs.Store.GetGeometry(dk); ok {
 			return val
 		}
 	case document.TypeRecord:
-		if val, ok, _ := cs.Store.GetRecord(dp); ok {
+		if val, ok, _ := cs.Store.GetRecord(dk); ok {
 			return val
 		}
 	case document.TypeArrayObject:
-		if val, ok, _ := cs.Store.GetArrayObject(dp); ok {
+		if val, ok, _ := cs.Store.GetArrayObject(dk); ok {
 			return val
 		}
 	case document.TypeUnknown:
-		if val, ok, _ := cs.Store.GetUnknown(dp); ok {
+		unknownDp, err := document.NewDataPoint(document.TypeUnknown, int32((fd>>8)&0x7FFF))
+		if err != nil {
+			return nil
+		}
+		unknownDk := document.NewDocumentKey(unknownDp, fd)
+		if val, ok, _ := cs.Store.GetUnknown(unknownDk); ok {
 			return val
 		}
 	}

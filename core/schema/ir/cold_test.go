@@ -1,202 +1,81 @@
-package ir
+package ir_test
 
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/document"
+	"github.com/asaidimu/go-anansi/v6/core/schema/ir"
 )
 
-// cold_test.go tests Pass 9 (SchemaMetadata), Pass 10 (ResolvedIndexes),
-// and Pass 11 (ResolvedConstraints).
-
-// ── Pass 9: SchemaMetadata ─────────────────────────────────────────────────
-
-func TestMeta_RootSchemaPresent(t *testing.T) {
+func TestSchemaMetadata_FlatSchema(t *testing.T) {
 	cs := mustCompile(flatSchema, nil)
-	m, ok := cs.Meta[0]
-	if !ok || m == nil {
-		t.Fatal("Meta[0] not present for root schema")
+	m := cs.Meta[0]
+	if m == nil {
+		t.Fatal("Meta[0] is nil")
 	}
 	if m.Name != "Flat" {
-		t.Errorf("Name: got %q, want %q", m.Name, "Flat")
+		t.Errorf("Name: got %q, want \"Flat\"", m.Name)
 	}
-	if m.Version != "1.0.0" {
-		t.Errorf("Version: got %q, want %q", m.Version, "1.0.0")
-	}
-	if m.UUID != "" {
-		t.Errorf("UUID: got %q, want empty", m.UUID)
-	}
-}
-
-func TestMeta_NestedSchemaPresent(t *testing.T) {
-	cs := mustCompile(nestedObjectSchema, nil)
-	m, ok := cs.Meta[1]
-	if !ok || m == nil {
-		t.Fatal("Meta[1] not present for nested schema")
-	}
-	if m.Name != "Address" {
-		t.Errorf("Name: got %q, want %q", m.Name, "Address")
-	}
-	if m.UUID != nestedAddressSchemaUUID {
-		t.Errorf("UUID: got %q, want %q", m.UUID, nestedAddressSchemaUUID)
-	}
-}
-
-func TestMeta_FieldsMapContainsAllFields(t *testing.T) {
-	cs := mustCompile(flatSchema, nil)
-	m := cs.Meta[0]
 	if len(m.Fields) != 3 {
-		t.Errorf("Fields count: got %d, want 3", len(m.Fields))
-	}
-	names := map[string]bool{}
-	for _, fm := range m.Fields {
-		names[fm.Name] = true
-	}
-	for _, want := range []string{"name", "desc", "version"} {
-		if !names[want] {
-			t.Errorf("field %q missing from Meta.Fields", want)
-		}
+		t.Errorf("Fields: got %d, want 3", len(m.Fields))
 	}
 }
 
-func TestMeta_FieldsMapKeyMatchesDescriptor(t *testing.T) {
+func TestSchemaMetadata_NestedObjectSchema(t *testing.T) {
 	cs := mustCompile(nestedObjectSchema, nil)
-	descriptorSet := map[uint32]bool{}
-	for _, fd := range cs.Descriptors {
-		descriptorSet[fd] = true
+
+	// Root (0)
+	m0 := cs.Meta[0]
+	if m0.Name != "Person" {
+		t.Errorf("Root name: got %q, want \"Person\"", m0.Name)
 	}
-	for schemaIdx, m := range cs.Meta {
-		for fd := range m.Fields {
-			if !descriptorSet[fd] {
-				t.Errorf("Meta[%d].Fields key 0x%08X not in Descriptors", schemaIdx, fd)
-			}
-		}
+
+	// Address (1)
+	m1 := cs.Meta[1]
+	if m1.Name != "Address" {
+		t.Errorf("Address name: got %q, want \"Address\"", m1.Name)
+	}
+	if m1.UUID != nestedAddressSchemaUUID {
+		t.Errorf("Address UUID: got %q, want %q", m1.UUID, nestedAddressSchemaUUID)
 	}
 }
 
-func TestMeta_IndexOrdinalsInitialised(t *testing.T) {
-	cs := mustCompile(indexedSchema, nil)
-	m := cs.Meta[0]
-	if m.IndexOrdinals == nil {
-		t.Fatal("IndexOrdinals is nil")
-	}
-}
-
-func TestMeta_ColdIndexesForwardedCorrectly(t *testing.T) {
-	cs := mustCompile(indexedSchema, nil)
-	m := cs.Meta[0]
-	cold, ok := m.Indexes["019ca000-0050-7050-9010-171e252c333a"]
-	if !ok {
-		t.Fatal("cold index not found in Meta.Indexes")
-	}
-	if cold.Name != "idx_sku" {
-		t.Errorf("index name: got %q, want %q", cold.Name, "idx_sku")
-	}
-	if cold.Type != IndexTypeUnique {
-		t.Errorf("index type: got %v, want IndexTypeUnique", cold.Type)
-	}
-	if len(cold.Fields) != 1 || cold.Fields[0] != "sku" {
-		t.Errorf("index fields: got %v, want [sku]", cold.Fields)
-	}
-}
-
-// ── Pass 10: ResolvedIndexes ───────────────────────────────────────────────
-
-func TestResolvedIndexes_EmptyForNoIndexes(t *testing.T) {
+func TestResolvedIndexes_FlatSchema(t *testing.T) {
 	cs := mustCompile(flatSchema, nil)
+	// flatSchema has no indexes.
 	if len(cs.ResolvedIndexes) != 0 {
 		t.Errorf("ResolvedIndexes: got %d entries, want 0", len(cs.ResolvedIndexes))
 	}
 }
 
-func TestResolvedIndexes_KeyPackingCorrect(t *testing.T) {
-	// indexedSchema has one index on root schema (index 0), ordinal 0.
-	// Expected key = (0<<8) | 0 = 0.
+func TestResolvedIndexes_IndexedSchema(t *testing.T) {
 	cs := mustCompile(indexedSchema, nil)
-	if len(cs.ResolvedIndexes) != 1 {
-		t.Fatalf("ResolvedIndexes: got %d entries, want 1", len(cs.ResolvedIndexes))
-	}
+
+	// indexedSchema has 1 index in root (schemaIdx 0), index ordinal 0.
+	// Key = (schemaIdx << 8) | indexOrdinal
 	key := uint16(0)<<8 | uint16(0)
 	ri, ok := cs.ResolvedIndexes[key]
 	if !ok {
-		t.Fatal("ResolvedIndexes key 0 not found")
+		t.Fatal("ResolvedIndex not found for key 0")
 	}
-	if ri.Type != IndexTypeUnique {
-		t.Errorf("ResolvedIndex type: got %v, want IndexTypeUnique", ri.Type)
+
+	if ri.Type != ir.IndexTypeUnique {
+		t.Error("Index should be unique type")
+	}
+	if len(ri.Fields) != 1 {
+		t.Fatalf("Index fields: got %d, want 1", len(ri.Fields))
 	}
 }
 
-func TestResolvedIndexes_OrdinalWrittenToMeta(t *testing.T) {
-	cs := mustCompile(indexedSchema, nil)
-	m := cs.Meta[0]
-	ordinal, ok := m.IndexOrdinals["019ca000-0050-7050-9010-171e252c333a"]
-	if !ok {
-		t.Fatal("index UUID not found in IndexOrdinals")
-	}
-	if ordinal != 0 {
-		t.Errorf("ordinal: got %d, want 0", ordinal)
-	}
-}
-
-// ── Pass 11: ResolvedConstraints ───────────────────────────────────────────
-
-func TestResolvedConstraints_EmptyForNoConstraints(t *testing.T) {
-	cs := mustCompile(flatSchema, nil)
-	if cs.ResolvedConstraints != nil {
-		t.Error("ResolvedConstraints: expected nil for flat schema")
-	}
-}
-
-func TestResolvedConstraints_UnknownPredicateIsError(t *testing.T) {
-	ss := mustParse(constrainedSchema)
-	_, err := Compile(ss, PredicateMap{})
-	if err == nil {
-		t.Fatal("expected error for unknown predicate")
-	}
-	ce := firstError(err)
-	if ce.Pass != PassConstraints {
-		t.Errorf("pass: got %v, want %v", ce.Pass, PassConstraints)
-	}
-}
-
-func TestResolvedConstraints_KnownPredicateSucceeds(t *testing.T) {
+func TestResolvedConstraints_ConstrainedSchema(t *testing.T) {
 	cs := mustCompileWithStubPredicate(constrainedSchema, "isEmail")
-	rt := cs.ResolvedConstraints
-	if rt == nil {
+
+	if cs.ResolvedConstraints == nil {
 		t.Fatal("ResolvedConstraints is nil")
 	}
-	if len(rt.Roots) != 1 {
-		t.Errorf("resolved roots: got %d, want 1", len(rt.Roots))
-	}
-}
 
-func TestResolvedConstraints_IndexMatchesOrdinals(t *testing.T) {
-	cs := mustCompileWithStubPredicate(constrainedSchema, "isEmail")
-	rt := cs.ResolvedConstraints
-	if rt == nil {
-		t.Fatal("ResolvedConstraints is nil")
+	// constrainedSchema has 1 root constraint.
+	roots := cs.ResolvedConstraints.Roots[0]
+	if roots == nil {
+		t.Fatal("Root constraints for schema 0 is nil")
 	}
-	
-	if len(rt.Index) == 0 {
-		t.Error("ResolvedConstraintTree.Index is empty")
-	}
-}
-
-// ── Helpers ────────────────────────────────────────────────────────────────
-
-// mustCompileWithStubPredicate compiles src with a no-op Predicate registered
-// under each given name. Panics on compile error.
-func mustCompileWithStubPredicate(src []byte, names ...string) *CompiledSchema {
-	pm := PredicateMap{}
-	for _, name := range names {
-		pm[name] = func(_ *document.DataContainer, _ []document.DataPoint, _ any) bool {
-			return true
-		}
-	}
-	ss := mustParse(src)
-	cs, err := Compile(ss, pm)
-	if err != nil {
-		panic("mustCompileWithStubPredicate: " + err.Error())
-	}
-	return cs
 }

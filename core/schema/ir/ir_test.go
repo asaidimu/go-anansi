@@ -158,26 +158,26 @@ func TestEnumElemTypeToArrayDataType(t *testing.T) {
 	}
 }
 
-func TestDescriptorToEnumDataPoint(t *testing.T) {
+func TestDescriptorToEnumDocumentKey(t *testing.T) {
 	// 5 << 7 | 10 = 640 + 10 = 650
 	fd := ir.PackDescriptor(ir.TypeEnum, 5, 10, 0, false, false, false)
 	
 	// String array enum
-	dp := ir.DescriptorToEnumDataPoint(fd, document.TypeArrayString)
-	if dp.Type() != document.TypeArrayString {
-		t.Errorf("Type() = %v, want %v", dp.Type(), document.TypeArrayString)
+	dk := ir.DescriptorToEnumDocumentKey(fd, document.TypeArrayString)
+	if dk.DataPoint().Type() != document.TypeArrayString {
+		t.Errorf("Type() = %v, want %v", dk.DataPoint().Type(), document.TypeArrayString)
 	}
-	if dp.ID() != 650 {
-		t.Errorf("ID() = %v, want 650", dp.ID())
+	if dk.DataPoint().ID() != 650 {
+		t.Errorf("ID() = %v, want 650", dk.DataPoint().ID())
 	}
 
 	// Int array enum
-	dp = ir.DescriptorToEnumDataPoint(fd, document.TypeArrayInt)
-	if dp.Type() != document.TypeArrayInt {
-		t.Errorf("Type() = %v, want %v", dp.Type(), document.TypeArrayInt)
+	dk = ir.DescriptorToEnumDocumentKey(fd, document.TypeArrayInt)
+	if dk.DataPoint().Type() != document.TypeArrayInt {
+		t.Errorf("Type() = %v, want %v", dk.DataPoint().Type(), document.TypeArrayInt)
 	}
-	if dp.ID() != 650 {
-		t.Errorf("ID() = %v, want 650", dp.ID())
+	if dk.DataPoint().ID() != 650 {
+		t.Errorf("ID() = %v, want 650", dk.DataPoint().ID())
 	}
 }
 

@@ -1,6 +1,10 @@
 package ir
 
-import "sort"
+import (
+	"sort"
+
+	"github.com/asaidimu/go-anansi/v6/core/document"
+)
 
 // compile.go provides the two public entry points:
 //
@@ -116,6 +120,7 @@ func Compile(src *SourceSchema, predicates PredicateMap) (*CompiledSchema, error
 		Variants:      variants,
 		Store:         store,
 		Meta:          meta,
+		PathCache:     make(map[document.DocumentKey]string),
 	}
 
 	// ── Build address space ───────────────────────────────────────────────────
