@@ -2,7 +2,7 @@ package ir
 
 // address_space.go defines CompiledAddressSpace, the compile-time address
 // table that backs Address() resolution. It is produced alongside
-// CompiledSchema and stored on it. Consumers that call Address() receive
+// Schema and stored on it. Consumers that call Address() receive
 // both pointers and pass them together.
 //
 // All fields are fixed-size arrays bounded by the IR hard limits (128 schemas,

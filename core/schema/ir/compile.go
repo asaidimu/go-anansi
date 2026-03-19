@@ -2,8 +2,6 @@ package ir
 
 import (
 	"sort"
-
-	"github.com/asaidimu/go-anansi/v6/core/document"
 )
 
 // compile.go provides the two public entry points:
@@ -13,7 +11,7 @@ import (
 //     *SourceSchema that can be passed to Compile. Useful for pre-validating
 //     source documents and for unit-testing passes independently.
 //
-//   Compile(src *SourceSchema, predicates PredicateMap) (*CompiledSchema, error)
+//   Compile(src *SourceSchema, predicates PredicateMap) (*Schema, error)
 //     Runs Passes 2–11 over the parsed source and returns the immutable IR.
 //
 // Errors are always returned as CompileErrors (a []CompileError). The compiler
@@ -40,14 +38,20 @@ func Parse(src []byte) (*SourceSchema, error) {
 }
 
 // Compile runs the full compilation pipeline over a parsed source document and
-// returns an immutable *CompiledSchema. predicates may be nil or empty if the
+// returns an immutable *Schema. predicates may be nil or empty if the
 // source contains no constraints; a non-empty PredicateMap is required for
 // constraint resolution (Pass 11).
 //
 // Errors from all passes are collected and returned together as CompileErrors.
 // The pipeline stops at the first pass that produces errors to avoid cascading
 // failures from invalid intermediate state.
-func Compile(src *SourceSchema, predicates PredicateMap) (*CompiledSchema, error) {
+func Compile(src *SourceSchema, predicates PredicateMap) (*Schema, error) {
+	if src == nil {
+		return nil, CompileErrors{{
+			Pass:    PassParse,
+			Message: "src is nil",
+		}}
+	}
 	if predicates == nil {
 		predicates = PredicateMap{}
 	}
@@ -112,15 +116,15 @@ func Compile(src *SourceSchema, predicates PredicateMap) (*CompiledSchema, error
 		return nil, CompileErrors(errs)
 	}
 
-	// Assemble the partial CompiledSchema. The address space build (below)
+	// Assemble the partial Schema. The address space build (below)
 	// reads cs.Descriptors, cs.SchemaOffsets, cs.Variants, and cs.Meta.
-	cs := &CompiledSchema{
+	cs := &Schema{
 		Descriptors:   descriptors,
 		SchemaOffsets: offsets,
 		Variants:      variants,
 		Store:         store,
 		Meta:          meta,
-		PathCache:     make(map[document.DocumentKey]string),
+		PathCache:     NewPathRegistry(),
 	}
 
 	// ── Build address space ───────────────────────────────────────────────────

@@ -8,12 +8,12 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/document"
 )
 
-// Serialize converts a CompiledSchema back into its original JSON representation.
-// It relies on the presence of CompiledSchema.Meta. If Meta is nil or incomplete,
+// Serialize converts a Schema back into its original JSON representation.
+// It relies on the presence of Schema.Meta. If Meta is nil or incomplete,
 // serialization will fail or produce partial output.
-func Serialize(cs *CompiledSchema) ([]byte, error) {
+func Serialize(cs *Schema) ([]byte, error) {
 	if cs.Meta == nil {
-		return nil, fmt.Errorf("serialize: CompiledSchema.Meta is nil")
+		return nil, fmt.Errorf("serialize: Schema.Meta is nil")
 	}
 
 	rootMeta, ok := cs.Meta[0]
@@ -107,7 +107,7 @@ func Serialize(cs *CompiledSchema) ([]byte, error) {
 	return json.MarshalIndent(src, "", "  ")
 }
 
-func serializeField(cs *CompiledSchema, schemaIdx uint8, fd uint32, fm FieldMeta) sourceField {
+func serializeField(cs *Schema, schemaIdx uint8, fd uint32, fm FieldMeta) sourceField {
 	ft := ExtractType(fd)
 	sf := sourceField{
 		Name:        fm.Name,
@@ -246,7 +246,7 @@ func serializeIndexCondition(cond IndexCondition) *sourceIndexCondition {
 	return nil
 }
 
-func serializeConstraint(cs *CompiledSchema, node ResolvedConstraintNode) (string, sourceConstraint) {
+func serializeConstraint(cs *Schema, node ResolvedConstraintNode) (string, sourceConstraint) {
 	switch n := node.(type) {
 	case ResolvedConstraint:
 		return n.UUID, sourceConstraint{
@@ -271,13 +271,15 @@ func serializeConstraint(cs *CompiledSchema, node ResolvedConstraintNode) (strin
 	return "", sourceConstraint{}
 }
 
-func dataPointsToPaths(cs *CompiledSchema, dps []document.DocumentKey) []string {
+func dataPointsToPaths(cs *Schema, dps []document.DocumentKey) []string {
 	if len(dps) == 0 {
 		return nil
 	}
 	paths := make([]string, len(dps))
 	for i, dk := range dps {
-		paths[i] = cs.PathCache[dk]
+		if path, ok := cs.PathCache.GetPath(dk); ok {
+			paths[i] = path
+		}
 	}
 	return paths
 }
@@ -334,7 +336,7 @@ func serializeComparisonOperator(op ComparisonOperator) string {
 	}
 }
 
-func getEnumValuesFromStore(cs *CompiledSchema, fd uint32) []any {
+func getEnumValuesFromStore(cs *Schema, fd uint32) []any {
 	if cs.Store == nil {
 		return nil
 	}
@@ -377,7 +379,7 @@ func getEnumValuesFromStore(cs *CompiledSchema, fd uint32) []any {
 	return nil
 }
 
-func getDefaultFromStore(cs *CompiledSchema, fd uint32, ft FieldTypeEnum) any {
+func getDefaultFromStore(cs *Schema, fd uint32, ft FieldTypeEnum) any {
 	if cs.Store == nil {
 		return nil
 	}

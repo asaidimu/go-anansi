@@ -3,7 +3,7 @@ package ir
 import "sort"
 
 // build_address_space.go implements the three-phase algorithm that produces a
-// CompiledAddressSpace from a CompiledSchema.
+// CompiledAddressSpace from a Schema.
 //
 // Phase 1 — Discover: DFS over the schema graph. Collect acyclic path nodes
 //           in pre-order and identify back-edge fields.
@@ -16,7 +16,7 @@ import "sort"
 
 // buildAddressSpace constructs the CompiledAddressSpace for cs.
 // cs.Meta must be fully populated (Pass 9 complete) before this is called.
-func buildAddressSpace(cs *CompiledSchema) (*CompiledAddressSpace, []CompileError) {
+func buildAddressSpace(cs *Schema) (*CompiledAddressSpace, []CompileError) {
 	as := &CompiledAddressSpace{}
 
 	// ── Phase 1: Discover ─────────────────────────────────────────────────────
@@ -217,7 +217,7 @@ func buildAddressSpace(cs *CompiledSchema) (*CompiledAddressSpace, []CompileErro
 // resolveFieldTargets returns the target schema index/indices for a
 // schema-bearing field. Union and composite fields may have multiple targets
 // via cs.Variants; all other schema-bearing types have exactly one.
-func resolveFieldTargets(cs *CompiledSchema, fd uint32, typ FieldTypeEnum) []uint8 {
+func resolveFieldTargets(cs *Schema, fd uint32, typ FieldTypeEnum) []uint8 {
 	if typ == TypeUnion || typ == TypeComposite {
 		return cs.Variants[fd]
 	}
@@ -226,7 +226,7 @@ func resolveFieldTargets(cs *CompiledSchema, fd uint32, typ FieldTypeEnum) []uin
 
 // schemaOffsetRange returns the [start, end) positions in cs.Descriptors for
 // the given schema index. Returns (0, 0) for type schemas with no fields.
-func schemaOffsetRange(cs *CompiledSchema, schemaIdx uint8) (start, end int) {
+func schemaOffsetRange(cs *Schema, schemaIdx uint8) (start, end int) {
 	if int(schemaIdx) >= len(cs.SchemaOffsets) {
 		return 0, 0
 	}
@@ -236,7 +236,7 @@ func schemaOffsetRange(cs *CompiledSchema, schemaIdx uint8) (start, end int) {
 
 // fieldUUIDFromMeta returns the UUID of a field given its schema index and
 // field_index. Returns empty string if not found.
-func fieldUUIDFromMeta(cs *CompiledSchema, schemaIdx uint8, fieldIdx uint8) string {
+func fieldUUIDFromMeta(cs *Schema, schemaIdx uint8, fieldIdx uint8) string {
 	m := cs.Meta[schemaIdx]
 	if m == nil {
 		return ""

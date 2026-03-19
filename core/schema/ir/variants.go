@@ -1,6 +1,6 @@
 package ir
 
-// variants.go implements Pass 6: build the Variants map on CompiledSchema.
+// variants.go implements Pass 6: build the Variants map on Schema.
 //
 // variantRefs (produced by Pass 5) maps each union/composite descriptor value
 // to the ordered slice of variant schema UUIDs. Pass 6 translates UUIDs to

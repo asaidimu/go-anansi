@@ -10,7 +10,7 @@ import (
 func TestCompile_E2E_FlatSchema(t *testing.T) {
 	cs := mustCompile(flatSchema, nil)
 	if cs == nil {
-		t.Fatal("Compile returned nil CompiledSchema")
+		t.Fatal("Compile returned nil Schema")
 	}
 
 	// Basic checks.

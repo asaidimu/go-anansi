@@ -219,6 +219,88 @@ var complexConstraintSchema = []byte(`{
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+// binaryTreeSchema exercises the multi-back-edge case: a BTree schema where
+// both "left" and "right" are back-edges to BTree itself. This verifies that
+// BackEdgeOrdinal assigns distinct 1-based slots (sorted by field UUID) and
+// that Address() produces different ordinals for each back-edge field.
+//
+// Field UUID lex order within BTree: left(010) < right(011) < value(012)
+// → BackEdgeOrdinal[BTree][left]=1, BackEdgeOrdinal[BTree][right]=2
+// → BlockSize[BTree] = AcyclicSubtreeSize(3) × 2 back-edges = 6
+var binaryTreeSchema = []byte(`{
+  "name": "BinaryTree",
+  "version": "1.0.0",
+  "fields": {
+    "019ca000-0000-7000-b000-000000000001": {
+      "name": "root", "type": "object",
+      "schema": { "id": "019ca000-0000-7000-b000-000000000020" }
+    }
+  },
+  "schemas": {
+    "019ca000-0000-7000-b000-000000000020": {
+      "name": "BTree",
+      "fields": {
+        "019ca000-0000-7000-b000-000000000010": {
+          "name": "left",  "type": "object",
+          "schema": { "id": "019ca000-0000-7000-b000-000000000020" }
+        },
+        "019ca000-0000-7000-b000-000000000011": {
+          "name": "right", "type": "object",
+          "schema": { "id": "019ca000-0000-7000-b000-000000000020" }
+        },
+        "019ca000-0000-7000-b000-000000000012": { "name": "value", "type": "string" }
+      }
+    }
+  }
+}`)
+
+// twoCycleSchema exercises the multiple-cyclic-targets case: two independent
+// self-cycles (P and Q), each with their own back block. This verifies that
+// block base addresses are strictly decreasing and non-overlapping when two
+// cyclic target schemas exist.
+//
+// Schema UUID lex order: ...0000a0 < ...0000b0 (a < b)
+// → P gets the higher block base (allocated first from addressSpaceMax downward)
+// → BlockBases[P] > BlockBases[Q] and BlockBases[P] - BlockSize[P] == BlockBases[Q]
+var twoCycleSchema = []byte(`{
+  "name": "TwoCycles",
+  "version": "1.0.0",
+  "fields": {
+    "019ca000-0000-7000-b000-000000000001": {
+      "name": "p", "type": "object",
+      "schema": { "id": "019ca000-0000-7000-b000-0000000000a0" }
+    },
+    "019ca000-0000-7000-b000-000000000002": {
+      "name": "q", "type": "object",
+      "schema": { "id": "019ca000-0000-7000-b000-0000000000b0" }
+    }
+  },
+  "schemas": {
+    "019ca000-0000-7000-b000-0000000000a0": {
+      "name": "P",
+      "fields": {
+        "019ca000-0000-7000-b000-0000000000a1": {
+          "name": "next", "type": "object",
+          "schema": { "id": "019ca000-0000-7000-b000-0000000000a0" }
+        },
+        "019ca000-0000-7000-b000-0000000000a2": { "name": "val", "type": "string" }
+      }
+    },
+    "019ca000-0000-7000-b000-0000000000b0": {
+      "name": "Q",
+      "fields": {
+        "019ca000-0000-7000-b000-0000000000b1": {
+          "name": "next", "type": "object",
+          "schema": { "id": "019ca000-0000-7000-b000-0000000000b0" }
+        },
+        "019ca000-0000-7000-b000-0000000000b2": { "name": "val", "type": "string" }
+      }
+    }
+  }
+}`)
+
+
+
 func mustParse(src []byte) *ir.SourceSchema {
 	ss, err := ir.Parse(src)
 	if err != nil {
@@ -227,7 +309,7 @@ func mustParse(src []byte) *ir.SourceSchema {
 	return ss
 }
 
-func mustCompile(src []byte, predicates ir.PredicateMap) *ir.CompiledSchema {
+func mustCompile(src []byte, predicates ir.PredicateMap) *ir.Schema {
 	ss := mustParse(src)
 	cs, err := ir.Compile(ss, predicates)
 	if err != nil {
@@ -236,10 +318,10 @@ func mustCompile(src []byte, predicates ir.PredicateMap) *ir.CompiledSchema {
 	return cs
 }
 
-func mustCompileAny(t *testing.T, src []byte) *ir.CompiledSchema {
+func mustCompileAny(t *testing.T, src []byte) *ir.Schema {
 	return mustCompile(src, nil)
 }
 
-func mustCompileWithStubPredicate(src []byte, name string) *ir.CompiledSchema {
+func mustCompileWithStubPredicate(src []byte, name string) *ir.Schema {
 	return mustCompile(src, ir.PredicateMap{name: func(_ *document.Document, _ []document.DocumentKey, _ any) bool { return true }})
 }

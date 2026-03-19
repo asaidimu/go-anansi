@@ -13,7 +13,7 @@ package ir
 // which consumers must not dereference. Consumers distinguish them via the
 // FieldTypeEnum of whatever field points to them.
 
-// buildSchemaOffsets produces the SchemaOffsets slice for CompiledSchema.
+// buildSchemaOffsets produces the SchemaOffsets slice for Schema.
 //
 // totalSchemas is 1 + len(nested schemas), determining the slice length.
 // objectSchemas is the set of schema indices that have at least one field —
