@@ -6,9 +6,7 @@ import "encoding/json"
 var (
 	PackDescriptor            = packDescriptor
 	EnumElemTypeToArrayDataType = enumElemTypeToArrayDataType
-	DescriptorToEnumDocumentKey = descriptorToEnumDocumentKey
 	InferEnumElemType         = inferEnumElemType
-	FieldTypeToDataType       = fieldTypeToDataType
 	BuildFieldIndex           = buildFieldIndex
 	BuildSchemaIndex          = buildSchemaIndex
 	GetDefaultFromStore       = getDefaultFromStore
