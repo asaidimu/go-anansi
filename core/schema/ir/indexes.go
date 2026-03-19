@@ -9,10 +9,10 @@ import "github.com/asaidimu/go-anansi/v6/core/document"
 //
 // Pass 10 runs after the address space is built so cs.DocumentKey() is available.
 
-// buildResolvedIndexes populates CompiledSchema.ResolvedIndexes and fills
+// buildResolvedIndexes populates Schema.ResolvedIndexes and fills
 // SchemaMetadata.IndexOrdinals for every schema that has indexes.
 func buildResolvedIndexes(
-	cs *CompiledSchema,
+	cs *Schema,
 	si *schemaIndex,
 ) (map[uint16]ResolvedIndex, []CompileError) {
 	resolved := make(map[uint16]ResolvedIndex)
@@ -41,7 +41,7 @@ func buildResolvedIndexes(
 }
 
 func resolveSchemaIndexes(
-	cs *CompiledSchema,
+	cs *Schema,
 	schemaIdx uint8,
 	m *SchemaMetadata,
 	resolved map[uint16]ResolvedIndex,
@@ -69,7 +69,7 @@ func resolveSchemaIndexes(
 	return errs
 }
 
-func resolveIndex(cs *CompiledSchema, cold IndexDescriptor) (ResolvedIndex, []CompileError) {
+func resolveIndex(cs *Schema, cold IndexDescriptor) (ResolvedIndex, []CompileError) {
 	var errs []CompileError
 
 	fields := make([]document.DocumentKey, 0, len(cold.Fields))
@@ -101,7 +101,7 @@ func resolveIndex(cs *CompiledSchema, cold IndexDescriptor) (ResolvedIndex, []Co
 	}, errs
 }
 
-func resolveIndexCondition(cs *CompiledSchema, cond IndexCondition) (ResolvedCondition, []CompileError) {
+func resolveIndexCondition(cs *Schema, cond IndexCondition) (ResolvedCondition, []CompileError) {
 	if cond == nil {
 		return nil, nil
 	}

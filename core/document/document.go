@@ -46,7 +46,6 @@ func (k DocumentKey) IsNull() bool {
 //
 // Each key carries the field descriptor alongside the DataPoint, making it
 // suitable for validation without any secondary schema lookups.
-//
 
 // data[i] holds a pointer to the slice header for DataType(i), lazily initialised.
 // The pointer is to the header (*[]T), not the backing array, so it survives appends.

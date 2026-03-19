@@ -97,11 +97,11 @@ const (
 	ComparisonNexists
 )
 
-// ── CompiledSchema ────────────────────────────────────────────────────────────
+// ── Schema ────────────────────────────────────────────────────────────
 
-// CompiledSchema is the top-level IR artifact. One per compiled source document.
+// Schema is the top-level IR artifact. One per compiled source document.
 // It is immutable once returned from Compile.
-type CompiledSchema struct {
+type Schema struct {
 	// Descriptors is the global flat array of FieldDescriptor values covering
 	// all fields across all schemas. Fields are laid out in schema-index order;
 	// within each schema, fields are ordered by UUID lexicographic sort.
@@ -144,7 +144,7 @@ type CompiledSchema struct {
 	// that produced it. Populated lazily by DocumentKey() on each successful
 	// resolution. Used by Serialize to reconstruct constraint field paths from
 	// DocumentKeys without a separate reverse-lookup pass.
-	PathCache map[document.DocumentKey]string
+	PathCache *PathRegistry
 }
 
 // ── FieldDescriptor helpers ───────────────────────────────────────────────────
@@ -224,7 +224,7 @@ func ExtractOwnerSchema(fd uint32) uint8 {
 
 // ExtractTargetSchema extracts the 8-bit target_schema index from a descriptor.
 // Returns 0 for union and composite fields — those fields do not use the
-// target_schema bits; their targets are stored in CompiledSchema.Variants.
+// target_schema bits; their targets are stored in Schema.Variants.
 func ExtractTargetSchema(fd uint32) uint8 {
 	return uint8((fd & FDMaskTargetSchema) >> 23)
 }
@@ -458,7 +458,7 @@ func (v *visitedSet) seen(idx uint8) bool {
 // This is the single authoritative place that handles the union/composite split,
 // preventing the target_schema=0 false-enqueue that would otherwise occur for
 // those types.
-func enqueueTargets(cs *CompiledSchema, fd uint32, typ FieldTypeEnum, visited *visitedSet, queue []uint8, tail int) int {
+func enqueueTargets(cs *Schema, fd uint32, typ FieldTypeEnum, visited *visitedSet, queue []uint8, tail int) int {
 	if typ == TypeUnion || typ == TypeComposite {
 		for _, v := range cs.Variants[fd] {
 			if !visited.seen(v) {
@@ -488,7 +488,10 @@ func enqueueTargets(cs *CompiledSchema, fd uint32, typ FieldTypeEnum, visited *v
 // once per call, preventing infinite recursion.
 //
 // No heap allocation.
-func TerminalWalk(cs *CompiledSchema, schemaIdx uint8, visit func(fd uint32)) {
+func TerminalWalk(cs *Schema, schemaIdx uint8, visit func(fd uint32)) {
+	if cs == nil {
+		return
+	}
 	// BFS over schemas reachable via terminal edges.
 	// Queue size 256 with power-of-two modulo: supports up to 255 concurrent
 	// entries (one slot always empty to distinguish full from empty), which
@@ -569,7 +572,10 @@ func TerminalWalk(cs *CompiledSchema, schemaIdx uint8, visit func(fd uint32)) {
 
 // FullWalk visits every field in every schema reachable from schemaIdx,
 // visiting each schema exactly once. Cycle-safe. No allocation.
-func FullWalk(cs *CompiledSchema, schemaIdx uint8, visit func(fd uint32)) {
+func FullWalk(cs *Schema, schemaIdx uint8, visit func(fd uint32)) {
+	if cs == nil {
+		return
+	}
 	// Queue size 256 with power-of-two modulo. The visitedSet prevents any
 	// schema from being enqueued more than once, so the maximum concurrent
 	// queue depth is 128 (the schema hard limit). 256 slots ensures the

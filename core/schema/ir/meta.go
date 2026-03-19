@@ -1,7 +1,7 @@
 package ir
 
 // meta.go implements Pass 9: build the cold SchemaMetadata for every schema
-// in the document. Metadata is keyed by schema index in CompiledSchema.Meta.
+// in the document. Metadata is keyed by schema index in Schema.Meta.
 // It is loaded only by consumers that require it (code generators, diff tools,
 // error reporters) and is never touched by the validator or binary serializer.
 

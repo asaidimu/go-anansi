@@ -7,7 +7,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/document"
 )
 
-// address.go implements Address(), a method on *CompiledSchema that resolves
+// address.go implements Address(), a method on *Schema that resolves
 // a dot-separated field path string to a document.DataPoint.
 //
 // The algorithm is defined in the Schema Address Space spec (Section 6). It
@@ -28,7 +28,7 @@ var ErrAddressNotFound = errors.New("address: path not found")
 // Address resolves a dot-separated field path to a document.DataPoint.
 //
 // Example paths: "name", "address.city", "parent.lines.product"
-func (cs *CompiledSchema) Address(path string) (document.DataPoint, error) {
+func (cs *Schema) Address(path string) (document.DataPoint, error) {
 	as := cs.AddressSpace
 	if as == nil {
 		return 0, errors.New("address: AddressSpace not built — schema was not fully compiled")
@@ -56,9 +56,15 @@ func (cs *CompiledSchema) Address(path string) (document.DataPoint, error) {
 // validation — the returned key carries both the value identity (DataPoint)
 // and all field-level rules (descriptor) without any secondary lookup.
 //
-// The result is cached in cs.PathCache so that Serialize can reconstruct
-// path strings from DocumentKeys without a separate reverse-lookup pass.
-func (cs *CompiledSchema) DocumentKey(path string) (document.DocumentKey, error) {
+
+func (cs *Schema) DocumentKey(path string) (document.DocumentKey, error) {
+	// 1. Fast path: check the registry first.
+	if cs.PathCache != nil {
+		if dk, ok := cs.PathCache.GetKey(path); ok {
+			return dk, nil
+		}
+	}
+
 	as := cs.AddressSpace
 	if as == nil {
 		return 0, errors.New("address: AddressSpace not built — schema was not fully compiled")
@@ -67,6 +73,7 @@ func (cs *CompiledSchema) DocumentKey(path string) (document.DocumentKey, error)
 		return 0, ErrAddressNotFound
 	}
 
+	// 2. Resolve the ordinal only if not in cache.
 	ordinal, terminalFD, ok := cs.resolveOrdinal(path)
 	if !ok {
 		return 0, ErrAddressNotFound
@@ -79,8 +86,10 @@ func (cs *CompiledSchema) DocumentKey(path string) (document.DocumentKey, error)
 	}
 
 	dk := document.NewDocumentKey(dp, terminalFD)
+
+	// 3. Store in the unified registry.
 	if cs.PathCache != nil {
-		cs.PathCache[dk] = path
+		cs.PathCache.Put(dk, path)
 	}
 	return dk, nil
 }
@@ -90,7 +99,7 @@ func (cs *CompiledSchema) DocumentKey(path string) (document.DocumentKey, error)
 // derive the correct document.DataType.
 //
 // Returns (ordinal, terminalFD, true) on success, (0, 0, false) on failure.
-func (cs *CompiledSchema) resolveOrdinal(path string) (ordinal uint32, terminalFD uint32, ok bool) {
+func (cs *Schema) resolveOrdinal(path string) (ordinal uint32, terminalFD uint32, ok bool) {
 	as := cs.AddressSpace
 	segments := strings.Split(path, ".")
 
@@ -191,7 +200,7 @@ func (cs *CompiledSchema) resolveOrdinal(path string) (ordinal uint32, terminalF
 //
 // For union/composite fields: nextSegment must name a field in exactly one
 // variant of the field. Zero or multiple matches → (0, false).
-func (cs *CompiledSchema) resolveTarget(fd uint32, typ FieldTypeEnum, nextSegment string) (uint8, bool) {
+func (cs *Schema) resolveTarget(fd uint32, typ FieldTypeEnum, nextSegment string) (uint8, bool) {
 	if typ == TypeUnion || typ == TypeComposite {
 		// Union/composite field: resolve next segment against variants.
 		return resolveUnionTarget(cs, cs.Variants[fd], nextSegment)
@@ -210,7 +219,7 @@ func (cs *CompiledSchema) resolveTarget(fd uint32, typ FieldTypeEnum, nextSegmen
 // resolveUnionTarget finds which variant from the given list contains a field
 // named nextSegment. Returns (variantIdx, true) iff at least one variant matches.
 // If multiple variants match (common field), the first match is returned.
-func resolveUnionTarget(cs *CompiledSchema, variants []uint8, nextSegment string) (uint8, bool) {
+func resolveUnionTarget(cs *Schema, variants []uint8, nextSegment string) (uint8, bool) {
 	as := cs.AddressSpace
 	for _, variantIdx := range variants {
 		if nm := as.FieldNames[variantIdx]; nm != nil {
@@ -226,7 +235,7 @@ func resolveUnionTarget(cs *CompiledSchema, variants []uint8, nextSegment string
 // Descriptors within a schema are stored in field_index order, so
 // Descriptors[schemaStart + fieldIdx] is the correct position.
 // Returns 0 if out of bounds.
-func descriptorAt(cs *CompiledSchema, schemaIdx uint8, fieldIdx uint8) uint32 {
+func descriptorAt(cs *Schema, schemaIdx uint8, fieldIdx uint8) uint32 {
 	start, end := schemaOffsetRange(cs, schemaIdx)
 	if start == end {
 		return 0
@@ -237,3 +246,5 @@ func descriptorAt(cs *CompiledSchema, schemaIdx uint8, fieldIdx uint8) uint32 {
 	}
 	return cs.Descriptors[pos]
 }
+
+

@@ -14,7 +14,7 @@ import (
 
 // buildResolvedConstraints resolves all constraints in the source schema.
 func buildResolvedConstraints(
-	cs *CompiledSchema,
+	cs *Schema,
 	predicates PredicateMap,
 	src *sourceSchema,
 ) (*ResolvedConstraintTree, []CompileError) {
@@ -46,7 +46,7 @@ func buildResolvedConstraints(
 }
 
 func resolveConstraintNode(
-	cs *CompiledSchema,
+	cs *Schema,
 	node ConstraintNode,
 	tree *ConstraintTree,
 	rt *ResolvedConstraintTree,
@@ -66,7 +66,7 @@ func resolveConstraintNode(
 }
 
 func resolveLeafConstraint(
-	cs *CompiledSchema,
+	cs *Schema,
 	c Constraint,
 	tree *ConstraintTree,
 	rt *ResolvedConstraintTree,
@@ -113,7 +113,7 @@ func resolveLeafConstraint(
 }
 
 func resolveGroupConstraint(
-	cs *CompiledSchema,
+	cs *Schema,
 	g ConstraintGroup,
 	tree *ConstraintTree,
 	rt *ResolvedConstraintTree,
