@@ -2,8 +2,20 @@
 // instances against a compiled ir.Schema.
 //
 // Build once with New — the schema is walked exactly once to construct the
-// execution graph. Call Validate/ValidatePartial/ValidateLoose many times
-// after that. The schema is never read again after construction.
+// execution graph. Call Validate/ValidatePartial/ValidateLoose many times.
+// The schema is never read again after construction.
+//
+// Storage model:
+//   - TypeObject, TypeComposite: fields are flattened into the parent Document.
+//     No nested *Document. Fields are addressed via full dot-paths from root.
+//   - TypeArray / TypeSet: []*Document (object elements) or typed scalar slice.
+//     Each *Document element is validated against a promoted sub-schema.
+//   - TypeRecord (with schema): map[string]*Document. Each value is validated
+//     against a promoted sub-schema.
+//   - TypeRecord (without schema): map[string]any — no element validation.
+//   - TypeUnion: variant determines storage. Object variants → *Document
+//     validated against the promoted variant schema. Scalar variants → stored
+//     directly in the parent document.
 package validate
 
 import (
@@ -20,31 +32,22 @@ import (
 // VALIDATION MODE
 // =============================================================================
 
-// ValidationMode defines the strictness level for validation operations.
 type ValidationMode byte
 
 const (
-	// ValidationModeStrict validates all fields and applies all constraints.
-	ValidationModeStrict ValidationMode = iota + 1
-
-	// ValidationModePartialStrict skips REQUIRED_FIELD_MISSING but enforces
-	// all other checks including constraints and unexpected fields.
+	ValidationModeStrict        ValidationMode = iota + 1
 	ValidationModePartialStrict
-
-	// ValidationModeLoose skips REQUIRED_FIELD_MISSING and UNEXPECTED_FIELD.
 	ValidationModeLoose
 )
 
 // =============================================================================
-// VALIDATION CONTEXT  (pooled)
+// VALIDATION CONTEXT  (pooled per graph)
 // =============================================================================
 
 type validationContext struct {
 	doc    *document.Document
 	mode   ValidationMode
 	issues []common.Issue
-	// failed tracks which node ids have failed. Dependents check this to
-	// decide whether to skip. Indexed by node id.
 	failed []bool
 }
 
@@ -66,18 +69,14 @@ func (c *validationContext) reset(doc *document.Document, mode ValidationMode, n
 // NODE INTERFACE
 // =============================================================================
 
-// node is a single compiled validation operation.
-// execute appends any issues it finds to ctx.issues and returns true on
-// success (or clean skip). A false return causes dependent nodes to skip.
 type node interface {
 	execute(ctx *validationContext) bool
 	nodeID() int
 	nodeDeps() []int
 }
 
-// baseNode provides common fields shared by all node types.
 type baseNode struct {
-	nid  int
+	nid   int
 	ndeps []int
 }
 
@@ -90,7 +89,7 @@ func (b *baseNode) nodeDeps() []int { return b.ndeps }
 
 type validationGraph struct {
 	nodes     []node
-	order     []int // topological execution order
+	order     []int
 	deps      [][]int
 	ctxPool   sync.Pool
 	nodeCount int
@@ -110,8 +109,6 @@ func (g *validationGraph) addNode(n node) {
 	g.deps[nid] = n.nodeDeps()
 }
 
-// finalize computes topological execution order via iterative post-order DFS.
-// Must be called once after all nodes are added.
 func (g *validationGraph) finalize() error {
 	const (
 		unvisited = 0
@@ -153,7 +150,6 @@ func (g *validationGraph) finalize() error {
 
 	g.order = order
 	g.nodeCount = len(g.nodes)
-
 	g.ctxPool.New = func() any {
 		return &validationContext{
 			issues: make([]common.Issue, 0, 8),
@@ -163,7 +159,6 @@ func (g *validationGraph) finalize() error {
 	return nil
 }
 
-// traverse executes the compiled graph against doc in the given mode.
 func (g *validationGraph) traverse(doc *document.Document, mode ValidationMode) ([]common.Issue, bool) {
 	ctx := g.ctxPool.Get().(*validationContext)
 	defer g.ctxPool.Put(ctx)
@@ -174,8 +169,6 @@ func (g *validationGraph) traverse(doc *document.Document, mode ValidationMode) 
 		if n == nil {
 			continue
 		}
-
-		// Skip if any dependency failed.
 		skip := false
 		for _, dep := range g.deps[nid] {
 			if ctx.failed[dep] {
@@ -184,10 +177,8 @@ func (g *validationGraph) traverse(doc *document.Document, mode ValidationMode) 
 			}
 		}
 		if skip {
-			// skipped-clean: do not mark failed, dependents are not blocked.
 			continue
 		}
-
 		ok := n.execute(ctx)
 		ctx.failed[nid] = !ok
 	}
@@ -213,13 +204,8 @@ func (g *idGen) alloc() int {
 // NODE IMPLEMENTATIONS
 // =============================================================================
 
-// unexpectedFieldsNode checks that every DocumentKey present in the document
-// belongs to the expected set for this schema level. The expected set is a
-// map[document.DocumentKey]struct{} built once during graph construction by
-// iterating the schema's descriptor slice.
-//
-// At validation time this node walks doc.positions — the only place a document
-// walk is appropriate, since we are asking "what is present that should not be".
+// unexpectedFieldsNode walks the document's positions map and reports any key
+// not in the expected set built during graph construction.
 type unexpectedFieldsNode struct {
 	baseNode
 	expected map[document.DocumentKey]struct{}
@@ -230,13 +216,14 @@ func (n *unexpectedFieldsNode) execute(ctx *validationContext) bool {
 	if ctx.mode == ValidationModeLoose {
 		return true
 	}
-
 	ok := true
 	ctx.doc.Walk(func(positions map[int64]int32, _ func(document.DataType, ...int) unsafe.Pointer) (any, error) {
 		for rawKey := range positions {
 			dk := document.DocumentKey(rawKey)
 			if _, expected := n.expected[dk]; !expected {
-				path := joinPath(n.path, keyName(dk))
+				fd := dk.Descriptor()
+				name := fmt.Sprintf("field[%d]", ir.ExtractFieldIndex(fd))
+				path := joinPath(n.path, name)
 				ctx.issues = append(ctx.issues, common.Issue{
 					Code:    "UNEXPECTED_FIELD",
 					Message: fmt.Sprintf("Unexpected field '%s'", path),
@@ -250,9 +237,7 @@ func (n *unexpectedFieldsNode) execute(ctx *validationContext) bool {
 	return ok
 }
 
-// requiredFieldNode checks that a single required field is present and holds
-// a concrete value. The DocumentKey it closes over was resolved once during
-// graph construction via cs.DocumentKey(path).
+// requiredFieldNode checks that a field is present and holds a concrete value.
 type requiredFieldNode struct {
 	baseNode
 	key  document.DocumentKey
@@ -274,8 +259,8 @@ func (n *requiredFieldNode) execute(ctx *validationContext) bool {
 	return false
 }
 
-// enumValidationNode checks that a field's value is a member of the allowed
-// set. The allowed sets are extracted from cs.Store once at construction time.
+// enumValidationNode checks a field's value against a pre-built allowed set
+// extracted from cs.Store at graph construction time.
 type enumValidationNode struct {
 	baseNode
 	key           document.DocumentKey
@@ -301,7 +286,6 @@ func (n *enumValidationNode) execute(ctx *validationContext) bool {
 			Path:    n.path,
 		})
 		return false
-
 	case document.TypeString:
 		v, _, _ := ctx.doc.GetString(n.key)
 		if _, ok := n.allowedString[v]; ok {
@@ -313,7 +297,6 @@ func (n *enumValidationNode) execute(ctx *validationContext) bool {
 			Path:    n.path,
 		})
 		return false
-
 	case document.TypeFloat:
 		v, _, _ := ctx.doc.GetFloat(n.key)
 		if _, ok := n.allowedFloat[v]; ok {
@@ -329,43 +312,13 @@ func (n *enumValidationNode) execute(ctx *validationContext) bool {
 	return true
 }
 
-// nestedObjectNode delegates to a pre-compiled sub-graph for a single nested
-// *Document stored under a TypeRecord field.
-type nestedObjectNode struct {
-	baseNode
-	key      document.DocumentKey
-	path     string
-	subGraph *validationGraph
-}
-
-func (n *nestedObjectNode) execute(ctx *validationContext) bool {
-	if !ctx.doc.HasValue(n.key) {
-		return true
-	}
-	recordMap, _, _ := ctx.doc.GetRecord(n.key)
-	if recordMap == nil {
-		return true
-	}
-	// A plain object field stores its nested Document under the empty string key.
-	nestedDoc, ok := recordMap[""]
-	if !ok || nestedDoc == nil {
-		return true
-	}
-	issues, ok := n.subGraph.traverse(nestedDoc, ctx.mode)
-	for i := range issues {
-		issues[i].Path = joinPath(n.path, issues[i].Path)
-	}
-	ctx.issues = append(ctx.issues, issues...)
-	return ok
-}
-
-// arrayValidationNode iterates each *Document element of a TypeArrayObject
-// field and validates it against the pre-compiled element sub-graph.
+// arrayValidationNode iterates a TypeArrayObject field and validates each
+// element *Document against a sub-graph built from the promoted element schema.
 type arrayValidationNode struct {
 	baseNode
 	key      document.DocumentKey
 	path     string
-	subGraph *validationGraph // nil = untyped array, no element validation
+	subGraph *validationGraph
 }
 
 func (n *arrayValidationNode) execute(ctx *validationContext) bool {
@@ -391,8 +344,9 @@ func (n *arrayValidationNode) execute(ctx *validationContext) bool {
 	return ok
 }
 
-// recordValidationNode iterates each value *Document in a TypeRecord field
-// (map[string]*Document) and validates each against the element sub-graph.
+// recordValidationNode iterates a TypeRecord field (map[string]*Document) and
+// validates each value *Document against a sub-graph built from the promoted
+// value schema.
 type recordValidationNode struct {
 	baseNode
 	key      document.DocumentKey
@@ -406,8 +360,9 @@ func (n *recordValidationNode) execute(ctx *validationContext) bool {
 	}
 	recordMap, _, _ := ctx.doc.GetRecord(n.key)
 	ok := true
-	for recordKey, item := range recordMap {
-		if item == nil {
+	for recordKey, rawItem := range recordMap {
+		item, isDoc := rawItem.(*document.Document)
+		if !isDoc || item == nil {
 			continue
 		}
 		itemPath := joinPath(n.path, recordKey)
@@ -423,74 +378,65 @@ func (n *recordValidationNode) execute(ctx *validationContext) bool {
 	return ok
 }
 
-// unionValidationNode validates a nested document against multiple variant
-// sub-graphs. Succeeds if the document matches at least one variant.
+// unionVariant pairs a sub-graph (nil for scalar variants) with the document
+// DataType used to store the union value.
+type unionVariant struct {
+	subGraph *validationGraph
+	dataType document.DataType
+}
+
+// unionValidationNode validates a field against one or more variant sub-graphs.
+// The value must match at least one variant.
 type unionValidationNode struct {
 	baseNode
 	key      document.DocumentKey
 	path     string
-	variants []*validationGraph
+	variants []unionVariant
 }
 
 func (n *unionValidationNode) execute(ctx *validationContext) bool {
 	if !ctx.doc.HasValue(n.key) {
 		return true
 	}
-	recordMap, _, _ := ctx.doc.GetRecord(n.key)
-	nestedDoc := recordMap[""]
-	if nestedDoc == nil {
-		return true
-	}
-	for _, g := range n.variants {
-		if _, ok := g.traverse(nestedDoc, ctx.mode); ok {
+	for _, v := range n.variants {
+		if v.subGraph == nil {
+			// Scalar variant: type match is sufficient.
+			if n.key.Type() == v.dataType {
+				return true
+			}
+			continue
+		}
+		// Object variant: stored as *document.Document under TypeRecord.
+		recordMap, ok, _ := ctx.doc.GetRecord(n.key)
+		if !ok || len(recordMap) == 0 {
+			continue
+		}
+		rawItem := recordMap[""]
+		item, isDoc := rawItem.(*document.Document)
+		if !isDoc || item == nil {
+			continue
+		}
+		if _, ok := v.subGraph.traverse(item, ctx.mode); ok {
 			return true
 		}
 	}
 	ctx.issues = append(ctx.issues, common.Issue{
 		Code:    "UNION_MISMATCH",
-		Message: fmt.Sprintf("Value at '%s' does not match any union variant (tried %d variants)", n.path, len(n.variants)),
+		Message: fmt.Sprintf("Value at '%s' does not match any union variant", n.path),
 		Path:    n.path,
 	})
 	return false
 }
 
-// compositeValidationNode validates a nested document against multiple variant
-// sub-graphs. Succeeds only if the document matches ALL variants.
-type compositeValidationNode struct {
-	baseNode
-	key      document.DocumentKey
-	path     string
-	variants []*validationGraph
-}
-
-func (n *compositeValidationNode) execute(ctx *validationContext) bool {
-	if !ctx.doc.HasValue(n.key) {
-		return true
-	}
-	recordMap, _, _ := ctx.doc.GetRecord(n.key)
-	nestedDoc := recordMap[""]
-	if nestedDoc == nil {
-		return true
-	}
-	ok := true
-	for _, g := range n.variants {
-		issues, variantOk := g.traverse(nestedDoc, ctx.mode)
-		ctx.issues = append(ctx.issues, issues...)
-		if !variantOk {
-			ok = false
-		}
-	}
-	return ok
-}
-
-// recursionMarkerNode handles a back-edge in the schema reference graph.
-// It delegates to a cached sub-graph built for the recursive schema, guarded
-// by a depth counter closed over at construction time.
+// recursionMarkerNode handles a recursive TypeObject back-edge.
+// subGraph is an indirect pointer that is filled in after the owning graph is
+// finalized, allowing the marker to reference the graph it lives in without
+// causing infinite recursion during construction.
 type recursionMarkerNode struct {
 	baseNode
 	key        document.DocumentKey
 	path       string
-	subGraph   *validationGraph
+	subGraph   **validationGraph // filled after finalize
 	schemaName string
 	maxDepth   int
 	depth      int
@@ -508,12 +454,20 @@ func (n *recursionMarkerNode) execute(ctx *validationContext) bool {
 		})
 		return false
 	}
-	recordMap, _, _ := ctx.doc.GetRecord(n.key)
-	nestedDoc := recordMap[""]
-	if nestedDoc == nil {
+	recordMap, ok, _ := ctx.doc.GetRecord(n.key)
+	if !ok || len(recordMap) == 0 {
 		return true
 	}
-	issues, ok := n.subGraph.traverse(nestedDoc, ctx.mode)
+	rawItem := recordMap[""]
+	item, isDoc := rawItem.(*document.Document)
+	if !isDoc || item == nil {
+		return true
+	}
+	g := *n.subGraph
+	if g == nil {
+		return true
+	}
+	issues, ok := g.traverse(item, ctx.mode)
 	for i := range issues {
 		issues[i].Path = joinPath(n.path, issues[i].Path)
 	}
@@ -521,9 +475,7 @@ func (n *recursionMarkerNode) execute(ctx *validationContext) bool {
 	return ok
 }
 
-// constraintNode evaluates a single resolved constraint predicate.
-// All DocumentKeys in constraint.Fields were resolved at compile time.
-// At validation time only doc.HasValue calls are made — no schema reads.
+// constraintNode evaluates a single resolved predicate.
 type constraintNode struct {
 	baseNode
 	constraint ir.ResolvedConstraint
@@ -540,7 +492,6 @@ func (n *constraintNode) execute(ctx *validationContext) bool {
 		}
 	}
 
-	// All fields present — run the predicate.
 	if missingCount == 0 {
 		if n.constraint.Predicate(ctx.doc, n.constraint.Fields, n.constraint.Parameters) {
 			return true
@@ -553,7 +504,6 @@ func (n *constraintNode) execute(ctx *validationContext) bool {
 		return false
 	}
 
-	// No fields present at all.
 	if presentCount == 0 {
 		switch ctx.mode {
 		case ValidationModeStrict:
@@ -564,11 +514,10 @@ func (n *constraintNode) execute(ctx *validationContext) bool {
 			})
 			return false
 		default:
-			return true // skip cleanly
+			return true
 		}
 	}
 
-	// Some present, some missing — partial update.
 	switch ctx.mode {
 	case ValidationModeStrict:
 		ctx.issues = append(ctx.issues, common.Issue{
@@ -585,12 +534,11 @@ func (n *constraintNode) execute(ctx *validationContext) bool {
 		})
 		return false
 	default:
-		return true // ValidationModeLoose: skip cleanly
+		return true
 	}
 }
 
-// constraintGroupNode evaluates a logical group of constraint nodes.
-// Member results are collected first, then folded through the LogicalOperator.
+// constraintGroupNode folds member results through a LogicalOperator.
 type constraintGroupNode struct {
 	baseNode
 	group ir.ResolvedConstraintGroup
@@ -602,9 +550,7 @@ func (n *constraintGroupNode) execute(ctx *validationContext) bool {
 	issuesBefore := len(ctx.issues)
 
 	for _, member := range n.group.Constraints {
-		memberBefore := len(ctx.issues)
 		var ok bool
-
 		switch m := member.(type) {
 		case ir.ResolvedConstraint:
 			cn := &constraintNode{constraint: m, path: n.path}
@@ -614,16 +560,13 @@ func (n *constraintGroupNode) execute(ctx *validationContext) bool {
 			ok = sub.execute(ctx)
 		}
 		results = append(results, ok)
-		_ = memberBefore // member issues accumulated into ctx.issues directly
 	}
 
 	if evaluateLogicalOperator(n.group.Operator, results) {
-		// Group passed — discard any member issues accumulated speculatively.
 		ctx.issues = ctx.issues[:issuesBefore]
 		return true
 	}
 
-	// Group failed — prepend a group-level issue before the member issues.
 	memberIssues := make([]common.Issue, len(ctx.issues)-issuesBefore)
 	copy(memberIssues, ctx.issues[issuesBefore:])
 	ctx.issues = ctx.issues[:issuesBefore]
@@ -635,10 +578,6 @@ func (n *constraintGroupNode) execute(ctx *validationContext) bool {
 	ctx.issues = append(ctx.issues, memberIssues...)
 	return false
 }
-
-// =============================================================================
-// LOGICAL OPERATOR EVALUATION
-// =============================================================================
 
 func evaluateLogicalOperator(op ir.LogicalOperator, results []bool) bool {
 	if len(results) == 0 {
@@ -699,22 +638,27 @@ func evaluateLogicalOperator(op ir.LogicalOperator, results []bool) bool {
 // GRAPH BUILDER
 // =============================================================================
 
-// buildContext tracks which schema indices are currently being built so that
-// back-edges (recursive references) can be detected and handled.
+// buildContext tracks which original schema indices are currently being built
+// to detect recursive back-edges. Keyed by original (pre-promotion) index.
+//
+// graphPtrs holds **validationGraph slots for recursive schemas. When a
+// recursive back-edge is encountered, a marker node is given a pointer to the
+// slot. After the enclosing buildGraph call completes, the caller writes the
+// finished graph into the slot so all markers resolve correctly.
 type buildContext struct {
-	building map[uint8]int
-	cache    map[uint8]*validationGraph
+	building  map[uint8]int
+	graphPtrs map[uint8]**validationGraph
 }
 
 func newBuildContext() *buildContext {
 	return &buildContext{
-		building: make(map[uint8]int),
-		cache:    make(map[uint8]*validationGraph),
+		building:  make(map[uint8]int),
+		graphPtrs: make(map[uint8]**validationGraph),
 	}
 }
 
 func (bc *buildContext) isRecursive(idx uint8) bool { return bc.building[idx] > 0 }
-func (bc *buildContext) push(idx uint8)             { bc.building[idx]++ }
+func (bc *buildContext) push(idx uint8)              { bc.building[idx]++ }
 func (bc *buildContext) pop(idx uint8) {
 	bc.building[idx]--
 	if bc.building[idx] <= 0 {
@@ -722,9 +666,10 @@ func (bc *buildContext) pop(idx uint8) {
 	}
 }
 
-// buildGraph walks cs.Descriptors once for schemaIdx, constructs all nodes,
-// and finalizes the execution order. After this returns the schema is not
-// read again.
+// buildGraph walks cs.Descriptors once for schemaIdx and constructs the graph.
+// cs is always the root schema. basePath accumulates the dot-path prefix for
+// flattened object/composite fields. For array, record, and union fields,
+// sub-schemas are promoted and their graphs are built independently.
 func buildGraph(
 	cs *ir.Schema,
 	schemaIdx uint8,
@@ -736,20 +681,10 @@ func buildGraph(
 ) (*validationGraph, error) {
 	g := newValidationGraph()
 
-	start, end := schemaOffsetRange(cs, schemaIdx)
-
-	// ── Build the expected-key set for unexpected-field detection ─────────────
-	// Walk the descriptor slice once to collect every DocumentKey that is valid
-	// at this schema level. This set is closed over by unexpectedFieldsNode and
-	// never consulted again after graph construction.
-	expectedKeys := make(map[document.DocumentKey]struct{}, end-start)
-	for _, fd := range cs.Descriptors[start:end] {
-		path := fieldPath(cs, fd, basePath)
-		key, err := cs.DocumentKey(path)
-		if err != nil {
-			return nil, fmt.Errorf("validator: cannot resolve key for path %q: %w", path, err)
-		}
-		expectedKeys[key] = struct{}{}
+	// Build expected-key set and populate PathCache in one pass.
+	expectedKeys := make(map[document.DocumentKey]struct{})
+	if err := collectExpectedKeys(cs, schemaIdx, basePath, expectedKeys); err != nil {
+		return nil, err
 	}
 
 	unexpID := gen.alloc()
@@ -759,21 +694,91 @@ func buildGraph(
 		path:     basePath,
 	})
 
-	// ── Per-field nodes ───────────────────────────────────────────────────────
-	// Single pass over cs.Descriptors[start:end]. After this loop the schema
-	// descriptor slice is not read again.
-	var fieldNodeIDs []int
+	fieldNodeIDs, err := buildFieldNodes(cs, schemaIdx, basePath, []int{unexpID}, gen, bc, maxDepth, depth, g)
+	if err != nil {
+		return nil, err
+	}
+
+	if cs.ResolvedConstraints != nil {
+		constraintDeps := make([]int, 0, 1+len(fieldNodeIDs))
+		constraintDeps = append(constraintDeps, unexpID)
+		constraintDeps = append(constraintDeps, fieldNodeIDs...)
+		for _, root := range cs.ResolvedConstraints.Roots {
+			if _, err := buildConstraintNode(root, basePath, constraintDeps, gen, g); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	if err := g.finalize(); err != nil {
+		return nil, err
+	}
+
+	return g, nil
+}
+
+// collectExpectedKeys populates expected with every DocumentKey valid at
+// schemaIdx and all its flattened (object/composite) sub-schemas.
+// Calling cs.DocumentKey populates PathCache as a side effect.
+func collectExpectedKeys(
+	cs *ir.Schema,
+	schemaIdx uint8,
+	basePath string,
+	expected map[document.DocumentKey]struct{},
+) error {
+	start, end := schemaOffsetRange(cs, schemaIdx)
+	for _, fd := range cs.Descriptors[start:end] {
+		path := resolveFieldPath(cs, fd, basePath)
+		key, err := cs.DocumentKey(path)
+		if err != nil {
+			return fmt.Errorf("validator: cannot resolve key for path %q: %w", path, err)
+		}
+		expected[key] = struct{}{}
+
+		if !ir.IsTerminal(fd) {
+			continue
+		}
+		typ := ir.ExtractType(fd)
+		switch typ {
+		case ir.TypeObject:
+			if err := collectExpectedKeys(cs, ir.ExtractTargetSchema(fd), path, expected); err != nil {
+				return err
+			}
+		case ir.TypeComposite:
+			for _, variantIdx := range cs.Variants[fd] {
+				if err := collectExpectedKeys(cs, variantIdx, path, expected); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// buildFieldNodes emits nodes for all fields of schemaIdx into g, flattening
+// object and composite sub-schemas recursively. Returns all emitted node IDs.
+func buildFieldNodes(
+	cs *ir.Schema,
+	schemaIdx uint8,
+	basePath string,
+	parentDeps []int,
+	gen *idGen,
+	bc *buildContext,
+	maxDepth, depth int,
+	g *validationGraph,
+) ([]int, error) {
+	start, end := schemaOffsetRange(cs, schemaIdx)
+	var nodeIDs []int
 
 	for _, fd := range cs.Descriptors[start:end] {
-		path := fieldPath(cs, fd, basePath)
+		path := resolveFieldPath(cs, fd, basePath)
 		key, err := cs.DocumentKey(path)
 		if err != nil {
 			return nil, fmt.Errorf("validator: cannot resolve key for path %q: %w", path, err)
 		}
 
-		fieldDeps := []int{unexpID}
+		fieldDeps := parentDeps
 
-		// Required check node.
 		if ir.IsRequired(fd) {
 			reqID := gen.alloc()
 			g.addNode(&requiredFieldNode{
@@ -782,7 +787,7 @@ func buildGraph(
 				path:     path,
 			})
 			fieldDeps = []int{reqID}
-			fieldNodeIDs = append(fieldNodeIDs, reqID)
+			nodeIDs = append(nodeIDs, reqID)
 		}
 
 		typ := ir.ExtractType(fd)
@@ -795,69 +800,129 @@ func buildGraph(
 				return nil, err
 			}
 			g.addNode(enumNode)
-			fieldNodeIDs = append(fieldNodeIDs, enumID)
+			nodeIDs = append(nodeIDs, enumID)
 
 		case ir.TypeObject:
-			nid, err := buildObjectNode(cs, fd, key, path, fieldDeps, gen, bc, maxDepth, depth, g)
-			if err != nil {
-				return nil, err
+			targetIdx := ir.ExtractTargetSchema(fd)
+			if bc.isRecursive(targetIdx) {
+				nid, err := buildRecursiveObjectNode(cs, fd, key, path, fieldDeps, gen, bc, maxDepth, depth, g)
+				if err != nil {
+					return nil, err
+				}
+				nodeIDs = append(nodeIDs, nid)
+			} else {
+				bc.push(targetIdx)
+				subIDs, err := buildFieldNodes(cs, targetIdx, path, fieldDeps, gen, bc, maxDepth, depth, g)
+				bc.pop(targetIdx)
+				if err != nil {
+					return nil, err
+				}
+				nodeIDs = append(nodeIDs, subIDs...)
 			}
-			fieldNodeIDs = append(fieldNodeIDs, nid)
+
+		case ir.TypeComposite:
+			for _, variantIdx := range cs.Variants[fd] {
+				if bc.isRecursive(variantIdx) {
+					nid, err := buildRecursiveObjectNode(cs, fd, key, path, fieldDeps, gen, bc, maxDepth, depth, g)
+					if err != nil {
+						return nil, err
+					}
+					nodeIDs = append(nodeIDs, nid)
+					break
+				}
+				bc.push(variantIdx)
+				subIDs, err := buildFieldNodes(cs, variantIdx, path, fieldDeps, gen, bc, maxDepth, depth, g)
+				bc.pop(variantIdx)
+				if err != nil {
+					return nil, err
+				}
+				nodeIDs = append(nodeIDs, subIDs...)
+			}
 
 		case ir.TypeArray, ir.TypeSet:
 			nid, err := buildArrayNode(cs, fd, key, path, fieldDeps, gen, bc, maxDepth, depth, g)
 			if err != nil {
 				return nil, err
 			}
-			fieldNodeIDs = append(fieldNodeIDs, nid)
+			nodeIDs = append(nodeIDs, nid)
 
 		case ir.TypeRecord:
 			nid, err := buildRecordNode(cs, fd, key, path, fieldDeps, gen, bc, maxDepth, depth, g)
 			if err != nil {
 				return nil, err
 			}
-			fieldNodeIDs = append(fieldNodeIDs, nid)
+			nodeIDs = append(nodeIDs, nid)
 
 		case ir.TypeUnion:
 			nid, err := buildUnionNode(cs, fd, key, path, fieldDeps, gen, bc, maxDepth, depth, g)
 			if err != nil {
 				return nil, err
 			}
-			fieldNodeIDs = append(fieldNodeIDs, nid)
-
-		case ir.TypeComposite:
-			nid, err := buildCompositeNode(cs, fd, key, path, fieldDeps, gen, bc, maxDepth, depth, g)
-			if err != nil {
-				return nil, err
-			}
-			fieldNodeIDs = append(fieldNodeIDs, nid)
-
-		// Scalar fields: required node (if any) is sufficient.
-		// No TypeCheckNode — Document's typed storage enforces correctness.
+			nodeIDs = append(nodeIDs, nid)
 		}
 	}
 
-	// ── Constraint nodes ──────────────────────────────────────────────────────
-	// ResolvedConstraints already holds []document.DocumentKey — no schema read.
-	if cs.ResolvedConstraints != nil {
-		constraintDeps := make([]int, 0, 1+len(fieldNodeIDs))
-		constraintDeps = append(constraintDeps, unexpID)
-		constraintDeps = append(constraintDeps, fieldNodeIDs...)
-
-		for _, root := range cs.ResolvedConstraints.Roots {
-			if _, err := buildConstraintNode(root, basePath, constraintDeps, gen, g); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	if err := g.finalize(); err != nil {
-		return nil, err
-	}
-	return g, nil
+	return nodeIDs, nil
 }
 
-// ── Per-type node builders ────────────────────────────────────────────────────
+func buildRecursiveObjectNode(
+	cs *ir.Schema,
+	fd uint32,
+	key document.DocumentKey,
+	path string,
+	deps []int,
+	gen *idGen,
+	bc *buildContext,
+	maxDepth, depth int,
+	g *validationGraph,
+) (int, error) {
+	targetIdx := ir.ExtractTargetSchema(fd)
+
+	// Every recursive back-edge for the same targetIdx shares one **validationGraph
+	// slot. All recursionMarkerNodes for the same targetIdx share the same slot.
+	// The slot is filled once the promoted graph is built.
+	ptr, alreadyBuilding := bc.graphPtrs[targetIdx]
+	if !alreadyBuilding {
+		ptr = new(*validationGraph)
+		bc.graphPtrs[targetIdx] = ptr
+
+		// Build the promoted graph now. We use a fresh buildContext so that
+		// recursive fields within the promoted schema (which reference back to
+		// promoted index 0) reuse the same ptr slot via the promoted bc,
+		// not the parent bc.
+		promoted, err := cs.Promote(targetIdx)
+		if err != nil {
+			return 0, fmt.Errorf("validator: cannot promote recursive schema %d: %w", targetIdx, err)
+		}
+		subGen := &idGen{}
+		subBc := newBuildContext()
+		// Register the slot in subBc under index 0 (the promoted root index),
+		// so that when the promoted graph encounters its own recursive field
+		// it finds the slot and doesn't recurse again.
+		subBc.graphPtrs[0] = ptr
+		subBc.push(0)
+
+		promoted_g, err := buildGraph(promoted, 0, "", subGen, subBc, maxDepth, depth+1)
+		subBc.pop(0)
+		if err != nil {
+			return 0, err
+		}
+		// Fill the slot — all marker nodes now resolve.
+		*ptr = promoted_g
+	}
+
+	nid := gen.alloc()
+	g.addNode(&recursionMarkerNode{
+		baseNode:   baseNode{nid: nid, ndeps: deps},
+		key:        key,
+		path:       path,
+		subGraph:   ptr,
+		schemaName: schemaNameFromMeta(cs, targetIdx),
+		maxDepth:   maxDepth,
+		depth:      depth,
+	})
+	return nid, nil
+}
 
 func buildEnumNode(
 	cs *ir.Schema,
@@ -878,9 +943,6 @@ func buildEnumNode(
 	if cs.Store == nil {
 		return node, nil
 	}
-	// Enum value sets are stored in cs.Store under keys built by
-	// ir.DescriptorToEnumDocumentKey(fd, arrayType) — NOT under the field's
-	// path-derived DocumentKey. Try each scalar array type; at most one will hit.
 	if strKey := ir.DescriptorToEnumDocumentKey(fd, document.TypeArrayString); strKey != 0 {
 		if vals, ok, _ := cs.Store.GetArrayString(strKey); ok {
 			for _, v := range vals {
@@ -905,60 +967,6 @@ func buildEnumNode(
 	return node, nil
 }
 
-func buildObjectNode(
-	cs *ir.Schema,
-	fd uint32,
-	key document.DocumentKey,
-	path string,
-	deps []int,
-	gen *idGen,
-	bc *buildContext,
-	maxDepth, depth int,
-	g *validationGraph,
-) (int, error) {
-	targetIdx := ir.ExtractTargetSchema(fd)
-
-	if bc.isRecursive(targetIdx) {
-		cached, ok := bc.cache[targetIdx]
-		if !ok {
-			var err error
-			bc.push(targetIdx)
-			cached, err = buildGraph(cs, targetIdx, path, gen, bc, maxDepth, depth+1)
-			bc.pop(targetIdx)
-			if err != nil {
-				return 0, err
-			}
-			bc.cache[targetIdx] = cached
-		}
-		nid := gen.alloc()
-		g.addNode(&recursionMarkerNode{
-			baseNode:   baseNode{nid: nid, ndeps: deps},
-			key:        key,
-			path:       path,
-			subGraph:   cached,
-			schemaName: schemaName(cs, targetIdx),
-			maxDepth:   maxDepth,
-			depth:      depth,
-		})
-		return nid, nil
-	}
-
-	bc.push(targetIdx)
-	subGraph, err := buildGraph(cs, targetIdx, path, gen, bc, maxDepth, depth+1)
-	bc.pop(targetIdx)
-	if err != nil {
-		return 0, err
-	}
-	nid := gen.alloc()
-	g.addNode(&nestedObjectNode{
-		baseNode: baseNode{nid: nid, ndeps: deps},
-		key:      key,
-		path:     path,
-		subGraph: subGraph,
-	})
-	return nid, nil
-}
-
 func buildArrayNode(
 	cs *ir.Schema,
 	fd uint32,
@@ -973,10 +981,13 @@ func buildArrayNode(
 	targetIdx := ir.ExtractTargetSchema(fd)
 	var subGraph *validationGraph
 	if targetIdx != 0 {
-		bc.push(targetIdx)
-		var err error
-		subGraph, err = buildGraph(cs, targetIdx, path+"[*]", gen, bc, maxDepth, depth+1)
-		bc.pop(targetIdx)
+		promoted, err := cs.Promote(targetIdx)
+		if err != nil {
+			return 0, fmt.Errorf("validator: cannot promote array element schema %d: %w", targetIdx, err)
+		}
+		subGen := &idGen{}
+		subBc := newBuildContext()
+		subGraph, err = buildGraph(promoted, 0, "", subGen, subBc, maxDepth, depth+1)
 		if err != nil {
 			return 0, err
 		}
@@ -1005,10 +1016,13 @@ func buildRecordNode(
 	targetIdx := ir.ExtractTargetSchema(fd)
 	var subGraph *validationGraph
 	if targetIdx != 0 {
-		bc.push(targetIdx)
-		var err error
-		subGraph, err = buildGraph(cs, targetIdx, path+"[*]", gen, bc, maxDepth, depth+1)
-		bc.pop(targetIdx)
+		promoted, err := cs.Promote(targetIdx)
+		if err != nil {
+			return 0, fmt.Errorf("validator: cannot promote record value schema %d: %w", targetIdx, err)
+		}
+		subGen := &idGen{}
+		subBc := newBuildContext()
+		subGraph, err = buildGraph(promoted, 0, "", subGen, subBc, maxDepth, depth+1)
 		if err != nil {
 			return 0, err
 		}
@@ -1034,10 +1048,34 @@ func buildUnionNode(
 	maxDepth, depth int,
 	g *validationGraph,
 ) (int, error) {
-	variants, err := buildVariantGraphs(cs, fd, path, gen, bc, maxDepth, depth)
-	if err != nil {
-		return 0, err
+	variantIdxs := cs.Variants[fd]
+	variants := make([]unionVariant, 0, len(variantIdxs))
+
+	for _, variantIdx := range variantIdxs {
+		m := cs.Meta[variantIdx]
+		if m == nil {
+			continue
+		}
+		if m.Type.IsSchemaBearing() && m.Type != ir.TypeEnum {
+			// Object variant: promote and build a sub-graph.
+			promoted, err := cs.Promote(variantIdx)
+			if err != nil {
+				return 0, fmt.Errorf("validator: cannot promote union variant schema %d: %w", variantIdx, err)
+			}
+			subGen := &idGen{}
+			subBc := newBuildContext()
+			subGraph, err := buildGraph(promoted, 0, "", subGen, subBc, maxDepth, depth+1)
+			if err != nil {
+				return 0, err
+			}
+			variants = append(variants, unionVariant{subGraph: subGraph, dataType: document.TypeRecord})
+		} else {
+			// Scalar variant.
+			dt := ir.FieldTypeToDataType(m.Type)
+			variants = append(variants, unionVariant{subGraph: nil, dataType: dt})
+		}
 	}
+
 	nid := gen.alloc()
 	g.addNode(&unionValidationNode{
 		baseNode: baseNode{nid: nid, ndeps: deps},
@@ -1046,53 +1084,6 @@ func buildUnionNode(
 		variants: variants,
 	})
 	return nid, nil
-}
-
-func buildCompositeNode(
-	cs *ir.Schema,
-	fd uint32,
-	key document.DocumentKey,
-	path string,
-	deps []int,
-	gen *idGen,
-	bc *buildContext,
-	maxDepth, depth int,
-	g *validationGraph,
-) (int, error) {
-	variants, err := buildVariantGraphs(cs, fd, path, gen, bc, maxDepth, depth)
-	if err != nil {
-		return 0, err
-	}
-	nid := gen.alloc()
-	g.addNode(&compositeValidationNode{
-		baseNode: baseNode{nid: nid, ndeps: deps},
-		key:      key,
-		path:     path,
-		variants: variants,
-	})
-	return nid, nil
-}
-
-func buildVariantGraphs(
-	cs *ir.Schema,
-	fd uint32,
-	basePath string,
-	gen *idGen,
-	bc *buildContext,
-	maxDepth, depth int,
-) ([]*validationGraph, error) {
-	variantIdxs := cs.Variants[fd]
-	graphs := make([]*validationGraph, 0, len(variantIdxs))
-	for _, variantIdx := range variantIdxs {
-		bc.push(variantIdx)
-		vg, err := buildGraph(cs, variantIdx, basePath, gen, bc, maxDepth, depth+1)
-		bc.pop(variantIdx)
-		if err != nil {
-			return nil, err
-		}
-		graphs = append(graphs, vg)
-	}
-	return graphs, nil
 }
 
 func buildConstraintNode(
@@ -1111,7 +1102,6 @@ func buildConstraintNode(
 			path:       path,
 		})
 		return nid, nil
-
 	case ir.ResolvedConstraintGroup:
 		nid := gen.alloc()
 		g.addNode(&constraintGroupNode{
@@ -1128,57 +1118,42 @@ func buildConstraintNode(
 // PUBLIC API
 // =============================================================================
 
-// ValidationConfig holds configuration for validation behaviour.
 type ValidationConfig struct {
 	MaxDepth int
 	Mode     ValidationMode
 }
 
-// DefaultValidationConfig returns sensible defaults.
 func DefaultValidationConfig() ValidationConfig {
-	return ValidationConfig{
-		MaxDepth: 20,
-		Mode:     ValidationModeStrict,
-	}
+	return ValidationConfig{MaxDepth: 20, Mode: ValidationModeStrict}
 }
 
-// DocumentValidator is the compiled, reusable validator.
-// Build once with New; call Validate/ValidatePartial/ValidateLoose many times.
-// The schema is not read after construction.
 type DocumentValidator struct {
 	graph  *validationGraph
 	config ValidationConfig
 }
 
-// New builds a DocumentValidator from a compiled ir.Schema using default config.
 func New(cs *ir.Schema) (*DocumentValidator, error) {
 	return NewWithConfig(cs, DefaultValidationConfig())
 }
 
-// NewWithConfig builds a DocumentValidator with explicit configuration.
 func NewWithConfig(cs *ir.Schema, config ValidationConfig) (*DocumentValidator, error) {
 	gen := &idGen{}
 	bc := newBuildContext()
-
 	g, err := buildGraph(cs, 0, "", gen, bc, config.MaxDepth, 0)
 	if err != nil {
 		return nil, fmt.Errorf("validator: failed to build graph: %w", err)
 	}
-
 	return &DocumentValidator{graph: g, config: config}, nil
 }
 
-// Validate runs strict validation.
 func (v *DocumentValidator) Validate(doc *document.Document) ([]common.Issue, bool) {
 	return v.graph.traverse(doc, ValidationModeStrict)
 }
 
-// ValidatePartial runs partial-strict validation (skips missing required fields).
 func (v *DocumentValidator) ValidatePartial(doc *document.Document) ([]common.Issue, bool) {
 	return v.graph.traverse(doc, ValidationModePartialStrict)
 }
 
-// ValidateLoose runs loose validation (skips missing required and unexpected fields).
 func (v *DocumentValidator) ValidateLoose(doc *document.Document) ([]common.Issue, bool) {
 	return v.graph.traverse(doc, ValidationModeLoose)
 }
@@ -1187,7 +1162,6 @@ func (v *DocumentValidator) ValidateLoose(doc *document.Document) ([]common.Issu
 // HELPERS
 // =============================================================================
 
-// schemaOffsetRange unpacks the start and end descriptor positions for a schema.
 func schemaOffsetRange(cs *ir.Schema, schemaIdx uint8) (int, int) {
 	if int(schemaIdx) >= len(cs.SchemaOffsets) {
 		return 0, 0
@@ -1196,20 +1170,16 @@ func schemaOffsetRange(cs *ir.Schema, schemaIdx uint8) (int, int) {
 	return int(uint16(packed)), int(uint16(packed >> 16))
 }
 
-// fieldPath reconstructs the dot-separated path for a field descriptor.
-// Uses PathCache when available; falls back to field index notation.
-func fieldPath(cs *ir.Schema, fd uint32, basePath string) string {
-	if cs.PathCache != nil {
-		// PathCache is keyed by DocumentKey — but we only have a descriptor here.
-		// We ask the Meta for the field name via FieldMeta stored in the schema.
-		ownerIdx := ir.ExtractOwnerSchema(fd)
-		if m := cs.Meta[ownerIdx]; m != nil {
-			if fm, ok := m.Fields[fd]; ok {
-				if basePath == "" {
-					return fm.Name
-				}
-				return basePath + "." + fm.Name
+// resolveFieldPath returns the dot-separated path for a field descriptor,
+// reading the field name from Meta.Fields[fd]. Falls back to index notation.
+func resolveFieldPath(cs *ir.Schema, fd uint32, basePath string) string {
+	ownerIdx := ir.ExtractOwnerSchema(fd)
+	if m := cs.Meta[ownerIdx]; m != nil {
+		if fm, ok := m.Fields[fd]; ok {
+			if basePath == "" {
+				return fm.Name
 			}
+			return basePath + "." + fm.Name
 		}
 	}
 	fieldIdx := ir.ExtractFieldIndex(fd)
@@ -1219,14 +1189,6 @@ func fieldPath(cs *ir.Schema, fd uint32, basePath string) string {
 	return fmt.Sprintf("%s.field[%d]", basePath, fieldIdx)
 }
 
-// keyName returns a short human-readable label for a DocumentKey, used in
-// unexpected-field issue messages.
-func keyName(dk document.DocumentKey) string {
-	fd := dk.Descriptor()
-	return fmt.Sprintf("field[%d]", ir.ExtractFieldIndex(fd))
-}
-
-// joinPath concatenates two path segments.
 func joinPath(base, suffix string) string {
 	if base == "" {
 		return suffix
@@ -1240,8 +1202,7 @@ func joinPath(base, suffix string) string {
 	return base + "." + suffix
 }
 
-// schemaName returns the schema's human-readable name from Meta.
-func schemaName(cs *ir.Schema, schemaIdx uint8) string {
+func schemaNameFromMeta(cs *ir.Schema, schemaIdx uint8) string {
 	if m := cs.Meta[schemaIdx]; m != nil && m.Name != "" {
 		return m.Name
 	}

@@ -306,7 +306,7 @@ func set(t *testing.T, doc *document.Document, dk document.DocumentKey, val any)
 		if !ok {
 			t.Fatalf("set: TypeRecord key requires *document.Document, got %T", val)
 		}
-		if err := doc.SetRecord(dk, map[string]*document.Document{"": nested}); err != nil {
+		if err := doc.SetRecord(dk, map[string]any{"": nested}); err != nil {
 			t.Fatalf("SetRecord: %v", err)
 		}
 	case document.TypeArrayObject:
