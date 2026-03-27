@@ -9,6 +9,7 @@ import (
 type ConstraintId string
 
 // SchemaId represents the id of a nested schema in a schema.
+// IT IS A UUID v7 AND IS DISTINCT FROM NAME
 type SchemaId string
 
 // ResourceReference defines a reference to a component in the registry.

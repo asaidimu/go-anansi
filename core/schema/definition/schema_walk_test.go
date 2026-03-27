@@ -12,7 +12,7 @@ import (
 
 func TestSchema_Walk(t *testing.T) {
 	s := &definition.Schema{
-		Version: common.Version{Major: 1},
+		Version: common.MustNewVersion("1.0.0"),
 		BaseSchema: definition.BaseSchema{
 			Name: "test_schema",
 			Fields: map[definition.FieldId]definition.Field{

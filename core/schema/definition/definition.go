@@ -56,7 +56,7 @@ func (ns NestedSchema) MarshalJSON() ([]byte, error) {
 }
 
 type Schema struct {
-	Version common.Version `json:"version"`
+	Version *common.Version `json:"version"`
 	BaseSchema
 	Schemas map[SchemaId]NestedSchema `json:"schemas,omitempty"`
 }

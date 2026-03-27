@@ -17,7 +17,7 @@ func generateComplexSchema(depth, fieldsPerLevel, arrayLength int) *definition.S
 			Indexes: make(map[definition.IndexId]definition.Index),
 		},
 		Schemas: make(map[definition.SchemaId]definition.NestedSchema),
-		Version: *common.MustNewVersion("1.0.0"),
+		Version: common.MustNewVersion("1.0.0"),
 	}
 
 	// Create a nested schema for recursion or object fields
