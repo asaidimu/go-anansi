@@ -13,7 +13,7 @@ import (
 func TestRecursiveSchema(t *testing.T) {
 	// Define a simple recursive schema: Node has a name and an array of children Nodes
 	recursiveSchema := definition.Schema{
-		Version: *common.MustNewVersion("1.0.0"),
+		Version: common.MustNewVersion("1.0.0"),
 		BaseSchema: definition.BaseSchema{
 			Name: "RecursiveNodeSchema",
 			Fields: map[definition.FieldId]definition.Field{

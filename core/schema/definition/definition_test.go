@@ -64,7 +64,7 @@ func TestSchema_MarshalUnmarshalJSON(t *testing.T) {
 				"author": "Test Author",
 			},
 		},
-		Version: *common.MustNewVersion("1.0.0"), // Version is a field of Schema, not BaseSchema
+		Version: common.MustNewVersion("1.0.0"), // Version is a field of Schema, not BaseSchema
 		Schemas: map[definition.SchemaId]definition.NestedSchema{
 			"3cc51bb6-92d1-4dad-bb2f-d7c21db1a0a5": { // UUID for AddressSchema
 				BaseSchema: definition.BaseSchema{
@@ -185,7 +185,7 @@ func TestSchema_EmptyFieldsOmitted(t *testing.T) {
 		BaseSchema: definition.BaseSchema{
 			Name: "EmptyTest",
 		},
-		Version: *common.MustNewVersion("1.0.0"), // Version is directly on Schema
+		Version: common.MustNewVersion("1.0.0"), // Version is directly on Schema
 		Schemas: make(map[definition.SchemaId]definition.NestedSchema), // Explicitly initialize empty map
 	}
 
@@ -207,7 +207,7 @@ func TestSchema_MarshalJSON_NullAndEmptyOmission(t *testing.T) {
 				Constraints: nil,    // Should be omitted
 				Metadata:    nil,    // Should be omitted
 			},
-			Version: *common.MustNewVersion("1.0.0"),
+			Version: common.MustNewVersion("1.0.0"),
 			Schemas: nil, // Should be omitted
 		}
 
@@ -229,7 +229,7 @@ func TestSchema_MarshalJSON_NullAndEmptyOmission(t *testing.T) {
 				Constraints: make(map[definition.ConstraintId]definition.Constraint),
 				Metadata:    make(map[string]any),
 			},
-			Version: *common.MustNewVersion("1.0.0"),
+			Version: common.MustNewVersion("1.0.0"),
 			Schemas: make(map[definition.SchemaId]definition.NestedSchema),
 		}
 
@@ -308,7 +308,7 @@ func TestSchema_MarshalJSON_NullAndEmptyOmission(t *testing.T) {
 				Name:        "", // Empty name
 				Description: "Schema with empty name",
 			},
-			Version: *common.MustNewVersion("1.0.0"),
+			Version: common.MustNewVersion("1.0.0"),
 		}
 
 		marshaled, err := json.Marshal(schema)
@@ -383,7 +383,7 @@ func TestSchema_AsMap(t *testing.T) {
 				"author": "Test Author",
 			},
 		},
-		Version: *common.MustNewVersion("1.0.0"),
+		Version: common.MustNewVersion("1.0.0"),
 		Schemas: map[definition.SchemaId]definition.NestedSchema{
 			"3cc51bb6-92d1-4dad-bb2f-d7c21db1a0a5": { // UUID for AddressSchema
 				BaseSchema: definition.BaseSchema{

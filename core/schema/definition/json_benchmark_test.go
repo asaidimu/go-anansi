@@ -60,7 +60,7 @@ var testSchemaForBenchmark = definition.Schema{
 			"author": "Test Author",
 		},
 	},
-	Version: *common.MustNewVersion("1.0.0"), // Version is a field of Schema, not BaseSchema
+	Version: common.MustNewVersion("1.0.0"), // Version is a field of Schema, not BaseSchema
 	Schemas: map[definition.SchemaId]definition.NestedSchema{
 		"3cc51bb6-92d1-4dad-bb2f-d7c21db1a0a5": { // UUID for AddressSchema
 			BaseSchema: definition.BaseSchema{

@@ -74,7 +74,7 @@ func TestSchema_ToJSONVsEncodingJSON(t *testing.T) {
 				"author": "Test Author",
 			},
 		},
-		Version: *common.MustNewVersion("1.0.0"), // Version is a field of Schema, not BaseSchema
+		Version: common.MustNewVersion("1.0.0"), // Version is a field of Schema, not BaseSchema
 		Schemas: map[definition.SchemaId]definition.NestedSchema{
 			"695fc841-1e4f-4835-843c-8be0c5a8bb08": {
 				BaseSchema: definition.BaseSchema{

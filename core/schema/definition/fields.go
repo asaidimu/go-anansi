@@ -8,6 +8,7 @@ import (
 type FieldName string
 
 // FieldId represents the id of a field in a schema.
+// IT IS A UUID v7 AND IS DISTINCT FROM NAME
 type FieldId string
 
 type FieldProperties struct {

@@ -11,7 +11,7 @@ import (
 func TestSchema_DeepCopy(t *testing.T) {
 	// Create a sample schema
 	original := &Schema{
-		Version: *common.MustNewVersion("1.0.0"),
+		Version: common.MustNewVersion("1.0.0"),
 		BaseSchema: BaseSchema{
 			Name:        "TestSchema",
 			Description: "A schema for testing deep copy",
@@ -101,7 +101,7 @@ func TestSchema_DeepCopy(t *testing.T) {
 
 func TestSchema_DeepCopy_Complex(t *testing.T) {
 	original := &Schema{
-		Version: *common.MustNewVersion("2.1.3"),
+		Version: common.MustNewVersion("2.1.3"),
 		BaseSchema: BaseSchema{
 			Name: "ComplexSchema",
 			Fields: map[FieldId]Field{

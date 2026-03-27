@@ -7,7 +7,7 @@ import (
 
 // MetaSchema is the schema that describes the structure of Schema itself
 var MetaSchema = definition.Schema{
-	Version: *common.MustNewVersion("1.0.0"),
+	Version: common.MustNewVersion("1.0.0"),
 	BaseSchema: definition.BaseSchema{
 		Name:        "Schema",
 		Description: "Meta-schema defining the structure of schema definitions",
