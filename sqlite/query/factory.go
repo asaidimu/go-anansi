@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // sqliteFactory builds SQLite query components with support for nested scopes.
 type sqliteFactory struct {
 	// Local state for this scope
 	aliases map[string]string
-	schemas map[string]*schema.SchemaDefinition
+	schemas map[string]*definition.Schema
 
 	// Shared state across all scopes (for parameter numbering)
 	globalParamCounter *int
@@ -28,7 +28,7 @@ func newSQLiteFactory() *sqliteFactory {
 	counter := 0
 	return &sqliteFactory{
 		aliases:            make(map[string]string),
-		schemas:            make(map[string]*schema.SchemaDefinition),
+		schemas:            make(map[string]*definition.Schema),
 		globalParamCounter: &counter,
 		parent:             nil,
 		depth:              0,
@@ -40,7 +40,7 @@ func newSQLiteFactory() *sqliteFactory {
 func (f *sqliteFactory) createChildScope() *sqliteFactory {
 	return &sqliteFactory{
 		aliases:            make(map[string]string),
-		schemas:            make(map[string]*schema.SchemaDefinition),
+		schemas:            make(map[string]*definition.Schema),
 		globalParamCounter: f.globalParamCounter,
 		parent:             f,
 		depth:              f.depth + 1,
@@ -60,12 +60,12 @@ func (f *sqliteFactory) addAlias(original, alias string) {
 }
 
 // addSchema registers a schema in the current scope.
-func (f *sqliteFactory) addSchema(name string, schemaDef *schema.SchemaDefinition) {
+func (f *sqliteFactory) addSchema(name string, schemaDef *definition.Schema) {
 	f.schemas[name] = schemaDef
 }
 
 // resolveFieldReference resolves a field reference, checking parent scopes for correlated subqueries.
-func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[string]*schema.SchemaDefinition, qualify ...bool) (string, error) {
+func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[string]*definition.Schema, qualify ...bool) (string, error) {
 	if !isValidIdentifier(fieldRef) {
 		return "", ErrSelectUnsupportedFieldReference.WithCause(fmt.Errorf("unsupported field reference: %s", fieldRef))
 	}
@@ -98,7 +98,7 @@ func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[strin
 		// First, check if the first part is a table/alias in our schemas
 		if schemaDef, ok := schemas[parts[0]]; ok {
 			// This is a table.field reference
-			if fieldDef := schemaDef.FindField(parts[1]); fieldDef != nil && fieldDef.Type.IsComplex() {
+			if _, fieldDef := schemaDef.FindField(parts[1]); fieldDef != nil && fieldDef.Type.IsComplex() {
 				// This is a JSON field - use json_extract for nested access
 				if len(parts) > 2 {
 					jsonPath := "$." + strings.Join(parts[2:], ".")
@@ -123,7 +123,7 @@ func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[strin
 		// Case 3: Check if the first part is a field in any of our schemas (for single table contexts)
 		// This handles cases like "_metadata_.version" when there's only one table
 		for _, schemaDef := range schemas {
-			if fieldDef := schemaDef.FindField(parts[0]); fieldDef != nil && fieldDef.Type.IsComplex() {
+			if _, fieldDef := schemaDef.FindField(parts[0]); fieldDef != nil && fieldDef.Type.IsComplex() {
 				// This is a JSON field - use json_extract for nested access
 				jsonPath := "$." + strings.Join(parts[1:], ".")
 				return fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(parts[0]), jsonPath), nil
@@ -133,7 +133,7 @@ func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[strin
 		// Check parent scope for JSON fields
 		if f.parent != nil {
 			for _, schemaDef := range f.parent.schemas {
-				if fieldDef := schemaDef.FindField(parts[0]); fieldDef != nil && fieldDef.Type.IsComplex() {
+				if _, fieldDef := schemaDef.FindField(parts[0]); fieldDef != nil && fieldDef.Type.IsComplex() {
 					jsonPath := "$." + strings.Join(parts[1:], ".")
 					return fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(parts[0]), jsonPath), nil
 				}
@@ -150,10 +150,10 @@ func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[strin
 }
 
 // resolveInCurrentScope attempts to resolve a field in the current scope only.
-func (f *sqliteFactory) resolveInCurrentScope(fieldName string, schemas map[string]*schema.SchemaDefinition, qualify ...bool) (string, error) {
+func (f *sqliteFactory) resolveInCurrentScope(fieldName string, schemas map[string]*definition.Schema, qualify ...bool) (string, error) {
 	if qualify != nil && qualify[0] {
 		for alias, schemaDef := range schemas {
-			if fieldDef := schemaDef.FindField(fieldName); fieldDef != nil {
+			if _, fieldDef := schemaDef.FindField(fieldName); fieldDef != nil {
 				// Return table-qualified name: "users"."id"
 				return fmt.Sprintf("%s.%s", quoteIdentifier(alias), quoteIdentifier(fieldName)), nil
 			}

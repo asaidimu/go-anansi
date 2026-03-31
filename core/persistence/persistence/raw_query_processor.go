@@ -38,7 +38,7 @@ func (p *rawQueryProcessor) ProcessRawQueryTemplate(ctx context.Context, templat
 
 		version := target.Version
 		if len(version) == 0 {
-			version = entry.ActiveVersion
+			version = entry.ActiveVersion.String()
 		}
 
 		physicalCollectionName := entry.Versions[version].Physical

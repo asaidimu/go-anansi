@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // updateAssignment is an internal struct to represent a single field update,
@@ -18,16 +18,11 @@ type updateAssignment struct {
 }
 
 // isJSONType is a helper to check if a schema field should be treated as a JSON object.
-func isJSONType(field *schema.FieldDefinition) bool {
+func isJSONType(field *definition.Field) bool {
 	if field == nil {
 		return false
 	}
-	switch field.Type {
-	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeSet, schema.FieldTypeRecord, schema.FieldTypeUnion:
-		return true
-	default:
-		return false
-	}
+	return field.Type.IsComplex()
 }
 
 // sqliteUpdateAssignments handles the SET clause in an UPDATE statement.
@@ -35,7 +30,7 @@ type sqliteUpdateAssignments struct {
 	factory *sqliteFactory
 	set     map[string]any
 	compute map[string]query.Query
-	schema  *schema.SchemaDefinition
+	schema  *definition.Schema
 }
 
 func (u *sqliteUpdateAssignments) Value() (string, []any, error) {
@@ -65,7 +60,10 @@ func (u *sqliteUpdateAssignments) Value() (string, []any, error) {
 
 	for _, assign := range assignments {
 		fieldParts := strings.Split(assign.fieldPath, ".")
-		topLevelField := u.schema.FindField(fieldParts[0])
+		var topLevelField *definition.Field
+		if u.schema != nil {
+			_, topLevelField = u.schema.FindField(fieldParts[0])
+		}
 
 		// Determine if this update targets a nested field within a JSON column.
 		if len(fieldParts) > 1 && isJSONType(topLevelField) {
@@ -92,7 +90,10 @@ func (u *sqliteUpdateAssignments) Value() (string, []any, error) {
 			} else {
 				param := u.factory.nextParam()
 				jsonUpdates[parentColumn][jsonPath] = param
-				fieldDef := u.schema.FindField(assign.fieldPath)
+				var fieldDef *definition.Field
+				if u.schema != nil {
+					_, fieldDef = u.schema.FindField(assign.fieldPath)
+				}
 				convertedValue, err := toSQLiteValue(fieldDef, assign.value)
 				if err != nil {
 					return "", nil, err
@@ -197,7 +198,7 @@ func (u *sqliteUpdateAssignments) buildSetClauseExpression(q *query.Query) (stri
 	if q.Projection != nil && len(q.Projection.Computed) == 1 {
 		computed := q.Projection.Computed[0]
 		if computed.ComputedFieldExpression != nil {
-			schemas := map[string]*schema.SchemaDefinition{}
+			schemas := map[string]*definition.Schema{}
 			if u.schema != nil {
 				schemas[u.schema.Name] = u.schema
 			}
@@ -328,7 +329,7 @@ func (f *sqliteFactory) buildUpdateTree(q *query.Query, updatePayload map[string
 
 	// WHERE clause supports subqueries through SQLiteWhereClause
 	if q.Filters != nil {
-		schemas := make(map[string]*schema.SchemaDefinition)
+		schemas := make(map[string]*definition.Schema)
 		if q.Target.Schema != nil {
 			name := q.Target.Name
 			if q.Target.Alias != nil {

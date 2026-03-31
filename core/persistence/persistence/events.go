@@ -6,7 +6,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"go.uber.org/zap"
 )
 
@@ -24,8 +24,8 @@ var _ base.Persistence = (*eventsPersistence)(nil)
 
 // newEventEmittingPersistence creates a new event-emitting persistence wrapper.
 func newEventEmittingPersistence(persistence base.Persistence,
-eventEmitter *events.EventEmitter[base.PersistenceEvent],
-_ *zap.Logger) base.Persistence {
+	eventEmitter *events.EventEmitter[base.PersistenceEvent],
+	_ *zap.Logger) base.Persistence {
 	return &eventsPersistence{
 		persistence:  persistence,
 		eventEmitter: eventEmitter,
@@ -33,7 +33,7 @@ _ *zap.Logger) base.Persistence {
 }
 
 // CreateCollection wraps the underlying persistence's CreateCollection method, adding event emission.
-func (e *eventsPersistence) CreateCollection(ctx context.Context, sc *schema.SchemaDefinition) (base.Collection, error) {
+func (e *eventsPersistence) CreateCollection(ctx context.Context, sc *definition.Schema) (base.Collection, error) {
 	config := events.OperationConfig{
 		Operation:         "createCollection",
 		StartEventTypes:   []string{string(base.CollectionCreateStart)},
@@ -53,7 +53,7 @@ func (e *eventsPersistence) CreateCollection(ctx context.Context, sc *schema.Sch
 	return result.(base.Collection), nil
 }
 
-func (e *eventsPersistence) CreateCollections(ctx context.Context, schemas []*schema.SchemaDefinition) error {
+func (e *eventsPersistence) CreateCollections(ctx context.Context, schemas []*definition.Schema) error {
 	config := events.OperationConfig{
 		Operation:         "createManyCollections",
 		StartEventTypes:   []string{string(base.CollectionCreateStart)},
@@ -169,7 +169,7 @@ func (e *eventsPersistence) Metadata(ctx context.Context, filter *base.MetadataF
 	return result.(base.Metadata), nil
 }
 
-func (e *eventsPersistence) Schema(ctx context.Context, id string, version ...string) (*schema.SchemaDefinition, error) {
+func (e *eventsPersistence) Schema(ctx context.Context, id string, version ...string) (*definition.Schema, error) {
 	return e.persistence.Schema(ctx, id, version...)
 }
 
@@ -226,7 +226,7 @@ func (e *eventsPersistence) Rollback(
 func (e *eventsPersistence) Migrate(
 	ctx context.Context,
 	name string,
-	migration schema.Migration,
+	migration any,
 	dryRun *bool,
 ) (base.Collection, error) {
 	config := events.OperationConfig{

@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqlite_query "github.com/asaidimu/go-anansi/v6/sqlite/query"
 )
 
@@ -43,10 +43,12 @@ func TestSQLInjection_JSONPath(t *testing.T) {
 	}
 
 	// Add a schema that defines 'data' as an object type
-	userSchema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"data": {Name: "data", Type: schema.FieldTypeObject},
+	userSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "data", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
+			},
 		},
 	}
 	q.Target.Schema = userSchema

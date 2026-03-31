@@ -7,7 +7,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // SQLiteSelectProjection handles SELECT clause projection
@@ -16,7 +16,7 @@ type SQLiteSelectProjection struct {
 	projection   *query.ProjectionConfiguration
 	aggregations []query.AggregationConfiguration
 	distinct     *query.QueryDistinctConfig
-	schemas      map[string]*schema.SchemaDefinition
+	schemas      map[string]*definition.Schema
 	total        bool
 }
 
@@ -162,7 +162,8 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 			for _, alias := range aliases {
 				schemaDef := p.schemas[alias]
 				if schemaDef != nil && len(schemaDef.Fields) > 0 {
-					for _, field := range schemaDef.GetFields() {
+					for _, name := range schemaDef.FieldNames() {
+						_, field := schemaDef.FindField(name)
 						resolvedField := fmt.Sprintf("%s.%s", alias, field.Name)
 						fieldAlias := fmt.Sprintf("'%s.%s'", alias, field.Name)
 						aliasedFields = append(aliasedFields, fmt.Sprintf("%s AS %s", resolvedField, fieldAlias))
@@ -551,7 +552,7 @@ func (f *SQLiteFromClause) Value() (string, []any, error) {
 type SQLiteJoinClause struct {
 	factory *sqliteFactory
 	joins   []query.JoinConfiguration
-	schemas map[string]*schema.SchemaDefinition
+	schemas map[string]*definition.Schema
 }
 
 func (j *SQLiteJoinClause) Value() (string, []any, error) {
@@ -667,7 +668,7 @@ func (w *SQLiteWhereClause) Value() (string, []any, error) {
 type SQLiteGroupByClause struct {
 	factory      *sqliteFactory
 	aggregations []query.AggregationConfiguration
-	schemas      map[string]*schema.SchemaDefinition
+	schemas      map[string]*definition.Schema
 }
 
 func (g *SQLiteGroupByClause) Value() (string, []any, error) {
@@ -706,7 +707,7 @@ func (g *SQLiteGroupByClause) Value() (string, []any, error) {
 type SQLiteHavingClause struct {
 	factory      *sqliteFactory
 	aggregations []query.AggregationConfiguration
-	schemas      map[string]*schema.SchemaDefinition
+	schemas      map[string]*definition.Schema
 }
 
 func (h *SQLiteHavingClause) Value() (string, []any, error) {
@@ -739,7 +740,7 @@ func (h *SQLiteHavingClause) Value() (string, []any, error) {
 type SQLiteOrderByClause struct {
 	factory    *sqliteFactory
 	sorts      []query.SortConfiguration
-	schemas    map[string]*schema.SchemaDefinition
+	schemas    map[string]*definition.Schema
 	pagination *query.PaginationOptions
 }
 

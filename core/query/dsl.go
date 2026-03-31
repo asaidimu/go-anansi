@@ -5,7 +5,7 @@ package query
 
 import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // Logical operators for combining filter conditions.
@@ -216,9 +216,9 @@ const (
 )
 
 type QueryTarget struct {
-	Name   string                   `json:"name,omitempty"`
-	Alias  *string                  `json:"alias,omitempty"`
-	Schema *schema.SchemaDefinition `json:"schema,omitempty"`
+	Name   string             `json:"name,omitempty"`
+	Alias  *string            `json:"alias,omitempty"`
+	Schema *definition.Schema `json:"schema,omitempty"`
 }
 
 // JoinConfiguration defines a join operation with another table.

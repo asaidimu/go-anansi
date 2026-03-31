@@ -4,8 +4,7 @@ import (
 	"context"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // ConfigureDocumentFactory sets up the document factory with a default secret for tests.
@@ -14,12 +13,15 @@ func ConfigureDocumentFactory(providers ...data.MetadataProviderConfig) {
 		providers = []data.MetadataProviderConfig{
 			{
 				Name: "custom",
-				Schema: &schema.NestedSchemaDefinition{
-					Name: "custom_meta",
-					Fields: &schema.NestedSchemaFields{
-						FieldsMap: map[string]*schema.FieldDefinition{
-							"custom_field": {
-								Name: "custom_field", Type: "string", Required: utils.BoolPtr(true),
+				Schema: &definition.NestedSchema{
+					BaseSchema: definition.BaseSchema{
+						Name: "custom_meta",
+						Fields: map[definition.FieldId]definition.Field{
+							"cf1": {
+								Name: "custom_field", Required: true,
+								FieldProperties: definition.FieldProperties{
+									Type: definition.FieldTypeString,
+								},
 							},
 						},
 					},

@@ -6,7 +6,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	store "github.com/asaidimu/go-store/v3"
 )
 
@@ -20,7 +20,7 @@ type ephemeralStore struct {
 // collection represents a single in-memory collection, analogous to a table in a relational database.
 type collection struct {
 	Name   string
-	schema *schema.SchemaDefinition
+	schema *definition.Schema
 	data   *store.Store
 }
 

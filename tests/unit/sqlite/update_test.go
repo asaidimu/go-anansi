@@ -5,7 +5,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqlite_query "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -14,15 +14,14 @@ import (
 func TestUpdateQueryTranslation(t *testing.T) {
 	factory := sqlite_query.NewSQLiteFactory()
 
-	schemaDef := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":      {Name: "id", Type: schema.FieldTypeString},
-			"name":    {Name: "name", Type: schema.FieldTypeString},
-			"version": {Name: "version", Type: schema.FieldTypeInteger},
-			"metadata": {
-				Name: "metadata",
-				Type: schema.FieldTypeObject,
+	schemaDef := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f3": {Name: "version", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"f4": {Name: "metadata", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
 			},
 		},
 	}

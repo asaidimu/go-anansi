@@ -12,7 +12,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 type RawQueryProcessor interface {
@@ -247,7 +247,7 @@ type TransformationMetadata struct {
 // associated operational data like migrations and subscriptions.
 type CollectionMetadata struct {
 	Name            string                   `json:"name"`                      // Name is the logical name of the collection.
-	Version         string                   `json:"version"`                   // Version is the version of the schema currently used by the collection.
+	Version         *common.Version          `json:"version"`                   // Version is the version of the schema currently used by the collection.
 	Description     string                   `json:"description"`               // Description is a human-readable summary of the collection's purpose.
 	Collection      string                   `json:"collection"`                // Collection is the physical name of the collection in the database.
 	Status          string                   `json:"status"`                    // Status indicates the current state of the collection (e.g., "active", "archived").
@@ -255,7 +255,7 @@ type CollectionMetadata struct {
 	Size            int64                    `json:"size"`                      // Size is the total size of the data in the collection, in bytes.
 	Created         int64                    `json:"created"`                   // Created is the timestamp when the collection was created.
 	Updated         int64                    `json:"updated"`                   // Updated is the timestamp of the last operation on the collection (Unix milliseconds).
-	Schema          *schema.SchemaDefinition `json:"schema"`                    // Schema is the schema definition associated with this collection.
+	Schema          *definition.Schema       `json:"schema"`                    // Schema is the schema definition associated with this collection.
 	Migrations      []MigrationMetadata      `json:"migrations,omitempty"`      // Migrations is a list of all schema migrations that have been applied to this collection.
 	Transformations []TransformationMetadata `json:"transformations,omitempty"` // Transformations is a list of all data transformations that have been applied to this collection.
 	Subscriptions   []SubscriptionInfo       `json:"subscriptions"`             // Subscriptions is a list of all active event subscriptions for this collection.
@@ -265,13 +265,13 @@ type CollectionMetadata struct {
 // It can provide a global overview, including aggregate statistics and lists
 // of all schemas, collections, and subscriptions across the system.
 type Metadata struct {
-	CollectionCount   *int64                     `json:"collectionCount,omitempty"`   // CollectionCount is the total number of collections in the system.
-	StorageUsageBytes *int64                     `json:"storageUsageBytes,omitempty"` // StorageUsageBytes is the total storage used by all collections, in bytes.
-	ConnectionStatus  *string                    `json:"connectionStatus,omitempty"`  // ConnectionStatus indicates the health of the main connection to the persistence layer.
-	ConnectionError   *string                    `json:"connectionError,omitempty"`   // ConnectionError contains an error message if the main connection has failed.
-	Schemas           []*schema.SchemaDefinition `json:"schemas,omitempty"`           // Schemas is a list of all schema definitions available in the system.
-	Collections       []*CollectionMetadata      `json:"collections,omitempty"`       // Collections is a list of metadata for all collections in the system.
-	Subscriptions     []*SubscriptionInfo        `json:"subscriptions"`               // Subscriptions is a list of all active subscriptions at the global level.
+	CollectionCount   *int64                `json:"collectionCount,omitempty"`   // CollectionCount is the total number of collections in the system.
+	StorageUsageBytes *int64                `json:"storageUsageBytes,omitempty"` // StorageUsageBytes is the total storage used by all collections, in bytes.
+	ConnectionStatus  *string               `json:"connectionStatus,omitempty"`  // ConnectionStatus indicates the health of the main connection to the persistence layer.
+	ConnectionError   *string               `json:"connectionError,omitempty"`   // ConnectionError contains an error message if the main connection has failed.
+	Schemas           []*definition.Schema  `json:"schemas,omitempty"`           // Schemas is a list of all schema definitions available in the system.
+	Collections       []*CollectionMetadata `json:"collections,omitempty"`       // Collections is a list of metadata for all collections in the system.
+	Subscriptions     []*SubscriptionInfo   `json:"subscriptions"`               // Subscriptions is a list of all active subscriptions at the global level.
 }
 
 // CreateStatus represents the outcome of a single document creation attempt.
@@ -320,7 +320,7 @@ type DeleteResult struct {
 type CreateCollectionOptions struct {
 	Name        string                  `json:"name"`             // Name is the logical name for the new collection.
 	Description string                  `json:"description"`      // Description is a human-readable summary of the collection's purpose.
-	Schema      schema.SchemaDefinition `json:"schema"`           // Schema is the schema definition that documents in this collection must adhere to.
+	Schema      definition.Schema `json:"schema"`           // Schema is the schema definition that documents in this collection must adhere to.
 	Labels      []string                `json:"labels,omitempty"` // Labels are optional tags to associate with the collection for organization.
 }
 
@@ -364,7 +364,7 @@ type BasePersistence interface {
 	Delete(ctx context.Context, name string) (bool, error)
 
 	// Schema retrieves a schema definition by its name and version.
-	Schema(ctx context.Context, name string, version ...string) (*schema.SchemaDefinition, error)
+	Schema(ctx context.Context, name string, version ...string) (*definition.Schema, error)
 
 	// Metadata retrieves metadata about the persistence layer, optionally filtered
 	// by the provided criteria.
@@ -390,11 +390,11 @@ type Persistence interface {
 	BasePersistence
 
 	// CreateCollection creates a new collection based on the provided schema definition.
-	CreateCollection(ctx context.Context, sc *schema.SchemaDefinition) (Collection, error)
+	CreateCollection(ctx context.Context, sc *definition.Schema) (Collection, error)
 
 	// CreateCollections creates multiple new collections based on the provided schema definitions.
 	// It returns a slice of Collection interfaces for the successfully created collections.
-	CreateCollections(ctx context.Context, schemas []*schema.SchemaDefinition) error
+	CreateCollections(ctx context.Context, schemas []*definition.Schema) error
 
 	// HasCollection checks if a collection with the given name exists.
 	HasCollection(ctx context.Context, name string) (bool, error)
@@ -429,7 +429,7 @@ type Persistence interface {
 	Migrate(
 		ctx context.Context,
 		name string,
-		migration schema.Migration,
+		migration any,
 		dryRun *bool,
 	) (Collection, error)
 
@@ -478,7 +478,7 @@ type Collection interface {
 
 	// Validate checks if the given data conforms to the collection's schema.
 	// The 'loose' flag allows for partial validation.
-	Validate(ctx context.Context, data *data.Document, loose bool) (*schema.ValidationResult, error)
+	Validate(ctx context.Context, data *data.Document, loose bool) ([]common.Issue, bool)
 
 	// Metadata retrieves metadata specifically for this collection, with an option to
 	// force a refresh of the data.

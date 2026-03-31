@@ -13,7 +13,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"go.uber.org/zap"
 )
 
@@ -117,9 +117,10 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 		if !exists {
 			registrySchema := RegistrySchema()
 			if err := manager.CreateCollection(ctx, *registrySchema); err != nil {
-				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_COLLECTION", fmt.Sprintf("'_schemas_': %v", ErrFailedToCreateRegistryCollection))
+				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_COLLECTION", fmt.Sprintf("'_schemas_': %%v", ErrFailedToCreateRegistryCollection))
 			}
 		}
+
 		return nil, nil
 	})
 
@@ -162,8 +163,8 @@ func (r *collectionRegistry) warmCache(ctx context.Context) error {
 }
 
 // CreateCollection - simplified implementation
-func (r *collectionRegistry) CreateCollection(ctx context.Context, sc *schema.SchemaDefinition) (*RegistryEntry, error) {
-	results, err := r.CreateCollections(ctx, []*schema.SchemaDefinition{sc})
+func (r *collectionRegistry) CreateCollection(ctx context.Context, sc *definition.Schema) (*RegistryEntry, error) {
+	results, err := r.CreateCollections(ctx, []*definition.Schema{sc})
 	if err != nil {
 		return nil, err
 	}
@@ -171,32 +172,32 @@ func (r *collectionRegistry) CreateCollection(ctx context.Context, sc *schema.Sc
 }
 
 // CreateCollections - streamlined without complex preparation phase
-func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*schema.SchemaDefinition) ([]*RegistryEntry, error) {
+func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*definition.Schema) ([]*RegistryEntry, error) {
 	if len(schemas) == 0 {
 		return []*RegistryEntry{}, nil
 	}
 
-	validSchemas := make(map[string]schema.SchemaDefinition)
-	for _, schema := range schemas {
-		schemaKey := fmt.Sprintf("%s@%s", schema.Name, schema.Version)
+	validSchemas := make(map[string]*definition.Schema)
+	for _, sc := range schemas {
+		schemaKey := fmt.Sprintf("%s@%s", sc.Name, sc.Version.String())
 
 		if _, ok := validSchemas[schemaKey]; ok {
-			return nil, common.NewSystemError("ERR_REGISTRY_DUPLICATE_SCHEMA_IN_BATCH", fmt.Sprintf("duplicate schema in batch: '%s' version '%s'", schema.Name, schema.Version))
+			return nil, common.NewSystemError("ERR_REGISTRY_DUPLICATE_SCHEMA_IN_BATCH", fmt.Sprintf("duplicate schema in batch: '%s' version '%s'", sc.Name, sc.Version.String()))
 		}
 
 		// Basic validation
-		enrichedSchema, err := EnrichSchema(schema)
+		enrichedSchema, err := EnrichSchema(sc)
 		if err != nil {
-			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_INVALID_SCHEMA", fmt.Sprintf("invalid schema '%s' v%s", schema.Name, schema.Version))
+			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_INVALID_SCHEMA", fmt.Sprintf("invalid schema '%s' v%s", sc.Name, sc.Version.String()))
 		}
 
 		// Check if collection already exists
-		if _, err := r.GetRegistryEntry(ctx, schema.Name); err == nil {
-			return nil, base.ErrCollectionAlreadyExists.WithMessage(fmt.Sprintf("collection '%s' already exists", schema.Name))
+		if _, err := r.GetRegistryEntry(ctx, sc.Name); err == nil {
+			return nil, base.ErrCollectionAlreadyExists.WithMessage(fmt.Sprintf("collection '%s' already exists", sc.Name))
 		} else if !errors.Is(err, base.ErrCollectionNotFound) {
 			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CHECK_REGISTRY_EXISTENCE")
 		}
-		validSchemas[schemaKey] = *enrichedSchema
+		validSchemas[schemaKey] = enrichedSchema
 	}
 
 	// Execute in transaction
@@ -209,34 +210,30 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*s
 	results, err := execute(ctx, r.executor, requiresTransaction, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) ([]*RegistryEntry, error) {
 		var createdEntries []*RegistryEntry
 
-		for _, schema := range validSchemas {
+		for _, sc := range validSchemas {
 			// Generate physical name
-			physicalName, err := generatePhysicalName(&schema)
+			physicalName, err := generatePhysicalName(sc)
 			if err != nil {
-				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_GENERATE_PHYSICAL_NAME", fmt.Sprintf("for '%s' v%s", schema.Name, schema.Version))
+				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_GENERATE_PHYSICAL_NAME", fmt.Sprintf("for '%s' v%s", sc.Name, sc.Version.String()))
 			}
 
 			// Create physical collection
-			tempSchema := *schema.MustClone()
+			tempSchema := sc.DeepCopy()
 			tempSchema.Name = physicalName
 
-			if err := manager.CreateCollection(tctx, tempSchema); err != nil {
+			if err := manager.CreateCollection(tctx, *tempSchema); err != nil {
 				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_COLLECTION_CREATION_FAILED", fmt.Sprintf("failed to create physical collection '%s'", physicalName))
 			}
 
 			// Build and persist registry entry
-			description := ""
-			if schema.Description != nil {
-				description = *schema.Description
-			}
 			entry := &RegistryEntry{
-				Name:          schema.Name,
-				Description:   description,
-				ActiveVersion: schema.Version,
+				Name:          sc.Name,
+				Description:   sc.Description,
+				ActiveVersion: sc.Version,
 				Versions: map[string]SchemaVersionRecord{
-					schema.Version: {
+					sc.Version.String(): {
 						Physical: physicalName,
-						Schema:   tempSchema,
+						Schema:   *tempSchema,
 					},
 				},
 			}
@@ -281,13 +278,13 @@ func (r *collectionRegistry) GetRegistryEntry(ctx context.Context, name string) 
 }
 
 // GetSchema - direct implementation without higher-order functions
-func (r *collectionRegistry) GetSchema(ctx context.Context, name string, version ...string) (*schema.SchemaDefinition, error) {
+func (r *collectionRegistry) GetSchema(ctx context.Context, name string, version ...string) (*definition.Schema, error) {
 	entry, err := r.GetRegistryEntry(ctx, name)
 	if err != nil {
 		return nil, err
 	}
 
-	resolvedVersion := entry.ActiveVersion
+	resolvedVersion := entry.ActiveVersion.String()
 	if len(version) > 0 {
 		resolvedVersion = version[0]
 	}
@@ -297,23 +294,24 @@ func (r *collectionRegistry) GetSchema(ctx context.Context, name string, version
 		return nil, common.NewSystemError("ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION", fmt.Sprintf("version '%s' not found for collection '%s'", resolvedVersion, name))
 	}
 
-	return versionRecord.Schema.MustClone(), nil
+	clone := versionRecord.Schema.DeepCopy()
+	return clone, nil
 }
 
 // ResolvePhysicalName - simplified
 func (r *collectionRegistry) ResolvePhysicalName(ctx context.Context, name string, version ...string) (string, error) {
-	schema, err := r.GetSchema(ctx, name, version...)
+	sc, err := r.GetSchema(ctx, name, version...)
 	if err != nil {
 		return "", err
 	}
-	return schema.Name, nil
+	return sc.Name, nil
 }
 
 // AddSchemaVersion - direct implementation
-func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version string, schema *schema.SchemaDefinition, physicalName ...string) (*RegistryEntry, error) {
-	enrichedSchema, err := EnrichSchema(schema)
+func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version string, sc *definition.Schema, physicalName ...string) (*RegistryEntry, error) {
+	enrichedSchema, err := EnrichSchema(sc)
 	if err != nil {
-		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INVALID_SCHEMA", fmt.Sprintf("Invalid schema : %v", err))
+		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INVALID_SCHEMA", fmt.Sprintf("Invalid schema : %%v", err))
 	}
 
 	entry, err := r.GetRegistryEntry(ctx, name)
@@ -330,25 +328,25 @@ func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version
 	if len(physicalName) > 0 {
 		actualPhysicalName = physicalName[0]
 	} else {
-		actualPhysicalName, err = generatePhysicalName(schema)
+		actualPhysicalName, err = generatePhysicalName(sc)
 		if err != nil {
-			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_GENERATE_PHYSICAL_NAME", fmt.Sprintf("for '%s v%s'", schema.Name, schema.Version))
+			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_GENERATE_PHYSICAL_NAME", fmt.Sprintf("for '%s v%s'", sc.Name, sc.Version.String()))
 		}
 	}
 
 	// Execute in transaction
 	updatedEntry, err := execute(ctx, r.executor, true, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
 		// Create physical collection
-		tempSchema := *enrichedSchema
+		tempSchema := enrichedSchema.DeepCopy()
 		tempSchema.Name = actualPhysicalName
-		if err := manager.CreateCollection(tctx, tempSchema); err != nil {
+		if err := manager.CreateCollection(tctx, *tempSchema); err != nil {
 			return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_COLLECTION_CREATION_FAILED", fmt.Sprintf("failed to create physical collection '%s'", actualPhysicalName))
 		}
 
 		// Update registry entry
 		entry.Versions[version] = SchemaVersionRecord{
 			Physical: actualPhysicalName,
-			Schema:   tempSchema,
+			Schema:   *tempSchema,
 		}
 
 		if err := r.updateRegistryEntry(tctx, collection, name, entry); err != nil {
@@ -374,7 +372,7 @@ func (r *collectionRegistry) SetActiveVersion(ctx context.Context, name, version
 		return nil, err
 	}
 
-	if entry.ActiveVersion == version {
+	if entry.ActiveVersion.String() == version {
 		return nil, common.NewSystemError("ERR_REGISTRY_VERSION_ALREADY_ACTIVE", fmt.Sprintf("version '%s' for collection '%s' is already active", version, name))
 	}
 
@@ -382,9 +380,14 @@ func (r *collectionRegistry) SetActiveVersion(ctx context.Context, name, version
 		return nil, common.NewSystemError("ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION", fmt.Sprintf("version '%s' not found for collection '%s'", version, name))
 	}
 
+	parsedVersion, err := common.NewVersion(version)
+	if err != nil {
+		return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_INVALID_VERSION_FORMAT")
+	}
+
 	// Execute in transaction
 	updatedEntry, err := execute(ctx, r.executor, true, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
-		entry.ActiveVersion = version
+		entry.ActiveVersion = parsedVersion
 		if err := r.updateRegistryEntry(tctx, collection, name, entry); err != nil {
 			return nil, err
 		}
@@ -446,7 +449,7 @@ func (r *collectionRegistry) PruneVersion(ctx context.Context, name, version str
 		return nil, common.NewSystemError("ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION", fmt.Sprintf("version '%s' not found for collection '%s'", version, name))
 	}
 
-	if entry.ActiveVersion == version {
+	if entry.ActiveVersion.String() == version {
 		return nil, common.NewSystemError("ERR_REGISTRY_CANNOT_PRUNE_ACTIVE_VERSION", fmt.Sprintf("version '%s' for collection '%s' is active", version, name))
 	}
 

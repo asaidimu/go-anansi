@@ -12,7 +12,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"go.uber.org/zap"
 )
@@ -25,7 +25,7 @@ import (
 type eventsCollection struct {
 	base.Collection // Embedded - provides all methods by default
 	eventEmitter    *events.EventEmitter[base.PersistenceEvent]
-	schema          *schema.SchemaDefinition
+	schema          *definition.Schema
 	name            string
 	logger          *zap.Logger
 }
@@ -35,7 +35,7 @@ var _ base.Collection = (*eventsCollection)(nil)
 // newEventEmittingCollection creates a new event-emitting collection wrapper.
 // It takes a CollectionBase and returns a Collection that will emit events
 // for all of its operations.
-func newEventEmittingCollection(name string, collection base.Collection, eventEmitter *events.EventEmitter[base.PersistenceEvent], schema *schema.SchemaDefinition, logger *zap.Logger) *eventsCollection {
+func newEventEmittingCollection(name string, collection base.Collection, eventEmitter *events.EventEmitter[base.PersistenceEvent], schema *definition.Schema, logger *zap.Logger) *eventsCollection {
 	return &eventsCollection{
 		Collection:   collection,
 		schema:       schema,

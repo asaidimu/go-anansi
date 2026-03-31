@@ -6,7 +6,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"go.uber.org/zap"
 )
 
@@ -14,11 +14,11 @@ import (
 func NewCollection(
 	eventEmitter *events.EventEmitter[base.PersistenceEvent],
 	name string,
-	sc *schema.SchemaDefinition,
+	sc *definition.Schema,
 	interactor query.DatabaseInteractor,
 	engine *query.QueryEngine,
 	logger *zap.Logger,
-	resolveSchema func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error),
+	resolveSchema func(ctx context.Context, name string) (string, *definition.Schema, error),
 	processor base.RawQueryProcessor,
 ) (base.Collection, error) {
 	base, err := newBaseCollection(eventEmitter, name, sc, interactor, engine, logger)

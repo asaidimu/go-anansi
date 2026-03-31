@@ -2,6 +2,7 @@ package definition
 
 import (
 	"encoding/json"
+	"sort"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 )
@@ -13,6 +14,26 @@ type BaseSchema struct {
 	Indexes     map[IndexId]Index           `json:"indexes,omitempty"`
 	Constraints map[ConstraintId]Constraint `json:"constraints,omitempty"`
 	Metadata    map[string]any              `json:"metadata,omitempty"`
+}
+
+// FindField finds a field by its name.
+func (b BaseSchema) FindField(name string) (FieldId, *Field) {
+	for id, field := range b.Fields {
+		if string(field.Name) == name {
+			return id, &field
+		}
+	}
+	return "", nil
+}
+
+// FieldNames returns all field names in the schema, sorted alphabetically.
+func (b BaseSchema) FieldNames() []string {
+	names := make([]string, 0, len(b.Fields))
+	for _, field := range b.Fields {
+		names = append(names, string(field.Name))
+	}
+	sort.Strings(names)
+	return names
 }
 
 type NestedSchemaMode byte

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 func (f *sqliteFactory) buildCreateTableTree(q *query.Query) (SQLNode, error) {
@@ -26,14 +26,16 @@ func (t *createTableTree) Value() (string, []any, error) {
 	var primaryKeys []string
 
 	for _, index := range sc.Indexes {
-		if index.Index.Type == schema.IndexTypePrimary && len(index.Index.Fields) > 0 {
-			primaryKeys = index.Index.Fields
+		if index.Type == definition.IndexTypePrimary && len(index.Fields) > 0 {
+			for _, fieldId := range index.Fields {
+				primaryKeys = append(primaryKeys, string(fieldId))
+			}
 			break
 		}
 	}
 
 	for _, name := range sc.FieldNames() {
-		field := sc.FindField(name)
+		_, field := sc.FindField(name)
 		columnDef, err := t.buildColumnDefinition(name, field)
 		if err != nil {
 			return "", nil, ErrCollectionFieldError.WithCause(fmt.Errorf("error on field '%s': %w", name, err))
@@ -59,50 +61,56 @@ func (t *createTableTree) Value() (string, []any, error) {
 
 // buildColumnDefinition constructs the DDL string for a single column, including its
 // name, data type, and any constraints.
-func (s *createTableTree) buildColumnDefinition(fieldName string, field *schema.FieldDefinition) (string, error) {
+func (s *createTableTree) buildColumnDefinition(fieldName string, field *definition.Field) (string, error) {
 	var parts []string
 	parts = append(parts, quoteIdentifier(fieldName), s.getColumnType(field.Type))
 
-	if field.Required != nil && *field.Required {
+	if field.Required {
 		parts = append(parts, "NOT NULL")
 	}
-	if field.Default != nil {
+	if !field.Default.IsZero() && !field.Default.IsNull() {
 		defVal, err := s.formatDefaultValue(field.Default, field)
 		if err != nil {
 			return "", err
 		}
 		parts = append(parts, "DEFAULT "+defVal)
 	}
-	if field.Unique != nil && *field.Unique {
+	if field.Unique {
 		parts = append(parts, "UNIQUE")
 	}
-	if field.Type == schema.FieldTypeEnum && len(field.Values) > 0 {
-		var checkValues []string
-		for _, v := range field.Values {
-			valStr, _ := s.formatDefaultValue(v, &schema.FieldDefinition{Type: schema.FieldTypeString})
-			checkValues = append(checkValues, valStr)
+
+	if field.Type == definition.FieldTypeEnum && !field.Schema.IsZero() {
+		ref, err := definition.FieldSchemaAs[definition.SchemaReference](field.Schema)
+		if err == nil {
+			if nested, ok := s.schema.Schemas[ref.ID]; ok && len(nested.Values) > 0 {
+				var checkValues []string
+				for _, v := range nested.Values {
+					valStr, _ := s.formatDefaultValue(v, &definition.Field{FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}})
+					checkValues = append(checkValues, valStr)
+				}
+				parts = append(parts, fmt.Sprintf("CHECK(%s IN (%s))", quoteIdentifier(fieldName), strings.Join(checkValues, ", ")))
+			}
 		}
-		parts = append(parts, fmt.Sprintf("CHECK(%s IN (%s))", quoteIdentifier(fieldName), strings.Join(checkValues, ", ")))
 	}
 	return strings.Join(parts, " "), nil
 }
 
 
-func (s *createTableTree) formatDefaultValue(value any, fieldDef *schema.FieldDefinition) (string, error) {
-	if value == nil {
+func (s *createTableTree) formatDefaultValue(value definition.LiteralValue, fieldDef *definition.Field) (string, error) {
+	if value.IsZero() || value.IsNull() {
 		return "NULL", nil
 	}
 
-	result, err := toSQLiteValue(fieldDef, value)
+	result, err := toSQLiteValue(fieldDef, value.Value())
 	if err != nil {
 		return "", err
 	}
 
 	switch fieldDef.Type {
-	case schema.FieldTypeString, schema.FieldTypeEnum:
+	case definition.FieldTypeString, definition.FieldTypeEnum:
 		resultS := result.(string)
 		return fmt.Sprintf("'%s'", strings.ReplaceAll(fmt.Sprintf("%v", resultS), "'", "''")), nil
-	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeSet, schema.FieldTypeRecord, schema.FieldTypeUnion:
+	case definition.FieldTypeObject, definition.FieldTypeArray, definition.FieldTypeSet, definition.FieldTypeRecord, definition.FieldTypeUnion:
 		resultS := result.(string)
 		return fmt.Sprintf("'%s'", strings.ReplaceAll(resultS, "'", "''")), nil
 	default:
@@ -110,18 +118,18 @@ func (s *createTableTree) formatDefaultValue(value any, fieldDef *schema.FieldDe
 	}
 }
 
-// getColumnType maps a schema.FieldType to its corresponding SQLite column type.
-func (s *createTableTree) getColumnType(fieldType schema.FieldType) string {
+// getColumnType maps a definition.FieldType to its corresponding SQLite column type.
+func (s *createTableTree) getColumnType(fieldType definition.FieldType) string {
 	switch fieldType {
-	case schema.FieldTypeString, schema.FieldTypeEnum:
+	case definition.FieldTypeString, definition.FieldTypeEnum:
 		return "TEXT"
-	case schema.FieldTypeNumber, schema.FieldTypeDecimal:
+	case definition.FieldTypeNumber, definition.FieldTypeDecimal:
 		return "REAL"
-	case schema.FieldTypeInteger:
+	case definition.FieldTypeInteger:
 		return "INTEGER"
-	case schema.FieldTypeBoolean:
+	case definition.FieldTypeBoolean:
 		return "INTEGER"
-	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeSet, schema.FieldTypeRecord, schema.FieldTypeUnion:
+	case definition.FieldTypeObject, definition.FieldTypeArray, definition.FieldTypeSet, definition.FieldTypeRecord, definition.FieldTypeUnion:
 		return "TEXT"
 	default:
 		return "BLOB"

@@ -9,7 +9,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"go.uber.org/zap"
 )
 
@@ -71,7 +71,7 @@ func (i *NativeInteractor[T]) Close() error {
 }
 
 // SelectDocuments retrieves multiple documents matching the query.
-func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *query.Query) ([]map[string]any, int64, error) {
+func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *definition.Schema, dsl *query.Query) ([]map[string]any, int64, error) {
 	compiled, err := i.b.Build(dsl, StmtSelect, nil)
 	if err != nil {
 		return nil, 0, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.SelectDocuments")
@@ -86,7 +86,7 @@ func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *schem
 }
 
 // SelectStream retrieves a stream of documents matching the query.
-func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *query.Query) (<-chan map[string]any, <-chan error, error) {
+func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *definition.Schema, dsl *query.Query) (<-chan map[string]any, <-chan error, error) {
 	compiled, err := i.b.Build(dsl, StmtSelect, nil)
 	if err != nil {
 		return nil, nil, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.SelectStream")
@@ -101,7 +101,7 @@ func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *schema.Schem
 }
 
 // UpdateDocuments updates documents matching the filter.
-func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, computedUpdates map[string]query.Query, filters *query.QueryFilter, returnDocs bool) ([]map[string]any, int64, error) {
+func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *definition.Schema, updates map[string]any, computedUpdates map[string]query.Query, filters *query.QueryFilter, returnDocs bool) ([]map[string]any, int64, error) {
 	dsl := &query.Query{
 		Target:  &query.QueryTarget{Name: schema.Name, Schema: schema},
 		Filters: filters,
@@ -149,11 +149,10 @@ func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *schem
 }
 
 // InsertDocuments inserts new documents.
-func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *schema.SchemaDefinition, records []map[string]any) ([]map[string]any, error) {
+func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *definition.Schema, records []map[string]any) ([]map[string]any, error) {
 	if len(records) == 0 {
 		return []map[string]any{}, nil
 	}
-
 	dsl := &query.Query{
 		Target: &query.QueryTarget{Name: sc.Name, Schema: sc},
 	}
@@ -172,7 +171,7 @@ func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *schema.Sc
 }
 
 // DeleteDocuments deletes documents matching the filter.
-func (i *NativeInteractor[T]) DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
+func (i *NativeInteractor[T]) DeleteDocuments(ctx context.Context, schema *definition.Schema, filters *query.QueryFilter, unsafeDelete bool) (int64, error) {
 	if filters == nil && !unsafeDelete {
 		return 0, ErrCouldNotDeleteWithoutFilters.WithOperation("native.NativeInteractor.DeleteDocuments")
 	}
@@ -198,6 +197,7 @@ func (i *NativeInteractor[T]) Query(ctx context.Context, raw *query.Query) (*que
 
 	return i.ix.ExecuteQuery(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
 }
+
 
 // StartTransaction begins a new transaction and returns a new interactor for it.
 func (i *NativeInteractor[T]) StartTransaction(ctx context.Context) (query.DatabaseInteractor, error) {
@@ -273,9 +273,11 @@ func (i *NativeInteractor[T]) CollectionExists(ctx context.Context, name string)
 		return false, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.CollectionExists")
 	}
 
-	result, _, err := i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: &schema.SchemaDefinition{
-		Version: "1.0.0",
-		Name:    name,
+	result, _, err := i.ix.Query(ctx, NativeQuery[T]{Query: compiled, Schema: &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: name,
+		},
 	}})
 
 	if err != nil {
@@ -286,7 +288,7 @@ func (i *NativeInteractor[T]) CollectionExists(ctx context.Context, name string)
 }
 
 // CreateCollection creates a new collection and its indexes within a single transaction.
-func (i *NativeInteractor[T]) CreateCollection(ctx context.Context, sc schema.SchemaDefinition) error {
+func (i *NativeInteractor[T]) CreateCollection(ctx context.Context, sc definition.Schema) error {
 	// This operation must be atomic, so we wrap it in a transaction.
 	// If already in a transaction, it will use the existing one.
 	tx, err := i.StartTransaction(ctx)
@@ -318,7 +320,7 @@ func (i *NativeInteractor[T]) CreateCollection(ctx context.Context, sc schema.Sc
 }
 
 // createCollectionLogic contains the core implementation for collection and index creation.
-func (i *NativeInteractor[T]) createCollectionLogic(ctx context.Context, sc schema.SchemaDefinition) error {
+func (i *NativeInteractor[T]) createCollectionLogic(ctx context.Context, sc definition.Schema) error {
 	// 1. Create the collection
 	dsl := &query.Query{Target: &query.QueryTarget{Name: sc.Name, Schema: &sc}}
 	compiled, err := i.b.Build(dsl, StmtCreateCollection, nil)
@@ -331,10 +333,10 @@ func (i *NativeInteractor[T]) createCollectionLogic(ctx context.Context, sc sche
 
 	// 2. Create associated indexes
 	for _, index := range sc.Indexes {
-		if index.Index.Type == schema.IndexTypePrimary {
+		if index.Type == definition.IndexTypePrimary {
 			continue // Primary indexes are usually created automatically
 		}
-		if err := i.CreateIndex(ctx, sc.Name, *index.Index); err != nil {
+		if err := i.CreateIndex(ctx, sc.Name, index); err != nil {
 			return err // CreateIndex already returns a detailed NativeError
 		}
 	}
@@ -342,7 +344,7 @@ func (i *NativeInteractor[T]) createCollectionLogic(ctx context.Context, sc sche
 }
 
 // CreateIndex creates a new index.
-func (i *NativeInteractor[T]) CreateIndex(ctx context.Context, collection string, index schema.IndexDefinition) error {
+func (i *NativeInteractor[T]) CreateIndex(ctx context.Context, collection string, index definition.Index) error {
 	dsl := &query.Query{Target: &query.QueryTarget{Name: collection}}
 	compiled, err := i.b.Build(dsl, StmtCreateIndex, index)
 	if err != nil {
@@ -353,7 +355,7 @@ func (i *NativeInteractor[T]) CreateIndex(ctx context.Context, collection string
 }
 
 // DropIndex drops an existing index.
-func (i *NativeInteractor[T]) DropIndex(ctx context.Context, collection string, index schema.IndexDefinition) error {
+func (i *NativeInteractor[T]) DropIndex(ctx context.Context, collection string, index definition.Index) error {
 	dsl := &query.Query{Target: &query.QueryTarget{Name: collection}}
 	compiled, err := i.b.Build(dsl, StmtDropIndex, index)
 	if err != nil {

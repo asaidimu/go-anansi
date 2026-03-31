@@ -13,7 +13,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -51,7 +51,7 @@ func newBasePersistence(
 		interactor,
 		engine,
 		logger,
-		func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error) {
+		func(ctx context.Context, name string) (string, *definition.Schema, error) {
 			if name != registrySchema.Name {
 				return "", nil, common.NewSystemError("ERR_INVALID_QUERY", "INVALID_QUERY_ON_REGISTRY")
 			}
@@ -121,7 +121,7 @@ func (p *basePersistence) Collection(ctx context.Context, name string) (base.Col
 		p.interactor,
 		p.engine,
 		p.logger,
-		func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error) {
+		func(ctx context.Context, name string) (string, *definition.Schema, error) {
 			sc, err := (p.registry).GetSchema(ctx, name)
 			if err != nil {
 				return "", nil, err
@@ -154,7 +154,7 @@ func (p *basePersistence) ListCollections(ctx context.Context) ([]string, error)
 	return names, nil
 }
 
-func (p *basePersistence) CreateCollection(ctx context.Context, sc *schema.SchemaDefinition) (base.Collection, error) {
+func (p *basePersistence) CreateCollection(ctx context.Context, sc *definition.Schema) (base.Collection, error) {
 	_, err := p.registry.CreateCollection(ctx, sc)
 	if err != nil {
 		return nil, err
@@ -163,10 +163,10 @@ func (p *basePersistence) CreateCollection(ctx context.Context, sc *schema.Schem
 	return p.Collection(ctx, sc.Name)
 }
 
-func (p *basePersistence) CreateCollections(ctx context.Context, schemas []*schema.SchemaDefinition) error {
+func (p *basePersistence) CreateCollections(ctx context.Context, schemas []*definition.Schema) error {
 	_, err := (p.registry).CreateCollections(ctx, schemas)
 	if err != nil {
-		return nil
+		return err
 	}
 	return nil
 }
@@ -212,17 +212,17 @@ func (p *basePersistence) Metadata(ctx context.Context, filter *base.MetadataFil
 	}
 
 	collections := make([]*base.CollectionMetadata, len(entries))
-	schemas := make([]*schema.SchemaDefinition, len(entries))
+	schemas := make([]*definition.Schema, len(entries))
 	for i, entry := range entries {
 		// For now, we'll just use the entry's schema. A more complete implementation
 		// might fetch detailed metadata from each collection.
-		sc := entry.Versions[entry.ActiveVersion].Schema
+		sc := entry.Versions[entry.ActiveVersion.String()].Schema
 		schemas[i] = &sc
 		collections[i] = &base.CollectionMetadata{
-			Name:          entry.Name,
-			Version: entry.ActiveVersion,
-			Description:   entry.Description,
-			Schema:        &sc,
+			Name:        entry.Name,
+			Version:     entry.ActiveVersion,
+			Description: entry.Description,
+			Schema:      &sc,
 		}
 	}
 
@@ -261,7 +261,7 @@ func (p *basePersistence) Subscribe(ctx context.Context, options base.Subscripti
 	return id
 }
 
-func (p *basePersistence) Schema(ctx context.Context, id string, version ...string) (*schema.SchemaDefinition, error) {
+func (p *basePersistence) Schema(ctx context.Context, id string, version ...string) (*definition.Schema, error) {
 	sc, err := (p.registry).GetSchema(ctx, id, version...)
 	if err != nil {
 		return nil, err
@@ -313,7 +313,7 @@ func (p *basePersistence) Unsubscribe(ctx context.Context, id string) {
 	}
 }
 
-func (p *basePersistence) createRegistryExecutor(_ *schema.SchemaDefinition) registry.RegistryExecutor {
+func (p *basePersistence) createRegistryExecutor(_ *definition.Schema) registry.RegistryExecutor {
 	executor := func(ctx context.Context, transact bool, fn func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (any, error)) (any, error) {
 		if transact {
 			return transaction.Execute(ctx, p.interactor, p.logger, func(tctx context.Context, tx query.DatabaseInteractor) (any, error) {
@@ -338,7 +338,7 @@ func (p *basePersistence) Rollback(
 func (p *basePersistence) Migrate(
 	ctx context.Context,
 	name string,
-	migration schema.Migration,
+	migration any,
 	dryRun *bool,
 ) (base.Collection, error) {
 	return nil, nil

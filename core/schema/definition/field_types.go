@@ -104,19 +104,6 @@ func (t FieldType) IsContainer() bool {
 	}
 }
 
-func init() {
-	_ = FieldTypeUnknown
-	_ = FieldTypeString
-	_ = FieldTypeNumber
-	_ = FieldTypeInteger
-	_ = FieldTypeDecimal
-	_ = FieldTypeBoolean
-	_ = FieldTypeArray
-	_ = FieldTypeSet
-	_ = FieldTypeEnum
-	_ = FieldTypeObject
-	_ = FieldTypeRecord
-	_ = FieldTypeUnion
-	_ = FieldTypeComposite
-	_ = FieldTypeGeometry
+func (t FieldType) IsComplex() bool {
+	return t.IsContainer()
 }

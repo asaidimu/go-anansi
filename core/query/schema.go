@@ -1,44 +1,42 @@
 package query
 
 import (
-	"maps"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
-
 
 // SchemaFromQueryOptions provides configuration options for schema generation
 type SchemaFromQueryOptions struct {
 	// FunctionTypeMap maps function names to their return types
 	// If not provided, function calls will default to FieldTypeUnknown
-	FunctionTypeMap map[string]schema.FieldType
+	FunctionTypeMap map[string]definition.FieldType
 
 	// DefaultAggregationTypes maps aggregation types to their expected return types
 	// If not provided, aggregation types will default to FieldTypeUnknown
-	DefaultAggregationTypes map[AggregationType]schema.FieldType
+	DefaultAggregationTypes map[AggregationType]definition.FieldType
 }
 
 // DefaultSchemaFromQueryOptions returns sensible defaults for schema generation
 func DefaultSchemaFromQueryOptions() *SchemaFromQueryOptions {
 	return &SchemaFromQueryOptions{
-		FunctionTypeMap: make(map[string]schema.FieldType),
-		DefaultAggregationTypes: map[AggregationType]schema.FieldType{
-			AggregationTypeCount: schema.FieldTypeInteger,
-			AggregationTypeSum:   schema.FieldTypeNumber,
-			AggregationTypeAvg:   schema.FieldTypeNumber,
-			AggregationTypeMin:   schema.FieldTypeUnknown,
-			AggregationTypeMax:   schema.FieldTypeUnknown,
+		FunctionTypeMap: make(map[string]definition.FieldType),
+		DefaultAggregationTypes: map[AggregationType]definition.FieldType{
+			AggregationTypeCount: definition.FieldTypeInteger,
+			AggregationTypeSum:   definition.FieldTypeNumber,
+			AggregationTypeAvg:   definition.FieldTypeNumber,
+			AggregationTypeMin:   definition.FieldTypeUnknown,
+			AggregationTypeMax:   definition.FieldTypeUnknown,
 		},
 	}
 }
 
 // SchemaFromQuery generates a schema definition for the expected result of a query
-func SchemaFromQuery(q *Query, options *SchemaFromQueryOptions) (*schema.SchemaDefinition, error) {
+func SchemaFromQuery(q *Query, options *SchemaFromQueryOptions) (*definition.Schema, error) {
 	if options == nil {
 		options = DefaultSchemaFromQueryOptions()
 	}
@@ -54,7 +52,7 @@ func SchemaFromQuery(q *Query, options *SchemaFromQueryOptions) (*schema.SchemaD
 	}
 
 	// Start with the base schema from the target
-	resultSchema := cloneSchemaDefinition(q.Target.Schema)
+	resultSchema := q.Target.Schema.DeepCopy()
 
 	// Apply joins - this adds nested schemas for joined collections
 	if err := applyJoinsToSchema(resultSchema, q.Joins); err != nil {
@@ -70,20 +68,20 @@ func SchemaFromQuery(q *Query, options *SchemaFromQueryOptions) (*schema.SchemaD
 
 	// Update schema metadata
 	resultSchema.Name = generateResultSchemaName(q)
-	resultSchema.Description = utils.StringPtr("Generated schema for query result")
+	resultSchema.Description = "Generated schema for query result"
 
 	return resultSchema, nil
 }
 
 // generateAggregationResultSchema creates a schema for aggregation query results
-func generateAggregationResultSchema(q *Query, options *SchemaFromQueryOptions) (*schema.SchemaDefinition, error) {
-	resultSchema := &schema.SchemaDefinition{
-		Name:        generateResultSchemaName(q) + "_aggregated",
-		Version:     "1.0.0",
-		Description: utils.StringPtr(
-		"Generated schema for aggregation query result",
-		),
-		Fields:      make(map[string]*schema.FieldDefinition),
+func generateAggregationResultSchema(q *Query, options *SchemaFromQueryOptions) (*definition.Schema, error) {
+	resultSchema := &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name:        generateResultSchemaName(q) + "_aggregated",
+			Description: "Generated schema for aggregation query result",
+			Fields:      make(map[definition.FieldId]definition.Field),
+		},
 	}
 
 	// For aggregations, the result structure depends on grouping
@@ -101,11 +99,11 @@ func generateAggregationResultSchema(q *Query, options *SchemaFromQueryOptions) 
 		// We need to create a dynamic structure based on group fields
 
 		// Create a nested schema for the aggregation values
-		aggregationValueSchema := &schema.NestedSchemaDefinition{
-			Name:         "AggregationValues",
-			Description:  utils.StringPtr("Schema for aggregated values"),
-			Fields: &schema.NestedSchemaFields{
-				FieldsMap: make(map[string]*schema.FieldDefinition),
+		aggregationValueSchema := definition.NestedSchema{
+			BaseSchema: definition.BaseSchema{
+				Name:        "AggregationValues",
+				Description: "Schema for aggregated values",
+				Fields:      make(map[definition.FieldId]definition.Field),
 			},
 		}
 
@@ -119,28 +117,31 @@ func generateAggregationResultSchema(q *Query, options *SchemaFromQueryOptions) 
 			}
 
 			fieldType := inferAggregationFieldType(agg, q.Target.Schema, options)
-			aggregationValueSchema.Fields.FieldsMap[fieldName] = &schema.FieldDefinition{
-				Name:        fieldName,
-				Type:        fieldType,
-				Required:    utils.BoolPtr(false),
-				Description: utils.StringPtr(fmt.Sprintf("%s aggregation on field %s", string(agg.Type), agg.Field)),
+			aggregationValueSchema.Fields[definition.FieldId(fieldName)] = definition.Field{
+				Name:        definition.FieldName(fieldName),
+				Description: fmt.Sprintf("%s aggregation on field %s", string(agg.Type), agg.Field),
+				FieldProperties: definition.FieldProperties{
+					Type: fieldType,
+				},
 			}
 		}
 
 		// Add the nested schema to result schema
-		if resultSchema.NestedSchemas == nil {
-			resultSchema.NestedSchemas = make(map[string]*schema.NestedSchemaDefinition)
+		if resultSchema.Schemas == nil {
+			resultSchema.Schemas = make(map[definition.SchemaId]definition.NestedSchema)
 		}
-		resultSchema.NestedSchemas["AggregationValues"] = aggregationValueSchema
+		resultSchema.Schemas["AggregationValues"] = aggregationValueSchema
 
 		// The result is a record type with dynamic keys pointing to aggregation values
-		resultSchema.Fields["aggregation_results"] = &schema.FieldDefinition{
+		resultSchema.Fields["aggregation_results"] = definition.Field{
 			Name:        "aggregation_results",
-			Type:        schema.FieldTypeRecord,
-			Required:    utils.BoolPtr(true),
-			Description: utils.StringPtr("Grouped aggregation results"),
-			Schema: schema.NestedSchemaReference{
-				ID: "AggregationValues",
+			Description: "Grouped aggregation results",
+			Required:    true,
+			FieldProperties: definition.FieldProperties{
+				Type: definition.FieldTypeRecord,
+				Schema: definition.NewSchemaReference(definition.SchemaReference{
+					ID: "AggregationValues",
+				}),
 			},
 		}
 	} else {
@@ -154,11 +155,12 @@ func generateAggregationResultSchema(q *Query, options *SchemaFromQueryOptions) 
 			}
 
 			fieldType := inferAggregationFieldType(agg, q.Target.Schema, options)
-			resultSchema.Fields[fieldName] = &schema.FieldDefinition{
-				Name:        fieldName,
-				Type:        fieldType,
-				Required:    utils.BoolPtr(false),
-				Description: utils.StringPtr(fmt.Sprintf("%s aggregation on field %s", string(agg.Type), agg.Field)),
+			resultSchema.Fields[definition.FieldId(fieldName)] = definition.Field{
+				Name:        definition.FieldName(fieldName),
+				Description: fmt.Sprintf("%s aggregation on field %s", string(agg.Type), agg.Field),
+				FieldProperties: definition.FieldProperties{
+					Type: fieldType,
+				},
 			}
 		}
 	}
@@ -166,7 +168,7 @@ func generateAggregationResultSchema(q *Query, options *SchemaFromQueryOptions) 
 	return resultSchema, nil
 }
 
-func applyJoinsToSchema(resultSchema *schema.SchemaDefinition, joins []JoinConfiguration) error {
+func applyJoinsToSchema(resultSchema *definition.Schema, joins []JoinConfiguration) error {
 	for _, join := range joins {
 		if join.Target.Schema == nil {
 			return common.NewSystemError("ERR_QUERY_SCHEMA_JOIN_TARGET_REQUIRED", fmt.Sprintf("join target schema is required for %s", join.Target.Name)).WithOperation("applyJoinsToSchema").WithCause(errors.New("join target schema is required"))
@@ -180,39 +182,42 @@ func applyJoinsToSchema(resultSchema *schema.SchemaDefinition, joins []JoinConfi
 
 		// Handle nested joins
 		parts := strings.Split(fieldName, ".")
-		currentSchema := resultSchema
+
+		// In definition.Schema, nested schemas are global to the schema, not nested within each other.
+		// However, fields can point to them.
+
+		currentFields := resultSchema.Fields
+		var currentBase *definition.BaseSchema = &resultSchema.BaseSchema
 
 		for i, part := range parts {
 			if i < len(parts)-1 {
 				// This is a nested part, so traverse the schema
-				field, exists := currentSchema.Fields[part]
+				fieldId := definition.FieldId(part)
+				field, exists := currentFields[fieldId]
 				if !exists {
 					return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_JOIN_FIELD_NOT_FOUND", fmt.Sprintf("nested join field '%s' not found in schema", part)).WithOperation("applyJoinsToSchema").WithCause(errors.New("nested join field not found"))
 				}
 
-				if field.Type != schema.FieldTypeObject {
+				if field.Type != definition.FieldTypeObject {
 					return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_JOIN_FIELD_NOT_OBJECT", fmt.Sprintf("nested join field '%s' is not an object", part)).WithOperation("applyJoinsToSchema").WithCause(errors.New("nested join field is not an object"))
 				}
 
-				nestedSchemaRef, ok := field.Schema.(schema.NestedSchemaReference)
-				if !ok {
+				if field.Schema.IsZero() || !field.Schema.IsSingle() {
 					return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_JOIN_NO_SCHEMA_REF", fmt.Sprintf("nested join field '%s' does not have a nested schema reference", part)).WithOperation("applyJoinsToSchema").WithCause(errors.New("nested join field does not have a nested schema reference"))
 				}
 
-				nestedSchema, exists := currentSchema.NestedSchemas[nestedSchemaRef.ID]
+				nestedRef, _ := definition.FieldSchemaAs[definition.SchemaReference](field.Schema)
+				nestedSchema, exists := resultSchema.Schemas[nestedRef.ID]
 				if !exists {
-					return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_SCHEMA_NOT_FOUND", fmt.Sprintf("nested schema '%s' not found for nested join", nestedSchemaRef.ID)).WithOperation("applyJoinsToSchema").WithCause(errors.New("nested schema not found for nested join"))
+					return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_SCHEMA_NOT_FOUND", fmt.Sprintf("nested schema '%s' not found for nested join", nestedRef.ID)).WithOperation("applyJoinsToSchema").WithCause(errors.New("nested schema not found for nested join"))
 				}
 
-				currentSchema = &schema.SchemaDefinition{
-					Name:          nestedSchema.Name,
-					NestedSchemas: currentSchema.NestedSchemas,
-					Fields:        nestedSchema.Fields.FieldsMap,
-				}
+				currentFields = nestedSchema.Fields
+				currentBase = &nestedSchema.BaseSchema
 
 			} else {
 				// This is the last part, so add the join field here
-				if err := addJoinField(currentSchema, part, join); err != nil {
+				if err := addJoinField(resultSchema, currentBase, part, join); err != nil {
 					return err
 				}
 			}
@@ -222,9 +227,9 @@ func applyJoinsToSchema(resultSchema *schema.SchemaDefinition, joins []JoinConfi
 	return nil
 }
 
-func addJoinField(targetSchema *schema.SchemaDefinition, fieldName string, join JoinConfiguration) error {
+func addJoinField(rootSchema *definition.Schema, targetBase *definition.BaseSchema, fieldName string, join JoinConfiguration) error {
 	// Clone the joined schema
-	joinedSchema := cloneSchemaDefinition(join.Target.Schema)
+	joinedSchema := join.Target.Schema.DeepCopy()
 
 	// Apply projection to joined schema if specified
 	if join.Projection != nil {
@@ -235,33 +240,35 @@ func addJoinField(targetSchema *schema.SchemaDefinition, fieldName string, join 
 
 	// Create nested schema definition
 	nestedSchemaName := fmt.Sprintf("%s_joined", fieldName)
-	nestedSchema := &schema.NestedSchemaDefinition{
-		Name:                nestedSchemaName,
-		Description:         utils.StringPtr(fmt.Sprintf("Joined data from %s", join.Target.Name)),
-		Fields: &schema.NestedSchemaFields{
-			FieldsMap: joinedSchema.Fields,
+	nestedSchema := definition.NestedSchema{
+		BaseSchema: definition.BaseSchema{
+			Name:        nestedSchemaName,
+			Description: fmt.Sprintf("Joined data from %s", join.Target.Name),
+			Fields:      joinedSchema.Fields,
+			Indexes:     joinedSchema.Indexes,
+			Constraints: joinedSchema.Constraints,
+			Metadata:    joinedSchema.Metadata,
 		},
 	}
 
-	// Add to nested schemas
-	if targetSchema.NestedSchemas == nil {
-		targetSchema.NestedSchemas = make(map[string]*schema.NestedSchemaDefinition)
+	// Add to nested schemas of the root schema
+	if rootSchema.Schemas == nil {
+		rootSchema.Schemas = make(map[definition.SchemaId]definition.NestedSchema)
 	}
-	targetSchema.NestedSchemas[nestedSchemaName] = nestedSchema
+	rootSchema.Schemas[definition.SchemaId(nestedSchemaName)] = nestedSchema
 
-	// Add field to main schema pointing to nested schema
-	joinFieldType := schema.FieldTypeObject
-	if join.Type == JoinTypeLeft || join.Type == JoinTypeRight || join.Type == JoinTypeFull {
-		// Outer joins can result in null values
-	}
+	// Add field to target base schema pointing to nested schema
+	joinFieldType := definition.FieldTypeObject
 
-	targetSchema.Fields[fieldName] = &schema.FieldDefinition{
-		Name:        fieldName,
-		Type:        joinFieldType,
-		Required:    utils.BoolPtr(join.Type == JoinTypeInner), // Inner joins guarantee presence
-		Description: utils.StringPtr(fmt.Sprintf("Data joined from %s collection", join.Target.Name)),
-		Schema: schema.NestedSchemaReference{
-			ID: nestedSchemaName,
+	targetBase.Fields[definition.FieldId(fieldName)] = definition.Field{
+		Name:        definition.FieldName(fieldName),
+		Description: fmt.Sprintf("Data joined from %s collection", join.Target.Name),
+		Required:    join.Type == JoinTypeInner, // Inner joins guarantee presence
+		FieldProperties: definition.FieldProperties{
+			Type: joinFieldType,
+			Schema: definition.NewSchemaReference(definition.SchemaReference{
+				ID: definition.SchemaId(nestedSchemaName),
+			}),
 		},
 	}
 
@@ -269,27 +276,30 @@ func addJoinField(targetSchema *schema.SchemaDefinition, fieldName string, join 
 }
 
 // applyProjectionToSchema modifies the schema based on projection configuration
-func applyProjectionToSchema(resultSchema *schema.SchemaDefinition, projection *ProjectionConfiguration, originalSchema *schema.SchemaDefinition, options *SchemaFromQueryOptions) error {
+func applyProjectionToSchema(resultSchema *definition.Schema, projection *ProjectionConfiguration, originalSchema *definition.Schema, options *SchemaFromQueryOptions) error {
 	// Handle exclusions first
 	if len(projection.Exclude) > 0 {
 		for _, exclude := range projection.Exclude {
-			delete(resultSchema.Fields, exclude.Name)
+			fieldId := definition.FieldId(exclude.Name)
 
 			// Handle nested exclusions
 			if exclude.Nested != nil {
-				if field, exists := resultSchema.Fields[exclude.Name]; exists {
+				if field, exists := resultSchema.Fields[fieldId]; exists {
 					// Apply nested exclusion to the field's schema
-					if err := applyNestedProjection(field, exclude.Nested, originalSchema); err != nil {
+					if err := applyNestedProjection(resultSchema, &field, exclude.Nested, originalSchema); err != nil {
 						return common.NewSystemError("ERR_QUERY_SCHEMA_RECURSIVE_NESTED_EXCLUSION_FAILED", fmt.Sprintf("%s to field %s", err.Error(), exclude.Name)).WithOperation("applyProjectionToSchema").WithCause(err)
 					}
+					resultSchema.Fields[fieldId] = field
 				}
+			} else {
+				delete(resultSchema.Fields, fieldId)
 			}
 		}
 	}
 
 	// Handle inclusions (if specified, only included fields remain)
 	if len(projection.Include) > 0 {
-		newFields := make(map[string]*schema.FieldDefinition)
+		newFields := make(map[definition.FieldId]definition.Field)
 
 		for _, include := range projection.Include {
 			fieldName := include.Name
@@ -297,19 +307,20 @@ func applyProjectionToSchema(resultSchema *schema.SchemaDefinition, projection *
 				fieldName = *include.Alias
 			}
 
-			if originalField, exists := originalSchema.Fields[include.Name]; exists {
-				// Clone the field
-				newField := cloneFieldDefinition(originalField)
-				newField.Name = fieldName
+			oldFieldId := definition.FieldId(include.Name)
+			if originalField, exists := originalSchema.Fields[oldFieldId]; exists {
+				// Clone the field (already cloned by DeepCopy of resultSchema, but let's be safe if we want a fresh one)
+				newField := originalField // Struct copy is enough since we will modify it
+				newField.Name = definition.FieldName(fieldName)
 
 				// Handle nested projections
 				if include.Nested != nil {
-					if err := applyNestedProjection(newField, include.Nested, originalSchema); err != nil {
+					if err := applyNestedProjection(resultSchema, &newField, include.Nested, originalSchema); err != nil {
 						return common.NewSystemError("ERR_QUERY_SCHEMA_RECURSIVE_NESTED_PROJECTION_FAILED", fmt.Sprintf("%s to field %s", err.Error(), include.Name)).WithOperation("applyProjectionToSchema").WithCause(err)
 					}
 				}
 
-				newFields[fieldName] = newField
+				newFields[definition.FieldId(fieldName)] = newField
 			}
 		}
 
@@ -319,7 +330,7 @@ func applyProjectionToSchema(resultSchema *schema.SchemaDefinition, projection *
 	// Handle computed fields
 	if len(projection.Computed) > 0 && options != nil {
 		for _, computed := range projection.Computed {
-			var fieldDef *schema.FieldDefinition
+			var fieldDef *definition.Field
 
 			if computed.ComputedFieldExpression != nil {
 				fieldDef = createComputedFieldDefinition(computed.ComputedFieldExpression, options)
@@ -328,7 +339,7 @@ func applyProjectionToSchema(resultSchema *schema.SchemaDefinition, projection *
 			}
 
 			if fieldDef != nil {
-				resultSchema.Fields[fieldDef.Name] = fieldDef
+				resultSchema.Fields[definition.FieldId(fieldDef.Name)] = *fieldDef
 			}
 		}
 	}
@@ -337,8 +348,8 @@ func applyProjectionToSchema(resultSchema *schema.SchemaDefinition, projection *
 }
 
 // createComputedFieldDefinition creates a field definition for a computed field
-func createComputedFieldDefinition(expr *ComputedFieldExpression, options *SchemaFromQueryOptions) *schema.FieldDefinition {
-	fieldType := schema.FieldTypeUnknown
+func createComputedFieldDefinition(expr *ComputedFieldExpression, options *SchemaFromQueryOptions) *definition.Field {
+	fieldType := definition.FieldTypeUnknown
 
 	if expr.Expression != nil {
 		if fnType, exists := options.FunctionTypeMap[expr.Expression.Function]; exists {
@@ -346,38 +357,37 @@ func createComputedFieldDefinition(expr *ComputedFieldExpression, options *Schem
 		}
 	}
 
-	return &schema.FieldDefinition{
-		Name:        expr.Alias,
-		Type:        fieldType,
-		Required:    utils.BoolPtr(false),
-		Description: utils.StringPtr(fmt.Sprintf("Computed field using function %s", expr.Expression.Function)),
+	return &definition.Field{
+		Name:        definition.FieldName(expr.Alias),
+		Description: fmt.Sprintf("Computed field using function %s", expr.Expression.Function),
+		FieldProperties: definition.FieldProperties{
+			Type: fieldType,
+		},
 	}
 }
 
 // createCaseFieldDefinition creates a field definition for a case expression
-func createCaseFieldDefinition(expr *CaseExpression) *schema.FieldDefinition {
-	// Case expressions can return different types - we'll use unknown for simplicity
-	// In a more sophisticated implementation, you could analyze the THEN clauses
-	// to infer a common type
-	return &schema.FieldDefinition{
-		Name:        expr.Alias,
-		Type:        schema.FieldTypeUnknown,
-		Required:    utils.BoolPtr(false),
-		Description: utils.StringPtr("Case expression result"),
+func createCaseFieldDefinition(expr *CaseExpression) *definition.Field {
+	return &definition.Field{
+		Name:        definition.FieldName(expr.Alias),
+		Description: "Case expression result",
+		FieldProperties: definition.FieldProperties{
+			Type: definition.FieldTypeUnknown,
+		},
 	}
 }
 
 // inferAggregationFieldType determines the appropriate field type for an aggregation result
-func inferAggregationFieldType(agg AggregationConfiguration, targetSchema *schema.SchemaDefinition, options *SchemaFromQueryOptions) schema.FieldType {
+func inferAggregationFieldType(agg AggregationConfiguration, targetSchema *definition.Schema, options *SchemaFromQueryOptions) definition.FieldType {
 	// For MIN and MAX, try to use the original field type
 	if agg.Type == AggregationTypeMin || agg.Type == AggregationTypeMax {
-		if field, exists := targetSchema.Fields[agg.Field]; exists {
+		if field, exists := targetSchema.Fields[definition.FieldId(agg.Field)]; exists {
 			// For numeric types, return the same type
 			switch field.Type {
-			case schema.FieldTypeNumber, schema.FieldTypeInteger, schema.FieldTypeDecimal:
+			case definition.FieldTypeNumber, definition.FieldTypeInteger, definition.FieldTypeDecimal:
 				return field.Type
 			default:
-				return schema.FieldTypeUnknown
+				return definition.FieldTypeUnknown
 			}
 		}
 	}
@@ -387,153 +397,7 @@ func inferAggregationFieldType(agg AggregationConfiguration, targetSchema *schem
 		return fieldType
 	}
 
-	return schema.FieldTypeUnknown
-}
-
-// cloneSchemaDefinition creates a deep copy of a schema definition
-func cloneSchemaDefinition(original *schema.SchemaDefinition) *schema.SchemaDefinition {
-	clone := &schema.SchemaDefinition{
-		Name:        original.Name,
-		Version:     original.Version,
-		Description: original.Description,
-		Fields:      make(map[string]*schema.FieldDefinition),
-		Indexes:     make([]schema.IndexOrReference, len(original.Indexes)),
-		Constraints: make(schema.SchemaConstraint, len(original.Constraints)),
-	}
-
-	// Clone fields
-	for name, field := range original.Fields {
-		clone.Fields[name] = cloneFieldDefinition(field)
-	}
-
-	// Clone indexes
-	copy(clone.Indexes, original.Indexes)
-
-	// Clone constraints
-	copy(clone.Constraints, original.Constraints)
-
-	// Clone nested schemas if they exist
-	if original.NestedSchemas != nil {
-		clone.NestedSchemas = make(map[string]*schema.NestedSchemaDefinition)
-		for name, nestedSchema := range original.NestedSchemas {
-			clone.NestedSchemas[name] = cloneNestedSchemaDefinition(nestedSchema)
-		}
-	}
-
-	// Clone metadata if it exists
-	if original.Metadata != nil {
-		clone.Metadata = make(map[string]any)
-		maps.Copy(clone.Metadata, original.Metadata)
-	}
-
-	return clone
-}
-
-// cloneFieldDefinition creates a deep copy of a field definition
-func cloneFieldDefinition(original *schema.FieldDefinition) *schema.FieldDefinition {
-	clone := &schema.FieldDefinition{
-		Name:        original.Name,
-		Type:        original.Type,
-		Default:     original.Default,
-		Schema:      original.Schema,
-		Values:      make([]any, len(original.Values)),
-		Constraints: make(schema.SchemaConstraint, len(original.Constraints)),
-	}
-
-	// Clone pointer fields
-	if original.Required != nil {
-		clone.Required = utils.BoolPtr(*original.Required)
-	}
-	if original.ItemsType != nil {
-		itemsType := *original.ItemsType
-		clone.ItemsType = &itemsType
-	}
-	if original.Deprecated != nil {
-		clone.Deprecated = utils.BoolPtr(*original.Deprecated)
-	}
-	if original.Description != nil {
-		clone.Description = utils.StringPtr(*original.Description)
-	}
-	if original.Unique != nil {
-		clone.Unique = utils.BoolPtr(*original.Unique)
-	}
-
-	// Clone values slice
-	copy(clone.Values, original.Values)
-
-	// Clone constraints
-	copy(clone.Constraints, original.Constraints)
-
-	return clone
-}
-
-// cloneNestedSchemaDefinition creates a deep copy of a nested schema definition
-func cloneNestedSchemaDefinition(original *schema.NestedSchemaDefinition) *schema.NestedSchemaDefinition {
-	clone := &schema.NestedSchemaDefinition{
-		Name:        original.Name,
-		Schema:      original.Schema,
-		Default:     original.Default,
-		Fields: &schema.NestedSchemaFields{},
-	}
-
-	// Clone pointer fields
-	if original.Description != nil {
-		clone.Description = utils.StringPtr(*original.Description)
-	}
-	if original.Concrete != nil {
-		clone.Concrete = utils.BoolPtr(*original.Concrete)
-	}
-	if original.Type != nil {
-		fieldType := *original.Type
-		clone.Type = &fieldType
-	}
-	if original.ItemsType != nil {
-		itemsType := *original.ItemsType
-		clone.ItemsType = &itemsType
-	}
-
-	// Clone structured fields map
-	if original.Fields != nil  && original.Fields.FieldsMap != nil {
-		clone.Fields.FieldsMap = make(map[string]*schema.FieldDefinition)
-		for name, field := range original.Fields.FieldsMap {
-			clone.Fields.FieldsMap[name] = cloneFieldDefinition(field)
-		}
-	}
-
-	// Clone structured fields array
-	if original.Fields != nil && original.Fields.FieldsArray != nil {
-		clone.Fields.FieldsArray =  make([]schema.ConditionalFieldSet, len(original.Fields.FieldsArray))
-
-		for i, structuredFields := range original.Fields.FieldsArray {
-			clone.Fields.FieldsArray[i].When = structuredFields.When
-			if structuredFields.Fields != nil {
-				clone.Fields.FieldsArray[i].Fields = make(map[string]*schema.FieldDefinition)
-				for name, field := range structuredFields.Fields {
-					clone.Fields.FieldsArray[i].Fields[name] = cloneFieldDefinition(field)
-				}
-			}
-		}
-	}
-
-	// Clone indexes
-	if original.Indexes != nil {
-		clone.Indexes = make([]schema.IndexOrReference, len(original.Indexes))
-		copy(clone.Indexes, original.Indexes)
-	}
-
-	// Clone constraints
-	if original.Constraints != nil {
-		clone.Constraints = make(schema.SchemaConstraint, len(original.Constraints))
-		copy(clone.Constraints, original.Constraints)
-	}
-
-	// Clone metadata
-	if original.Metadata != nil {
-		clone.Metadata = make(map[string]any)
-		maps.Copy(clone.Metadata, original.Metadata)
-	}
-
-	return clone
+	return definition.FieldTypeUnknown
 }
 
 // generateResultSchemaName creates a descriptive name for the result schema
@@ -565,118 +429,120 @@ func generateResultSchemaName(q *Query) string {
 
 	return "query_result"
 }
+
 // applyNestedProjection applies projection to nested field schemas
-func applyNestedProjection(field *schema.FieldDefinition, projection *ProjectionConfiguration, originalSchema *schema.SchemaDefinition) error {
+func applyNestedProjection(rootSchema *definition.Schema, field *definition.Field, projection *ProjectionConfiguration, originalSchema *definition.Schema) error {
 	// Only handle fields that can have nested schemas
 	switch field.Type {
-	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeRecord:
+	case definition.FieldTypeObject, definition.FieldTypeArray, definition.FieldTypeRecord:
 		// Continue processing
 	default:
-		return common.NewSystemError("ERR_QUERY_SCHEMA_CANNOT_APPLY_NESTED_PROJECTION", fmt.Sprintf("cannot apply nested projection to field of type %s", field.Type)).WithOperation("applyNestedProjection").WithCause(errors.New("cannot apply nested projection to field of this type"))
+		return common.NewSystemError("ERR_QUERY_SCHEMA_CANNOT_APPLY_NESTED_PROJECTION", fmt.Sprintf("cannot apply nested projection to field of type %s", field.Type.String())).WithOperation("applyNestedProjection").WithCause(errors.New("cannot apply nested projection to field of this type"))
 	}
 
 	// Handle nested schema references
-	if nestedRef, ok := field.Schema.(schema.NestedSchemaReference); ok {
-		return applyProjectionToSchemaReference(field, nestedRef, projection, originalSchema)
+	if field.Schema.IsZero() {
+		return nil
 	}
 
-	// Handle inline nested field definitions (map[string]*FieldDefinition)
-	if nestedFields, ok := field.Schema.(map[string]*schema.FieldDefinition); ok {
-		return applyProjectionToInlineFields(nestedFields, projection, originalSchema)
+	if field.Schema.IsSingle() {
+		nestedRef, _ := definition.FieldSchemaAs[definition.SchemaReference](field.Schema)
+		return applyProjectionToSchemaReference(rootSchema, field, nestedRef, projection, originalSchema)
 	}
 
-	// Handle slice of nested schema references (for union types)
-	if nestedRefs, ok := field.Schema.([]schema.NestedSchemaReference); ok {
-		return applyProjectionToSchemaReferenceSlice(field, nestedRefs, projection, originalSchema)
+	if field.Schema.IsMultiple() {
+		nestedRefs, _ := definition.FieldSchemaAs[[]definition.SchemaReference](field.Schema)
+		return applyProjectionToSchemaReferenceSlice(rootSchema, field, nestedRefs, projection, originalSchema)
 	}
 
 	return common.NewSystemError("ERR_QUERY_SCHEMA_UNSUPPORTED_NESTED_SCHEMA_FORMAT", fmt.Sprintf("unsupported nested schema format for field %s", field.Name)).WithOperation("applyNestedProjection").WithCause(errors.New("unsupported nested schema format"))
 }
 
 // applyProjectionToSchemaReference handles projection for a single nested schema reference
-func applyProjectionToSchemaReference(field *schema.FieldDefinition, nestedRef schema.NestedSchemaReference, projection *ProjectionConfiguration, originalSchema *schema.SchemaDefinition) error {
-	// Find the referenced nested schema using the provided method
-	originalNestedSchema, exists := originalSchema.FindNestedSchema(nestedRef.ID)
+func applyProjectionToSchemaReference(rootSchema *definition.Schema, field *definition.Field, nestedRef definition.SchemaReference, projection *ProjectionConfiguration, originalSchema *definition.Schema) error {
+	// Find the referenced nested schema
+	originalNestedSchema, exists := originalSchema.Schemas[nestedRef.ID]
 	if !exists {
 		return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_SCHEMA_REF_NOT_FOUND", fmt.Sprintf("nested schema reference %s not found", nestedRef.ID)).WithOperation("applyProjectionToSchemaReference").WithCause(errors.New("nested schema reference not found"))
 	}
 
-	// Clone the nested schema for modification
-	modifiedNestedSchema := cloneNestedSchemaDefinition(originalNestedSchema)
+	// Deep copy the nested schema for modification
+	modifiedNestedSchema := originalNestedSchema // Struct copy is enough for BaseSchema if we deep copy fields later
+	modifiedNestedSchema.Fields = make(map[definition.FieldId]definition.Field, len(originalNestedSchema.Fields))
+	for id, f := range originalNestedSchema.Fields {
+		modifiedNestedSchema.Fields[id] = f // We'll project these below
+	}
 
 	// Apply projection to the nested schema's fields
-	if originalNestedSchema.IsStructured() {
-		if err := applyProjectionToNestedSchema(modifiedNestedSchema, projection, originalSchema); err != nil {
-			return common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_NESTED_FAILED", fmt.Sprintf("failed to apply projection to nested schema %s", nestedRef.ID)).WithOperation("applyProjectionToSchemaReference").WithCause(err)
-		}
-	} else {
-		// For non-structured nested schemas, we can't apply field-level projections
-		return common.NewSystemError("ERR_QUERY_SCHEMA_CANNOT_APPLY_FIELD_PROJECTION_NON_STRUCTURED", fmt.Sprintf("cannot apply field projection to non-structured nested schema %s", nestedRef.ID)).WithOperation("applyProjectionToSchemaReference").WithCause(errors.New("cannot apply field projection to non-structured nested schema"))
+	if err := applyProjectionToFieldsMap(rootSchema, modifiedNestedSchema.Fields, projection, originalSchema); err != nil {
+		return common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_NESTED_FAILED", fmt.Sprintf("failed to apply projection to nested schema %s", nestedRef.ID)).WithOperation("applyProjectionToSchemaReference").WithCause(err)
 	}
 
 	// Create a new nested schema ID to avoid conflicts
-	projectedSchemaID := generateProjectedSchemaID(nestedRef.ID, projection)
+	projectedSchemaID := generateProjectedSchemaID(string(nestedRef.ID), projection)
 
 	// Update both the schema name and register it with the new ID
 	modifiedNestedSchema.Name = projectedSchemaID
 
-	// Ensure the parent schema has a NestedSchemas map
-	if originalSchema.NestedSchemas == nil {
-		originalSchema.NestedSchemas = make(map[string]*schema.NestedSchemaDefinition)
+	// Ensure the root schema has a Schemas map
+	if rootSchema.Schemas == nil {
+		rootSchema.Schemas = make(map[definition.SchemaId]definition.NestedSchema)
 	}
 
-	// Register the modified nested schema using the same ID as the name
-	originalSchema.NestedSchemas[projectedSchemaID] = modifiedNestedSchema
+	// Register the modified nested schema
+	rootSchema.Schemas[definition.SchemaId(projectedSchemaID)] = modifiedNestedSchema
 
 	// Update the field's schema reference to use the new schema name/ID
-	updatedRef := schema.NestedSchemaReference{
-		ID:          projectedSchemaID, // This must match NestedSchemaDefinition.Name
+	updatedRef := definition.SchemaReference{
+		ID:          definition.SchemaId(projectedSchemaID),
 		Constraints: nestedRef.Constraints, // Preserve existing constraints
 		Indexes:     nestedRef.Indexes,     // Preserve existing indexes
 	}
-	field.Schema = updatedRef
+	field.Schema = definition.NewSchemaReference(updatedRef)
 
 	return nil
 }
 
 // applyProjectionToSchemaReferenceSlice handles projection for union types with multiple schema references
-func applyProjectionToSchemaReferenceSlice(field *schema.FieldDefinition, nestedRefs []schema.NestedSchemaReference, projection *ProjectionConfiguration, originalSchema *schema.SchemaDefinition) error {
-	projectedRefs := make([]schema.NestedSchemaReference, 0, len(nestedRefs))
+func applyProjectionToSchemaReferenceSlice(rootSchema *definition.Schema, field *definition.Field, nestedRefs []definition.SchemaReference, projection *ProjectionConfiguration, originalSchema *definition.Schema) error {
+	projectedRefs := make([]definition.SchemaReference, 0, len(nestedRefs))
 
 	for _, nestedRef := range nestedRefs {
 		// Find the referenced nested schema
-		originalNestedSchema, exists := originalSchema.FindNestedSchema(nestedRef.ID)
+		originalNestedSchema, exists := originalSchema.Schemas[nestedRef.ID]
 		if !exists {
 			return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_SCHEMA_REF_NOT_FOUND_UNION", fmt.Sprintf("nested schema reference %s not found in union type", nestedRef.ID)).WithOperation("applyProjectionToSchemaReferenceSlice").WithCause(errors.New("nested schema reference not found in union type"))
 		}
 
 		// Clone the nested schema for modification
-		modifiedNestedSchema := cloneNestedSchemaDefinition(originalNestedSchema)
+		modifiedNestedSchema := originalNestedSchema
+		modifiedNestedSchema.Fields = make(map[definition.FieldId]definition.Field, len(originalNestedSchema.Fields))
+		for id, f := range originalNestedSchema.Fields {
+			modifiedNestedSchema.Fields[id] = f
+		}
 
-		// Apply projection if the nested schema is structured
-		if originalNestedSchema.IsStructured() {
-			if err := applyProjectionToNestedSchema(modifiedNestedSchema, projection, originalSchema); err != nil {
-				return common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_NESTED_UNION_FAILED", fmt.Sprintf("failed to apply projection to nested schema %s in union", nestedRef.ID)).WithOperation("applyProjectionToSchemaReferenceSlice").WithCause(err)
-			}
+		// Apply projection
+		if err := applyProjectionToFieldsMap(rootSchema, modifiedNestedSchema.Fields, projection, originalSchema); err != nil {
+			return common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_NESTED_UNION_FAILED", fmt.Sprintf("failed to apply projection to nested schema %s in union", nestedRef.ID)).WithOperation("applyProjectionToSchemaReferenceSlice").WithCause(err)
 		}
 
 		// Create a new nested schema ID for the projected version
-		projectedSchemaID := generateProjectedSchemaID(nestedRef.ID, projection)
+		projectedSchemaID := generateProjectedSchemaID(string(nestedRef.ID), projection)
 
 		// Update both the schema name and register it with the new ID
 		modifiedNestedSchema.Name = projectedSchemaID
 
-		// Ensure the parent schema has a NestedSchemas map
-		if originalSchema.NestedSchemas == nil {
-			originalSchema.NestedSchemas = make(map[string]*schema.NestedSchemaDefinition)
+		// Ensure the root schema has a Schemas map
+		if rootSchema.Schemas == nil {
+			rootSchema.Schemas = make(map[definition.SchemaId]definition.NestedSchema)
 		}
 
-		// Register the modified nested schema using the same ID as the name
-		originalSchema.NestedSchemas[projectedSchemaID] = modifiedNestedSchema
+		// Register the modified nested schema
+		rootSchema.Schemas[definition.SchemaId(projectedSchemaID)] = modifiedNestedSchema
 
-		// Create updated reference with ID matching the schema name
-		updatedRef := schema.NestedSchemaReference{
-			ID:          projectedSchemaID, // This must match NestedSchemaDefinition.Name
+		// Create updated reference
+		updatedRef := definition.SchemaReference{
+			ID:          definition.SchemaId(projectedSchemaID),
 			Constraints: nestedRef.Constraints, // Preserve existing constraints
 			Indexes:     nestedRef.Indexes,     // Preserve existing indexes
 		}
@@ -684,54 +550,34 @@ func applyProjectionToSchemaReferenceSlice(field *schema.FieldDefinition, nested
 	}
 
 	// Update the field's schema reference slice
-	field.Schema = projectedRefs
+	field.Schema = definition.NewSchemaReference(projectedRefs)
 	return nil
 }
 
-// applyProjectionToNestedSchema applies projection configuration to a nested schema definition
-func applyProjectionToNestedSchema(nestedSchema *schema.NestedSchemaDefinition, projection *ProjectionConfiguration, parentSchema *schema.SchemaDefinition) error {
-	// Handle structured fields map
-	if nestedSchema.Fields != nil && nestedSchema.Fields.FieldsMap != nil {
-		return applyProjectionToFieldsMap(nestedSchema.Fields.FieldsMap, projection, parentSchema)
-	}
-
-	// Handle structured fields array (conditional fields)
-	if nestedSchema.Fields != nil && nestedSchema.Fields.FieldsArray != nil {
-		for i := range nestedSchema.Fields.FieldsArray {
-			if nestedSchema.Fields.FieldsArray[i].Fields != nil {
-				if err := applyProjectionToFieldsMap(nestedSchema.Fields.FieldsArray[i].Fields, projection, parentSchema); err != nil {
-					return common.NewSystemError("ERR_QUERY_SCHEMA_APPLY_PROJECTION_CONDITIONAL_FAILED", fmt.Sprintf("failed to apply projection to conditional fields array at index %d", i)).WithOperation("applyProjectionToNestedSchema").WithCause(err)
-				}
-			}
-		}
-		return nil
-	}
-
-	return common.NewSystemError("ERR_QUERY_SCHEMA_NO_STRUCTURED_FIELDS_TO_PROJECT", "nested schema has no structured fields to project").WithOperation("applyProjectionToNestedSchema").WithCause(errors.New("nested schema has no structured fields to project"))
-}
-
 // applyProjectionToFieldsMap applies projection to a map of field definitions
-func applyProjectionToFieldsMap(fields map[string]*schema.FieldDefinition, projection *ProjectionConfiguration, parentSchema *schema.SchemaDefinition) error {
+func applyProjectionToFieldsMap(rootSchema *definition.Schema, fields map[definition.FieldId]definition.Field, projection *ProjectionConfiguration, originalSchema *definition.Schema) error {
 	// Handle exclusions first
 	if len(projection.Exclude) > 0 {
 		for _, exclude := range projection.Exclude {
+			fieldId := definition.FieldId(exclude.Name)
 			if exclude.Nested != nil {
 				// Apply nested projection before excluding the field
-				if field, exists := fields[exclude.Name]; exists {
-					if err := applyNestedProjection(field, exclude.Nested, parentSchema); err != nil {
+				if field, exists := fields[fieldId]; exists {
+					if err := applyNestedProjection(rootSchema, &field, exclude.Nested, originalSchema); err != nil {
 						return common.NewSystemError("ERR_QUERY_SCHEMA_RECURSIVE_NESTED_EXCLUSION_FAILED", fmt.Sprintf("failed to apply recursive nested exclusion to field %s", exclude.Name)).WithOperation("applyProjectionToFieldsMap").WithCause(err)
 					}
+					fields[fieldId] = field
 				}
 			} else {
 				// Simple exclusion - remove the field
-				delete(fields, exclude.Name)
+				delete(fields, fieldId)
 			}
 		}
 	}
 
 	// Handle inclusions (if specified, only included fields remain)
 	if len(projection.Include) > 0 {
-		newFields := make(map[string]*schema.FieldDefinition)
+		newFields := make(map[definition.FieldId]definition.Field)
 
 		for _, include := range projection.Include {
 			fieldName := include.Name
@@ -739,19 +585,20 @@ func applyProjectionToFieldsMap(fields map[string]*schema.FieldDefinition, proje
 				fieldName = *include.Alias
 			}
 
-			if originalField, exists := fields[include.Name]; exists {
-				// Clone the field to avoid modifying the original
-				newField := cloneFieldDefinition(originalField)
-				newField.Name = fieldName
+			oldFieldId := definition.FieldId(include.Name)
+			if originalField, exists := fields[oldFieldId]; exists {
+				// Clone the field
+				newField := originalField
+				newField.Name = definition.FieldName(fieldName)
 
 				// Handle recursive nested projections
 				if include.Nested != nil {
-					if err := applyNestedProjection(newField, include.Nested, parentSchema); err != nil {
+					if err := applyNestedProjection(rootSchema, &newField, include.Nested, originalSchema); err != nil {
 						return common.NewSystemError("ERR_QUERY_SCHEMA_RECURSIVE_NESTED_PROJECTION_FAILED", fmt.Sprintf("failed to apply recursive nested projection to field %s", include.Name)).WithOperation("applyProjectionToFieldsMap").WithCause(err)
 					}
 				}
 
-				newFields[fieldName] = newField
+				newFields[definition.FieldId(fieldName)] = newField
 			} else {
 				// Field doesn't exist in the original schema
 				return common.NewSystemError("ERR_QUERY_SCHEMA_PROJECTION_INCLUDE_FIELD_NOT_EXIST", fmt.Sprintf("field %s specified in projection include does not exist", include.Name)).WithOperation("applyProjectionToFieldsMap").WithCause(errors.New("field specified in projection include does not exist"))
@@ -768,7 +615,7 @@ func applyProjectionToFieldsMap(fields map[string]*schema.FieldDefinition, proje
 	// Handle computed fields in nested context
 	if len(projection.Computed) > 0 {
 		for _, computed := range projection.Computed {
-			var fieldDef *schema.FieldDefinition
+			var fieldDef *definition.Field
 
 			if computed.ComputedFieldExpression != nil {
 				fieldDef = createComputedFieldDefinitionForNested(computed.ComputedFieldExpression)
@@ -778,10 +625,10 @@ func applyProjectionToFieldsMap(fields map[string]*schema.FieldDefinition, proje
 
 			if fieldDef != nil {
 				// Check for field name conflicts
-				if _, exists := fields[fieldDef.Name]; exists {
+				if _, exists := fields[definition.FieldId(fieldDef.Name)]; exists {
 					return common.NewSystemError("ERR_QUERY_SCHEMA_COMPUTED_FIELD_CONFLICT", fmt.Sprintf("computed field %s conflicts with existing field", fieldDef.Name)).WithOperation("applyProjectionToFieldsMap").WithCause(errors.New("computed field conflicts with existing field"))
 				}
-				fields[fieldDef.Name] = fieldDef
+				fields[definition.FieldId(fieldDef.Name)] = *fieldDef
 			}
 		}
 	}
@@ -789,29 +636,25 @@ func applyProjectionToFieldsMap(fields map[string]*schema.FieldDefinition, proje
 	return nil
 }
 
-// applyProjectionToInlineFields applies projection to inline nested field definitions
-func applyProjectionToInlineFields(fields map[string]*schema.FieldDefinition, projection *ProjectionConfiguration, parentSchema *schema.SchemaDefinition) error {
-	return applyProjectionToFieldsMap(fields, projection, parentSchema)
-}
-
 // createComputedFieldDefinitionForNested creates a field definition for a computed field in nested context
-func createComputedFieldDefinitionForNested(expr *ComputedFieldExpression) *schema.FieldDefinition {
-	// In nested context, we default to unknown type since we don't have access to function type maps
-	return &schema.FieldDefinition{
-		Name:        expr.Alias,
-		Type:        schema.FieldTypeUnknown,
-		Required:    utils.BoolPtr(false),
-		Description: utils.StringPtr(fmt.Sprintf("Computed field using function %s", expr.Expression.Function)),
+func createComputedFieldDefinitionForNested(expr *ComputedFieldExpression) *definition.Field {
+	return &definition.Field{
+		Name:        definition.FieldName(expr.Alias),
+		Description: fmt.Sprintf("Computed field using function %s", expr.Expression.Function),
+		FieldProperties: definition.FieldProperties{
+			Type: definition.FieldTypeUnknown,
+		},
 	}
 }
 
 // createCaseFieldDefinitionForNested creates a field definition for a case expression in nested context
-func createCaseFieldDefinitionForNested(expr *CaseExpression) *schema.FieldDefinition {
-	return &schema.FieldDefinition{
-		Name:        expr.Alias,
-		Type:        schema.FieldTypeUnknown,
-		Required:    utils.BoolPtr(false),
-		Description: utils.StringPtr("Case expression result"),
+func createCaseFieldDefinitionForNested(expr *CaseExpression) *definition.Field {
+	return &definition.Field{
+		Name:        definition.FieldName(expr.Alias),
+		Description: "Case expression result",
+		FieldProperties: definition.FieldProperties{
+			Type: definition.FieldTypeUnknown,
+		},
 	}
 }
 

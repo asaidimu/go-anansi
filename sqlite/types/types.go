@@ -1,9 +1,9 @@
 package types
 
-import "github.com/asaidimu/go-anansi/v6/core/schema"
+import "github.com/asaidimu/go-anansi/v6/core/schema/definition"
 
 type SQLitePayload struct {
-	Schema *schema.SchemaDefinition
+	Schema *definition.Schema
 	SQL    string
 	Params []any
 }
