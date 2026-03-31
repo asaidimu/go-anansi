@@ -8,7 +8,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
@@ -19,7 +19,7 @@ import (
 // ReadRows reads all rows from a *sql.Rows object and converts them into a slice
 // of map[string]any maps. If no schema is provided, it returns raw row data without conversions.
 // Add the constant here (or import it from your constants package)
-func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) ([]map[string]any, int64, error) {
+func ReadRows(logger *zap.Logger, sc *definition.Schema, rows *sql.Rows) ([]map[string]any, int64, error) {
 	utilDocChan, utilErrChan := readRowsToDocs(rows)
 
 	var results []map[string]any
@@ -60,7 +60,7 @@ func ReadRows(logger *zap.Logger, sc *schema.SchemaDefinition, rows *sql.Rows) (
 					globalResult[tableName] = tableObj
 				}
 
-				fieldDef := sc.FindField(fieldName)
+				_, fieldDef := sc.FindField(fieldName)
 				cv, err := fromSQLiteValue(fieldDef, value)
 				if err != nil {
 					logger.Warn("failed to convert value", zap.String("field", fieldName), zap.Error(err))
@@ -180,7 +180,7 @@ func convertBooleanFromSQLite(value any) (any, error) {
 }
 
 // fromSQLiteValue converts a value from SQLite to its Go representation based on the schema.
-func fromSQLiteValue(fieldDef *schema.FieldDefinition, value any) (any, error) {
+func fromSQLiteValue(fieldDef *definition.Field, value any) (any, error) {
 	if value == nil || fieldDef == nil {
 		return value, nil
 	}
@@ -189,7 +189,7 @@ func fromSQLiteValue(fieldDef *schema.FieldDefinition, value any) (any, error) {
 	var err error
 
 	switch fieldDef.Type {
-	case schema.FieldTypeBoolean:
+	case definition.FieldTypeBoolean:
 		convertedValue, err = convertBooleanFromSQLite(value)
 	default:
 		if fieldDef.Type.IsComplex() {

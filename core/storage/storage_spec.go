@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // storage_spec.go
@@ -43,7 +43,7 @@ type StorageEngine interface {
 	// CreateCollection creates a new collection based on the provided schema. This method
 	// also registers the schema with the engine's internal schema registry.
 	// It returns a handle to the newly created collection.
-	CreateCollection(ctx context.Context, schema *schema.SchemaDefinition) (base.Collection, error)
+	CreateCollection(ctx context.Context, schema *definition.Schema) (base.Collection, error)
 
 	// HasCollection checks if a collection with the given name exists.
 	HasCollection(ctx context.Context, name string) (bool, error)
@@ -60,7 +60,7 @@ type StorageEngine interface {
 	Transact(ctx context.Context, callback func(ctx context.Context, tx TransactionalEngine) (any, error)) (any, error)
 
 	// Schema retrieves a specific schema definition from the engine's registry by name and optional version.
-	Schema(ctx context.Context, name string, version ...string) (*schema.SchemaDefinition, error)
+	Schema(ctx context.Context, name string, version ...string) (*definition.Schema, error)
 
 	// Metadata retrieves observability and diagnostic information about the storage engine.
 	Metadata(ctx context.Context, filter *base.MetadataFilter) (base.Metadata, error)

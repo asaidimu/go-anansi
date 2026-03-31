@@ -5,7 +5,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/sqlite/types"
 )
 
@@ -95,7 +95,7 @@ func (f *sqliteFactory) buildRawQuery(q *query.Query, stmtType native.StatementT
 	raw := q.Raw
 	finalSQL := raw.Template
 
-	var sc *schema.SchemaDefinition
+	var sc *definition.Schema
 	if q.Target != nil {
 		sc = q.Target.Schema
 	}

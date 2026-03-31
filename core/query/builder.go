@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // QueryValidationResult represents the result of query validation
@@ -46,7 +46,7 @@ func (qb *QueryBuilder) Alias(alias string) *QueryBuilder {
 	return qb
 }
 
-func (qb *QueryBuilder) Schema(schema *schema.SchemaDefinition) *QueryBuilder {
+func (qb *QueryBuilder) Schema(schema *definition.Schema) *QueryBuilder {
 	if qb.query.Target == nil {
 		qb.query.Target = &QueryTarget{}
 	}
@@ -861,7 +861,7 @@ func (jb *JoinBuilder) Alias(alias string) *JoinBuilder {
 	return jb
 }
 
-func (jb *JoinBuilder) Schema(schema *schema.SchemaDefinition) *JoinBuilder {
+func (jb *JoinBuilder) Schema(schema *definition.Schema) *JoinBuilder {
 	jb.joinConfig.Target.Schema = schema
 	return jb
 }

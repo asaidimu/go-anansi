@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -36,8 +36,8 @@ type MetadataProvider func(ctx context.Context, doc *Document) (map[string]any, 
 // MetadataProviderConfig holds a nested schema, its dependencies and its corresponding provider.
 type MetadataProviderConfig struct {
 	Name         string
-	Schema       *schema.NestedSchemaDefinition
-	Dependencies []*schema.NestedSchemaDefinition
+	Schema       *definition.NestedSchema
+	Dependencies []*definition.NestedSchema
 	Provider     MetadataProvider
 }
 
@@ -400,7 +400,7 @@ func (f *documentFactory) isValidID(id string) bool {
 // ============================================================================
 
 // GetMetadataSchema merges all provider schemas into a single metadata schema
-func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchemaDefinition) {
+func GetMetadataSchema() (*definition.NestedSchema, []*definition.NestedSchema) {
 	f := getFactory()
 	// Copy provider configs while holding lock
 	f.mu.RLock()
@@ -409,18 +409,12 @@ func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchema
 	f.mu.RUnlock()
 
 	mergedSchema := DefaultMetadataSchema()
-	dependencies := make([]*schema.NestedSchemaDefinition, 0)
+	dependencies := make([]*definition.NestedSchema, 0)
 	dependencyNames := make(map[string]bool)
 
-	// Initialize the StructuredFieldsMap if it's nil
+	// Initialize the Fields map if it's nil
 	if mergedSchema.Fields == nil {
-		mergedSchema.Fields = &schema.NestedSchemaFields{
-			FieldsMap: make(map[string]*schema.FieldDefinition),
-		}
-	}
-
-	if mergedSchema.Fields.FieldsMap == nil {
-		mergedSchema.Fields.FieldsMap = make(map[string]*schema.FieldDefinition)
+		mergedSchema.Fields = make(map[definition.FieldId]definition.Field)
 	}
 
 	for _, providerConfig := range providers {
@@ -433,8 +427,8 @@ func GetMetadataSchema() (*schema.NestedSchemaDefinition, []*schema.NestedSchema
 		}
 
 		// Merge the provider's schema fields into the top-level metadata schema
-		if providerConfig.Schema != nil && providerConfig.Schema.Fields != nil && providerConfig.Schema.Fields.FieldsMap != nil {
-			maps.Copy(mergedSchema.Fields.FieldsMap, providerConfig.Schema.Fields.FieldsMap)
+		if providerConfig.Schema != nil && providerConfig.Schema.Fields != nil {
+			maps.Copy(mergedSchema.Fields, providerConfig.Schema.Fields)
 		}
 	}
 

@@ -5,7 +5,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // managedPersistence is a decorator that wraps a base.Persistence
@@ -63,14 +63,14 @@ func (m *managedPersistence) ListCollections(ctx context.Context) ([]string, err
 }
 
 // CreateCollection delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) CreateCollection(ctx context.Context, sc *schema.SchemaDefinition) (base.Collection, error) {
+func (m *managedPersistence) CreateCollection(ctx context.Context, sc *definition.Schema) (base.Collection, error) {
 	if err := m.checkClosed(); err != nil {
 		return nil, err
 	}
 	return m.wrapped.CreateCollection(ctx, sc)
 }
 
-func (m *managedPersistence) CreateCollections(ctx context.Context, schemas []*schema.SchemaDefinition) error {
+func (m *managedPersistence) CreateCollections(ctx context.Context, schemas []*definition.Schema) error {
 	if err := m.checkClosed(); err != nil {
 		return err
 	}
@@ -109,7 +109,7 @@ func (m *managedPersistence) Subscribe(ctx context.Context, options base.Subscri
 }
 
 // Schema delegates the call to the wrapped persistence after checking the closed state.
-func (m *managedPersistence) Schema(ctx context.Context, id string, version ...string) (*schema.SchemaDefinition, error) {
+func (m *managedPersistence) Schema(ctx context.Context, id string, version ...string) (*definition.Schema, error) {
 	if err := m.checkClosed(); err != nil {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (m *managedPersistence) Rollback(
 func (m *managedPersistence) Migrate(
 	ctx context.Context,
 	name string,
-	migration schema.Migration,
+	migration any,
 	dryRun *bool,
 ) (base.Collection, error) {
 	if err := m.checkClosed(); err != nil {

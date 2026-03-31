@@ -2,7 +2,7 @@ package query
 
 import (
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 type SQLNode interface {
@@ -44,7 +44,7 @@ type selectTree struct {
 
 
 type createTableTree struct {
-	schema *schema.SchemaDefinition
+	schema *definition.Schema
 }
 
 
@@ -55,12 +55,12 @@ type dropTableTree struct {
 
 type createIndexTree struct {
 	collection string
-	index  *schema.IndexDefinition
+	index  *definition.Index
 }
 
 
 
 type dropIndexTree struct {
 	collection string
-	index *schema.IndexDefinition
+	index *definition.Index
 }

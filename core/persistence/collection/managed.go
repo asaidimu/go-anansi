@@ -12,7 +12,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
@@ -22,18 +22,18 @@ type managedCollection struct {
 	physicalName      string
 	logicalName       string
 	wrapped           base.Collection
-	schema            *schema.SchemaDefinition
+	schema            *definition.Schema
 	rawQueryProcessor base.RawQueryProcessor
-	resolveSchema     func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error)
+	resolveSchema     func(ctx context.Context, name string) (string, *definition.Schema, error)
 }
 
 // newManagedCollection creates a new ManagedCollection decorator.
 func newManagedCollection(
-	schema *schema.SchemaDefinition,
+	sc *definition.Schema,
 	logicalName string,
 	physicalName string,
 	wrapped base.Collection,
-	resolveSchema func(ctx context.Context, name string) (string, *schema.SchemaDefinition, error),
+	resolveSchema func(ctx context.Context, name string) (string, *definition.Schema, error),
 	processor base.RawQueryProcessor,
 ) (*managedCollection, error) {
 
@@ -42,7 +42,7 @@ func newManagedCollection(
 	}
 
 	return &managedCollection{
-		schema:            schema,
+		schema:            sc,
 		physicalName:      physicalName,
 		logicalName:       logicalName,
 		wrapped:           wrapped,
@@ -84,14 +84,10 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []*data.Documen
 			continue
 		}
 
-		validationResult, err := c.Validate(ctx, d, false)
+		validationResult, ok := c.Validate(ctx, d, false)
 
-		if err != nil {
-			return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_VALIDATION_SYSTEM_ERROR")
-		}
-
-		if !validationResult.Valid {
-			results = append(results, base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: validationResult.Issues})
+		if !ok {
+			results = append(results, base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: validationResult})
 		} else {
 			results = append(results, base.CreateResult{Status: base.StatusCreated, Data: doc})
 			validCount++
@@ -154,7 +150,7 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 	fq.Target = &query.QueryTarget{
 		Name:   c.physicalName,
 		Alias:  &c.logicalName,
-		Schema: c.schema.MustDeepClone(),
+		Schema: c.schema.DeepCopy(),
 	}
 
 	// Add main collection translation
@@ -371,9 +367,9 @@ func (c *managedCollection) prepareFilterValue(ctx context.Context, value *query
 }
 
 // resolveTargetWithTranslations resolves a query target and returns translation mappings.
-func (c *managedCollection) resolveTargetWithTranslations(ctx context.Context, target *query.QueryTarget) (string, *schema.SchemaDefinition, map[string]string, error) {
+func (c *managedCollection) resolveTargetWithTranslations(ctx context.Context, target *query.QueryTarget) (string, *definition.Schema, map[string]string, error) {
 	if c.resolveSchema == nil {
-		return "", nil, nil, schema.ErrPhysicalNameResolverNotSet
+		return "", nil, nil, common.NewSystemError("ERR_PERSISTENCE_RESOLVER_NOT_SET", "Physical name resolver not set")
 	}
 
 	logicalName := target.Name
@@ -399,12 +395,9 @@ func (c *managedCollection) resolveTargetWithTranslations(ctx context.Context, t
 // and updates the document and its metadata.
 func (c *managedCollection) Update(ctx context.Context, params *base.CollectionUpdate) (*base.ReadResult, error) {
 	validate := func() error {
-		result, err := c.Validate(ctx, params.Set, true)
-		if err != nil {
-			return common.SystemErrorFrom(err, "ERR_PERSISTENCE_VALIDATION_SYSTEM_ERROR")
-		}
-		if !result.Valid {
-			return base.ErrValidationFailed.WithIssues(result.Issues)
+		result, ok := c.Validate(ctx, params.Set, true)
+		if !ok{
+			return base.ErrValidationFailed.WithIssues(result)
 		}
 		return nil
 	}
@@ -524,7 +517,7 @@ func (c *managedCollection) Delete(ctx context.Context, q *query.QueryFilter, un
 	return count, nil
 }
 
-func (c *managedCollection) Validate(ctx context.Context, data *data.Document, loose bool) (*schema.ValidationResult, error) {
+func (c *managedCollection) Validate(ctx context.Context, data *data.Document, loose bool) ([]common.Issue, bool) {
 	return c.wrapped.Validate(ctx, data, loose)
 }
 

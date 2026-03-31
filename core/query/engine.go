@@ -6,7 +6,7 @@ import (
 	"hash/fnv"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"go.uber.org/zap"
 )
 
@@ -50,7 +50,7 @@ func (e *QueryEngine) RegisterFilterFunction(operator ComparisonOperator, fn Pre
 }
 
 // Query orchestrates the entire query execution process, from partitioning to final result.
-func (e *QueryEngine) Query(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *Query) (*QueryResult, error) {
+func (e *QueryEngine) Query(ctx context.Context, schemaDef *definition.Schema, dsl *Query) (*QueryResult, error) {
 	interactor, ok := GetInteractor(ctx)
 	if !ok {
 		return nil, common.NewSystemError("ERR_QUERY_INTERACTOR_NOT_FOUND", "could not get interactor").WithOperation("Query")

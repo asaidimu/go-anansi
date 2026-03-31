@@ -11,8 +11,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	"github.com/asaidimu/go-events"
@@ -44,18 +43,19 @@ func SetupTestDB(t *testing.T) (*sql.DB, func()) {
 	return db, cleanup
 }
 
-func NewTestSchema(name ...string) *schema.SchemaDefinition {
+func NewTestSchema(name ...string) *definition.Schema {
 	sname := "test_collection"
 	if name != nil {
 		sname = name[0]
 	}
-	return &schema.SchemaDefinition{
-		Name:        sname,
-		Version:     "8.0.0",
-		Description: utils.StringPtr("test collection"),
-		Fields: map[string]*schema.FieldDefinition{
-			"name":      {Name: "name", Type: "string", Required: utils.BoolPtr(true)},
-			"age":       {Name: "age", Type: "integer"},
+	return &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name:        sname,
+			Description: "test collection",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "name", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 }

@@ -125,3 +125,4 @@ func NewSchemaReference[T SchemaReferenceType](payload T) FieldSchemaReference {
 	}
 	return fr
 }
+

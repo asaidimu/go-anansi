@@ -4,14 +4,14 @@ package query
 
 import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // QueryGeneratorFactory defines the interface for a factory that creates QueryGenerator instances.
 // This allows for the creation of query generators that are specific to a given database schema.
 type QueryGeneratorFactory interface {
 	// CreateGenerator creates a new QueryGenerator for a specific schema.
-	CreateGenerator(schema *schema.SchemaDefinition) (QueryGenerator, error)
+	CreateGenerator(schema *definition.Schema) (QueryGenerator, error)
 }
 
 // QueryGenerator defines the interface for generating database-specific query strings
@@ -187,7 +187,7 @@ type CaseExpressionBuilderInterface interface {
 type JoinBuilderInterface interface {
 	On(filter QueryFilter) *JoinBuilder
 	Alias(alias string) *JoinBuilder
-	Schema(schema *schema.SchemaDefinition) *JoinBuilder
+	Schema(schema *definition.Schema) *JoinBuilder
 	WithProjection(projection *ProjectionConfiguration) *JoinBuilder
 	End() *QueryBuilder
 }

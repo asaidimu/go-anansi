@@ -7,7 +7,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	sqlite "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	"github.com/asaidimu/go-anansi/v6/tests/testutils"
@@ -23,7 +23,7 @@ func TestSelect(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
 	qb := query.NewQueryBuilder()
-	qb.From("users").Schema(&schema.SchemaDefinition{}).
+	qb.From("users").Schema(&definition.Schema{}).
 		Select().
 		AddComputed("full_name", "concat", &query.FieldReference{Field: "first_name"}, " ", &query.FieldReference{Field: "last_name"}).
 		AddCase("status_category").
@@ -57,11 +57,13 @@ func TestInsert(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
 	qb := query.NewQueryBuilder()
-	userSchema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
-			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
-			"age":        {Name: "age", Type: schema.FieldTypeInteger},
+	userSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f3": {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 	qb.From("users").Schema(userSchema)
@@ -90,7 +92,7 @@ func TestUpdate(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
 	qb := query.NewQueryBuilder()
-	qb.From("users").Schema(&schema.SchemaDefinition{}).
+	qb.From("users").Schema(&definition.Schema{}).
 		Where("id").Eq("user-123")
 
 	q := qb.Build()
@@ -116,12 +118,14 @@ func TestUpdate(t *testing.T) {
 func TestDelete(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
-	userSchema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":    {Name: "id", Type: schema.FieldTypeString},
-			"age":   {Name: "age", Type: schema.FieldTypeInteger},
-			"email": {Name: "email", Type: schema.FieldTypeString},
+	userSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"f3": {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -145,19 +149,23 @@ func TestDelete(t *testing.T) {
 func TestSelectComplex(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
-	orderSchema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"id":           {Name: "id", Type: schema.FieldTypeString},
-			"order_date":   {Name: "order_date", Type: schema.FieldTypeString},
-			"total_amount": {Name: "total_amount", Type: schema.FieldTypeNumber},
-			"customer_id":  {Name: "customer_id", Type: schema.FieldTypeString},
+	orderSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "order_date", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f3": {Name: "total_amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"f4": {Name: "customer_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	customerSchema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"id":     {Name: "id", Type: schema.FieldTypeString},
-			"region": {Name: "region", Type: schema.FieldTypeString},
+	customerSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -199,10 +207,12 @@ func TestSelectComplex(t *testing.T) {
 func TestSelectWithInAndNinOperators(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
-	userSchema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"region": {Name: "region", Type: schema.FieldTypeString},
-			"status": {Name: "status", Type: schema.FieldTypeString},
+	userSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -232,22 +242,28 @@ func TestSelectWithInAndNinOperators(t *testing.T) {
 func TestSelectWithMultipleJoins(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
-	orderSchema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"customer_id": {Name: "customer_id", Type: schema.FieldTypeString},
-			"product_id":  {Name: "product_id", Type: schema.FieldTypeString},
+	orderSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "customer_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "product_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	userSchema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"id": {Name: "id", Type: schema.FieldTypeString},
+	userSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	productSchema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"id": {Name: "id", Type: schema.FieldTypeString},
+	productSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -283,11 +299,13 @@ func TestSelectWithMultipleJoins(t *testing.T) {
 func TestSelectWithCaseStatement(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
-	userSchema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
-			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
-			"status":     {Name: "status", Type: schema.FieldTypeString},
+	userSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f3": {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -328,16 +346,20 @@ func TestSelectWithCaseStatement(t *testing.T) {
 func TestSelectWithDifferentDataTypesInWhere(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
-	userSchema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"age": {Name: "age", Type: schema.FieldTypeInteger},
+	userSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 
-	productSchema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"price":    {Name: "price", Type: schema.FieldTypeNumber},
-			"in_stock": {Name: "in_stock", Type: schema.FieldTypeBoolean},
+	productSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "price", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"f2": {Name: "in_stock", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeBoolean}},
+			},
 		},
 	}
 
@@ -351,7 +373,7 @@ func TestSelectWithDifferentDataTypesInWhere(t *testing.T) {
 	assert.Equal(t, expectedSQLInt, nqInt.Raw().SQL)
 	assert.Equal(t, []any{float64(30)}, nqInt.Raw().Params)
 
-	// Test with float - fields in alphabetical order: in_stock, price
+	// Test with float - fields in alphabetical order: f2 (in_stock), f1 (price)
 	qbFloat := query.NewQueryBuilder().From("products").Schema(productSchema).Where("price").Lte(9.99)
 	qFloat := qbFloat.Build()
 	nqFloat, errFloat := builder.Build(&qFloat, native.StmtSelect, nil)
@@ -361,7 +383,7 @@ func TestSelectWithDifferentDataTypesInWhere(t *testing.T) {
 	assert.Equal(t, expectedSQLFloat, nqFloat.Raw().SQL)
 	assert.Equal(t, []any{9.99}, nqFloat.Raw().Params)
 
-	// Test with boolean - fields in alphabetical order: in_stock, price
+	// Test with boolean - fields in alphabetical order: f2 (in_stock), f1 (price)
 	qbBool := query.NewQueryBuilder().From("products").Schema(productSchema).Where("in_stock").Eq(true)
 	qBool := qbBool.Build()
 	nqBool, errBool := builder.Build(&qBool, native.StmtSelect, nil)
@@ -383,14 +405,16 @@ func float64p(f float64) *float64 {
 func TestSelectWithDistinct(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
-	userSchema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"country": {Name: "country", Type: schema.FieldTypeString},
-			"city":    {Name: "city", Type: schema.FieldTypeString},
+	userSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "country", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "city", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	// Test DISTINCT on all fields - alphabetical order: city, country
+	// Test DISTINCT on all fields - alphabetical order: f2 (city), f1 (country)
 	qbAll := query.NewQueryBuilder().From("users").Schema(userSchema).Distinct()
 	qAll := qbAll.Build()
 	nqAll, errAll := builder.Build(&qAll, native.StmtSelect, nil)
@@ -412,10 +436,12 @@ func TestSelectWithDistinct(t *testing.T) {
 func TestSelectWithAggregations(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
-	salesSchema := &schema.SchemaDefinition{
-		Fields: map[string]*schema.FieldDefinition{
-			"amount": {Name: "amount", Type: schema.FieldTypeNumber},
-			"region": {Name: "region", Type: schema.FieldTypeString},
+	salesSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"f2": {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -451,12 +477,14 @@ func TestSQLiteFactory_SelectImplicitFields(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
 	// Define a schema for the collection
-	accountsSchema := &schema.SchemaDefinition{
-		Name: "accounts",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":      {Name: "id", Type: schema.FieldTypeString},
-			"name":    {Name: "name", Type: schema.FieldTypeString},
-			"balance": {Name: "balance", Type: schema.FieldTypeNumber},
+	accountsSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "accounts",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f3": {Name: "balance", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 
@@ -473,7 +501,7 @@ func TestSQLiteFactory_SelectImplicitFields(t *testing.T) {
 	assert.NotNil(t, nq)
 
 	// Assert the generated SQL
-	// The SELECT clause should implicitly include all fields from the schema in alphabetical order: balance, id, name
+	// The SELECT clause should implicitly include all fields from the schema in alphabetical order: f3 (balance), f1 (id), f2 (name)
 	expectedSQL := `SELECT accounts.balance AS 'accounts.balance', accounts.id AS 'accounts.id', accounts.name AS 'accounts.name' FROM accounts WHERE "id" = $1`
 	assert.Equal(t, expectedSQL, nq.Raw().SQL)
 	assert.Equal(t, 1, len(nq.Raw().Params))

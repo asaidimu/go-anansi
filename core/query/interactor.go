@@ -3,7 +3,7 @@ package query
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // InteractorOptions provides a set of configurations for the DatabaseInteractor.
@@ -41,16 +41,16 @@ type InteractorOptions struct {
 type SchemaManager interface {
 	// CreateCollection generates and executes the necessary DDL statements to create a
 	// table based on a schema definition.
-	CreateCollection(ctx context.Context,schema schema.SchemaDefinition) error
+	CreateCollection(ctx context.Context,schema definition.Schema) error
 
 	// CreateIndex generates and executes the DDL statements to create an index on a table.
-	CreateIndex(ctx context.Context, collection string, index schema.IndexDefinition) error
+	CreateIndex(ctx context.Context, collection string, index definition.Index) error
 
 	// DropCollection removes a table from the database.
 	DropCollection(ctx context.Context, name string) error
 
 	// DropIndex removes an index from the database.
-	DropIndex(ctx context.Context, collection string, index schema.IndexDefinition) error
+	DropIndex(ctx context.Context, collection string, index definition.Index) error
 
 	// CollectionExists checks if a table with the given name exists in the database.
 	CollectionExists(ctx context.Context,name string) (bool, error)
@@ -87,19 +87,19 @@ type DatabaseInteractor interface {
 	SchemaManager
 
 	// SelectDocuments retrieves documents from the database based on a QueryDSL
-	SelectDocuments(ctx context.Context, schema *schema.SchemaDefinition, dsl *Query) ([]map[string]any, int64, error)
+	SelectDocuments(ctx context.Context, schema *definition.Schema, dsl *Query) ([]map[string]any, int64, error)
 
 	// SelectStream executes a SELECT query and returns a channel of documents.
-	SelectStream(ctx context.Context, sc *schema.SchemaDefinition, dsl *Query) (<-chan map[string]any, <-chan error, error)
+	SelectStream(ctx context.Context, sc *definition.Schema, dsl *Query) (<-chan map[string]any, <-chan error, error)
 
 	// UpdateDocuments modifies documents in the database that match the provided filters.
-	UpdateDocuments(ctx context.Context, schema *schema.SchemaDefinition, updates map[string]any, computedUpdates map[string]Query, filters *QueryFilter, returning bool) ([]map[string]any,int64, error)
+	UpdateDocuments(ctx context.Context, schema *definition.Schema, updates map[string]any, computedUpdates map[string]Query, filters *QueryFilter, returning bool) ([]map[string]any,int64, error)
 
 	// InsertDocuments adds new documents to the database.
-	InsertDocuments(ctx context.Context, schema *schema.SchemaDefinition, records []map[string]any) ([]map[string]any, error)
+	InsertDocuments(ctx context.Context, schema *definition.Schema, records []map[string]any) ([]map[string]any, error)
 
 	// DeleteDocuments removes documents from the database that match the provided filters.
-	DeleteDocuments(ctx context.Context, schema *schema.SchemaDefinition, filters *QueryFilter, unsafeDelete bool) (int64, error)
+	DeleteDocuments(ctx context.Context, schema *definition.Schema, filters *QueryFilter, unsafeDelete bool) (int64, error)
 
 	// Query executes a raw, templated query directly against the database.
 	// This allows for operations that are not tied to a specific collection,

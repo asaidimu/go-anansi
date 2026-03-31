@@ -7,7 +7,7 @@ package native
 import (
 	"context"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // StatementType represents the type of database operation.
@@ -80,7 +80,7 @@ type NativeQuery[T any] struct {
 
 	// Schema defines the structure and constraints for the data being queried.
 	// This is used for result mapping, validation, and type conversion.
-	Schema *schema.SchemaDefinition
+	Schema *definition.Schema
 }
 
 // QueryFactory is implemented by each database dialect (SQL, MongoDB, etc.).

@@ -5,25 +5,27 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqlite "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCreateTableTree_Value(t *testing.T) {
-	schemaDef := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: schema.FieldTypeString},
-			"name": {Name: "name", Type: schema.FieldTypeString},
-			"age":  {Name: "age", Type: schema.FieldTypeInteger},
+	schemaDef := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f3": {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 
 	q := query.Query{
 		Target: &query.QueryTarget{
-			Name: schemaDef.Name,
+			Name:   schemaDef.Name,
 			Schema: schemaDef,
 		},
 	}
@@ -45,13 +47,15 @@ func TestCreateTableTree_Value(t *testing.T) {
 }
 
 func TestDropTableTree_Value(t *testing.T) {
-	schemaDef := &schema.SchemaDefinition{
-		Name: "users",
+	schemaDef := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+		},
 	}
 
 	q := query.Query{
 		Target: &query.QueryTarget{
-			Name: schemaDef.Name,
+			Name:   schemaDef.Name,
 			Schema: schemaDef,
 		},
 	}
@@ -68,17 +72,19 @@ func TestDropTableTree_Value(t *testing.T) {
 }
 
 func TestCreateIndexTree_Value(t *testing.T) {
-	schemaDef := &schema.SchemaDefinition{
-		Name: "users",
+	schemaDef := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+		},
 	}
-	indexDef := schema.IndexDefinition{
+	indexDef := definition.Index{
 		Name:   "idx_users_name",
-		Fields: []string{"name"},
+		Fields: []definition.FieldId{"name"},
 	}
 
 	q := query.Query{
 		Target: &query.QueryTarget{
-			Name: schemaDef.Name,
+			Name:   schemaDef.Name,
 			Schema: schemaDef,
 		},
 	}
@@ -95,16 +101,18 @@ func TestCreateIndexTree_Value(t *testing.T) {
 }
 
 func TestDropIndexTree_Value(t *testing.T) {
-	schemaDef := &schema.SchemaDefinition{
-		Name: "users",
+	schemaDef := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+		},
 	}
-	indexDef := schema.IndexDefinition{
+	indexDef := definition.Index{
 		Name: "idx_users_name",
 	}
 
 	q := query.Query{
 		Target: &query.QueryTarget{
-			Name: schemaDef.Name,
+			Name:   schemaDef.Name,
 			Schema: schemaDef,
 		},
 	}

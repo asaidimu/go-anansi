@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 )
 
 // toSQLiteValue converts a Go value to its SQLite representation based on the schema.
-func toSQLiteValue(fieldDef *schema.FieldDefinition, value any) (any, error) {
+func toSQLiteValue(fieldDef *definition.Field, value any) (any, error) {
 	if value == nil {
 		return nil, nil
 	}
@@ -30,17 +30,19 @@ func toSQLiteValue(fieldDef *schema.FieldDefinition, value any) (any, error) {
 	}
 
 	// Use the schema's field type to determine the conversion logic.
-	switch fieldDef.Type {
-	case schema.FieldTypeObject, schema.FieldTypeArray, schema.FieldTypeSet, schema.FieldTypeRecord, schema.FieldTypeUnion:
+	if fieldDef.Type.IsComplex() {
 		jsonBytes, err := utils.ToJSONBytes(value)
 		if err != nil {
 			return nil, ErrConvertMarshalFieldFailed.WithCause(fmt.Errorf("failed to marshal field '%s' to JSON: %w", fieldDef.Name, err))
 		}
 		return string(jsonBytes), nil
-	case schema.FieldTypeBoolean:
-		if b, ok := fieldDef.Type.Coerce(value); ok {
-			val := b.(bool)
-			if val {
+	}
+
+	switch fieldDef.Type {
+	case definition.FieldTypeBoolean:
+		// Simple boolean conversion for SQLite (1 for true, 0 for false)
+		if b, ok := value.(bool); ok {
+			if b {
 				return 1, nil
 			}
 			return 0, nil

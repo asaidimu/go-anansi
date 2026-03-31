@@ -6,7 +6,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // SQLiteInsertValues handles the VALUES clause in an INSERT statement.
@@ -14,7 +14,7 @@ type SQLiteInsertValues struct {
 	factory *sqliteFactory
 	data    map[string]any
 	batch   []map[string]any
-	schema  *schema.SchemaDefinition
+	schema  *definition.Schema
 	fields  []string
 }
 
@@ -32,7 +32,7 @@ func (i *SQLiteInsertValues) Value() (string, []any, error) {
 		i.fields = i.schema.FieldNames()
 	}
 
-	if len(i.schema.FieldNames()) == 0 {
+	if len(i.fields) == 0 {
 		return "", nil, ErrInsertSchemaNoFields
 	}
 
@@ -99,22 +99,22 @@ func (i *SQLiteInsertValues) processDocumentFields(
 	placeholders := make([]string, 0, len(fields))
 	params := make([]any, 0, len(fields))
 
-	for _, field := range fields {
-		value, exists := doc[field]
+	for _, fieldName := range fields {
+		value, exists := doc[fieldName]
 		if !exists {
 			value = nil
 		}
 
 		placeholders = append(placeholders, i.factory.nextParam())
 
-		var fieldDef *schema.FieldDefinition
+		var fieldDef *definition.Field
 		if i.schema != nil {
-			fieldDef = i.schema.FindField(field)
+			_, fieldDef = i.schema.FindField(fieldName)
 		}
 
 		convertedValue, err := toSQLiteValue(fieldDef, value)
 		if err != nil {
-			return nil, nil, ErrInsertFieldConversionFailed.WithCause(fmt.Errorf("failed to convert field %s: %w", field, err))
+			return nil, nil, ErrInsertFieldConversionFailed.WithCause(fmt.Errorf("failed to convert field %s: %w", fieldName, err))
 		}
 
 		params = append(params, convertedValue)

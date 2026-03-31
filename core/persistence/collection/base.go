@@ -8,11 +8,10 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
-	"github.com/asaidimu/go-anansi/v6/core/schema/validator"
 
 	"github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
@@ -21,13 +20,13 @@ import (
 type baseCollection struct {
 	eventEmitter  *events.EventEmitter[base.PersistenceEvent]
 	name          string
-	schema        *schema.SchemaDefinition
+	schema        *definition.Schema
 	engine        *query.QueryEngine
 	interactor    query.DatabaseInteractor
 	logger        *zap.Logger
 	subscriptions map[string]*base.SubscriptionInfo // To store unsubscribe functions
 	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
-	validator     *validator.DocumentValidator
+	validator     *definition.DocumentValidator
 	metadata      *base.CollectionMetadata
 }
 
@@ -37,24 +36,20 @@ var _ base.Collection = (*baseCollection)(nil)
 func newBaseCollection(
 	eventEmitter *events.EventEmitter[base.PersistenceEvent],
 	name string,
-	sc *schema.SchemaDefinition,
+	sc *definition.Schema,
 	interactor query.DatabaseInteractor,
 	engine *query.QueryEngine,
 	logger *zap.Logger,
 ) (base.Collection, error) {
 	if sc == nil {
-		return nil, schema.ErrInvalidSchema.WithMessage("Collection access requires a non nil schema")
+		return nil, common.NewSystemError("ERR_PERSISTENCE_INVALID_SCHEMA", "Collection access requires a non nil schema")
 	}
 
-	validator, err := validator.NewDocumentValidator(sc, nil)
+	validator, err := definition.NewDocumentValidator(sc, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	description := ""
-	if sc.Description != nil {
-		description = *sc.Description
-	}
 	base := &baseCollection{
 		eventEmitter:  eventEmitter,
 		name:          name,
@@ -68,7 +63,7 @@ func newBaseCollection(
 			Version:       sc.Version,
 			Name:          name,
 			Collection:    sc.Name,
-			Description:   description,
+			Description:   sc.Description,
 			Status:        "active",
 			Created:       0, // get this from the registry
 			Records:       0, // For this and the next two below, we should have methods in the interactor to expose these
@@ -137,7 +132,7 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []*data.Document) 
 // Read retrieves documents from the collection that match the given QueryDSL.
 func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
 	rctx := query.WithInteractor(ctx, c.getCurrentInteractor(ctx))
-	docs, err := c.engine.Query(rctx, c.schema.MustClone(), q)
+	docs, err := c.engine.Query(rctx, c.schema.DeepCopy(), q)
 	if err != nil {
 		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_READ_DOCUMENTS_FAILED")
 	}
@@ -218,12 +213,11 @@ func (c *baseCollection) Delete(ctx context.Context, q *query.QueryFilter, unsaf
 
 // Validate checks if the given data conforms to the collection's schema.
 // The 'loose' flag allows for partial validation.
-func (c *baseCollection) Validate(ctx context.Context, data *data.Document, loose bool) (*schema.ValidationResult, error) {
-	issues, ok := c.validator.Validate(data.ToMap(), loose)
-	return &schema.ValidationResult{
-		Valid:  ok,
-		Issues: issues,
-	}, nil
+func (c *baseCollection) Validate(ctx context.Context, data *data.Document, loose bool) ([]common.Issue, bool) {
+	if loose {
+		return c.validator.ValidateLoose(data.ToMap())
+	}
+	return c.validator.Validate(data.ToMap())
 }
 
 // Metadata retrieves metadata specifically for this collection, with an option to
@@ -231,9 +225,9 @@ func (c *baseCollection) Validate(ctx context.Context, data *data.Document, loos
 func (c *baseCollection) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) *base.CollectionMetadata {
 	// TODO improve this method
 	metadata := *c.metadata
-	schema := *metadata.Schema
-	schema.Name = metadata.Name
-	metadata.Schema = &schema
+	sc := metadata.Schema.DeepCopy()
+	sc.Name = metadata.Name
+	metadata.Schema = sc
 	return &metadata
 }
 

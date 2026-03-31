@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 // SQLiteDeleteFromClause handles the DELETE FROM clause
@@ -74,7 +74,7 @@ func (f *sqliteFactory) buildDeleteTree(q *query.Query) (SQLNode, error) {
 	// Build filters (WHERE clause)
 	if q.Filters != nil {
 		// Create a projection for the WHERE clause
-		schemas := make(map[string]*schema.SchemaDefinition)
+		schemas := make(map[string]*definition.Schema)
 		if q.Target.Schema != nil {
 			name := q.Target.Name
 			if q.Target.Alias != nil {
