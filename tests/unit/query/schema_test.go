@@ -3,9 +3,9 @@ package query_test
 import (
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/schema/validator"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -16,26 +16,30 @@ func float64p(f float64) *float64 {
 
 func TestSchemaFromQuery(t *testing.T) {
 	// Define base schemas for testing
-	userSchema := &schema.SchemaDefinition{
-		Name:    "users",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":      {Name: "id", Type: schema.FieldTypeString},
-			"name":    {Name: "name", Type: schema.FieldTypeString},
-			"email":   {Name: "email", Type: schema.FieldTypeString},
-			"age":     {Name: "age", Type: schema.FieldTypeInteger},
-			"isAdmin": {Name: "isAdmin", Type: schema.FieldTypeBoolean},
+	userSchema := &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":      {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name":    {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"email":   {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":     {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"isAdmin": {Name: "isAdmin", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeBoolean}},
+			},
 		},
 	}
 
-	orderSchema := &schema.SchemaDefinition{
-		Name:    "orders",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":       {Name: "id", Type: schema.FieldTypeString},
-			"userId":   {Name: "userId", Type: schema.FieldTypeString},
-			"amount":   {Name: "amount", Type: schema.FieldTypeNumber},
-			"quantity": {Name: "quantity", Type: schema.FieldTypeInteger},
+	orderSchema := &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: "orders",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":       {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"userId":   {Name: "userId", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"amount":   {Name: "amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"quantity": {Name: "quantity", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 
@@ -49,7 +53,7 @@ func TestSchemaFromQuery(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, resultSchema)
 		assert.Len(t, resultSchema.Fields, 5)
-		assert.Contains(t, resultSchema.Fields, "name")
+		assert.Contains(t, resultSchema.Fields, definition.FieldId("name"))
 	})
 
 	t.Run("SelectWithProjection", func(t *testing.T) {
@@ -62,9 +66,9 @@ func TestSchemaFromQuery(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, resultSchema)
 		assert.Len(t, resultSchema.Fields, 2)
-		assert.Contains(t, resultSchema.Fields, "id")
-		assert.Contains(t, resultSchema.Fields, "name")
-		assert.NotContains(t, resultSchema.Fields, "email")
+		assert.Contains(t, resultSchema.Fields, definition.FieldId("id"))
+		assert.Contains(t, resultSchema.Fields, definition.FieldId("name"))
+		assert.NotContains(t, resultSchema.Fields, definition.FieldId("email"))
 	})
 
 	t.Run("SelectWithJoin", func(t *testing.T) {
@@ -89,18 +93,18 @@ func TestSchemaFromQuery(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, resultSchema)
 		assert.Len(t, resultSchema.Fields, 6) // 5 from users + 1 for the joined orders
-		assert.Contains(t, resultSchema.Fields, "user_orders")
+		assert.Contains(t, resultSchema.Fields, definition.FieldId("user_orders"))
 
 		joinedField := resultSchema.Fields["user_orders"]
-		assert.Equal(t, schema.FieldTypeObject, joinedField.Type)
-		assert.NotNil(t, resultSchema.NestedSchemas)
+		assert.Equal(t, definition.FieldTypeObject, joinedField.Type)
+		assert.NotNil(t, resultSchema.Schemas)
 
-		nestedSchemaRef, ok := joinedField.Schema.(schema.NestedSchemaReference)
-		require.True(t, ok)
-		nestedSchema, exists := resultSchema.NestedSchemas[nestedSchemaRef.ID]
+		nestedSchemaRef, err := definition.FieldSchemaAs[definition.SchemaReference](joinedField.Schema)
+		require.NoError(t, err)
+		nestedSchema, exists := resultSchema.Schemas[nestedSchemaRef.ID]
 		require.True(t, exists)
-		assert.Len(t, nestedSchema.Fields.FieldsMap, 4)
-		assert.Contains(t, nestedSchema.Fields.FieldsMap, "amount")
+		assert.Len(t, nestedSchema.Fields, 4)
+		assert.Contains(t, nestedSchema.Fields, definition.FieldId("amount"))
 	})
 
 	t.Run("SelectWithAggregation", func(t *testing.T) {
@@ -116,14 +120,14 @@ func TestSchemaFromQuery(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, resultSchema)
 		assert.Len(t, resultSchema.Fields, 2)
-		assert.Contains(t, resultSchema.Fields, "total_revenue")
-		assert.Contains(t, resultSchema.Fields, "avg_quantity")
+		assert.Contains(t, resultSchema.Fields, definition.FieldId("total_revenue"))
+		assert.Contains(t, resultSchema.Fields, definition.FieldId("avg_quantity"))
 
 		totalRevenueField := resultSchema.Fields["total_revenue"]
-		assert.Equal(t, schema.FieldTypeNumber, totalRevenueField.Type)
+		assert.Equal(t, definition.FieldTypeNumber, totalRevenueField.Type)
 
 		avgQuantityField := resultSchema.Fields["avg_quantity"]
-		assert.Equal(t, schema.FieldTypeNumber, avgQuantityField.Type)
+		assert.Equal(t, definition.FieldTypeNumber, avgQuantityField.Type)
 	})
 
 	t.Run("SelectWithGroupBy", func(t *testing.T) {
@@ -146,7 +150,7 @@ func TestSchemaFromQuery(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, resultSchema)
 		assert.Len(t, resultSchema.Fields, 1)
-		assert.Contains(t, resultSchema.Fields, "aggregation_results")
+		assert.Contains(t, resultSchema.Fields, definition.FieldId("aggregation_results"))
 	})
 
 	t.Run("SchemaMatchesExpectedFormat", func(t *testing.T) {
@@ -161,22 +165,24 @@ func TestSchemaFromQuery(t *testing.T) {
 		resultSchema, err := query.SchemaFromQuery(&q, nil)
 		require.NoError(t, err)
 
-		expectedSchema := &schema.SchemaDefinition{
-			Name:        "users_projected_result",
-			Version:     "1.0.0",
-			Description: stringPtr("Generated schema for query result"),
-			Fields: map[string]*schema.FieldDefinition{
-				"id":   {Name: "id", Type: schema.FieldTypeString},
-				"name": {Name: "name", Type: schema.FieldTypeString},
+		expectedSchema := &definition.Schema{
+			Version: common.MustNewVersion("1.0.0"),
+			BaseSchema: definition.BaseSchema{
+				Name:        "users_projected_result",
+				Description: "Generated schema for query result",
+				Fields: map[definition.FieldId]definition.Field{
+					"id":   {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+					"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				},
 			},
 		}
 
 		assert.Equal(t, expectedSchema.Name, resultSchema.Name)
-		assert.Equal(t, expectedSchema.Version, resultSchema.Version)
+		assert.Equal(t, expectedSchema.Version.String(), resultSchema.Version.String())
 		assert.Equal(t, expectedSchema.Description, resultSchema.Description)
 		assert.Equal(t, len(expectedSchema.Fields), len(resultSchema.Fields))
-		for name, field := range expectedSchema.Fields {
-			resultField, ok := resultSchema.Fields[name]
+		for id, field := range expectedSchema.Fields {
+			resultField, ok := resultSchema.Fields[id]
 			require.True(t, ok)
 			assert.Equal(t, field.Name, resultField.Name)
 			assert.Equal(t, field.Type, resultField.Type)
@@ -184,22 +190,28 @@ func TestSchemaFromQuery(t *testing.T) {
 	})
 
 	t.Run("SelectWithNestedJoins", func(t *testing.T) {
-		contactSchema := &schema.SchemaDefinition{
-			Name: "contacts",
-			Fields: map[string]*schema.FieldDefinition{
-				"id":      {Name: "id", Type: schema.FieldTypeString},
-				"phone":   {Name: "phone", Type: schema.FieldTypeString},
-				"address": {Name: "address", Type: schema.FieldTypeString},
+		contactSchema := &definition.Schema{
+			Version: common.MustNewVersion("1.0.0"),
+			BaseSchema: definition.BaseSchema{
+				Name: "contacts",
+				Fields: map[definition.FieldId]definition.Field{
+					"id":      {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+					"phone":   {Name: "phone", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+					"address": {Name: "address", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				},
 			},
 		}
 
-		profileSchema := &schema.SchemaDefinition{
-			Name: "profiles",
-			Fields: map[string]*schema.FieldDefinition{
-				"id":         {Name: "id", Type: schema.FieldTypeString},
-				"userId":     {Name: "userId", Type: schema.FieldTypeString},
-				"contactId":  {Name: "contactId", Type: schema.FieldTypeString},
-				"department": {Name: "department", Type: schema.FieldTypeString},
+		profileSchema := &definition.Schema{
+			Version: common.MustNewVersion("1.0.0"),
+			BaseSchema: definition.BaseSchema{
+				Name: "profiles",
+				Fields: map[definition.FieldId]definition.Field{
+					"id":         {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+					"userId":     {Name: "userId", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+					"contactId":  {Name: "contactId", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+					"department": {Name: "department", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				},
 			},
 		}
 
@@ -238,30 +250,30 @@ func TestSchemaFromQuery(t *testing.T) {
 
 		// 5 from users + 1 for profile join
 		assert.Len(t, resultSchema.Fields, 6)
-		assert.Contains(t, resultSchema.Fields, "profile")
+		assert.Contains(t, resultSchema.Fields, definition.FieldId("profile"))
 
 		profileField := resultSchema.Fields["profile"]
-		assert.Equal(t, schema.FieldTypeObject, profileField.Type)
+		assert.Equal(t, definition.FieldTypeObject, profileField.Type)
 
-		profileSchemaRef, ok := profileField.Schema.(schema.NestedSchemaReference)
-		require.True(t, ok)
-		nestedProfileSchema, exists := resultSchema.FindNestedSchema(profileSchemaRef.ID)
+		profileSchemaRef, err := definition.FieldSchemaAs[definition.SchemaReference](profileField.Schema)
+		require.NoError(t, err)
+		nestedProfileSchema, exists := resultSchema.Schemas[profileSchemaRef.ID]
 		require.True(t, exists)
 
 		// 4 from profiles + 1 for contact join
-		assert.Len(t, nestedProfileSchema.Fields.FieldsMap, 5)
-		assert.Contains(t, nestedProfileSchema.Fields.FieldsMap, "contact")
+		assert.Len(t, nestedProfileSchema.Fields, 5)
+		assert.Contains(t, nestedProfileSchema.Fields, definition.FieldId("contact"))
 
-		contactField := nestedProfileSchema.Fields.FieldsMap["contact"]
-		assert.Equal(t, schema.FieldTypeObject, contactField.Type)
+		contactField := nestedProfileSchema.Fields["contact"]
+		assert.Equal(t, definition.FieldTypeObject, contactField.Type)
 
-		contactSchemaRef, ok := contactField.Schema.(schema.NestedSchemaReference)
-		require.True(t, ok)
-		nestedContactSchema, exists := resultSchema.FindNestedSchema(contactSchemaRef.ID)
+		contactSchemaRef, err := definition.FieldSchemaAs[definition.SchemaReference](contactField.Schema)
+		require.NoError(t, err)
+		nestedContactSchema, exists := resultSchema.Schemas[contactSchemaRef.ID]
 		require.True(t, exists)
 
-		assert.Len(t, nestedContactSchema.Fields.FieldsMap, 3)
-		assert.Contains(t, nestedContactSchema.Fields.FieldsMap, "phone")
+		assert.Len(t, nestedContactSchema.Fields, 3)
+		assert.Contains(t, nestedContactSchema.Fields, definition.FieldId("phone"))
 
 		// Validate the schema with a sample document
 		doc := map[string]any{
@@ -283,9 +295,9 @@ func TestSchemaFromQuery(t *testing.T) {
 			},
 		}
 
-		v, err := validator.NewDocumentValidator(resultSchema, nil)
+		v, err := definition.NewDocumentValidator(resultSchema, nil)
 		require.NoError(t, err)
-		issues, ok := v.Validate(doc, false)
+		issues, ok := v.Validate(doc)
 		assert.True(t, ok)
 		assert.Empty(t, issues)
 	})

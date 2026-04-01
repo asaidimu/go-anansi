@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -19,24 +20,26 @@ type DelayedEphemeralInteractor struct {
 	delay time.Duration
 }
 
-func (i *DelayedEphemeralInteractor) SelectDocuments(ctx context.Context, schemaDef *schema.SchemaDefinition, dsl *query.Query) ([]map[string]any, int64, error) {
+func (i *DelayedEphemeralInteractor) SelectDocuments(ctx context.Context, schemaDef *definition.Schema, dsl *query.Query) ([]map[string]any, int64, error) {
 	time.Sleep(i.delay)
 	docs, count, err := i.DatabaseInteractor.SelectDocuments(ctx, schemaDef, dsl)
 	return docs, count, err
 }
 
-func newTestSchema(name ...string) *schema.SchemaDefinition {
+func newTestSchema(name ...string) *definition.Schema {
 	sname := "test_collection"
 	if name != nil {
 		sname = name[0]
 	}
-	return &schema.SchemaDefinition{
-		Name:        sname,
-		Version:     "1.0.0",
-		Description: stringPtr("test collection"),
-		Fields: map[string]*schema.FieldDefinition{
-			"id":        {Name: "id", Type: "string", Required: func() *bool { b := true; return &b }(), Unique: func() *bool { b := true; return &b }()},
-			"name":      {Name: "name", Type: "string", Required: func() *bool { b := true; return &b }()},
+	return &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name:        sname,
+			Description: "test collection",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":   {Name: "id", Required: true, Unique: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name": {Name: "name", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 }

@@ -396,7 +396,7 @@ func (c *managedCollection) resolveTargetWithTranslations(ctx context.Context, t
 func (c *managedCollection) Update(ctx context.Context, params *base.CollectionUpdate) (*base.ReadResult, error) {
 	validate := func() error {
 		result, ok := c.Validate(ctx, params.Set, true)
-		if !ok{
+		if !ok {
 			return base.ErrValidationFailed.WithIssues(result)
 		}
 		return nil
@@ -517,8 +517,8 @@ func (c *managedCollection) Delete(ctx context.Context, q *query.QueryFilter, un
 	return count, nil
 }
 
-func (c *managedCollection) Validate(ctx context.Context, data *data.Document, loose bool) ([]common.Issue, bool) {
-	return c.wrapped.Validate(ctx, data, loose)
+func (c *managedCollection) Validate(ctx context.Context, data *data.Document, partial bool) ([]common.Issue, bool) {
+	return c.wrapped.Validate(ctx, data, partial)
 }
 
 func (c *managedCollection) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) *base.CollectionMetadata {

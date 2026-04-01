@@ -233,7 +233,6 @@ func (jb *JSONBuilder) writeLiteralValueFromAny(v any) {
 		jb.writeNull()
 	}
 }
-
 // ToJSON converts a schema to JSON bytes using the walker
 func (s *Schema) ToJSON() []byte {
 	jb := acquireJSONBuilder()
@@ -336,15 +335,7 @@ func (s *Schema) ToJSON() []byte {
 				jb.writeKey("type")
 				jb.writeString(ns.Type.String())
 			}
-			if len(ns.Values) > 0 {
-				jb.writeKey("values")
-				jb.startArray()
-				for _, lv := range ns.Values {
-					jb.writeComma()
-					jb.writeLiteralValue(lv)
-				}
-				jb.endArray()
-			}
+			// values are now written by NodeTypeValuesArray
 			contextStack = append(contextStack, contextInfo{ctx.Type, ctx.Depth, false})
 		case NodeTypeConstraintsMap:
 			jb.writeKey("constraints")
@@ -365,19 +356,7 @@ func (s *Schema) ToJSON() []byte {
 			rule := ctx.Value.(*ConstraintRule)
 			jb.writeKey("predicate")
 			jb.writeString(string(rule.Predicate))
-			if len(rule.Fields) > 0 {
-				jb.writeKey("fields")
-				jb.startArray()
-				for _, f := range rule.Fields {
-					jb.writeComma()
-					jb.writeString(string(f))
-				}
-				jb.endArray()
-			}
-			if !rule.Parameters.IsZero() && !rule.Parameters.IsNull() {
-				jb.writeKey("parameters")
-				jb.writeLiteralValue(rule.Parameters)
-			}
+			// fields and parameters are now written by their respective child nodes
 		case NodeTypeConstraintGroup:
 			group := ctx.Value.(*ConstraintGroup)
 			jb.writeKey("operator")
@@ -406,15 +385,6 @@ func (s *Schema) ToJSON() []byte {
 			}
 			jb.writeKey("type")
 			jb.writeString(index.Type.String())
-			if len(index.Fields) > 0 {
-				jb.writeKey("fields")
-				jb.startArray()
-				for _, f := range index.Fields {
-					jb.writeComma()
-					jb.writeString(string(f))
-				}
-				jb.endArray()
-			}
 			if index.Order != "" {
 				jb.writeKey("order")
 				jb.writeString(index.Order)
@@ -423,6 +393,7 @@ func (s *Schema) ToJSON() []byte {
 				jb.writeKey("unique")
 				jb.writeBool(true)
 			}
+			// fields are now written by NodeTypeIndexFields
 			contextStack = append(contextStack, contextInfo{ctx.Type, ctx.Depth, false})
 		case NodeTypeIndexCondition:
 			condition := ctx.Value.(*IndexCondition)
@@ -480,35 +451,35 @@ func (s *Schema) ToJSON() []byte {
 			}
 		case NodeTypeValuesArray:
 			values := ctx.Value.([]LiteralValue)
-			jb.writeKey(ctx.Key)
+			jb.writeKey(ctx.Key) // key is "values"
 			jb.startArray()
 			for _, lv := range values {
 				jb.writeComma()
 				jb.writeLiteralValue(lv)
 			}
-			jb.endArray()
+			jb.endArray() // close the array
 		case NodeTypeConstraintParameters:
 			params := ctx.Value.(LiteralValue)
-			jb.writeKey(ctx.Key)
+			jb.writeKey(ctx.Key) // key is "parameters"
 			jb.writeLiteralValue(params)
 		case NodeTypeConstraintFields:
 			fields := ctx.Value.([]FieldName)
-			jb.writeKey(ctx.Key)
+			jb.writeKey(ctx.Key) // key is "fields"
 			jb.startArray()
 			for _, f := range fields {
 				jb.writeComma()
 				jb.writeString(string(f))
 			}
-			jb.endArray()
+			jb.endArray() // close the array
 		case NodeTypeIndexFields:
 			fields := ctx.Value.([]FieldId)
-			jb.writeKey(ctx.Key)
+			jb.writeKey(ctx.Key) // key is "fields"
 			jb.startArray()
 			for _, f := range fields {
 				jb.writeComma()
 				jb.writeString(string(f))
 			}
-			jb.endArray()
+			jb.endArray() // close the array
 		case NodeTypeFieldDefault:
 			def := ctx.Value.(LiteralValue)
 			jb.writeKey(ctx.Key)

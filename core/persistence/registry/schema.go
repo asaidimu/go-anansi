@@ -12,7 +12,7 @@ const REGISTRY_COLLECTION_NAME = "_schemas_"
 
 var RegistryCollectionSchemaJson = fmt.Sprintf(`
 {
-  "name": "%%s",
+  "name": "%s",
   "version": "1.0.0",
   "description": "Stores schema definitions for all collections in the database.",
   "fields": {

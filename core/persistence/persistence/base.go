@@ -111,9 +111,10 @@ func (p *basePersistence) Collection(ctx context.Context, name string) (base.Col
 		return nil, err
 	}
 
-	if issues := sc.ValidateAll(); len(issues) > 0 {
+	if issues, ok := (p.registry).ValidateSChema(ctx, sc); !ok {
 		return nil, common.NewSystemError("ERR_INVALID_SCHEMA").WithIssues(issues)
 	}
+
 	newCollection, err := collection.NewCollection(
 		p.eventEmitter,
 		name,

@@ -186,14 +186,22 @@ func applyJoinsToSchema(resultSchema *definition.Schema, joins []JoinConfigurati
 		// In definition.Schema, nested schemas are global to the schema, not nested within each other.
 		// However, fields can point to them.
 
-		currentFields := resultSchema.Fields
-		var currentBase *definition.BaseSchema = &resultSchema.BaseSchema
+		var currentNestedSchema *definition.NestedSchema
+		var currentSchemaId definition.SchemaId
 
 		for i, part := range parts {
 			if i < len(parts)-1 {
 				// This is a nested part, so traverse the schema
 				fieldId := definition.FieldId(part)
-				field, exists := currentFields[fieldId]
+				var field definition.Field
+				var exists bool
+
+				if currentNestedSchema != nil {
+					field, exists = currentNestedSchema.Fields[fieldId]
+				} else {
+					field, exists = resultSchema.Fields[fieldId]
+				}
+
 				if !exists {
 					return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_JOIN_FIELD_NOT_FOUND", fmt.Sprintf("nested join field '%s' not found in schema", part)).WithOperation("applyJoinsToSchema").WithCause(errors.New("nested join field not found"))
 				}
@@ -207,18 +215,29 @@ func applyJoinsToSchema(resultSchema *definition.Schema, joins []JoinConfigurati
 				}
 
 				nestedRef, _ := definition.FieldSchemaAs[definition.SchemaReference](field.Schema)
-				nestedSchema, exists := resultSchema.Schemas[nestedRef.ID]
+				currentSchemaId = nestedRef.ID
+				ns, exists := resultSchema.Schemas[currentSchemaId]
 				if !exists {
 					return common.NewSystemError("ERR_QUERY_SCHEMA_NESTED_SCHEMA_NOT_FOUND", fmt.Sprintf("nested schema '%s' not found for nested join", nestedRef.ID)).WithOperation("applyJoinsToSchema").WithCause(errors.New("nested schema not found for nested join"))
 				}
-
-				currentFields = nestedSchema.Fields
-				currentBase = &nestedSchema.BaseSchema
+				currentNestedSchema = &ns
 
 			} else {
 				// This is the last part, so add the join field here
-				if err := addJoinField(resultSchema, currentBase, part, join); err != nil {
+				var targetBase *definition.BaseSchema
+				if currentNestedSchema != nil {
+					targetBase = &currentNestedSchema.BaseSchema
+				} else {
+					targetBase = &resultSchema.BaseSchema
+				}
+
+				if err := addJoinField(resultSchema, targetBase, part, join); err != nil {
 					return err
+				}
+
+				// If we modified a nested schema, we need to put it back in the map
+				if currentSchemaId != "" && currentNestedSchema != nil {
+					resultSchema.Schemas[currentSchemaId] = *currentNestedSchema
 				}
 			}
 		}
