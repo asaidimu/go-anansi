@@ -213,9 +213,9 @@ func (c *baseCollection) Delete(ctx context.Context, q *query.QueryFilter, unsaf
 
 // Validate checks if the given data conforms to the collection's schema.
 // The 'loose' flag allows for partial validation.
-func (c *baseCollection) Validate(ctx context.Context, data *data.Document, loose bool) ([]common.Issue, bool) {
-	if loose {
-		return c.validator.ValidateLoose(data.ToMap())
+func (c *baseCollection) Validate(ctx context.Context, data *data.Document, partial bool) ([]common.Issue, bool) {
+	if partial {
+		return c.validator.ValidatePartial(data.ToMap())
 	}
 	return c.validator.Validate(data.ToMap())
 }

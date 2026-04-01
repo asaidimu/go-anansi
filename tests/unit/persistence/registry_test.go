@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	cevents "github.com/asaidimu/go-anansi/v6/core/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
@@ -16,8 +15,8 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 	"github.com/asaidimu/go-events"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,17 +25,25 @@ import (
 
 // --- Test Setup Helper ---
 
-func newTestSchema(name ...string) *schema.SchemaDefinition {
+func newTestSchema(name ...string) *definition.Schema {
 	sname := "test_collection"
-	if name != nil {
+	if len(name) > 0 {
 		sname = name[0]
 	}
-	return &schema.SchemaDefinition{
-		Name:        sname,
-		Version:     "1.0.0",
-		Description: utils.StringPtr("test collection"),
-		Fields: map[string]*schema.FieldDefinition{
-			"name": {Name: "name", Type: "string", Required: utils.BoolPtr(true)},
+	return &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name:        sname,
+			Description: "test collection",
+			Fields: map[definition.FieldId]definition.Field{
+				"name": {
+					Name: "name",
+					FieldProperties: definition.FieldProperties{
+						Type: definition.FieldTypeString,
+					},
+					Required: true,
+				},
+			},
 		},
 	}
 }
@@ -47,9 +54,7 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 	logger := zap.NewNop()
 
 	// Configure the document factory
-	config := data.DocumentFactoryConfig{}
-	err := data.ConfigureDocumentFactory(config, logger)
-	require.NoError(t, err)
+	testutils.ConfigureDocumentFactory()
 
 	interactor := ephemeral.NewEphemeral()
 
@@ -75,12 +80,6 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 		if transact {
 
 			return transaction.Execute(ctx, interactor, logger, func(tctx context.Context, tx query.DatabaseInteractor) (any, error) {
-
-				if err != nil {
-					logger.Error("Failed to create transaction collection.", zap.Error(err))
-					return nil, err
-				}
-
 				return fn(tctx, registryCollection, tx.SchemaManager())
 			})
 		}
@@ -114,14 +113,11 @@ func TestCreateCollection(t *testing.T) {
 	t.Run("Success case", func(t *testing.T) {
 		cr, schemaManager, _ := setupTestEnv(t)
 
-		// ctx, cancel := context.WithTimeout(context.Background(), 100*time.Nanosecond)
-		// defer cancel()
-
 		entry, err := cr.CreateCollection(ctx, sampleSchema)
 		require.NoError(t, err)
 		assert.NotNil(t, entry)
 
-		activeVersion, ok := entry.Versions[entry.ActiveVersion]
+		activeVersion, ok := entry.Versions[entry.ActiveVersion.String()]
 		assert.True(t, ok)
 
 		physicalName := activeVersion.Physical
@@ -137,7 +133,7 @@ func TestCreateCollection(t *testing.T) {
 		regEntry, err := cr.GetRegistryEntry(ctx, entry.Name)
 		require.NoError(t, err)
 		assert.Equal(t, sampleSchema.Name, regEntry.Name)
-		assert.Equal(t, "1.0.0", regEntry.ActiveVersion)
+		assert.Equal(t, "1.0.0", regEntry.ActiveVersion.String())
 		assert.Equal(t, physicalName, regEntry.Versions["1.0.0"].Physical)
 
 	})
@@ -166,7 +162,7 @@ func TestDropCollection(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, entry)
 
-		physicalName := entry.Versions[entry.ActiveVersion].Physical
+		physicalName := entry.Versions[entry.ActiveVersion.String()].Physical
 
 		// Verify physical collection exists before dropping
 		exists, err := schemaManager.CollectionExists(context.Background(), physicalName)
@@ -195,7 +191,7 @@ func TestDropCollection(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, entry)
 
-		physicalName := entry.Versions[entry.ActiveVersion].Physical
+		physicalName := entry.Versions[entry.ActiveVersion.String()].Physical
 
 		// Verify physical collection exists before dropping
 		exists, err := schemaManager.CollectionExists(context.Background(), physicalName)
@@ -237,8 +233,13 @@ func TestPruneVersion(t *testing.T) {
 
 		// Add a new version
 		newSchema := *sampleSchema
-		newSchema.Version = "1.1.0"
-		newSchema.Fields["new_field"] = &schema.FieldDefinition{Name: "new_field", Type: "string"}
+		newSchema.Version = common.MustNewVersion("1.1.0")
+		newSchema.BaseSchema.Fields["new_field"] = definition.Field{
+			Name: "new_field",
+			FieldProperties: definition.FieldProperties{
+				Type: definition.FieldTypeString,
+			},
+		}
 		updatedEntry, err := cr.AddSchemaVersion(ctx, sampleSchema.Name, "1.1.0", &newSchema)
 		require.NoError(t, err)
 		require.NotNil(t, updatedEntry)
@@ -288,7 +289,7 @@ func TestPruneVersion(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, entry)
 
-		_, err = cr.PruneVersion(ctx, sampleSchema.Name, entry.ActiveVersion)
+		_, err = cr.PruneVersion(ctx, sampleSchema.Name, entry.ActiveVersion.String())
 		assert.Error(t, err)
 		var sysErr *common.SystemError
 		assert.True(t, errors.As(err, &sysErr))
@@ -331,8 +332,8 @@ func TestGetRegistryEntry(t *testing.T) {
 		require.NoError(t, err)
 		assert.NotNil(t, retrievedEntry)
 		assert.Equal(t, createdEntry.Name, retrievedEntry.Name)
-		assert.Equal(t, createdEntry.ActiveVersion, retrievedEntry.ActiveVersion)
-		assert.Equal(t, createdEntry.Versions[createdEntry.ActiveVersion].Physical, retrievedEntry.Versions[retrievedEntry.ActiveVersion].Physical)
+		assert.Equal(t, createdEntry.ActiveVersion.String(), retrievedEntry.ActiveVersion.String())
+		assert.Equal(t, createdEntry.Versions[createdEntry.ActiveVersion.String()].Physical, retrievedEntry.Versions[retrievedEntry.ActiveVersion.String()].Physical)
 	})
 
 	t.Run("Returns ErrCollectionNotFound if collection does not exist", func(t *testing.T) {
@@ -356,8 +357,13 @@ func TestAddSchemaVersion(t *testing.T) {
 
 		// Add a new version
 		newSchema := *sampleSchema
-		newSchema.Version = "1.1.0"
-		newSchema.Fields["new_field"] = &schema.FieldDefinition{Name: "new_field", Type: "string"}
+		newSchema.Version = common.MustNewVersion("1.1.0")
+		newSchema.BaseSchema.Fields["new_field"] = definition.Field{
+			Name: "new_field",
+			FieldProperties: definition.FieldProperties{
+				Type: definition.FieldTypeString,
+			},
+		}
 		updatedEntry, err := cr.AddSchemaVersion(ctx, sampleSchema.Name, "1.1.0", &newSchema)
 		require.NoError(t, err)
 		require.NotNil(t, updatedEntry)
@@ -377,7 +383,7 @@ func TestAddSchemaVersion(t *testing.T) {
 	t.Run("Fails if collection does not exist", func(t *testing.T) {
 		cr, _, _ := setupTestEnv(t)
 		newSchema := *sampleSchema
-		newSchema.Version = "1.1.0"
+		newSchema.Version = common.MustNewVersion("1.1.0")
 		_, err := cr.AddSchemaVersion(ctx, "non_existent_collection", "1.1.0", &newSchema)
 		assert.ErrorIs(t, err, base.ErrCollectionNotFound)
 	})
@@ -405,9 +411,11 @@ func TestAddSchemaVersion(t *testing.T) {
 		require.NoError(t, err)
 
 		// Create an invalid new schema (e.g., missing required fields)
-		invalidSchema := &schema.SchemaDefinition{
-			Name:   sampleSchema.Name,
-			Fields: map[string]*schema.FieldDefinition{},
+		invalidSchema := &definition.Schema{
+			BaseSchema: definition.BaseSchema{
+				Name:   sampleSchema.Name,
+				Fields: map[definition.FieldId]definition.Field{},
+			},
 		}
 		_, err = cr.AddSchemaVersion(ctx, sampleSchema.Name, "1.1.0", invalidSchema)
 		assert.Error(t, err)
@@ -427,7 +435,7 @@ func TestSetActiveVersion(t *testing.T) {
 
 		// Add a new version
 		newSchema := *sampleSchema
-		newSchema.Version = "1.1.0"
+		newSchema.Version = common.MustNewVersion("1.1.0")
 		_, err = cr.AddSchemaVersion(ctx, sampleSchema.Name, "1.1.0", &newSchema)
 		require.NoError(t, err)
 
@@ -435,12 +443,12 @@ func TestSetActiveVersion(t *testing.T) {
 		updatedEntry, err := cr.SetActiveVersion(ctx, sampleSchema.Name, "1.1.0")
 		require.NoError(t, err)
 		assert.NotNil(t, updatedEntry)
-		assert.Equal(t, "1.1.0", updatedEntry.ActiveVersion, "Active version should be updated")
+		assert.Equal(t, "1.1.0", updatedEntry.ActiveVersion.String(), "Active version should be updated")
 
 		// Verify the change is persisted by retrieving the entry again
 		retrievedEntry, err := cr.GetRegistryEntry(ctx, sampleSchema.Name)
 		require.NoError(t, err)
-		assert.Equal(t, "1.1.0", retrievedEntry.ActiveVersion, "Persisted active version should be updated")
+		assert.Equal(t, "1.1.0", retrievedEntry.ActiveVersion.String(), "Persisted active version should be updated")
 	})
 
 	t.Run("Fails if collection does not exist", func(t *testing.T) {
@@ -523,7 +531,7 @@ func TestList(t *testing.T) {
 		retrievedSchema, err := cr.GetSchema(ctx, sampleSchema.Name)
 		require.NoError(t, err)
 		assert.NotNil(t, retrievedSchema)
-		assert.Equal(t, sampleSchema.Version, retrievedSchema.Version)
+		assert.Equal(t, sampleSchema.Version.String(), retrievedSchema.Version.String())
 	})
 
 	t.Run("Successfully retrieves specific version schema", func(t *testing.T) {
@@ -535,8 +543,13 @@ func TestList(t *testing.T) {
 
 		// Add a new version
 		newSchema := *sampleSchema
-		newSchema.Version = "1.1.0"
-		newSchema.Fields["new_field"] = &schema.FieldDefinition{Name: "new_field", Type: "string"}
+		newSchema.Version = common.MustNewVersion("1.1.0")
+		newSchema.BaseSchema.Fields["new_field"] = definition.Field{
+			Name: "new_field",
+			FieldProperties: definition.FieldProperties{
+				Type: definition.FieldTypeString,
+			},
+		}
 		_, err = cr.AddSchemaVersion(ctx, sampleSchema.Name, "1.1.0", &newSchema)
 		require.NoError(t, err)
 
@@ -544,8 +557,9 @@ func TestList(t *testing.T) {
 		retrievedSchema, err := cr.GetSchema(ctx, sampleSchema.Name, "1.1.0")
 		require.NoError(t, err)
 		assert.NotNil(t, retrievedSchema)
-		assert.Equal(t, "1.1.0", retrievedSchema.Version)
-		assert.NotNil(t, retrievedSchema.Fields["new_field"])
+		assert.Equal(t, "1.1.0", retrievedSchema.Version.String())
+		_, exists := retrievedSchema.BaseSchema.Fields["new_field"]
+		assert.True(t, exists)
 	})
 
 	t.Run("Returns ErrCollectionNotFound if collection does not exist", func(t *testing.T) {
@@ -569,4 +583,3 @@ func TestList(t *testing.T) {
 		assert.Equal(t, "ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION", sysErr.Code)
 	})
 }
-

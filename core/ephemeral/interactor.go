@@ -119,7 +119,30 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 		return []map[string]any{aggregationResults}, 0, nil
 	}
 
-	return filteredDocs, int64(len(filteredDocs)), nil
+	// Apply Sorting
+	sortedDocs, err := queryHelper.Sort(filteredDocs)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Apply Pagination
+	paginatedDocs, paginationResult, err := queryHelper.Paginate(sortedDocs)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	totalCount := int64(len(sortedDocs))
+	if paginationResult != nil && paginationResult.Total != nil {
+		totalCount = int64(*paginationResult.Total)
+	}
+
+	// Apply Projection
+	projectedDocs, err := queryHelper.Project(paginatedDocs)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	return projectedDocs, totalCount, nil
 }
 
 // SelectStream streams documents from the in-memory store.

@@ -886,7 +886,7 @@ func (graph *ValidationGraph) buildObjectFieldNodes(
 		return nil, ErrSchemaNotFound.WithMessage(fmt.Sprintf("Failed to resolve FieldSchemaReference: %v", err)).WithPath(fieldPath).WithCause(err)
 	}
 
-	nestedSchema, exists := sc.Schemas[schemaRef.ID]
+	nestedSchema, exists := topLevelSchema.Schemas[schemaRef.ID]
 	if !exists {
 		return nil, ErrSchemaNotFound.WithMessage(fmt.Sprintf("Nested schema '%s' not found for field '%s'", schemaRef.ID, fieldDef.Name)).WithPath(fieldPath)
 	}
@@ -1027,7 +1027,7 @@ func (graph *ValidationGraph) buildArrayNode(
 
 	if tempRootFieldType == 0 && len(nestedDef.Fields) > 0 {
 		tempRootFieldType = FieldTypeObject
-		tempRootFieldSchema = NewSchemaReference(SchemaReference{ID: SchemaId(nestedDef.Name)})
+		tempRootFieldSchema = NewSchemaReference(SchemaReference{ID: schemaRef.ID})
 	} else {
 		tempRootFieldSchema = nestedDef.FieldProperties.Schema
 	}
@@ -1091,7 +1091,7 @@ func (graph *ValidationGraph) buildRecordNode(
 
 	if tempRootFieldType == 0 && len(nestedDef.Fields) > 0 {
 		tempRootFieldType = FieldTypeObject
-		tempRootFieldSchema = NewSchemaReference(SchemaReference{ID: SchemaId(nestedDef.Name)})
+		tempRootFieldSchema = NewSchemaReference(SchemaReference{ID: schemaRef.ID})
 	} else {
 		tempRootFieldSchema = nestedDef.FieldProperties.Schema
 	}

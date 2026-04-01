@@ -124,11 +124,6 @@ func TestPersistence_CollectionEvents(t *testing.T) {
 	}
 
 	// Subscribe to all collection events
-	// These events are emitted to provide hooks for external systems
-	// to react to collection lifecycle changes (creation, deletion).
-	// 'Start' events allow for pre-processing or validation,
-	// 'Success' events for post-processing or notifications,
-	// and 'Failed' events for error handling and rollback.
 	collectionEventTypes := []base.PersistenceEventType{
 		base.CollectionCreateStart, base.CollectionCreateSuccess, base.CollectionCreateFailed,
 		base.CollectionDeleteStart, base.CollectionDeleteSuccess, base.CollectionDeleteFailed,
@@ -148,7 +143,7 @@ func TestPersistence_CollectionEvents(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test Collection Delete
-	_, err = p.Delete(context.Background(), sc.Name)
+	_, err = p.Delete(context.Background(), sc.BaseSchema.Name)
 	require.NoError(t, err)
 
 	// Allow some time for events to be processed
@@ -188,8 +183,6 @@ func TestPersistence_TransactionEvents(t *testing.T) {
 	}
 
 	// Subscribe to transaction events
-	// These events provide observability into the lifecycle of database transactions,
-	// allowing for monitoring, auditing, and integration with distributed tracing systems.
 	transactionEventTypes := []base.PersistenceEventType{
 		base.TransactionStart, base.TransactionSuccess, base.TransactionFailed,
 	}
@@ -287,9 +280,7 @@ func TestPersistence_DocumentUpdateEvents(t *testing.T) {
 	_, err = collection.Update(context.Background(), &base.CollectionUpdate{Set: updateDoc, Filter: updateFilter})
 	require.NoError(t, err)
 
-	// Test failed update (e.g., trying to update a non-existent document with a filter that doesn't match)
-	// For ephemeral, an update to a non-existent document will not return an error, but will affect 0 rows.
-	// The event emission logic should still capture this as a 'failed' update if 0 rows are affected.
+	// Test failed update
 	failedDocUpdate := data.MustNewDocument(map[string]any{data.DocumentIDField: "2", "name": "failed_update"})
 	failedUpdateFilter := query.NewQueryBuilder().Where(data.DocumentIDField).Eq("2").Build().Filters
 	rows, err := collection.Update(context.Background(), &base.CollectionUpdate{Set: failedDocUpdate, Filter: failedUpdateFilter})

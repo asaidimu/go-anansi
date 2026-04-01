@@ -2,6 +2,7 @@ package persistence_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
@@ -11,22 +12,25 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
-func newCartTestSchema(name string) *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
-		Version: "1.0.0",
-		Name:    name,
-		Fields: map[string]*schema.FieldDefinition{
-			"name":     {Name: "name", Type: "string"},
-			"quantity": {Name: "quantity", Type: "integer"},
-			"amount":   {Name: "amount", Type: "integer"},
-			"itemId":   {Name: "itemId", Type: "string"},
-			"saleId":   {Name: "saleId", Type: "string"},
+
+func newCartTestSchema(name string) *definition.Schema {
+	return &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: name,
+			Fields: map[definition.FieldId]definition.Field{
+				"name":     {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"quantity": {Name: "quantity", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"amount":   {Name: "amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"itemId":   {Name: "itemId", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"saleId":   {Name: "saleId", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 }
@@ -41,7 +45,7 @@ func setupCartTest(t *testing.T) (base.Persistence, *data.Document, func()) {
 	require.NoError(t, err)
 
 	// Create collections
-	schemas := []*schema.SchemaDefinition{
+	schemas := []*definition.Schema{
 		newCartTestSchema("inventory"),
 		newCartTestSchema("sales"),
 		newCartTestSchema("payments"),
@@ -74,7 +78,8 @@ func setupCartTest(t *testing.T) (base.Persistence, *data.Document, func()) {
 	d, err := inventory.CreateOne(context.Background(), doc)
 	if err != nil {
 		if d.Issues != nil {
-			t.Logf("Error creating inventory document: %v \n with schema %s", d.Issues, sc.MustToJSON())
+			scJSON, _ := json.Marshal(sc)
+			t.Logf("Error creating inventory document: %v \n with schema %s", d.Issues, string(scJSON))
 		}
 		t.Logf("Error creating inventory document: %v", err)
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v6/core/schema/meta"
 	"go.uber.org/zap"
 )
 
@@ -93,9 +94,10 @@ func (c *simpleCollectionCache) clear() {
 
 // Simplified registry implementation that maintains the original interface
 type collectionRegistry struct {
-	executor RegistryExecutor
-	logger   *zap.Logger
-	cache    *simpleCollectionCache
+	executor  RegistryExecutor
+	logger    *zap.Logger
+	cache     *simpleCollectionCache
+	validator *definition.DocumentValidator
 }
 
 var _ base.CollectionRegistry = (*collectionRegistry)(nil)
@@ -128,10 +130,12 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 		return nil, err
 	}
 
+	validator, err := definition.NewDocumentValidator(&meta.MetaSchema, meta.MetaSchemaPredicates)
 	registry := &collectionRegistry{
-		executor: executor,
-		logger:   logger,
-		cache:    newSimpleCollectionCache(cacheConfig.MaxCacheSize),
+		executor:  executor,
+		logger:    logger,
+		cache:     newSimpleCollectionCache(cacheConfig.MaxCacheSize),
+		validator: validator,
 	}
 
 	// Warm up the cache
@@ -186,6 +190,11 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*d
 		}
 
 		// Basic validation
+		issues, ok := r.validator.Validate(sc.AsMap())
+		if !ok {
+			return nil, ErrInvalidSchema.WithIssues(issues)
+		}
+
 		enrichedSchema, err := EnrichSchema(sc)
 		if err != nil {
 			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_INVALID_SCHEMA", fmt.Sprintf("invalid schema '%s' v%s", sc.Name, sc.Version.String()))
@@ -309,6 +318,10 @@ func (r *collectionRegistry) ResolvePhysicalName(ctx context.Context, name strin
 
 // AddSchemaVersion - direct implementation
 func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version string, sc *definition.Schema, physicalName ...string) (*RegistryEntry, error) {
+	issues, ok := r.validator.Validate(sc.AsMap())
+	if !ok {
+		return nil, ErrInvalidSchema.WithIssues(issues)
+	}
 	enrichedSchema, err := EnrichSchema(sc)
 	if err != nil {
 		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INVALID_SCHEMA", fmt.Sprintf("Invalid schema : %%v", err))
@@ -665,4 +678,8 @@ func (r *collectionRegistry) InvalidateCache(name string) {
 
 func (r *collectionRegistry) RefreshCache() error {
 	return r.warmCache(context.Background())
+}
+
+func (r *collectionRegistry) ValidateSChema(ctx context.Context, schema *definition.Schema) ([]common.Issue, bool) {
+	return r.validator.Validate(schema.AsMap())
 }

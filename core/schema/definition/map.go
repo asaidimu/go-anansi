@@ -117,7 +117,10 @@ func (s *Schema) AsMap() map[string]any {
 		case NodeTypeSchema:
 			schema := ctx.Value.(*Schema)
 			root := sk.root
-			root["version"] = schema.Version.String()
+			// TODO Re-think this method, as we can see it is unsafe
+			if schema.Version != nil {
+				root["version"] = schema.Version.String()
+			}
 			root["name"] = schema.Name
 			if schema.Description != "" {
 				root["description"] = schema.Description

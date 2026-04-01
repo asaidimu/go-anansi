@@ -4,13 +4,13 @@ import (
 	"context"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -30,13 +30,13 @@ func TestPersistence_CreateAndGetCollection(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
-	schema := newTestSchema("my_collection")
+	schemaDef := newTestSchema("my_collection")
 
 	// Create the collection
-	createdCollection, err := p.CreateCollection(context.Background(), schema)
+	createdCollection, err := p.CreateCollection(context.Background(), schemaDef)
 	require.NoError(t, err)
 	assert.NotNil(t, createdCollection)
 
@@ -53,13 +53,13 @@ func TestPersistence_DeleteCollection(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
-	schema := newTestSchema("my_collection")
+	schemaDef := newTestSchema("my_collection")
 
 	// Create the collection
-	_, err = p.CreateCollection(context.Background(), schema)
+	_, err = p.CreateCollection(context.Background(), schemaDef)
 	require.NoError(t, err)
 
 	// Delete the collection
@@ -76,15 +76,15 @@ func TestPersistence_Subscriptions(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
-	var receivedEvent base.PersistenceEvent
+	// var receivedEvent base.PersistenceEvent
 	callback := func(ctx context.Context, event base.PersistenceEvent) error {
-		receivedEvent = event
+		// receivedEvent = event
 		return nil
 	}
-	assert.NotNil(t, receivedEvent)
+
 	// Register a subscription
 	subID := p.Subscribe(context.Background(), base.SubscriptionOptions{
 		Event:    base.CollectionCreateSuccess,
@@ -113,11 +113,16 @@ func TestPersistence_Transact(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	sc := newTestSchema("accounts")
-	sc.Fields["balance"] = &schema.FieldDefinition{Name: "balance", Type: "number"}
+	sc.BaseSchema.Fields["balance"] = definition.Field{
+		Name: "balance",
+		FieldProperties: definition.FieldProperties{
+			Type: definition.FieldTypeNumber,
+		},
+	}
 
 	// Create the collection and some initial data outside the transaction
 	accounts, err := p.CreateCollection(context.Background(), sc)
@@ -263,28 +268,27 @@ func TestPersistence_Schema(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// Create a schema and a collection based on it
-	testSchema := newTestSchema("my_schema_collection")
-	testSchema.Version = "1.0.0"
-	_, err = p.CreateCollection(context.Background(), testSchema)
+	testSchemaDef := newTestSchema("my_schema_collection")
+	_, err = p.CreateCollection(context.Background(), testSchemaDef)
 	require.NoError(t, err)
 
 	// Retrieve the schema by ID
 	retrievedSchema, err := p.Schema(context.Background(), "my_schema_collection")
 	require.NoError(t, err)
 	assert.NotNil(t, retrievedSchema)
-	assert.Equal(t, testSchema.Description, retrievedSchema.Description)
-	assert.Equal(t, testSchema.Version, retrievedSchema.Version)
+	assert.Equal(t, testSchemaDef.Description, retrievedSchema.Description)
+	assert.Equal(t, testSchemaDef.Version.String(), retrievedSchema.Version.String())
 
 	// Retrieve the schema by ID and version
 	retrievedSchemaWithVersion, err := p.Schema(context.Background(), "my_schema_collection", "1.0.0")
 	require.NoError(t, err)
 	assert.NotNil(t, retrievedSchemaWithVersion)
-	assert.Equal(t, testSchema.Description, retrievedSchemaWithVersion.Description)
-	assert.Equal(t, testSchema.Version, retrievedSchemaWithVersion.Version)
+	assert.Equal(t, testSchemaDef.Description, retrievedSchemaWithVersion.Description)
+	assert.Equal(t, testSchemaDef.Version.String(), retrievedSchemaWithVersion.Version.String())
 
 	// Try to retrieve a non-existent schema
 	_, err = p.Schema(context.Background(), "non_existent_schema")
@@ -301,7 +305,7 @@ func TestPersistence_DeleteNonExistentCollection(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// Try to delete a collection that doesn't exist
@@ -314,7 +318,7 @@ func TestPersistence_Close(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// Close the persistence instance
@@ -323,14 +327,14 @@ func TestPersistence_Close(t *testing.T) {
 	// Attempt an operation after closing, it should return an error
 	_, err = p.CreateCollection(context.Background(), newTestSchema("closed_collection"))
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "persistence instance is closed") // Assuming the event bus closure causes subsequent errors
+	assert.Contains(t, err.Error(), "persistence instance is closed")
 }
 
 func TestPersistence_CollectionNonExistent(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// Try to get a collection that doesn't exist
@@ -342,7 +346,7 @@ func TestPersistence_CreateWithInvalidSchema(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// Create an invalid schema (e.g., missing name)
@@ -355,7 +359,7 @@ func TestPersistence_MetadataOnEmptyDB(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// Get metadata from an empty database
@@ -371,11 +375,16 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	sc := newTestSchema("accounts")
-	sc.Fields["balance"] = &schema.FieldDefinition{Name: "balance", Type: "number"}
+	sc.BaseSchema.Fields["balance"] = definition.Field{
+		Name: "balance",
+		FieldProperties: definition.FieldProperties{
+			Type: definition.FieldTypeNumber,
+		},
+	}
 
 	accounts, err := p.CreateCollection(context.Background(), sc)
 	require.NoError(t, err)
@@ -436,7 +445,7 @@ func TestPersistence_Metadata(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// Create some collections
@@ -458,25 +467,29 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	p, err := persistence.NewPersistence(interactor,nil, logger, nil)
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
 	// 1. Define Schemas
-	userSchema := schema.SchemaDefinition{
-		Name:    "users",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"idi":   {Name: "idi", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"name": {Name: "name", Type: schema.FieldTypeString},
+	userSchema := definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"idi":  {Name: "idi", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	profileSchema := schema.SchemaDefinition{
-		Name:    "profiles",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"user": {Name: "user", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"bio":  {Name: "bio", Type: schema.FieldTypeString},
+	profileSchema := definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: "profiles",
+			Fields: map[definition.FieldId]definition.Field{
+				"user": {Name: "user", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"bio":  {Name: "bio", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -552,7 +565,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 			assert.Equal(t, "Bob", userData.Must().GetString("name"))
 			assert.Equal(t, "Enjoys testing", profileData.Must().GetString("bio"))
 		case "user3":
-			assert.NoError(t, errProfile) // We expect NO profile here
+			assert.NoError(t, errProfile)         // We expect NO profile here
 			assert.True(t, profileData.IsEmpty()) // Ensure profileData is nil
 			assert.Equal(t, "Charlie", userData.Must().GetString("name"))
 		default:

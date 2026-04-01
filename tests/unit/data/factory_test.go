@@ -13,11 +13,11 @@ func TestGetMetadataSchema_MergesCustomSchemas(t *testing.T) {
 	mergedSchema, _ := data.GetMetadataSchema()
 
 	// Check that the default fields are present
-	require.Contains(t, mergedSchema.Fields.FieldsMap, "version")
-	require.Contains(t, mergedSchema.Fields.FieldsMap, "created")
-	require.Contains(t, mergedSchema.Fields.FieldsMap, "updated")
-	require.Contains(t, mergedSchema.Fields.FieldsMap, "checksum")
-	require.Contains(t, mergedSchema.Fields.FieldsMap, "custom_field")
+	require.Contains(t, mergedSchema.FieldNames(), "version")
+	require.Contains(t, mergedSchema.FieldNames(), "created")
+	require.Contains(t, mergedSchema.FieldNames(), "updated")
+	require.Contains(t, mergedSchema.FieldNames(), "checksum")
+	require.Contains(t, mergedSchema.FieldNames(), "custom_field")
 }
 
 func TestNewDocument_WithUserProvidedMetadata(t *testing.T) {

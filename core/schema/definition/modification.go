@@ -1,7 +1,6 @@
 package definition
 
 import (
-	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/google/uuid"
 )
 
@@ -135,11 +134,4 @@ func (s *Schema) WithIndexEnsured(index *Index) (*Schema, bool, error) {
 	// Add new
 	newID := IndexId(uuid.New().String())
 	return s.WithIndex(newID, *index), true, nil
-}
-
-// ValidateAll is a placeholder for full schema validation.
-// For now, it returns no issues to allow the migration to proceed.
-func (s *Schema) ValidateAll() []common.Issue {
-	// TODO: Implement full semantic validation for the new schema format.
-	return nil
 }

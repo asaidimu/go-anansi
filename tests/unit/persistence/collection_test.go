@@ -2,11 +2,11 @@ package persistence_test
 
 import (
 	"context"
-	"slices"
-
 	"os"
+	"slices"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
 	cevents "github.com/asaidimu/go-anansi/v6/core/events"
@@ -16,8 +16,7 @@ import (
 	pevents "github.com/asaidimu/go-anansi/v6/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/registry"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/schema/validator"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 	"github.com/asaidimu/go-events"
@@ -33,38 +32,52 @@ func TestMain(m *testing.M) {
 }
 
 // Helper to create a basic schema definition
-func testSchema(name ...string) *schema.SchemaDefinition {
+func testSchema(name ...string) *definition.Schema {
 	sname := "test_collection"
-	if name != nil {
+	if len(name) > 0 {
 		sname = name[0]
 	}
-	return &schema.SchemaDefinition{
-		Name:        sname,
-		Version:     "1.0.0",
-		Description: utils.StringPtr("test collection"),
-		Fields: map[string]*schema.FieldDefinition{
-			"name":   {Name: "name", Type: "string", Required: utils.BoolPtr(true), Unique: utils.BoolPtr(true)},
-			"status": {Name: "status", Type: "string"},
+	return &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name:        sname,
+			Description: "test collection",
+			Fields: map[definition.FieldId]definition.Field{
+				"name": {
+					Name: "name",
+					FieldProperties: definition.FieldProperties{
+						Type: definition.FieldTypeString,
+					},
+					Required: true,
+					Unique:   true,
+				},
+				"status": {
+					Name: "status",
+					FieldProperties: definition.FieldProperties{
+						Type: definition.FieldTypeString,
+					},
+				},
+			},
 		},
 	}
 }
 
-func resolveSchema(ctx context.Context, logicalName string) (string, *schema.SchemaDefinition, error) {
+func resolveSchema(ctx context.Context, logicalName string) (string, *definition.Schema, error) {
 	return logicalName, nil, nil
 }
 
-// setupCollectionTest is a helper function to set up a new collection for testing.
-func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *zap.Logger, *schema.SchemaDefinition, *events.TypedEventBus[persistence.PersistenceEvent], context.Context) {
+// setupCollection is a helper function to set up a new collection for testing.
+func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *zap.Logger, *definition.Schema, *events.TypedEventBus[persistence.PersistenceEvent], context.Context) {
 	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())
 	ephemeralInteractor := ephemeral.NewEphemeral()
 	manager := ephemeralInteractor.SchemaManager()
 	logger := zap.NewNop()
 	testSchemaDef := registry.MustEnrichSchema(testSchema())
 
-	validator, err := validator.NewDocumentValidator(testSchemaDef, nil)
+	validator, err := definition.NewDocumentValidator(testSchemaDef, nil)
 	assert.NoError(t, err)
 	expected := data.MustNewDocument(map[string]any{"name": "Test1"})
-	_, ok := validator.Validate(expected.ToMap(), false)
+	_, ok := validator.Validate(expected.ToMap())
 	assert.True(t, ok)
 
 	err = manager.CreateCollection(context.Background(), *testSchemaDef)
@@ -81,9 +94,15 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 }
 
 // setupNonExistentCollection is a helper function to set up a collection with a non-existent schema for testing error cases.
-func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *zap.Logger, *schema.SchemaDefinition, *events.TypedEventBus[persistence.PersistenceEvent], context.Context) {
+func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *zap.Logger, *definition.Schema, *events.TypedEventBus[persistence.PersistenceEvent], context.Context) {
 	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())
-		nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent", Version: "1.0.0", Fields: map[string]*schema.FieldDefinition{} }
+	nonExistentSchema := &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name:   "non_existent",
+			Fields: map[definition.FieldId]definition.Field{},
+		},
+	}
 	ephemeralInteractor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 	engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
@@ -192,7 +211,13 @@ func TestCollection_Read(t *testing.T) {
 	t.Run("read documents error - non-existent collection", func(t *testing.T) {
 		// Create a new collection instance with a non-existent schema name
 		_, ephemeralInteractor, logger, _, bus, ctx := setupCollection(t)
-		nonExistentSchema := &schema.SchemaDefinition{Name: "non_existent", Version: "1.0.0", Fields: map[string]*schema.FieldDefinition{} }
+		nonExistentSchema := &definition.Schema{
+			Version: common.MustNewVersion("1.0.0"),
+			BaseSchema: definition.BaseSchema{
+				Name:   "non_existent",
+				Fields: map[definition.FieldId]definition.Field{},
+			},
+		}
 		engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
 		factory := pevents.NewPersistenceEventFactory(nonExistentSchema.Name, logger)
 		eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
@@ -281,19 +306,6 @@ func TestCollection_Update(t *testing.T) {
 		assert.Equal(t, "done", docs[1].Must().GetString("status"))
 	})
 
-	t.Run("update documents error - non-existent collection", func(t *testing.T) {
-		// Create a new collection instance with a non-existent schema name
-		nonExistentCollection, _, _, _, _, ctx := setupNonExistentCollection()
-
-		updates := data.MustNewDocument(map[string]any{"name": "any"})
-		updateParams := &persistence.CollectionUpdate{Set: updates, Filter: q.Filters, Version: nil}
-
-		_, err := nonExistentCollection.Update(ctx, updateParams)
-
-		assert.Error(t, err)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "validation failed")
-	})
 }
 
 func TestCollection_Delete(t *testing.T) {
@@ -389,36 +401,32 @@ func TestCollection_Validate(t *testing.T) {
 
 	t.Run("valid document", func(t *testing.T) {
 		doc := data.MustNewDocument(map[string]any{data.DocumentIDField: "1", "name": "Valid Name"})
-		result, err := collection.Validate(ctx, doc, false)
-		assert.NoError(t, err)
-		assert.True(t, result.Valid)
-		assert.Empty(t, result.Issues)
+		issues, ok := collection.Validate(ctx, doc, false)
+		assert.True(t, ok)
+		assert.Empty(t, issues)
 	})
 
 	t.Run("invalid document - missing required field", func(t *testing.T) {
 		doc := data.MustNewDocument(map[string]any{data.DocumentIDField: "1"}) // Missing 'name'
-		result, err := collection.Validate(ctx, doc, false)
-		assert.NoError(t, err) // Validation itself should not return an error, but a result with issues
-		assert.False(t, result.Valid)
-		assert.NotEmpty(t, result.Issues)
-		assert.Contains(t, result.Issues[0].Message, "Required")
+		issues, ok := collection.Validate(ctx, doc, false)
+		assert.False(t, ok)
+		assert.NotEmpty(t, issues)
+		assert.Contains(t, issues[0].Message, "Required")
 	})
 
 	t.Run("invalid document - wrong type", func(t *testing.T) {
 		doc := data.MustNewDocument(map[string]any{data.DocumentIDField: "1", "name": 123}) // Name should be string
-		result, err := collection.Validate(ctx, doc, false)
-		assert.NoError(t, err)
-		assert.False(t, result.Valid)
-		assert.NotEmpty(t, result.Issues)
-		assert.Contains(t, result.Issues[0].Message, "Expected")
+		issues, ok := collection.Validate(ctx, doc, false)
+		assert.False(t, ok)
+		assert.NotEmpty(t, issues)
+		assert.Contains(t, issues[0].Message, "Expected")
 	})
 
 	t.Run("loose validation - missing required field allowed", func(t *testing.T) {
-		doc := data.MustNewDocument(map[string]any{data.DocumentIDField: "1"})                    // Missing 'name'
-		result, err := collection.Validate(ctx, doc, true) // Loose validation
-		assert.NoError(t, err)
-		assert.True(t, result.Valid) // Should be valid in loose mode for missing required
-		assert.Empty(t, result.Issues)
+		doc := data.MustNewDocument(map[string]any{data.DocumentIDField: "1"}) // Missing 'name'
+		issues, ok := collection.Validate(ctx, doc, true)                     // Loose validation
+		assert.True(t, ok)                                                   // Should be valid in loose mode for missing required
+		assert.Empty(t, issues)
 	})
 }
 

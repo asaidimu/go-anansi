@@ -477,8 +477,8 @@ type Collection interface {
 	Delete(ctx context.Context, query *query.QueryFilter, unsafe bool) (int, error)
 
 	// Validate checks if the given data conforms to the collection's schema.
-	// The 'loose' flag allows for partial validation.
-	Validate(ctx context.Context, data *data.Document, loose bool) ([]common.Issue, bool)
+	// The 'partial' flag allows for partial validation.
+	Validate(ctx context.Context, data *data.Document, partial bool) ([]common.Issue, bool)
 
 	// Metadata retrieves metadata specifically for this collection, with an option to
 	// force a refresh of the data.
