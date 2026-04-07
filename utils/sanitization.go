@@ -2,14 +2,14 @@ package utils
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/collection"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	putils "github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"go.uber.org/zap"
 )
 
@@ -84,74 +84,79 @@ func (p *sanitizationStore) ensureCollection(ctx context.Context) (base.ModelCol
 }
 
 // createPolicyCollectionSchema defines the schema for the sanitization policies collection
-func (p *sanitizationStore) createPolicyCollectionSchema() *schema.SchemaDefinition {
-	sc := schema.SchemaDefinition{
-		Name:        p.collectionName,
-		Description: putils.StringPtr("System collection for storing sanitization policies"),
-		Version:     "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"f997d3ff-4db1-4941-a4c5-ebe77c4fc54f": {
-				Name:        "version",
-				Type:        "string",
-				Required:    putils.BoolPtr(false),
-				Description: putils.StringPtr("Version of the policy"),
-			},
-			"3f247047-f653-4c99-b53a-636deed01a82": {
-				Name:        "scope",
-				Type:        "string",
-				Required:    putils.BoolPtr(true),
-				Description: putils.StringPtr("Scope identifier (must be non-empty)"),
-			},
-			"431ba4d5-93e7-4f00-8816-fbd494f7bca5": {
-				Name:        "policy",
-				Type:        "enum",
-				Required:    putils.BoolPtr(false),
-				Default:     "preserve",
-				Values:      []any{"obscure", "preserve", "redact", "hash"},
-				Description: putils.StringPtr("Default policy for this config"),
-			},
-			"11d3cfbd-77ee-451e-a92e-585afbf3d606": {
-				Name:        "fields",
-				Type:        "record",
-				Required:    putils.BoolPtr(false),
-				Description: putils.StringPtr("Field-specific masking policies"),
-			},
-			"2f6418cf-4e44-4396-8a5d-83f7e9baa281": {
-				Name:        "patterns",
-				Type:        "record",
-				Required:    putils.BoolPtr(false),
-				Description: putils.StringPtr("Regex-based field matching patterns"),
-			},
-			"abee6a37-dc45-4c31-89be-1ac9b091ee48": {
-				Name:        "obscure",
-				Type:        "record",
-				Required:    putils.BoolPtr(false),
-				Description: putils.StringPtr("Obscure policy configuration"),
-			},
-			"c8f3a9e2-1d7b-4f5c-9a3e-8b2d4c6f1a9e": {
-				Name:        "salt",
-				Type:        "string",
-				Required:    putils.BoolPtr(false),
-				Description: putils.StringPtr("Secret key for HMAC hashing"),
-			},
-			"d9e4b0f3-2e8c-5g6d-0b4f-9c3e5d7g2b0f": {
-				Name:        "description",
-				Type:        "string",
-				Required:    putils.BoolPtr(false),
-				Description: putils.StringPtr("Human-readable description of the policy"),
-			},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition{
-					Fields: []string{"scope"},
-					Unique: putils.BoolPtr(true),
-					Name:   "idx_scope_unique",
-				},
-			},
-		},
+func (p *sanitizationStore) createPolicyCollectionSchema() *definition.Schema {
+	jsonSchema := fmt.Sprintf(`
+{
+  "name": "%s",
+  "version": "1.0.0",
+  "description": "System collection for storing sanitization policies",
+  "fields": {
+    "f1": {
+      "name": "version",
+      "type": "string",
+      "required": false,
+      "description": "Version of the policy"
+    },
+    "f2": {
+      "name": "scope",
+      "type": "string",
+      "required": true,
+      "description": "Scope identifier (must be non-empty)"
+    },
+    "f3": {
+      "name": "policy",
+      "type": "enum",
+      "required": false,
+      "default": "preserve",
+      "values": ["obscure", "preserve", "redact", "hash"],
+      "description": "Default policy for this config"
+    },
+    "f4": {
+      "name": "fields",
+      "type": "record",
+      "required": false,
+      "description": "Field-specific masking policies"
+    },
+    "f5": {
+      "name": "patterns",
+      "type": "record",
+      "required": false,
+      "description": "Regex-based field matching patterns"
+    },
+    "f6": {
+      "name": "obscure",
+      "type": "record",
+      "required": false,
+      "description": "Obscure policy configuration"
+    },
+    "f7": {
+      "name": "salt",
+      "type": "string",
+      "required": false,
+      "description": "Secret key for HMAC hashing"
+    },
+    "f8": {
+      "name": "description",
+      "type": "string",
+      "required": false,
+      "description": "Human-readable description of the policy"
+    }
+  },
+  "indexes": {
+    "idx1": {
+      "name": "idx_scope_unique",
+      "fields": ["f2"],
+      "unique": true
+    }
+  }
+}
+`, p.collectionName)
+
+	sc, err := definition.FromJSON([]byte(jsonSchema))
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse sanitization schema: %v", err))
 	}
-	return (&sc).MustClone()
+	return sc
 }
 
 // Save persists a sanitization policy (upsert based on scope)

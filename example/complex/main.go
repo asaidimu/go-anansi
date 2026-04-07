@@ -17,7 +17,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
@@ -245,7 +245,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to read user.json: %v", err)
 	}
-	userSchemaDef, err := schema.From(userSchemaBytes)
+	userSchemaDef, err := definition.FromJSON(userSchemaBytes)
 	if err != nil {
 		log.Fatalf("Failed to unmarshal user.json: %v", err)
 	}
@@ -254,7 +254,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to read document.json: %v", err)
 	}
-	documentSchemaDef, err := schema.From(documentSchemaBytes)
+	documentSchemaDef, err := definition.FromJSON(documentSchemaBytes)
 	if err != nil {
 		log.Fatalf("Failed to unmarshal document.json: %v", err)
 	}
@@ -265,7 +265,7 @@ func main() {
 		Logger:                logger,
 		DocumentFactoryConfig: factoryConfig,
 		Decorators:            decorators,
-		Schemas: []*schema.SchemaDefinition{
+		Schemas: []*definition.Schema{
 			userSchemaDef,
 			documentSchemaDef,
 		},

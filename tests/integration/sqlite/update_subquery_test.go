@@ -5,7 +5,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sql "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,12 +15,14 @@ func TestUpdateWithScalarSubquery(t *testing.T) {
 	// Test: UPDATE employees SET salary = (SELECT AVG(salary) FROM employees WHERE department = 'Engineering')
 	// WHERE id = 'emp1'
 
-	employeesSchema := &schema.SchemaDefinition{
-		Name: "employees",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":         {Name: "id", Type: schema.FieldTypeString},
-			"salary":     {Name: "salary", Type: schema.FieldTypeNumber},
-			"department": {Name: "department", Type: schema.FieldTypeString},
+	employeesSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "employees",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":         {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"salary":     {Name: "salary", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"department": {Name: "department", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -82,20 +84,24 @@ func TestUpdateWithSubqueryInWHERE(t *testing.T) {
 	// Test: UPDATE employees SET bonus = 1000
 	// WHERE department_id IN (SELECT id FROM departments WHERE budget > 100000)
 
-	employeesSchema := &schema.SchemaDefinition{
-		Name: "employees",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":            {Name: "id", Type: schema.FieldTypeString},
-			"bonus":         {Name: "bonus", Type: schema.FieldTypeNumber},
-			"department_id": {Name: "department_id", Type: schema.FieldTypeString},
+	employeesSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "employees",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":            {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"bonus":         {Name: "bonus", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"department_id": {Name: "department_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	departmentsSchema := &schema.SchemaDefinition{
-		Name: "departments",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":     {Name: "id", Type: schema.FieldTypeString},
-			"budget": {Name: "budget", Type: schema.FieldTypeNumber},
+	departmentsSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "departments",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":     {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"budget": {Name: "budget", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 
@@ -163,20 +169,24 @@ func TestUpdateWithSubqueryContainingJoin(t *testing.T) {
 	// )
 	// WHERE id = 'emp1'
 
-	employeesSchema := &schema.SchemaDefinition{
-		Name: "employees",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":            {Name: "id", Type: schema.FieldTypeString},
-			"salary":        {Name: "salary", Type: schema.FieldTypeNumber},
-			"department_id": {Name: "department_id", Type: schema.FieldTypeString},
+	employeesSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "employees",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":            {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"salary":        {Name: "salary", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"department_id": {Name: "department_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	departmentsSchema := &schema.SchemaDefinition{
-		Name: "departments",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: schema.FieldTypeString},
-			"name": {Name: "name", Type: schema.FieldTypeString},
+	departmentsSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "departments",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":   {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -271,20 +281,24 @@ func TestUpdateWithNestedSubqueries(t *testing.T) {
 	// )
 	// WHERE id = 'emp1'
 
-	employeesSchema := &schema.SchemaDefinition{
-		Name: "employees",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":            {Name: "id", Type: schema.FieldTypeString},
-			"salary":        {Name: "salary", Type: schema.FieldTypeNumber},
-			"department_id": {Name: "department_id", Type: schema.FieldTypeString},
+	employeesSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "employees",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":            {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"salary":        {Name: "salary", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"department_id": {Name: "department_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	departmentsSchema := &schema.SchemaDefinition{
-		Name: "departments",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":     {Name: "id", Type: schema.FieldTypeString},
-			"region": {Name: "region", Type: schema.FieldTypeString},
+	departmentsSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "departments",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":     {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"region": {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -371,12 +385,14 @@ func TestUpdateWithCorrelatedSubquery(t *testing.T) {
 	// )
 	// WHERE e1.id = 'emp1'
 
-	employeesSchema := &schema.SchemaDefinition{
-		Name: "employees",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":            {Name: "id", Type: schema.FieldTypeString},
-			"salary":        {Name: "salary", Type: schema.FieldTypeNumber},
-			"department_id": {Name: "department_id", Type: schema.FieldTypeString},
+	employeesSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "employees",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":            {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"salary":        {Name: "salary", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"department_id": {Name: "department_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -447,13 +463,15 @@ func TestUpdateMultipleFieldsWithSubqueries(t *testing.T) {
 	//   bonus = (SELECT MAX(bonus) FROM employees WHERE department = 'Sales')
 	// WHERE id = 'emp1'
 
-	employeesSchema := &schema.SchemaDefinition{
-		Name: "employees",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":         {Name: "id", Type: schema.FieldTypeString},
-			"salary":     {Name: "salary", Type: schema.FieldTypeNumber},
-			"bonus":      {Name: "bonus", Type: schema.FieldTypeNumber},
-			"department": {Name: "department", Type: schema.FieldTypeString},
+	employeesSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "employees",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":         {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"salary":     {Name: "salary", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"bonus":      {Name: "bonus", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"department": {Name: "department", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 

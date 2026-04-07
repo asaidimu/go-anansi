@@ -10,7 +10,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
@@ -56,18 +56,16 @@ func TestNativeInteractor_CreateCollection(t *testing.T) {
 	interactor, err := createNativeInteractor(t, db)
 	require.NoError(t, err)
 
-	testSchema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: schema.FieldTypeString},
-			"name": {Name: "name", Type: schema.FieldTypeString},
-			"age":  {Name: "age", Type: schema.FieldTypeInteger},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition{
-
-			Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+	testSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":   {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":  {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"pk": {Name: "id_pk", Fields: []definition.FieldId{"id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -117,16 +115,16 @@ func TestNativeInteractor_InsertDocuments(t *testing.T) {
 	interactor, err := createNativeInteractor(t, db)
 	require.NoError(t, err)
 
-	testSchema := &schema.SchemaDefinition{
-		Name: "products",
-		Fields: map[string]*schema.FieldDefinition{
-			"product_id": {Name: "product_id", Type: schema.FieldTypeString},
-			"name":       {Name: "name", Type: schema.FieldTypeString},
-			"price":      {Name: "price", Type: schema.FieldTypeNumber},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition {Name: "product_id_pk", Fields: []string{"product_id"}, Type: schema.IndexTypePrimary},
+	testSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "products",
+			Fields: map[definition.FieldId]definition.Field{
+				"product_id": {Name: "product_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name":       {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"price":      {Name: "price", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"pk": {Name: "product_id_pk", Fields: []definition.FieldId{"product_id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -176,17 +174,17 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 	interactor, err := createNativeInteractor(t, db)
 	require.NoError(t, err)
 
-	testSchema := &schema.SchemaDefinition{
-		Name: "orders",
-		Fields: map[string]*schema.FieldDefinition{
-			"order_id":    {Name: "order_id", Type: schema.FieldTypeString},
-			"customer_id": {Name: "customer_id", Type: schema.FieldTypeString},
-			"amount":      {Name: "amount", Type: schema.FieldTypeNumber},
-			"status":      {Name: "status", Type: schema.FieldTypeString},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition {Name: "order_id_pk", Fields: []string{"order_id"}, Type: schema.IndexTypePrimary},
+	testSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "orders",
+			Fields: map[definition.FieldId]definition.Field{
+				"order_id":    {Name: "order_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"customer_id": {Name: "customer_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"amount":      {Name: "amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"status":      {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"pk": {Name: "order_id_pk", Fields: []definition.FieldId{"order_id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -267,16 +265,16 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 	interactor, err := createNativeInteractor(t, db)
 	require.NoError(t, err)
 
-	testSchema := &schema.SchemaDefinition{
-		Name: "tasks",
-		Fields: map[string]*schema.FieldDefinition{
-			"task_id":   {Name: "task_id", Type: schema.FieldTypeString},
-			"description": {Name: "description", Type: schema.FieldTypeString},
-			"completed": {Name: "completed", Type: schema.FieldTypeBoolean},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition {Name: "task_id_pk", Fields: []string{"task_id"}, Type: schema.IndexTypePrimary},
+	testSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "tasks",
+			Fields: map[definition.FieldId]definition.Field{
+				"task_id":     {Name: "task_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"description": {Name: "description", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"completed":   {Name: "completed", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeBoolean}},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"pk": {Name: "task_id_pk", Fields: []definition.FieldId{"task_id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -347,15 +345,15 @@ func TestNativeInteractor_DeleteDocuments(t *testing.T) {
 	interactor, err := createNativeInteractor(t, db)
 	require.NoError(t, err)
 
-	testSchema := &schema.SchemaDefinition{
-		Name: "items",
-		Fields: map[string]*schema.FieldDefinition{
-			"item_id": {Name: "item_id", Type: schema.FieldTypeString},
-			"name":    {Name: "name", Type: schema.FieldTypeString},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition {Name: "item_id_pk", Fields: []string{"item_id"}, Type: schema.IndexTypePrimary},
+	testSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "items",
+			Fields: map[definition.FieldId]definition.Field{
+				"item_id": {Name: "item_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name":    {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"pk": {Name: "item_id_pk", Fields: []definition.FieldId{"item_id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -414,14 +412,14 @@ func TestNativeInteractor_DropCollection(t *testing.T) {
 	interactor, err := createNativeInteractor(t, db)
 	require.NoError(t, err)
 
-	testSchema := &schema.SchemaDefinition{
-		Name: "temp_collection",
-		Fields: map[string]*schema.FieldDefinition{
-			"id": {Name: "id", Type: schema.FieldTypeString},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition {Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+	testSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "temp_collection",
+			Fields: map[definition.FieldId]definition.Field{
+				"id": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"pk": {Name: "id_pk", Fields: []definition.FieldId{"id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -454,18 +452,16 @@ func TestNativeInteractor_CreateIndex(t *testing.T) {
 	interactor, err := createNativeInteractor(t, db)
 	require.NoError(t, err)
 
-	testSchema := &schema.SchemaDefinition{
-		Name: "indexed_data",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":    {Name: "id", Type: schema.FieldTypeString},
-			"value": {Name: "value", Type: schema.FieldTypeString},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition {Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+	testSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "indexed_data",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":    {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"value": {Name: "value", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 			},
-			{
-				Index: &schema.IndexDefinition {Name: "idx_value", Fields: []string{"value"}, Type: schema.IndexTypeUnique},
+			Indexes: map[definition.IndexId]definition.Index{
+				"pk": {Name: "id_pk", Fields: []definition.FieldId{"id"}, Type: definition.IndexTypePrimary},
+				"idx": {Name: "idx_value", Fields: []definition.FieldId{"value"}, Type: definition.IndexTypeUnique},
 			},
 		},
 	}
@@ -502,18 +498,16 @@ func TestNativeInteractor_DropIndex(t *testing.T) {
 	interactor, err := createNativeInteractor(t, db)
 	require.NoError(t, err)
 
-	testSchema := &schema.SchemaDefinition{
-		Name: "data_with_index",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":         {Name: "id", Type: schema.FieldTypeString},
-			"data_value": {Name: "data_value", Type: schema.FieldTypeString},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition {Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+	testSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "data_with_index",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":         {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"data_value": {Name: "data_value", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 			},
-			{
-				Index: &schema.IndexDefinition{Name: "idx_data_value", Fields: []string{"data_value"}, Type: schema.IndexTypeNormal},
+			Indexes: map[definition.IndexId]definition.Index{
+				"pk": {Name: "id_pk", Fields: []definition.FieldId{"id"}, Type: definition.IndexTypePrimary},
+				"idx": {Name: "idx_data_value", Fields: []definition.FieldId{"data_value"}, Type: definition.IndexTypeNormal},
 			},
 		},
 	}
@@ -530,7 +524,7 @@ func TestNativeInteractor_DropIndex(t *testing.T) {
 	assert.Equal(t, "idx_data_value", indexName)
 
 	// Drop the index
-	indexToDrop := schema.IndexDefinition{Name: "idx_data_value", Fields: []string{"data_value"}}
+	indexToDrop := definition.Index{Name: "idx_data_value", Fields: []definition.FieldId{"data_value"}}
 	err = interactor.SchemaManager().DropIndex(ctx, testSchema.Name, indexToDrop)
 	require.NoError(t, err)
 
@@ -548,15 +542,15 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	interactor, err := createNativeInteractor(t, db)
 	require.NoError(t, err)
 
-	testSchema := &schema.SchemaDefinition{
-		Name: "accounts",
-		Fields: map[string]*schema.FieldDefinition{
-			"account_id": {Name: "account_id", Type: schema.FieldTypeString},
-			"balance":    {Name: "balance", Type: schema.FieldTypeNumber},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition {Name: "account_id_pk", Fields: []string{"account_id"}, Type: schema.IndexTypePrimary},
+	testSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "accounts",
+			Fields: map[definition.FieldId]definition.Field{
+				"account_id": {Name: "account_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"balance":    {Name: "balance", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"pk": {Name: "account_id_pk", Fields: []definition.FieldId{"account_id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -675,10 +669,12 @@ func TestNativeInteractor_CheckCollection(t *testing.T) {
 	interactor, err := createNativeInteractor(t, db)
 	require.NoError(t, err)
 
-	testSchema := &schema.SchemaDefinition{
-		Name: "test_collection",
-		Fields: map[string]*schema.FieldDefinition{
-			"id": {Name: "id", Type: schema.FieldTypeString},
+	testSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "test_collection",
+			Fields: map[definition.FieldId]definition.Field{
+				"id": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -708,17 +704,17 @@ func TestNativeInteractor_RawQuery(t *testing.T) {
 	require.NoError(t, err)
 
 	// 1. Create a collection using DSL
-	testSchema := &schema.SchemaDefinition{
-		Name: "raw_users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":    {Name: "id", Type: schema.FieldTypeString},
-			"name":  {Name: "name", Type: schema.FieldTypeString},
-			"email": {Name: "email", Type: schema.FieldTypeString},
-			"age":   {Name: "age", Type: schema.FieldTypeInteger},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition {Name: "id_pk", Fields: []string{"id"}, Type: schema.IndexTypePrimary},
+	testSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "raw_users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":    {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name":  {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"email": {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":   {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"pk": {Name: "id_pk", Fields: []definition.FieldId{"id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}

@@ -128,7 +128,7 @@ func main() {
 		log.Fatalf("Failed to create native interactor: %v", err)
 	}
 
-	productSchema := &schema.SchemaDefinition{
+	productSchema := &definition.Schema{
 		Name:    "Product",
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
@@ -177,20 +177,22 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	coreutils "github.com/asaidimu/go-anansi/v6/core/utils" // For BoolPtr
-	_ "github.com/mattn/go-sqlite3"                         // SQLite driver
+	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	_ "github.com/mattn/go-sqlite3" // SQLite driver
 	"go.uber.org/zap"
 )
 
-func getProductSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
-		Name:    "Product",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"name":  {Name: "name", Type: "string", Required: coreutils.BoolPtr(true)},
-			"price": {Name: "price", Type: "number", Required: coreutils.BoolPtr(true)},
-			"stock": {Name: "stock", Type: "integer", Required: coreutils.BoolPtr(true)},
+func getProductSchema() *definition.Schema {
+	return &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: "Product",
+			Fields: map[definition.FieldId]definition.Field{
+				"name":  {Name: "name", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"price": {Name: "price", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"stock": {Name: "stock", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 }
@@ -205,7 +207,7 @@ func main() {
 		DBPath:        ":memory:", // Use an in-memory database
 		EnableLogging: true,
 		EnableEvents:  true,
-		Schemas:       []schema.SchemaDefinition{*productSchema},
+		Schemas:       []*definition.Schema{productSchema},
 	})
 	if err != nil {
 		log.Fatalf("Failed to start playground: %v", err)
@@ -271,8 +273,8 @@ import (
 )
 
 // getProductSchema returns a minimal, valid Product schema.
-func getProductSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
+func getProductSchema() *definition.Schema {
+	return &definition.Schema{
 		Name:    "Product",
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
@@ -415,8 +417,8 @@ import (
 )
 
 // Schemas for User, Account, and LedgerTransaction
-func getUserSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
+func getUserSchema() *definition.Schema {
+	return &definition.Schema{
 		Name:    "User", Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
 			"id":    {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
@@ -426,8 +428,8 @@ func getUserSchema() *schema.SchemaDefinition {
 	}
 }
 
-func getAccountSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
+func getAccountSchema() *definition.Schema {
+	return &definition.Schema{
 		Name:    "Account", Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
 			"id":     {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
@@ -437,8 +439,8 @@ func getAccountSchema() *schema.SchemaDefinition {
 	}
 }
 
-func getLedgerTransactionSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
+func getLedgerTransactionSchema() *definition.Schema {
+	return &definition.Schema{
 		Name:    "LedgerTransaction", Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{
 			"id":        {Name: "id", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
@@ -711,8 +713,8 @@ func main() {
 	}
 }
 
-func getLedgerTransactionSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
+func getLedgerTransactionSchema() *definition.Schema {
+	return &definition.Schema{
 		Name:    "LedgerTransaction", // Renamed from Transaction
 		Version: "1.0.0",
 		Fields: map[string]*schema.FieldDefinition{

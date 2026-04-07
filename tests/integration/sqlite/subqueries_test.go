@@ -6,7 +6,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sql "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -15,12 +15,14 @@ import (
 func TestSimpleScalarSubquery(t *testing.T) {
 	// Test: WHERE age > (SELECT AVG(age) FROM users)
 
-	usersSchema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: schema.FieldTypeString},
-			"age":  {Name: "age", Type: schema.FieldTypeNumber},
-			"name": {Name: "name", Type: schema.FieldTypeString},
+	usersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":   {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":  {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -67,20 +69,24 @@ func TestSubqueryWithIN(t *testing.T) {
 	// Test: WHERE user_id IN (SELECT id FROM users WHERE department = 'Engineering')
 	dept := "Engineering"
 
-	usersSchema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":         {Name: "id", Type: schema.FieldTypeString},
-			"department": {Name: "department", Type: schema.FieldTypeString},
+	usersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":         {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"department": {Name: "department", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	ordersSchema := &schema.SchemaDefinition{
-		Name: "orders",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":      {Name: "id", Type: schema.FieldTypeString},
-			"user_id": {Name: "user_id", Type: schema.FieldTypeString},
-			"total":   {Name: "total", Type: schema.FieldTypeNumber},
+	ordersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "orders",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":      {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"user_id": {Name: "user_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"total":   {Name: "total", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 
@@ -141,27 +147,33 @@ func TestSubqueryWithJoin(t *testing.T) {
 
 	deptName := "Engineering"
 
-	usersSchema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":            {Name: "id", Type: schema.FieldTypeString},
-			"department_id": {Name: "department_id", Type: schema.FieldTypeString},
+	usersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":            {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"department_id": {Name: "department_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	departmentsSchema := &schema.SchemaDefinition{
-		Name: "departments",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: schema.FieldTypeString},
-			"name": {Name: "name", Type: schema.FieldTypeString},
+	departmentsSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "departments",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":   {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	ordersSchema := &schema.SchemaDefinition{
-		Name: "orders",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":      {Name: "id", Type: schema.FieldTypeString},
-			"user_id": {Name: "user_id", Type: schema.FieldTypeString},
+	ordersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "orders",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":      {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"user_id": {Name: "user_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -247,27 +259,33 @@ func TestNestedSubqueries(t *testing.T) {
 
 	region := "East"
 
-	departmentsSchema := &schema.SchemaDefinition{
-		Name: "departments",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":     {Name: "id", Type: schema.FieldTypeString},
-			"region": {Name: "region", Type: schema.FieldTypeString},
+	departmentsSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "departments",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":     {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"region": {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	usersSchema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":            {Name: "id", Type: schema.FieldTypeString},
-			"department_id": {Name: "department_id", Type: schema.FieldTypeString},
+	usersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":            {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"department_id": {Name: "department_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	ordersSchema := &schema.SchemaDefinition{
-		Name: "orders",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":      {Name: "id", Type: schema.FieldTypeString},
-			"user_id": {Name: "user_id", Type: schema.FieldTypeString},
+	ordersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "orders",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":      {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"user_id": {Name: "user_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -346,19 +364,23 @@ func TestCorrelatedSubquery(t *testing.T) {
 	//   SELECT COUNT(*) FROM orders o WHERE o.user_id = u.id
 	// ) > 5
 
-	usersSchema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: schema.FieldTypeString},
-			"name": {Name: "name", Type: schema.FieldTypeString},
+	usersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":   {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	ordersSchema := &schema.SchemaDefinition{
-		Name: "orders",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":      {Name: "id", Type: schema.FieldTypeString},
-			"user_id": {Name: "user_id", Type: schema.FieldTypeString},
+	ordersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "orders",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":      {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"user_id": {Name: "user_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -426,10 +448,12 @@ func TestCorrelatedSubquery(t *testing.T) {
 func TestSubqueryDepthLimit(t *testing.T) {
 	// Test: Ensure we prevent infinite recursion with depth limit
 
-	testSchema := &schema.SchemaDefinition{
-		Name: "test",
-		Fields: map[string]*schema.FieldDefinition{
-			"id": {Name: "id", Type: schema.FieldTypeString},
+	testSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "test",
+			Fields: map[definition.FieldId]definition.Field{
+				"id": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -486,19 +510,23 @@ func TestSubqueryInJoinCondition(t *testing.T) {
 	// INNER JOIN departments d ON u.department_id = d.id
 	//   AND d.budget > (SELECT AVG(budget) FROM departments)
 
-	usersSchema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":            {Name: "id", Type: schema.FieldTypeString},
-			"department_id": {Name: "department_id", Type: schema.FieldTypeString},
+	usersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":            {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"department_id": {Name: "department_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	departmentsSchema := &schema.SchemaDefinition{
-		Name: "departments",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":     {Name: "id", Type: schema.FieldTypeString},
-			"budget": {Name: "budget", Type: schema.FieldTypeNumber},
+	departmentsSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "departments",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":     {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"budget": {Name: "budget", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 

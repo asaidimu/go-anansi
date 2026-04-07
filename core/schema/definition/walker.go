@@ -6,7 +6,7 @@ import (
 
 const (
 	// Most schemas won't exceed this depth
-	typicalMaxDepth = 10
+	typicalMaxDepth = 100
 )
 
 // NodeType represents the type of node being visited

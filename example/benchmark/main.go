@@ -9,13 +9,13 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	coreutils "github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	_ "github.com/mattn/go-sqlite3"
@@ -30,31 +30,34 @@ const (
 )
 
 // getUserSchema defines the structure of the "User" documents.
-func getUserSchema() *schema.SchemaDefinition {
-	sc := &schema.SchemaDefinition{
-		Name:    "User",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			// "ida" is the primary unique identifier used for lookups
-			"ida":    {Name: "ida", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
-			"name":   {Name: "name", Type: "string", Required: coreutils.BoolPtr(true)},
-			"email":  {Name: "email", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
-			"age":    {Name: "age", Type: "integer", Required: coreutils.BoolPtr(true)},
-			"active": {Name: "active", Type: "boolean", Required: coreutils.BoolPtr(true)},
+func getUserSchema() *definition.Schema {
+	return &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: "User",
+			Fields: map[definition.FieldId]definition.Field{
+				// "ida" is the primary unique identifier used for lookups
+				"ida":    {Name: "ida", Required: true, Unique: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name":   {Name: "name", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"email":  {Name: "email", Required: true, Unique: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":    {Name: "age", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"active": {Name: "active", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeBoolean}},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"key_ida": {
+					Name:   "key_ida",
+					Fields: []definition.FieldId{"ida"},
+					Type:   definition.IndexTypeNormal,
+					Unique: true,
+				},
+				"key_age": {
+					Name:   "key_age",
+					Fields: []definition.FieldId{"age"},
+					Type:   definition.IndexTypeNormal,
+				},
+			},
 		},
 	}
-	sc,_ = sc.WithIndex(&schema.IndexDefinition{
-		Name:   "key_ida",
-		Fields: []string{"ida"},
-		Type:   schema.IndexTypeNormal,
-		Unique: coreutils.BoolPtr(true),
-	})
-	sc,_ = sc.WithIndex(&schema.IndexDefinition{
-		Name:   "key_age",
-		Fields: []string{"age"},
-		Type:   schema.IndexTypeNormal,
-	})
-	return sc
 }
 
 func main() {

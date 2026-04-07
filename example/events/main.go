@@ -14,8 +14,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	coreutils "github.com/asaidimu/go-anansi/v6/core/utils" // For BoolPtr
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
@@ -23,15 +22,17 @@ import (
 )
 
 // Product schema definition
-func getProductSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
-		Name:    "Product",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"name":  {Name: "name", Type: "string", Required: coreutils.BoolPtr(true)},
-			"value":  {Name: "value", Type: "number", Required: coreutils.BoolPtr(true)},
-			"price": {Name: "price", Type: "number", Required: coreutils.BoolPtr(true)},
-			"stock": {Name: "stock", Type: "integer", Required: coreutils.BoolPtr(true)},
+func getProductSchema() *definition.Schema {
+	return &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: "Product",
+			Fields: map[definition.FieldId]definition.Field{
+				"name":  {Name: "name", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"value": {Name: "value", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"price": {Name: "price", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"stock": {Name: "stock", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 }

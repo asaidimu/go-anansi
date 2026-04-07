@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -22,13 +22,16 @@ func TestPersistence_RawQuery_Update(t *testing.T) {
 	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
-	productSchema := schema.SchemaDefinition{
-		Name:    "products",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"pid":   {Name: "pid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"name":  {Name: "name", Type: schema.FieldTypeString},
-			"price": {Name: "price", Type: schema.FieldTypeNumber},
+	v1, _ := common.NewVersion("1.0.0")
+	productSchema := definition.Schema{
+		Version: v1,
+		BaseSchema: definition.BaseSchema{
+			Name: "products",
+			Fields: map[definition.FieldId]definition.Field{
+				"pid":   {Name: "pid", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"name":  {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"price": {Name: "price", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 
@@ -71,21 +74,26 @@ func TestPersistence_RawQuery_LeftJoin(t *testing.T) {
 	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
-	userSchema := schema.SchemaDefinition{
-		Name:    "users",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"uid":   {Name: "uid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"name": {Name: "name", Type: schema.FieldTypeString},
+	v1, _ := common.NewVersion("1.0.0")
+	userSchema := definition.Schema{
+		Version: v1,
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"uid":  {Name: "uid", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	profileSchema := schema.SchemaDefinition{
-		Name:    "profiles",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"user_id": {Name: "user_id", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"bio":  {Name: "bio", Type: schema.FieldTypeString},
+	profileSchema := definition.Schema{
+		Version: v1,
+		BaseSchema: definition.BaseSchema{
+			Name: "profiles",
+			Fields: map[definition.FieldId]definition.Field{
+				"user_id": {Name: "user_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"bio":     {Name: "bio", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -162,13 +170,16 @@ func TestPersistence_RawQuery_Delete(t *testing.T) {
 	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
-	productSchema := schema.SchemaDefinition{
-		Name:    "products",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"pid":   {Name: "pid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"name":  {Name: "name", Type: schema.FieldTypeString},
-			"price": {Name: "price", Type: schema.FieldTypeNumber},
+	v1, _ := common.NewVersion("1.0.0")
+	productSchema := definition.Schema{
+		Version: v1,
+		BaseSchema: definition.BaseSchema{
+			Name: "products",
+			Fields: map[definition.FieldId]definition.Field{
+				"pid":   {Name: "pid", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"name":  {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"price": {Name: "price", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 
@@ -211,13 +222,16 @@ func TestPersistence_RawQuery_GroupConcat(t *testing.T) {
 	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
-	orderSchema := schema.SchemaDefinition{
-		Name:    "orders",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"order_id": {Name: "order_id", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"user_id":  {Name: "user_id", Type: schema.FieldTypeString},
-			"product":  {Name: "product", Type: schema.FieldTypeString},
+	v1, _ := common.NewVersion("1.0.0")
+	orderSchema := definition.Schema{
+		Version: v1,
+		BaseSchema: definition.BaseSchema{
+			Name: "orders",
+			Fields: map[definition.FieldId]definition.Field{
+				"order_id": {Name: "order_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"user_id":  {Name: "user_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"product":  {Name: "product", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -287,13 +301,16 @@ func TestPersistence_RawQuery_CollectionRead(t *testing.T) {
 	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
 	require.NoError(t, err)
 
-	productSchema := schema.SchemaDefinition{
-		Name:    "products",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"pid":   {Name: "pid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"name":  {Name: "name", Type: schema.FieldTypeString},
-			"price": {Name: "price", Type: schema.FieldTypeNumber},
+	v1, _ := common.NewVersion("1.0.0")
+	productSchema := definition.Schema{
+		Version: v1,
+		BaseSchema: definition.BaseSchema{
+			Name: "products",
+			Fields: map[definition.FieldId]definition.Field{
+				"pid":   {Name: "pid", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"name":  {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"price": {Name: "price", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 

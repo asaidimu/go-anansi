@@ -7,7 +7,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqlite "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,12 +37,14 @@ func TestCreateCollectionIntegration(t *testing.T) {
 	db, _ := setupDDLTestDB(t)
 	defer db.Close()
 
-	userSchema := schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: schema.FieldTypeString},
-			"name": {Name: "name", Type: schema.FieldTypeString},
-			"age":  {Name: "age", Type: schema.FieldTypeInteger},
+	userSchema := definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":   {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":  {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 
@@ -77,12 +79,14 @@ func TestDropCollectionIntegration(t *testing.T) {
 	db, _ := setupDDLTestDB(t)
 	defer db.Close()
 
-	userSchema := schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: schema.FieldTypeString},
-			"name": {Name: "name", Type: schema.FieldTypeString},
-			"age":  {Name: "age", Type: schema.FieldTypeInteger},
+	userSchema := definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":   {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":  {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 
@@ -123,18 +127,20 @@ func TestCreateIndexIntegration(t *testing.T) {
 	db, _ := setupDDLTestDB(t)
 	defer db.Close()
 
-	userSchema := schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: schema.FieldTypeString},
-			"name": {Name: "name", Type: schema.FieldTypeString},
-			"age":  {Name: "age", Type: schema.FieldTypeInteger},
+	userSchema := definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":   {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":  {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
-	indexDef := schema.IndexDefinition{
+	indexDef := definition.Index{
 		Name:   "idx_users_name",
-		Fields: []string{"name"},
-		Type:   schema.IndexTypeNormal,
+		Fields: []definition.FieldId{"name"},
+		Type:   definition.IndexTypeNormal,
 	}
 
 	builder := sqlite.NewSQLiteFactory()
@@ -174,18 +180,20 @@ func TestDropIndexIntegration(t *testing.T) {
 	db,_ := setupDDLTestDB(t)
 	defer db.Close()
 
-	userSchema := schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: schema.FieldTypeString},
-			"name": {Name: "name", Type: schema.FieldTypeString},
-			"age":  {Name: "age", Type: schema.FieldTypeInteger},
+	userSchema := definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":   {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":  {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
-	indexDef := schema.IndexDefinition{
+	indexDef := definition.Index{
 		Name:   "idx_users_name",
-		Fields: []string{"name"},
-		Type:   schema.IndexTypeNormal,
+		Fields: []definition.FieldId{"name"},
+		Type:   definition.IndexTypeNormal,
 	}
 
 	builder := sqlite.NewSQLiteFactory()

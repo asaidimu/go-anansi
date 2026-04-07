@@ -7,23 +7,23 @@ import (
 	"sync"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 )
 
 //go:embed models/*.json
 var schemasFS embed.FS
 
 var (
-	schemas     []*schema.SchemaDefinition
+	schemas     []*definition.Schema
 	schemasOnce sync.Once
 	schemasErr  error
 )
 
 // GetSchemas returns all schema definitions, loading them from the embedded filesystem on the first call.
-func GetSchemas() ([]*schema.SchemaDefinition, error) {
+func GetSchemas() ([]*definition.Schema, error) {
 	schemasOnce.Do(func() {
-		loadedSchemas := []*schema.SchemaDefinition{}
-		err := walkSchemas(func(def *schema.SchemaDefinition) error {
+		loadedSchemas := []*definition.Schema{}
+		err := walkSchemas(func(def *definition.Schema) error {
 			loadedSchemas = append(loadedSchemas, def)
 			return nil
 		})
@@ -38,7 +38,7 @@ func GetSchemas() ([]*schema.SchemaDefinition, error) {
 	return schemas, schemasErr
 }
 
-func walkSchemas(callback func(*schema.SchemaDefinition) error) error {
+func walkSchemas(callback func(*definition.Schema) error) error {
 	dir, err := schemasFS.ReadDir("models")
 	if err != nil {
 		return err
@@ -54,7 +54,7 @@ func walkSchemas(callback func(*schema.SchemaDefinition) error) error {
 		if err != nil {
 			return common.SystemErrorFrom(err).WithMessagef("Failed to read %s", name).WithPath(name)
 		}
-		schemaDef, err := schema.From(bytes);
+		schemaDef, err := definition.FromJSON(bytes)
 		if err != nil {
 			return common.SystemErrorFrom(err).WithPath(name)
 		}

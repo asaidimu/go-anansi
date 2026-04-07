@@ -109,26 +109,21 @@ func (ns *NestedSchema) deepCopy() NestedSchema {
 
 // deepCopy creates a deep copy of a Constraint
 func (c *Constraint) deepCopy() Constraint {
-	copy := Constraint{
-		Name:        c.Name,
-		Description: c.Description,
-		ConstraintUnion: ConstraintUnion{
-			kind:        c.kind,
-		},
-	}
-
-	switch c.kind {
-	case ConstraintKindRule:
-		if rule, err := ConstraintAs[*ConstraintRule](c.ConstraintUnion); err == nil {
-			copy.ConstraintUnion = NewConstrainUnion(rule.deepCopy())
-		}
-	case ConstraintKindGroup:
-		if group, err := ConstraintAs[*ConstraintGroup](c.ConstraintUnion); err == nil {
-			copy.ConstraintUnion = NewConstrainUnion(group.deepCopy())
-		}
-	}
-
-	return copy
+    copy := Constraint{
+        Name:        c.Name,
+        Description: c.Description,
+    }
+    switch c.kind {
+    case ConstraintKindRule:
+        if rule, err := ConstraintAs[*ConstraintRule](c.ConstraintUnion); err == nil {
+            copy.ConstraintUnion = NewConstrainUnion(rule.deepCopy())
+        }
+    case ConstraintKindGroup:
+        if group, err := ConstraintAs[*ConstraintGroup](c.ConstraintUnion); err == nil {
+            copy.ConstraintUnion = NewConstrainUnion(group.deepCopy())
+        }
+    }
+    return copy
 }
 
 // deepCopy creates a deep copy of a ConstraintRule

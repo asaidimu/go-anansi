@@ -14,8 +14,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	coreutils "github.com/asaidimu/go-anansi/v6/core/utils" // For BoolPtr
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
@@ -23,37 +22,43 @@ import (
 )
 
 // Schemas
-func getUserSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
-		Name:    "User",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"name":  {Name: "name", Type: "string", Required: coreutils.BoolPtr(true)},
-			"email": {Name: "email", Type: "string", Required: coreutils.BoolPtr(true), Unique: coreutils.BoolPtr(true)},
+func getUserSchema() *definition.Schema {
+	return &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: "User",
+			Fields: map[definition.FieldId]definition.Field{
+				"name":  {Name: "name", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"email": {Name: "email", Required: true, Unique: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 }
 
-func getAccountSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
-		Name:    "Account",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"userId":  {Name: "userId", Type: "string", Required: coreutils.BoolPtr(true)}, // Foreign key to User
-			"balance": {Name: "balance", Type: "number", Required: coreutils.BoolPtr(true)},
+func getAccountSchema() *definition.Schema {
+	return &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: "Account",
+			Fields: map[definition.FieldId]definition.Field{
+				"userId":  {Name: "userId", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}}, // Foreign key to User
+				"balance": {Name: "balance", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 }
 
-func getLedgerTransactionSchema() *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
-		Name:    "LedgerTransaction", // Renamed from Transaction
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"accountId": {Name: "accountId", Type: "string", Required: coreutils.BoolPtr(true)}, // Foreign key to Account
-			"amount":    {Name: "amount", Type: "number", Required: coreutils.BoolPtr(true)},
-			"type":      {Name: "type", Type: "string", Required: coreutils.BoolPtr(true)}, // e.g., "deposit", "withdrawal"
-			"timestamp": {Name: "timestamp", Type: "integer", Required: coreutils.BoolPtr(true)},
+func getLedgerTransactionSchema() *definition.Schema {
+	return &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: "LedgerTransaction", // Renamed from Transaction
+			Fields: map[definition.FieldId]definition.Field{
+				"accountId": {Name: "accountId", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}}, // Foreign key to Account
+				"amount":    {Name: "amount", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"type":      {Name: "type", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}}, // e.g., "deposit", "withdrawal"
+				"timestamp": {Name: "timestamp", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 }

@@ -35,7 +35,7 @@ func (t *createIndexTree) Value() (string, []any, error) {
 
 	var sb strings.Builder
 	sb.WriteString("CREATE ")
-	if index.Unique {
+	if index.Unique || index.Type == definition.IndexTypeUnique {
 		sb.WriteString("UNIQUE ")
 	}
 	sb.WriteString("INDEX IF NOT EXISTS ")

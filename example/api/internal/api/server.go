@@ -10,7 +10,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"go.uber.org/zap"
 
 	"github.com/asaidimu/go-anansi/v6/example/api/internal/app"
@@ -323,7 +323,7 @@ func (s *APIServer) createCollection(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sc, err := schema.From(reqBody.Schema)
+	sc, err := definition.FromJSON(reqBody.Schema)
 	if err != nil {
 		s.Response.WriteError(w, http.StatusBadRequest, common.SystemErrorFrom(err).WithCode("INVALID_SCHEMA"), r)
 		return
