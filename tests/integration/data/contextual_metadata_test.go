@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -17,11 +17,11 @@ func TestContextualMetadataProvider(t *testing.T) {
 	// 1. Define a context-aware metadata provider
 	contextualProvider := data.MetadataProviderConfig{
 		Name: "contextual",
-		Schema: &schema.NestedSchemaDefinition{
-			Name: "contextual_meta",
-			Fields: &schema.NestedSchemaFields{
-				FieldsMap: map[string]*schema.FieldDefinition{
-					"trace_id": {Name: "trace_id", Type: "string"},
+		Schema: &definition.NestedSchema{
+			BaseSchema: definition.BaseSchema{
+				Name: "contextual_meta",
+				Fields: map[definition.FieldId]definition.Field{
+					"trace_id": {Name: "trace_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 				},
 			},
 		},

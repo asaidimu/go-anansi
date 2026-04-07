@@ -29,10 +29,6 @@ func setupCollectionTest(t *testing.T) (base.Collection, func()) {
 	require.NoError(t, err)
 
 	schema := newTestSchema("crud_collection")
-	issues := schema.ValidateAll()
-	if len(issues) > 0{
-		fmt.Printf("Issues, %v", issues)
-	}
 	collection, err := p.CreateCollection(context.Background(), schema)
 	if err != nil {
 		fmt.Printf("Issues, %v", common.SystemErrorFrom(err).ToIssue())

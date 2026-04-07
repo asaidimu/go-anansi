@@ -9,7 +9,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	sqlite "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	_ "github.com/mattn/go-sqlite3"
@@ -99,16 +99,18 @@ func TestInsert_Integration(t *testing.T) {
 
 	builder := sqlite.NewSQLiteFactory()
 
-	usersSchema := &schema.SchemaDefinition{
-		Name: "users_1_0_0",
-		Fields: map[string]*schema.FieldDefinition{
-			data.DocumentIDField:         {Name: data.DocumentIDField, Type: schema.FieldTypeString},
-			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
-			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
-			"email":      {Name: "email", Type: schema.FieldTypeString},
-			"age":        {Name: "age", Type: schema.FieldTypeInteger},
-			"status":     {Name: "status", Type: schema.FieldTypeString},
-			"region":     {Name: "region", Type: schema.FieldTypeString},
+	usersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users_1_0_0",
+			Fields: map[definition.FieldId]definition.Field{
+				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"first_name": {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"last_name":  {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"email":      {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":        {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"status":     {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"region":     {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -139,17 +141,19 @@ func TestUpdate_Integration(t *testing.T) {
 	defer db.Close()
 
 	builder := sqlite.NewSQLiteFactory()
-	usersSchema := &schema.SchemaDefinition{
-		Name: "users_1_0_0",
-		Fields: map[string]*schema.FieldDefinition{
-			data.DocumentIDField:         {Name: data.DocumentIDField, Type: schema.FieldTypeString},
-			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
-			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
-			"email":      {Name: "email", Type: schema.FieldTypeString},
-			"age":        {Name: "age", Type: schema.FieldTypeInteger},
-			"status":     {Name: "status", Type: schema.FieldTypeString},
-			"region":     {Name: "region", Type: schema.FieldTypeString},
-			"metadata":   {Name: "_metadata_", Type: schema.FieldTypeRecord},
+	usersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users_1_0_0",
+			Fields: map[definition.FieldId]definition.Field{
+				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"first_name": {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"last_name":  {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"email":      {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":        {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"status":     {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"region":     {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"metadata":   {Name: "_metadata_", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeRecord}},
+			},
 		},
 	}
 
@@ -180,16 +184,18 @@ func TestDelete_Integration(t *testing.T) {
 	defer db.Close()
 
 	builder := sqlite.NewSQLiteFactory()
-	usersSchema := &schema.SchemaDefinition{
-		Name: "users_1_0_0",
-		Fields: map[string]*schema.FieldDefinition{
-			data.DocumentIDField:         {Name: data.DocumentIDField, Type: schema.FieldTypeString},
-			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
-			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
-			"email":      {Name: "email", Type: schema.FieldTypeString},
-			"age":        {Name: "age", Type: schema.FieldTypeInteger},
-			"status":     {Name: "status", Type: schema.FieldTypeString},
-			"region":     {Name: "region", Type: schema.FieldTypeString},
+	usersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users_1_0_0",
+			Fields: map[definition.FieldId]definition.Field{
+				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"first_name": {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"last_name":  {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"email":      {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":        {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"status":     {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"region":     {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Schema(usersSchema).Where(data.DocumentIDField).Eq("user-2")
@@ -227,12 +233,14 @@ func TestComplexTypes_Integration(t *testing.T) {
 
 	builder := sqlite.NewSQLiteFactory()
 
-	complexDocsSchema := &schema.SchemaDefinition{
-		Name: "complex_docs_01",
-		Fields: map[string]*schema.FieldDefinition{
-			data.DocumentIDField:       {Name: data.DocumentIDField, Type: schema.FieldTypeString},
-			"tags":     {Name: "tags", Type: schema.FieldTypeArray},
-			"metadata": {Name: "_metadata_", Type: schema.FieldTypeObject},
+	complexDocsSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "complex_docs_01",
+			Fields: map[definition.FieldId]definition.Field{
+				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"tags":     {Name: "tags", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeArray}},
+				"metadata": {Name: "_metadata_", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
+			},
 		},
 	}
 
@@ -295,26 +303,30 @@ func TestSelectComplex_Integration(t *testing.T) {
 
 	builder := sqlite.NewSQLiteFactory()
 
-	ordersSchema := &schema.SchemaDefinition{
-		Name: "orders_1_0_0",
-		Fields: map[string]*schema.FieldDefinition{
-			data.DocumentIDField:           {Name: data.DocumentIDField, Type: schema.FieldTypeString},
-			"customer_id":  {Name: "customer_id", Type: schema.FieldTypeString},
-			"order_date":   {Name: "order_date", Type: schema.FieldTypeString},
-			"total_amount": {Name: "total_amount", Type: schema.FieldTypeNumber},
+	ordersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "orders_1_0_0",
+			Fields: map[definition.FieldId]definition.Field{
+				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"customer_id":  {Name: "customer_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"order_date":   {Name: "order_date", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"total_amount": {Name: "total_amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 
-	usersSchema := &schema.SchemaDefinition{
-		Name: "users_1_0_0",
-		Fields: map[string]*schema.FieldDefinition{
-			data.DocumentIDField:         {Name: data.DocumentIDField, Type: schema.FieldTypeString},
-			"first_name": {Name: "first_name", Type: schema.FieldTypeString},
-			"last_name":  {Name: "last_name", Type: schema.FieldTypeString},
-			"email":      {Name: "email", Type: schema.FieldTypeString},
-			"age":        {Name: "age", Type: schema.FieldTypeInteger},
-			"status":     {Name: "status", Type: schema.FieldTypeString},
-			"region":     {Name: "region", Type: schema.FieldTypeString},
+	usersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users_1_0_0",
+			Fields: map[definition.FieldId]definition.Field{
+				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"first_name": {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"last_name":  {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"email":      {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":        {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"status":     {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"region":     {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -373,22 +385,26 @@ func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
 	// Define the schema for the users table, marking 'profile' as a complex object
-	userSchema := &schema.SchemaDefinition{
-		Name: "users_1_0_0",
-		Fields: map[string]*schema.FieldDefinition{
-			data.DocumentIDField:      {Name: data.DocumentIDField, Type: schema.FieldTypeString},
-			"profile": {Name: "profile", Type: schema.FieldTypeRecord},
+	userSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users_1_0_0",
+			Fields: map[definition.FieldId]definition.Field{
+				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"profile": {Name: "profile", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeRecord}},
+			},
 		},
 	}
 
 	// Define the schema for the users table, marking 'profile' as a complex object
-	ordersSchema := &schema.SchemaDefinition{
-		Name: "orders_1_0_0",
-		Fields: map[string]*schema.FieldDefinition{
-			data.DocumentIDField:           {Name: data.DocumentIDField, Type: schema.FieldTypeString},
-			"customer_id":  {Name: "customer_id", Type: schema.FieldTypeString},
-			"order_date":   {Name: "order_date", Type: schema.FieldTypeString},
-			"total_amount": {Name: "total_amount", Type: schema.FieldTypeNumber},
+	ordersSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "orders_1_0_0",
+			Fields: map[definition.FieldId]definition.Field{
+				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"customer_id":  {Name: "customer_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"order_date":   {Name: "order_date", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"total_amount": {Name: "total_amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 
@@ -449,12 +465,14 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
 	// Define the schema for the docs table
-	docSchema := &schema.SchemaDefinition{
-		Name: "docs",
-		Fields: map[string]*schema.FieldDefinition{
-			data.DocumentIDField:       {Name: data.DocumentIDField, Type: schema.FieldTypeString},
-			"metadata": {Name: "_metadata_", Type: schema.FieldTypeObject},
-			"status":   {Name: "status", Type: schema.FieldTypeString},
+	docSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "docs",
+			Fields: map[definition.FieldId]definition.Field{
+				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"metadata": {Name: "_metadata_", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
+				"status":   {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -496,12 +514,14 @@ func TestSelectWithAggregations_Integration(t *testing.T) {
 
 	builder := sqlite.NewSQLiteFactory()
 
-	salesSchema := &schema.SchemaDefinition{
-		Name: "sales",
-		Fields: map[string]*schema.FieldDefinition{
-			data.DocumentIDField:     {Name: data.DocumentIDField, Type: schema.FieldTypeInteger},
-			"region": {Name: "region", Type: schema.FieldTypeString},
-			"amount": {Name: "amount", Type: schema.FieldTypeNumber},
+	salesSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "sales",
+			Fields: map[definition.FieldId]definition.Field{
+				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"region": {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"amount": {Name: "amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 
@@ -562,11 +582,13 @@ func TestSelectWithAggregations_Integration(t *testing.T) {
 func TestComputedFieldTranslation(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
 
-	docSchema := &schema.SchemaDefinition{
-		Name: "docs",
-		Fields: map[string]*schema.FieldDefinition{
-			data.DocumentIDField:       {Name: data.DocumentIDField, Type: schema.FieldTypeString},
-			"metadata": {Name: "metadata", Type: schema.FieldTypeObject},
+	docSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "docs",
+			Fields: map[definition.FieldId]definition.Field{
+				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"metadata": {Name: "metadata", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
+			},
 		},
 	}
 

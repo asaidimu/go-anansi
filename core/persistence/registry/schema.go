@@ -78,7 +78,7 @@ func RegistrySchema() *definition.Schema {
 	if err != nil {
 		// This should ideally not happen as the JSON is hardcoded and controlled.
 		// If it does, it indicates a critical internal error.
-		panic(fmt.Sprintf("failed to unmarshal registry schema: %%v", err))
+		panic(fmt.Sprintf("failed to unmarshal registry schema: %v", err))
 	}
 
 	return MustEnrichSchema(def)

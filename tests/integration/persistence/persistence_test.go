@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	"github.com/asaidimu/go-anansi/v6/tests/testutils"
@@ -49,20 +49,23 @@ func setupTestDB(t *testing.T) (*sql.DB, func()) {
 	return db, cleanup
 }
 
-func newTestSchema(name ...string) *schema.SchemaDefinition {
+func newTestSchema(name ...string) *definition.Schema {
 	sname := "test_collection"
 	if name != nil {
 		sname = name[0]
 	}
-	return &schema.SchemaDefinition{
-		Name:        sname,
-		Version:     "8.0.0",
-		Description: utils.StringPtr("test collection"),
-		Fields: map[string]*schema.FieldDefinition{
-			"name":      {Name: "name", Type: "string", Required: utils.BoolPtr(true)},
-			"age":       {Name: "age", Type: "integer"},
-			"is_active": {Name: "is_active", Type: "boolean"},
-			"price":     {Name: "price", Type: "number"},
+	version, _ := common.NewVersion("8.0.0")
+	return &definition.Schema{
+		Version: version,
+		BaseSchema: definition.BaseSchema{
+			Name:        sname,
+			Description: "test collection",
+			Fields: map[definition.FieldId]definition.Field{
+				"name":      {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"age":       {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"is_active": {Name: "is_active", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeBoolean}},
+				"price":     {Name: "price", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 }
@@ -195,7 +198,7 @@ func TestPersistence_Transact(t *testing.T) {
 	require.NoError(t, err)
 
 	sc := newTestSchema("accounts")
-	sc.Fields["balance"] = &schema.FieldDefinition{Name: "balance", Type: "number"}
+	sc.Fields["balance"] = definition.Field{Name: "balance", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}}
 
 	// Create the collection and some initial data outside the transaction
 	accounts, err := p.CreateCollection(context.Background(), sc)
@@ -330,7 +333,8 @@ func TestPersistence_Schema(t *testing.T) {
 
 	// Create a schema and a collection based on it
 	testSchema := newTestSchema("my_schema_collection")
-	testSchema.Version = "1.0.0"
+	v1, _ := common.NewVersion("1.0.0")
+	testSchema.Version = v1
 	_, err = p.CreateCollection(context.Background(), testSchema)
 	require.NoError(t, err)
 
@@ -474,7 +478,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	require.NoError(t, err)
 
 	sc := newTestSchema("accounts")
-	sc.Fields["balance"] = &schema.FieldDefinition{Name: "balance", Type: "number"}
+	sc.Fields["balance"] = definition.Field{Name: "balance", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}}
 
 	accounts, err := p.CreateCollection(context.Background(), sc)
 	require.NoError(t, err)
@@ -544,21 +548,26 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	require.NoError(t, err)
 
 	// 1. Define Schemas
-	userSchema := schema.SchemaDefinition{
-		Name:    "users",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"uid":  {Name: "uid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"name": {Name: "name", Type: schema.FieldTypeString},
+	v1, _ := common.NewVersion("1.0.0")
+	userSchema := definition.Schema{
+		Version: v1,
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"uid":  {Name: "uid", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
-	profileSchema := schema.SchemaDefinition{
-		Name:    "profiles",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"user": {Name: "user", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"bio":  {Name: "bio", Type: schema.FieldTypeString},
+	profileSchema := definition.Schema{
+		Version: v1,
+		BaseSchema: definition.BaseSchema{
+			Name: "profiles",
+			Fields: map[definition.FieldId]definition.Field{
+				"user": {Name: "user", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"bio":  {Name: "bio", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -648,32 +657,32 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 	require.NoError(t, err)
 
 	// 1. Define Schemas
-	userSchema := schema.SchemaDefinition{
-		Name:    "users",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"uid":  {Name: "uid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"name": {Name: "name", Type: schema.FieldTypeString},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition{Name: "ix_uid", Fields: []string{"uid"}, Type: schema.IndexTypeNormal},
+	v1, _ := common.NewVersion("1.0.0")
+	userSchema := definition.Schema{
+		Version: v1,
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"uid":  {Name: "uid", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"ix1": {Name: "ix_uid", Fields: []definition.FieldId{"uid"}, Type: definition.IndexTypeNormal},
 			},
 		},
 	}
 
-	orderSchema := schema.SchemaDefinition{
-		Name:    "orders",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"order_id": {Name: "order_id", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"user_id":  {Name: "user_id", Type: schema.FieldTypeString},
-			"amount":   {Name: "amount", Type: schema.FieldTypeNumber},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition{
-					Name: "order_id_pk", Fields: []string{"order_id"}, Type: schema.IndexTypeUnique},
+	orderSchema := definition.Schema{
+		Version: v1,
+		BaseSchema: definition.BaseSchema{
+			Name: "orders",
+			Fields: map[definition.FieldId]definition.Field{
+				"order_id": {Name: "order_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"user_id":  {Name: "user_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"amount":   {Name: "amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"idx1": {Name: "order_id_pk", Fields: []definition.FieldId{"order_id"}, Type: definition.IndexTypeUnique},
 			},
 		},
 	}
@@ -755,17 +764,18 @@ func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
 	require.NoError(t, err)
 
 	// 1. Define Schema for products
-	productSchema := schema.SchemaDefinition{
-		Name:    "products",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"pid":   {Name: "pid", Type: schema.FieldTypeString, Required: utils.BoolPtr(true)},
-			"name":  {Name: "name", Type: schema.FieldTypeString},
-			"price": {Name: "price", Type: schema.FieldTypeNumber},
-		},
-		Indexes: []schema.IndexOrReference{
-			{
-				Index: &schema.IndexDefinition{Name: "ix_pid", Fields: []string{"pid"}, Type: schema.IndexTypeNormal},
+	v1, _ := common.NewVersion("1.0.0")
+	productSchema := definition.Schema{
+		Version: v1,
+		BaseSchema: definition.BaseSchema{
+			Name: "products",
+			Fields: map[definition.FieldId]definition.Field{
+				"pid":   {Name: "pid", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"name":  {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"price": {Name: "price", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
+			Indexes: map[definition.IndexId]definition.Index{
+				"idx1": {Name: "ix_pid", Fields: []definition.FieldId{"pid"}, Type: definition.IndexTypeNormal},
 			},
 		},
 	}
@@ -821,18 +831,21 @@ func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
 	assert.Equal(t, float64(75.0), readDocs[2].MustGet("price"))
 }
 
-func newIntegrityTestSchema(name ...string) *schema.SchemaDefinition {
+func newIntegrityTestSchema(name ...string) *definition.Schema {
 	sname := "integrity_test_collection"
 	if len(name) > 0 {
 		sname = name[0]
 	}
-	return &schema.SchemaDefinition{
-		Name:        sname,
-		Version:     "1.0.0",
-		Description: utils.StringPtr("A collection for testing signing and hashing"),
-		Fields: map[string]*schema.FieldDefinition{
-			"message": {Name: "message", Type: "string"},
-			"value":   {Name: "value", Type: "integer"},
+	version, _ := common.NewVersion("1.0.0")
+	return &definition.Schema{
+		Version: version,
+		BaseSchema: definition.BaseSchema{
+			Name:        sname,
+			Description: "A collection for testing signing and hashing",
+			Fields: map[definition.FieldId]definition.Field{
+				"message": {Name: "message", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"value":   {Name: "value", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 }

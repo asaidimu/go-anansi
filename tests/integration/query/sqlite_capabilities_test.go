@@ -5,7 +5,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	sqlite "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	"github.com/stretchr/testify/assert"
@@ -14,11 +14,13 @@ import (
 
 func TestSQLiteCapabilities_LogicalOperators(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
-	schema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"name": {Name: "name", Type: schema.FieldTypeString},
-			"age":  {Name: "age", Type: schema.FieldTypeInteger},
+	schema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":  {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 
@@ -51,13 +53,15 @@ func TestSQLiteCapabilities_LogicalOperators(t *testing.T) {
 
 func TestSQLiteCapabilities_ComparisonOperators(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
-	schema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"name":    {Name: "name", Type: schema.FieldTypeString},
-			"age":     {Name: "age", Type: schema.FieldTypeInteger},
-			"status":  {Name: "status", Type: schema.FieldTypeString},
-			"profile": {Name: "profile", Type: schema.FieldTypeString},
+	schema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"name":    {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":     {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"status":  {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"profile": {Name: "profile", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -124,13 +128,15 @@ func TestSQLiteCapabilities_ComparisonOperators(t *testing.T) {
 
 func TestSQLiteCapabilities_ExpressionOperators(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
-	schema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"age":      {Name: "age", Type: schema.FieldTypeInteger},
-			"salary":   {Name: "salary", Type: schema.FieldTypeInteger},
-			"bonus":    {Name: "bonus", Type: schema.FieldTypeInteger},
-			"expenses": {Name: "expenses", Type: schema.FieldTypeInteger},
+	schema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"age":      {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"salary":   {Name: "salary", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"bonus":    {Name: "bonus", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"expenses": {Name: "expenses", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 
@@ -157,12 +163,14 @@ func TestSQLiteCapabilities_ExpressionOperators(t *testing.T) {
 
 func TestSQLiteCapabilities_Functions(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
-	schema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"name":    {Name: "name", Type: schema.FieldTypeString},
-			"profile": {Name: "profile", Type: schema.FieldTypeObject},
-			"age":     {Name: "age", Type: schema.FieldTypeInteger},
+	schema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"name":    {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"profile": {Name: "profile", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
+				"age":     {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 
@@ -229,18 +237,22 @@ func TestSQLiteCapabilities_Functions(t *testing.T) {
 
 func TestSQLiteCapabilities_JoinTypes(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
-	userSchema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":   {Name: "id", Type: schema.FieldTypeString},
-			"name": {Name: "name", Type: schema.FieldTypeString},
+	userSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":   {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
-	profileSchema := &schema.SchemaDefinition{
-		Name: "profiles",
-		Fields: map[string]*schema.FieldDefinition{
-			"user_id": {Name: "user_id", Type: schema.FieldTypeString},
-			"bio":     {Name: "bio", Type: schema.FieldTypeString},
+	profileSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "profiles",
+			Fields: map[definition.FieldId]definition.Field{
+				"user_id": {Name: "user_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"bio":     {Name: "bio", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -271,11 +283,13 @@ func TestSQLiteCapabilities_JoinTypes(t *testing.T) {
 
 func TestSQLiteCapabilities_AggregationFunctions(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
-	schema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"age":    {Name: "age", Type: schema.FieldTypeInteger},
-			"salary": {Name: "salary", Type: schema.FieldTypeNumber},
+	schema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"age":    {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"salary": {Name: "salary", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+			},
 		},
 	}
 
@@ -312,11 +326,13 @@ func TestSQLiteCapabilities_AggregationFunctions(t *testing.T) {
 
 func TestSQLiteCapabilities_Pagination(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
-	schema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"name": {Name: "name", Type: schema.FieldTypeString},
-			"age":  {Name: "age", Type: schema.FieldTypeInteger},
+	schema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":  {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 
@@ -335,11 +351,13 @@ func TestSQLiteCapabilities_Pagination(t *testing.T) {
 
 func TestSQLiteCapabilities_TextSearch(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
-	schema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"name": {Name: "name", Type: schema.FieldTypeString},
-			"bio":  {Name: "bio", Type: schema.FieldTypeString},
+	schema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"bio":  {Name: "bio", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 
@@ -352,11 +370,13 @@ func TestSQLiteCapabilities_TextSearch(t *testing.T) {
 
 func TestSQLiteCapabilities_Sorting(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
-	schema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"name": {Name: "name", Type: schema.FieldTypeString},
-			"age":  {Name: "age", Type: schema.FieldTypeInteger},
+	schema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":  {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 
@@ -381,12 +401,14 @@ func TestSQLiteCapabilities_Sorting(t *testing.T) {
 
 func TestSQLiteCapabilities_OtherFeatures(t *testing.T) {
 	builder := sqlite.NewSQLiteFactory()
-	schema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"name":    {Name: "name", Type: schema.FieldTypeString},
-			"age":     {Name: "age", Type: schema.FieldTypeInteger},
-			"profile": {Name: "profile", Type: schema.FieldTypeObject},
+	schema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"name":    {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":     {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"profile": {Name: "profile", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
+			},
 		},
 	}
 

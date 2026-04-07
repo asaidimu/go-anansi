@@ -9,7 +9,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/tests/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,11 +19,11 @@ import (
 func setupSelectiveTest(t *testing.T) (base.Persistence, func()) {
 	sensitiveProvider := data.MetadataProviderConfig{
 		Name: "sensitive_provider",
-		Schema: &schema.NestedSchemaDefinition{
-			Name: "sensitive_meta",
-			Fields: &schema.NestedSchemaFields{
-				FieldsMap: map[string]*schema.FieldDefinition{
-					"sensitivity_level": {Name: "sensitivity_level", Type: "string"},
+		Schema: &definition.NestedSchema{
+			BaseSchema: definition.BaseSchema{
+				Name: "sensitive_meta",
+				Fields: map[definition.FieldId]definition.Field{
+					"sensitivity_level": {Name: "sensitivity_level", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 				},
 			},
 		},
@@ -37,11 +37,11 @@ func setupSelectiveTest(t *testing.T) (base.Persistence, func()) {
 
 	auditedProvider := data.MetadataProviderConfig{
 		Name: "audited_provider",
-		Schema: &schema.NestedSchemaDefinition{
-			Name: "audited_meta",
-			Fields: &schema.NestedSchemaFields{
-				FieldsMap: map[string]*schema.FieldDefinition{
-					"audit_required": {Name: "audit_required", Type: "boolean"},
+		Schema: &definition.NestedSchema{
+			BaseSchema: definition.BaseSchema{
+				Name: "audited_meta",
+				Fields: map[definition.FieldId]definition.Field{
+					"audit_required": {Name: "audit_required", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeBoolean}},
 				},
 			},
 		},

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	pevents "github.com/asaidimu/go-anansi/v6/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
@@ -48,7 +49,9 @@ func NewTestSchema(name ...string) *definition.Schema {
 	if name != nil {
 		sname = name[0]
 	}
+	version, _ := common.NewVersion("1.0.0")
 	return &definition.Schema{
+		Version: version,
 		BaseSchema: definition.BaseSchema{
 			Name:        sname,
 			Description: "test collection",

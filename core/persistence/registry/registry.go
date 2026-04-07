@@ -13,8 +13,8 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
-	"github.com/asaidimu/go-anansi/v6/core/schema/meta"
 	"go.uber.org/zap"
 )
 
@@ -119,7 +119,7 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 		if !exists {
 			registrySchema := RegistrySchema()
 			if err := manager.CreateCollection(ctx, *registrySchema); err != nil {
-				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_COLLECTION", fmt.Sprintf("'_schemas_': %%v", ErrFailedToCreateRegistryCollection))
+				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_CREATE_REGISTRY_COLLECTION", fmt.Sprintf("'_schemas_': %v", ErrFailedToCreateRegistryCollection))
 			}
 		}
 
@@ -130,7 +130,7 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 		return nil, err
 	}
 
-	validator, err := definition.NewDocumentValidator(&meta.MetaSchema, meta.MetaSchemaPredicates)
+	validator := schema.SchemaValidator()
 	registry := &collectionRegistry{
 		executor:  executor,
 		logger:    logger,
@@ -324,7 +324,7 @@ func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version
 	}
 	enrichedSchema, err := EnrichSchema(sc)
 	if err != nil {
-		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INVALID_SCHEMA", fmt.Sprintf("Invalid schema : %%v", err))
+		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INVALID_SCHEMA", fmt.Sprintf("Invalid schema : %v", err))
 	}
 
 	entry, err := r.GetRegistryEntry(ctx, name)

@@ -28,7 +28,9 @@ func (t *createTableTree) Value() (string, []any, error) {
 	for _, index := range sc.Indexes {
 		if index.Type == definition.IndexTypePrimary && len(index.Fields) > 0 {
 			for _, fieldId := range index.Fields {
-				primaryKeys = append(primaryKeys, string(fieldId))
+				if field, ok := sc.Fields[fieldId]; ok {
+					primaryKeys = append(primaryKeys, string(field.Name))
+				}
 			}
 			break
 		}

@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v6"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	persistenceUtils "github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	testEvents "github.com/asaidimu/go-anansi/v6/utils" // Import from the correct events package
@@ -60,12 +60,15 @@ func setupEventTest(t *testing.T) (base.Persistence, *testEvents.WatermillEventB
 	require.NoError(t, err)
 
 	// Create a test collection
-	testSchema := &schema.SchemaDefinition{
-		Name:    "test_collection",
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"name":  {Name: "name", Type: "string", Required: utils.BoolPtr(true)},
-			"value": {Name: "value", Type: "integer"},
+	v1, _ := common.NewVersion("1.0.0")
+	testSchema := &definition.Schema{
+		Version: v1,
+		BaseSchema: definition.BaseSchema{
+			Name: "test_collection",
+			Fields: map[definition.FieldId]definition.Field{
+				"name":  {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
+				"value": {Name: "value", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+			},
 		},
 	}
 	collection, err := p.CreateCollection(context.Background(), testSchema)

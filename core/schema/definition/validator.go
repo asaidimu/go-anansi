@@ -1808,38 +1808,6 @@ func deepEqual(a, b any, numericEquivalent bool) bool {
 	return reflect.DeepEqual(a, b)
 }
 
-func compareNumeric(a, b any) bool {
-	fa, okA := toFloat64(a)
-	fb, okB := toFloat64(b)
-	if !okA || !okB {
-		return false
-	}
-	const epsilon = 1e-12
-	diff := fa - fb
-	if diff < 0 {
-		diff = -diff
-	}
-	return diff < epsilon
-}
-
-func toFloat64(v any) (float64, bool) {
-	switch i := v.(type) {
-	case float64:
-		return i, true
-	case int64:
-		return float64(i), true
-	case int:
-		return float64(i), true
-	case float32:
-		return float64(i), true
-	case int32:
-		return float64(i), true
-	case uint64:
-		return float64(i), true
-	default:
-		return 0, false
-	}
-}
 
 func isReflectNumeric(v reflect.Value) bool {
 	k := v.Kind()

@@ -7,7 +7,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
 	sqlite_executor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqlite_query "github.com/asaidimu/go-anansi/v6/sqlite/query"
@@ -19,20 +19,22 @@ import (
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 )
 
-func setupQueryExecutorTest(t *testing.T) (*sql.DB, native.QueryExecutor[types.SQLitePayload], *schema.SchemaDefinition) {
+func setupQueryExecutorTest(t *testing.T) (*sql.DB, native.QueryExecutor[types.SQLitePayload], *definition.Schema) {
 	db, err := sql.Open("sqlite3", ":memory:")
 	require.NoError(t, err)
 
 	executor, err := sqlite_executor.NewSQLiteExecutor(db, zap.NewNop())
 	require.NoError(t, err)
 
-	userSchema := &schema.SchemaDefinition{
-		Name: "users",
-		Fields: map[string]*schema.FieldDefinition{
-			"id":    {Name: "id", Type: schema.FieldTypeString},
-			"name":  {Name: "name", Type: schema.FieldTypeString},
-			"age":   {Name: "age", Type: schema.FieldTypeInteger},
-			"email": {Name: "email", Type: schema.FieldTypeString},
+	userSchema := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"id":    {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"name":  {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":   {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"email": {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 

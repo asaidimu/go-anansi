@@ -28,7 +28,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
 	u "github.com/asaidimu/go-anansi/v6/utils"
@@ -77,7 +77,7 @@ type SetupConfig struct {
 	Decorators *utils.Decorators
 
 	// Schemas are created automatically on first start if they do not exist.
-	Schemas []*schema.SchemaDefinition
+	Schemas []*definition.Schema
 }
 
 // Setup builds the persistence layer.  It is safe to call multiple times –
@@ -118,7 +118,7 @@ func Setup(config SetupConfig) (base.Persistence, error) {
 			return
 		}
 
-		newSchemas := make([]*schema.SchemaDefinition, 0, len(config.Schemas))
+		newSchemas := make([]*definition.Schema, 0, len(config.Schemas))
 		for _, s := range config.Schemas {
 			exists, err := p.HasCollection(ctx, s.Name) // We check for the existence of the collection so as not to re-create it
 			if err != nil {
@@ -161,7 +161,7 @@ type PlaygroundConfig struct {
 	EnableEvents bool
 
 	// Schemas are created automatically on first start if they do not exist.
-	Schemas []*schema.SchemaDefinition
+	Schemas []*definition.Schema
 
 	// EnableSanitization adds default sanitization patterns to protect
 	// sensitive data in logs and events. Recommended for any playground

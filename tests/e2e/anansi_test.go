@@ -7,17 +7,18 @@ import (
 	"testing"
 
 	anansi "github.com/asaidimu/go-anansi/v6"
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
+	_ "github.com/mattn/go-sqlite3" // Import for SQLite driver
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
-	_ "github.com/mattn/go-sqlite3" // Import for SQLite driver
 )
 
 // setupTestDB creates a unique, in-memory SQLite database for each test.
@@ -48,12 +49,17 @@ func createNativeInteractor(t *testing.T) (query.DatabaseInteractor, func()) {
 	return interactor, cleanupDB
 }
 
-func newTestSchema(name string) *schema.SchemaDefinition {
-	return &schema.SchemaDefinition{
-		Name:    name,
-		Version: "1.0.0",
-		Fields: map[string]*schema.FieldDefinition{
-			"name": {Name: "name", Type: "string"},
+func newTestSchema(name string) *definition.Schema {
+
+	version, _ := common.NewVersion("8.0.0")
+	return &definition.Schema{
+		Version: version,
+		BaseSchema: definition.BaseSchema{
+			Name:        name,
+			Description: "test collection",
+			Fields: map[definition.FieldId]definition.Field{
+				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
 		},
 	}
 }
@@ -77,10 +83,10 @@ func TestAnansiSetupAndBasicOperation(t *testing.T) {
 
 	// 5. Call anansi.Setup
 	cfg := anansi.SetupConfig{
-		Interactor:    interactor,
-		Logger:        logger,
+		Interactor:            interactor,
+		Logger:                logger,
 		DocumentFactoryConfig: factoryConfig,
-		Decorators:    decorators,
+		Decorators:            decorators,
 	}
 	p, err := anansi.Setup(cfg)
 
@@ -121,10 +127,10 @@ func TestAnansiSetupCalledTwice(t *testing.T) {
 
 	// First call to Setup
 	cfg1 := anansi.SetupConfig{
-		Interactor:    interactor1,
-		Logger:        logger1,
+		Interactor:            interactor1,
+		Logger:                logger1,
 		DocumentFactoryConfig: factoryConfig1,
-		Decorators:    decorators1,
+		Decorators:            decorators1,
 	}
 	p1, err1 := anansi.Setup(cfg1)
 	require.NoError(t, err1)
@@ -140,10 +146,10 @@ func TestAnansiSetupCalledTwice(t *testing.T) {
 	decorators2 := &utils.Decorators{}
 
 	cfg2 := anansi.SetupConfig{
-		Interactor:    interactor2,
-		Logger:        logger2,
+		Interactor:            interactor2,
+		Logger:                logger2,
 		DocumentFactoryConfig: factoryConfig2,
-		Decorators:    decorators2,
+		Decorators:            decorators2,
 	}
 	p2, err2 := anansi.Setup(cfg2)
 
