@@ -20,7 +20,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestSelect(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	qb := query.NewQueryBuilder()
 	qb.From("users").Schema(&definition.Schema{}).
@@ -54,7 +54,7 @@ func TestSelect(t *testing.T) {
 }
 
 func TestInsert(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	qb := query.NewQueryBuilder()
 	userSchema := &definition.Schema{
@@ -89,7 +89,7 @@ func TestInsert(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	qb := query.NewQueryBuilder()
 	qb.From("users").Schema(&definition.Schema{}).
@@ -116,7 +116,7 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	userSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -147,7 +147,7 @@ func TestDelete(t *testing.T) {
 }
 
 func TestSelectComplex(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	orderSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -205,7 +205,7 @@ func TestSelectComplex(t *testing.T) {
 }
 
 func TestSelectWithInAndNinOperators(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	userSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -240,7 +240,7 @@ func TestSelectWithInAndNinOperators(t *testing.T) {
 }
 
 func TestSelectWithMultipleJoins(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	orderSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -297,7 +297,7 @@ func TestSelectWithMultipleJoins(t *testing.T) {
 }
 
 func TestSelectWithCaseStatement(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	userSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -344,7 +344,7 @@ func TestSelectWithCaseStatement(t *testing.T) {
 }
 
 func TestSelectWithDifferentDataTypesInWhere(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	userSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -403,7 +403,7 @@ func float64p(f float64) *float64 {
 }
 
 func TestSelectWithDistinct(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	userSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -434,7 +434,7 @@ func TestSelectWithDistinct(t *testing.T) {
 }
 
 func TestSelectWithAggregations(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	salesSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -474,7 +474,7 @@ func TestSelectWithAggregations(t *testing.T) {
 }
 
 func TestSQLiteFactory_SelectImplicitFields(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	// Define a schema for the collection
 	accountsSchema := &definition.Schema{

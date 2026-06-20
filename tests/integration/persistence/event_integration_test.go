@@ -36,7 +36,7 @@ func setupEventTest(t *testing.T) (base.Persistence, *testEvents.WatermillEventB
 
 	executor, err := sqliteExecutor.NewSQLiteExecutor(db, logger)
 	require.NoError(t, err)
-	queryFactory := sqliteQuery.NewSQLiteFactory()
+	queryFactory := sqliteQuery.NewSQLiteFactory(nil)
 
 	interactor, err := native.NewNativeInteractor(executor, queryFactory, logger)
 	require.NoError(t, err)

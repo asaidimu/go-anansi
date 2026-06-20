@@ -354,12 +354,41 @@ func convertInterface(v any) (any, error) {
 		rv = rv.Elem()
 	}
 
+	// 1. Handle standard non-primitive types
 	v = rv.Interface()
 	if _, ok := v.(time.Time); ok { return v, nil }
 
 	switch rv.Kind() {
+	// 2. Normalize Custom Types to Primitives
+	// This fixes the Enum validation error
+	case reflect.String:
+		return rv.String(), nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return rv.Int(), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		return rv.Uint(), nil
+	case reflect.Float32, reflect.Float64:
+		return rv.Float(), nil
+	case reflect.Bool:
+		return rv.Bool(), nil
+
+	// 3. Normalize Maps
+	// This fixes the [OBJECT_TYPE_MISMATCH] error
+	case reflect.Map:
+		ret := make(map[string]any)
+		for _, key := range rv.MapKeys() {
+			// Convert the key to string (Go maps in our context use string keys)
+			k := fmt.Sprintf("%v", key.Interface())
+			// Recursively normalize the map value
+			elem, err := convertInterface(rv.MapIndex(key).Interface())
+			if err != nil { return nil, err }
+			ret[k] = elem
+		}
+		return ret, nil
+
 	case reflect.Struct:
 		return structToMap(v, false)
+
 	case reflect.Slice:
 		ret := make([]any, rv.Len())
 		for i := 0; i < rv.Len(); i++ {
@@ -368,6 +397,7 @@ func convertInterface(v any) (any, error) {
 			ret[i] = elem
 		}
 		return ret, nil
+
 	default:
 		return v, nil
 	}

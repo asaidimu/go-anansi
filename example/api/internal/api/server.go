@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
@@ -49,8 +51,8 @@ func NewAPIServer(cfg *app.Config, logger *zap.Logger, pm *app.PersistenceManage
 // SetupRoutes configures the API endpoints.
 func (s *APIServer) SetupRoutes() {
 	// 1. Create the middleware-wrapped versions of the handlers
-	docsHandler := CollectionContextMiddleware(http.HandlerFunc(s.handleCollectionDocuments))
-	singleDocHandler := CollectionContextMiddleware(http.HandlerFunc(s.handleSingleDocument))
+	docsHandler := collectionContextMiddleware(http.HandlerFunc(s.handleCollectionDocuments))
+	singleDocHandler := collectionContextMiddleware(http.HandlerFunc(s.handleSingleDocument))
 
 	// Existing routes...
 	s.mux.HandleFunc("/api/v1/collections", s.handleCollections)
@@ -70,7 +72,8 @@ func (s *APIServer) SetupRoutes() {
 	s.mux.HandleFunc("POST /api/v1/sanitization/import", s.importSanitizationPolicies)
 	s.mux.HandleFunc("GET /api/v1/sanitization/export", s.exportSanitizationPolicies)
 
-	finalHandler := CollectionContextMiddleware(s.mux)
+	finalHandler := corsMiddleware(collectionContextMiddleware(s.mux))
+
 	s.server.Handler = finalHandler
 	s.Handler = finalHandler
 }
@@ -391,11 +394,28 @@ func (s *APIServer) createDocuments(w http.ResponseWriter, r *http.Request, coll
 		Documents []map[string]any `json:"documents"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+	// 1. Read the body into memory so we can use it twice (logging & decoding)
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		s.Response.WriteError(w, http.StatusBadRequest, common.NewSystemError("READ_ERROR", "Could not read request body"), r)
+		return
+	}
+	// Crucial: Close the body after reading
+	defer r.Body.Close()
+
+	// 2. Structured Logging with Zap
+	// We use zap.ByteString to avoid expensive fmt.Sprintf calls and handle encoding properly
+	s.Logger.Info("Received Document",
+		zap.ByteString("payload", bodyBytes),
+	)
+
+	// 3. Unmarshal the captured bytes into our struct
+	if err := json.Unmarshal(bodyBytes, &reqBody); err != nil {
 		s.Response.WriteError(w, http.StatusBadRequest, common.NewSystemError("INVALID_JSON", "Invalid JSON format"), r)
 		return
 	}
 
+	// 4. Logic Processing
 	set, ok := data.NewDocumentSet(reqBody.Documents, r.Context())
 	if !ok {
 		s.Response.WriteError(w, http.StatusBadRequest, common.NewSystemError("PARSE_ERROR", "Failed to parse documents"), r)
@@ -406,20 +426,27 @@ func (s *APIServer) createDocuments(w http.ResponseWriter, r *http.Request, coll
 	rs := base.CreateResultSet(results)
 
 	if err != nil {
+		if e, ok := errors.AsType[*common.SystemError](err); ok {
+			s.Response.WriteError(w, http.StatusUnprocessableEntity, e.Cause, r)
+			return
+		}
 		sysErr := common.SystemErrorFrom(err).WithIssues(rs.Issues()).WithCode("BATCH_CREATE_FAILED")
 		s.Response.WriteError(w, http.StatusUnprocessableEntity, sysErr, r)
 		return
 	}
 
+	// 5. Sanitization and Response
 	docs, err := rs.Documents().Sanitize(r.Context())
 	if err != nil {
+		// Log the internal error before responding
+		s.Logger.Error("Sanitization failed", zap.Error(err))
 		sysErr := common.SystemErrorFrom(err).WithCode("SANITIZATION_ERROR")
 		s.Response.WriteError(w, http.StatusInternalServerError, sysErr, r)
 		return
 	}
+
 	s.Response.WriteJSON(w, http.StatusCreated, map[string]any{"documents": docs.ToMaps()}, r)
 }
-
 func (s *APIServer) readDocuments(w http.ResponseWriter, r *http.Request, collection base.Collection) {
 	q := query.NewQueryBuilder().Build()
 	result, err := collection.Read(r.Context(), &q)

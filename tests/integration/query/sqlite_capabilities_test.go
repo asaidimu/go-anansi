@@ -13,7 +13,7 @@ import (
 )
 
 func TestSQLiteCapabilities_LogicalOperators(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	schema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
 			Name: "users",
@@ -52,7 +52,7 @@ func TestSQLiteCapabilities_LogicalOperators(t *testing.T) {
 }
 
 func TestSQLiteCapabilities_ComparisonOperators(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	schema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
 			Name: "users",
@@ -127,7 +127,7 @@ func TestSQLiteCapabilities_ComparisonOperators(t *testing.T) {
 }
 
 func TestSQLiteCapabilities_ExpressionOperators(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	schema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
 			Name: "users",
@@ -162,7 +162,7 @@ func TestSQLiteCapabilities_ExpressionOperators(t *testing.T) {
 }
 
 func TestSQLiteCapabilities_Functions(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	schema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
 			Name: "users",
@@ -236,7 +236,7 @@ func TestSQLiteCapabilities_Functions(t *testing.T) {
 }
 
 func TestSQLiteCapabilities_JoinTypes(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	userSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
 			Name: "users",
@@ -282,7 +282,7 @@ func TestSQLiteCapabilities_JoinTypes(t *testing.T) {
 }
 
 func TestSQLiteCapabilities_AggregationFunctions(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	schema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
 			Name: "users",
@@ -325,7 +325,7 @@ func TestSQLiteCapabilities_AggregationFunctions(t *testing.T) {
 }
 
 func TestSQLiteCapabilities_Pagination(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	schema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
 			Name: "users",
@@ -350,7 +350,7 @@ func TestSQLiteCapabilities_Pagination(t *testing.T) {
 }
 
 func TestSQLiteCapabilities_TextSearch(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	schema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
 			Name: "users",
@@ -369,7 +369,7 @@ func TestSQLiteCapabilities_TextSearch(t *testing.T) {
 }
 
 func TestSQLiteCapabilities_Sorting(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	schema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
 			Name: "users",
@@ -400,7 +400,7 @@ func TestSQLiteCapabilities_Sorting(t *testing.T) {
 }
 
 func TestSQLiteCapabilities_OtherFeatures(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	schema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
 			Name: "users",

@@ -4,7 +4,6 @@ import (
 	"strconv"
 	"sync"
 	"unsafe"
-
 )
 
 // JSONBuilder builds JSON directly without intermediate allocations
@@ -203,44 +202,43 @@ func (jb *JSONBuilder) writeLiteralValue(lv LiteralValue) {
 
 // writeLiteralValueFromAny writes any simple type value
 func (jb *JSONBuilder) writeLiteralValueFromAny(v any) {
-	 if v == nil {
-        jb.writeNull()
-        return
-    }
-    switch val := v.(type) {
-    case string:
-        jb.writeString(val)
-    case bool:
-        jb.writeBool(val)
-    case int, int8, int16, int32, int64:
-        jb.writeInt(toInt64(val))
-    case uint, uint8, uint16, uint32, uint64:
-        jb.writeInt(int64(toUint64(val)))
-    case float32, float64:
+	if v == nil {
+		jb.writeNull()
+		return
+	}
+	switch val := v.(type) {
+	case string:
+		jb.writeString(val)
+	case bool:
+		jb.writeBool(val)
+	case int, int8, int16, int32, int64:
+		jb.writeInt(toInt64(val))
+	case uint, uint8, uint16, uint32, uint64:
+		jb.writeInt(int64(toUint64(val)))
+	case float32, float64:
 		fl, ok := toFloat64(val)
 		if !ok {
 			fl = 0
 		}
-        jb.writeFloat(fl)
-    case []any:
-        jb.startArray()
-        for _, elem := range val {
-            jb.writeComma()
-            jb.writeLiteralValueFromAny(elem)
-        }
-        jb.endArray()
-    case map[string]any:
-        jb.startObject()
-        for k, elem := range val {
-            jb.writeKey(k)
-            jb.writeLiteralValueFromAny(elem)
-        }
-        jb.endObject()
-    default:
-        jb.writeNull()
-    }
+		jb.writeFloat(fl)
+	case []any:
+		jb.startArray()
+		for _, elem := range val {
+			jb.writeComma()
+			jb.writeLiteralValueFromAny(elem)
+		}
+		jb.endArray()
+	case map[string]any:
+		jb.startObject()
+		for k, elem := range val {
+			jb.writeKey(k)
+			jb.writeLiteralValueFromAny(elem)
+		}
+		jb.endObject()
+	default:
+		jb.writeNull()
+	}
 }
-
 
 // ToJSON converts a schema to JSON bytes using the walker
 func (s *Schema) ToJSON() []byte {
@@ -343,6 +341,28 @@ func (s *Schema) ToJSON() []byte {
 			if ns.Type != 0 {
 				jb.writeKey("type")
 				jb.writeString(ns.Type.String())
+			}
+			if !ns.Schema.IsZero() {
+				jb.writeKey("schema")
+				if ns.Schema.IsSingle() {
+					sr, _ := FieldSchemaAs[SchemaReference](ns.Schema)
+					jb.startObject()
+					jb.writeKey("id")
+					jb.writeString(string(sr.ID))
+					// Optionally write indexes/constraints if present
+					jb.endObject()
+				} else if ns.Schema.IsMultiple() {
+					refs, _ := FieldSchemaAs[[]SchemaReference](ns.Schema)
+					jb.startArray()
+					for _, sr := range refs {
+						jb.writeComma()
+						jb.startObject()
+						jb.writeKey("id")
+						jb.writeString(string(sr.ID))
+						jb.endObject()
+					}
+					jb.endArray()
+				}
 			}
 			// values are now written by NodeTypeValuesArray
 			contextStack = append(contextStack, contextInfo{ctx.Type, ctx.Depth, false})
@@ -539,5 +559,3 @@ func (s *Schema) ToJSON() []byte {
 	copy(result, jb.buf)
 	return result
 }
-
-

@@ -34,7 +34,7 @@ func NewDatabase(cfg *Config, logger *zap.Logger) (*Database, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to create SQLite interactor: %w", err)
 	}
-	queryFactory := sqliteQuery.NewSQLiteFactory()
+	queryFactory := sqliteQuery.NewSQLiteFactory(logger)
 	interactor, err := native.NewNativeInteractor(executor, queryFactory, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create native interactor: %w", err)

@@ -56,7 +56,7 @@ func TestSimpleScalarSubquery(t *testing.T) {
 		},
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	value, err := factory.Build(q, native.StmtSelect, nil)
 	assert.NoError(t, err)
 
@@ -128,7 +128,7 @@ func TestSubqueryWithIN(t *testing.T) {
 		},
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	value, err := factory.Build(q, native.StmtSelect, nil)
 	require.NoError(t, err)
 
@@ -240,7 +240,7 @@ func TestSubqueryWithJoin(t *testing.T) {
 		},
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	value, err := factory.Build(q, native.StmtSelect, nil)
 	require.NoError(t, err)
 
@@ -349,7 +349,7 @@ func TestNestedSubqueries(t *testing.T) {
 		},
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	value, err := factory.Build(q, native.StmtSelect, nil)
 	require.NoError(t, err)
 
@@ -430,7 +430,7 @@ func TestCorrelatedSubquery(t *testing.T) {
 		},
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	value, err := factory.Build(q, native.StmtSelect, nil)
 	require.NoError(t, err)
 
@@ -498,7 +498,7 @@ func TestSubqueryDepthLimit(t *testing.T) {
 		currentQuery = &currentQuery.Filters.Condition.Value.SubqueryVal.Query
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	_, err := factory.Build(q, native.StmtSelect, nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "maximum subquery nesting depth")
@@ -592,7 +592,7 @@ func TestSubqueryInJoinCondition(t *testing.T) {
 		},
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	value, err := factory.Build(q, native.StmtSelect, nil)
 	require.NoError(t, err)
 

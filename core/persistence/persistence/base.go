@@ -13,6 +13,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -111,8 +112,8 @@ func (p *basePersistence) Collection(ctx context.Context, name string) (base.Col
 		return nil, err
 	}
 
-	if issues, ok := (p.registry).ValidateSChema(ctx, sc); !ok {
-		return nil, common.NewSystemError("ERR_INVALID_SCHEMA").WithIssues(issues)
+	if _, err := schema.ValidateSchema(sc); err != nil {
+		return nil, err
 	}
 
 	newCollection, err := collection.NewCollection(

@@ -7,6 +7,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v6/sqlite/types"
+	"go.uber.org/zap"
 )
 
 type sqliteQuery struct {
@@ -24,8 +25,8 @@ func (q *sqliteQuery) StatementType() native.StatementType {
 
 
 // NewSQLiteFactory creates a new factory for building SQLite queries.
-func NewSQLiteFactory() native.QueryFactory[types.SQLitePayload] {
-	return newSQLiteFactory()
+func NewSQLiteFactory(logger *zap.Logger) native.QueryFactory[types.SQLitePayload] {
+	return newSQLiteFactory(logger)
 }
 
 func (x *sqliteFactory) Build(
@@ -34,7 +35,7 @@ func (x *sqliteFactory) Build(
 	extra any,
 ) (native.Query[types.SQLitePayload], error) {
 
-	f := newSQLiteFactory()
+	f := newSQLiteFactory(x.logger)
 
 	// Check for raw query first - raw takes precedence
 	if q.Raw != nil {

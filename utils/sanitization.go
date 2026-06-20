@@ -25,7 +25,7 @@ const (
 // sanitizationStore implements SanitizationPersistence using ModelCollection.
 type sanitizationStore struct {
 	persistence    base.Persistence
-	collection     base.ModelCollection[data.FieldMaskConfig,*data.FieldMaskConfig]
+	collection     base.ModelCollection[data.FieldMaskConfig, *data.FieldMaskConfig]
 	collectionName string
 	logger         *zap.Logger
 }
@@ -53,7 +53,7 @@ func NewSanitizationPolicyStore(persistence base.Persistence, logger *zap.Logger
 }
 
 // ensureCollection ensures the sanitization policies collection exists and returns model collection
-func (p *sanitizationStore) ensureCollection(ctx context.Context) (base.ModelCollection[data.FieldMaskConfig,*data.FieldMaskConfig], error) {
+func (p *sanitizationStore) ensureCollection(ctx context.Context) (base.ModelCollection[data.FieldMaskConfig, *data.FieldMaskConfig], error) {
 	if p.collection != nil {
 		return p.collection, nil
 	}
@@ -106,9 +106,9 @@ func (p *sanitizationStore) createPolicyCollectionSchema() *definition.Schema {
     "f3": {
       "name": "policy",
       "type": "enum",
+      "schema": { "id": "s1" },
       "required": false,
       "default": "preserve",
-      "values": ["obscure", "preserve", "redact", "hash"],
       "description": "Default policy for this config"
     },
     "f4": {
@@ -140,6 +140,13 @@ func (p *sanitizationStore) createPolicyCollectionSchema() *definition.Schema {
       "type": "string",
       "required": false,
       "description": "Human-readable description of the policy"
+    }
+  },
+  "schemas": {
+    "s1": {
+      "name": "SanitizationPolicy",
+      "type": "string",
+      "values": ["obscure", "preserve", "redact", "hash"]
     }
   },
   "indexes": {

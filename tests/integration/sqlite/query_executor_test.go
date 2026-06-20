@@ -39,7 +39,7 @@ func setupQueryExecutorTest(t *testing.T) (*sql.DB, native.QueryExecutor[types.S
 	}
 
 	// Create the table
-	builder := sqlite_query.NewSQLiteFactory()
+	builder := sqlite_query.NewSQLiteFactory(nil)
 	q := query.Query{
 		Target: &query.QueryTarget{
 			Name:   userSchema.Name,
@@ -59,7 +59,7 @@ func TestInsertAndSelectIntegration(t *testing.T) {
 	db, executor, userSchema := setupQueryExecutorTest(t)
 	defer db.Close()
 
-	builder := sqlite_query.NewSQLiteFactory()
+	builder := sqlite_query.NewSQLiteFactory(nil)
 
 	// Insert data
 	records := []map[string]any{
@@ -114,7 +114,7 @@ func TestUpdateIntegration(t *testing.T) {
 	db, executor, userSchema := setupQueryExecutorTest(t)
 	defer db.Close()
 
-	builder := sqlite_query.NewSQLiteFactory()
+	builder := sqlite_query.NewSQLiteFactory(nil)
 
 	// Insert data
 	records := []map[string]any{
@@ -194,7 +194,7 @@ func TestDeleteIntegration(t *testing.T) {
 	db, executor, userSchema := setupQueryExecutorTest(t)
 	defer db.Close()
 
-	builder := sqlite_query.NewSQLiteFactory()
+	builder := sqlite_query.NewSQLiteFactory(nil)
 
 	// Insert data
 	records := []map[string]any{
@@ -274,7 +274,7 @@ func TestOffsetPagination(t *testing.T) {
 	db, executor, userSchema := setupQueryExecutorTest(t)
 	defer db.Close()
 
-	builder := sqlite_query.NewSQLiteFactory()
+	builder := sqlite_query.NewSQLiteFactory(nil)
 
 	// Insert test data
 	records := make([]map[string]any, 11)
@@ -340,7 +340,7 @@ func TestCursorPagination(t *testing.T) {
 	db, executor, userSchema := setupQueryExecutorTest(t)
 	defer db.Close()
 
-	builder := sqlite_query.NewSQLiteFactory()
+	builder := sqlite_query.NewSQLiteFactory(nil)
 
 	// Insert test data
 	records := make([]map[string]any, 11)

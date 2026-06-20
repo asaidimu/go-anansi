@@ -70,7 +70,7 @@ func CreateNativeInteractor(t *testing.T) (query.DatabaseInteractor, func()) {
 	require.NoError(t, err)
 	executor, err := sqliteExecutor.NewSQLiteExecutor(db, logger)
 	require.NoError(t, err)
-	queryFactory := sqliteQuery.NewSQLiteFactory()
+	queryFactory := sqliteQuery.NewSQLiteFactory(nil)
 
 	i, err := native.NewNativeInteractor(executor, queryFactory, logger)
 	require.NoError(t, err)

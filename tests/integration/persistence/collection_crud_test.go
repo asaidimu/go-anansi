@@ -2,10 +2,8 @@ package persistence_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	pevents "github.com/asaidimu/go-anansi/v6/core/persistence/events"
@@ -30,9 +28,6 @@ func setupCollectionTest(t *testing.T) (base.Collection, func()) {
 
 	schema := newTestSchema("crud_collection")
 	collection, err := p.CreateCollection(context.Background(), schema)
-	if err != nil {
-		fmt.Printf("Issues, %v", common.SystemErrorFrom(err).ToIssue())
-	}
 	require.NoError(t, err)
 
 	return collection, cleanup

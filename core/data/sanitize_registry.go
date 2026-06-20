@@ -2,6 +2,7 @@ package data
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"sync"
 
@@ -115,8 +116,8 @@ func (r *SanitizationRegistry) SetGlobal(config *FieldMaskConfig) error {
 // Register registers a scoped sanitization policy.
 // The config is stored as-is without merging with global.
 // Merging happens on-demand when sanitizers are created.
-func (r *SanitizationRegistry) Register(scopeID string, config *FieldMaskConfig) error {
-	if scopeID == "" {
+func (r *SanitizationRegistry) Register(scope string, config *FieldMaskConfig) error {
+	if scope == "" {
 		return common.SystemErrorFrom(ErrSanitizationConfigInvalid).
 			WithOperation("SanitizationRegistry.Register").
 			WithMessage("scope identifier cannot be empty")
@@ -125,37 +126,39 @@ func (r *SanitizationRegistry) Register(scopeID string, config *FieldMaskConfig)
 	if config == nil {
 		return common.SystemErrorFrom(ErrSanitizationConfigInvalid).
 			WithOperation("SanitizationRegistry.Register").
-			WithMessagef("config for scope %q cannot be nil", scopeID)
+			WithMessagef("config for scope %q cannot be nil", scope)
 	}
 
 	// Validate config
 	if err := config.Validate(); err != nil {
 		return common.SystemErrorFrom(err).
 			WithOperation("SanitizationRegistry.Register").
-			WithMessagef("invalid config for scope %q", scopeID)
+			WithMessagef("invalid config for scope %q", scope)
 	}
 
+	config.Scope = scope
 	r.mu.Lock()
 	persistence := r.persistence
-	r.scoped[scopeID] = config
+	r.scoped[scope] = config
 	r.mu.Unlock()
-
 	if persistence != nil {
 		if err := r.persistence.Save(context.Background(), config); err != nil {
 			r.logger.Info("Failed to save scope\n", zap.Any("Scope", config))
 			r.logger.Error("Failed to persist sanitization policy",
-				zap.String("scope", scopeID), zap.Error(err))
-			// Don't fail the registration - it's still in memory
+				zap.String("scope", scope), zap.Error(err))
+				if c, ok := errors.AsType[*common.SystemError](err); ok {
+					r.logger.Info("Failed to save scope\n", zap.String("Issues", c.Issues.String()), zap.Any("Data", config))
+				}
 		}
 	}
 
 	r.logger.Info("Registered scoped sanitization policy",
-		zap.String("scope", scopeID),
+		zap.String("scope", scope),
 		zap.Int("fields", len(config.Fields)),
 		zap.Int("patterns", len(config.Patterns)))
 
 	if r.onUpdate != nil {
-		r.onUpdate(scopeID)
+		r.onUpdate(scope)
 	}
 
 	return nil

@@ -71,7 +71,7 @@ func TestUpdateWithScalarSubquery(t *testing.T) {
 		},
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	value, err := factory.Build(q, native.StmtUpdate, updatePayload)
 	require.NoError(t, err)
 
@@ -152,7 +152,7 @@ func TestUpdateWithSubqueryInWHERE(t *testing.T) {
 		},
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	value, err := factory.Build(q, native.StmtUpdate, updatePayload)
 	require.NoError(t, err)
 
@@ -259,7 +259,7 @@ func TestUpdateWithSubqueryContainingJoin(t *testing.T) {
 		},
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	value, err := factory.Build(q, native.StmtUpdate, updatePayload)
 	require.NoError(t, err)
 
@@ -369,7 +369,7 @@ func TestUpdateWithNestedSubqueries(t *testing.T) {
 		},
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	value, err := factory.Build(q, native.StmtUpdate, updatePayload)
 	require.NoError(t, err)
 
@@ -446,7 +446,7 @@ func TestUpdateWithCorrelatedSubquery(t *testing.T) {
 		},
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	value, err := factory.Build(q, native.StmtUpdate, updatePayload)
 	require.NoError(t, err)
 
@@ -542,7 +542,7 @@ func TestUpdateMultipleFieldsWithSubqueries(t *testing.T) {
 		},
 	}
 
-	factory := sql.NewSQLiteFactory()
+	factory := sql.NewSQLiteFactory(nil)
 	value, err := factory.Build(q, native.StmtUpdate, updatePayload)
 	require.NoError(t, err)
 

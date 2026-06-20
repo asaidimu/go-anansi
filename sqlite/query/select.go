@@ -811,7 +811,7 @@ func (u *SQLiteUnionClause) Value() (string, []any, error) {
 	var params []any
 
 	for i, subQuery := range u.union.Queries {
-		subFactory := newSQLiteFactory()
+		subFactory := newSQLiteFactory(u.factory.logger)
 		selectTree, err := subFactory.buildSelectTree(&subQuery)
 		if err != nil {
 			return "", nil, err

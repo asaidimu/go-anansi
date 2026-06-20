@@ -81,15 +81,41 @@ func (s *createTableTree) buildColumnDefinition(fieldName string, field *definit
 		parts = append(parts, "UNIQUE")
 	}
 
+	// Handle enum CHECK constraint (supports multiple references)
 	if field.Type == definition.FieldTypeEnum && !field.Schema.IsZero() {
-		ref, err := definition.FieldSchemaAs[definition.SchemaReference](field.Schema)
-		if err == nil {
-			if nested, ok := s.schema.Schemas[ref.ID]; ok && len(nested.Values) > 0 {
-				var checkValues []string
-				for _, v := range nested.Values {
-					valStr, _ := s.formatDefaultValue(v, &definition.Field{FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}})
-					checkValues = append(checkValues, valStr)
+		var allEnumValues []definition.LiteralValue
+
+		// Collect values from either a single reference or multiple
+		if field.Schema.IsSingle() {
+			ref, err := definition.FieldSchemaAs[definition.SchemaReference](field.Schema)
+			if err == nil {
+				values, err := s.collectEnumValuesFromRef(ref)
+				if err == nil {
+					allEnumValues = append(allEnumValues, values...)
 				}
+			}
+		} else if field.Schema.IsMultiple() {
+			refs, err := definition.FieldSchemaAs[[]definition.SchemaReference](field.Schema)
+			if err == nil {
+				for _, ref := range refs {
+					values, err := s.collectEnumValuesFromRef(ref)
+					if err == nil {
+						allEnumValues = append(allEnumValues, values...)
+					}
+				}
+			}
+		}
+
+		if len(allEnumValues) > 0 {
+			var checkValues []string
+			for _, v := range allEnumValues {
+				valStr, err := s.formatDefaultValue(v, &definition.Field{FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}})
+				if err != nil {
+					continue
+				}
+				checkValues = append(checkValues, valStr)
+			}
+			if len(checkValues) > 0 {
 				parts = append(parts, fmt.Sprintf("CHECK(%s IN (%s))", quoteIdentifier(fieldName), strings.Join(checkValues, ", ")))
 			}
 		}
@@ -97,6 +123,18 @@ func (s *createTableTree) buildColumnDefinition(fieldName string, field *definit
 	return strings.Join(parts, " "), nil
 }
 
+// Helper to collect LiteralValues from a single SchemaReference (named or inline)
+func (s *createTableTree) collectEnumValuesFromRef(ref definition.SchemaReference) ([]definition.LiteralValue, error) {
+	if ref.ID != "" {
+		if nested, ok := s.schema.Schemas[ref.ID]; ok {
+			return nested.Values, nil
+		}
+		return nil, fmt.Errorf("enum schema %s not found", ref.ID)
+	} else if len(ref.Values) > 0 {
+		return ref.Values, nil
+	}
+	return nil, fmt.Errorf("inline enum descriptor has no values")
+}
 
 func (s *createTableTree) formatDefaultValue(value definition.LiteralValue, fieldDef *definition.Field) (string, error) {
 	if value.IsZero() || value.IsNull() {

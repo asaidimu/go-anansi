@@ -9,9 +9,10 @@ import (
 
 // PredicateParams is a generic struct that holds the parameters for a predicate function.
 type PredicateParams struct {
-	Data       any          `json:"data"`       // The data being validated.
-	Keys       []FieldName  `json:"keys"`       // The specific field being validated.
-	Parameters LiteralValue `json:"parameters"` // Any extra arguments for the predicate.
+	Root       map[string]any `json:"root"`       // The root data being validated.
+	Data       any            `json:"data"`       // The data being validated.
+	Keys       []FieldName    `json:"keys"`       // The specific field being validated.
+	Parameters LiteralValue   `json:"parameters"` // Any extra arguments for the predicate.
 }
 
 // Predicate defines a function for data validation.
@@ -51,7 +52,7 @@ type ConstraintUnion struct {
 // ConstraintRule represents a discriminated union of Constraint, ConstraintGroup, or ResourceReference.
 // Exactly one field should be non-nil at any time.
 type Constraint struct {
-	Name        string `json:"name"`
+	Name        string `json:"name"` // should be ConstraintName but I got lazy
 	Description string `json:"description,omitempty"`
 	ConstraintUnion
 }
@@ -175,7 +176,7 @@ func (cu ConstraintUnion) MarshalJSON() ([]byte, error) {
 		// We use a flat proxy here just like we did in Constraint.MarshalJSON
 		// to ensure Parameters is omitted if it is Zero or Null.
 		return json.Marshal(struct {
-			Fields     []FieldName     `json:"fields,omitempty"`
+			Fields     []FieldName   `json:"fields,omitempty"`
 			Predicate  PredicateName `json:"predicate"`
 			Parameters *LiteralValue `json:"parameters,omitempty"`
 		}{

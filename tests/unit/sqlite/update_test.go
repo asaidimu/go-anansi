@@ -12,7 +12,7 @@ import (
 )
 
 func TestUpdateQueryTranslation(t *testing.T) {
-	factory := sqlite_query.NewSQLiteFactory()
+	factory := sqlite_query.NewSQLiteFactory(nil)
 
 	schemaDef := &definition.Schema{
 		BaseSchema: definition.BaseSchema{

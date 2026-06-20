@@ -8,13 +8,14 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/core/data"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/google/uuid"
 )
 
 // generatePhysicalName creates a database-safe identifier from schema name and version
 // with a maximum length of 24 characters, suitable for SQL tables and NoSQL collections
-func generatePhysicalName(s *definition.Schema) (string, error) {
+func generatePhysicalName(s *schema.Schema) (string, error) {
 	// Validate inputs
 	if s.Name == "" {
 		return "", ErrSchemaNameEmpty
@@ -92,18 +93,18 @@ func unmarshalEntry(doc *data.Document) (*base.RegistryEntry, error) {
 }
 
 // EnrichSchema adds system fields (id, metadata) to a schema
-func EnrichSchema(sc *definition.Schema) (*definition.Schema, error) {
+func EnrichSchema(sc *schema.Schema) (*schema.Schema, error) {
 	if sc == nil {
 		return nil, nil
 	}
 
 	// --- Add ID Field ---
-	idField := &definition.Field{
-		Name:     definition.FieldName(data.DocumentIDField),
+	idField := &schema.Field{
+		Name:     schema.FieldName(data.DocumentIDField),
 		Required: true,
 		Unique:   true,
-		FieldProperties: definition.FieldProperties{
-			Type: definition.FieldTypeString,
+		FieldProperties: schema.FieldProperties{
+			Type: schema.FieldTypeString,
 		},
 	}
 
@@ -115,22 +116,22 @@ func EnrichSchema(sc *definition.Schema) (*definition.Schema, error) {
 	}
 
 	// --- Remove any user-defined indexes on 'id' field ---
-	sc, _, err = sc.WithoutIndexesReferencingField(definition.FieldName(data.DocumentIDField))
+	sc, _, err = sc.WithoutIndexesReferencingField(schema.FieldName(data.DocumentIDField))
 	if err != nil {
 		return nil, err
 	}
 
 	// --- Add primary key index ---
 	// First find the FieldId for the ID field
-	idFieldId, _, exists := sc.GetFieldByName(definition.FieldName(data.DocumentIDField))
+	idFieldId, _, exists := sc.GetFieldByName(schema.FieldName(data.DocumentIDField))
 	if !exists {
 		return nil, fmt.Errorf("id field not found after being ensured")
 	}
 
-	pkIndex := &definition.Index{
+	pkIndex := &schema.Index{
 		Name:   "pk_id",
-		Fields: []definition.FieldId{idFieldId},
-		Type:   definition.IndexTypePrimary,
+		Fields: []schema.FieldId{idFieldId},
+		Type:   schema.IndexTypePrimary,
 		Unique: true,
 	}
 
@@ -141,20 +142,20 @@ func EnrichSchema(sc *definition.Schema) (*definition.Schema, error) {
 	}
 
 	// --- Add Metadata Field ---
-	msdid := definition.SchemaId("ca6a2799-ea8a-4f0e-b4ef-7d2c3038b4af")
+	msdid := schema.SchemaId(uuid.Must(uuid.NewV7()).String())
 	msd, _ := data.GetMetadataSchema()
-	metadataField := &definition.Field{
-		Name: definition.FieldName(data.MetadataField),
-		FieldProperties: definition.FieldProperties{
-			Type: definition.FieldTypeObject,
-			Schema: definition.NewSchemaReference(definition.SchemaReference{
+	metadataField := &schema.Field{
+		Name: schema.FieldName(data.MetadataField),
+		FieldProperties: schema.FieldProperties{
+			Type: schema.FieldTypeObject,
+			Schema: schema.NewSchemaReference(schema.SchemaReference{
 				ID: msdid,
 			}),
 		},
 	}
 
 	if sc.Schemas == nil {
-		sc.Schemas = make(map[definition.SchemaId]definition.NestedSchema)
+		sc.Schemas = make(map[schema.SchemaId]schema.NestedSchema)
 	}
 
 	sc.Schemas[msdid] = *msd
@@ -165,12 +166,14 @@ func EnrichSchema(sc *definition.Schema) (*definition.Schema, error) {
 		return nil, err
 	}
 
-	// TODO: Validate the final schema
+	if _, err := schema.ValidateSchema(sc); err != nil {
+		return nil, err
+	}
 
 	return sc, nil
 }
 
-func MustEnrichSchema(sc *definition.Schema) *definition.Schema {
+func MustEnrichSchema(sc *schema.Schema) *schema.Schema {
 	result, err := EnrichSchema(sc)
 	if err != nil {
 		panic(err)
