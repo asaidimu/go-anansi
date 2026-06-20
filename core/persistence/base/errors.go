@@ -1,0 +1,42 @@
+package base
+
+import (
+	"github.com/asaidimu/go-anansi/v6/core/common"
+)
+
+// Common errors for the persistence layer.
+var (
+	ErrExplicitMetadataProjectionForbidden           = common.NewSystemError("ERR_PERSISTENCE_EXPLICIT_METADATA_PROJECTION_FORBIDEN", "Explicit metadata projection is forbidden")
+	ErrFailedToResolvePhysicalName                   = common.NewSystemError("ERR_PERSISTENCE_RESOLVE_PHYSICAL_NAME_FAILED", "failed to resolve physical name")
+	ErrCollectionNotFound                            = common.NewSystemError("ERR_PERSISTENCE_COLLECTION_NOT_FOUND", "collection not found")
+	ErrTransactionTimeout                            = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_TIMEOUT", "timed out waiting for transaction operations")
+	ErrTransactionAlreadyFinalized                   = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_ALREADY_FINALIZED", "transaction already committed or rolled back")
+	ErrTransactionNoActive                           = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_NO_ACTIVE", "no active transaction to finalize")
+	ErrTransactionAsyncOperationFailed               = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_ASYNC_OPERATION_FAILED", "transaction failed due to an async operation")
+	ErrTransactionCommitFailed                       = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_COMMIT_FAILED", "failed to commit transaction")
+	ErrTransactionFailed                             = common.NewSystemError("ERR_PERSISTENCE_TRANSACTION_FAILED", "the transaction failed")
+	ErrImmutableFieldModification                    = common.NewSystemError("ERR_PERSISTENCE_IMMUTABLE_FIELD_MODIFICATION", "attempted to modify an immutable field")
+	ErrCollectionAlreadyExists                       = common.NewSystemError("ERR_PERSISTENCE_COLLECTION_ALREADY_EXISTS", "collection already exists")
+	ErrFailedToCreateIndex                           = common.NewSystemError("ERR_PERSISTENCE_FAILED_TO_CREATE_INDEX", "failed to create index")
+	ErrFailedToReadDocuments                         = common.NewSystemError("ERR_PERSISTENCE_FAILED_TO_READ_DOCUMENTS", "failed to read documents")
+	ErrUniqueConstraintViolation                     = common.NewSystemError("ERR_PERSISTENCE_UNIQUE_CONSTRAINT_VIOLATION", "unique constraint violation")
+	ErrPersistenceClosed                             = common.NewSystemError("ERR_PERSISTENCE_CLOSED", "persistence instance is closed")
+	ErrFailedToListCollections                       = common.NewSystemError("ERR_PERSISTENCE_FAILED_TO_LIST_COLLECTIONS", "failed to list collections from registry")
+	ErrMultipleEntriesFound                          = common.NewSystemError("ERR_PERSISTENCE_MULTIPLE_ENTRIES_FOUND", "multiple entries found")
+	ErrVersionAlreadyExists                          = common.NewSystemError("ERR_PERSISTENCE_VERSION_ALREADY_EXISTS", "version already exists")
+	ErrVersionNotFound                               = common.NewSystemError("ERR_PERSISTENCE_VERSION_NOT_FOUND", "version not found")
+	ErrInvalidUpdateParams                           = common.NewSystemError("ERR_PERSISTENCE_INVALID_UPDATE_PARAMS", "Invalid update parameters provided")
+	ErrDeleteRequiresFilter                          = common.NewSystemError("ERR_PERSISTENCE_DELETE_REQUIRES_FILTER", "Delete operation requires a filter or unsafe flag")
+	ErrValidationFailed                              = common.NewSystemError("ERR_PERSISTENCE_VALIDATION_FAILED", "document validation failed")
+	ErrUnexpectedType                                = common.NewSystemError("ERR_PERSISTENCE_UNEXPECTED_TYPE", "unexpected type")
+	ErrDangerousUpdate                               = common.NewSystemError("ERR_PERSISTENCE_DANGEROUS_UPDATE", "Cannot dangerously update documents")
+	ErrDangerousDelete                               = common.NewSystemError("ERR_PERSISTENCE_DANGEROUS_DELETE", "Cannot dangerously delete documents")
+	ErrValidationSystemError                         = common.NewSystemError("ERR_PERSISTENCE_VALIDATION_SYSTEM_ERROR", "A system error occurred during validation")
+	ErrInsertDocumentsFailed                         = common.NewSystemError("ERR_PERSISTENCE_INSERT_DOCUMENTS_FAILED", "failed to insert documents")
+	ErrReadDocumentsFailed                           = common.NewSystemError("ERR_PERSISTENCE_READ_DOCUMENTS_FAILED", "failed to read documents")
+	ErrUpdateDocumentsFailed                         = common.NewSystemError("ERR_PERSISTENCE_UPDATE_DOCUMENTS_FAILED", "failed to update documents")
+	ErrDeleteDocumentsFailed                         = common.NewSystemError("ERR_PERSISTENCE_DELETE_DOCUMENTS_FAILED", "failed to delete documents")
+	ErrRawQueryProcessorRegistryLookupFailed         = common.NewSystemError("ERR_PERSISTENCE_RAW_QUERY_PROCESSOR_REGISTRY_LOOKUP_FAILED", "failed to lookup registry entry for raw query processing")
+	ErrRawQueryProcessorPhysicalNameResolutionFailed = common.NewSystemError("ERR_PERSISTENCE_RAW_QUERY_PROCESSOR_PHYSICAL_NAME_RESOLUTION_FAILED", "failed to resolve physical name for raw query processing")
+	ErrFailedToStartTransaction                      = common.NewSystemError("ERR_PERSISTENCE_FAILED_TO_START_TRANSACTION", "failed to start transaction")
+)

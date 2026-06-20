@@ -26,4 +26,9 @@ go.work
 go-anansi
 dist
 *.db
+*.db-*
 .commit-message.md
+*/**/tmp
+tmp/*
+*.prof
+*.test
