@@ -1,0 +1,188 @@
+// Comments:
+// Single-line comments start with '//' and extend to the end of the line.
+/* Block comments start with '/*' and end with '*/'.
+   They can span multiple lines. */
+// Comments are treated as whitespace and are ignored by the parser.
+
+<query> ::=
+    (<where_clause> | <search_clause>)?
+    [<join_clause>]
+    [<group_by_clause>]
+    [<aggregate_clause>]
+    [<having_clause>]
+    [<projection_clause>]
+    [<sort_clause>]
+    [<paginate_clause>]
+    [<hint_clause>]
+
+<where_clause> ::=
+    "WHERE" <filter_expression>
+
+<filter_expression> ::=
+    <filter_condition>
+    | <logical_group>
+    | <function_call>
+
+<logical_group> ::=
+    "AND" "(" <filter_expression> | <search_clause>  {"," <filter_expression>}* ")"
+    | "OR" "(" <filter_expression> | <search_clause>  {"," <filter_expression>}* ")"
+    | "XOR" "(" <filter_expression> {"," <filter_expression>}* ")"
+    | "NOR" "(" <filter_expression> {"," <filter_expression>}* ")"
+    | "NOT" "(" <filter_expression> ")"
+
+<search_clause> ::=
+    <search_type> "SEARCH" <string_literal>
+    ["IN" "(" <field_list> ")"]
+    ["WITH" "(" <search_options> ")"]
+
+<filter_condition> ::=
+    <field_path> <comparison_operator> <filter_value>
+    | <field_path> "EXISTS"
+    | <field_path> "NOT EXISTS"
+
+<comparison_operator> ::=
+    "==" | "!=" | "<" | "<=" | ">" | ">="
+    | "IN" | "NOT IN"
+    | "CONTAINS" | "NOT CONTAINS"
+
+<filter_value> ::=
+    <literal_value>
+    | <field_path>
+    | <function_call>
+    | <array_of_filter_values>
+    | <object_literal>
+    | <subquery>
+
+<subquery> ::=
+    "(" <query> ")"
+
+<function_call> ::=
+    <identifier> "(" [<function_arguments>] ")"
+
+<function_arguments> ::=
+    <filter_value> {"," <filter_value>}*
+
+<sort_clause> ::=
+    "SORT BY" <sort_item> {"," <sort_item>}*
+
+<sort_item> ::=
+    <field_path> [<sort_direction>]
+
+<sort_direction> ::=
+    "ASC" | "DESC"
+
+<paginate_clause> ::=
+    "PAGINATE" <pagination_type>
+
+<pagination_type> ::=
+    "OFFSET" <number_literal> "LIMIT" <number_literal>
+
+<projection_clause> ::=
+    [<include_clause>]
+    [<exclude_clause>]
+    [<compute_clause>]
+
+<include_clause> ::=
+    "INCLUDE" <projection_item> {"," <projection_item>}*
+
+<exclude_clause> ::=
+    "EXCLUDE" <projection_item> {"," <projection_item>}*
+
+<projection_item> ::=
+    <field_path>
+    | <identifier> "{" <nested_projection> "}"
+
+<nested_projection> ::=
+    [<include_clause>] [<exclude_clause>] [<compute_clause>]
+
+<compute_clause> ::=
+    "COMPUTE" <computed_field> {"," <computed_field>}*
+
+<computed_field> ::=
+    <function_call> "AS" <identifier>
+    | <case_expression> "AS" <identifier>
+
+<case_expression> ::=
+    "CASE" {<case_when_then>}+ ["ELSE" <filter_value>] "END"
+
+<case_when_then> ::=
+    "WHEN" <filter_expression> "THEN" <filter_value>
+
+<join_clause> ::=
+    {"JOIN" [<join_type>] <identifier> "AS" <identifier> "ON" <filter_expression> [<nested_projection>]}+
+
+<join_type> ::=
+    "INNER" | "LEFT" | "RIGHT" | "FULL"
+
+<aggregate_clause> ::=
+    "AGGREGATE" <aggregation_item> {"," <aggregation_item>}*
+
+<aggregation_item> ::=
+    <aggregation_function> "(" <field_path> {"," <field_path>}* ")" "AS" <identifier>
+
+<aggregation_function> ::=
+    <identifier>
+
+<group_by_clause> ::=
+    "GROUP BY" <field_path> {"," <field_path>}*
+
+<having_clause> ::=
+    "HAVING" <filter_expression>
+
+<hint_clause> ::=
+    "HINT" <hint_item> {"," <hint_item>}*
+
+<hint_item> ::=
+    "USE INDEX" <identifier>
+    | "FORCE INDEX" <identifier>
+    | "NO INDEX"
+    | "MAX_TIME" <number_literal>
+
+<search_type> ::=
+    "MATCH" | "PHRASE" | "PREFIX" | "WILDCARD" | "FUZZY" | "REGEX"
+
+<text_operator> ::=
+    "AND" | "OR"
+
+<search_options> ::=
+    <search_option> {"," <search_option>}*
+
+<search_option> ::=
+    "FUZZINESS" <number_literal>
+    | "MINIMUM_MATCH" <string_literal>
+    | "BOOST" <object_literal>
+    | "ANALYZER" <string_literal>
+    | "OPERATOR" <text_operator>
+
+<field_path> ::=
+    <identifier> {"." <identifier>}* ["[" <array_index> "]"]
+
+<array_index> ::=
+    <number_literal> | "*"
+
+<field_list> ::=
+    <field_path> {"," <field_path>}*
+
+<array_of_filter_values> ::=
+    "[" [<filter_value> {"," <filter_value>}*] "]"
+
+<object_literal> ::=
+    "{" [<object_pair> {"," <object_pair>}*] "}"
+
+<object_pair> ::=
+    <string_literal> ":" <literal_value>
+
+<literal_value> ::=
+    <string_literal> | <number_literal> | <boolean_literal> | "null"
+
+<identifier> ::=
+    [a-zA-Z_][a-zA-Z0-9_]*
+
+<string_literal> ::=
+    "\"" [^"]* "\""
+
+<number_literal> ::=
+    [-]?[0-9]+(.[0-9]+)?
+
+<boolean_literal> ::=
+    "true" | "false"

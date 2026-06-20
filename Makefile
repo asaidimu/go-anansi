@@ -1,4 +1,4 @@
-.PHONY: all build test clean
+.PHONY: all build test
 
 all: build
 
@@ -6,7 +6,4 @@ build:
 	go build -v ./...
 
 test:
-	go test -v ./...
-
-clean:
-	rm -f persistence
+	go clean -testcache && go test -v ./...

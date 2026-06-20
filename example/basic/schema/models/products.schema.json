@@ -1,0 +1,23 @@
+{
+  "name": "Products",
+  "version": "1.0.0",
+  "fields": {
+    "name": {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "price": {
+      "name": "price",
+      "type": "number",
+      "required": true
+    },
+    "stock": {
+      "name": "stock",
+      "type": "integer",
+      "required": true
+    }
+  }
+}
+
