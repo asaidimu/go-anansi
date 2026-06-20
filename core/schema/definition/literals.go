@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/common"
 )
@@ -463,4 +464,17 @@ func mustNewLiteralValue(value any) LiteralValue {
 		panic(err)
 	}
 	return val
+}
+type LiteralValues []LiteralValue
+
+func (lvs LiteralValues) String(joiner ...string) string {
+    sep := ","
+    if len(joiner) > 0 && joiner[0] != "" {
+        sep = joiner[0]
+    }
+    var strs []string
+    for _, lv := range lvs {
+        strs = append(strs, lv.String())
+    }
+    return strings.Join(strs, sep)
 }

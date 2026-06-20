@@ -6,6 +6,7 @@ import (
 )
 
 // ConstraintId represents the id of a constraint in a schema.
+// IT IS A UUID v7 AND IS DISTINCT FROM NAME
 type ConstraintId string
 
 // SchemaId represents the id of a nested schema in a schema.
@@ -22,6 +23,8 @@ type SchemaReference struct {
 	ID          SchemaId                    `json:"id"`
 	Indexes     map[IndexId]Index           `json:"indexes,omitempty"`
 	Constraints map[ConstraintId]Constraint `json:"constraints,omitempty"`
+	Type        FieldType                   `json:"type,omitempty"`
+	Values      []LiteralValue              `json:"values,omitempty"`
 }
 
 type FieldSchemaKind byte
@@ -67,7 +70,7 @@ func (fr *FieldSchemaReference) UnmarshalJSON(data []byte) error {
 
 func (fr FieldSchemaReference) MarshalJSON() ([]byte, error) {
 	if fr.payload == nil {
-        return []byte("null"), nil
+		return []byte("null"), nil
 	}
 
 	val, err := json.Marshal(fr.payload)
@@ -95,6 +98,10 @@ func FieldSchemaAs[T SchemaReferenceType](fr FieldSchemaReference) (T, error) {
 		)
 	}
 	return val, nil
+}
+
+func (ref SchemaReference) IsInline() bool {
+	return len(ref.ID) == 0 && ( ref.Type != 0 || len(ref.Values) > 0)
 }
 
 // IsSingle returns true if this reference holds a single schema
@@ -125,4 +132,3 @@ func NewSchemaReference[T SchemaReferenceType](payload T) FieldSchemaReference {
 	}
 	return fr
 }
-

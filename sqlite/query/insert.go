@@ -7,6 +7,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/query"
 	"github.com/asaidimu/go-anansi/v6/core/query/native"
 	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"go.uber.org/zap"
 )
 
 // SQLiteInsertValues handles the VALUES clause in an INSERT statement.
@@ -126,6 +127,7 @@ func (i *SQLiteInsertValues) processDocumentFields(
 // SQLiteInsertStatement represents a complete INSERT statement
 type SQLiteInsertStatement struct {
 	tree *insertTree
+	factory *sqliteFactory
 }
 
 func (s *SQLiteInsertStatement) Value() (string, []any, error) {
@@ -134,10 +136,13 @@ func (s *SQLiteInsertStatement) Value() (string, []any, error) {
 
 	// INSERT INTO clause
 	if s.tree.target == nil {
+		s.factory.logger.Error("failed to generate SQL: missing target", zap.Error(ErrInsertStatementNoTarget))
 		return "", nil, ErrInsertStatementNoTarget
 	}
+
 	targetSQL, targetParams, err := s.tree.target.Value()
 	if err != nil {
+		s.factory.logger.Error("failed to generate target SQL", zap.Error(err))
 		return "", nil, err
 	}
 	sqlParts = append(sqlParts, targetSQL)
@@ -145,16 +150,26 @@ func (s *SQLiteInsertStatement) Value() (string, []any, error) {
 
 	// VALUES clause
 	if s.tree.values == nil {
+		s.factory.logger.Error("failed to generate SQL: missing values", zap.Error(ErrInsertStatementNoValues))
 		return "", nil, ErrInsertStatementNoValues
 	}
+
 	valuesSQL, valuesParams, err := s.tree.values.Value()
 	if err != nil {
+		s.factory.logger.Error("failed to generate values SQL", zap.Error(err))
 		return "", nil, err
 	}
 	sqlParts = append(sqlParts, valuesSQL)
 	allParams = append(allParams, valuesParams...)
 
-	return strings.Join(sqlParts, " "), allParams, nil
+	// Success case
+	finalSQL := strings.Join(sqlParts, " ")
+	/* s.factory.logger.Info("successfully generated SQLite insert statement",
+		zap.String("sql", finalSQL),
+		zap.Any("params", allParams),
+	) */
+
+	return finalSQL, allParams, nil
 }
 
 func (s *SQLiteInsertStatement) StatementType() native.StatementType {
@@ -175,7 +190,7 @@ func (i *SQLiteInsertTargetClause) Value() (string, []any, error) {
 
 // buildInsertTree builds a SQLNode for an INSERT statement.
 func (f *sqliteFactory) buildInsertTree(q *query.Query, extra any) (SQLNode, error) {
-	tree := &insertTree{}
+	tree := &insertTree{ }
 
 	if q.Target == nil {
 		return nil, ErrInsertQueryNoTarget
@@ -203,5 +218,5 @@ func (f *sqliteFactory) buildInsertTree(q *query.Query, extra any) (SQLNode, err
 	}
 
 	tree.values = values
-	return &SQLiteInsertStatement{tree: tree}, nil
+	return &SQLiteInsertStatement{tree: tree, factory: f}, nil
 }

@@ -11,7 +11,7 @@ import (
 )
 
 func TestSQLInjection_FieldName(t *testing.T) {
-	factory := sqlite_query.NewSQLiteFactory()
+	factory := sqlite_query.NewSQLiteFactory(nil)
 
 	// Malicious field name
 	maliciousFieldName := "id; DROP TABLE users; --" // Added space after ;
@@ -29,7 +29,7 @@ func TestSQLInjection_FieldName(t *testing.T) {
 }
 
 func TestSQLInjection_JSONPath(t *testing.T) {
-	factory := sqlite_query.NewSQLiteFactory()
+	factory := sqlite_query.NewSQLiteFactory(nil)
 
 	// Malicious JSON path
 	maliciousJSONPath := "profile.name'); DROP TABLE users;--"
@@ -58,7 +58,7 @@ func TestSQLInjection_JSONPath(t *testing.T) {
 }
 
 func TestSQLInjection_FilterValue(t *testing.T) {
-	factory := sqlite_query.NewSQLiteFactory()
+	factory := sqlite_query.NewSQLiteFactory(nil)
 
 	// Malicious filter value
 	maliciousValue := "1 OR 1=1; DROP TABLE users;--"
@@ -78,7 +78,7 @@ func TestSQLInjection_FilterValue(t *testing.T) {
 }
 
 func TestSQLInjection_TextSearch(t *testing.T) {
-	factory := sqlite_query.NewSQLiteFactory()
+	factory := sqlite_query.NewSQLiteFactory(nil)
 
 	// Malicious text search query
 	maliciousSearchQuery := "search_term' OR 1=1; DROP TABLE users;--"

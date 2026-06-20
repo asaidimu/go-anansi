@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"go.uber.org/zap"
 )
 
 // sqliteFactory builds SQLite query components with support for nested scopes.
@@ -21,17 +22,22 @@ type sqliteFactory struct {
 
 	// Depth tracking to prevent infinite recursion
 	depth int
+	logger      *zap.Logger
 }
 
 // newSQLiteFactory creates a new root-level factory.
-func newSQLiteFactory() *sqliteFactory {
+func newSQLiteFactory(logger *zap.Logger) *sqliteFactory {
 	counter := 0
+	if logger == nil {
+		logger = zap.NewNop()
+	}
 	return &sqliteFactory{
 		aliases:            make(map[string]string),
 		schemas:            make(map[string]*definition.Schema),
 		globalParamCounter: &counter,
 		parent:             nil,
 		depth:              0,
+		logger: logger,
 	}
 }
 

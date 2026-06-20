@@ -1,5 +1,7 @@
 package definition
 
+import "strings"
+
 func toInt64(v any) int64 {
 	switch x := v.(type) {
 	case int:
@@ -67,4 +69,10 @@ func toFloat64(v any) (float64, bool) {
 	default:
 		return 0, false
 	}
+}
+
+
+// pathToString converts a path slice to a string key
+func pathToString(path []string) string {
+	return strings.Join(path, "/")
 }

@@ -50,7 +50,7 @@ type NestedSchema struct {
 	// The field definition part
 	FieldProperties
 
-	Values   []LiteralValue `json:"values,omitempty"`
+	Values   LiteralValues `json:"values,omitempty"`
 	Concrete bool           `json:"concrete,omitempty"`
 }
 

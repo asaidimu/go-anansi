@@ -166,7 +166,6 @@ func (r *collectionRegistry) warmCache(ctx context.Context) error {
 	return nil
 }
 
-// CreateCollection - simplified implementation
 func (r *collectionRegistry) CreateCollection(ctx context.Context, sc *definition.Schema) (*RegistryEntry, error) {
 	results, err := r.CreateCollections(ctx, []*definition.Schema{sc})
 	if err != nil {
@@ -190,8 +189,7 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*d
 		}
 
 		// Basic validation
-		issues, ok := r.validator.Validate(sc.AsMap())
-		if !ok {
+		if issues, err := schema.ValidateSchema(sc); err != nil {
 			return nil, ErrInvalidSchema.WithIssues(issues)
 		}
 
@@ -678,8 +676,4 @@ func (r *collectionRegistry) InvalidateCache(name string) {
 
 func (r *collectionRegistry) RefreshCache() error {
 	return r.warmCache(context.Background())
-}
-
-func (r *collectionRegistry) ValidateSChema(ctx context.Context, schema *definition.Schema) ([]common.Issue, bool) {
-	return r.validator.Validate(schema.AsMap())
 }

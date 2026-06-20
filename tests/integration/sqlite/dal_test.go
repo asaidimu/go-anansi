@@ -97,7 +97,7 @@ func TestInsert_Integration(t *testing.T) {
 	db := setupDALTestDB(t)
 	defer db.Close()
 
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	usersSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -140,7 +140,7 @@ func TestUpdate_Integration(t *testing.T) {
 	db := setupDALTestDB(t)
 	defer db.Close()
 
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	usersSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
 			Name: "users_1_0_0",
@@ -183,7 +183,7 @@ func TestDelete_Integration(t *testing.T) {
 	db := setupDALTestDB(t)
 	defer db.Close()
 
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	usersSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
 			Name: "users_1_0_0",
@@ -231,7 +231,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 	`)
 	require.NoError(t, err)
 
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	complexDocsSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -301,7 +301,7 @@ func TestSelectComplex_Integration(t *testing.T) {
 	db := setupDALTestDB(t)
 	defer db.Close()
 
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	ordersSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -382,7 +382,7 @@ func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
 	_, err = db.Exec(`UPDATE users_1_0_0 SET profile = ? WHERE _id_ = ?`, `{"preferences": {"theme": "dark"}, "level": 5}`, "user-1")
 	require.NoError(t, err)
 
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	// Define the schema for the users table, marking 'profile' as a complex object
 	userSchema := &definition.Schema{
@@ -462,7 +462,7 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 	`)
 	require.NoError(t, err)
 
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	// Define the schema for the docs table
 	docSchema := &definition.Schema{
@@ -512,7 +512,7 @@ func TestSelectWithAggregations_Integration(t *testing.T) {
 	db := setupDALTestDB(t)
 	defer db.Close()
 
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	salesSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -580,7 +580,7 @@ func TestSelectWithAggregations_Integration(t *testing.T) {
 }
 
 func TestComputedFieldTranslation(t *testing.T) {
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 
 	docSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{

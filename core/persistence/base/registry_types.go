@@ -83,6 +83,4 @@ type CollectionRegistry interface {
 	// ResolveName returns the physical name of a schema
 	// If no version is provided, it returns the currently active schema version.
 	ResolvePhysicalName(ctx context.Context, name string, version ...string) (string, error)
-
-	ValidateSChema(ctx context.Context, schema *definition.Schema)([]common.Issue, bool)
 }

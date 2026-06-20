@@ -48,7 +48,7 @@ func TestCreateCollectionIntegration(t *testing.T) {
 		},
 	}
 
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	q := query.Query{
 		Target: &query.QueryTarget{
 			Name:   userSchema.Name,
@@ -90,7 +90,7 @@ func TestDropCollectionIntegration(t *testing.T) {
 		},
 	}
 
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	q := query.Query{
 		Target: &query.QueryTarget{
 			Name:   userSchema.Name,
@@ -143,7 +143,7 @@ func TestCreateIndexIntegration(t *testing.T) {
 		Type:   definition.IndexTypeNormal,
 	}
 
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	q := query.Query{
 		Target: &query.QueryTarget{
 			Name:   userSchema.Name,
@@ -196,7 +196,7 @@ func TestDropIndexIntegration(t *testing.T) {
 		Type:   definition.IndexTypeNormal,
 	}
 
-	builder := sqlite.NewSQLiteFactory()
+	builder := sqlite.NewSQLiteFactory(nil)
 	q := query.Query{
 		Target: &query.QueryTarget{
 			Name:   userSchema.Name,

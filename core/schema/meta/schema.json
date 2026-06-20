@@ -3,260 +3,323 @@
   "name": "Schema",
   "description": "Meta-schema defining the structure of schema definitions",
   "fields": {
-    "constraints": {
-      "name": "constraints",
-      "description": "Map of constraint definitions",
-      "type": "record",
-      "schema": { "id": "Constraint" }
-    },
-    "schemas": {
-      "name": "schemas",
-      "description": "Map of nested schema definitions",
-      "type": "record",
-      "schema": { "id": "NestedSchema" }
-    },
-    "name": {
-      "name": "name",
-      "description": "The name of the schema",
-      "required": true,
-      "type": "string"
-    },
-    "description": {
-      "name": "description",
-      "description": "Optional description of the schema",
-      "type": "string"
-    },
-    "version": {
-      "name": "version",
-      "description": "Schema version",
-      "required": true,
-      "type": "string"
-    },
-    "metadata": {
-      "name": "metadata",
-      "description": "Arbitrary metadata as key-value pairs",
-      "type": "record"
-    },
-    "fields": {
+    "019d7775-6565-7755-904d-2d0cdf0e1b86": {
       "name": "fields",
-      "description": "Map of field definitions",
       "type": "record",
-      "schema": { "id": "Field" }
+      "schema": { "id": "019d7775-6565-7f15-b0f4-27a4f40cbf5c" }
     },
-    "indexes": {
+    "019d7775-6565-73d6-a7be-130b3c1e93c8": {
       "name": "indexes",
-      "description": "Map of index definitions",
       "type": "record",
-      "schema": { "id": "Index" }
+      "schema": { "id": "019d7775-6565-74f6-9c72-9e35d3d16b0a" }
+    },
+    "019d7775-6565-722f-9a5a-2810f537a61c": {
+      "name": "constraints",
+      "type": "record",
+      "schema": { "id": "019d7775-6565-7ab6-9c65-ab60632aeca8" }
+    },
+    "019d7775-6565-7fe8-86f6-57a8a305a314": {
+      "name": "schemas",
+      "type": "record",
+      "schema": { "id": "019d7775-6565-7db3-9bb0-be9fc50550bd" }
+    },
+    "019d7775-6565-7c1f-a6f7-aeb5c4eb35e4": {
+      "name": "name",
+      "required": true,
+      "type": "string"
+    },
+    "019d7775-6565-7545-9e25-fc471f57bcfb": {
+      "name": "description",
+      "type": "string"
+    },
+    "019d7775-6565-7bdc-a9d4-776b1f163346": {
+      "name": "version",
+      "required": true,
+      "type": "string"
+    },
+    "019d7775-6565-74ed-8a52-12027f3c577d": {
+      "name": "metadata",
+      "type": "record"
     }
   },
   "schemas": {
-    "Unknown": { "name": "Unknown", "type": "unknown" },
-    "IndexCondition": {
-      "name": "IndexCondition",
-      "description": "A single condition for a partial index",
+    "019d7775-6566-7da1-b24a-67bd81dd2b0e": {
+      "name": "Unknown",
+      "type": "unknown"
+    },
+    "019d7775-6565-7db3-9bb0-be9fc50550bd": {
+      "name": "NestedSchema",
       "fields": {
-        "field": {
-          "name": "field",
-          "description": "The field to check",
+        "019d7775-6566-77a1-9b36-bbd57f927d11": {
+          "name": "fields",
+          "type": "record",
+          "schema": { "id": "019d7775-6565-7f15-b0f4-27a4f40cbf5c" }
+        },
+        "019d7775-6567-7931-b2d6-fb52039c28b5": {
+          "name": "type",
+          "type": "enum",
+          "schema": { "id": "019d7775-6566-765a-b142-157d1d6367b7" }
+        },
+        "019d7775-6567-7742-90ae-a96178ae505d": {
+          "name": "values",
+          "type": "array",
+          "schema": { "id": "019d7775-6566-7da1-b24a-67bd81dd2b0e" }
+        },
+        "019d7775-6567-7709-a7e3-ed75f833da15": {
+          "name": "schema",
+          "type": "union",
+          "schema": [
+            { "id": "019d7775-6565-7f2a-956b-35b40caa8ec7" },
+            { "id": "019d7775-6565-71bc-84f3-044dc089d50c" },
+            { "id": "019d7775-6566-7786-8769-c13eb5a883d9" }
+          ]
+        },
+        "019d7775-6566-748e-b099-50c76a5b79c2": {
+          "name": "name",
           "required": true,
           "type": "string"
         },
-        "value": {
+        "019d7775-6566-74df-a8df-038cc26af034": {
+          "name": "description",
+          "type": "string"
+        },
+        "019d7775-6567-748e-bcad-76068cc4739f": {
+          "name": "metadata",
+          "type": "record"
+        },
+        "019d7775-6567-7022-b7fb-3975ccae2b72": {
+          "name": "concrete",
+          "type": "boolean"
+        },
+        "019d7775-6567-7f25-b7e2-acc72435964f": {
+          "name": "indexes",
+          "type": "record",
+          "schema": { "id": "019d7775-6565-74f6-9c72-9e35d3d16b0a" }
+        },
+        "019d7775-6567-750b-a618-5bcdc4e5d04a": {
+          "name": "constraints",
+          "type": "record",
+          "schema": { "id": "019d7775-6565-7ab6-9c65-ab60632aeca8" }
+        },
+        "019d7775-6567-75c4-b399-eb4764617462": {
+          "name": "default",
+          "type": "unknown"
+        }
+      },
+      "constraints": {
+        "019d7775-6563-7554-bfae-d6ad7774d5ac": {
+          "name": "nested_schema_mode_exclusive",
+          "predicate": "nested_schema_exclusive_mode"
+        }
+      }
+    },
+    "019d7775-6565-71ef-a08f-cdcdb116f947": {
+      "name": "IndexCondition",
+      "fields": {
+        "019d7775-6567-75ef-8e82-347da30f06fd": {
+          "name": "operator",
+          "required": true,
+          "type": "enum",
+          "schema": { "id": "019d7775-6566-7a70-8b56-e55704397fc2" }
+        },
+        "019d7775-6567-7466-a873-e7866e9d031f": {
+          "name": "field",
+          "required": true,
+          "type": "string"
+        },
+        "019d7775-6567-7526-9704-d19fb4eb8d8d": {
           "name": "value",
-          "description": "The value to compare against",
           "required": true,
           "type": "unknown"
+        }
+      },
+      "constraints": {
+        "019d7775-6563-713e-8355-df812c6bb8c9": {
+          "name": "index_condition_exclusive_type",
+          "predicate": "index_condition_type_exclusive"
         },
-        "operator": {
-          "name": "operator",
-          "description": "Comparison operator",
-          "required": true,
-          "type": "enum",
-          "schema": { "id": "ComparisonOperatorEnum" }
+        "019d7775-6564-712b-8c53-9fa93809f219": {
+          "name": "index_condition_value_type_match",
+          "predicate": "index_condition_value_matches_field_type"
         }
       }
     },
-    "ConstraintUnion": { "name": "ConstraintUnion", "type": "union" },
-    "String": { "name": "String", "type": "string" },
-    "IndexConditionGroup": {
+    "019d7775-6565-7d6a-a531-47e7ea838bc4": {
       "name": "IndexConditionGroup",
-      "description": "A group of conditions combined with a logical operator",
       "fields": {
-        "operator": {
+        "019d7775-6567-7b4e-893f-ee7afb0c4be1": {
           "name": "operator",
-          "description": "Logical operator (AND, OR, NOT)",
           "required": true,
           "type": "enum",
-          "schema": { "id": "LogicalOperatorEnum" }
+          "schema": { "id": "019d7775-6566-7e3b-860a-c4aa4adf5d6d" }
         },
-        "conditions": {
+        "019d7775-6567-7af2-817f-bc5b8732c198": {
           "name": "conditions",
-          "description": "Array of conditions (each can be IndexCondition or IndexConditionGroup)",
           "required": true,
           "type": "array",
-          "schema": { "id": "IndexConditionUnion" }
+          "schema": { "id": "019d7775-6565-74a3-a6e0-881a0148fc59" }
         }
       }
     },
-    "Constraint": { "name": "Constraint", "type": "composite" },
-    "ConstraintMetadata": {
-      "name": "ConstraintMetadata",
-      "description": "Metadata fields present in all constraints",
+    "019d7775-6565-794d-8aba-bdc5e3cbe97e": {
+      "name": "ConstraintUnion",
+      "type": "union",
+      "schema": [
+        { "id": "019d7775-6565-703f-95cf-e7511d33c91b" },
+        { "id": "019d7775-6565-7ea4-a820-e8bcdbc690bc" }
+      ]
+    },
+    "019d7775-6566-7786-8769-c13eb5a883d9": {
+      "name": "InlineTypeDescriptor",
       "fields": {
-        "name": {
-          "name": "name",
-          "description": "The name of the constraint",
+        "019d7775-6568-713f-867f-93dde123ccfd": {
+          "name": "type",
           "required": true,
-          "type": "string"
+          "type": "enum",
+          "schema": { "id": "019d7775-6566-7e05-ab1b-6f768f459927" }
         },
-        "description": {
-          "name": "description",
-          "description": "Optional description",
-          "type": "string"
+        "019d7775-6568-7ae5-95b7-56c97722c732": {
+          "name": "values",
+          "type": "array",
+          "schema": { "id": "019d7775-6566-7da1-b24a-67bd81dd2b0e" }
         }
       }
     },
-    "IndexTypeEnum": {
-      "name": "IndexTypeEnum",
-      "type": "string",
-      "values": ["normal", "unique", "primary", "spatial", "fulltext"]
-    },
-    "LogicalOperatorEnum": {
+    "019d7775-6566-7e3b-860a-c4aa4adf5d6d": {
       "name": "LogicalOperatorEnum",
       "type": "string",
       "values": ["and", "or", "not", "nor", "xor", "nand", "xnor"]
     },
-    "IndexOrderEnum": {
+    "019d7775-6566-7f2f-a009-0af144502aac": {
       "name": "IndexOrderEnum",
       "type": "string",
       "values": ["asc", "desc"]
     },
-    "NestedSchema": {
-      "name": "NestedSchema",
-      "description": "Defines a nested schema - uses BaseSchema fields for objects, FieldProperties for array/enum elements",
+    "019d7775-6565-7f15-b0f4-27a4f40cbf5c": {
+      "name": "Field",
       "fields": {
-        "constraints": {
-          "name": "constraints",
-          "description": "Map of constraint definitions (for object types only)",
-          "type": "record",
-          "schema": { "id": "Constraint" }
+        "019d7775-6566-727e-b4ff-4e6e8b800808": {
+          "name": "type",
+          "required": true,
+          "type": "enum",
+          "schema": { "id": "019d7775-6566-765a-b142-157d1d6367b7" }
         },
-        "schema": {
+        "019d7775-6566-79e9-a60b-1c15e2154580": {
           "name": "schema",
-          "description": "Schema reference (for complex array/set element types only)",
           "type": "union",
           "schema": [
-            { "id": "SchemaReference" },
-            { "id": "SchemaReferenceArray" }
+            { "id": "019d7775-6565-7f2a-956b-35b40caa8ec7" },
+            { "id": "019d7775-6565-71bc-84f3-044dc089d50c" },
+            { "id": "019d7775-6566-7786-8769-c13eb5a883d9" }
           ]
         },
-        "name": {
+        "019d7775-6566-7a4c-877d-262c18adb028": {
           "name": "name",
-          "description": "The name of the nested schema",
           "required": true,
           "type": "string"
         },
-        "description": {
+        "019d7775-6566-7b93-aa4c-b1e3869512d8": {
           "name": "description",
-          "description": "Optional description",
           "type": "string"
         },
-        "concrete": {
-          "name": "concrete",
-          "description": "Whether this schema should map to a physical collection",
-          "type": "boolean"
-        },
-        "indexes": {
-          "name": "indexes",
-          "description": "Map of index definitions (for object types only)",
-          "type": "record",
-          "schema": { "id": "Index" }
-        },
-        "type": {
-          "name": "type",
-          "description": "The element type (for array/set/enum element types only)",
-          "type": "enum",
-          "schema": { "id": "FieldTypeEnum" }
-        },
-        "values": {
-          "name": "values",
-          "description": "Allowed values (for enum element types only)",
-          "type": "array",
-          "schema": { "id": "Unknown" }
-        },
-        "metadata": {
-          "name": "metadata",
-          "description": "Arbitrary metadata (for object types only)",
-          "type": "record"
-        },
-        "default": {
+        "019d7775-6566-7ed5-9fb3-33a67b90dbbe": {
           "name": "default",
-          "description": "Default value (for array/set/enum element types only)",
           "type": "unknown"
         },
-        "fields": {
-          "name": "fields",
-          "description": "Map of field definitions (for object types only)",
-          "type": "record",
-          "schema": { "id": "Field" }
-        }
-      }
-    },
-    "Index": {
-      "name": "Index",
-      "description": "Defines an index for querying",
-      "fields": {
-        "name": {
-          "name": "name",
-          "description": "The name of the index",
-          "required": true,
-          "type": "string"
-        },
-        "description": {
-          "name": "description",
-          "description": "Optional description",
-          "type": "string"
-        },
-        "unique": {
-          "name": "unique",
-          "description": "Whether the index enforces uniqueness",
+        "019d7775-6566-722b-8132-d5d8c4c9b2b6": {
+          "name": "required",
           "type": "boolean"
         },
-        "type": {
-          "name": "type",
-          "description": "The type of index",
-          "required": true,
-          "type": "enum",
-          "schema": { "id": "IndexTypeEnum" }
+        "019d7775-6566-7367-9664-adb25994bf41": {
+          "name": "deprecated",
+          "type": "boolean"
         },
-        "fields": {
-          "name": "fields",
-          "description": "Fields included in the index",
-          "required": true,
-          "type": "array",
-          "schema": { "id": "String" }
+        "019d7775-6566-7fc8-82c6-735838cdfe21": {
+          "name": "unique",
+          "type": "boolean"
+        }
+      },
+      "constraints": {
+        "019d7775-6563-7605-8bfb-c27365b73581": {
+          "name": "enum_fields_valid",
+          "predicate": "enum_fields_valid"
         },
-        "order": {
-          "name": "order",
-          "description": "Sort order",
-          "type": "enum",
-          "schema": { "id": "IndexOrderEnum" }
+        "019d7775-6563-74fe-a5ae-4eef62a128d9": {
+          "name": "arrays_require_schema",
+          "predicate": "collection_requires_schema"
         },
-        "condition": {
-          "name": "condition",
-          "description": "Optional condition for partial indexes",
-          "type": "union",
-          "schema": [
-            { "id": "IndexCondition" },
-            { "id": "IndexConditionGroup" }
-          ]
+        "019d7775-6563-7080-ae67-bad5cd864f07": {
+          "name": "objects_require_schema",
+          "predicate": "object_requires_schema"
+        },
+        "019d7775-6563-7e83-92c4-0258a8fc0d3a": {
+          "name": "unions_require_multiple_schemas",
+          "predicate": "union_requires_multiple_schemas"
+        },
+        "019d7775-6564-7c60-9f9f-aeeabe05c1b5": {
+          "name": "default_value_type_match",
+          "predicate": "default_matches_type"
+        },
+        "019d7775-6564-77ca-94bc-30a07da76c3d": {
+          "name": "records_allow_optional_schema",
+          "predicate": "record_schema_cardinality"
+        },
+        "019d7775-6564-7768-8995-72c282cfe69f": {
+          "name": "inline_type_descriptor_valid",
+          "predicate": "inline_type_descriptor_valid"
+        },
+        "019d7775-6563-7c55-a6f3-ac8f087d89d1": {
+          "name": "primitives_no_schema",
+          "predicate": "primitives_prohibit_schema"
+        },
+        "019d7775-6563-73ce-aef1-86943b54a1ca": {
+          "name": "composites_require_multiple_schemas",
+          "predicate": "composite_requires_multiple_schemas"
+        },
+        "019d7775-6564-719d-9948-67dd885e7632": {
+          "name": "object_referenced_schema_has_fields",
+          "predicate": "object_referenced_schema_has_fields"
+        },
+        "019d7775-6564-75ce-a807-02396e0b8394": {
+          "name": "composite_referenced_schemas_must_be_objects",
+          "predicate": "composite_referenced_schemas_must_be_objects"
+        },
+        "019d7775-6564-75bc-abf5-6ddd81b7d2d4": {
+          "name": "schema_reference_form_correct",
+          "predicate": "schema_reference_form_correct"
         }
       }
     },
-    "IndexConditionUnion": { "name": "IndexConditionUnion", "type": "union" },
-    "SchemaReferenceArray": { "name": "SchemaReferenceArray", "type": "array" },
-    "ComparisonOperatorEnum": {
+    "019d7775-6565-7ab6-9c65-ab60632aeca8": {
+      "name": "Constraint",
+      "type": "composite",
+      "schema": [
+        { "id": "019d7775-6565-7068-9cb9-28460e0368f0" },
+        { "id": "019d7775-6565-794d-8aba-bdc5e3cbe97e" }
+      ]
+    },
+    "019d7775-6566-765a-b142-157d1d6367b7": {
+      "name": "FieldTypeEnum",
+      "type": "string",
+      "values": [
+        "unknown",
+        "string",
+        "number",
+        "integer",
+        "decimal",
+        "boolean",
+        "array",
+        "set",
+        "enum",
+        "object",
+        "record",
+        "union",
+        "composite",
+        "geometry",
+        "bytes"
+      ]
+    },
+    "019d7775-6566-7a70-8b56-e55704397fc2": {
       "name": "ComparisonOperatorEnum",
       "type": "string",
       "values": [
@@ -274,145 +337,216 @@
         "nexists"
       ]
     },
-    "Field": {
-      "name": "Field",
-      "description": "Defines a field within a schema",
+    "019d7775-6565-74a3-a6e0-881a0148fc59": {
+      "name": "IndexConditionUnion",
+      "type": "union",
+      "schema": [
+        { "id": "019d7775-6565-71ef-a08f-cdcdb116f947" },
+        { "id": "019d7775-6565-7d6a-a531-47e7ea838bc4" }
+      ]
+    },
+    "019d7775-6565-7068-9cb9-28460e0368f0": {
+      "name": "ConstraintMetadata",
       "fields": {
-        "required": {
-          "name": "required",
-          "description": "Whether the field is required",
-          "type": "boolean"
-        },
-        "deprecated": {
-          "name": "deprecated",
-          "description": "Whether the field is deprecated",
-          "type": "boolean"
-        },
-        "unique": {
-          "name": "unique",
-          "description": "Whether the field value must be unique",
-          "type": "boolean"
-        },
-        "type": {
-          "name": "type",
-          "description": "The type of the field",
-          "required": true,
-          "type": "enum",
-          "schema": { "id": "FieldTypeEnum" }
-        },
-        "schema": {
-          "name": "schema",
-          "description": "Schema reference for complex types (single SchemaReference or array for unions/composites)",
-          "type": "union",
-          "schema": [
-            { "id": "SchemaReference" },
-            { "id": "SchemaReferenceArray" }
-          ]
-        },
-        "name": {
+        "019d7775-6567-7017-9068-5bfcd1f9fef0": {
           "name": "name",
-          "description": "The name of the field",
           "required": true,
           "type": "string"
         },
-        "description": {
+        "019d7775-6568-7b0d-ad28-391874b5e3de": {
           "name": "description",
-          "description": "Optional description of the field",
           "type": "string"
-        },
-        "default": {
-          "name": "default",
-          "description": "Default value for the field",
-          "type": "unknown"
         }
       }
     },
-    "ConstraintRule": {
+    "019d7775-6565-703f-95cf-e7511d33c91b": {
       "name": "ConstraintRule",
-      "description": "A single validation rule with a predicate",
       "fields": {
-        "parameters": {
-          "name": "parameters",
-          "description": "Parameters for the predicate",
-          "type": "unknown"
-        },
-        "fields": {
-          "name": "fields",
-          "description": "Fields this rule applies to",
-          "type": "array",
-          "schema": { "id": "String" }
-        },
-        "predicate": {
+        "019d7775-6568-7ad6-9e45-7fdbdef3fc7e": {
           "name": "predicate",
-          "description": "The predicate function name",
           "required": true,
           "type": "string"
+        },
+        "019d7775-6568-7221-a4de-7e82d6c9f6bc": {
+          "name": "parameters",
+          "type": "unknown"
+        },
+        "019d7775-6568-7d8b-a230-328fe5d352e8": {
+          "name": "fields",
+          "type": "array",
+          "schema": { "id": "019d7775-6566-7a63-9e10-5d11c8eb607c" }
+        }
+      },
+      "constraints": {
+        "019d7775-6563-7028-b96f-bc6e0abefc15": {
+          "name": "constraint_type_exclusive",
+          "predicate": "constraint_type_exclusive"
+        },
+        "019d7775-6563-752b-bf9d-bf8936472250": {
+          "name": "constraint_rule_requires_predicate",
+          "predicate": "constraint_rule_requires_predicate"
+        },
+        "019d7775-6564-7fc2-bbdb-0fc59e567f2b": {
+          "name": "constraint_fields_exist",
+          "predicate": "constraint_fields_exist"
         }
       }
     },
-    "ConstraintGroup": {
+    "019d7775-6565-7ea4-a820-e8bcdbc690bc": {
       "name": "ConstraintGroup",
-      "description": "A group of constraints combined with a logical operator",
       "fields": {
-        "operator": {
+        "019d7775-6568-7ebf-a1c3-829de95d9216": {
           "name": "operator",
-          "description": "Logical operator (AND, OR, NOT)",
           "required": true,
           "type": "enum",
-          "schema": { "id": "LogicalOperatorEnum" }
+          "schema": { "id": "019d7775-6566-7e3b-860a-c4aa4adf5d6d" }
         },
-        "rules": {
+        "019d7775-6568-76d9-a21c-fb289c36cc70": {
           "name": "rules",
-          "description": "Array of constraint rules or groups",
           "required": true,
           "type": "array",
-          "schema": { "id": "ConstraintUnion" }
+          "schema": { "id": "019d7775-6565-794d-8aba-bdc5e3cbe97e" }
+        }
+      },
+      "constraints": {
+        "019d7775-6563-7028-b96f-bc6e0abefc15": {
+          "name": "constraint_type_exclusive",
+          "predicate": "constraint_type_exclusive"
         }
       }
     },
-    "SchemaReference": {
+    "019d7775-6565-7f2a-956b-35b40caa8ec7": {
       "name": "SchemaReference",
-      "description": "A reference to a nested schema",
       "fields": {
-        "indexes": {
-          "name": "indexes",
-          "description": "Additional indexes for this reference",
-          "type": "record",
-          "schema": { "id": "Index" }
-        },
-        "constraints": {
-          "name": "constraints",
-          "description": "Additional constraints for this reference",
-          "type": "record",
-          "schema": { "id": "Constraint" }
-        },
-        "id": {
+        "019d7775-6568-762c-932e-89b85f08a951": {
           "name": "id",
-          "description": "The ID of the referenced schema",
           "required": true,
           "type": "string"
+        },
+        "019d7775-6568-77eb-bd9d-d874a2354fd5": {
+          "name": "indexes",
+          "type": "record",
+          "schema": { "id": "019d7775-6565-74f6-9c72-9e35d3d16b0a" }
+        },
+        "019d7775-6568-7ed9-99b3-90cca439ee2e": {
+          "name": "constraints",
+          "type": "record",
+          "schema": { "id": "019d7775-6565-7ab6-9c65-ab60632aeca8" }
+        }
+      },
+      "constraints": {
+        "019d7775-6564-79f2-9d64-d6b8c2696deb": {
+          "name": "schema_reference_id_required",
+          "predicate": "schema_reference_id_required"
         }
       }
     },
-    "FieldTypeEnum": {
-      "name": "FieldTypeEnum",
+    "019d7775-6565-71bc-84f3-044dc089d50c": {
+      "name": "SchemaReferenceArray",
+      "type": "array",
+      "schema": { "id": "019d7775-6565-7f2a-956b-35b40caa8ec7" }
+    },
+    "019d7775-6566-7e05-ab1b-6f768f459927": {
+      "name": "InlineTypeEnum",
       "type": "string",
       "values": [
-        "unknown",
         "string",
         "number",
         "integer",
         "decimal",
         "boolean",
-        "array",
-        "set",
-        "enum",
-        "object",
-        "record",
-        "union",
-        "composite",
-        "geometry"
+        "bytes",
+        "unknown",
+        "record"
       ]
+    },
+    "019d7775-6566-7df4-bc09-67956251c4a2": {
+      "name": "IndexTypeEnum",
+      "type": "string",
+      "values": ["normal", "unique", "primary", "spatial", "fulltext"]
+    },
+    "019d7775-6566-7a63-9e10-5d11c8eb607c": {
+      "name": "String",
+      "type": "string"
+    },
+    "019d7775-6565-74f6-9c72-9e35d3d16b0a": {
+      "name": "Index",
+      "fields": {
+        "019d7775-6567-7390-96c6-8154ccc6d1ad": {
+          "name": "name",
+          "required": true,
+          "type": "string"
+        },
+        "019d7775-6567-7568-98c8-76d64b745bc7": {
+          "name": "description",
+          "type": "string"
+        },
+        "019d7775-6567-7a3d-b154-1199406b7851": {
+          "name": "unique",
+          "type": "boolean"
+        },
+        "019d7775-6567-7e59-a2f4-ffc431e24fdd": {
+          "name": "type",
+          "required": true,
+          "type": "enum",
+          "schema": { "id": "019d7775-6566-7df4-bc09-67956251c4a2" }
+        },
+        "019d7775-6567-787d-921c-fa28f53cedcd": {
+          "name": "fields",
+          "required": true,
+          "type": "array",
+          "schema": { "id": "019d7775-6566-7a63-9e10-5d11c8eb607c" }
+        },
+        "019d7775-6567-76c9-869a-c4e25c154583": {
+          "name": "order",
+          "type": "enum",
+          "schema": { "id": "019d7775-6566-7f2f-a009-0af144502aac" }
+        },
+        "019d7775-6567-7bc2-b870-6e1ae4faa558": {
+          "name": "condition",
+          "type": "union",
+          "schema": [
+            { "id": "019d7775-6565-71ef-a08f-cdcdb116f947" },
+            { "id": "019d7775-6565-7d6a-a531-47e7ea838bc4" }
+          ]
+        }
+      },
+      "constraints": {
+        "019d7775-6564-7c2d-b06d-82971c0b1fa9": {
+          "name": "index_fields_exist",
+          "predicate": "index_fields_reference_valid"
+        },
+        "019d7775-6564-7660-adc8-3f1ab037d695": {
+          "name": "spatial_index_on_geometry_field",
+          "predicate": "spatial_index_on_geometry_field"
+        },
+        "019d7775-6564-712b-8c53-9fa93809f219": {
+          "name": "index_condition_value_type_match",
+          "predicate": "index_condition_value_matches_field_type"
+        },
+        "019d7775-6564-7285-a734-f7eed15d25e4": {
+          "name": "index_fields_not_empty",
+          "predicate": "index_fields_not_empty"
+        }
+      }
+    }
+  },
+  "constraints": {
+    "019d7775-6563-7554-bfae-d6ad7774d5ac": {
+      "name": "nested_schema_mode_exclusive",
+      "predicate": "nested_schema_exclusive_mode"
+    },
+    "019d7775-6564-7565-b53c-49667d23c237": {
+      "name": "global_field_id_uniqueness",
+      "predicate": "global_field_id_uniqueness"
+    },
+    "019d7775-6564-7a5d-bb7e-d2e9e804123f": {
+      "name": "schema_reference_integrity",
+      "predicate": "schema_reference_exists"
+    },
+    "019d7775-6563-7f89-8368-395733efec86": {
+      "name": "schema_name_required",
+      "predicate": "schema_name_required"
     }
   }
 }

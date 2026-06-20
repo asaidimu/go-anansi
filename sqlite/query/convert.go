@@ -30,7 +30,7 @@ func toSQLiteValue(fieldDef *definition.Field, value any) (any, error) {
 	}
 
 	// Use the schema's field type to determine the conversion logic.
-	if fieldDef.Type.IsComplex() {
+	if fieldDef.Type.IsContainer() {
 		jsonBytes, err := utils.ToJSONBytes(value)
 		if err != nil {
 			return nil, ErrConvertMarshalFieldFailed.WithCause(fmt.Errorf("failed to marshal field '%s' to JSON: %w", fieldDef.Name, err))

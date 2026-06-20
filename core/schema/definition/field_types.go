@@ -96,7 +96,7 @@ func (t *FieldType) UnmarshalJSON(data []byte) error {
 func (t FieldType) IsContainer() bool {
 	switch t {
 	case FieldTypeArray, FieldTypeSet, FieldTypeGeometry,
-		FieldTypeRecord, FieldTypeObject, FieldTypeEnum,
+		FieldTypeRecord, FieldTypeObject,
 		FieldTypeUnion, FieldTypeComposite:
 		return true
 	default:
@@ -105,5 +105,5 @@ func (t FieldType) IsContainer() bool {
 }
 
 func (t FieldType) IsComplex() bool {
-	return t.IsContainer()
+	return t == FieldTypeEnum || t.IsContainer()
 }

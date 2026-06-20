@@ -11,7 +11,7 @@ import (
 )
 
 func TestQueryPartitioner_Partition_Basic(t *testing.T) {
-	factory := sqlite.NewSQLiteFactory()
+	factory := sqlite.NewSQLiteFactory(nil)
 	capabilities := factory.Capabilities()
 	partitioner := query.NewQueryPartitioner(capabilities)
 
@@ -35,7 +35,7 @@ func TestQueryPartitioner_Partition_Basic(t *testing.T) {
 }
 
 func TestQueryPartitioner_Partition_UnsupportedFilter(t *testing.T) {
-	factory := sqlite.NewSQLiteFactory()
+	factory := sqlite.NewSQLiteFactory(nil)
 	capabilities := factory.Capabilities()
 	// Let's pretend 'regex' is not supported
 	delete(capabilities.SupportedComparisonOperators, query.ComparisonOperatorContains)
@@ -56,7 +56,7 @@ func TestQueryPartitioner_Partition_UnsupportedFilter(t *testing.T) {
 }
 
 func TestQueryPartitioner_Partition_MixedFilters_AND(t *testing.T) {
-	factory := sqlite.NewSQLiteFactory()
+	factory := sqlite.NewSQLiteFactory(nil)
 	capabilities := factory.Capabilities()
 	delete(capabilities.SupportedComparisonOperators, query.ComparisonOperatorContains)
 	partitioner := query.NewQueryPartitioner(capabilities)
@@ -83,7 +83,7 @@ func TestQueryPartitioner_Partition_MixedFilters_AND(t *testing.T) {
 }
 
 func TestQueryPartitioner_Partition_MixedFilters_OR(t *testing.T) {
-	factory := sqlite.NewSQLiteFactory()
+	factory := sqlite.NewSQLiteFactory(nil)
 	capabilities := factory.Capabilities()
 	delete(capabilities.SupportedComparisonOperators, query.ComparisonOperatorContains)
 	partitioner := query.NewQueryPartitioner(capabilities)
@@ -107,7 +107,7 @@ func TestQueryPartitioner_Partition_MixedFilters_OR(t *testing.T) {
 }
 
 func TestQueryPartitioner_Partition_UnsupportedJoin(t *testing.T) {
-	factory := sqlite.NewSQLiteFactory()
+	factory := sqlite.NewSQLiteFactory(nil)
 	capabilities := factory.Capabilities()
 	// SQLite doesn't support RIGHT JOIN
 	delete(capabilities.SupportedJoinTypes, query.JoinTypeRight)
@@ -134,7 +134,7 @@ func TestQueryPartitioner_Partition_UnsupportedJoin(t *testing.T) {
 }
 
 func TestQueryPartitioner_Partition_ProjectionAugmentation(t *testing.T) {
-	factory := sqlite.NewSQLiteFactory()
+	factory := sqlite.NewSQLiteFactory(nil)
 	capabilities := factory.Capabilities()
 	delete(capabilities.SupportedComparisonOperators, query.ComparisonOperatorContains)
 	partitioner := query.NewQueryPartitioner(capabilities)

@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v6/core/common"
 	"github.com/asaidimu/go-anansi/v6/example/api/internal/api"
 	"github.com/asaidimu/go-anansi/v6/example/api/internal/app"
 	"github.com/asaidimu/go-anansi/v6/example/api/internal/response"
@@ -36,6 +38,9 @@ func main() {
 	// 6. Setup Persistence Manager
 	pm, cleanup, err := app.NewPersistenceManager(schemaLoader, cfg, logger)
 	if err != nil {
+		if e, ok := errors.AsType[*common.SystemError](err); ok {
+			logger.Fatal("Failed to setup persistence manager", zap.Any("issues", common.Issues(e.Issues)))
+		}
 		logger.Fatal("Failed to setup persistence manager", zap.Error(err))
 	}
 	defer cleanup()

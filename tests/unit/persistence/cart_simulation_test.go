@@ -12,6 +12,7 @@ import (
 	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v6/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v6/core/schema"
 	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,7 +53,10 @@ func setupCartTest(t *testing.T) (base.Persistence, *data.Document, func()) {
 	}
 
 	for _, s := range schemas {
-		_, err := p.CreateCollection(context.Background(), s)
+		_, err := schema.ValidateSchema(s)
+		require.NoError(t, err)
+
+		_, err = p.CreateCollection(context.Background(), s)
 
 		if err != nil {
 			var sysErr *common.SystemError

@@ -244,7 +244,7 @@ func Playground(cfg PlaygroundConfig) (base.Persistence, func(), error) {
 		return nil, func() {}, err
 	}
 
-	queryFactory := sqliteQuery.NewSQLiteFactory()
+	queryFactory := sqliteQuery.NewSQLiteFactory(logger)
 	interactor, err := native.NewNativeInteractor(executor, queryFactory, logger)
 	if err != nil {
 		db.Close()

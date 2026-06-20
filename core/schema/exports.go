@@ -117,7 +117,6 @@ func LiteralValueAs[T definition.LiteralValueType](lv LiteralValue) (T, error) {
 	return definition.LiteralValueAs[T](lv)
 }
 
-
 var (
 	validatorOnce   sync.Once
 	schemaValidator *DocumentValidator
@@ -135,21 +134,27 @@ func SchemaValidator() *DocumentValidator {
 }
 
 // ValidateSchema validates any schema and returns validation issues and a boolean
-func ValidateSchema(sc *Schema) ([]common.Issue, bool, error) {
+func ValidateSchema(sc *Schema) ([]common.Issue, error) {
 	docMap := sc.AsMap()
 
-	issues, ok := SchemaValidator().Validate(docMap)
-	return issues, ok, nil
+	if issues, ok := SchemaValidator().Validate(docMap); !ok {
+		return issues, common.NewSystemError("SCHEMA_VALIDATION_FAILED").WithIssues(issues)
+	}
+	return sentinelIssues, nil
 }
 
-func ValidateSchemaJson(sc []byte) ([]common.Issue, bool, error) {
+var sentinelIssues []common.Issue = []common.Issue{}
+
+func ValidateSchemaJson(sc []byte) ([]common.Issue, error) {
 	var schemaData map[string]any
 	err := json.Unmarshal(sc, &schemaData)
 
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
-	issues, ok := SchemaValidator().Validate(schemaData)
-	return issues, ok, nil
+	if issues, ok := SchemaValidator().Validate(schemaData); !ok {
+		return issues, common.NewSystemError("SCHEMA_VALIDATION_FAILED").WithIssues(issues)
+	}
+	return sentinelIssues, nil
 }

@@ -18,7 +18,7 @@ const (
 )
 
 type Index struct {
-	Name        string              `json:"name"`
+	Name        string              `json:"name"` // should be IndexName but I got lazy
 	Description string              `json:"description,omitempty"`
 	Order       string              `json:"order,omitempty"`
 	Condition   IndexConditionUnion `json:"condition"`
