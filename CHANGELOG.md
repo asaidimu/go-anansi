@@ -1,3 +1,10 @@
+## [7.0.1](https://github.com/asaidimu/go-anansi/compare/v7.0.0...v7.0.1) (2026-06-22)
+
+
+### Bug Fixes
+
+* fix package version ([2fa0dbe](https://github.com/asaidimu/go-anansi/commit/2fa0dbe696b1d84879d0df5aec92b7a9a622ca12))
+
 # [7.0.0](https://github.com/asaidimu/go-anansi/compare/v6.0.0...v7.0.0) (2026-06-20)
 
 
