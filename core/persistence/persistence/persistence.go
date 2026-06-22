@@ -1,11 +1,11 @@
 package persistence
 
 import (
-	cevents "github.com/asaidimu/go-anansi/v6/core/events"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/events"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
-	"github.com/asaidimu/go-anansi/v6/core/query"
+	cevents "github.com/asaidimu/go-anansi/v7/core/events"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/events"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/utils"
+	"github.com/asaidimu/go-anansi/v7/core/query"
 	"go.uber.org/zap"
 )
 

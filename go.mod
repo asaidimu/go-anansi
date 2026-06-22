@@ -1,4 +1,4 @@
-module github.com/asaidimu/go-anansi/v6
+module github.com/asaidimu/go-anansi/v7
 
 go 1.25
 

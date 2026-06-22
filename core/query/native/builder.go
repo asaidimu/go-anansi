@@ -1,6 +1,6 @@
 package native
 
-import "github.com/asaidimu/go-anansi/v6/core/query"
+import "github.com/asaidimu/go-anansi/v7/core/query"
 
 
 // NewQueryBuilder constructs a QueryBuilder for the given dialect factory.

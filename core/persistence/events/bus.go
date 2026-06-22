@@ -3,7 +3,7 @@ package events
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v6/core/events"
+	"github.com/asaidimu/go-anansi/v7/core/events"
 	goevents "github.com/asaidimu/go-events"
 )
 

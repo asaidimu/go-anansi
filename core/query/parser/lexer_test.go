@@ -3,7 +3,7 @@ package parser_test
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/query/parser"
+	"github.com/asaidimu/go-anansi/v7/core/query/parser"
 )
 
 // TestBasicTokens tests basic single-character tokens

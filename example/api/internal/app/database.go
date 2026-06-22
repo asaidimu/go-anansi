@@ -4,10 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
-	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/query/native"
+	sqliteExecutor "github.com/asaidimu/go-anansi/v7/sqlite/executor"
+	sqliteQuery "github.com/asaidimu/go-anansi/v7/sqlite/query"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 	"go.uber.org/zap"
 )

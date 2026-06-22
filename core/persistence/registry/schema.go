@@ -3,7 +3,7 @@ package registry
 import (
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
 )
 
 // REGISTRY_COLLECTION_NAME is the constant name for the internal collection that

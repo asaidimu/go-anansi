@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/json"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -397,8 +397,8 @@ func TestFormatValidation(t *testing.T) {
 			},
 		},
 		{
-			name:   "ipv6",
-			format: "ipv6",
+			name:   "ipv7",
+			format: "ipv7",
 			valid: []string{
 				`"2001:0db8:85a3:0000:0000:8a2e:0370:7334"`,
 				`"2001:db8::8a2e:370:7334"`,
@@ -406,7 +406,7 @@ func TestFormatValidation(t *testing.T) {
 			},
 			invalid: []string{
 				`"192.168.1.1"`,
-				`"not-an-ipv6"`,
+				`"not-an-ipv7"`,
 			},
 		},
 		{

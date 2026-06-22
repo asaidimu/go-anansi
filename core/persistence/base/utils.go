@@ -1,8 +1,8 @@
 package base
 
 import (
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/data"
 )
 
 type CreateResultSet []CreateResult

@@ -4,13 +4,13 @@ import (
 	"os"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
-	sqlite "github.com/asaidimu/go-anansi/v6/sqlite/query"
-	"github.com/asaidimu/go-anansi/v6/tests/testutils"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/query/native"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7/core/utils"
+	sqlite "github.com/asaidimu/go-anansi/v7/sqlite/query"
+	"github.com/asaidimu/go-anansi/v7/tests/testutils"
 	"github.com/stretchr/testify/assert"
 )
 

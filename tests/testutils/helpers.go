@@ -3,8 +3,8 @@ package testutils
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
 )
 
 // ConfigureDocumentFactory sets up the document factory with a default secret for tests.

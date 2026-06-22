@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	anansievents "github.com/asaidimu/go-anansi/v6/core/events" // Alias to avoid conflict
-	"github.com/asaidimu/go-anansi/v6/core/persistence/events"
+	anansievents "github.com/asaidimu/go-anansi/v7/core/events" // Alias to avoid conflict
+	"github.com/asaidimu/go-anansi/v7/core/persistence/events"
 	goevents "github.com/asaidimu/go-events"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap/zaptest"

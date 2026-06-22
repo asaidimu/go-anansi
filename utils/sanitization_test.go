@@ -3,7 +3,7 @@ package utils
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/schema"
+	"github.com/asaidimu/go-anansi/v7/core/schema"
 	"github.com/stretchr/testify/require"
 )
 

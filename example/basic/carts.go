@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
 )
 
 const CartsCollectionName = "Carts" // from carts.schema.json/#/name

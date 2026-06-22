@@ -1,8 +1,8 @@
 package meta
 
 import (
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
 )
 
 // MetaSchema is the schema that describes the structure of Schema itself

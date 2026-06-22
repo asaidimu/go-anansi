@@ -16,7 +16,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/common"
 )
 
 const (
@@ -1037,8 +1037,8 @@ func validateFormat(format, value string) error {
 		return validateHostname(value)
 	case "ipv4":
 		return validateIPv4(value)
-	case "ipv6":
-		return validateIPv6(value)
+	case "ipv7":
+		return validateIPv7(value)
 	case "uri", "iri":
 		return validateURI(value)
 	case "uri-reference", "iri-reference":
@@ -1109,9 +1109,9 @@ func validateIPv4(value string) error {
 	return nil
 }
 
-func validateIPv6(value string) error {
+func validateIPv7(value string) error {
 	if ip := net.ParseIP(value); ip == nil || ip.To4() != nil {
-		return fmt.Errorf("invalid IPv6")
+		return fmt.Errorf("invalid IPv7")
 	}
 	return nil
 }

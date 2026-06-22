@@ -10,7 +10,9 @@
     "product_ids": {
       "name": "product_ids",
       "type": "array",
-      "itemsType": "string",
+      "schema": {
+        "type": "string"
+      },
       "required": true
     },
     "quantity": {

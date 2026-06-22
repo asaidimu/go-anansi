@@ -131,7 +131,19 @@ func (s *Schema) AsMap() map[string]any {
 			if !ns.Schema.IsZero() {
 				if ns.Schema.IsSingle() {
 					sr, _ := FieldSchemaAs[SchemaReference](ns.Schema)
-					m["schema"] = map[string]any{"id": string(sr.ID)}
+					if sr.IsInline() {
+						refMap := map[string]any{"type": sr.Type.String()}
+						if len(sr.Values) > 0 {
+							vals := make([]any, len(sr.Values))
+							for i, lv := range sr.Values {
+								vals[i] = lv.Value()
+							}
+							refMap["values"] = vals
+						}
+						m["schema"] = refMap
+					} else {
+						m["schema"] = map[string]any{"id": string(sr.ID)}
+					}
 				} else if ns.Schema.IsMultiple() {
 					refs, _ := FieldSchemaAs[[]SchemaReference](ns.Schema)
 					arr := make([]any, len(refs))
@@ -254,9 +266,19 @@ func (s *Schema) AsMap() map[string]any {
 			m := builder.currentMap()
 			if ref.IsSingle() {
 				sr, _ := FieldSchemaAs[SchemaReference](ref)
-				refMap := map[string]any{"id": string(sr.ID)}
-				// Keep matching ToJSON behavior (omitting empty collections if preferred)
-				m["schema"] = refMap
+				if sr.IsInline() {
+					refMap := map[string]any{"type": sr.Type.String()}
+					if len(sr.Values) > 0 {
+						vals := make([]any, len(sr.Values))
+						for i, lv := range sr.Values {
+							vals[i] = lv.Value()
+						}
+						refMap["values"] = vals
+					}
+					m["schema"] = refMap
+				} else {
+					m["schema"] = map[string]any{"id": string(sr.ID)}
+				}
 			} else if ref.IsMultiple() {
 				refs, _ := FieldSchemaAs[[]SchemaReference](ref)
 				arr := make([]any, len(refs))

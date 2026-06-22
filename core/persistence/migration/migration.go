@@ -3,7 +3,7 @@ package migration
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v6/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/data"
 )
 
 // Transformer is a function that takes a document conforming to an old schema

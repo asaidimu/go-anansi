@@ -5,7 +5,7 @@ import (
 	"crypto/rsa"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/data"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

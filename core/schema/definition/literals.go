@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/common"
 )
 
 // LiteralType represents the type of field or value

@@ -346,11 +346,26 @@ func (s *Schema) ToJSON() []byte {
 				jb.writeKey("schema")
 				if ns.Schema.IsSingle() {
 					sr, _ := FieldSchemaAs[SchemaReference](ns.Schema)
-					jb.startObject()
-					jb.writeKey("id")
-					jb.writeString(string(sr.ID))
-					// Optionally write indexes/constraints if present
-					jb.endObject()
+					if sr.IsInline() {
+						jb.startObject()
+						jb.writeKey("type")
+						jb.writeString(sr.Type.String())
+						if len(sr.Values) > 0 {
+							jb.writeKey("values")
+							jb.startArray()
+							for _, lv := range sr.Values {
+								jb.writeComma()
+								jb.writeLiteralValue(lv)
+							}
+							jb.endArray()
+						}
+						jb.endObject()
+					} else {
+						jb.startObject()
+						jb.writeKey("id")
+						jb.writeString(string(sr.ID))
+						jb.endObject()
+					}
 				} else if ns.Schema.IsMultiple() {
 					refs, _ := FieldSchemaAs[[]SchemaReference](ns.Schema)
 					jb.startArray()
@@ -451,21 +466,36 @@ func (s *Schema) ToJSON() []byte {
 			jb.writeKey("schema")
 			if ref.IsSingle() {
 				sr, _ := FieldSchemaAs[SchemaReference](ref)
-				jb.startObject()
-				jb.writeKey("id")
-				jb.writeString(string(sr.ID))
-				// TODO: Handle indexes and constraints in schema references
-				if len(sr.Indexes) > 0 {
-					jb.writeKey("indexes")
+				if sr.IsInline() {
 					jb.startObject()
+					jb.writeKey("type")
+					jb.writeString(sr.Type.String())
+					if len(sr.Values) > 0 {
+						jb.writeKey("values")
+						jb.startArray()
+						for _, lv := range sr.Values {
+							jb.writeComma()
+							jb.writeLiteralValue(lv)
+						}
+						jb.endArray()
+					}
+					jb.endObject()
+				} else {
+					jb.startObject()
+					jb.writeKey("id")
+					jb.writeString(string(sr.ID))
+					if len(sr.Indexes) > 0 {
+						jb.writeKey("indexes")
+						jb.startObject()
+						jb.endObject()
+					}
+					if len(sr.Constraints) > 0 {
+						jb.writeKey("constraints")
+						jb.startObject()
+						jb.endObject()
+					}
 					jb.endObject()
 				}
-				if len(sr.Constraints) > 0 {
-					jb.writeKey("constraints")
-					jb.startObject()
-					jb.endObject()
-				}
-				jb.endObject()
 			} else if ref.IsMultiple() {
 				refs, _ := FieldSchemaAs[[]SchemaReference](ref)
 				jb.startArray()
