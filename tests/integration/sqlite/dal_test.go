@@ -5,18 +5,18 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
-	sqlite "github.com/asaidimu/go-anansi/v6/sqlite/query"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/query/native"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7/core/utils"
+	sqlite "github.com/asaidimu/go-anansi/v7/sqlite/query"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/asaidimu/go-anansi/v6/tests/testutils"
+	"github.com/asaidimu/go-anansi/v7/tests/testutils"
 )
 
 func setupDALTestDB(t *testing.T) *sql.DB {

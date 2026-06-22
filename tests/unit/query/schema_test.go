@@ -3,9 +3,9 @@ package query_test
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

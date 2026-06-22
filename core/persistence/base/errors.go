@@ -1,7 +1,7 @@
 package base
 
 import (
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/common"
 )
 
 // Common errors for the persistence layer.

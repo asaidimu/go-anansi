@@ -1,6 +1,6 @@
 package parser
 
-import "github.com/asaidimu/go-anansi/v6/core/common"
+import "github.com/asaidimu/go-anansi/v7/core/common"
 
 type TokenType string
 

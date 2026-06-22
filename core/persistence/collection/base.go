@@ -4,14 +4,14 @@ import (
 	"context"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/transaction"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/transaction"
 
-	"github.com/asaidimu/go-anansi/v6/core/events"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7/core/events"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )

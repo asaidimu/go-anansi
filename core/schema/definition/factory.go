@@ -3,7 +3,7 @@ package definition
 import (
 	"encoding/json"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/common"
 )
 
 // FromJSON parses a byte slice containing JSON into a Schema object.

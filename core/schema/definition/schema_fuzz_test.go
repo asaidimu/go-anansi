@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
 )
 
 // FuzzSchema tests the unmarshaling and resolution of the Schema object

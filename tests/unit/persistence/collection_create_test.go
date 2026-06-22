@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
-	persistence "github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/ephemeral"
+	persistence "github.com/asaidimu/go-anansi/v7/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v7/core/query"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )

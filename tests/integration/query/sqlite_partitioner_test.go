@@ -3,9 +3,9 @@ package query_test
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	sqlite "github.com/asaidimu/go-anansi/v6/sqlite/query"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	sqlite "github.com/asaidimu/go-anansi/v7/sqlite/query"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

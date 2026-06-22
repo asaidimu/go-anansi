@@ -6,7 +6,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/asaidimu/go-anansi/v6/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/data"
 )
 
 func main() {

@@ -5,11 +5,11 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/query/native"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7/core/utils"
 	"github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
 )
 
 var primitiveTypes = map[string]bool{

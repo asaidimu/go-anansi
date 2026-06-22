@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/common"
 )
 
 // Pre-defined errors for the lexer package.

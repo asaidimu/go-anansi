@@ -1,6 +1,6 @@
 package meta
 
-import "github.com/asaidimu/go-anansi/v6/core/schema/definition"
+import "github.com/asaidimu/go-anansi/v7/core/schema/definition"
 
 // MetaSchemaConstraints defines the semantic validation rules for schemas.
 var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{

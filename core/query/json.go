@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/common"
 )
 
 // MarshalJSON implements the json.Marshaler interface for QueryDistinctConfig.

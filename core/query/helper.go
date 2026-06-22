@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/utils"
 	"go.uber.org/zap"
 )
 

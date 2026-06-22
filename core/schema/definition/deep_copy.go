@@ -252,6 +252,7 @@ func (fsr FieldSchemaReference) deepCopy() FieldSchemaReference {
 func (sr SchemaReference) deepCopy() SchemaReference {
 	copy := SchemaReference{
 		ID:          sr.ID,
+		Type:        sr.Type,
 		Constraints: make(map[ConstraintId]Constraint, len(sr.Constraints)),
 		Indexes:     make(map[IndexId]Index, len(sr.Indexes)),
 	}
@@ -262,6 +263,13 @@ func (sr SchemaReference) deepCopy() SchemaReference {
 
 	for id, index := range sr.Indexes {
 		copy.Indexes[id] = index.deepCopy()
+	}
+
+	if len(sr.Values) > 0 {
+		copy.Values = make([]LiteralValue, len(sr.Values))
+		for i, val := range sr.Values {
+			copy.Values[i] = val.deepCopy()
+		}
 	}
 
 	return copy

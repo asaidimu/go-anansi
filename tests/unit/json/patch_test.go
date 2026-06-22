@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/json"
+	"github.com/asaidimu/go-anansi/v7/core/json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

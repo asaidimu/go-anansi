@@ -1,8 +1,8 @@
 package query
 
 import (
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/query"
 )
 
 // Capabilities returns the capabilities of the SQLite interactor.

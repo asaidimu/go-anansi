@@ -3,7 +3,7 @@ package query
 import (
 	"errors"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/common"
 )
 
 // QueryPartitioner is responsible for splitting a QueryDSL query into a database-specific query

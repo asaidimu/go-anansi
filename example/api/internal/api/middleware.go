@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/common"
 )
 
 // collectionContextMiddleware is a middleware that injects the collection name from the URL

@@ -2,7 +2,7 @@
 package utils
 
 import (
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
 )
 
 

@@ -7,16 +7,16 @@ import (
 	"log"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/common" // Import common for Issue
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
-	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
-	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
+	"github.com/asaidimu/go-anansi/v7"
+	"github.com/asaidimu/go-anansi/v7/core/common" // Import common for Issue
+	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/utils"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/query/native"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	sqliteExecutor "github.com/asaidimu/go-anansi/v7/sqlite/executor"
+	sqliteQuery "github.com/asaidimu/go-anansi/v7/sqlite/query"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 	"go.uber.org/zap"
 )
@@ -212,16 +212,16 @@ func main() {
 
 	// 8. Populate Data
 	logger.Info("Populating data...")
-	user1 := data.MustNewDocument(map[string]any{"id": "U001", "name": "Alice", "email": "alice@example.com"})
-	user2 := data.MustNewDocument(map[string]any{"id": "U002", "name": "Bob", "email": "bob@example.com"})
+	user1 := data.MustNewDocument(map[string]any{"_id_": "U001", "name": "Alice", "email": "alice@example.com"})
+	user2 := data.MustNewDocument(map[string]any{"_id_": "U002", "name": "Bob", "email": "bob@example.com"})
 	_, err = usersCollection.CreateMany(ctx, []*data.Document{user1, user2})
 	if err != nil {
 		log.Fatalf("Failed to create users: %v", err)
 	}
 	logger.Info("Users created.")
 
-	account1 := data.MustNewDocument(map[string]any{"id": "A001", "userId": "U001", "balance": 1000.00})
-	account2 := data.MustNewDocument(map[string]any{"id": "A002", "userId": "U002", "balance": 500.00})
+	account1 := data.MustNewDocument(map[string]any{"_id_": "A001", "userId": "U001", "balance": 1000.00})
+	account2 := data.MustNewDocument(map[string]any{"_id_": "A002", "userId": "U002", "balance": 500.00})
 	_, err = accountsCollection.CreateMany(ctx, []*data.Document{account1, account2})
 	if err != nil {
 		log.Fatalf("Failed to create accounts: %v", err)
@@ -229,8 +229,8 @@ func main() {
 	logger.Info("Accounts created.")
 
 	// Create valid transactions
-	tx1 := data.MustNewDocument(map[string]any{"id": "T001", "accountId": "A001", "amount": 200.00, "type": "deposit", "timestamp": time.Now().Unix()})
-	tx2 := data.MustNewDocument(map[string]any{"id": "T002", "accountId": "A002", "amount": 50.00, "type": "withdrawal", "timestamp": time.Now().Unix()})
+	tx1 := data.MustNewDocument(map[string]any{"_id_": "T001", "accountId": "A001", "amount": 200.00, "type": "deposit", "timestamp": time.Now().Unix()})
+	tx2 := data.MustNewDocument(map[string]any{"_id_": "T002", "accountId": "A002", "amount": 50.00, "type": "withdrawal", "timestamp": time.Now().Unix()})
 	_, err = transactionsCollection.CreateMany(ctx, []*data.Document{tx1, tx2})
 	if err != nil {
 		log.Fatalf("Failed to create valid transactions: %v", err)
@@ -239,7 +239,7 @@ func main() {
 
 	// Attempt to create an invalid transaction (negative amount)
 	logger.Info("Attempting to create invalid transaction (negative amount)...")
-	invalidTx := data.MustNewDocument(map[string]any{"id": "T003", "accountId": "A001", "amount": -10.00, "type": "withdrawal", "timestamp": time.Now().Unix()})
+	invalidTx := data.MustNewDocument(map[string]any{"_id_": "T003", "accountId": "A001", "amount": -10.00, "type": "withdrawal", "timestamp": time.Now().Unix()})
 	_, err = transactionsCollection.CreateOne(ctx, invalidTx)
 	if err != nil {
 		logger.Info(fmt.Sprintf("Successfully prevented invalid transaction: %v", err))
@@ -260,7 +260,7 @@ func main() {
 			Value: query.FilterValue{
 				FieldRefVal: &query.FieldReference{
 					Type:  "field",
-					Field: "Account.id",
+					Field: "Account._id_",
 				},
 			},
 		},
@@ -272,12 +272,12 @@ func main() {
 			Value: query.FilterValue{
 				FieldRefVal: &query.FieldReference{
 					Type:  "field",
-					Field: "User.id",
+					Field: "User._id_",
 				},
 			},
 		},
 	}).End().
-		Where("User.id").Eq("U001").
+		Where("User._id_").Eq("U001").
 		Build()
 
 	txResult, err := transactionsCollection.Read(ctx, &aliceTransactionsQuery)
@@ -293,7 +293,7 @@ func main() {
 		ledgerTx := doc.Must().Get("LedgerTransaction").(map[string]any)
 		user := doc.Must().Get("User").(map[string]any)
 		logger.Info(fmt.Sprintf("  Transaction ID: %s, Amount: %.2f, Type: %s, Account ID: %s, User Name: %s",
-			ledgerTx["id"], ledgerTx["amount"], ledgerTx["type"], ledgerTx["accountId"], user["name"]))
+			ledgerTx["_id_"], ledgerTx["amount"], ledgerTx["type"], ledgerTx["accountId"], user["name"]))
 	}
 
 	// Get user details for a specific account (A002)
@@ -301,18 +301,18 @@ func main() {
 	accountUserDetailsQuery := query.NewQueryBuilder().
 		From("Account").
 		LeftJoin("User").On(query.QueryFilter{
-		Condition: &query.FilterCondition{
-			Field:    "Account.userId",
-			Operator: query.ComparisonOperatorEq,
-			Value: query.FilterValue{
-				FieldRefVal: &query.FieldReference{
-					Type:  "field",
-					Field: "User.id",
+			Condition: &query.FilterCondition{
+				Field:    "Account.userId",
+				Operator: query.ComparisonOperatorEq,
+				Value: query.FilterValue{
+					FieldRefVal: &query.FieldReference{
+						Type:  "field",
+						Field: "User._id_",
+					},
 				},
 			},
-		},
-	}).End().
-		Where("Account.id").Eq("A002").
+		}).End().
+		Where("Account._id_").Eq("A002").
 		Build()
 
 	accountResult, err := accountsCollection.Read(ctx, &accountUserDetailsQuery)

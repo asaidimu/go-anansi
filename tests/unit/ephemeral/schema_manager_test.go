@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/ephemeral"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7/core/ephemeral"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
 	"github.com/stretchr/testify/assert"
 )
 

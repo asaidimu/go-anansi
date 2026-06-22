@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/sqlite/types"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/query/native"
+	"github.com/asaidimu/go-anansi/v7/sqlite/types"
 	"go.uber.org/zap"
 )
 

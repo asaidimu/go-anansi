@@ -72,7 +72,7 @@ Go-Anansi champions a schema-driven development approach. All data interactions 
 To integrate Go-Anansi into your Go project, use `go get`:
 
 ```bash
-go get github.com/asaidimu/go-anansi/v6
+go get github.com/asaidimu/go-anansi/v7
 ```
 
 ### Basic Setup
@@ -96,14 +96,14 @@ import (
 	"log"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
-	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
-	u "github.com/asaidimu/go-anansi/v6/utils" // for NewWatermillEventBus
+	"github.com/asaidimu/go-anansi/v7"
+	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/utils"
+	"github.com/asaidimu/go-anansi/v7/core/query/native"
+	"github.com/asaidimu/go-anansi/v7/core/schema"
+	sqliteExecutor "github.com/asaidimu/go-anansi/v7/sqlite/executor"
+	sqliteQuery "github.com/asaidimu/go-anansi/v7/sqlite/query"
+	u "github.com/asaidimu/go-anansi/v7/utils" // for NewWatermillEventBus
 	_ "github.com/mattn/go-sqlite3"           // SQLite driver
 	"go.uber.org/zap"
 )
@@ -176,9 +176,9 @@ import (
 	"log"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
 	_ "github.com/mattn/go-sqlite3" // SQLite driver
 	"go.uber.org/zap"
 )
@@ -262,12 +262,12 @@ import (
 	"log"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	coreutils "github.com/asaidimu/go-anansi/v6/core/utils"
+	"github.com/asaidimu/go-anansi/v7"
+	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/schema"
+	coreutils "github.com/asaidimu/go-anansi/v7/core/utils"
 	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
@@ -405,14 +405,14 @@ import (
 	"log"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	coreutils "github.com/asaidimu/go-anansi/v6/core/utils"
-	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
-	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
+	"github.com/asaidimu/go-anansi/v7"
+	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/query/native"
+	"github.com/asaidimu/go-anansi/v7/core/schema"
+	coreutils "github.com/asaidimu/go-anansi/v7/core/utils"
+	sqliteExecutor "github.com/asaidimu/go-anansi/v7/sqlite/executor"
+	sqliteQuery "github.com/asaidimu/go-anansi/v7/sqlite/query"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -586,17 +586,17 @@ import (
 	"log"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/utils"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema"
-	coreutils "github.com/asaidimu/go-anansi/v6/core/utils"
-	sqliteExecutor "github.com/asaidimu/go-anansi/v6/sqlite/executor"
-	sqliteQuery "github.com/asaidimu/go-anansi/v6/sqlite/query"
+	"github.com/asaidimu/go-anansi/v7"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/utils"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/query/native"
+	"github.com/asaidimu/go-anansi/v7/core/schema"
+	coreutils "github.com/asaidimu/go-anansi/v7/core/utils"
+	sqliteExecutor "github.com/asaidimu/go-anansi/v7/sqlite/executor"
+	sqliteQuery "github.com/asaidimu/go-anansi/v7/sqlite/query"
 	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )

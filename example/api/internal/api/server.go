@@ -8,15 +8,15 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
 	"go.uber.org/zap"
 
-	"github.com/asaidimu/go-anansi/v6/example/api/internal/app"
-	"github.com/asaidimu/go-anansi/v6/example/api/internal/response"
+	"github.com/asaidimu/go-anansi/v7/example/api/internal/app"
+	"github.com/asaidimu/go-anansi/v7/example/api/internal/response"
 )
 
 // APIServer encapsulates the HTTP server and its dependencies.

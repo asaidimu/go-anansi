@@ -3,11 +3,11 @@ package sqlite_test
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v6/core/common"
-	"github.com/asaidimu/go-anansi/v6/core/query"
-	"github.com/asaidimu/go-anansi/v6/core/query/native"
-	"github.com/asaidimu/go-anansi/v6/core/schema/definition"
-	sql "github.com/asaidimu/go-anansi/v6/sqlite/query"
+	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v7/core/query/native"
+	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	sql "github.com/asaidimu/go-anansi/v7/sqlite/query"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

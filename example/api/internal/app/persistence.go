@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v6"
-	"github.com/asaidimu/go-anansi/v6/core/data"
-	"github.com/asaidimu/go-anansi/v6/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v6/example/api/schema"
-	"github.com/asaidimu/go-anansi/v6/utils"
+	"github.com/asaidimu/go-anansi/v7"
+	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v7/example/api/schema"
+	"github.com/asaidimu/go-anansi/v7/utils"
 	"go.uber.org/zap"
 )
 
