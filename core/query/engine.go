@@ -83,7 +83,8 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *definition.Schema, d
 	// 2. Execute the database part of the query.
 	result, err := common.ExecuteWithContext(ctx, func() (*QueryResult, error) {
 		data, count, err := interactor.SelectDocuments(ctx, schemaDef, dbQuery)
-		return &QueryResult{Data: data, Count: int(count)}, err
+		total := int(count)
+		return &QueryResult{Data: data, Count: len(data), Total: &total, PaginationInfo: computePaginationInfo(dsl.Pagination, len(data), &total)}, err
 	})
 
 	if err != nil {
@@ -119,7 +120,10 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *definition.Schema, d
 	}
 
 	return &QueryResult{
-		Data: finalDocs, Count: result.Count,
+		Data:           finalDocs,
+		Count:          len(finalDocs),
+		Total:          result.Total,
+		PaginationInfo: computePaginationInfo(dsl.Pagination, len(finalDocs), result.Total),
 	}, nil
 }
 
@@ -134,6 +138,46 @@ func (e *QueryEngine) generateCacheKey(dsl *Query) (uint64, error) {
 		return 0, err
 	}
 	return hasher.Sum64(), nil
+}
+
+// computePaginationInfo derives PaginationInfo from the original pagination options and query results.
+func computePaginationInfo(pagination *PaginationOptions, count int, total *int) *PaginationInfo {
+	if total == nil {
+		return nil
+	}
+	t := *total
+
+	switch {
+	case pagination == nil || pagination.Type == "" || pagination.Limit <= 0:
+		return &PaginationInfo{
+			Number: 1,
+			Size:   t,
+			Count:  count,
+			Total:  t,
+			Pages:  1,
+		}
+
+	case pagination.Type == PaginationTypeCursor:
+		return nil
+
+	default:
+		offset := 0
+		if pagination.Offset != nil {
+			offset = *pagination.Offset
+		}
+		pageNumber := offset/pagination.Limit + 1
+		totalPages := t / pagination.Limit
+		if t%pagination.Limit != 0 {
+			totalPages++
+		}
+		return &PaginationInfo{
+			Number: pageNumber,
+			Size:   pagination.Limit,
+			Count:  count,
+			Total:  t,
+			Pages:  totalPages,
+		}
+	}
 }
 
 func (e *QueryEngine) runPostProcessing(helper *QueryHelper, docs []map[string]any) ([]map[string]any, error) {

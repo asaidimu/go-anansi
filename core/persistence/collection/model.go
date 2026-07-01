@@ -241,7 +241,10 @@ func (mc *modelCollection[T, P]) UpdateMany(ctx context.Context, f *query.QueryF
 			WithOperation("ModelCollection.UpdateMany")
 	}
 
-	return result.Count, nil
+	if result.Total == nil {
+		return 0, nil
+	}
+	return *result.Total, nil
 }
 
 // Replace replaces an entire model by ID (all fields, not partial).

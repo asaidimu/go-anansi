@@ -142,8 +142,10 @@ func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadRe
 		return nil, common.NewSystemError("ERR_PERSISTENCE_READ_DOCUMENTS_FAILED", "Failed to convert results to documents")
 	}
 	result := base.ReadResult{
-		Data:  values,
-		Count: docs.Count,
+		Data:           values,
+		Count:          len(values),
+		Total:          docs.Total,
+		PaginationInfo: docs.PaginationInfo,
 	}
 
 	return &result, nil
@@ -186,9 +188,11 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 		return nil, common.NewSystemError("ERR_PERSISTENCE_UPDATE_DOCUMENTS_FAILED", "Failed to convert updated results to documents")
 	}
 
+	total := int(updateResult.Count)
 	return &base.ReadResult{
 		Data:  documentSet,
-		Count: int(updateResult.Count),
+		Count: len(documentSet),
+		Total: &total,
 	}, nil
 }
 

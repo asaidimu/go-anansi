@@ -1,4 +1,4 @@
-// Package types provides the interfaces and types for database operations.
+// Package base types provides the interfaces and types for database operations.
 // It defines a structured and extensible framework for data storage, retrieval,
 // management, and observability within the system. This package establishes the
 // core contracts that any underlying database driver must implement, ensuring a
@@ -503,8 +503,10 @@ type Collection interface {
 
 // ReadResult represents the result of a database query.
 type ReadResult struct {
-	Data  data.DocumentSet `json:"data"`
-	Count int              `json:"count,omitempty"`
+	Data           data.DocumentSet      `json:"data"`
+	Count          int                   `json:"count,omitempty"`
+	Total          *int                  `json:"total,omitempty"`
+	PaginationInfo *query.PaginationInfo `json:"pagination_info,omitempty"`
 }
 
 // Transaction defines the interface for a database transaction.

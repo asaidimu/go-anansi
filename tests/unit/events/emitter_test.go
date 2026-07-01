@@ -3,6 +3,7 @@ package events_test
 import (
 	"context"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -10,7 +11,9 @@ import (
 	anansievents "github.com/asaidimu/go-anansi/v7/core/events" // Alias to avoid conflict
 	"github.com/asaidimu/go-anansi/v7/core/persistence/events"
 	goevents "github.com/asaidimu/go-events"
+	goeventsv2 "github.com/asaidimu/go-events/v2"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap/zaptest"
 )
 
@@ -199,7 +202,7 @@ func TestEventEmitter_WithEventEmission(t *testing.T) {
 		SuccessEventTypes: []string{"op.success"},
 		FailedEventTypes:  []string{"op.failed"},
 		Input:             map[string]string{"data": "input"},
-		Extra: nil,
+		Extra:             nil,
 	}
 
 	// Test successful operation
@@ -237,7 +240,7 @@ func TestEventEmitter_WithEventEmission(t *testing.T) {
 	emittedEvents = []TestEvent{} // Reset
 	emittedEventTypes = []string{}
 	expectedErr := errors.New("something went wrong")
-	result, err = emitter.WithEventEmission(ctx, config, func() (any, error) {
+	_, err = emitter.WithEventEmission(ctx, config, func() (any, error) {
 		return nil, expectedErr
 	})
 
@@ -265,4 +268,120 @@ func TestEventEmitter_WithEventEmission(t *testing.T) {
 	}
 	assert.Equal(t, "TestOperation", failedEvent.ID)
 	assert.Equal(t, "op.failed", failedEvent.Message)
+}
+
+// ---- New tests for v2 event bus ----
+
+func TestEventEmitter_WithV2Bus_SimpleEventBus_Emit(t *testing.T) {
+	dir, err := os.MkdirTemp("", "v2-simple-emit")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	cfg := goeventsv2.DefaultConfig(dir, "test-bus")
+	cfg.PollInterval = 10 * time.Millisecond
+	bus, err := goeventsv2.NewEventBus(cfg)
+	require.NoError(t, err)
+	defer bus.Close()
+
+	// Wrap the v2 bus with SimpleEventBus
+	simple := goeventsv2.NewSimple[TestEvent](bus)
+	logger := zaptest.NewLogger(t)
+
+	factory := func(ctx context.Context, eventType string, operation string, input any, output any, errorMsg *string, startTime time.Time, duration *int64, extra map[string]any) TestEvent {
+		return TestEvent{ID: operation, Message: eventType, Context: map[string]any{}}
+	}
+
+	emitter := anansievents.NewEventEmitter(simple, factory, logger)
+
+	received := make(chan TestEvent, 1)
+	cancel := simple.Subscribe("test.event", func(ctx context.Context, event TestEvent) error {
+		received <- event
+		return nil
+	})
+	defer cancel()
+
+	testEvent := TestEvent{ID: "123", Message: "Hello"}
+	emitter.EmitEvent(context.Background(), "test.event", testEvent)
+
+	select {
+	case emitted := <-received:
+		assert.Equal(t, testEvent, emitted)
+	case <-time.After(2 * time.Second):
+		t.Fatal("EmitEvent did not emit event on v2 bus via SimpleEventBus")
+	}
+}
+
+func TestEventEmitter_WithV2Bus_SimpleEventBus_OperationSuccess(t *testing.T) {
+	dir, err := os.MkdirTemp("", "v2-simple-op-success")
+	require.NoError(t, err)
+	defer os.RemoveAll(dir)
+
+	cfg := goeventsv2.DefaultConfig(dir, "test-bus")
+	cfg.PollInterval = 10 * time.Millisecond
+	bus, err := goeventsv2.NewEventBus(cfg)
+	require.NoError(t, err)
+	defer bus.Close()
+
+	simple := goeventsv2.NewSimple[TestEvent](bus)
+	logger := zaptest.NewLogger(t)
+
+	factory := func(ctx context.Context, eventType string, operation string, input any, output any, errorMsg *string, startTime time.Time, duration *int64, extra map[string]any) TestEvent {
+		return TestEvent{ID: operation, Message: eventType, Context: map[string]any{}}
+	}
+
+	emitter := anansievents.NewEventEmitter(simple, factory, logger)
+
+	var mu sync.Mutex
+	receivedEvents := []TestEvent{}
+
+	cancelStart := simple.Subscribe("op.start", func(ctx context.Context, event TestEvent) error {
+		mu.Lock()
+		receivedEvents = append(receivedEvents, event)
+		mu.Unlock()
+		return nil
+	})
+	defer cancelStart()
+
+	cancelSuccess := simple.Subscribe("op.success", func(ctx context.Context, event TestEvent) error {
+		mu.Lock()
+		receivedEvents = append(receivedEvents, event)
+		mu.Unlock()
+		return nil
+	})
+	defer cancelSuccess()
+
+	config := anansievents.OperationConfig{
+		Operation:         "TestOperation",
+		StartEventTypes:   []string{"op.start"},
+		SuccessEventTypes: []string{"op.success"},
+		FailedEventTypes:  []string{"op.failed"},
+		Input:             map[string]string{"data": "input"},
+		Extra:             nil,
+	}
+
+	result, err := emitter.WithEventEmission(context.Background(), config, func() (any, error) {
+		return "operation_output", nil
+	})
+
+	assert.NoError(t, err)
+	assert.Equal(t, "operation_output", result)
+
+	time.Sleep(200 * time.Millisecond)
+
+	mu.Lock()
+	assert.GreaterOrEqual(t, len(receivedEvents), 2)
+	var hasStart, hasSuccess bool
+	for _, ev := range receivedEvents {
+		if ev.Message == "op.start" {
+			hasStart = true
+			assert.Equal(t, "TestOperation", ev.ID)
+		}
+		if ev.Message == "op.success" {
+			hasSuccess = true
+			assert.Equal(t, "TestOperation", ev.ID)
+		}
+	}
+	assert.True(t, hasStart)
+	assert.True(t, hasSuccess)
+	mu.Unlock()
 }
