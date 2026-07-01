@@ -1,3 +1,10 @@
+# [7.1.0](https://github.com/asaidimu/go-anansi/compare/v7.0.1...v7.1.0) (2026-07-01)
+
+
+### Features
+
+* add PaginationInfo metadata to query results ([383b0a9](https://github.com/asaidimu/go-anansi/commit/383b0a94f3449fb04da0f1570dd5c3ac29811a62))
+
 ## [7.0.1](https://github.com/asaidimu/go-anansi/compare/v7.0.0...v7.0.1) (2026-06-22)
 
 
