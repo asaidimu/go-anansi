@@ -205,7 +205,7 @@ func (p *polyfillCollection) Update(ctx context.Context, params *base.Collection
 			return nil, err
 		}
 
-		if updateResult.Count == 0 {
+		if updateResult.Total == nil || *updateResult.Total == 0 {
 			return &base.ReadResult{Count: 0, Data: []*data.Document{}}, nil
 		}
 
@@ -223,11 +223,11 @@ func (p *polyfillCollection) Update(ctx context.Context, params *base.Collection
 		fetchResult, err := p.Collection.Read(transactionCtx, &fetchQuery)
 		if err != nil {
 			// The update succeeded, but the final fetch failed. Return an empty document list with the correct count.
-			return &base.ReadResult{Count: updateResult.Count, Data: []*data.Document{}}, nil
+			return &base.ReadResult{Count: 0, Total: updateResult.Total, Data: []*data.Document{}}, nil
 		}
 
 		// The final result uses the documents from the final fetch and the count from the update.
-		return &base.ReadResult{Count: updateResult.Count, Data: fetchResult.Data}, nil
+		return &base.ReadResult{Count: len(fetchResult.Data), Total: updateResult.Total, Data: fetchResult.Data}, nil
 	})
 
 	if err != nil {

@@ -341,14 +341,25 @@ func (q *Query) IsEmpty() bool {
 // QueryResult represents the result of a database query.
 // TODO. Why am I not using this struct?
 type QueryResult struct {
-	Data        []map[string]any `json:"data"`
-	Count       int              `json:"count,omitempty"`
-	SearchScore *float64         `json:"search_score,omitempty"`
+	Data           []map[string]any `json:"data"`
+	Count          int              `json:"count,omitempty"`
+	Total          *int             `json:"total,omitempty"`
+	PaginationInfo *PaginationInfo  `json:"pagination_info,omitempty"`
+	SearchScore    *float64         `json:"search_score,omitempty"`
 }
 
 // PaginationResult contains the pagination information for a query result.
 type PaginationResult struct {
 	Total *int `json:"total,omitempty"` // Keep Total as it exists in TS, though deprecated
+}
+
+// PaginationInfo provides comprehensive pagination metadata for a query result.
+type PaginationInfo struct {
+	Number int `json:"number"` // 1-based page number
+	Size   int `json:"size"`   // Maximum items per page (limit)
+	Count  int `json:"count"`  // Items in the current page
+	Total  int `json:"total"`  // Total items across all pages
+	Pages  int `json:"pages"`  // Total number of pages
 }
 
 // standardComparisonOperators is a set of all the standard, built-in comparison operators.

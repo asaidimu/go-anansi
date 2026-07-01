@@ -293,7 +293,8 @@ func TestCollection_Update(t *testing.T) {
 		// Perform the update
 		rowsAffected, err := c.Update(ctx, updateParams)
 		assert.NoError(t, err)
-		assert.Equal(t, 2, rowsAffected.Count)
+		require.NotNil(t, rowsAffected.Total)
+		assert.Equal(t, 2, *rowsAffected.Total)
 
 		// Verify the documents were actually updated
 		readQuery := query.NewQueryBuilder().Where("status").Eq("done").Build()
