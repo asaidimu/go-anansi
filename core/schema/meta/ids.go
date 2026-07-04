@@ -33,8 +33,10 @@ const (
 	ConstraintObjectReferencedSchemaHasFields         definition.ConstraintId = "019d7775-6564-719d-9948-67dd885e7632"
 	ConstraintSpatialIndexOnGeometryField             definition.ConstraintId = "019d7775-6564-7660-adc8-3f1ab037d695"
 	ConstraintGlobalFieldIdUniqueness                 definition.ConstraintId = "019d7775-6564-7565-b53c-49667d23c237"
+	ConstraintFieldIdMustBeUUIDv7                     definition.ConstraintId = "019f2c2f-49ac-7c51-82a6-df53d00ee9cd"
 	ConstraintInlineTypeDescriptorValid               definition.ConstraintId = "019d7775-6564-7768-8995-72c282cfe69f"
 	ConstraintSchemaReferenceFormCorrect              definition.ConstraintId = "019d7775-6564-75bc-abf5-6ddd81b7d2d4"
+	ConstraintElementsMustBeUnique                   definition.ConstraintId = "019f6649-9f35-7bac-90a8-0651ba21b3ac"
 )
 
 // -----------------------------------------------------------------------------
@@ -94,6 +96,7 @@ const (
 	FieldFieldIDRequired    definition.FieldId = "019d7775-6566-722b-8132-d5d8c4c9b2b6"
 	FieldFieldIDDeprecated  definition.FieldId = "019d7775-6566-7367-9664-adb25994bf41"
 	FieldFieldIDUnique      definition.FieldId = "019d7775-6566-7fc8-82c6-735838cdfe21"
+	FieldFieldIDNullable    definition.FieldId = "019f2c34-76a2-7823-b6d9-76e5ed0194de"
 )
 
 // -----------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "name": "Schema",
+  "name": "SchemaDefinition",
   "description": "Meta-schema defining the structure of schema definitions",
   "fields": {
     "019d7775-6565-7755-904d-2d0cdf0e1b86": {
@@ -48,7 +48,7 @@
       "type": "unknown"
     },
     "019d7775-6565-7db3-9bb0-be9fc50550bd": {
-      "name": "NestedSchema",
+      "name": "NestedSchemaDefinition",
       "fields": {
         "019d7775-6566-77a1-9b36-bbd57f927d11": {
           "name": "fields",
@@ -191,12 +191,12 @@
       "values": ["and", "or", "not", "nor", "xor", "nand", "xnor"]
     },
     "019d7775-6566-7f2f-a009-0af144502aac": {
-      "name": "IndexOrderEnum",
+      "name": "IndexOrder",
       "type": "string",
       "values": ["asc", "desc"]
     },
     "019d7775-6565-7f15-b0f4-27a4f40cbf5c": {
-      "name": "Field",
+      "name": "FieldDefinition",
       "fields": {
         "019d7775-6566-727e-b4ff-4e6e8b800808": {
           "name": "type",
@@ -236,6 +236,10 @@
         },
         "019d7775-6566-7fc8-82c6-735838cdfe21": {
           "name": "unique",
+          "type": "boolean"
+        },
+        "019d7775-6568-8000-0000-000000000001": {
+          "name": "nullable",
           "type": "boolean"
         }
       },
@@ -299,7 +303,7 @@
       ]
     },
     "019d7775-6566-765a-b142-157d1d6367b7": {
-      "name": "FieldTypeEnum",
+      "name": "FieldType",
       "type": "string",
       "values": [
         "unknown",
@@ -320,7 +324,7 @@
       ]
     },
     "019d7775-6566-7a70-8b56-e55704397fc2": {
-      "name": "ComparisonOperatorEnum",
+      "name": "ComparisonOperator",
       "type": "string",
       "values": [
         "eq",
@@ -447,7 +451,7 @@
       "schema": { "id": "019d7775-6565-7f2a-956b-35b40caa8ec7" }
     },
     "019d7775-6566-7e05-ab1b-6f768f459927": {
-      "name": "InlineTypeEnum",
+      "name": "InlineTypeKind",
       "type": "string",
       "values": [
         "string",
@@ -461,7 +465,7 @@
       ]
     },
     "019d7775-6566-7df4-bc09-67956251c4a2": {
-      "name": "IndexTypeEnum",
+      "name": "IndexType",
       "type": "string",
       "values": ["normal", "unique", "primary", "spatial", "fulltext"]
     },
@@ -470,7 +474,7 @@
       "type": "string"
     },
     "019d7775-6565-74f6-9c72-9e35d3d16b0a": {
-      "name": "Index",
+      "name": "IndexDefinition",
       "fields": {
         "019d7775-6567-7390-96c6-8154ccc6d1ad": {
           "name": "name",
@@ -539,6 +543,10 @@
     "019d7775-6564-7565-b53c-49667d23c237": {
       "name": "global_field_id_uniqueness",
       "predicate": "global_field_id_uniqueness"
+    },
+    "019f2c2f-49ac-7c51-82a6-df53d00ee9cd": {
+      "name": "field_id_must_be_uuidv7",
+      "predicate": "field_id_must_be_uuidv7"
     },
     "019d7775-6564-7a5d-bb7e-d2e9e804123f": {
       "name": "schema_reference_integrity",

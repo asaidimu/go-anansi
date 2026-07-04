@@ -347,6 +347,9 @@ func (p *basePersistence) Migrate(
 }
 
 func (p *basePersistence) Close(ctx context.Context) {
+	if p.registry != nil {
+		_ = p.registry.Close(ctx)
+	}
 	p.eventEmitter = nil
 	p.registry = nil
 	p.interactor = nil

@@ -165,7 +165,7 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 		fq.Pagination = &query.PaginationOptions{
 			IncludeTotal: utils.PrimitivePtr(true),
 		}
-	} else if fq.Pagination.IncludeTotal != nil {
+	} else {
 		fq.Pagination.IncludeTotal = utils.PrimitivePtr(true)
 	}
 

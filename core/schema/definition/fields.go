@@ -24,6 +24,7 @@ type Field struct {
 	Required    bool      `json:"required,omitempty"`
 	Deprecated  bool      `json:"deprecated,omitempty"`
 	Unique      bool      `json:"unique,omitempty"`
+	Nullable    bool      `json:"nullable,omitempty"`
 
 	FieldProperties
 }

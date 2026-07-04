@@ -24,7 +24,7 @@ import (
 //     and relative (recursive scope). No consumer calls path resolution.
 //   - All enum lookup tables are pre-built. No consumer calls buildEnumLookup.
 //   - Recursive back-references are ResolvedRecursiveRef — not expanded trees.
-//   - Fields are in stable sorted order (by FieldName).
+//   - Fields are in stable sorted order (by UUIDv7 FieldId).
 
 // ResolvedSchema is the fully compiled top-level schema.
 type ResolvedSchema struct {
@@ -73,14 +73,17 @@ type ResolvedNestedSchema struct {
 // Recursive is the exception: it is set instead of Object/Container/Set/Union/Composite
 // when the field closes a recursive reference cycle.
 type ResolvedField struct {
-	Name       FieldName
-	Path       string   // absolute dot-separated path from schema root
-	Parts      []string // pre-split path parts for zero-alloc traversal
-	Type       FieldType
-	Required   bool
-	Deprecated bool
-	Unique     bool
-	Default    LiteralValue
+	ID          FieldId    // stable UUIDv7 — never changes across renames
+	Name        FieldName
+	Description string
+	Path        string   // absolute dot-separated path from schema root
+	Parts       []string // pre-split path parts for zero-alloc traversal
+	Type        FieldType
+	Required    bool
+	Deprecated  bool
+	Unique      bool
+	Nullable    bool
+	Default     LiteralValue
 
 	// Exactly one is non-nil. Recursive takes precedence over Object when
 	// a field closes a cycle (Object is nil; Recursive is set).
@@ -88,7 +91,6 @@ type ResolvedField struct {
 	Enum      *ResolvedEnum
 	Object    *ResolvedObjectField
 	Container *ResolvedContainer // covers FieldTypeArray and FieldTypeRecord
-	Set       *ResolvedSet
 	Union     *ResolvedUnion
 	Composite *ResolvedComposite
 	Recursive *ResolvedRecursiveRef
@@ -116,13 +118,6 @@ type ResolvedObjectField struct {
 type ResolvedContainer struct {
 	ItemSchema *ResolvedNestedSchema // set for named item schemas
 	ItemType   FieldType             // set for inline descriptors
-}
-
-// ResolvedSet is structurally identical to ResolvedContainer but carries
-// set-uniqueness semantics. Kept distinct for consumer clarity.
-type ResolvedSet struct {
-	ItemSchema *ResolvedNestedSchema
-	ItemType   FieldType
 }
 
 // ResolvedUnion holds ordered variant schemas for a union-typed field.
@@ -214,6 +209,19 @@ func Compile(sc *Schema) (*ResolvedSchema, error) {
 		resolved: make(map[SchemaId]*ResolvedNestedSchema),
 	}
 	return c.compile()
+}
+
+// newSchemaCompiler creates a SchemaCompiler from a Schema for constraint
+// compilation.  The Schema must be the same one that was (or will be) passed
+// to Compile.  The returned compiler's resolved map is intentionally empty;
+// it is only used for CompileConstraints and TopLevelConstraintsForPath,
+// which don't need the resolved cache.
+func newSchemaCompiler(sc *Schema) *SchemaCompiler {
+	return &SchemaCompiler{
+		source:   sc,
+		building: make(map[SchemaId]bool),
+		resolved: make(map[SchemaId]*ResolvedNestedSchema),
+	}
 }
 
 func (c *SchemaCompiler) compile() (*ResolvedSchema, error) {
@@ -317,24 +325,25 @@ func (c *SchemaCompiler) compileNestedSchema(id SchemaId) (*ResolvedNestedSchema
 // =============================================================================
 
 // compileFields converts a map[FieldId]Field to a sorted []ResolvedField.
+// Fields are sorted by FieldId (UUIDv7), which is time-ordered.
+// This guarantees that adding a new field always appends — existing fields
+// never change position.
 func (c *SchemaCompiler) compileFields(fields map[FieldId]Field, basePath string) ([]ResolvedField, error) {
 	if len(fields) == 0 {
 		return nil, nil
 	}
 
-	// Sort by FieldName for deterministic output.
-	names := make([]string, 0, len(fields))
-	byName := make(map[string]Field, len(fields))
-	for _, f := range fields {
-		n := string(f.Name)
-		names = append(names, n)
-		byName[n] = f
+	ids := make([]string, 0, len(fields))
+	for id := range fields {
+		ids = append(ids, string(id))
 	}
-	sort.Strings(names)
+	sort.Strings(ids)
 
 	result := make([]ResolvedField, 0, len(fields))
-	for _, name := range names {
-		rf, err := c.compileField(byName[name], basePath)
+	for _, idStr := range ids {
+		id := FieldId(idStr)
+		f := fields[id]
+		rf, err := c.compileField(f, id, basePath)
 		if err != nil {
 			return nil, err
 		}
@@ -344,19 +353,22 @@ func (c *SchemaCompiler) compileFields(fields map[FieldId]Field, basePath string
 }
 
 // compileField compiles a single Field into a ResolvedField.
-func (c *SchemaCompiler) compileField(f Field, basePath string) (ResolvedField, error) {
+func (c *SchemaCompiler) compileField(f Field, id FieldId, basePath string) (ResolvedField, error) {
 	path, parts := buildAbsPath(basePath, string(f.Name))
 	typ := f.Type // FieldProperties.Type is always authoritative for Field
 
 	rf := ResolvedField{
-		Name:       f.Name,
-		Path:       path,
-		Parts:      parts,
-		Type:       typ,
-		Required:   f.Required,
-		Deprecated: f.Deprecated,
-		Unique:     f.Unique,
-		Default:    f.Default,
+		ID:          id,
+		Name:        f.Name,
+		Description: f.Description,
+		Path:        path,
+		Parts:       parts,
+		Type:        typ,
+		Required:    f.Required,
+		Deprecated:  f.Deprecated,
+		Unique:      f.Unique,
+		Nullable:    f.Nullable,
+		Default:     f.Default,
 	}
 
 	var err error
@@ -378,11 +390,6 @@ func (c *SchemaCompiler) compileField(f Field, basePath string) (ResolvedField, 
 		var rc *ResolvedContainer
 		rc, rf.Recursive, err = c.compileContainerField(f, path)
 		rf.Container = rc
-
-	case FieldTypeSet:
-		var rs *ResolvedSet
-		rs, rf.Recursive, err = c.compileSetField(f, path)
-		rf.Set = rs
 
 	case FieldTypeUnion:
 		rf.Union, err = c.compileUnionField(f, path)
@@ -546,15 +553,6 @@ func (c *SchemaCompiler) compileContainerField(f Field, path string) (*ResolvedC
 	}
 
 	return &ResolvedContainer{ItemSchema: rns}, nil, nil
-}
-
-// compileSetField resolves a set field's item schema.
-func (c *SchemaCompiler) compileSetField(f Field, path string) (*ResolvedSet, *ResolvedRecursiveRef, error) {
-	rc, rec, err := c.compileContainerField(f, path)
-	if err != nil || rec != nil {
-		return nil, rec, err
-	}
-	return &ResolvedSet{ItemSchema: rc.ItemSchema, ItemType: rc.ItemType}, nil, nil
 }
 
 // compileUnionField resolves a union field's variant schemas.

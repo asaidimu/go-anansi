@@ -428,7 +428,7 @@ func TestSchema_MarshalJSON_NullAndEmptyOmission(t *testing.T) {
 			},
 			"IndexOrderEnum": {
 				BaseSchema: definition.BaseSchema{
-					Name: "IndexOrderEnum",
+					Name: "IndexOrder",
 				},
 				FieldProperties: definition.FieldProperties{
 					Type: definition.FieldTypeString,
@@ -521,7 +521,7 @@ func TestSchema_MarshalJSON_NullAndEmptyOmission(t *testing.T) {
 				},
 			},
 			"IndexOrderEnum": map[string]any{
-				"name": "IndexOrderEnum",
+				"name": "IndexOrder",
 				"type": "string",
 				"values": []any{
 					"asc",

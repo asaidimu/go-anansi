@@ -2,6 +2,7 @@ package schema
 
 import (
 	"encoding/json"
+	"os"
 	"sync"
 
 	"github.com/asaidimu/go-anansi/v7/core/common"
@@ -42,6 +43,12 @@ type FieldSchemaReference = definition.FieldSchemaReference
 type DocumentValidator = definition.DocumentValidator
 type ValidationConfig = definition.ValidationConfig
 
+type CompiledSchema = definition.CompiledSchema
+type FieldDescriptor = definition.FieldDescriptor
+type FieldKind = definition.FieldKind
+type FieldMeta = definition.FieldMeta
+type SchemaMeta = definition.SchemaMeta
+
 // --- Constants ---
 
 const (
@@ -52,7 +59,7 @@ const (
 	FieldTypeDecimal   = definition.FieldTypeDecimal
 	FieldTypeBoolean   = definition.FieldTypeBoolean
 	FieldTypeArray     = definition.FieldTypeArray
-	FieldTypeSet       = definition.FieldTypeSet
+
 	FieldTypeEnum      = definition.FieldTypeEnum
 	FieldTypeObject    = definition.FieldTypeObject
 	FieldTypeRecord    = definition.FieldTypeRecord
@@ -118,19 +125,27 @@ func LiteralValueAs[T definition.LiteralValueType](lv LiteralValue) (T, error) {
 }
 
 var (
-	validatorOnce   sync.Once
-	schemaValidator *DocumentValidator
+	productionValidatorOnce sync.Once
+	productionValidator     *DocumentValidator
+	devValidatorOnce       sync.Once
+	devValidator           *DocumentValidator
 )
 
 func SchemaValidator() *DocumentValidator {
-	validatorOnce.Do(func() {
+	if os.Getenv("ANANSI_ENV") == "development" {
+		devValidatorOnce.Do(func() {
+			devValidator = meta.DevelopmentSchemaValidator()
+		})
+		return devValidator
+	}
+	productionValidatorOnce.Do(func() {
 		var err error
-		schemaValidator, err = NewDocumentValidator(&meta.MetaSchema, meta.MetaSchemaPredicates)
+		productionValidator, err = NewDocumentValidator(&meta.MetaSchema, meta.MetaSchemaPredicates)
 		if err != nil {
 			panic(err)
 		}
 	})
-	return schemaValidator
+	return productionValidator
 }
 
 // ValidateSchema validates any schema and returns validation issues and a boolean

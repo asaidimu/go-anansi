@@ -12,7 +12,6 @@ const (
 	FieldTypeDecimal
 	FieldTypeBoolean
 	FieldTypeArray
-	FieldTypeSet
 	FieldTypeEnum
 	FieldTypeObject
 	FieldTypeRecord
@@ -32,7 +31,6 @@ var (
 		FieldTypeDecimal:   "decimal",
 		FieldTypeBoolean:   "boolean",
 		FieldTypeArray:     "array",
-		FieldTypeSet:       "set",
 		FieldTypeEnum:      "enum",
 		FieldTypeObject:    "object",
 		FieldTypeRecord:    "record",
@@ -50,7 +48,6 @@ var (
 		"decimal":   FieldTypeDecimal,
 		"boolean":   FieldTypeBoolean,
 		"array":     FieldTypeArray,
-		"set":       FieldTypeSet,
 		"enum":      FieldTypeEnum,
 		"object":    FieldTypeObject,
 		"record":    FieldTypeRecord,
@@ -95,7 +92,7 @@ func (t *FieldType) UnmarshalJSON(data []byte) error {
 
 func (t FieldType) IsContainer() bool {
 	switch t {
-	case FieldTypeArray, FieldTypeSet, FieldTypeGeometry,
+	case FieldTypeArray, FieldTypeGeometry,
 		FieldTypeRecord, FieldTypeObject,
 		FieldTypeUnion, FieldTypeComposite:
 		return true

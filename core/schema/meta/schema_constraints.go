@@ -172,6 +172,13 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 			Fields:    []definition.FieldName{},
 		}),
 	},
+	ConstraintFieldIdMustBeUUIDv7: {
+		Name: "field_id_must_be_uuidv7",
+		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
+			Predicate: "field_id_must_be_uuidv7",
+			Fields:    []definition.FieldName{},
+		}),
+	},
 	ConstraintInlineTypeDescriptorValid: {
 		Name: "inline_type_descriptor_valid",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
@@ -183,6 +190,13 @@ var MetaSchemaConstraints = map[definition.ConstraintId]definition.Constraint{
 		Name: "schema_reference_form_correct",
 		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
 			Predicate: "schema_reference_form_correct",
+			Fields:    []definition.FieldName{},
+		}),
+	},
+	ConstraintElementsMustBeUnique: {
+		Name: "elements_must_be_unique",
+		ConstraintUnion: definition.NewConstrainUnion(&definition.ConstraintRule{
+			Predicate: "elements_must_be_unique",
 			Fields:    []definition.FieldName{},
 		}),
 	},
