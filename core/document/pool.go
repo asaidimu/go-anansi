@@ -54,9 +54,15 @@ func (p *Pool) Put(doc *Document) {
 		return
 	}
 
-	// Recurse into TypeArrayObject children before clearing the parent.
+	// Recurse into TypeRecord and TypeArrayObject children before clearing the parent.
 	// slot() is not used here because we do not want to allocate a new slice
-	// if TypeArrayObject was never initialised.
+	// if the type was never initialised.
+	if ptr := doc.data[TypeRecord]; ptr != nil {
+		children := *(*[]*Document)(ptr)
+		for _, child := range children {
+			p.Put(child)
+		}
+	}
 	if ptr := doc.data[TypeArrayObject]; ptr != nil {
 		children := *(*[][]*Document)(ptr)
 		for _, group := range children {

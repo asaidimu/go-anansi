@@ -28,6 +28,7 @@ import (
 
 func TestMain(m *testing.M) {
 	testutils.ConfigureDocumentFactory()
+	os.Setenv("ANANSI_ENV", "development")
 	os.Exit(m.Run())
 }
 

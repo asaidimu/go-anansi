@@ -25,6 +25,9 @@ func (d *Document) UnmarshalJSON(data []byte) error {
 	var val map[string]any
 	json.Unmarshal(data, &val)
 	doc, err := NewDocument(val)
-	d = doc
-	return err
+	if err != nil {
+		return err
+	}
+	*d = *doc
+	return nil
 }

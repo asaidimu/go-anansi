@@ -1,4 +1,6 @@
-# Document Specification
+# Proposed Document Specification
+
+A propsed replacement for current map based documents
 
 ## Design Philosophy
 

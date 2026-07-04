@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v7/core/cache"
 	"github.com/asaidimu/go-anansi/v7/core/common"
 	"github.com/asaidimu/go-anansi/v7/core/data"
 	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
@@ -21,94 +21,27 @@ import (
 type RegistryEntry = base.RegistryEntry
 type SchemaVersionRecord = base.SchemaVersionRecord
 
-// CacheConfig holds configuration for the in-memory cache
-type CacheConfig struct {
-	// RefreshInterval defines how often to check for external changes
-	RefreshInterval time.Duration
-	// MaxCacheSize limits the number of entries kept in memory (0 = unlimited)
-	MaxCacheSize int
-	// EnableAutoRefresh determines if cache should auto-refresh in background
-	EnableAutoRefresh bool
-}
-
-// DefaultCacheConfig provides sensible defaults for cache configuration
-func DefaultCacheConfig() CacheConfig {
-	return CacheConfig{
-		RefreshInterval:   5 * time.Minute,
-		MaxCacheSize:      0, // unlimited
-		EnableAutoRefresh: true,
-	}
-}
-
-// Keep the existing RegistryExecutor signature for compatibility
+// RegistryExecutor defines a function that executes registry operations,
+// optionally within a database transaction.
 type RegistryExecutor func(ctx context.Context, transaction bool,
 	fn func(ctx context.Context, collection base.Collection, manager query.SchemaManager) (any, error),
 ) (any, error)
 
-// Simplified cache without background refresh complexity
-type simpleCollectionCache struct {
-	mu      sync.RWMutex
-	entries map[string]*RegistryEntry
-	maxSize int
-}
-
-func newSimpleCollectionCache(maxSize int) *simpleCollectionCache {
-	return &simpleCollectionCache{
-		entries: make(map[string]*RegistryEntry),
-		maxSize: maxSize,
-	}
-}
-
-func (c *simpleCollectionCache) get(name string) *RegistryEntry {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	if entry, exists := c.entries[name]; exists {
-		// Return a copy to prevent external modification
-		entryCopy := *entry
-		return &entryCopy
-	}
-	return nil
-}
-
-func (c *simpleCollectionCache) set(name string, entry *RegistryEntry) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	// Store a copy to prevent external modification
-	entryCopy := *entry
-	c.entries[name] = &entryCopy
-}
-
-func (c *simpleCollectionCache) delete(name string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.entries, name)
-}
-
-func (c *simpleCollectionCache) clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.entries = make(map[string]*RegistryEntry)
-}
-
-// Simplified registry implementation that maintains the original interface
+// collectionRegistry implements base.CollectionRegistry using a transactional
+// executor and a bounded, sharded, TTL-aware cache.
 type collectionRegistry struct {
 	executor  RegistryExecutor
 	logger    *zap.Logger
-	cache     *simpleCollectionCache
+	cache     cache.RepositoryCache[*RegistryEntry]
 	validator *definition.DocumentValidator
 }
 
 var _ base.CollectionRegistry = (*collectionRegistry)(nil)
 
-// Keep the original constructor signature
-func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config ...CacheConfig) (base.CollectionRegistry, error) {
-	cacheConfig := DefaultCacheConfig()
-	if len(config) > 0 {
-		cacheConfig = config[0]
-	}
-
+// NewCollectionRegistry creates a new registry, bootstrapping the _schemas_
+// collection if needed. The cache is lazily populated via read-through on
+// GetRegistryEntry; no full warm-up is performed.
+func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, cacheConfig ...cache.CacheConfig) (base.CollectionRegistry, error) {
 	// Bootstrap the registry collection
 	_, err := executor(context.Background(), false, func(ctx context.Context, collection base.Collection, manager query.SchemaManager) (any, error) {
 		exists, err := manager.CollectionExists(ctx, REGISTRY_COLLECTION_NAME)
@@ -130,40 +63,32 @@ func NewCollectionRegistry(executor RegistryExecutor, logger *zap.Logger, config
 		return nil, err
 	}
 
+	cfg := cache.DefaultCacheConfig()
+	if len(cacheConfig) > 0 {
+		cfg = cacheConfig[0]
+	}
+	// Registry entries do not expire by TTL — eviction is capacity-only.
+	cfg.PositiveTTL = 0
+	cfg.NegativeTTL = 30 * time.Second
+
+	c := cache.NewManagedCache[*RegistryEntry](cfg, func(e *RegistryEntry) (*RegistryEntry, error) {
+		return deepCopyEntry(e), nil
+	})
+
 	validator := schema.SchemaValidator()
 	registry := &collectionRegistry{
 		executor:  executor,
 		logger:    logger,
-		cache:     newSimpleCollectionCache(cacheConfig.MaxCacheSize),
+		cache:     c,
 		validator: validator,
-	}
-
-	// Warm up the cache
-	if err := registry.warmCache(context.Background()); err != nil {
-		logger.Warn("Failed to warm cache during initialization", zap.Error(err))
 	}
 
 	return registry, nil
 }
 
-// Close maintains compatibility but simplified
+// Close shuts down the background cache goroutines and releases resources.
 func (r *collectionRegistry) Close(ctx context.Context) error {
-	r.cache.clear()
-	return nil
-}
-
-// Simplified cache warming
-func (r *collectionRegistry) warmCache(ctx context.Context) error {
-	entries, err := r.loadAllFromDatabase(ctx)
-	if err != nil {
-		return common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_WARM_CACHE")
-	}
-
-	for _, entry := range entries {
-		r.cache.set(entry.Name, entry)
-	}
-
-	return nil
+	return r.cache.Close()
 }
 
 func (r *collectionRegistry) CreateCollection(ctx context.Context, sc *definition.Schema) (*RegistryEntry, error) {
@@ -174,7 +99,7 @@ func (r *collectionRegistry) CreateCollection(ctx context.Context, sc *definitio
 	return results[0], nil
 }
 
-// CreateCollections - streamlined without complex preparation phase
+// CreateCollections creates collections atomically in a single transaction.
 func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*definition.Schema) ([]*RegistryEntry, error) {
 	if len(schemas) == 0 {
 		return []*RegistryEntry{}, nil
@@ -188,7 +113,6 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*d
 			return nil, common.NewSystemError("ERR_REGISTRY_DUPLICATE_SCHEMA_IN_BATCH", fmt.Sprintf("duplicate schema in batch: '%s' version '%s'", sc.Name, sc.Version.String()))
 		}
 
-		// Basic validation
 		if issues, err := schema.ValidateSchema(sc); err != nil {
 			return nil, ErrInvalidSchema.WithIssues(issues)
 		}
@@ -209,7 +133,6 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*d
 
 	// Execute in transaction
 	requiresTransaction := true
-
 	if _, ok := transaction.GetCurrentTransaction(ctx); ok {
 		requiresTransaction = false
 	}
@@ -218,13 +141,11 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*d
 		var createdEntries []*RegistryEntry
 
 		for _, sc := range validSchemas {
-			// Generate physical name
 			physicalName, err := generatePhysicalName(sc)
 			if err != nil {
 				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_GENERATE_PHYSICAL_NAME", fmt.Sprintf("for '%s' v%s", sc.Name, sc.Version.String()))
 			}
 
-			// Create physical collection
 			tempSchema := sc.DeepCopy()
 			tempSchema.Name = physicalName
 
@@ -232,7 +153,6 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*d
 				return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_COLLECTION_CREATION_FAILED", fmt.Sprintf("failed to create physical collection '%s'", physicalName))
 			}
 
-			// Build and persist registry entry
 			entry := &RegistryEntry{
 				Name:          sc.Name,
 				Description:   sc.Description,
@@ -260,31 +180,38 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*d
 
 	// Update cache after successful completion
 	for _, entry := range results {
-		r.cache.set(entry.Name, entry)
+		r.cache.Set(entry.Name, entry)
 	}
 
 	return results, nil
 }
 
-// GetRegistryEntry - simplified with straightforward caching
+// GetRegistryEntry retrieves a registry entry with read-through caching.
+// On cache miss, it queries _schemas_ from the database, populates the cache,
+// and returns a deep copy. Non-existent collections are negative-cached.
 func (r *collectionRegistry) GetRegistryEntry(ctx context.Context, name string) (*RegistryEntry, error) {
-	// Try cache first
-	if cached := r.cache.get(name); cached != nil {
-		return cached, nil
+	val, status := r.cache.GetStatus(name)
+	switch status {
+	case cache.CacheHitPositive:
+		return deepCopyEntry(val), nil
+	case cache.CacheHitNegative:
+		return nil, base.ErrCollectionNotFound
 	}
 
-	// Load from database
+	// Read-through from database
 	entry, err := r.loadFromDatabase(ctx, name)
 	if err != nil {
+		if errors.Is(err, base.ErrCollectionNotFound) {
+			r.cache.Nullify(name)
+		}
 		return nil, err
 	}
 
-	// Update cache
-	r.cache.set(name, entry)
-	return entry, nil
+	r.cache.Set(name, entry)
+	return deepCopyEntry(entry), nil
 }
 
-// GetSchema - direct implementation without higher-order functions
+// GetSchema resolves a schema by name and optional version.
 func (r *collectionRegistry) GetSchema(ctx context.Context, name string, version ...string) (*definition.Schema, error) {
 	entry, err := r.GetRegistryEntry(ctx, name)
 	if err != nil {
@@ -305,7 +232,7 @@ func (r *collectionRegistry) GetSchema(ctx context.Context, name string, version
 	return clone, nil
 }
 
-// ResolvePhysicalName - simplified
+// ResolvePhysicalName returns the physical name for a collection, optionally for a specific version.
 func (r *collectionRegistry) ResolvePhysicalName(ctx context.Context, name string, version ...string) (string, error) {
 	sc, err := r.GetSchema(ctx, name, version...)
 	if err != nil {
@@ -314,7 +241,7 @@ func (r *collectionRegistry) ResolvePhysicalName(ctx context.Context, name strin
 	return sc.Name, nil
 }
 
-// AddSchemaVersion - direct implementation
+// AddSchemaVersion adds a new schema version to an existing collection.
 func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version string, sc *definition.Schema, physicalName ...string) (*RegistryEntry, error) {
 	issues, ok := r.validator.Validate(sc.AsMap())
 	if !ok {
@@ -334,7 +261,6 @@ func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version
 		return nil, base.ErrVersionAlreadyExists.WithMessage(fmt.Sprintf("version '%s' for collection '%s'", version, name))
 	}
 
-	// Determine physical name
 	actualPhysicalName := ""
 	if len(physicalName) > 0 {
 		actualPhysicalName = physicalName[0]
@@ -345,16 +271,13 @@ func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version
 		}
 	}
 
-	// Execute in transaction
 	updatedEntry, err := execute(ctx, r.executor, true, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
-		// Create physical collection
 		tempSchema := enrichedSchema.DeepCopy()
 		tempSchema.Name = actualPhysicalName
 		if err := manager.CreateCollection(tctx, *tempSchema); err != nil {
 			return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_COLLECTION_CREATION_FAILED", fmt.Sprintf("failed to create physical collection '%s'", actualPhysicalName))
 		}
 
-		// Update registry entry
 		entry.Versions[version] = SchemaVersionRecord{
 			Physical: actualPhysicalName,
 			Schema:   *tempSchema,
@@ -371,12 +294,11 @@ func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version
 		return nil, err
 	}
 
-	// Update cache
-	r.cache.set(name, updatedEntry)
+	r.cache.Set(name, updatedEntry)
 	return updatedEntry, nil
 }
 
-// SetActiveVersion - simplified
+// SetActiveVersion changes the active schema version for a collection.
 func (r *collectionRegistry) SetActiveVersion(ctx context.Context, name, version string) (*RegistryEntry, error) {
 	entry, err := r.GetRegistryEntry(ctx, name)
 	if err != nil {
@@ -396,7 +318,6 @@ func (r *collectionRegistry) SetActiveVersion(ctx context.Context, name, version
 		return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_INVALID_VERSION_FORMAT")
 	}
 
-	// Execute in transaction
 	updatedEntry, err := execute(ctx, r.executor, true, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
 		entry.ActiveVersion = parsedVersion
 		if err := r.updateRegistryEntry(tctx, collection, name, entry); err != nil {
@@ -409,12 +330,11 @@ func (r *collectionRegistry) SetActiveVersion(ctx context.Context, name, version
 		return nil, err
 	}
 
-	// Update cache
-	r.cache.set(name, updatedEntry)
+	r.cache.Set(name, updatedEntry)
 	return updatedEntry, nil
 }
 
-// DropCollection - simplified
+// DropCollection removes a collection from the registry, optionally dropping physical data.
 func (r *collectionRegistry) DropCollection(ctx context.Context, name string, opts base.DropCollectionOptions) error {
 	entry, err := r.GetRegistryEntry(ctx, name)
 	if err != nil {
@@ -422,7 +342,6 @@ func (r *collectionRegistry) DropCollection(ctx context.Context, name string, op
 	}
 
 	_, err = execute(ctx, r.executor, true, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (bool, error) {
-		// Drop physical collections if requested
 		if opts.DeletePhysicalData {
 			for _, versionRecord := range entry.Versions {
 				if err := manager.DropCollection(ctx, versionRecord.Physical); err != nil {
@@ -431,7 +350,6 @@ func (r *collectionRegistry) DropCollection(ctx context.Context, name string, op
 			}
 		}
 
-		// Remove registry entry
 		if err := r.deleteRegistryEntry(tctx, collection, name); err != nil {
 			return false, err
 		}
@@ -443,12 +361,11 @@ func (r *collectionRegistry) DropCollection(ctx context.Context, name string, op
 		return err
 	}
 
-	// Remove from cache
-	r.cache.delete(name)
+	r.cache.Evict(name)
 	return nil
 }
 
-// PruneVersion - simplified
+// PruneVersion removes a specific non-active version from a collection.
 func (r *collectionRegistry) PruneVersion(ctx context.Context, name, version string) (*RegistryEntry, error) {
 	entry, err := r.GetRegistryEntry(ctx, name)
 	if err != nil {
@@ -464,14 +381,11 @@ func (r *collectionRegistry) PruneVersion(ctx context.Context, name, version str
 		return nil, common.NewSystemError("ERR_REGISTRY_CANNOT_PRUNE_ACTIVE_VERSION", fmt.Sprintf("version '%s' for collection '%s' is active", version, name))
 	}
 
-	// Execute in transaction
 	updatedEntry, err := execute(ctx, r.executor, true, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
-		// Drop the physical collection
 		if err := manager.DropCollection(ctx, versionRecord.Physical); err != nil {
 			return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_DROP_PHYSICAL_COLLECTION", fmt.Sprintf("failed to drop physical collection '%s'", versionRecord.Physical))
 		}
 
-		// Remove version from entry
 		delete(entry.Versions, version)
 
 		if err := r.updateRegistryEntry(tctx, collection, name, entry); err != nil {
@@ -485,28 +399,57 @@ func (r *collectionRegistry) PruneVersion(ctx context.Context, name, version str
 		return nil, err
 	}
 
-	// Update cache
-	r.cache.set(name, updatedEntry)
+	r.cache.Set(name, updatedEntry)
 	return updatedEntry, nil
 }
 
-// List - simplified
+// List returns all registry entries by scanning the _schemas_ collection.
 func (r *collectionRegistry) List(ctx context.Context) ([]*RegistryEntry, error) {
-	// Load all from database (could optimize by checking cache first)
+	// Full database scan — acceptable for administrative operations.
 	allEntries, err := r.loadAllFromDatabase(ctx)
 	if err != nil {
 		return nil, base.ErrFailedToListCollections.WithCause(err)
 	}
 
-	// Update cache with fresh data
+	// Warm cache with fresh data from the scan.
 	for _, entry := range allEntries {
-		r.cache.set(entry.Name, entry)
+		r.cache.Set(entry.Name, entry)
 	}
 
 	return allEntries, nil
 }
 
-// Simplified helper methods - using the original execute pattern
+// ---------------------------------------------------------------------------
+// Cache maintenance helpers
+// ---------------------------------------------------------------------------
+
+func (r *collectionRegistry) InvalidateCache(name string) {
+	if name == "" {
+		r.cache.Clear()
+	} else {
+		r.cache.Evict(name)
+	}
+}
+
+// CacheStats returns current cache statistics for observability.
+func (r *collectionRegistry) CacheStats() map[string]any {
+	stats := r.cache.Stats()
+	return map[string]any{
+		"entries":          stats.Size,
+		"positive_count":   stats.PositiveCount,
+		"negative_count":   stats.NegativeCount,
+		"hits":             stats.Hits,
+		"misses":           stats.Misses,
+		"negative_hits":    stats.NegativeHits,
+		"evictions":        stats.Evictions,
+		"expirations":      stats.Expirations,
+		"evictor_active":   stats.EvictorActive,
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
 
 func execute[T any](
 	ctx context.Context,
@@ -580,8 +523,6 @@ func (r *collectionRegistry) loadAllFromDatabase(ctx context.Context) ([]*Regist
 	return entries, nil
 }
 
-// Keep existing helper methods but simplified
-
 func (r *collectionRegistry) entryToDocument(entry *RegistryEntry) (*data.Document, error) {
 	entryBytes, err := json.Marshal(entry)
 	if err != nil {
@@ -652,28 +593,40 @@ func (r *collectionRegistry) buildNameQuery(name string) query.Query {
 		Where("name").Eq(name).Build()
 }
 
-// Maintain compatibility methods but simplified internals
-
-func (r *collectionRegistry) CacheStats() map[string]any {
-	r.cache.mu.RLock()
-	defer r.cache.mu.RUnlock()
-
-	return map[string]any{
-		"entries":          len(r.cache.entries),
-		"max_size":         r.cache.maxSize,
-		"refresh_enabled":  false, // No longer supported
-		"refresh_interval": "disabled",
+// deepCopyEntry creates a complete, independent copy of a RegistryEntry to
+// prevent callers from mutating the cached copy.
+func deepCopyEntry(src *RegistryEntry) *RegistryEntry {
+	if src == nil {
+		return nil
 	}
-}
 
-func (r *collectionRegistry) InvalidateCache(name string) {
-	if name == "" {
-		r.cache.clear()
-	} else {
-		r.cache.delete(name)
+	versions := make(map[string]SchemaVersionRecord, len(src.Versions))
+	for k, v := range src.Versions {
+		versions[k] = SchemaVersionRecord{
+			Physical: v.Physical,
+			Schema:   *v.Schema.DeepCopy(),
+		}
 	}
-}
 
-func (r *collectionRegistry) RefreshCache() error {
-	return r.warmCache(context.Background())
+	var activeVer *common.Version
+	if src.ActiveVersion != nil {
+		v := *src.ActiveVersion
+		activeVer = &v
+	}
+
+	var meta map[string]any
+	if src.Metadata != nil {
+		meta = make(map[string]any, len(src.Metadata))
+		for k, v := range src.Metadata {
+			meta[k] = v
+		}
+	}
+
+	return &RegistryEntry{
+		Name:          src.Name,
+		Description:   src.Description,
+		ActiveVersion: activeVer,
+		Versions:      versions,
+		Metadata:      meta,
+	}
 }

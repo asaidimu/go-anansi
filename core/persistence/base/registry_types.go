@@ -83,4 +83,8 @@ type CollectionRegistry interface {
 	// ResolveName returns the physical name of a schema
 	// If no version is provided, it returns the currently active schema version.
 	ResolvePhysicalName(ctx context.Context, name string, version ...string) (string, error)
+
+	// Close stops background goroutines (e.g. cache janitor/evictor) and
+	// releases resources held by the registry.
+	Close(ctx context.Context) error
 }

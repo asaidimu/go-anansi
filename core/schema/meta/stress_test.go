@@ -610,8 +610,7 @@ func TestMetaSchema_StressPredicates(t *testing.T) {
 }
 
 func TestMetaSchema_ValidSchemas(t *testing.T) {
-	vd, err := definition.NewDocumentValidator(&meta.MetaSchema, meta.MetaSchemaPredicates)
-	require.NoError(t, err)
+	vd := meta.DevelopmentSchemaValidator()
 
 	tests := []struct {
 		name   string

@@ -21,7 +21,7 @@ const (
 	TypeBool                          // bool                       — boolean
 	TypeBytes                         // []byte                     — binary blobs, hashes, UUIDs, encoded payloads
 	TypeGeometry                      // [][]float64                — geometry (coordinate rings)
-	TypeRecord                        // map[string]any  — record<T> with known schema
+	TypeRecord                        // *Document  — typed sub-object with known schema
 	TypeArrayUnknown                  // []any                      — array of unknown/incompatible-union elements
 	TypeArrayInt                      // []int64                    — array of integer/enum
 	TypeArrayFloat                    // []float64                  — array of number

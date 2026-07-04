@@ -2,6 +2,7 @@ package meta
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v7/core/common"
@@ -14,7 +15,7 @@ var primitiveTypes = map[string]bool{
 	"bytes": true, "unknown": true,
 }
 
-var collectionTypes = map[string]bool{"array": true, "set": true}
+var collectionTypes = map[string]bool{"array": true}
 
 var baseSchemaIndicators = []string{"fields"}
 var fieldPropsIndicators = []string{"type", "default", "values", "schema"}
@@ -765,7 +766,7 @@ var MetaSchemaPredicates = definition.PredicateMap{
 			default:
 				errMsg = "must be numeric"
 			}
-		case "array", "set":
+		case "array":
 			if _, ok := defaultVal.([]any); !ok {
 				errMsg = "must be array"
 			}
@@ -826,6 +827,62 @@ var MetaSchemaPredicates = definition.PredicateMap{
 				}
 			}
 		}
+		return issues
+	},
+
+	"field_id_must_be_uuidv7": func(params definition.PredicateParams) []common.Issue {
+		root, ok := params.Data.(map[string]any)
+		if !ok {
+			return nil
+		}
+		var issues []common.Issue
+
+		// checkMapKeys validates all keys in a map[string]any are valid UUIDv7.
+		checkMapKeys := func(m any, path, kind string) {
+			mm, ok := m.(map[string]any)
+			if !ok {
+				return
+			}
+			for id := range mm {
+				if !isUUIDv7(id) {
+					issues = append(issues, common.Issue{
+						Code:     "ID_NOT_UUIDV7",
+						Message:  fmt.Sprintf("%s '%s' is not a valid UUIDv7", kind, id),
+						Path:     fmt.Sprintf("%s.%s", path, id),
+						Severity: "error",
+					})
+				}
+			}
+		}
+
+		// walkScope validates all ID-bearing maps in a single schema scope.
+		walkScope := func(scope any, path string) {
+			m, ok := scope.(map[string]any)
+			if !ok {
+				return
+			}
+			if f, ok := m["fields"]; ok {
+				checkMapKeys(f, path+".fields", "Field ID")
+			}
+			if idx, ok := m["indexes"]; ok {
+				checkMapKeys(idx, path+".indexes", "Index ID")
+			}
+			if c, ok := m["constraints"]; ok {
+				checkMapKeys(c, path+".constraints", "Constraint ID")
+			}
+		}
+
+		// Root scope.
+		walkScope(root, "")
+
+		// Schema IDs (schemas map keys).
+		if schemas, ok := root["schemas"].(map[string]any); ok {
+			checkMapKeys(schemas, "schemas", "Schema ID")
+			for schemaID, schemaVal := range schemas {
+				walkScope(schemaVal, "schemas."+schemaID)
+			}
+		}
+
 		return issues
 	},
 
@@ -941,7 +998,6 @@ var MetaSchemaPredicates = definition.PredicateMap{
 		allowedToHaveInline := map[string]bool{
 			"record": true,
 			"array":  true,
-			"set":    true,
 			"enum":   true,
 		}
 		fieldTypeStr, ok := fieldTypeVal.(string)
@@ -1028,7 +1084,7 @@ var MetaSchemaPredicates = definition.PredicateMap{
 			// Single reference
 			isNamed, isInline := classifyRef(v)
 			switch typeStr {
-			case "array", "set", "record", "enum":
+			case "array", "record", "enum":
 				if !isNamed && !isInline {
 					return []common.Issue{{
 						Code:     "SCHEMA_REF_FORM_INVALID",
@@ -1471,6 +1527,28 @@ var MetaSchemaPredicates = definition.PredicateMap{
 		return nil
 	},
 
+	"elements_must_be_unique": func(params definition.PredicateParams) []common.Issue {
+		data, ok := params.Data.([]any)
+		if !ok {
+			return nil
+		}
+		if len(data) <= 1 {
+			return nil
+		}
+		for i := 1; i < len(data); i++ {
+			for j := 0; j < i; j++ {
+				if reflect.DeepEqual(data[i], data[j]) {
+					return []common.Issue{{
+						Code:     "DUPLICATE_ELEMENT",
+						Message:  fmt.Sprintf("Duplicate value at index %d (first seen at index %d)", i, j),
+						Severity: "error",
+					}}
+				}
+			}
+		}
+		return nil
+	},
+
 	"index_fields_reference_valid": func(params definition.PredicateParams) []common.Issue {
 		root := params.Root
 		data, ok := params.Data.(map[string]any)
@@ -1514,3 +1592,38 @@ var MetaSchemaPredicates = definition.PredicateMap{
 		return issues
 	},
 }
+
+// isUUIDv7 checks whether s is a valid UUIDv7 string.
+// Format: xxxxxxxx-xxxx-7xxx-{8,9,a,b}xxx-xxxxxxxxxxxx
+func isUUIDv7(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i := 0; i < 36; i++ {
+		c := s[i]
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		case 14:
+			if c != '7' {
+				return false
+			}
+		case 19:
+			if c != '8' && c != '9' && c != 'a' && c != 'b' {
+				return false
+			}
+		default:
+			if !isHex(c) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func isHex(c byte) bool {
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')
+}
+

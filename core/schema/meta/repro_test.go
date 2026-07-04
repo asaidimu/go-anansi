@@ -52,8 +52,7 @@ func TestCartSchema(t *testing.T) {
 	})
 
 	t.Run("Can validate schemas", func(t *testing.T) {
-		vd, err := definition.NewDocumentValidator(&meta.MetaSchema, meta.MetaSchemaPredicates)
-		require.NoError(t, err, "Should be able to create a validator from MetaSchema")
+		vd := meta.DevelopmentSchemaValidator()
 		sc, err := definition.FromJSON([]byte(cartSchemaJSON))
 		require.NoError(t, err, "Should be able to parse definition")
 

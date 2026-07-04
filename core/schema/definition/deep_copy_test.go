@@ -52,7 +52,7 @@ func TestSchema_DeepCopy(t *testing.T) {
 		Schemas: map[SchemaId]NestedSchema{
 			"nested1": {
 				BaseSchema: BaseSchema{
-					Name: "NestedSchema",
+					Name: "NestedSchemaDefinition",
 				},
 			},
 		},

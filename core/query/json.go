@@ -313,15 +313,16 @@ func (p PaginationOptions) MarshalJSON() ([]byte, error) {
 	// This ensures only relevant fields for the specific pagination type are included.
 	switch p.Type {
 	case "offset":
-		// For "offset" type, only include Type, Limit, and Offset.
 		aux := struct {
-			Type   PaginationType `json:"type"`
-			Limit  int            `json:"limit"`
-			Offset *int           `json:"offset,omitempty"`
+			Type         PaginationType `json:"type"`
+			Limit        int            `json:"limit"`
+			Offset       *int           `json:"offset,omitempty"`
+			IncludeTotal *bool          `json:"include_total,omitempty"`
 		}{
-			Type:   p.Type,
-			Limit:  p.Limit,
-			Offset: p.Offset,
+			Type:         p.Type,
+			Limit:        p.Limit,
+			Offset:       p.Offset,
+			IncludeTotal: p.IncludeTotal,
 		}
 		return json.Marshal(aux)
 	default:
@@ -346,14 +347,16 @@ func (p *PaginationOptions) UnmarshalJSON(b []byte) error {
 	switch p.Type {
 	case "offset":
 		var aux struct {
-			Limit  int  `json:"limit"`
-			Offset *int `json:"offset,omitempty"`
+			Limit        int   `json:"limit"`
+			Offset       *int  `json:"offset,omitempty"`
+			IncludeTotal *bool `json:"include_total,omitempty"`
 		}
 		if err := json.Unmarshal(b, &aux); err != nil {
 			return common.NewSystemError("ERR_QUERY_PAGINATION_UNMARSHAL_OFFSET_FAILED", "failed to unmarshal offset pagination options").WithOperation("UnmarshalJSON").WithCause(err)
 		}
 		p.Limit = aux.Limit
 		p.Offset = aux.Offset
+		p.IncludeTotal = aux.IncludeTotal
 	default:
 		return common.NewSystemError("ERR_QUERY_UNKNOWN_PAGINATION_TYPE_UNMARSHAL", fmt.Sprintf("unknown or missing pagination type '%s' in JSON", p.Type)).WithOperation("UnmarshalJSON").WithCause(errors.New("unknown or missing pagination type"))
 	}

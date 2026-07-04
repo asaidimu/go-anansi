@@ -54,7 +54,7 @@ func (s *Schema) WithFieldEnsured(field *Field) (*Schema, FieldId, bool, error) 
 	}
 
 	// Add new
-	newID := FieldId(uuid.New().String())
+	newID := FieldId(uuid.Must(uuid.NewV7()).String())
 	return s.WithField(newID, *field), newID, true, nil
 }
 
@@ -132,6 +132,6 @@ func (s *Schema) WithIndexEnsured(index *Index) (*Schema, bool, error) {
 	}
 
 	// Add new
-	newID := IndexId(uuid.New().String())
+	newID := IndexId(uuid.Must(uuid.NewV7()).String())
 	return s.WithIndex(newID, *index), true, nil
 }

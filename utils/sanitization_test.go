@@ -8,6 +8,8 @@ import (
 )
 
 func TestSanitizationSchema(t *testing.T) {
+	t.Setenv("ANANSI_ENV", "development")
+
 	store := &sanitizationStore{
 		collectionName: SanitizationPoliciesCollection,
 	}

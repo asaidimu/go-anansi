@@ -612,7 +612,7 @@ func NegativeAmountValidator(logger *zap.Logger) utils.CollectionDecorator {
 }
 
 type negativeAmountValidator struct {
-	next   base.Collection
+    base.Collection
 	logger *zap.Logger
 }
 
@@ -637,29 +637,16 @@ func (d *negativeAmountValidator) CreateOne(ctx context.Context, doc data.Docume
 	if err := d.validateAmount(doc); err != nil {
 		return base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: []common.Issue{{Message: err.Error()}}}, err
 	}
-	return d.next.CreateOne(ctx, doc)
+	return d.Collection.CreateOne(ctx, doc)
 }
 
 // All other Collection interface methods would typically delegate to d.next without modification,
 // unless specific interception logic is required. For brevity, only `CreateOne` is shown here.
-// In a full implementation, all methods of `base.Collection` need to be implemented,
-// typically by calling `d.next.<MethodName>(...)`.
+// By embeding the struct, all other methods are pass through
+// This example is naive because decorators are added to all collections, and is particularly usefull for 
+// System wide concerns such as logging, access control e.t.c
+// Nothing however prevents you from wrapping your own instances
 
-func (d *negativeAmountValidator) CreateMany(ctx context.Context, docs []data.Document) ([]base.CreateResult, error) { /* ... delegate ... */ return d.next.CreateMany(ctx, docs) }
-func (d *negativeAmountValidator) Read(ctx context.Context, query *query.Query) (*base.ReadResult, error) { /* ... delegate ... */ return d.next.Read(ctx, query) }
-func (d *negativeAmountValidator) Update(ctx context.Context, params *base.CollectionUpdate) (int, error) {
-	if err := d.validateAmount(params.Set); err != nil {
-		return 0, err
-	}
-	return d.next.Update(ctx, params)
-}
-func (d *negativeAmountValidator) Delete(ctx context.Context, queryFilter *query.QueryFilter, unsafe bool) (int, error) { /* ... delegate ... */ return d.next.Delete(ctx, queryFilter, unsafe) }
-func (d *negativeAmountValidator) Validate(ctx context.Context, data data.Document, loose bool) (*schema.ValidationResult, error) { /* ... delegate ... */ return d.next.Validate(ctx, data, loose) }
-func (d *negativeAmountValidator) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) (*base.CollectionMetadata, error) { /* ... delegate ... */ return d.next.Metadata(ctx, filter, forceRefresh) }
-func (d *negativeAmountValidator) Subscribe(ctx context.Context, options base.SubscriptionOptions) string { /* ... delegate ... */ return d.next.Subscribe(ctx, options) }
-func (d *negativeAmountValidator) Unsubscribe(ctx context.Context, id string) { d.next.Unsubscribe(ctx, id) }
-func (d *negativeAmountValidator) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) { /* ... delegate ... */ return d.next.Subscriptions(ctx) }
-func (d *negativeAmountValidator) Capabilities(ctx context.Context) *query.Capabilities { /* ... delegate ... */ return d.next.Capabilities(ctx) }
 
 
 func main() {

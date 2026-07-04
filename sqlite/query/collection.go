@@ -150,7 +150,7 @@ func (s *createTableTree) formatDefaultValue(value definition.LiteralValue, fiel
 	case definition.FieldTypeString, definition.FieldTypeEnum:
 		resultS := result.(string)
 		return fmt.Sprintf("'%s'", strings.ReplaceAll(fmt.Sprintf("%v", resultS), "'", "''")), nil
-	case definition.FieldTypeObject, definition.FieldTypeArray, definition.FieldTypeSet, definition.FieldTypeRecord, definition.FieldTypeUnion:
+	case definition.FieldTypeObject, definition.FieldTypeArray, definition.FieldTypeRecord, definition.FieldTypeUnion:
 		resultS := result.(string)
 		return fmt.Sprintf("'%s'", strings.ReplaceAll(resultS, "'", "''")), nil
 	default:
@@ -169,7 +169,7 @@ func (s *createTableTree) getColumnType(fieldType definition.FieldType) string {
 		return "INTEGER"
 	case definition.FieldTypeBoolean:
 		return "INTEGER"
-	case definition.FieldTypeObject, definition.FieldTypeArray, definition.FieldTypeSet, definition.FieldTypeRecord, definition.FieldTypeUnion:
+	case definition.FieldTypeObject, definition.FieldTypeArray, definition.FieldTypeRecord, definition.FieldTypeUnion:
 		return "TEXT"
 	default:
 		return "BLOB"

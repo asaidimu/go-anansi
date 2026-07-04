@@ -97,7 +97,7 @@ func TestSchema_ToJSONVsEncodingJSON(t *testing.T) {
 				},
 			},
 			"IndexOrderEnum": {
-				BaseSchema: definition.BaseSchema{Name: "IndexOrderEnum"},
+				BaseSchema: definition.BaseSchema{Name: "IndexOrder"},
 				FieldProperties: definition.FieldProperties{
 					Type: definition.FieldTypeString,
 				},

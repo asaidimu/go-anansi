@@ -3,6 +3,7 @@ package definition
 import (
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -285,7 +286,6 @@ func (n *baseNode) GetID() int             { return n.id }
 func (n *baseNode) GetPathParts() []string { return n.pathParts }
 func (n *baseNode) GetDependencies() []int { return n.deps }
 
-// Validation node types
 type UnexpectedFieldsNode struct {
 	baseNode
 	expectedFields map[string]bool
@@ -305,11 +305,12 @@ type TypeCheckNode struct {
 
 type EnumValidationNode struct {
 	baseNode
-	fieldDef  *Field
-	schema    *Schema
-	schemaRef SchemaReference
-	lookup    map[any]struct{}
-	complex   []any
+	fieldDef      *Field
+	schema        *Schema
+	schemaRef     SchemaReference
+	lookup        map[any]struct{}
+	complex       []any
+	expectNumeric bool // pre-computed when using resolved schema
 }
 
 type ArrayValidationNode struct {
@@ -324,11 +325,6 @@ type RecordValidationNode struct {
 	fieldDef *Field
 	schema   *Schema
 	graph    *ValidationGraph
-}
-
-type SetValidationNode struct {
-	baseNode
-	itemGraph *ValidationGraph
 }
 
 type NestedSchemaNode struct {
@@ -591,24 +587,18 @@ func getTopLevelConstraintsForPath(topLevelSchema *Schema, fieldPath string) Sch
 			if err != nil {
 				continue
 			}
-			for _, fieldName := range r.Fields {
-				if fieldMatches(fieldName) {
+			if slices.ContainsFunc(r.Fields, fieldMatches) {
 					result[id] = constraint
-					break
 				}
-			}
 
 		case ConstraintKindGroup:
 			g, err := ConstraintAs[*ConstraintGroup](constraint.ConstraintUnion)
 			if err != nil {
 				continue
 			}
-			for _, fieldName := range collectGroupFieldNames(g) {
-				if fieldMatches(fieldName) {
+			if slices.ContainsFunc(collectGroupFieldNames(g), fieldMatches) {
 					result[id] = constraint
-					break
 				}
-			}
 		}
 	}
 
@@ -761,6 +751,7 @@ func (graph *ValidationGraph) buildFieldNodes(
 	currentDeps := baseDeps
 	var nodes []*baseNode
 
+	// TODO: Handle nullable — when true, skip required check and allow null
 	if fieldDef.Required {
 		parentPath := basePath
 		parentPathParts := baseParts
@@ -809,9 +800,6 @@ func (graph *ValidationGraph) buildFieldTypeNodes(
 	case FieldTypeArray:
 		node, err = graph.buildArrayNode(fieldDef, fieldPath, fieldPathParts, currentDeps, sc, topLevelSchema, buildCtx)
 
-	case FieldTypeSet:
-		node, err = graph.buildSetNode(fieldDef, fieldPath, fieldPathParts, currentDeps, sc, topLevelSchema, buildCtx)
-
 	case FieldTypeRecord:
 		node, err = graph.buildRecordNode(fieldDef, fieldPath, fieldPathParts, currentDeps, sc, topLevelSchema, buildCtx)
 
@@ -819,7 +807,7 @@ func (graph *ValidationGraph) buildFieldTypeNodes(
 		node, err = graph.buildUnionNode(fieldDef, fieldPath, fieldPathParts, currentDeps, sc, topLevelSchema, buildCtx)
 
 	case FieldTypeComposite:
-		compositeNodes, err := graph.buildCompositeNode(fieldDef, fieldPath, fieldPathParts, currentDeps, sc, topLevelSchema, buildCtx)
+		compositeNodes, err := graph.buildCompositeNode(fieldDef, fieldPath, fieldPathParts, topLevelSchema, buildCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -832,7 +820,7 @@ func (graph *ValidationGraph) buildFieldTypeNodes(
 		}
 
 	case FieldTypeObject:
-		objectNodes, err := graph.buildObjectFieldNodes(fieldDef, fieldPath, fieldPathParts, sc, addedConstraints, topLevelSchema, buildCtx, skipUnexpectedForObjects)
+		objectNodes, err := graph.buildObjectFieldNodes(fieldDef, fieldPath, fieldPathParts, addedConstraints, topLevelSchema, buildCtx, skipUnexpectedForObjects)
 		if err != nil {
 			return nil, err
 		}
@@ -859,37 +847,6 @@ func (graph *ValidationGraph) buildFieldTypeNodes(
 	}
 
 	return nodes, nil
-}
-
-func (graph *ValidationGraph) buildSetNode(
-	fieldDef *Field,
-	fieldPath string,
-	fieldPathParts []string,
-	deps []int,
-	sc *Schema,
-	topLevelSchema *Schema,
-	buildCtx *buildContext,
-) (ValidationNode, error) {
-	// First, obtain a sub‑graph for validating set elements (same as array)
-	containerNode, err := graph.buildContainerNode(fieldDef, fieldPath, fieldPathParts, deps, sc, topLevelSchema, buildCtx, FieldTypeArray, "set elements")
-	if err != nil {
-		return nil, err
-	}
-	// The container node is either ArrayValidationNode or nil. We'll embed it inside a SetValidationNode.
-	return &SetValidationNode{
-		baseNode: baseNode{id: graph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts, deps: deps},
-		itemGraph: func() *ValidationGraph {
-			if containerNode == nil {
-				return nil
-			}
-			switch n := containerNode.(type) {
-			case *ArrayValidationNode:
-				return n.graph
-			default:
-				return nil
-			}
-		}(),
-	}, nil
 }
 
 func (graph *ValidationGraph) buildEnumNode(
@@ -1013,7 +970,6 @@ func (graph *ValidationGraph) buildObjectFieldNodes(
 	fieldDef *Field,
 	fieldPath string,
 	fieldPathParts []string,
-	sc *Schema,
 	addedConstraints map[string]bool,
 	topLevelSchema *Schema,
 	buildCtx *buildContext,
@@ -1185,7 +1141,7 @@ func (graph *ValidationGraph) buildContainerNode(
 		if nestedDef.Type == 0 && len(nestedDef.Fields) > 0 {
 			tempRootFieldSchema = NewSchemaReference(SchemaReference{ID: schemaRef.ID})
 		} else {
-			tempRootFieldSchema = nestedDef.FieldProperties.Schema
+			tempRootFieldSchema = nestedDef.Schema
 		}
 
 		effectiveType := getNestedSchemaEffectiveType(&nestedDef)
@@ -1361,10 +1317,10 @@ func collectCompositeVocabulary(refs []SchemaReference, topLevelSchema *Schema) 
 
 		case FieldTypeUnion, FieldTypeComposite:
 			// resolve the union/composite refs and recurse into each variant
-			if nestedDef.FieldProperties.Schema.IsZero() {
+			if nestedDef.Schema.IsZero() {
 				return
 			}
-			variantRefs, err := FieldSchemaAs[[]SchemaReference](nestedDef.FieldProperties.Schema)
+			variantRefs, err := FieldSchemaAs[[]SchemaReference](nestedDef.Schema)
 			if err != nil {
 				return
 			}
@@ -1409,8 +1365,6 @@ func (graph *ValidationGraph) buildCompositeNode(
 	fieldDef *Field,
 	fieldPath string,
 	fieldPathParts []string,
-	deps []int,
-	sc *Schema,
 	topLevelSchema *Schema,
 	buildCtx *buildContext,
 ) ([]*baseNode, error) {
@@ -1483,11 +1437,11 @@ func (graph *ValidationGraph) buildCompositeNode(
 		case FieldTypeUnion:
 			// Union part: build per-variant sub-graphs (reusing the existing
 			// union graph builder) then wrap them in a UnionMemberNode.
-			if nestedDef.FieldProperties.Schema.IsZero() || !nestedDef.FieldProperties.Schema.IsMultiple() {
+			if nestedDef.Schema.IsZero() || !nestedDef.Schema.IsMultiple() {
 				return nil, ErrSchemaNotFound.WithMessage(fmt.Sprintf("Union part '%s' in composite must reference multiple schemas", ref.ID)).WithPath(fieldPath)
 			}
 
-			variantRefs, err := FieldSchemaAs[[]SchemaReference](nestedDef.FieldProperties.Schema)
+			variantRefs, err := FieldSchemaAs[[]SchemaReference](nestedDef.Schema)
 			if err != nil {
 				return nil, ErrSchemaNotFound.WithMessage(fmt.Sprintf("Failed to resolve union variants for composite part '%s': %v", ref.ID, err)).WithPath(fieldPath).WithCause(err)
 			}
@@ -1624,6 +1578,810 @@ func (graph *ValidationGraph) buildFromConstraintRuleWithScope(
 	return ruleDepIDs
 }
 
+// =============================================================================
+// RESOLVED-SCHEMA GRAPH BUILDER
+// =============================================================================
+//
+// These methods mirror the raw-*Schema builder above but consume the
+// pre-compiled ResolvedSchema IR.  They produce the same ValidationNode DAG
+// without re-resolving types, building enum lookups, or computing field paths.
+
+// resolvedConstraintToConstraint converts a ResolvedConstraint back to a raw
+// Constraint so the existing runtime Execute methods can consume it unchanged.
+func resolvedConstraintToConstraint(rc ResolvedConstraint) Constraint {
+	c := Constraint{Name: rc.Name}
+	if rc.Rule != nil {
+		c.ConstraintUnion = NewConstrainUnion(&ConstraintRule{
+			Predicate:  rc.Rule.Predicate,
+			Fields:     rc.Rule.Fields,
+			Parameters: rc.Rule.Parameters,
+		})
+	} else if rc.Group != nil {
+		members := make([]ConstraintUnion, len(rc.Group.Members))
+		for i, m := range rc.Group.Members {
+			mc := resolvedConstraintToConstraint(m)
+			members[i] = mc.ConstraintUnion
+		}
+		c.ConstraintUnion = NewConstrainUnion(&ConstraintGroup{
+			Operator: rc.Group.Operator,
+			Rules:    members,
+		})
+	}
+	return c
+}
+
+// buildFromResolvedConstraintRuleWithScope is the resolved equivalent of
+// buildFromConstraintRuleWithScope.  It uses the pre-computed paths from
+// ResolvedConstraint rather than calling resolveConstraintFieldPaths.
+func (graph *ValidationGraph) buildFromResolvedConstraintRuleWithScope(
+	rc ResolvedConstraint,
+	basePath string,
+	baseParts []string,
+	deps []int,
+	addedConstraints map[string]bool,
+) []int {
+	dedupKey := basePath + ":" + rc.Name
+
+	if rc.Rule != nil {
+		if addedConstraints[dedupKey] {
+			return nil
+		}
+
+		nodeID := graph.buildNodeID()
+		node := &ConstraintNode{
+			baseNode:            baseNode{id: nodeID, path: basePath, pathParts: baseParts, deps: deps},
+			constraint:          resolvedConstraintToConstraint(rc),
+			fieldPaths:          rc.AbsFieldPaths,
+			fieldPathParts:      rc.AbsFieldParts,
+			constraintPath:      basePath,
+			constraintPathParts: baseParts,
+			scope:               rc.Scope,
+		}
+		graph.addNode(node)
+		addedConstraints[dedupKey] = true
+		return []int{node.id}
+	}
+
+	if rc.Group != nil {
+		if addedConstraints[dedupKey] {
+			return nil
+		}
+
+		memberUnions := make([]ConstraintUnion, len(rc.Group.Members))
+		for i, m := range rc.Group.Members {
+			mc := resolvedConstraintToConstraint(m)
+			memberUnions[i] = mc.ConstraintUnion
+		}
+
+		nodeID := graph.buildNodeID()
+		node := &ConstraintGroupNode{
+			baseNode: baseNode{id: nodeID, path: basePath, pathParts: baseParts, deps: deps},
+			group: ConstraintGroup{
+				Operator: rc.Group.Operator,
+				Rules:    memberUnions,
+			},
+			Name:  rc.Name,
+			scope: rc.Scope,
+		}
+		graph.addNode(node)
+		addedConstraints[dedupKey] = true
+		return []int{node.id}
+	}
+
+	return nil
+}
+
+// buildFromResolvedConstraints is the resolved equivalent of
+// buildFromEffectiveConstraints.
+func (graph *ValidationGraph) buildFromResolvedConstraints(
+	constraints []ResolvedConstraint,
+	baseParts []string,
+	deps []int,
+	addedConstraints map[string]bool,
+) []int {
+	var ruleDepIDs []int
+	for _, rc := range constraints {
+		ids := graph.buildFromResolvedConstraintRuleWithScope(rc, "", baseParts, deps, addedConstraints)
+		ruleDepIDs = append(ruleDepIDs, ids...)
+	}
+	return ruleDepIDs
+}
+
+// buildResolvedEnumNode creates an EnumValidationNode from a resolved enum field.
+func (graph *ValidationGraph) buildResolvedEnumNode(
+	rf *ResolvedField,
+	fieldPath string,
+	fieldPathParts []string,
+	deps []int,
+) (ValidationNode, error) {
+	return &EnumValidationNode{
+		baseNode:      baseNode{id: graph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts, deps: deps},
+		fieldDef:      &Field{FieldProperties: FieldProperties{Type: rf.Type}},
+		lookup:        rf.Enum.Lookup,
+		complex:       rf.Enum.Complex,
+		expectNumeric: rf.Enum.ExpectNumeric,
+	}, nil
+}
+
+// buildResolvedObjectFieldNodes is the resolved equivalent of
+// buildObjectFieldNodes.  It uses the pre-resolved pointer rather than
+// looking up schemas by ID.
+func (graph *ValidationGraph) buildResolvedObjectFieldNodes(
+	rf *ResolvedField,
+	fieldPath string,
+	fieldPathParts []string,
+	rs *ResolvedSchema,
+	addedConstraints map[string]bool,
+	compiler *SchemaCompiler,
+	buildCtx *buildContext,
+	skipUnexpected bool,
+) ([]*baseNode, error) {
+	var nodes []*baseNode
+
+	// Determine the target schema and constraints from either the
+	// pre-resolved object pointer or the recursive back-reference.
+	var (
+		schemaID       SchemaId
+		schemaName     string
+		refConstraints SchemaConstraint
+		rns            *ResolvedNestedSchema
+	)
+	if rf.Recursive != nil {
+		schemaID = rf.Recursive.SchemaID
+		schemaName = rf.Recursive.SchemaName
+		refConstraints = rf.Recursive.RefConstraints
+		var exists bool
+		rns, exists = rs.Schemas[schemaID]
+		if !exists {
+			return nil, ErrSchemaNotFound.
+				WithMessage(fmt.Sprintf("recursive schema '%s' not found", schemaID)).
+				WithPath(fieldPath)
+		}
+	} else if rf.Object != nil && rf.Object.Schema != nil {
+		schemaID = rf.Object.Schema.ID
+		schemaName = rf.Object.Schema.Name
+		refConstraints = rf.Object.RefConstraints
+		rns = rf.Object.Schema
+	} else {
+		return nil, ErrSchemaNotFound.
+			WithMessage("object field has no resolved schema").WithPath(fieldPath)
+	}
+
+	// Runtime recursion detection via build context.
+	if buildCtx.isRecursive(schemaID) {
+		recursiveGraph, err := buildCtx.getOrBuildResolvedRecursiveGraph(
+			schemaID, rns, refConstraints, compiler, rs,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		markerNode := &RecursionMarkerNode{
+			baseNode: baseNode{
+				id:        graph.buildNodeID(),
+				path:      fieldPath,
+				pathParts: fieldPathParts,
+			},
+			validationGraph: recursiveGraph,
+			schemaName:      schemaName,
+		}
+		graph.addNode(markerNode)
+		nodes = append(nodes, &markerNode.baseNode)
+		return nodes, nil
+	}
+
+	// Non-recursive: inline the nested schema at this path.
+	buildCtx.markBuilding(schemaID)
+	defer buildCtx.unmarkBuilding(schemaID)
+
+	nestedNodes, err := graph.buildFromResolvedSchema(
+		rs, fieldPath, fieldPathParts, addedConstraints,
+		rns, refConstraints,
+		compiler, buildCtx, skipUnexpected, false,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	markerNode := &NestedSchemaNode{
+		baseNode: baseNode{
+			id:        graph.buildNodeID(),
+			path:      fieldPath,
+			pathParts: fieldPathParts,
+			deps:      getDependencyIDs(nestedNodes),
+		},
+	}
+	graph.addNode(markerNode)
+	nodes = append(nodes, &markerNode.baseNode)
+
+	return nodes, nil
+}
+
+// buildResolvedContainerNode is the resolved equivalent of buildContainerNode.
+func (graph *ValidationGraph) buildResolvedContainerNode(
+	rf *ResolvedField,
+	fieldPath string,
+	fieldPathParts []string,
+	deps []int,
+	rs *ResolvedSchema,
+	compiler *SchemaCompiler,
+	buildCtx *buildContext,
+	itemKind FieldType,
+) (ValidationNode, error) {
+	makeNode := func(subGraph *ValidationGraph) ValidationNode {
+		bn := baseNode{id: graph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts, deps: deps}
+		if itemKind == FieldTypeArray {
+			return &ArrayValidationNode{baseNode: bn, fieldDef: &Field{FieldProperties: FieldProperties{Type: rf.Type}}, graph: subGraph}
+		}
+		return &RecordValidationNode{baseNode: bn, fieldDef: &Field{FieldProperties: FieldProperties{Type: rf.Type}}, graph: subGraph}
+	}
+
+	// Handle recursive container: rf.Recursive is set instead of
+	// rf.Container when the item schema closes a recursive cycle.
+	if rf.Recursive != nil {
+		rns, exists := rs.Schemas[rf.Recursive.SchemaID]
+		if !exists {
+			return nil, ErrSchemaNotFound.
+				WithMessage(fmt.Sprintf("recursive container schema '%s' not found", rf.Recursive.SchemaID)).
+				WithPath(fieldPath)
+		}
+
+		itemRF := &ResolvedField{
+			Name:  "item",
+			Path:  "item",
+			Parts: []string{"item"},
+			Type:  rns.EffectiveType,
+			Object: &ResolvedObjectField{
+				Schema:         rns,
+				RefConstraints: rf.Recursive.RefConstraints,
+			},
+		}
+
+		subGraph := newValidationGraph()
+		subAdded := make(map[string]bool)
+		subRs := &ResolvedSchema{Fields: []ResolvedField{*itemRF}, Schemas: rs.Schemas}
+		if _, err := subGraph.buildFromResolvedSchema(subRs, "", nil, subAdded, nil, nil, compiler, buildCtx, true, false); err != nil {
+			return nil, err
+		}
+		if err := subGraph.finalize(); err != nil {
+			return nil, err
+		}
+		return makeNode(subGraph), nil
+	}
+
+	ct := rf.Container
+	if ct == nil {
+		return makeNode(nil), nil
+	}
+
+	// Named item schema
+	if ct.ItemSchema != nil {
+		skipUnexpected := ct.ItemSchema.EffectiveType == FieldTypeComposite ||
+			ct.ItemSchema.EffectiveType == FieldTypeUnion
+
+		// Composite and union-typed item schemas need the original schema
+		// reference to reconstruct their validation graph (the resolved IR
+		// stores composite/union data at the field level, not the schema
+		// level).  Fall back to the raw schema path for these cases.
+		if ct.ItemSchema.EffectiveType == FieldTypeComposite ||
+			ct.ItemSchema.EffectiveType == FieldTypeUnion {
+			if compiler != nil {
+				ns, exists := compiler.source.Schemas[ct.ItemSchema.ID]
+				if !exists {
+					return nil, ErrSchemaNotFound.
+						WithMessage(fmt.Sprintf("item schema '%s' not found", ct.ItemSchema.ID)).
+						WithPath(fieldPath)
+				}
+
+				tempRootField := &Field{
+					Name: "item",
+					FieldProperties: FieldProperties{
+						Type:   ct.ItemSchema.EffectiveType,
+						Schema: ns.Schema,
+					},
+				}
+				subGraph, err := graph.createSubGraph("item", tempRootField, fieldPath, compiler.source, buildCtx, skipUnexpected, false)
+				if err != nil {
+					return nil, err
+				}
+				return makeNode(subGraph), nil
+			}
+			return makeNode(nil), nil
+		}
+
+		subGraph := newValidationGraph()
+		subAdded := make(map[string]bool)
+
+		// Wrap the item schema as a field named "item"
+		var itemRF *ResolvedField
+		switch ct.ItemSchema.EffectiveType {
+		case FieldTypeObject:
+			itemRF = &ResolvedField{
+				Name:   "item",
+				Path:   "item",
+				Parts:  []string{"item"},
+				Type:   FieldTypeObject,
+				Object: &ResolvedObjectField{Schema: ct.ItemSchema},
+			}
+		case FieldTypeEnum:
+			itemRF = &ResolvedField{
+				Name:  "item",
+				Path:  "item",
+				Parts: []string{"item"},
+				Type:  ct.ItemSchema.EffectiveType,
+				Enum:  ct.ItemSchema.Enum,
+			}
+		default:
+			itemRF = &ResolvedField{
+				Name:   "item",
+				Path:   "item",
+				Parts:  []string{"item"},
+				Type:   ct.ItemSchema.EffectiveType,
+				Scalar: &ResolvedScalar{},
+			}
+		}
+
+		subRs := &ResolvedSchema{Fields: []ResolvedField{*itemRF}, Schemas: rs.Schemas}
+		if _, err := subGraph.buildFromResolvedSchema(subRs, "", nil, subAdded, nil, nil, compiler, buildCtx, skipUnexpected, false); err != nil {
+			return nil, err
+		}
+		if err := subGraph.finalize(); err != nil {
+			return nil, err
+		}
+		return makeNode(subGraph), nil
+	}
+
+	// Inline item type descriptor
+	if ct.ItemType != 0 {
+		subGraph := newValidationGraph()
+		subAdded := make(map[string]bool)
+
+		if ct.ItemType == FieldTypeObject {
+			syntheticSchema := &Schema{
+				BaseSchema: BaseSchema{
+					Name:   "__inline_record",
+					Fields: map[FieldId]Field{},
+				},
+			}
+			_, err := subGraph.buildFromSchema(syntheticSchema, "", nil, subAdded, nil, nil, nil, buildCtx, true, false)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			itemField := &Field{
+				Name: "item",
+				FieldProperties: FieldProperties{
+					Type: ct.ItemType,
+				},
+			}
+			typeNode := subGraph.createTypeCheckNode("item", []string{"item"}, itemField, nil)
+			subGraph.addNode(typeNode)
+		}
+
+		if err := subGraph.finalize(); err != nil {
+			return nil, err
+		}
+		return makeNode(subGraph), nil
+	}
+
+	return makeNode(nil), nil
+}
+
+// buildResolvedUnionNode is the resolved equivalent of buildUnionNode.
+func (graph *ValidationGraph) buildResolvedUnionNode(
+	rf *ResolvedField,
+	fieldPath string,
+	fieldPathParts []string,
+	deps []int,
+	rs *ResolvedSchema,
+	compiler *SchemaCompiler,
+	buildCtx *buildContext,
+) (ValidationNode, error) {
+	if rf.Union == nil || len(rf.Union.Variants) == 0 {
+		return nil, ErrSchemaNotFound.
+			WithMessage("union field has no resolved variants").WithPath(fieldPath)
+	}
+
+	graphs := make([]*ValidationGraph, 0, len(rf.Union.Variants))
+	for _, variant := range rf.Union.Variants {
+		subGraph := newValidationGraph()
+		subAdded := make(map[string]bool)
+
+		itemRF := &ResolvedField{
+			Name:  "root",
+			Path:  "root",
+			Parts: []string{"root"},
+			Type:  variant.EffectiveType,
+		}
+		if variant.EffectiveType == FieldTypeObject {
+			itemRF.Object = &ResolvedObjectField{Schema: variant}
+		} else {
+			itemRF.Scalar = &ResolvedScalar{}
+		}
+
+		subRs := &ResolvedSchema{Fields: []ResolvedField{*itemRF}, Schemas: rs.Schemas}
+		if _, err := subGraph.buildFromResolvedSchema(subRs, "", nil, subAdded, nil, nil, compiler, buildCtx, true, false); err != nil {
+			return nil, err
+		}
+		if err := subGraph.finalize(); err != nil {
+			return nil, err
+		}
+		graphs = append(graphs, subGraph)
+	}
+
+	return &UnionValidationNode{
+		baseNode: baseNode{
+			id:        graph.buildNodeID(),
+			path:      fieldPath,
+			pathParts: fieldPathParts,
+			deps:      deps,
+		},
+		fieldDef: &Field{FieldProperties: FieldProperties{Type: rf.Type}},
+		graphs:   graphs,
+	}, nil
+}
+
+// buildResolvedCompositeNode is the resolved equivalent of buildCompositeNode.
+func (graph *ValidationGraph) buildResolvedCompositeNode(
+	rf *ResolvedField,
+	fieldPath string,
+	fieldPathParts []string,
+	rs *ResolvedSchema,
+	addedConstraints map[string]bool,
+	compiler *SchemaCompiler,
+	buildCtx *buildContext,
+) ([]*baseNode, error) {
+	if rf.Composite == nil {
+		return nil, ErrSchemaNotFound.
+			WithMessage("composite field has no resolved data").WithPath(fieldPath)
+	}
+
+	// Build unified UnexpectedFieldsNode from pre-computed vocabulary
+	vocab := rf.Composite.MergedVocabulary
+	if vocab == nil {
+		vocab = make(map[string]bool)
+	}
+	unexpectedNode := graph.createUnexpectedFieldsNode(fieldPath, fieldPathParts, vocab)
+	graph.addNode(unexpectedNode)
+
+	baseDeps := []int{unexpectedNode.id}
+	var allPartNodes []*baseNode
+
+	// Object parts
+	for _, objPart := range rf.Composite.ObjectParts {
+		buildCtx.markBuilding(objPart.ID)
+
+		partNodes, err := graph.buildFromResolvedSchema(
+			rs, fieldPath, fieldPathParts, addedConstraints,
+			objPart, nil,
+			compiler, buildCtx, true, true,
+		)
+		buildCtx.unmarkBuilding(objPart.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, pn := range partNodes {
+			pn.deps = append([]int{unexpectedNode.id}, pn.deps...)
+			graph.dependencies[pn.id] = pn.deps
+		}
+		allPartNodes = append(allPartNodes, partNodes...)
+	}
+
+	// Union parts
+	for _, unionPart := range rf.Composite.UnionParts {
+		variantGraphs := make([]*ValidationGraph, 0, len(unionPart.Variants))
+		for _, variant := range unionPart.Variants {
+			subGraph := newValidationGraph()
+			subAdded := make(map[string]bool)
+
+			itemRF := &ResolvedField{
+				Name:  "root",
+				Path:  "root",
+				Parts: []string{"root"},
+				Type:  variant.EffectiveType,
+			}
+			if variant.EffectiveType == FieldTypeObject {
+				itemRF.Object = &ResolvedObjectField{Schema: variant}
+			} else {
+				itemRF.Scalar = &ResolvedScalar{}
+			}
+
+			subRs := &ResolvedSchema{Fields: []ResolvedField{*itemRF}, Schemas: rs.Schemas}
+			if _, err := subGraph.buildFromResolvedSchema(subRs, "", nil, subAdded, nil, nil, compiler, buildCtx, true, true); err != nil {
+				return nil, err
+			}
+			if err := subGraph.finalize(); err != nil {
+				return nil, err
+			}
+			variantGraphs = append(variantGraphs, subGraph)
+		}
+
+		memberNode := &UnionValidationNode{
+			baseNode: baseNode{
+				id:        graph.buildNodeID(),
+				path:      fieldPath,
+				pathParts: fieldPathParts,
+				deps:      baseDeps,
+			},
+			graphs: variantGraphs,
+		}
+		graph.addNode(memberNode)
+		allPartNodes = append(allPartNodes, &memberNode.baseNode)
+	}
+
+	result := make([]*baseNode, 0, 1+len(allPartNodes))
+	result = append(result, &unexpectedNode.baseNode)
+	result = append(result, allPartNodes...)
+	return result, nil
+}
+
+// buildResolvedFieldTypeNodes is the resolved equivalent of buildFieldTypeNodes.
+func (graph *ValidationGraph) buildResolvedFieldTypeNodes(
+	rf *ResolvedField,
+	fieldPath string,
+	fieldPathParts []string,
+	currentDeps []int,
+	rs *ResolvedSchema,
+	addedConstraints map[string]bool,
+	compiler *SchemaCompiler,
+	buildCtx *buildContext,
+	skipUnexpectedForObjects bool,
+) ([]*baseNode, error) {
+	var node ValidationNode
+	var nodes []*baseNode
+	var err error
+
+	// NOTE: Unlike the original raw-schema builder, we do NOT short-circuit
+	// on rf.Recursive here.  Recursive back-references in the resolved IR
+	// replace the type-specific pointer (Container, Object, etc.) but the
+	// recursion must still be detected at graph-build time via buildCtx,
+	// just like the original code.  The per-type handlers below (object,
+	// container) check buildCtx.isRecursive() and create RecursionMarkerNode
+	// in the correct context (e.g. inside a container's item sub-graph).
+
+	switch rf.Type {
+	case FieldTypeString, FieldTypeNumber, FieldTypeInteger, FieldTypeDecimal,
+		FieldTypeBoolean, FieldTypeBytes, FieldTypeUnknown, FieldTypeGeometry:
+		// No additional data needed; TypeCheckNode handles these.
+
+	case FieldTypeEnum:
+		node, err = graph.buildResolvedEnumNode(rf, fieldPath, fieldPathParts, currentDeps)
+
+	case FieldTypeObject:
+		objectNodes, err := graph.buildResolvedObjectFieldNodes(
+			rf, fieldPath, fieldPathParts, rs, addedConstraints,
+			compiler, buildCtx, skipUnexpectedForObjects,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if len(objectNodes) > 0 {
+			nodes = append(nodes, objectNodes...)
+		}
+		return nodes, nil
+
+	case FieldTypeArray:
+		node, err = graph.buildResolvedContainerNode(rf, fieldPath, fieldPathParts, currentDeps, rs, compiler, buildCtx, FieldTypeArray)
+
+	case FieldTypeRecord:
+		node, err = graph.buildResolvedContainerNode(rf, fieldPath, fieldPathParts, currentDeps, rs, compiler, buildCtx, FieldTypeRecord)
+
+	case FieldTypeUnion:
+		node, err = graph.buildResolvedUnionNode(rf, fieldPath, fieldPathParts, currentDeps, rs, compiler, buildCtx)
+
+	case FieldTypeComposite:
+		compositeNodes, cerr := graph.buildResolvedCompositeNode(
+			rf, fieldPath, fieldPathParts, rs, addedConstraints,
+			compiler, buildCtx,
+		)
+		if cerr != nil {
+			return nil, cerr
+		}
+		nodes = append(nodes, compositeNodes...)
+		return nodes, nil
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if node != nil {
+		graph.addNode(node)
+		if bn, ok := node.(interface {
+			GetID() int
+			GetPath() string
+			GetPathParts() []string
+			GetDependencies() []int
+		}); ok {
+			nodes = append(nodes, &baseNode{id: bn.GetID(), path: bn.GetPath(), pathParts: bn.GetPathParts(), deps: bn.GetDependencies()})
+		}
+	}
+
+	return nodes, nil
+}
+
+// buildResolvedFieldNodes is the resolved equivalent of buildFieldNodes.
+func (graph *ValidationGraph) buildResolvedFieldNodes(
+	rf *ResolvedField,
+	basePath string,
+	baseParts []string,
+	baseDeps []int,
+	rs *ResolvedSchema,
+	addedConstraints map[string]bool,
+	compiler *SchemaCompiler,
+	buildCtx *buildContext,
+	skipUnexpectedForObjects bool,
+) ([]*baseNode, error) {
+	// Compute the field path from the mount base path and field name.
+	// We cannot use rf.Path / rf.Parts directly because those are the
+	// absolute paths within the schema definition; when a nested schema
+	// is inlined at a mount path (basePath != ""), the effective document
+	// path is basePath "." fieldName.
+	fieldPath, fieldPathParts := buildPathAndParts(basePath, baseParts, string(rf.Name))
+	currentDeps := baseDeps
+	var nodes []*baseNode
+
+	if rf.Required {
+		parentPath := basePath
+		parentPathParts := baseParts
+		reqNode := graph.createRequiredFieldNode(fieldPath, fieldPathParts, string(rf.Name), parentPath, parentPathParts, currentDeps)
+		graph.addNode(reqNode)
+		currentDeps = []int{reqNode.GetID()}
+		nodes = append(nodes, &reqNode.baseNode)
+	}
+
+	isContainer := rf.Type.IsComplex()
+	if !isContainer {
+		typeNode := graph.createTypeCheckNode(fieldPath, fieldPathParts, &Field{FieldProperties: FieldProperties{Type: rf.Type}}, currentDeps)
+		graph.addNode(typeNode)
+		currentDeps = []int{typeNode.id}
+		nodes = append(nodes, &typeNode.baseNode)
+	}
+
+	typeSpecificNodes, err := graph.buildResolvedFieldTypeNodes(
+		rf, fieldPath, fieldPathParts, currentDeps,
+		rs, addedConstraints, compiler, buildCtx, skipUnexpectedForObjects,
+	)
+	if err != nil {
+		return nil, err
+	}
+	nodes = append(nodes, typeSpecificNodes...)
+
+	return nodes, nil
+}
+
+// buildFromResolvedSchema builds validation graph nodes from a ResolvedSchema.
+// It is the resolved equivalent of buildFromSchema.
+func (graph *ValidationGraph) buildFromResolvedSchema(
+	rs *ResolvedSchema,
+	basePath string,
+	baseParts []string,
+	addedConstraints map[string]bool,
+	rns *ResolvedNestedSchema,
+	schemaRefConstraints SchemaConstraint,
+	compiler *SchemaCompiler,
+	buildCtx *buildContext,
+	skipUnexpectedCheck bool,
+	skipUnexpectedForObjects bool,
+) ([]*baseNode, error) {
+	var rootNodes []*baseNode
+
+	// Determine which fields to process
+	var fields []ResolvedField
+	if rns != nil {
+		fields = rns.Fields
+	} else {
+		fields = rs.Fields
+	}
+
+	// Unexpected fields gate
+	var unexpectedNode *UnexpectedFieldsNode
+	if !skipUnexpectedCheck {
+		expectedFields := make(map[string]bool, len(fields))
+		for _, f := range fields {
+			expectedFields[string(f.Name)] = true
+		}
+		unexpectedNode = graph.createUnexpectedFieldsNode(basePath, baseParts, expectedFields)
+		graph.addNode(unexpectedNode)
+		rootNodes = append(rootNodes, &unexpectedNode.baseNode)
+	}
+
+	var baseDepsForFields []int
+	if unexpectedNode != nil {
+		baseDepsForFields = []int{unexpectedNode.id}
+	}
+
+	// Build field nodes
+	var allFieldNodes []*baseNode
+	for _, rf := range fields {
+		fieldNodes, err := graph.buildResolvedFieldNodes(
+			&rf, basePath, baseParts, baseDepsForFields,
+			rs, addedConstraints, compiler, buildCtx, skipUnexpectedForObjects,
+		)
+		if err != nil {
+			return nil, err
+		}
+		allFieldNodes = append(allFieldNodes, fieldNodes...)
+	}
+
+	// Build constraint nodes
+	var constraintNodes []ResolvedConstraint
+	if basePath == "" && rns == nil {
+		// Root schema: use pre-compiled constraints
+		constraintNodes = rs.Constraints
+	} else if compiler != nil {
+		// Nested schema at mount path: compile with three-level merge
+		var nested SchemaConstraint
+		if rns != nil {
+			nested = rns.RawConstraints
+		}
+		var topLevel SchemaConstraint
+		if basePath != "" {
+			topLevel = compiler.TopLevelConstraintsForPath(basePath)
+		}
+		var err error
+		constraintNodes, err = compiler.CompileConstraints(
+			nested, schemaRefConstraints, topLevel, basePath,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	constraintDeps := getDependencyIDs(allFieldNodes)
+	var constraintIDs []int
+	if len(constraintNodes) > 0 {
+		constraintIDs = graph.buildFromResolvedConstraints(constraintNodes, baseParts, constraintDeps, addedConstraints)
+	}
+
+	if len(constraintIDs) > 0 {
+		completionNode := graph.createCompletionNode(basePath, baseParts, constraintIDs)
+		graph.addNode(completionNode)
+		rootNodes = append(rootNodes, &completionNode.baseNode)
+	}
+
+	return rootNodes, nil
+}
+
+// getOrBuildResolvedRecursiveGraph is the resolved equivalent of
+// getOrBuildRecursiveGraph.
+func (ctx *buildContext) getOrBuildResolvedRecursiveGraph(
+	schemaID SchemaId,
+	rns *ResolvedNestedSchema,
+	instanceConstraints SchemaConstraint,
+	compiler *SchemaCompiler,
+	rs *ResolvedSchema,
+) (*ValidationGraph, error) {
+	cacheKey := makeGraphCacheKey(schemaID, instanceConstraints)
+	if cached, exists := ctx.recursiveGraphCache[cacheKey]; exists {
+		return cached, nil
+	}
+
+	subGraph := newValidationGraph()
+	subAdded := make(map[string]bool)
+	ctx.recursiveGraphCache[cacheKey] = subGraph
+
+	ctx.markBuilding(schemaID)
+	defer ctx.unmarkBuilding(schemaID)
+
+	if _, err := subGraph.buildFromResolvedSchema(
+		rs, "", nil, subAdded,
+		rns, instanceConstraints,
+		compiler, ctx, false, false,
+	); err != nil {
+		delete(ctx.recursiveGraphCache, cacheKey)
+		return nil, err
+	}
+
+	if err := subGraph.finalize(); err != nil {
+		delete(ctx.recursiveGraphCache, cacheKey)
+		return nil, err
+	}
+
+	return subGraph, nil
+}
+
 func (graph *ValidationGraph) traverse(fmap PredicateMap, document map[string]any, mode ValidationMode, maxDepth int, originalRoot map[string]any) ([]common.Issue, bool) {
 	ctx := graph.ctxPool.Get().(*ValidationContext)
 	defer graph.ctxPool.Put(ctx)
@@ -1697,11 +2455,20 @@ func NewDocumentValidator(sc *Schema, fmap PredicateMap) (*DocumentValidator, er
 }
 
 func NewDocumentValidatorWithConfig(sc *Schema, fmap PredicateMap, config ValidationConfig) (*DocumentValidator, error) {
+	// Compile the schema into its resolved IR.
+	rs, err := Compile(sc)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a SchemaCompiler for per-mount-path constraint compilation.
+	compiler := newSchemaCompiler(sc)
+
 	graph := newValidationGraph()
 	addedConstraints := make(map[string]bool)
 	buildCtx := newBuildContext()
 
-	if _, err := graph.buildFromSchema(sc, "", nil, addedConstraints, nil, nil, sc, buildCtx, false, false); err != nil {
+	if _, err := graph.buildFromResolvedSchema(rs, "", nil, addedConstraints, nil, nil, compiler, buildCtx, false, false); err != nil {
 		return nil, err
 	}
 
@@ -1862,8 +2629,13 @@ func (n *EnumValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 		}}}
 	}
 
-	nested, _ := n.schema.Schemas[n.schemaRef.ID]
-	expectNumeric := (nested.Type == FieldTypeNumber || nested.Type == FieldTypeDecimal || nested.Type == FieldTypeInteger)
+	expectNumeric := n.expectNumeric
+	// Legacy fallback for old code path
+	if n.schema != nil && n.schemaRef.ID != "" {
+		if nested, ok := n.schema.Schemas[n.schemaRef.ID]; ok {
+			expectNumeric = (nested.Type == FieldTypeNumber || nested.Type == FieldTypeDecimal || nested.Type == FieldTypeInteger)
+		}
+	}
 	switch v := value.(type) {
 	case string, int64, float64, bool:
 		if _, found := n.lookup[v]; found {
@@ -1982,105 +2754,6 @@ func (n *RecordValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 		return &NodeResult{Success: len(allIssues) == 0, Issues: allIssues}
 	}
 	return success
-}
-
-func (n *SetValidationNode) Execute(ctx *ValidationContext) *NodeResult {
-	value, exists := getNodeValue(ctx, n.pathParts)
-	if !exists || value == nil {
-		return success
-	}
-
-	val := reflect.ValueOf(value)
-	if val.Kind() != reflect.Slice {
-		return &NodeResult{Success: false, Issues: []common.Issue{{
-			Code:    "SET_TYPE_MISMATCH",
-			Message: "Expected array for set validation",
-			Path:    n.path,
-		}}}
-	}
-
-	// First, validate each element’s type/structure if an itemGraph is present
-	if n.itemGraph != nil {
-		currentDepth := getPathDepth(n.pathParts)
-		if currentDepth >= ctx.MaxDepth {
-			return &NodeResult{Success: false, Issues: []common.Issue{{
-				Code:    "MAX_DEPTH_EXCEEDED",
-				Message: fmt.Sprintf("Maximum nesting depth of %d exceeded", ctx.MaxDepth),
-				Path:    n.path,
-			}}}
-		}
-		var allIssues []common.Issue
-		for i := 0; i < val.Len(); i++ {
-			item := val.Index(i).Interface()
-			itemPath := fmt.Sprintf("%s[%d]", n.path, i)
-			remainingDepth := ctx.MaxDepth - currentDepth
-			itemIssues, _ := n.itemGraph.traverse(ctx.FunctionMap, map[string]any{"item": item}, ctx.Mode, remainingDepth, ctx.OriginalRoot)
-			for j := range itemIssues {
-				if strings.HasPrefix(itemIssues[j].Path, "item") {
-					itemIssues[j].Path = strings.Replace(itemIssues[j].Path, "item", itemPath, 1)
-				}
-			}
-			allIssues = append(allIssues, itemIssues...)
-		}
-		if len(allIssues) > 0 {
-			return &NodeResult{Success: false, Issues: allIssues}
-		}
-	}
-
-	length := val.Len()
-	if length <= 1 {
-		return success
-	}
-
-	seenComparable := make(map[any]int, length)
-
-	type complexItem struct {
-		val   any
-		index int
-	}
-	seenComplex := make([]complexItem, 0)
-
-	for i := range length {
-		item := val.Index(i).Interface()
-
-		if isSafeComparable(item) {
-			if firstIdx, found := seenComparable[item]; found {
-				return n.createDuplicateError(i, firstIdx)
-			}
-			seenComparable[item] = i
-		} else {
-			for _, prev := range seenComplex {
-				if deepEqual(item, prev.val, false) {
-					return n.createDuplicateError(i, prev.index)
-				}
-			}
-			seenComplex = append(seenComplex, complexItem{val: item, index: i})
-		}
-	}
-
-	return success
-}
-
-func (n *SetValidationNode) createDuplicateError(currentIndex, firstIndex int) *NodeResult {
-	return &NodeResult{
-		Success: false,
-		Issues: []common.Issue{{
-			Code:    "SET_DUPLICATE",
-			Message: fmt.Sprintf("Duplicate value at index %d (first seen at index %d)", currentIndex, firstIndex),
-			Path:    n.path,
-		}},
-	}
-}
-
-func isSafeComparable(v any) bool {
-	if v == nil {
-		return true
-	}
-	t := reflect.TypeOf(v)
-	if t.Kind() == reflect.Pointer {
-		return false
-	}
-	return t.Comparable()
 }
 
 func deepEqual(a, b any, numericEquivalent bool) bool {
@@ -2662,5 +3335,5 @@ func getNestedSchemaEffectiveType(nestedDef *NestedSchema) FieldType {
 	if len(nestedDef.Fields) > 0 {
 		return FieldTypeObject
 	}
-	return nestedDef.FieldProperties.Type
+	return nestedDef.Type
 }

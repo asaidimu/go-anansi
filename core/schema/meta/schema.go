@@ -9,7 +9,7 @@ import (
 var MetaSchema = definition.Schema{
 	Version: common.MustNewVersion("1.0.0"),
 	BaseSchema: definition.BaseSchema{
-		Name:        "Schema",
+		Name:        "SchemaDefinition",
 		Description: "Meta-schema defining the structure of schema definitions",
 		Fields: map[definition.FieldId]definition.Field{
 			FieldIDName: {
@@ -75,6 +75,7 @@ var MetaSchema = definition.Schema{
 		},
 		Constraints: map[definition.ConstraintId]definition.Constraint{
 			ConstraintGlobalFieldIdUniqueness:   MetaSchemaConstraints[ConstraintGlobalFieldIdUniqueness],
+			ConstraintFieldIdMustBeUUIDv7:       MetaSchemaConstraints[ConstraintFieldIdMustBeUUIDv7],
 			ConstraintSchemaReferenceIntegrity:  MetaSchemaConstraints[ConstraintSchemaReferenceIntegrity],
 			ConstraintSchemaNameRequired:        MetaSchemaConstraints[ConstraintSchemaNameRequired],
 			ConstraintNestedSchemaModeExclusive: MetaSchemaConstraints[ConstraintNestedSchemaModeExclusive],
@@ -86,7 +87,7 @@ var MetaSchema = definition.Schema{
 		// -----------------------------------------------------------------
 		SchemaIDField: {
 			BaseSchema: definition.BaseSchema{
-				Name: "Field",
+				Name: "FieldDefinition",
 				Fields: map[definition.FieldId]definition.Field{
 					FieldFieldIDName: {
 						Name:     "name",
@@ -150,6 +151,13 @@ var MetaSchema = definition.Schema{
 							Type: definition.FieldTypeBoolean,
 						},
 					},
+					FieldFieldIDNullable: {
+						Name:     "nullable",
+						Required: false,
+						FieldProperties: definition.FieldProperties{
+							Type: definition.FieldTypeBoolean,
+						},
+					},
 				},
 				Constraints: map[definition.ConstraintId]definition.Constraint{
 					ConstraintPrimitivesNoSchema:                      MetaSchemaConstraints[ConstraintPrimitivesNoSchema],
@@ -173,7 +181,7 @@ var MetaSchema = definition.Schema{
 		// -----------------------------------------------------------------
 		SchemaIDNestedSchema: {
 			BaseSchema: definition.BaseSchema{
-				Name: "NestedSchema",
+				Name: "NestedSchemaDefinition",
 				Fields: map[definition.FieldId]definition.Field{
 					NestedSchemaFieldIDName: {
 						Name:     "name",
@@ -274,7 +282,7 @@ var MetaSchema = definition.Schema{
 		// -----------------------------------------------------------------
 		SchemaIDIndex: {
 			BaseSchema: definition.BaseSchema{
-				Name: "Index",
+				Name: "IndexDefinition",
 				Fields: map[definition.FieldId]definition.Field{
 					IndexFieldIDName: {
 						Name:     "name",
@@ -610,7 +618,7 @@ var MetaSchema = definition.Schema{
 		},
 
 		SchemaIDInlineTypeEnum: {
-			BaseSchema: definition.BaseSchema{Name: "InlineTypeEnum"},
+			BaseSchema: definition.BaseSchema{Name: "InlineTypeKind"},
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
 			},
@@ -630,7 +638,7 @@ var MetaSchema = definition.Schema{
 		// Enums
 		// -----------------------------------------------------------------
 		SchemaIDFieldTypeEnum: {
-			BaseSchema: definition.BaseSchema{Name: "FieldTypeEnum"},
+			BaseSchema: definition.BaseSchema{Name: "FieldType"},
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
 			},
@@ -642,7 +650,6 @@ var MetaSchema = definition.Schema{
 				mustNewLiteralValue("decimal"),
 				mustNewLiteralValue("boolean"),
 				mustNewLiteralValue("array"),
-				mustNewLiteralValue("set"),
 				mustNewLiteralValue("enum"),
 				mustNewLiteralValue("object"),
 				mustNewLiteralValue("record"),
@@ -654,7 +661,7 @@ var MetaSchema = definition.Schema{
 		},
 
 		SchemaIDIndexTypeEnum: {
-			BaseSchema: definition.BaseSchema{Name: "IndexTypeEnum"},
+			BaseSchema: definition.BaseSchema{Name: "IndexType"},
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
 			},
@@ -684,7 +691,7 @@ var MetaSchema = definition.Schema{
 		},
 
 		SchemaIDIndexOrderEnum: {
-			BaseSchema: definition.BaseSchema{Name: "IndexOrderEnum"},
+			BaseSchema: definition.BaseSchema{Name: "IndexOrder"},
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
 			},
@@ -695,7 +702,7 @@ var MetaSchema = definition.Schema{
 		},
 
 		SchemaIDComparisonOperatorEnum: {
-			BaseSchema: definition.BaseSchema{Name: "ComparisonOperatorEnum"},
+			BaseSchema: definition.BaseSchema{Name: "ComparisonOperator"},
 			FieldProperties: definition.FieldProperties{
 				Type: definition.FieldTypeString,
 			},

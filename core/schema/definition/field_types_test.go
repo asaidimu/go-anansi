@@ -20,7 +20,6 @@ func TestFieldType_String(t *testing.T) {
 		{"Decimal", definition.FieldTypeDecimal, "decimal"},
 		{"Boolean", definition.FieldTypeBoolean, "boolean"},
 		{"Array", definition.FieldTypeArray, "array"},
-		{"Set", definition.FieldTypeSet, "set"},
 		{"Enum", definition.FieldTypeEnum, "enum"},
 		{"Object", definition.FieldTypeObject, "object"},
 		{"Record", definition.FieldTypeRecord, "record"},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"hash/fnv"
+	"math"
 
 	"github.com/asaidimu/go-anansi/v7/core/common"
 	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
@@ -151,7 +152,7 @@ func computePaginationInfo(pagination *PaginationOptions, count int, total *int)
 	case pagination == nil || pagination.Type == "" || pagination.Limit <= 0:
 		return &PaginationInfo{
 			Number: 1,
-			Size:   t,
+			Size:   int(math.Min(float64(count), float64(t))),
 			Count:  count,
 			Total:  t,
 			Pages:  1,
@@ -161,7 +162,7 @@ func computePaginationInfo(pagination *PaginationOptions, count int, total *int)
 		return nil
 
 	default:
-		offset := 0
+			offset := 0
 		if pagination.Offset != nil {
 			offset = *pagination.Offset
 		}
@@ -172,7 +173,7 @@ func computePaginationInfo(pagination *PaginationOptions, count int, total *int)
 		}
 		return &PaginationInfo{
 			Number: pageNumber,
-			Size:   pagination.Limit,
+			Size:   int(math.Min(float64(count), float64(pagination.Limit))),
 			Count:  count,
 			Total:  t,
 			Pages:  totalPages,
