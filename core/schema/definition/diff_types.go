@@ -96,6 +96,7 @@ const (
 	PathRequired
 	PathDeprecated
 	PathUnique
+	PathNullable
 	PathType
 	PathDefault
 	PathFieldSchema
@@ -108,6 +109,11 @@ const (
 	PathCondition
 	PathConditions  // For IndexConditionGroup.Conditions array
 
+	// Index condition sub-properties
+	PathConditionField
+	PathConditionOperator
+	PathConditionValue
+
 	// Constraint properties
 	PathConstraintKind
 	PathConstraintFields
@@ -115,6 +121,13 @@ const (
 	PathParameters
 	PathOperator
 	PathRules
+
+	// Schema reference sub-properties
+	PathSchemaRefID
+	PathSchemaRefType
+	PathSchemaRefValues
+	PathSchemaRefConstraints
+	PathSchemaRefIndexes
 
 	// Nested schema specific properties
 	PathValues
@@ -279,6 +292,8 @@ func (pst PathSegmentType) String() string {
 		return "deprecated"
 	case PathUnique:
 		return "unique"
+	case PathNullable:
+		return "nullable"
 	case PathType:
 		return "type"
 	case PathDefault:
@@ -297,6 +312,12 @@ func (pst PathSegmentType) String() string {
 		return "condition"
 	case PathConditions:
 		return "conditions"
+	case PathConditionField:
+		return "condition_field"
+	case PathConditionOperator:
+		return "condition_operator"
+	case PathConditionValue:
+		return "condition_value"
 	case PathConstraintKind:
 		return "constraint_kind"
 	case PathConstraintFields:
@@ -309,6 +330,16 @@ func (pst PathSegmentType) String() string {
 		return "operator"
 	case PathRules:
 		return "rules"
+	case PathSchemaRefID:
+		return "schema_ref_id"
+	case PathSchemaRefType:
+		return "schema_ref_type"
+	case PathSchemaRefValues:
+		return "schema_ref_values"
+	case PathSchemaRefConstraints:
+		return "schema_ref_constraints"
+	case PathSchemaRefIndexes:
+		return "schema_ref_indexes"
 	case PathValues:
 		return "values"
 	case PathConcrete:
@@ -348,6 +379,8 @@ func (pst *PathSegmentType) UnmarshalJSON(data []byte) error {
 		*pst = PathDeprecated
 	case "unique":
 		*pst = PathUnique
+	case "nullable":
+		*pst = PathNullable
 	case "type":
 		*pst = PathType
 	case "default":
@@ -366,6 +399,12 @@ func (pst *PathSegmentType) UnmarshalJSON(data []byte) error {
 		*pst = PathCondition
 	case "conditions":
 		*pst = PathConditions
+	case "condition_field":
+		*pst = PathConditionField
+	case "condition_operator":
+		*pst = PathConditionOperator
+	case "condition_value":
+		*pst = PathConditionValue
 	case "constraint_kind":
 		*pst = PathConstraintKind
 	case "constraint_fields":
@@ -378,6 +417,16 @@ func (pst *PathSegmentType) UnmarshalJSON(data []byte) error {
 		*pst = PathOperator
 	case "rules":
 		*pst = PathRules
+	case "schema_ref_id":
+		*pst = PathSchemaRefID
+	case "schema_ref_type":
+		*pst = PathSchemaRefType
+	case "schema_ref_values":
+		*pst = PathSchemaRefValues
+	case "schema_ref_constraints":
+		*pst = PathSchemaRefConstraints
+	case "schema_ref_indexes":
+		*pst = PathSchemaRefIndexes
 	case "values":
 		*pst = PathValues
 	case "concrete":
