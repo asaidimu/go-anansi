@@ -1,0 +1,37 @@
+{
+  "version": "1",
+  "schemas": {
+    "Products": {
+      "path": "schemas/products.schema.json",
+      "hash": "sha256:29296f4a56e8fbceedf380d15f660cfc90b712725bd75d6ff722d08bce14d932",
+      "version": "1.0.0",
+      "schema": {
+        "version": "1.0.0",
+        "name": "Products",
+        "fields": {
+          "019f405a-e686-75b6-95da-737a99188596": {
+            "name": "name",
+            "required": true,
+            "unique": true,
+            "type": "string"
+          },
+          "019f405a-e686-764c-839f-a217470c321c": {
+            "name": "price",
+            "required": true,
+            "type": "number"
+          },
+          "019f405a-e686-7658-b3c8-fd15c3db2889": {
+            "name": "stock",
+            "required": true,
+            "type": "integer"
+          },
+          "019f405a-e686-7663-b32a-ccbccfc18c52": {
+            "name": "category",
+            "type": "string"
+          }
+        }
+      },
+      "migration_file": "019f4078-a5c3-795c-ae90-ac15750f5ffb_Products_major.go"
+    }
+  }
+}

@@ -21,7 +21,7 @@ type ResourceReference struct {
 // SchemaReference defines a reference to a nested schema.
 type SchemaReference struct {
 	ID          SchemaId                    `json:"id"`
-	Indexes     map[IndexId]Index           `json:"indexes,omitempty"`
+	Indexes     map[IndexID]Index           `json:"indexes,omitempty"`
 	Constraints map[ConstraintId]Constraint `json:"constraints,omitempty"`
 	Type        FieldType                   `json:"type,omitempty"`
 	Values      []LiteralValue              `json:"values,omitempty"`

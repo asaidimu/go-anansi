@@ -666,8 +666,8 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 				"uid":  {Name: "uid", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}, Required: true},
 				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"ix1": {Name: "ix_uid", Fields: []definition.FieldId{"uid"}, Type: definition.IndexTypeNormal},
+			Indexes: map[definition.IndexID]definition.Index{
+				"ix1": {Name: "ix_uid", Fields: []definition.FieldName{"uid"}, Type: definition.IndexTypeNormal},
 			},
 		},
 	}
@@ -681,8 +681,8 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 				"user_id":  {Name: "user_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 				"amount":   {Name: "amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"idx1": {Name: "order_id_pk", Fields: []definition.FieldId{"order_id"}, Type: definition.IndexTypeUnique},
+			Indexes: map[definition.IndexID]definition.Index{
+				"idx1": {Name: "order_id_pk", Fields: []definition.FieldName{"order_id"}, Type: definition.IndexTypeUnique},
 			},
 		},
 	}
@@ -774,8 +774,8 @@ func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
 				"name":  {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 				"price": {Name: "price", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"idx1": {Name: "ix_pid", Fields: []definition.FieldId{"pid"}, Type: definition.IndexTypeNormal},
+			Indexes: map[definition.IndexID]definition.Index{
+				"idx1": {Name: "ix_pid", Fields: []definition.FieldName{"pid"}, Type: definition.IndexTypeNormal},
 			},
 		},
 	}

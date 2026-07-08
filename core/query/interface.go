@@ -223,26 +223,53 @@ type FunctionCapabilities struct {
 // Capabilities defines the features and limitations of a database backend.
 // This struct is used by the QueryPartitioner to split a QueryDSL query
 // into a database query and a post-processing query.
+type SchemaEvolution struct {
+	// AddColumn indicates the backend can ALTER TABLE ... ADD COLUMN in place.
+	AddColumn bool
+	// DropColumn indicates the backend can ALTER TABLE ... DROP COLUMN in place.
+	DropColumn bool
+	// RenameColumn indicates the backend can ALTER TABLE ... RENAME COLUMN in place.
+	// SQLite requires table recreation for this — set false unless using 3.25+.
+	RenameColumn bool
+	// AlterColumnType indicates the backend can ALTER COLUMN ... TYPE in place.
+	// Only PostgreSQL supports this natively; SQLite/MySQL require table recreation.
+	AlterColumnType bool
+	// AddConstraint indicates the backend can ALTER TABLE ... ADD CONSTRAINT after creation.
+	AddConstraint bool
+	// DropConstraint indicates the backend can ALTER TABLE ... DROP CONSTRAINT.
+	DropConstraint bool
+}
+
+func (s SchemaEvolution) All() bool {
+	return s.AddColumn && s.DropColumn && s.RenameColumn &&
+		s.AlterColumnType && s.AddConstraint && s.DropConstraint
+}
+
+func (s SchemaEvolution) None() bool {
+	return !s.AddColumn && !s.DropColumn && !s.RenameColumn &&
+		!s.AlterColumnType && !s.AddConstraint && !s.DropConstraint
+}
+
 type Capabilities struct {
 	// RequiresTransactionSerialization forces all transactions to be serialized with a mutex.
-	// Set to true for databases that cannot handle concurrent multi-collection
-	// transactions with nested and async operations.
 	RequiresTransactionSerialization bool
+
+	// SchemaEvolution declares which DDL operations the backend can perform
+	// without recreating the table. Operations not supported here will trigger
+	// a full data migration (copy table, transform, swap).
+	SchemaEvolution SchemaEvolution
 
 	// SupportedLogicalOperators is a set of logical operators (AND, OR, NOT) that the database can handle in filter expressions.
 	SupportedLogicalOperators map[common.LogicalOperator]struct{}
 	// SupportedComparisonOperators is a set of comparison operators (e.g., Eq, Gt, Lt) that the database can handle natively.
 	SupportedComparisonOperators map[ComparisonOperator]struct{}
 	// SupportedExpressionOperators is a set of operators for computed fields or filters (e.g., MULTIPLY, ADD).
-	// This allows translation of an abstract function like `MULTIPLY(col, 2)` to `col * 2`.
 	SupportedExpressionOperators map[string]struct{}
 	// SupportedFunctions is a map of functions the database can execute, detailing their allowed contexts.
 	SupportedFunctions map[string]FunctionCapabilities
 	// SupportedJoinTypes is a set of JOIN types (e.g., INNER, LEFT) that the database supports.
-	// If empty, it implies joins are not supported.
 	SupportedJoinTypes map[JoinType]struct{}
 	// SupportedAggregationFunctions is a set of aggregation functions (e.g., COUNT, SUM) that the database supports.
-	// If empty, it implies aggregate functions are not supported.
 	SupportedAggregationFunctions map[AggregationType]struct{}
 	// SupportedPaginationTypes is a set of pagination methods (e.g., OFFSET, CURSOR) supported by the database.
 	SupportedPaginationTypes map[PaginationType]struct{}

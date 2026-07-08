@@ -7,8 +7,8 @@ import (
 	"github.com/asaidimu/go-anansi/v7/core/common"
 )
 
-// IndexId represents the id of an index.
-type IndexId string
+// IndexID represents the id of an index.
+type IndexID string
 
 type IndexConditionKind byte
 
@@ -22,7 +22,7 @@ type Index struct {
 	Description string              `json:"description,omitempty"`
 	Order       string              `json:"order,omitempty"`
 	Condition   IndexConditionUnion `json:"condition"`
-	Fields      []FieldId           `json:"fields"`
+	Fields      []FieldName         `json:"fields"`
 	Type        IndexType           `json:"type"`
 	Unique      bool                `json:"unique,omitempty"`
 }
@@ -44,7 +44,7 @@ func (i Index) MarshalJSON() ([]byte, error) {
 }
 
 type IndexCondition struct {
-	Field    FieldId                   `json:"field"`
+	Field    FieldName                 `json:"field"`
 	Value    LiteralValue              `json:"value"`
 	Operator common.ComparisonOperator `json:"operator"`
 }

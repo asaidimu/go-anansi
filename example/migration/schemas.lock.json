@@ -1,0 +1,73 @@
+{
+  "version": "1",
+  "schemas": {
+    "Products": {
+      "path": "schemas/products.schema.json",
+      "hash": "sha256:7a5b0e5616dcad92130d76773c0e8773fa9409feb1e02bcad00e487ced5e48c6",
+      "version": "1.1.0",
+      "schema": {
+        "version": "1.0.0",
+        "name": "Products",
+        "fields": {
+          "019f405a-e686-75b6-95da-737a99188596": {
+            "name": "name",
+            "required": true,
+            "unique": true,
+            "type": "string"
+          },
+          "019f405a-e686-764c-839f-a217470c321c": {
+            "name": "price",
+            "required": true,
+            "type": "number"
+          },
+          "019f405a-e686-7658-b3c8-fd15c3db2889": {
+            "name": "stock",
+            "required": true,
+            "type": "integer"
+          },
+          "019f405a-e686-7663-b32a-ccbccfc18c52": {
+            "name": "category",
+            "type": "string"
+          },
+          "019f405a-e686-7672-9c22-790e7c3b3b08": {
+            "name": "description",
+            "type": "string"
+          }
+        }
+      },
+      "migration_file": "019f4079-e76e-704d-86eb-c90dbb3ffc69_Products_minor.go",
+      "history": [
+        {
+          "version": "1.0.0",
+          "schema": {
+            "version": "1.0.0",
+            "name": "Products",
+            "fields": {
+              "019f405a-e686-75b6-95da-737a99188596": {
+                "name": "name",
+                "required": true,
+                "unique": true,
+                "type": "string"
+              },
+              "019f405a-e686-764c-839f-a217470c321c": {
+                "name": "price",
+                "required": true,
+                "type": "number"
+              },
+              "019f405a-e686-7658-b3c8-fd15c3db2889": {
+                "name": "stock",
+                "required": true,
+                "type": "integer"
+              },
+              "019f405a-e686-7663-b32a-ccbccfc18c52": {
+                "name": "category",
+                "type": "string"
+              }
+            }
+          },
+          "migration_file": "019f4078-a5c3-795c-ae90-ac15750f5ffb_Products_major.go"
+        }
+      ]
+    }
+  }
+}

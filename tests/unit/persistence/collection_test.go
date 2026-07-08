@@ -87,7 +87,7 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 	engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
 	factory := pevents.NewPersistenceEventFactory(testSchemaDef.Name, logger)
 	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
-	c, err := collection.NewCollection(eventEmitter, testSchemaDef.Name, testSchemaDef, ephemeralInteractor, engine, logger, resolveSchema, nil)
+	c, err := collection.NewCollection(eventEmitter, testSchemaDef.Name, collection.NewStaticSchemaProvider(testSchemaDef), ephemeralInteractor, engine, logger, resolveSchema, nil)
 	assert.NoError(t, err)
 
 	ctx := context.Background()
@@ -109,7 +109,7 @@ func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *z
 	engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
 	factory := pevents.NewPersistenceEventFactory(nonExistentSchema.Name, logger)
 	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
-	c, _ := collection.NewCollection(eventEmitter, nonExistentSchema.Name, nonExistentSchema, ephemeralInteractor, engine, logger, resolveSchema, nil)
+	c, _ := collection.NewCollection(eventEmitter, nonExistentSchema.Name, collection.NewStaticSchemaProvider(nonExistentSchema), ephemeralInteractor, engine, logger, resolveSchema, nil)
 	ctx := context.Background()
 	return c, ephemeralInteractor, logger, nonExistentSchema, bus, ctx
 }
@@ -222,7 +222,7 @@ func TestCollection_Read(t *testing.T) {
 		engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
 		factory := pevents.NewPersistenceEventFactory(nonExistentSchema.Name, logger)
 		eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
-		nonExistentCollection, _ := collection.NewCollection(eventEmitter, nonExistentSchema.Name, nonExistentSchema, ephemeralInteractor, engine, logger, resolveSchema, nil)
+		nonExistentCollection, _ := collection.NewCollection(eventEmitter, nonExistentSchema.Name, collection.NewStaticSchemaProvider(nonExistentSchema), ephemeralInteractor, engine, logger, resolveSchema, nil)
 
 		result, err := nonExistentCollection.Read(ctx, &q)
 

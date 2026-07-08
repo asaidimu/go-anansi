@@ -34,13 +34,13 @@ var testSchemaForBenchmark = definition.Schema{
 				},
 			},
 		},
-		Indexes: map[definition.IndexId]definition.Index{
-			definition.IndexId("77117b14-13e7-4dcf-91ba-f5f1f36adafb"): { // UUID for "idx_name"
+		Indexes: map[definition.IndexID]definition.Index{
+			definition.IndexID("77117b14-13e7-4dcf-91ba-f5f1f36adafb"): { // UUID for "idx_name"
 				Name: "idx_name",
 				Type: definition.IndexTypeNormal,
-				Fields: []definition.FieldId{
-					"8ffb9dff-e32a-4d67-8eb3-da9aa7d4941e", // UUID for "name" field
-				},
+			Fields: []definition.FieldName{
+				"name",
+			},
 			},
 		},
 		Constraints: map[definition.ConstraintId]definition.Constraint{

@@ -37,11 +37,11 @@ func TestSchema_DeepCopy(t *testing.T) {
 					}),
 				},
 			},
-			Indexes: map[IndexId]Index{
+			Indexes: map[IndexID]Index{
 				"index1": {
 					Name:   "indexOne",
 					Type:   IndexTypeUnique,
-					Fields: []FieldId{"field1"},
+					Fields: []FieldName{"field1"},
 				},
 			},
 			Metadata: map[string]any{
@@ -129,7 +129,7 @@ func TestSchema_DeepCopy_Complex(t *testing.T) {
 					}),
 				},
 			},
-			Indexes: map[IndexId]Index{
+			Indexes: map[IndexID]Index{
 				"idx1": {
 					Name: "complexIndex",
 					Condition: NewIndexConditionUnion(&IndexConditionGroup{

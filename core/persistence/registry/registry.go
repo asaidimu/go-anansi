@@ -157,7 +157,7 @@ func (r *collectionRegistry) CreateCollections(ctx context.Context, schemas []*d
 				Name:          sc.Name,
 				Description:   sc.Description,
 				ActiveVersion: sc.Version,
-				Versions: map[string]SchemaVersionRecord{
+				Versions: map[string]*SchemaVersionRecord{
 					sc.Version.String(): {
 						Physical: physicalName,
 						Schema:   *tempSchema,
@@ -232,6 +232,65 @@ func (r *collectionRegistry) GetSchema(ctx context.Context, name string, version
 	return clone, nil
 }
 
+// CurrentSchema returns a shared reference to the active schema from the
+// cached registry entry (not a deep copy). The caller must not mutate the
+// returned schema.
+func (r *collectionRegistry) CurrentSchema(ctx context.Context, name string) (*definition.Schema, error) {
+	entry, status := r.cache.GetStatus(name)
+	switch status {
+	case cache.CacheHitNegative:
+		return nil, base.ErrCollectionNotFound
+	case cache.CacheMiss:
+		// Read-through: fetch from database, caches on success
+		var err error
+		entry, err = r.loadFromDatabase(ctx, name)
+		if err != nil {
+			if errors.Is(err, base.ErrCollectionNotFound) {
+				r.cache.Nullify(name)
+			}
+			return nil, err
+		}
+		r.cache.Set(name, entry)
+	}
+
+	activeStr := entry.ActiveVersion.String()
+	versionRecord, ok := entry.Versions[activeStr]
+	if !ok {
+		return nil, common.NewSystemError("ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION", fmt.Sprintf("active version '%s' not found for collection '%s'", activeStr, name))
+	}
+
+	return &versionRecord.Schema, nil
+}
+
+// CurrentValidator returns the lazily-built DocumentValidator for the active
+// schema version. The validator is cached on the cached *SchemaVersionRecord
+// via sync.Once and reused across callers.
+func (r *collectionRegistry) CurrentValidator(ctx context.Context, name string) (*definition.DocumentValidator, error) {
+	entry, status := r.cache.GetStatus(name)
+	switch status {
+	case cache.CacheHitNegative:
+		return nil, base.ErrCollectionNotFound
+	case cache.CacheMiss:
+		var err error
+		entry, err = r.loadFromDatabase(ctx, name)
+		if err != nil {
+			if errors.Is(err, base.ErrCollectionNotFound) {
+				r.cache.Nullify(name)
+			}
+			return nil, err
+		}
+		r.cache.Set(name, entry)
+	}
+
+	activeStr := entry.ActiveVersion.String()
+	versionRecord, ok := entry.Versions[activeStr]
+	if !ok {
+		return nil, common.NewSystemError("ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION", fmt.Sprintf("active version '%s' not found for collection '%s'", activeStr, name))
+	}
+
+	return versionRecord.Validator()
+}
+
 // ResolvePhysicalName returns the physical name for a collection, optionally for a specific version.
 func (r *collectionRegistry) ResolvePhysicalName(ctx context.Context, name string, version ...string) (string, error) {
 	sc, err := r.GetSchema(ctx, name, version...)
@@ -274,11 +333,18 @@ func (r *collectionRegistry) AddSchemaVersion(ctx context.Context, name, version
 	updatedEntry, err := execute(ctx, r.executor, true, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
 		tempSchema := enrichedSchema.DeepCopy()
 		tempSchema.Name = actualPhysicalName
-		if err := manager.CreateCollection(tctx, *tempSchema); err != nil {
-			return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_COLLECTION_CREATION_FAILED", fmt.Sprintf("failed to create physical collection '%s'", actualPhysicalName))
+
+		// Only create the physical collection when the caller did not provide
+		// an explicit physicalName (i.e., the collection was generated fresh).
+		// When physicalName IS provided, the physical collection already exists
+		// because the caller applied DDL in-place.
+		if len(physicalName) == 0 {
+			if err := manager.CreateCollection(tctx, *tempSchema); err != nil {
+				return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_COLLECTION_CREATION_FAILED", fmt.Sprintf("failed to create physical collection '%s'", actualPhysicalName))
+			}
 		}
 
-		entry.Versions[version] = SchemaVersionRecord{
+		entry.Versions[version] = &SchemaVersionRecord{
 			Physical: actualPhysicalName,
 			Schema:   *tempSchema,
 		}
@@ -600,9 +666,9 @@ func deepCopyEntry(src *RegistryEntry) *RegistryEntry {
 		return nil
 	}
 
-	versions := make(map[string]SchemaVersionRecord, len(src.Versions))
+	versions := make(map[string]*SchemaVersionRecord, len(src.Versions))
 	for k, v := range src.Versions {
-		versions[k] = SchemaVersionRecord{
+		versions[k] = &SchemaVersionRecord{
 			Physical: v.Physical,
 			Schema:   *v.Schema.DeepCopy(),
 		}

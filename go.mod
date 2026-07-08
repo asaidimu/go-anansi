@@ -7,6 +7,8 @@ require (
 	github.com/asaidimu/go-events v1.1.0
 	github.com/asaidimu/go-events/v2 v2.0.0
 	github.com/asaidimu/go-store/v3 v3.3.0
+	github.com/bmatcuk/doublestar/v4 v4.10.0
+	github.com/brianvoe/gofakeit/v7 v7.15.0
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/mattn/go-sqlite3 v1.14.30
@@ -19,7 +21,6 @@ require github.com/google/btree v1.1.3 // indirect
 require (
 	github.com/DataDog/zstd v1.4.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/brianvoe/gofakeit/v7 v7.15.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/cockroachdb/errors v1.11.3 // indirect
 	github.com/cockroachdb/fifo v0.0.0-20240606204812-0bbfbd93a7ce // indirect

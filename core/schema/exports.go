@@ -23,7 +23,7 @@ type FieldProperties = definition.FieldProperties
 type FieldType = definition.FieldType
 
 type Index = definition.Index
-type IndexId = definition.IndexId
+type IndexId = definition.IndexID
 type IndexType = definition.IndexType
 
 type Constraint = definition.Constraint

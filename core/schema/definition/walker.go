@@ -506,7 +506,7 @@ func (s *Schema) walkIndexesMap(
 	acc any,
 	walker func(any, *NodeContext) (any, error),
 	parent *NodeContext,
-	indexes map[IndexId]Index,
+	indexes map[IndexID]Index,
 ) (any, error) {
 	ctx := acquireContext(parent.Depth + 1)
 	defer releaseContext(ctx)
@@ -808,7 +808,7 @@ func (s *Schema) walkIndexFields(
 	walker func(any, *NodeContext) (any, error),
 	parent *NodeContext,
 	key string,
-	fields []FieldId,
+	fields []FieldName,
 ) (any, error) {
 	ctx := acquireContext(parent.Depth + 1)
 	defer releaseContext(ctx)

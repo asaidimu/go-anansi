@@ -1,0 +1,7 @@
+{
+  "schema": {
+    "glob": "schemas/**/*.schema.json",
+    "lockfile": "schemas.lock.json",
+    "migrations_dir": "migrations/"
+  }
+}

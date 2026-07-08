@@ -45,11 +45,11 @@ func TestSchema_Walk(t *testing.T) {
 					}),
 				},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
+			Indexes: map[definition.IndexID]definition.Index{
 				"index1": {
 					Name:   "index one",
 					Type:   definition.IndexTypeUnique,
-					Fields: []definition.FieldId{"field1"},
+					Fields: []definition.FieldName{"field1"},
 					Condition: definition.NewIndexConditionUnion(&definition.IndexCondition{
 						Field:    "field2",
 						Operator: common.Equal,
@@ -59,7 +59,7 @@ func TestSchema_Walk(t *testing.T) {
 				"index2": {
 					Name:   "index two",
 					Type:   definition.IndexTypeNormal,
-					Fields: []definition.FieldId{"field2"},
+					Fields: []definition.FieldName{"field2"},
 					Condition: definition.NewIndexConditionUnion(&definition.IndexConditionGroup{
 						Operator: common.LogicalOr,
 						Conditions: []definition.IndexConditionUnion{

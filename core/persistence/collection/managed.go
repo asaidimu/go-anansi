@@ -22,14 +22,14 @@ type managedCollection struct {
 	physicalName      string
 	logicalName       string
 	wrapped           base.Collection
-	schema            *definition.Schema
+	schemaProvider    base.SchemaProvider
 	rawQueryProcessor base.RawQueryProcessor
 	resolveSchema     func(ctx context.Context, name string) (string, *definition.Schema, error)
 }
 
 // newManagedCollection creates a new ManagedCollection decorator.
 func newManagedCollection(
-	sc *definition.Schema,
+	provider base.SchemaProvider,
 	logicalName string,
 	physicalName string,
 	wrapped base.Collection,
@@ -42,13 +42,18 @@ func newManagedCollection(
 	}
 
 	return &managedCollection{
-		schema:            sc,
+		schemaProvider:    provider,
 		physicalName:      physicalName,
 		logicalName:       logicalName,
 		wrapped:           wrapped,
 		resolveSchema:     resolveSchema,
 		rawQueryProcessor: processor,
 	}, nil
+}
+
+// currentSchema resolves the active schema from the provider on-demand.
+func (c *managedCollection) currentSchema(ctx context.Context) (*definition.Schema, error) {
+	return c.schemaProvider.CurrentSchema(ctx)
 }
 
 // --- Core Method Overrides ---
@@ -147,10 +152,14 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 	}
 
 	// Set the main target (the collection itself)
+	sc, err := c.currentSchema(ctx)
+	if err != nil {
+		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_RESOLVE_SCHEMA_FAILED")
+	}
 	fq.Target = &query.QueryTarget{
 		Name:   c.physicalName,
 		Alias:  &c.logicalName,
-		Schema: c.schema.DeepCopy(),
+		Schema: sc.DeepCopy(),
 	}
 
 	// Add main collection translation

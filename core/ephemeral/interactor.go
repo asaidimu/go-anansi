@@ -12,6 +12,7 @@ import (
 	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v7/core/utils"
 	store "github.com/asaidimu/go-store/v3"
+	"github.com/google/uuid"
 )
 
 // EphemeralDatabaseInteractor provides an in-memory implementation of the
@@ -472,6 +473,14 @@ func (i *EphemeralDatabaseInteractor) Capabilities() query.Capabilities {
 		SupportedPaginationTypes: map[query.PaginationType]struct{}{
 			query.PaginationTypeOffset: {},
 		},
+		SchemaEvolution: query.SchemaEvolution{
+			AddColumn:        true,
+			DropColumn:       true,
+			RenameColumn:     true,
+			AlterColumnType:  true,
+			AddConstraint:    true,
+			DropConstraint:   true,
+		},
 		SupportsGroupBy:      true,
 		SupportsDistinct:     true,
 		SupportsNestedFields: true,
@@ -568,4 +577,46 @@ func (m *EphemeralDatabaseInteractor) CollectionExists(ctx context.Context, name
 
 	_, exists := m.store.collections[name]
 	return exists, nil
+}
+
+func (m *EphemeralDatabaseInteractor) AddColumn(ctx context.Context, collection string, field definition.Field) error {
+	c, err := m.store.getCollection(collection)
+	if err != nil {
+		return err
+	}
+	if c.schema.Fields == nil {
+		c.schema.Fields = make(map[definition.FieldId]definition.Field)
+	}
+	newID := definition.FieldId(uuid.Must(uuid.NewV7()).String())
+	c.schema.Fields[newID] = field
+	return nil
+}
+
+func (m *EphemeralDatabaseInteractor) DropColumn(ctx context.Context, collection string, fieldName string) error {
+	c, err := m.store.getCollection(collection)
+	if err != nil {
+		return err
+	}
+	for id, f := range c.schema.Fields {
+		if string(f.Name) == fieldName {
+			delete(c.schema.Fields, id)
+			break
+		}
+	}
+	return nil
+}
+
+func (m *EphemeralDatabaseInteractor) RenameColumn(ctx context.Context, collection string, oldName, newName string) error {
+	c, err := m.store.getCollection(collection)
+	if err != nil {
+		return err
+	}
+	for id, f := range c.schema.Fields {
+		if string(f.Name) == oldName {
+			f.Name = definition.FieldName(newName)
+			c.schema.Fields[id] = f
+			break
+		}
+	}
+	return nil
 }

@@ -69,7 +69,7 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 	factory := pevents.NewPersistenceEventFactory(registry.REGISTRY_COLLECTION_NAME, logger)
 	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
 	registryCollection, err := collection.NewCollection(
-		eventEmitter, registry.REGISTRY_COLLECTION_NAME, registrySchemaDef, interactor, engine, logger, nil, nil,
+		eventEmitter, registry.REGISTRY_COLLECTION_NAME, collection.NewStaticSchemaProvider(registrySchemaDef), interactor, engine, logger, nil, nil,
 	)
 
 	require.NoError(t, err)
@@ -419,6 +419,33 @@ func TestAddSchemaVersion(t *testing.T) {
 		}
 		_, err = cr.AddSchemaVersion(ctx, sampleSchema.Name, "1.1.0", invalidSchema)
 		assert.Error(t, err)
+	})
+
+	t.Run("Reuses existing physical collection when physicalName is provided", func(t *testing.T) {
+		cr, schemaManager, _ := setupTestEnv(t)
+
+		// Create the initial collection
+		entry, err := cr.CreateCollection(ctx, sampleSchema)
+		require.NoError(t, err)
+		require.NotNil(t, entry)
+
+		// Get the existing physical name for v1.0.0
+		existingPhysical := entry.Versions["1.0.0"].Physical
+
+		// Add a new version pointing to the same physical collection
+		newSchema := *sampleSchema
+		newSchema.Version = common.MustNewVersion("1.1.0")
+		updatedEntry, err := cr.AddSchemaVersion(ctx, sampleSchema.Name, "1.1.0", &newSchema, existingPhysical)
+		require.NoError(t, err)
+
+		// Verify the new version points to the reused physical collection
+		v2 := updatedEntry.Versions["1.1.0"]
+		assert.Equal(t, existingPhysical, v2.Physical, "Version 1.1.0 should reuse the existing physical collection")
+
+		// Verify the physical collection still exists (was not dropped)
+		exists, err := schemaManager.CollectionExists(ctx, existingPhysical)
+		require.NoError(t, err)
+		assert.True(t, exists, "The reused physical collection should still exist")
 	})
 }
 

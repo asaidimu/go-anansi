@@ -46,6 +46,12 @@ const (
 	// StmtDropIndex represents index deletion (DROP INDEX in SQL, dropIndex in MongoDB)
 	StmtDropIndex StatementType = "DROP_INDEX"
 
+	// StmtAddColumn represents adding a column (ALTER TABLE ... ADD COLUMN)
+	StmtAddColumn StatementType = "ADD_COLUMN"
+	// StmtDropColumn represents dropping a column (ALTER TABLE ... DROP COLUMN)
+	StmtDropColumn StatementType = "DROP_COLUMN"
+	// StmtRenameColumn represents renaming a column (ALTER TABLE ... RENAME COLUMN)
+	StmtRenameColumn StatementType = "RENAME_COLUMN"
 )
 
 // Query is a generic, type-safe representation of a database-native query.

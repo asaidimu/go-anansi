@@ -10,7 +10,6 @@ import (
 	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v7/core/schema"
 	"github.com/asaidimu/go-anansi/v7/core/utils"
-	"github.com/google/uuid"
 )
 
 // generatePhysicalName creates a database-safe identifier from schema name and version
@@ -92,14 +91,18 @@ func unmarshalEntry(doc *data.Document) (*base.RegistryEntry, error) {
 	return utils.MapToStruct[*RegistryEntry](doc.ToMap())
 }
 
-// EnrichSchema adds system fields (id, metadata) to a schema
+// EnrichSchema adds system fields (id, metadata) to a schema.
+// Uses static UUIDs for all injected entities so the result is idempotent —
+// the same input schema always produces the identical output.
 func EnrichSchema(sc *schema.Schema) (*schema.Schema, error) {
 	if sc == nil {
 		return nil, nil
 	}
 
-	// --- Add ID Field ---
-	idField := &schema.Field{
+	var err error
+
+	// --- Add ID Field (using static field ID) ---
+	idField := schema.Field{
 		Name:     schema.FieldName(data.DocumentIDField),
 		Required: true,
 		Unique:   true,
@@ -107,13 +110,7 @@ func EnrichSchema(sc *schema.Schema) (*schema.Schema, error) {
 			Type: schema.FieldTypeString,
 		},
 	}
-
-	// Ensure the ID field exists with exact properties
-	var err error
-	sc, _, _, err = sc.WithFieldEnsured(idField)
-	if err != nil {
-		return nil, err
-	}
+	sc = sc.WithField(schema.FieldId(data.SystemFieldIDDocumentID), idField)
 
 	// --- Remove any user-defined indexes on 'id' field ---
 	sc, _, err = sc.WithoutIndexesReferencingField(schema.FieldName(data.DocumentIDField))
@@ -122,29 +119,34 @@ func EnrichSchema(sc *schema.Schema) (*schema.Schema, error) {
 	}
 
 	// --- Add primary key index ---
-	// First find the FieldId for the ID field
-	idFieldId, _, exists := sc.GetFieldByName(schema.FieldName(data.DocumentIDField))
-	if !exists {
-		return nil, fmt.Errorf("id field not found after being ensured")
-	}
-
 	pkIndex := &schema.Index{
 		Name:   "pk_id",
-		Fields: []schema.FieldId{idFieldId},
+		Fields: []schema.FieldName{schema.FieldName(data.DocumentIDField)},
 		Type:   schema.IndexTypePrimary,
 		Unique: true,
 	}
-
-	// Ensure the primary key index exists (replaces if already there)
 	sc, _, err = sc.WithIndexEnsured(pkIndex)
 	if err != nil {
 		return nil, err
 	}
 
-	// --- Add Metadata Field ---
-	msdid := schema.SchemaId(uuid.Must(uuid.NewV7()).String())
+	// --- Add Metadata Field (using static UUIDs) ---
+	msdid := schema.SchemaId(data.SystemSchemaIDMetadata)
 	msd, _ := data.GetMetadataSchema()
-	metadataField := &schema.Field{
+
+	// Clean up any existing metadata sub-schema entries to avoid duplicates.
+	for sid := range sc.Schemas {
+		if ns, ok := sc.Schemas[sid]; ok && ns.Name == data.MetadataField {
+			delete(sc.Schemas, sid)
+		}
+	}
+	if sc.Schemas == nil {
+		sc.Schemas = make(map[schema.SchemaId]schema.NestedSchema)
+	}
+	sc.Schemas[msdid] = *msd
+
+	// Set / replace the metadata field with a static field ID.
+	metadataField := schema.Field{
 		Name: schema.FieldName(data.MetadataField),
 		FieldProperties: schema.FieldProperties{
 			Type: schema.FieldTypeObject,
@@ -153,18 +155,7 @@ func EnrichSchema(sc *schema.Schema) (*schema.Schema, error) {
 			}),
 		},
 	}
-
-	if sc.Schemas == nil {
-		sc.Schemas = make(map[schema.SchemaId]schema.NestedSchema)
-	}
-
-	sc.Schemas[msdid] = *msd
-
-	// Ensure metadata field exists
-	sc, _, _, err = sc.WithFieldEnsured(metadataField)
-	if err != nil {
-		return nil, err
-	}
+	sc = sc.WithField(schema.FieldId(data.SystemFieldIDMetadata), metadataField)
 
 	if _, err := schema.ValidateSchema(sc); err != nil {
 		return nil, err

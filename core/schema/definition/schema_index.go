@@ -147,7 +147,7 @@ func (s *Schema) BuildIndex() *SchemaIndex {
 			}
 
 		case NodeTypeIndexFields:
-			fields := ctx.Value.([]FieldId)
+			fields := ctx.Value.([]FieldName)
 			idx.nodes[pathKey] = &NodeInfo{
 				kind:     KindArray,
 				capacity: len(fields),

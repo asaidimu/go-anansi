@@ -18,16 +18,15 @@ import (
 
 // Collection implements the PersistenceCollectionInterface.
 type baseCollection struct {
-	eventEmitter  *events.EventEmitter[base.PersistenceEvent]
-	name          string
-	schema        *definition.Schema
-	engine        *query.QueryEngine
-	interactor    query.DatabaseInteractor
-	logger        *zap.Logger
-	subscriptions map[string]*base.SubscriptionInfo // To store unsubscribe functions
-	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
-	validator     *definition.DocumentValidator
-	metadata      *base.CollectionMetadata
+	eventEmitter   *events.EventEmitter[base.PersistenceEvent]
+	name           string
+	schemaProvider base.SchemaProvider
+	engine         *query.QueryEngine
+	interactor     query.DatabaseInteractor
+	logger         *zap.Logger
+	subscriptions  map[string]*base.SubscriptionInfo // To store unsubscribe functions
+	subMu          sync.RWMutex                      // Mutex to protect subscriptions map
+	metadata       *base.CollectionMetadata
 }
 
 var _ base.Collection = (*baseCollection)(nil)
@@ -36,42 +35,23 @@ var _ base.Collection = (*baseCollection)(nil)
 func newBaseCollection(
 	eventEmitter *events.EventEmitter[base.PersistenceEvent],
 	name string,
-	sc *definition.Schema,
+	schemaProvider base.SchemaProvider,
 	interactor query.DatabaseInteractor,
 	engine *query.QueryEngine,
 	logger *zap.Logger,
 ) (base.Collection, error) {
-	if sc == nil {
-		return nil, common.NewSystemError("ERR_PERSISTENCE_INVALID_SCHEMA", "Collection access requires a non nil schema")
-	}
-
-	validator, err := definition.NewDocumentValidator(sc, nil)
-	if err != nil {
-		return nil, err
+	if schemaProvider == nil {
+		return nil, common.NewSystemError("ERR_PERSISTENCE_INVALID_SCHEMA", "Collection access requires a non nil schema provider")
 	}
 
 	base := &baseCollection{
-		eventEmitter:  eventEmitter,
-		name:          name,
-		schema:        sc,
-		engine:        engine,
-		interactor:    interactor,
-		logger:        logger,
-		subscriptions: make(map[string]*base.SubscriptionInfo),
-		validator:     validator,
-		metadata: &base.CollectionMetadata{
-			Version:       sc.Version,
-			Name:          name,
-			Collection:    sc.Name,
-			Description:   sc.Description,
-			Status:        "active",
-			Created:       0, // get this from the registry
-			Records:       0, // For this and the next two below, we should have methods in the interactor to expose these
-			Size:          0, // Not directly available from interactor yet
-			Updated:       0, // Placehold
-			Schema:        sc,
-			Subscriptions: []base.SubscriptionInfo{}, // Collection-specific subscriptions not managed here yet
-		},
+		eventEmitter:   eventEmitter,
+		name:           name,
+		schemaProvider: schemaProvider,
+		engine:         engine,
+		interactor:     interactor,
+		logger:         logger,
+		subscriptions:  make(map[string]*base.SubscriptionInfo),
 	}
 
 	return base, nil
@@ -112,8 +92,12 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []*data.Document) 
 
 	// Insert the documents
 	inserted, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
+		sc, err := c.currentSchema(ctx)
+		if err != nil {
+			return nil, err
+		}
 		values := data.DocumentSet(docs).ToMaps()
-		return interactor.InsertDocuments(ctx, c.schema, values)
+		return interactor.InsertDocuments(ctx, sc, values)
 	})
 
 	if err != nil {
@@ -132,7 +116,11 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []*data.Document) 
 // Read retrieves documents from the collection that match the given QueryDSL.
 func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
 	rctx := query.WithInteractor(ctx, c.getCurrentInteractor(ctx))
-	docs, err := c.engine.Query(rctx, c.schema.DeepCopy(), q)
+	sc, err := c.currentSchema(ctx)
+	if err != nil {
+		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_RESOLVE_SCHEMA_FAILED")
+	}
+	docs, err := c.engine.Query(rctx, sc.DeepCopy(), q)
 	if err != nil {
 		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_READ_DOCUMENTS_FAILED")
 	}
@@ -163,7 +151,11 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 	}
 
 	result, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
-		docs, count, err := interactor.UpdateDocuments(ctx, c.schema, updatesMap, params.Compute, params.Filter, params.ReturnDocument)
+		sc, err := c.currentSchema(ctx)
+		if err != nil {
+			return nil, err
+		}
+		docs, count, err := interactor.UpdateDocuments(ctx, sc, updatesMap, params.Compute, params.Filter, params.ReturnDocument)
 		if err != nil {
 			return nil, err
 		}
@@ -204,7 +196,11 @@ func (c *baseCollection) Delete(ctx context.Context, q *query.QueryFilter, unsaf
 	}
 
 	result, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
-		return interactor.DeleteDocuments(ctx, c.schema, q, unsafe)
+		sc, err := c.currentSchema(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return interactor.DeleteDocuments(ctx, sc, q, unsafe)
 	})
 
 	if err != nil {
@@ -217,22 +213,32 @@ func (c *baseCollection) Delete(ctx context.Context, q *query.QueryFilter, unsaf
 
 // Validate checks if the given data conforms to the collection's schema.
 // The 'loose' flag allows for partial validation.
-func (c *baseCollection) Validate(ctx context.Context, data *data.Document, partial bool) ([]common.Issue, bool) {
-	if partial {
-		return c.validator.ValidatePartial(data.ToMap())
+func (c *baseCollection) Validate(ctx context.Context, doc *data.Document, partial bool) ([]common.Issue, bool) {
+	v, err := c.currentValidator(ctx)
+	if err != nil {
+		return []common.Issue{{Message: err.Error()}}, false
 	}
-	return c.validator.Validate(data.ToMap())
+	if partial {
+		return v.ValidatePartial(doc.ToMap())
+	}
+	return v.Validate(doc.ToMap())
 }
 
 // Metadata retrieves metadata specifically for this collection, with an option to
 // force a refresh of the data.
 func (c *baseCollection) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) *base.CollectionMetadata {
-	// TODO improve this method
-	metadata := *c.metadata
-	sc := metadata.Schema.DeepCopy()
-	sc.Name = metadata.Name
-	metadata.Schema = sc
-	return &metadata
+	sc, err := c.currentSchema(ctx)
+	if err != nil {
+		return &base.CollectionMetadata{Name: c.name}
+	}
+	clone := sc.DeepCopy()
+	clone.Name = c.name
+	return &base.CollectionMetadata{
+		Version:    sc.Version,
+		Name:       c.name,
+		Collection: sc.Name,
+		Schema:     clone,
+	}
 }
 
 // Subscribe registers a subscription for an event that is specific to this collection.
@@ -286,6 +292,16 @@ func (c *baseCollection) Subscriptions(ctx context.Context) ([]base.Subscription
 func (c *baseCollection) Capabilities(ctx context.Context) *query.Capabilities {
 	capabilities := c.getCurrentInteractor(ctx).Capabilities()
 	return &capabilities
+}
+
+// currentSchema resolves the active schema from the provider on-demand.
+func (c *baseCollection) currentSchema(ctx context.Context) (*definition.Schema, error) {
+	return c.schemaProvider.CurrentSchema(ctx)
+}
+
+// currentValidator resolves the active validator from the provider on-demand.
+func (c *baseCollection) currentValidator(ctx context.Context) (*definition.DocumentValidator, error) {
+	return c.schemaProvider.CurrentValidator(ctx)
 }
 
 func (c *baseCollection) getCurrentInteractor(ctx context.Context) query.DatabaseInteractor {

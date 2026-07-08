@@ -11,6 +11,7 @@ import (
 	"github.com/asaidimu/go-anansi/v7/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v7/core/query"
 	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -571,5 +572,407 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 		default:
 			t.Errorf("Unexpected user ID: %v", userData.Must().GetString("idi"))
 		}
+	}
+}
+
+func TestPersistence_Migrate_PhaseSchemaOnly(t *testing.T) {
+	ctx := context.Background()
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	schema := newMigrationTestSchema("migrate_schema_only")
+	_, err = p.CreateCollection(ctx, schema)
+	require.NoError(t, err)
+
+	target := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "migrate_schema_only",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+		},
+	}
+
+	plan := base.NewSchemaOnlyMigration(target, "add email field")
+	_, err = p.Migrate(ctx, "migrate_schema_only", plan, nil)
+	require.NoError(t, err)
+
+	sc, err := p.Schema(ctx, "migrate_schema_only")
+	require.NoError(t, err)
+	assert.Equal(t, "2.0.0", sc.Version.String())
+}
+
+func TestPersistence_Migrate_PhaseSchemaOnly_ReactivePropagation(t *testing.T) {
+	ctx := context.Background()
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	schema := newMigrationTestSchema("migrate_reactive")
+	coll, err := p.CreateCollection(ctx, schema)
+	require.NoError(t, err)
+
+	// Create a document with the original schema
+	_, err = coll.CreateMany(ctx, []*data.Document{
+		data.MustNewDocument(map[string]any{"name": "Alice"}),
+	})
+	require.NoError(t, err)
+
+	// Migrate to add a field via PhaseSchemaOnly
+	target := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "migrate_reactive",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+		},
+	}
+
+	plan := base.NewSchemaOnlyMigration(target, "add email field")
+	newColl, err := p.Migrate(ctx, "migrate_reactive", plan, nil)
+	require.NoError(t, err)
+
+	// The old collection reference should see the new schema reactively
+	_, err = coll.CreateMany(ctx, []*data.Document{
+		data.MustNewDocument(map[string]any{"name": "Bob", "email": "bob@test.com"}),
+	})
+	assert.NoError(t, err, "old collection reference should accept new fields after reactive propagation")
+
+	// Verify the returned collection can also use the new field
+	_, err = newColl.CreateMany(ctx, []*data.Document{
+		data.MustNewDocument(map[string]any{"name": "Charlie", "email": "charlie@test.com"}),
+	})
+	assert.NoError(t, err)
+
+	// Verify all data is intact (no orphaned physical collection)
+	result, err := coll.Read(ctx, &query.Query{})
+	require.NoError(t, err)
+	assert.Len(t, result.Data, 3, "should have 3 documents — data not lost")
+
+	// Verify data preserved from before migration
+	sc, err := p.Schema(ctx, "migrate_reactive")
+	require.NoError(t, err)
+	assert.Equal(t, "2.0.0", sc.Version.String())
+}
+
+func TestPersistence_Migrate_PhaseFull(t *testing.T) {
+	ctx := context.Background()
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	schema := newMigrationTestSchema("migrate_full")
+	coll, err := p.CreateCollection(ctx, schema)
+	require.NoError(t, err)
+
+	_, err = coll.CreateMany(ctx, []*data.Document{
+		data.MustNewDocument(map[string]any{"name": "Alice"}),
+		data.MustNewDocument(map[string]any{"name": "Bob"}),
+	})
+	require.NoError(t, err)
+
+	target := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "migrate_full",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "name_upper", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+		},
+	}
+
+	transformer := func(_ context.Context, doc data.Document) (data.Document, error) {
+		d := doc.ToMap()
+		name, _ := d["name"].(string)
+		d["name_upper"] = name
+		delete(d, "name")
+		return *data.MustNewDocument(d), nil
+	}
+
+	plan := base.NewFullMigration(target, "rename name to name_upper", transformer)
+	_, err = p.Migrate(ctx, "migrate_full", plan, nil)
+	require.NoError(t, err)
+
+	sc, err := p.Schema(ctx, "migrate_full")
+	require.NoError(t, err)
+	require.NotNil(t, sc.Version)
+	assert.Equal(t, "2.0.0", sc.Version.String())
+
+	coll, err = p.Collection(ctx, "migrate_full")
+	require.NoError(t, err)
+
+	result, err := coll.Read(ctx, &query.Query{})
+	require.NoError(t, err)
+	require.Len(t, result.Data, 2)
+}
+
+func TestPersistence_Migrate_PhaseDDL_FallbackToFull(t *testing.T) {
+	ctx := context.Background()
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	schema := newMigrationTestSchema("migrate_ddl_fallback")
+	coll, err := p.CreateCollection(ctx, schema)
+	require.NoError(t, err)
+
+	_, err = coll.CreateMany(ctx, []*data.Document{
+		data.MustNewDocument(map[string]any{"name": "Alice"}),
+	})
+	require.NoError(t, err)
+
+	target := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "migrate_ddl_fallback",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "full_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+		},
+	}
+
+	transformer := func(_ context.Context, doc data.Document) (data.Document, error) {
+		d := doc.ToMap()
+		d["full_name"] = d["name"]
+		delete(d, "name")
+		return *data.MustNewDocument(d), nil
+	}
+
+	plan := &base.MigrationPlan{
+		Description: "rename field with fallback",
+		Target:      target,
+		Phase:       base.PhaseDDL,
+		Transformer: transformer,
+	}
+	_, err = p.Migrate(ctx, "migrate_ddl_fallback", plan, nil)
+	require.NoError(t, err)
+}
+
+func TestPersistence_Rollback(t *testing.T) {
+	ctx := context.Background()
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	schema := newMigrationTestSchema("rollback_test")
+	_, err = p.CreateCollection(ctx, schema)
+	require.NoError(t, err)
+
+	target := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "rollback_test",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+		},
+	}
+
+	plan := base.NewSchemaOnlyMigration(target, "add email")
+	_, err = p.Migrate(ctx, "rollback_test", plan, nil)
+	require.NoError(t, err)
+
+	sc, err := p.Schema(ctx, "rollback_test")
+	require.NoError(t, err)
+	assert.Equal(t, "2.0.0", sc.Version.String())
+
+	rolledBack, err := p.Rollback(ctx, "rollback_test", nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, rolledBack)
+
+	sc, err = p.Schema(ctx, "rollback_test")
+	require.NoError(t, err)
+	assert.Equal(t, "1.0.0", sc.Version.String())
+}
+
+func TestPersistence_Migrate_DryRun(t *testing.T) {
+	ctx := context.Background()
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	schema := newMigrationTestSchema("dryrun_test")
+	_, err = p.CreateCollection(ctx, schema)
+	require.NoError(t, err)
+
+	target := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "dryrun_test",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+		},
+	}
+
+	dryRun := true
+	plan := base.NewSchemaOnlyMigration(target, "dry run")
+	_, err = p.Migrate(ctx, "dryrun_test", plan, &dryRun)
+	require.NoError(t, err)
+
+	sc, err := p.Schema(ctx, "dryrun_test")
+	require.NoError(t, err)
+	assert.Equal(t, "1.0.0", sc.Version.String())
+}
+
+func TestPersistence_Migrate_InvalidParam(t *testing.T) {
+	ctx := context.Background()
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	_, err = p.Migrate(ctx, "test", "not-a-plan", nil)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "must be a *base.MigrationPlan")
+}
+
+func TestPersistence_Rollback_NoPreviousVersion(t *testing.T) {
+	ctx := context.Background()
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	schema := newMigrationTestSchema("rollback_none")
+	_, err = p.CreateCollection(ctx, schema)
+	require.NoError(t, err)
+
+	_, err = p.Rollback(ctx, "rollback_none", nil, nil)
+	assert.Error(t, err)
+}
+
+func TestPersistence_E2E_MigrateWithTransformer(t *testing.T) {
+	ctx := context.Background()
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	schema := newMigrationTestSchema("e2e_transform")
+	coll, err := p.CreateCollection(ctx, schema)
+	require.NoError(t, err)
+
+	docs := []*data.Document{
+		data.MustNewDocument(map[string]any{"name": "Alice", "age": 30}),
+		data.MustNewDocument(map[string]any{"name": "Bob", "age": 25}),
+	}
+	_, err = coll.CreateMany(ctx, docs)
+	require.NoError(t, err)
+
+	target := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "e2e_transform",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"f3": {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f4": {Name: "is_adult", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeBoolean}},
+			},
+		},
+	}
+
+	transformer := func(_ context.Context, doc data.Document) (data.Document, error) {
+		d := doc.ToMap()
+		d["email"] = d["name"].(string) + "@example.com"
+		d["is_adult"] = d["age"].(int) >= 18
+		return *data.MustNewDocument(d), nil
+	}
+
+	plan := base.NewFullMigration(target, "add email and is_adult", transformer)
+	_, err = p.Migrate(ctx, "e2e_transform", plan, nil)
+	require.NoError(t, err)
+
+	coll, err = p.Collection(ctx, "e2e_transform")
+	require.NoError(t, err)
+
+	result, err := coll.Read(ctx, &query.Query{})
+	require.NoError(t, err)
+	require.Len(t, result.Data, 2)
+
+	for _, doc := range result.Data {
+		email, err := doc.Get("email")
+		require.NoError(t, err)
+		name, err := doc.Get("name")
+		require.NoError(t, err)
+		isAdult, err := doc.Get("is_adult")
+		require.NoError(t, err)
+
+		assert.Equal(t, name.(string)+"@example.com", email)
+		age, _ := doc.Get("age")
+		assert.Equal(t, age.(int) >= 18, isAdult)
+	}
+}
+
+func TestPersistence_E2E_RollbackAfterMigrate(t *testing.T) {
+	ctx := context.Background()
+	interactor := ephemeral.NewEphemeral()
+	logger := zap.NewNop()
+
+	p, err := persistence.NewPersistence(interactor, nil, logger, nil)
+	require.NoError(t, err)
+
+	schema := newMigrationTestSchema("e2e_rollback")
+	_, err = p.CreateCollection(ctx, schema)
+	require.NoError(t, err)
+
+	target := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "e2e_rollback",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+		},
+	}
+
+	plan := base.NewSchemaOnlyMigration(target, "add email")
+	_, err = p.Migrate(ctx, "e2e_rollback", plan, nil)
+	require.NoError(t, err)
+
+	sc, err := p.Schema(ctx, "e2e_rollback")
+	require.NoError(t, err)
+	require.NotNil(t, sc)
+	assert.Equal(t, "2.0.0", sc.Version.String())
+
+	rolledBack, err := p.Rollback(ctx, "e2e_rollback", nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, rolledBack)
+
+	sc, err = p.Schema(ctx, "e2e_rollback")
+	require.NoError(t, err)
+	assert.Equal(t, "1.0.0", sc.Version.String())
+}
+
+func newMigrationTestSchema(name string) *definition.Schema {
+	return &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: name,
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				definition.FieldId(uuid.Must(uuid.NewV7()).String()): {
+					Name: "age",
+					FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger},
+				},
+			},
+		},
 	}
 }

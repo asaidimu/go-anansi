@@ -38,12 +38,12 @@ func TestSchema_MarshalUnmarshalJSON(t *testing.T) {
 					},
 				},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
+			Indexes: map[definition.IndexID]definition.Index{
 				"77117b14-13e7-4dcf-91ba-f5f1f36adafb": { // UUID for "idx_name"
 					Name: "idx_name",
 					Type: definition.IndexTypeNormal,
-					Fields: []definition.FieldId{
-						"8ffb9dff-e32a-4d67-8eb3-da9aa7d4941e", // UUID for "name" field
+					Fields: []definition.FieldName{
+						"name",
 					},
 				},
 			},
@@ -225,7 +225,7 @@ func TestSchema_MarshalJSON_NullAndEmptyOmission(t *testing.T) {
 				Name:        "TestSchemaWithEmpty",
 				Description: "",
 				Fields:      make(map[definition.FieldId]definition.Field),
-				Indexes:     make(map[definition.IndexId]definition.Index),
+				Indexes:     make(map[definition.IndexID]definition.Index),
 				Constraints: make(map[definition.ConstraintId]definition.Constraint),
 				Metadata:    make(map[string]any),
 			},
@@ -362,8 +362,8 @@ func TestSchema_MarshalJSON_NullAndEmptyOmission(t *testing.T) {
 				"77117b14-13e7-4dcf-91ba-f5f1f36adafb": { // UUID for "idx_name"
 					Name: "idx_name",
 					Type: definition.IndexTypeNormal,
-					Fields: []definition.FieldId{
-						"8ffb9dff-e32a-4d67-8eb3-da9aa7d4941e", // UUID for "name" field
+					Fields: []definition.FieldName{
+						"name",
 					},
 				},
 			},
@@ -475,7 +475,7 @@ func TestSchema_MarshalJSON_NullAndEmptyOmission(t *testing.T) {
 			"77117b14-13e7-4dcf-91ba-f5f1f36adafb": map[string]any{
 				"name":   "idx_name",
 				"type":   "normal",
-				"fields": []string{"8ffb9dff-e32a-4d67-8eb3-da9aa7d4941e"},
+				"fields": []string{"name"},
 			},
 		},
 		"constraints": map[string]any{

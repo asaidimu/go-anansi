@@ -91,51 +91,53 @@ func (p *sanitizationStore) createPolicyCollectionSchema() *definition.Schema {
   "version": "1.0.0",
   "description": "System collection for storing sanitization policies",
   "fields": {
-    "f1": {
+    "019f32a8-e475-7e82-9f45-4aee484e8359": {
       "name": "version",
       "type": "string",
       "required": false,
       "description": "Version of the policy"
     },
-    "f2": {
+    "019f32a8-e475-7e91-85dd-16594685bc76": {
       "name": "scope",
       "type": "string",
       "required": true,
       "description": "Scope identifier (must be non-empty)"
     },
-    "f3": {
+    "019f32a8-e475-7be9-9cbd-c5af42aab072": {
       "name": "policy",
       "type": "enum",
-      "schema": { "id": "s1" },
+      "schema": {
+        "id": "019f32a8-e475-728a-9346-241344178f91"
+      },
       "required": false,
       "default": "preserve",
       "description": "Default policy for this config"
     },
-    "f4": {
+    "019f32a8-e475-7b3a-b5a0-717f48bfb5ff": {
       "name": "fields",
       "type": "record",
       "required": false,
       "description": "Field-specific masking policies"
     },
-    "f5": {
+    "019f32a8-e475-702b-8bae-84b24213ac4d": {
       "name": "patterns",
       "type": "record",
       "required": false,
       "description": "Regex-based field matching patterns"
     },
-    "f6": {
+    "019f32a8-e475-7472-8a91-62ce450fa515": {
       "name": "obscure",
       "type": "record",
       "required": false,
       "description": "Obscure policy configuration"
     },
-    "f7": {
+    "019f32a8-e475-7e3d-a83e-a94641e3b5a0": {
       "name": "salt",
       "type": "string",
       "required": false,
       "description": "Secret key for HMAC hashing"
     },
-    "f8": {
+    "019f32a8-e475-787f-85fb-9ffa4a0bb370": {
       "name": "description",
       "type": "string",
       "required": false,
@@ -143,16 +145,23 @@ func (p *sanitizationStore) createPolicyCollectionSchema() *definition.Schema {
     }
   },
   "schemas": {
-    "s1": {
+    "019f32a8-e475-728a-9346-241344178f91": {
       "name": "SanitizationPolicy",
       "type": "string",
-      "values": ["obscure", "preserve", "redact", "hash"]
+      "values": [
+        "obscure",
+        "preserve",
+        "redact",
+        "hash"
+      ]
     }
   },
   "indexes": {
-    "idx1": {
+    "019f32a8-e475-756d-8621-687745af9a4b": {
       "name": "idx_scope_unique",
-      "fields": ["f2"],
+      "fields": [
+        "scope"
+      ],
       "unique": true
     }
   }

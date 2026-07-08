@@ -8,6 +8,14 @@ import (
 // Capabilities returns the capabilities of the SQLite interactor.
 func (i *sqliteFactory) Capabilities() query.Capabilities {
 	return query.Capabilities{
+		SchemaEvolution: query.SchemaEvolution{
+			AddColumn:       true,  // ALTER TABLE ... ADD COLUMN
+			DropColumn:      true,  // ALTER TABLE ... DROP COLUMN (SQLite 3.35.0+)
+			RenameColumn:    false, // requires table recreation
+			AlterColumnType: false, // requires table recreation
+			AddConstraint:   false, // very limited after creation
+			DropConstraint:  false, // not supported
+		},
 		RequiresTransactionSerialization: true,
 		SupportedLogicalOperators: map[common.LogicalOperator]struct{}{
 			common.LogicalAnd: {},
