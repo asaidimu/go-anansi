@@ -38,22 +38,38 @@ type InteractorOptions struct {
 // SchemaManager defines the contract for database schema operations.
 // It abstracts the specific DDL (Data Definition Language) syntax for creating and
 // managing collections (tables) and their indexes.
+//
+// Methods that the backend does not support (per Capabilities.SchemaEvolution) should
+// return ErrDDLNotSupported so the migration layer can fall back to a full table copy.
 type SchemaManager interface {
 	// CreateCollection generates and executes the necessary DDL statements to create a
 	// table based on a schema definition.
-	CreateCollection(ctx context.Context,schema definition.Schema) error
-
-	// CreateIndex generates and executes the DDL statements to create an index on a table.
-	CreateIndex(ctx context.Context, collection string, index definition.Index) error
+	CreateCollection(ctx context.Context, schema definition.Schema) error
 
 	// DropCollection removes a table from the database.
 	DropCollection(ctx context.Context, name string) error
 
+	// CollectionExists checks if a table with the given name exists in the database.
+	CollectionExists(ctx context.Context, name string) (bool, error)
+
+	// --- Index DDL ---
+
+	// CreateIndex generates and executes the DDL statements to create an index on a table.
+	CreateIndex(ctx context.Context, collection string, index definition.Index) error
+
 	// DropIndex removes an index from the database.
 	DropIndex(ctx context.Context, collection string, index definition.Index) error
 
-	// CollectionExists checks if a table with the given name exists in the database.
-	CollectionExists(ctx context.Context,name string) (bool, error)
+	// --- Column DDL — may return ErrDDLNotSupported ---
+
+	// AddColumn adds a single column to an existing table/collection.
+	AddColumn(ctx context.Context, collection string, field definition.Field) error
+
+	// DropColumn removes a single column from an existing table/collection.
+	DropColumn(ctx context.Context, collection string, fieldName string) error
+
+	// RenameColumn changes the name of a column in-place.
+	RenameColumn(ctx context.Context, collection string, oldName, newName string) error
 }
 
 // RawQueryResult represents the outcome of executing a raw database query.

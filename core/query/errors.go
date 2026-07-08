@@ -61,4 +61,8 @@ var (
 	ErrTargetCannotBeNil                    = common.NewSystemError("ERR_QUERY_TARGET_CANNOT_BE_NIL", "target cannot be nil")
 	ErrTargetNameEmptyStream                = common.NewSystemError("ERR_QUERY_TARGET_NAME_EMPTY_STREAM", "target name cannot be empty")
 	ErrJoinConditionNil                     = common.NewSystemError("ERR_QUERY_JOIN_CONDITION_NIL", "join condition ('on') cannot be nil")
+
+	// ErrDDLNotSupported is returned by SchemaManager methods when the backend
+	// cannot perform the requested DDL operation in place.
+	ErrDDLNotSupported = common.NewSystemError("ERR_QUERY_DDL_NOT_SUPPORTED", "this DDL operation is not supported by the backend")
 )

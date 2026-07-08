@@ -2,6 +2,8 @@ package base
 
 import (
 	"context"
+	"sync"
+
 	"github.com/asaidimu/go-anansi/v7/core/common"
 	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
 )
@@ -10,16 +12,41 @@ import (
 type SchemaVersionRecord struct {
 	Physical string            `json:"physical"` // The physical name of the collection in the database for this version.
 	Schema   definition.Schema `json:"schema"`   // The full schema definition for this version.
+
+	validatorOnce sync.Once
+	validator     *definition.DocumentValidator
+}
+
+// Validator returns the lazily-built DocumentValidator for this schema version.
+// It is built at most once per SchemaVersionRecord and cached thereafter.
+func (r *SchemaVersionRecord) Validator() (*definition.DocumentValidator, error) {
+	r.validatorOnce.Do(func() {
+		r.validator, _ = definition.NewDocumentValidator(&r.Schema, nil)
+	})
+	return r.validator, nil
 }
 
 type RegistryEntry struct {
-	Name          string                         `json:"name"`                  // The name of the collection this schema defines.
-	Description   string                         `json:"description,omitempty"` // A human-readable description of the schema.
-	ActiveVersion *common.Version                `json:"version"`               // The current active version of the schema, pointing to an entry in 'Versions'.
-	Versions      map[string]SchemaVersionRecord `json:"versions,omitempty"`    // A map of all schema versions, keyed by version string.
+	Name          string                      `json:"name"`                  // The name of the collection this schema defines.
+	Description   string                      `json:"description,omitempty"` // A human-readable description of the schema.
+	ActiveVersion *common.Version             `json:"version"`               // The current active version of the schema, pointing to an entry in 'Versions'.
+	Versions      map[string]*SchemaVersionRecord `json:"versions,omitempty"`    // A map of all schema versions, keyed by version string.
 	// TODO: Watch for this should you ever decide to change the name of the
 	// metadata field
-	Metadata      map[string]any                 `json:"_metadata_,omitempty"`    // A map of all schema versions, keyed by version string.
+	Metadata      map[string]any              `json:"_metadata_,omitempty"`    // A map of all schema versions, keyed by version string.
+}
+
+// SchemaProvider is the interface collection layers use to resolve the active schema
+// and its compiled validator without holding a direct schema pointer. Two
+// implementations exist:
+//
+//   - RegistrySchemaProvider — delegates to CollectionRegistry for live resolution.
+//   - StaticSchemaProvider  — returns a fixed schema (used for bootstrapping the
+//     registry collection before the registry itself exists).
+type SchemaProvider interface {
+	CurrentSchema(ctx context.Context) (*definition.Schema, error)
+	CurrentValidator(ctx context.Context) (*definition.DocumentValidator, error)
+	PhysicalName(ctx context.Context) (string, error)
 }
 
 // DropCollectionOptions provides flags to control the behavior of the DropCollection method,
@@ -64,7 +91,18 @@ type CollectionRegistry interface {
 
 	// GetSchema retrieves a specific schema definition for a collection.
 	// If no version is provided, it returns the currently active schema version.
+	// Callers should treat the returned schema as immutable.
 	GetSchema(ctx context.Context, name string, version ...string) (*definition.Schema, error)
+
+	// CurrentSchema returns the active schema for the named collection.
+	// Unlike GetSchema, this returns a shared reference (not a deep copy) and is
+	// suitable for high-frequency reads where the caller does not mutate the result.
+	CurrentSchema(ctx context.Context, name string) (*definition.Schema, error)
+
+	// CurrentValidator returns the lazily-built DocumentValidator for the active
+	// schema version. The validator is cached on the version record and rebuilt
+	// only when a new version is added.
+	CurrentValidator(ctx context.Context, name string) (*definition.DocumentValidator, error)
 
 	// GetRegistryEntry retrieves the complete management record for a collection.
 	GetRegistryEntry(ctx context.Context, name string) (*RegistryEntry, error)

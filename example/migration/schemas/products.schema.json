@@ -1,0 +1,29 @@
+{
+  "name": "Products",
+  "fields": {
+    "019f405a-e686-75b6-95da-737a99188596": {
+      "name": "name",
+      "type": "string",
+      "required": true,
+      "unique": true
+    },
+    "019f405a-e686-764c-839f-a217470c321c": {
+      "name": "price",
+      "type": "number",
+      "required": true
+    },
+    "019f405a-e686-7658-b3c8-fd15c3db2889": {
+      "name": "stock",
+      "type": "integer",
+      "required": true
+    },
+    "019f405a-e686-7663-b32a-ccbccfc18c52": {
+      "name": "category",
+      "type": "string"
+    },
+    "019f405a-e686-7672-9c22-790e7c3b3b08": {
+      "name": "description",
+      "type": "string"
+    }
+  }
+}

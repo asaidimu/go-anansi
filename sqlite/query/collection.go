@@ -27,8 +27,8 @@ func (t *createTableTree) Value() (string, []any, error) {
 
 	for _, index := range sc.Indexes {
 		if index.Type == definition.IndexTypePrimary && len(index.Fields) > 0 {
-			for _, fieldId := range index.Fields {
-				if field, ok := sc.Fields[fieldId]; ok {
+			for _, fieldName := range index.Fields {
+				if _, field, ok := sc.GetFieldByName(fieldName); ok {
 					primaryKeys = append(primaryKeys, string(field.Name))
 				}
 			}
@@ -176,6 +176,84 @@ func (s *createTableTree) getColumnType(fieldType definition.FieldType) string {
 	}
 }
 
+
+func (f *sqliteFactory) buildAddColumnTree(q *query.Query, field definition.Field) (SQLNode, error) {
+	return &alterTableAddColumnTree{collection: q.Target.Name, field: field}, nil
+}
+
+type alterTableAddColumnTree struct {
+	collection string
+	field      definition.Field
+}
+
+func (t *alterTableAddColumnTree) Value() (string, []any, error) {
+	if t.collection == "" {
+		return "", nil, ErrCollectionSchemaNotDefined
+	}
+	colDef, err := t.buildColumnDefinition(string(t.field.Name), &t.field)
+	if err != nil {
+		return "", nil, err
+	}
+	sql := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s;", t.collection, colDef)
+	return sql, nil, nil
+}
+
+func (t *alterTableAddColumnTree) buildColumnDefinition(fieldName string, field *definition.Field) (string, error) {
+	var parts []string
+	parts = append(parts, quoteIdentifier(fieldName), t.getColumnType(field.Type))
+
+	if field.Required {
+		parts = append(parts, "NOT NULL")
+	}
+	if !field.Default.IsZero() && !field.Default.IsNull() {
+		defVal, err := t.formatDefaultValue(field.Default, field)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, "DEFAULT "+defVal)
+	}
+	if field.Unique {
+		parts = append(parts, "UNIQUE")
+	}
+	return strings.Join(parts, " "), nil
+}
+
+func (t *alterTableAddColumnTree) getColumnType(fieldType definition.FieldType) string {
+	switch fieldType {
+	case definition.FieldTypeString, definition.FieldTypeEnum:
+		return "TEXT"
+	case definition.FieldTypeNumber, definition.FieldTypeDecimal:
+		return "REAL"
+	case definition.FieldTypeInteger:
+		return "INTEGER"
+	case definition.FieldTypeBoolean:
+		return "INTEGER"
+	case definition.FieldTypeObject, definition.FieldTypeArray, definition.FieldTypeRecord, definition.FieldTypeUnion:
+		return "TEXT"
+	default:
+		return "BLOB"
+	}
+}
+
+func (t *alterTableAddColumnTree) formatDefaultValue(value definition.LiteralValue, fieldDef *definition.Field) (string, error) {
+	if value.IsZero() || value.IsNull() {
+		return "NULL", nil
+	}
+	result, err := toSQLiteValue(fieldDef, value.Value())
+	if err != nil {
+		return "", err
+	}
+	switch fieldDef.Type {
+	case definition.FieldTypeString, definition.FieldTypeEnum:
+		resultS := result.(string)
+		return fmt.Sprintf("'%s'", strings.ReplaceAll(fmt.Sprintf("%v", resultS), "'", "''")), nil
+	case definition.FieldTypeObject, definition.FieldTypeArray, definition.FieldTypeRecord, definition.FieldTypeUnion:
+		resultS := result.(string)
+		return fmt.Sprintf("'%s'", strings.ReplaceAll(resultS, "'", "''")), nil
+	default:
+		return fmt.Sprintf("%v", result), nil
+	}
+}
 
 func (f *sqliteFactory) buildDropTableTree(q *query.Query) (SQLNode, error) {
 	return &dropTableTree{name: q.Target.Name}, nil

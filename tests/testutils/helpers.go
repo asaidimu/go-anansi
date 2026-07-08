@@ -17,7 +17,7 @@ func ConfigureDocumentFactory(providers ...data.MetadataProviderConfig) {
 					BaseSchema: definition.BaseSchema{
 						Name: "custom_meta",
 						Fields: map[definition.FieldId]definition.Field{
-							"cf1": {
+							"019f3d5c-847c-7618-a2ea-ac43462b96f7": {
 								Name: "custom_field", Required: true,
 								FieldProperties: definition.FieldProperties{
 									Type: definition.FieldTypeString,

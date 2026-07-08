@@ -14,7 +14,7 @@ func generateComplexSchema(depth, fieldsPerLevel, arrayLength int) *definition.S
 		BaseSchema: definition.BaseSchema{
 			Name:    "ComplexRoot",
 			Fields:  make(map[definition.FieldId]definition.Field),
-			Indexes: make(map[definition.IndexId]definition.Index),
+			Indexes: make(map[definition.IndexID]definition.Index),
 		},
 		Schemas: make(map[definition.SchemaId]definition.NestedSchema),
 		Version: common.MustNewVersion("1.0.0"),

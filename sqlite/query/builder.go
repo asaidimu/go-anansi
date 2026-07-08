@@ -70,6 +70,12 @@ func (x *sqliteFactory) Build(
 		sqlTree, err = f.buildCreateIndexTree(q, extra)
 	case native.StmtDropIndex:
 		sqlTree, err = f.buildDropIndexTree(q, extra)
+	case native.StmtAddColumn:
+		field, ok := extra.(definition.Field)
+		if !ok {
+			return nil, ErrBuilderUnsupportedStatementType.WithCause(fmt.Errorf("StmtAddColumn: expected definition.Field, got %T", extra))
+		}
+		sqlTree, err = f.buildAddColumnTree(q, field)
 	case native.StmtCheckCollection:
 		sqlTree, err = f.buildCheckTableTree(q)
 	default:

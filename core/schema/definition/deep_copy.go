@@ -12,7 +12,7 @@ func (s *Schema) DeepCopy() *Schema {
 			Description: s.Description,
 			Fields:      make(map[FieldId]Field, len(s.Fields)),
 			Constraints: make(map[ConstraintId]Constraint, len(s.Constraints)),
-			Indexes:     make(map[IndexId]Index, len(s.Indexes)),
+			Indexes:     make(map[IndexID]Index, len(s.Indexes)),
 			Metadata:    make(map[string]any, len(s.Metadata)),
 		},
 		Schemas: make(map[SchemaId]NestedSchema, len(s.Schemas)),
@@ -69,7 +69,7 @@ func (ns *NestedSchema) deepCopy() NestedSchema {
 			Description: ns.Description,
 			Fields:      make(map[FieldId]Field, len(ns.Fields)),
 			Constraints: make(map[ConstraintId]Constraint, len(ns.Constraints)),
-			Indexes:     make(map[IndexId]Index, len(ns.Indexes)),
+			Indexes:     make(map[IndexID]Index, len(ns.Indexes)),
 			Metadata:    make(map[string]any, len(ns.Metadata)),
 		},
 		FieldProperties: FieldProperties{
@@ -166,9 +166,9 @@ func (cg *ConstraintGroup) deepCopy() *ConstraintGroup {
 
 // deepCopy creates a deep copy of an Index
 func (idx *Index) deepCopy() Index {
-	var copiedFields []FieldId
+	var copiedFields []FieldName
 	if idx.Fields != nil {
-		copiedFields = make([]FieldId, len(idx.Fields))
+		copiedFields = make([]FieldName, len(idx.Fields))
 		for i, field := range idx.Fields {
 			copiedFields[i] = field
 		}
@@ -251,18 +251,22 @@ func (fsr FieldSchemaReference) deepCopy() FieldSchemaReference {
 // deepCopy creates a deep copy of a SchemaReference
 func (sr SchemaReference) deepCopy() SchemaReference {
 	copy := SchemaReference{
-		ID:          sr.ID,
-		Type:        sr.Type,
-		Constraints: make(map[ConstraintId]Constraint, len(sr.Constraints)),
-		Indexes:     make(map[IndexId]Index, len(sr.Indexes)),
+		ID:   sr.ID,
+		Type: sr.Type,
 	}
 
-	for id, constraint := range sr.Constraints {
-		copy.Constraints[id] = constraint.deepCopy()
+	if sr.Constraints != nil {
+		copy.Constraints = make(map[ConstraintId]Constraint, len(sr.Constraints))
+		for id, constraint := range sr.Constraints {
+			copy.Constraints[id] = constraint.deepCopy()
+		}
 	}
 
-	for id, index := range sr.Indexes {
-		copy.Indexes[id] = index.deepCopy()
+	if sr.Indexes != nil {
+		copy.Indexes = make(map[IndexID]Index, len(sr.Indexes))
+		for id, index := range sr.Indexes {
+			copy.Indexes[id] = index.deepCopy()
+		}
 	}
 
 	if len(sr.Values) > 0 {

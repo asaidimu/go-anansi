@@ -43,16 +43,16 @@ func getUserSchema() *definition.Schema {
 				"age":    {Name: "age", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
 				"active": {Name: "active", Required: true, FieldProperties: definition.FieldProperties{Type: definition.FieldTypeBoolean}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
+			Indexes: map[definition.IndexID]definition.Index{
 				"key_ida": {
 					Name:   "key_ida",
-					Fields: []definition.FieldId{"ida"},
+					Fields: []definition.FieldName{"ida"},
 					Type:   definition.IndexTypeNormal,
 					Unique: true,
 				},
 				"key_age": {
 					Name:   "key_age",
-					Fields: []definition.FieldId{"age"},
+					Fields: []definition.FieldName{"age"},
 					Type:   definition.IndexTypeNormal,
 				},
 			},

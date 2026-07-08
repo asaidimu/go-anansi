@@ -531,7 +531,7 @@ func (s *Schema) ToJSON() []byte {
 			}
 			jb.endArray() // close the array
 		case NodeTypeIndexFields:
-			fields := ctx.Value.([]FieldId)
+			fields := ctx.Value.([]FieldName)
 			jb.writeKey(ctx.Key) // key is "fields"
 			jb.startArray()
 			for _, f := range fields {

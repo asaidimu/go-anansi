@@ -1,7 +1,7 @@
 # Go-Anansi: A Schema-Driven, Hybrid Persistence Layer for Go
 
 ![Go Version](https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=for-the-badge&logo=go)
-![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 ![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen?style=for-the-badge)
 
 Go-Anansi is a sophisticated, schema-driven persistence framework for Go applications, engineered for flexibility, extensibility, and high performance. It provides a robust data access layer that abstracts away underlying database complexities, allowing developers to focus on business logic rather than boilerplate data management.
@@ -871,18 +871,12 @@ Future enhancements and areas of active development include:
 
 ---
 
-## 📜 License
+## License
 
-This project is licensed under the **Anansi Platform Proprietary License**.
-
-**IMPORTANT: This is a source-available license. It is NOT an open-source license as defined by the Open Source Initiative. A separate commercial license is required for any form of commercial use.**
-
-For the full text of the license, please see the [LICENSE.md](LICENSE.md) file.
-
-To obtain a commercial license or discuss consulting engagements, please contact the Licensor.
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
 
 ---
 
 ## 🙏 Acknowledgments
 
-Go-Anansi is a product of CyberSync Printers & Stationers - BN-P7SABM5J. All rights reserved.
+Go-Anansi is a product of CyberSync Printers & Stationers - BN-P7SABM5J.

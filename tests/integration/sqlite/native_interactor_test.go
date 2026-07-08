@@ -64,8 +64,8 @@ func TestNativeInteractor_CreateCollection(t *testing.T) {
 				"name": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 				"age":  {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"pk": {Name: "id_pk", Fields: []definition.FieldId{"id"}, Type: definition.IndexTypePrimary},
+			Indexes: map[definition.IndexID]definition.Index{
+				"pk": {Name: "id_pk", Fields: []definition.FieldName{"id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -123,8 +123,8 @@ func TestNativeInteractor_InsertDocuments(t *testing.T) {
 				"name":       {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 				"price":      {Name: "price", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"pk": {Name: "product_id_pk", Fields: []definition.FieldId{"product_id"}, Type: definition.IndexTypePrimary},
+			Indexes: map[definition.IndexID]definition.Index{
+				"pk": {Name: "product_id_pk", Fields: []definition.FieldName{"product_id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -183,8 +183,8 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 				"amount":      {Name: "amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
 				"status":      {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"pk": {Name: "order_id_pk", Fields: []definition.FieldId{"order_id"}, Type: definition.IndexTypePrimary},
+			Indexes: map[definition.IndexID]definition.Index{
+				"pk": {Name: "order_id_pk", Fields: []definition.FieldName{"order_id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -273,8 +273,8 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 				"description": {Name: "description", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 				"completed":   {Name: "completed", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeBoolean}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"pk": {Name: "task_id_pk", Fields: []definition.FieldId{"task_id"}, Type: definition.IndexTypePrimary},
+			Indexes: map[definition.IndexID]definition.Index{
+				"pk": {Name: "task_id_pk", Fields: []definition.FieldName{"task_id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -352,8 +352,8 @@ func TestNativeInteractor_DeleteDocuments(t *testing.T) {
 				"item_id": {Name: "item_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 				"name":    {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"pk": {Name: "item_id_pk", Fields: []definition.FieldId{"item_id"}, Type: definition.IndexTypePrimary},
+			Indexes: map[definition.IndexID]definition.Index{
+				"pk": {Name: "item_id_pk", Fields: []definition.FieldName{"item_id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -418,8 +418,8 @@ func TestNativeInteractor_DropCollection(t *testing.T) {
 			Fields: map[definition.FieldId]definition.Field{
 				"id": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"pk": {Name: "id_pk", Fields: []definition.FieldId{"id"}, Type: definition.IndexTypePrimary},
+			Indexes: map[definition.IndexID]definition.Index{
+				"pk": {Name: "id_pk", Fields: []definition.FieldName{"id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -459,9 +459,9 @@ func TestNativeInteractor_CreateIndex(t *testing.T) {
 				"id":    {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 				"value": {Name: "value", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"pk": {Name: "id_pk", Fields: []definition.FieldId{"id"}, Type: definition.IndexTypePrimary},
-				"idx": {Name: "idx_value", Fields: []definition.FieldId{"value"}, Type: definition.IndexTypeUnique},
+			Indexes: map[definition.IndexID]definition.Index{
+				"pk": {Name: "id_pk", Fields: []definition.FieldName{"id"}, Type: definition.IndexTypePrimary},
+				"idx": {Name: "idx_value", Fields: []definition.FieldName{"value"}, Type: definition.IndexTypeUnique},
 			},
 		},
 	}
@@ -505,9 +505,9 @@ func TestNativeInteractor_DropIndex(t *testing.T) {
 				"id":         {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 				"data_value": {Name: "data_value", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"pk": {Name: "id_pk", Fields: []definition.FieldId{"id"}, Type: definition.IndexTypePrimary},
-				"idx": {Name: "idx_data_value", Fields: []definition.FieldId{"data_value"}, Type: definition.IndexTypeNormal},
+			Indexes: map[definition.IndexID]definition.Index{
+				"pk": {Name: "id_pk", Fields: []definition.FieldName{"id"}, Type: definition.IndexTypePrimary},
+				"idx": {Name: "idx_data_value", Fields: []definition.FieldName{"data_value"}, Type: definition.IndexTypeNormal},
 			},
 		},
 	}
@@ -524,7 +524,7 @@ func TestNativeInteractor_DropIndex(t *testing.T) {
 	assert.Equal(t, "idx_data_value", indexName)
 
 	// Drop the index
-	indexToDrop := definition.Index{Name: "idx_data_value", Fields: []definition.FieldId{"data_value"}}
+	indexToDrop := definition.Index{Name: "idx_data_value", Fields: []definition.FieldName{"data_value"}}
 	err = interactor.SchemaManager().DropIndex(ctx, testSchema.Name, indexToDrop)
 	require.NoError(t, err)
 
@@ -549,8 +549,8 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 				"account_id": {Name: "account_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 				"balance":    {Name: "balance", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"pk": {Name: "account_id_pk", Fields: []definition.FieldId{"account_id"}, Type: definition.IndexTypePrimary},
+			Indexes: map[definition.IndexID]definition.Index{
+				"pk": {Name: "account_id_pk", Fields: []definition.FieldName{"account_id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}
@@ -713,8 +713,8 @@ func TestNativeInteractor_RawQuery(t *testing.T) {
 				"email": {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 				"age":   {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
 			},
-			Indexes: map[definition.IndexId]definition.Index{
-				"pk": {Name: "id_pk", Fields: []definition.FieldId{"id"}, Type: definition.IndexTypePrimary},
+			Indexes: map[definition.IndexID]definition.Index{
+				"pk": {Name: "id_pk", Fields: []definition.FieldName{"id"}, Type: definition.IndexTypePrimary},
 			},
 		},
 	}

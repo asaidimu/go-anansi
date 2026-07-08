@@ -68,7 +68,7 @@ func TestIndexConditionUnion_UnmarshalJSON_Condition(t *testing.T) {
 	require.NoError(t, errA)
 	require.NotNil(t, cond)
 
-	assert.Equal(t, definition.FieldId("fieldA"), cond.Field)
+	assert.Equal(t, definition.FieldName("fieldA"), cond.Field)
 	assert.Equal(t, common.NotEqual, cond.Operator)
 
 	val, errB := definition.LiteralValueAs[string](cond.Value)
@@ -105,7 +105,7 @@ func TestIndexConditionUnion_UnmarshalJSON_Group(t *testing.T) {
 	require.NoError(t, errC)
 	require.NotNil(t, cond)
 
-	assert.Equal(t, definition.FieldId("fieldB"), cond.Field)
+	assert.Equal(t, definition.FieldName("fieldB"), cond.Field)
 	assert.Equal(t, common.LessThan, cond.Operator)
 
 	val, errV := definition.LiteralValueAs[int64](cond.Value)

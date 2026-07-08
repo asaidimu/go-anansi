@@ -60,17 +60,11 @@ func (s *Schema) WithFieldEnsured(field *Field) (*Schema, FieldId, bool, error) 
 
 // WithoutIndexesReferencingField returns a new schema without any indexes that reference the given field.
 func (s *Schema) WithoutIndexesReferencingField(fieldName FieldName) (*Schema, bool, error) {
-	// First, we need to find the FieldId for this name
-	fieldId, _, exists := s.GetFieldByName(fieldName)
-	if !exists {
-		return s, false, nil
-	}
-
 	clone := s.DeepCopy()
 	modified := false
 	for id, index := range clone.Indexes {
-		for _, fId := range index.Fields {
-			if fId == fieldId {
+		for _, fn := range index.Fields {
+			if fn == fieldName {
 				delete(clone.Indexes, id)
 				modified = true
 				break
@@ -100,7 +94,7 @@ func (idx *Index) Equals(other *Index) bool {
 }
 
 // GetIndexByName returns the index with the given name, if it exists.
-func (s *Schema) GetIndexByName(name string) (IndexId, *Index, bool) {
+func (s *Schema) GetIndexByName(name string) (IndexID, *Index, bool) {
 	for id, index := range s.Indexes {
 		if index.Name == name {
 			return id, &index, true
@@ -110,10 +104,10 @@ func (s *Schema) GetIndexByName(name string) (IndexId, *Index, bool) {
 }
 
 // WithIndex returns a new schema with the index added or replaced (by ID)
-func (s *Schema) WithIndex(id IndexId, index Index) *Schema {
+func (s *Schema) WithIndex(id IndexID, index Index) *Schema {
 	clone := s.DeepCopy()
 	if clone.Indexes == nil {
-		clone.Indexes = make(map[IndexId]Index)
+		clone.Indexes = make(map[IndexID]Index)
 	}
 	clone.Indexes[id] = index
 	return clone
@@ -132,6 +126,6 @@ func (s *Schema) WithIndexEnsured(index *Index) (*Schema, bool, error) {
 	}
 
 	// Add new
-	newID := IndexId(uuid.Must(uuid.NewV7()).String())
+	newID := IndexID(uuid.Must(uuid.NewV7()).String())
 	return s.WithIndex(newID, *index), true, nil
 }

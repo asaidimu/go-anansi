@@ -43,8 +43,8 @@ func (t *createIndexTree) Value() (string, []any, error) {
 	if indexName == "" {
 		unquotedTableName := strings.Trim(collection, `"`)
 		stringFields := make([]string, len(index.Fields))
-		for i, f := range index.Fields {
-			stringFields[i] = string(f)
+		for i, fn := range index.Fields {
+			stringFields[i] = string(fn)
 		}
 		indexName = fmt.Sprintf("idx_%s_%s", unquotedTableName, strings.Join(stringFields, "_"))
 	}
@@ -52,14 +52,16 @@ func (t *createIndexTree) Value() (string, []any, error) {
 	sb.WriteString(fmt.Sprintf(" ON %s (", collection))
 
 	var fieldParts []string
-	for _, fieldId := range index.Fields {
-		field := string(fieldId)
+	for _, field := range index.Fields {
+		colName := string(field)
 		part := ""
-		if strings.Contains(field, ".") {
-			jsonPath := "$." + strings.ReplaceAll(field, ".", ".")
-			part = fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(field[:strings.Index(field, ".")]), jsonPath)
+		if strings.Contains(colName, ".") {
+			tablePart := colName[:strings.Index(colName, ".")]
+			fieldPart := colName[strings.Index(colName, ".")+1:]
+			jsonPath := "$." + strings.ReplaceAll(fieldPart, ".", ".")
+			part = fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(tablePart), jsonPath)
 		} else {
-			part = quoteIdentifier(field)
+			part = quoteIdentifier(colName)
 		}
 		if index.Order != "" && strings.ToUpper(index.Order) == "DESC" {
 			part += " DESC"

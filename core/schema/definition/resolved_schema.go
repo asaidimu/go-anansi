@@ -30,7 +30,7 @@ import (
 type ResolvedSchema struct {
 	Fields      []ResolvedField
 	Constraints []ResolvedConstraint
-	Indexes     map[IndexId]Index
+	Indexes     map[IndexID]Index
 	// All named sub-schemas, each resolved to exactly one level.
 	// This is the sole authoritative registry after compilation.
 	Schemas map[SchemaId]*ResolvedNestedSchema
@@ -65,7 +65,7 @@ type ResolvedNestedSchema struct {
 
 	// Indexes from the source BaseSchema. Preserved for consumers such as
 	// query builders and storage adapters that need index information.
-	Indexes map[IndexId]Index
+	Indexes map[IndexID]Index
 }
 
 // ResolvedField is a fully resolved field. All type ambiguity is eliminated.

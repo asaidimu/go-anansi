@@ -11,7 +11,7 @@ type BaseSchema struct {
 	Name        string                      `json:"name,omitempty"`
 	Description string                      `json:"description,omitempty"`
 	Fields      map[FieldId]Field           `json:"fields,omitempty"`
-	Indexes     map[IndexId]Index           `json:"indexes,omitempty"`
+	Indexes     map[IndexID]Index           `json:"indexes,omitempty"`
 	Constraints map[ConstraintId]Constraint `json:"constraints,omitempty"`
 	Metadata    map[string]any              `json:"metadata,omitempty"`
 }

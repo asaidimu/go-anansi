@@ -611,21 +611,29 @@ var MetaSchemaPredicates = definition.PredicateMap{
 		if !ok {
 			return nil
 		}
+		// Build name-to-type map
+		fieldTypeByName := make(map[string]string, len(schemaFields))
+		for _, f := range schemaFields {
+			if fMap, ok := f.(map[string]any); ok {
+				if fName, ok := fMap["name"].(string); ok {
+					fType, _ := fMap["type"].(string)
+					fieldTypeByName[fName] = fType
+				}
+			}
+		}
 		for _, f := range fieldsArr {
-			fieldID, ok := f.(string)
+			fieldName, ok := f.(string)
 			if !ok {
 				continue
 			}
-			fieldDef, exists := schemaFields[fieldID]
+			fieldType, exists := fieldTypeByName[fieldName]
 			if !exists {
 				continue
 			}
-			fieldMap := fieldDef.(map[string]any)
-			fieldType, _ := fieldMap["type"]
 			if fieldType != "geometry" {
 				return []common.Issue{{
 					Code:     "SPATIAL_INDEX_NON_GEOMETRY",
-					Message:  fmt.Sprintf("Spatial index can only reference geometry fields, but field '%s' has type '%v'", fieldID, fieldType),
+					Message:  fmt.Sprintf("Spatial index can only reference geometry fields, but field '%s' has type '%v'", fieldName, fieldType),
 					Severity: "error",
 				}}
 			}
@@ -637,7 +645,7 @@ var MetaSchemaPredicates = definition.PredicateMap{
 		root := params.Root
 		condition := params.Data.(map[string]any)
 		fieldVal, _ := condition["field"]
-		fieldID, ok := fieldVal.(string)
+		fieldName, ok := fieldVal.(string)
 		if !ok {
 			return nil
 		}
@@ -646,27 +654,34 @@ var MetaSchemaPredicates = definition.PredicateMap{
 		if !ok {
 			return nil
 		}
-		fieldDef, exists := schemaFields[fieldID]
-		if !exists {
+		// Look up field by name instead of by ID
+		var fieldType string
+		for _, f := range schemaFields {
+			if fMap, ok := f.(map[string]any); ok {
+				if fName, ok := fMap["name"].(string); ok && fName == fieldName {
+					fieldType, _ = fMap["type"].(string)
+					break
+				}
+			}
+		}
+		if fieldType == "" {
 			return nil
 		}
-		fieldMap := fieldDef.(map[string]any)
-		fieldType, _ := fieldMap["type"]
 		switch fieldType {
 		case "string":
 			if _, ok := value.(string); !ok && value != nil {
-				return []common.Issue{{Code: "INDEX_CONDITION_VALUE_TYPE_MISMATCH", Message: fmt.Sprintf("Value for field '%s' must be string", fieldID), Severity: "error"}}
+				return []common.Issue{{Code: "INDEX_CONDITION_VALUE_TYPE_MISMATCH", Message: fmt.Sprintf("Value for field '%s' must be string", fieldName), Severity: "error"}}
 			}
 		case "boolean":
 			if _, ok := value.(bool); !ok && value != nil {
-				return []common.Issue{{Code: "INDEX_CONDITION_VALUE_TYPE_MISMATCH", Message: fmt.Sprintf("Value for field '%s' must be boolean", fieldID), Severity: "error"}}
+				return []common.Issue{{Code: "INDEX_CONDITION_VALUE_TYPE_MISMATCH", Message: fmt.Sprintf("Value for field '%s' must be boolean", fieldName), Severity: "error"}}
 			}
 		case "integer":
 			switch value.(type) {
 			case int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8:
 			default:
 				if value != nil {
-					return []common.Issue{{Code: "INDEX_CONDITION_VALUE_TYPE_MISMATCH", Message: fmt.Sprintf("Value for field '%s' must be integer", fieldID), Severity: "error"}}
+					return []common.Issue{{Code: "INDEX_CONDITION_VALUE_TYPE_MISMATCH", Message: fmt.Sprintf("Value for field '%s' must be integer", fieldName), Severity: "error"}}
 				}
 			}
 		case "number", "decimal":
@@ -674,7 +689,7 @@ var MetaSchemaPredicates = definition.PredicateMap{
 			case int, int64, int32, int16, int8, uint, uint64, uint32, uint16, uint8, float64, float32:
 			default:
 				if value != nil {
-					return []common.Issue{{Code: "INDEX_CONDITION_VALUE_TYPE_MISMATCH", Message: fmt.Sprintf("Value for field '%s' must be numeric", fieldID), Severity: "error"}}
+					return []common.Issue{{Code: "INDEX_CONDITION_VALUE_TYPE_MISMATCH", Message: fmt.Sprintf("Value for field '%s' must be numeric", fieldName), Severity: "error"}}
 				}
 			}
 		}
@@ -1575,15 +1590,24 @@ var MetaSchemaPredicates = definition.PredicateMap{
 				name = n
 			}
 		}
+		// Build a set of field names from the schema's fields map (value.name)
+		fieldNameSet := make(map[string]bool, len(schemaFields))
+		for _, f := range schemaFields {
+			if fMap, ok := f.(map[string]any); ok {
+				if fName, ok := fMap["name"].(string); ok {
+					fieldNameSet[fName] = true
+				}
+			}
+		}
 		for i, fieldRef := range fieldsArray {
-			fieldID, ok := fieldRef.(string)
+			fieldName, ok := fieldRef.(string)
 			if !ok {
 				continue
 			}
-			if _, exists := schemaFields[fieldID]; !exists {
+			if !fieldNameSet[fieldName] {
 				issues = append(issues, common.Issue{
 					Code:     "INDEX_FIELD_NOT_FOUND",
-					Message:  fmt.Sprintf("Index '%s' references non-existent field '%s'", name, fieldID),
+					Message:  fmt.Sprintf("Index '%s' references non-existent field '%s'", name, fieldName),
 					Path:     fmt.Sprintf("indexes.%s.fields[%d]", name, i),
 					Severity: "error",
 				})

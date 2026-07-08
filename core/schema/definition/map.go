@@ -311,7 +311,7 @@ func (s *Schema) AsMap() map[string]any {
 			builder.currentMap()[ctx.Key] = arr
 
 		case NodeTypeIndexFields:
-			fields := ctx.Value.([]FieldId)
+			fields := ctx.Value.([]FieldName)
 			arr := make([]any, len(fields))
 			for i, f := range fields {
 				arr[i] = string(f)

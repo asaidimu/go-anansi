@@ -79,7 +79,7 @@ func TestCreateIndexTree_Value(t *testing.T) {
 	}
 	indexDef := definition.Index{
 		Name:   "idx_users_name",
-		Fields: []definition.FieldId{"name"},
+		Fields: []definition.FieldName{"name"},
 	}
 
 	q := query.Query{

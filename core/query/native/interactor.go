@@ -376,6 +376,54 @@ func (i *NativeInteractor[T]) DropCollection(ctx context.Context, name string) e
 	return err
 }
 
+// AddColumn adds a column to an existing collection.
+// Returns ErrDDLNotSupported if the backend cannot perform this in place.
+func (i *NativeInteractor[T]) AddColumn(ctx context.Context, collection string, field definition.Field) error {
+	caps := i.qf.Capabilities()
+	if !caps.SchemaEvolution.AddColumn {
+		return query.ErrDDLNotSupported
+	}
+	dsl := &query.Query{Target: &query.QueryTarget{Name: collection}}
+	compiled, err := i.b.Build(dsl, StmtAddColumn, field)
+	if err != nil {
+		return err
+	}
+	_, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
+	return err
+}
+
+// DropColumn removes a column from an existing collection.
+// Returns ErrDDLNotSupported if the backend cannot perform this in place.
+func (i *NativeInteractor[T]) DropColumn(ctx context.Context, collection string, fieldName string) error {
+	caps := i.qf.Capabilities()
+	if !caps.SchemaEvolution.DropColumn {
+		return query.ErrDDLNotSupported
+	}
+	dsl := &query.Query{Target: &query.QueryTarget{Name: collection}}
+	compiled, err := i.b.Build(dsl, StmtDropColumn, fieldName)
+	if err != nil {
+		return err
+	}
+	_, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
+	return err
+}
+
+// RenameColumn renames a column in an existing collection.
+// Returns ErrDDLNotSupported if the backend cannot perform this in place.
+func (i *NativeInteractor[T]) RenameColumn(ctx context.Context, collection string, oldName, newName string) error {
+	caps := i.qf.Capabilities()
+	if !caps.SchemaEvolution.RenameColumn {
+		return query.ErrDDLNotSupported
+	}
+	dsl := &query.Query{Target: &query.QueryTarget{Name: collection}}
+	compiled, err := i.b.Build(dsl, StmtRenameColumn, map[string]string{"oldName": oldName, "newName": newName})
+	if err != nil {
+		return err
+	}
+	_, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil})
+	return err
+}
+
 // Capabilities returns the capabilities of the underlying database dialect.
 func (i *NativeInteractor[T]) Capabilities() query.Capabilities {
 	return i.qf.Capabilities()

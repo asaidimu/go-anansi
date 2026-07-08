@@ -16,6 +16,16 @@ const (
 	MetadataUpdated   = "updated"
 )
 
+// Static UUIDv7 IDs for system entities injected by EnrichSchema.
+// Using constants ensures EnrichSchema is idempotent — the same schema
+// enriched twice produces identical output, which is critical for
+// migration diff computation.
+const (
+	SystemFieldIDDocumentID = "019f4065-0a3d-7ea1-bc46-bbaeed4bfd6d"
+	SystemFieldIDMetadata   = "019f4065-0a3d-7ecf-a2eb-7af6e1fdd6f0"
+	SystemSchemaIDMetadata  = "019f4065-0a3d-7ed7-8ab1-417acc881135"
+)
+
 func MetadataFieldPath(field string) string {
 	return fmt.Sprintf("%s.%s", MetadataField, field)
 }
@@ -29,35 +39,35 @@ func DefaultMetadataSchema() *definition.NestedSchema {
 		BaseSchema: definition.BaseSchema{
 			Name: MetadataField,
 			Fields: map[definition.FieldId]definition.Field{
-				"v1": {
+				"019f32a2-1eb3-7c39-885e-c3d545f981ac": {
 					Name:     definition.FieldName(MetadataVersion),
 					Required: true,
 					FieldProperties: definition.FieldProperties{
 						Type: definition.FieldTypeNumber,
 					},
 				},
-				"c1": {
+				"019f32a2-1eb5-78b8-971d-ac164c938f2f": {
 					Name:     definition.FieldName(MetadataCreated),
 					Required: true,
 					FieldProperties: definition.FieldProperties{
 						Type: definition.FieldTypeString,
 					},
 				},
-				"u1": {
+				"019f32a2-1eb5-72a9-a0d6-086140f78a85": {
 					Name:     definition.FieldName(MetadataUpdated),
 					Required: true,
 					FieldProperties: definition.FieldProperties{
 						Type: definition.FieldTypeString,
 					},
 				},
-				"cs1": {
+				"019f32a2-1eb5-7440-b104-8d774438853a": {
 					Name:     definition.FieldName(MetadataChecksum),
 					Required: true,
 					FieldProperties: definition.FieldProperties{
 						Type: definition.FieldTypeString,
 					},
 				},
-				"s1": {
+				"019f32a2-1eb5-774f-abf3-09d64b4dbdd7": {
 					Name:     definition.FieldName(MetadataSignature),
 					Required: false,
 					FieldProperties: definition.FieldProperties{

@@ -1,4 +1,4 @@
-package main
+package typescript
 
 import (
 	"fmt"
@@ -30,6 +30,47 @@ func (g *TSGenerator) Generate() string {
 	}
 
 	return strings.Join(lines, "\n\n") + "\n"
+}
+
+// GenerateCombined generates a single TypeScript file containing types for all
+// given schemas. Nested schemas are merged into one registry so cross-schema
+// references resolve correctly.
+func GenerateCombined(schemas []*definition.Schema) string {
+	merged := &definition.Schema{
+		Schemas: make(map[definition.SchemaId]definition.NestedSchema),
+	}
+	for _, s := range schemas {
+		for id, ns := range s.Schemas {
+			merged.Schemas[id] = ns
+		}
+	}
+
+	gen := &TSGenerator{schema: merged}
+	parts := []string{"// Auto-generated from anansi schemas — do not edit\n"}
+
+	// Generate all nested schema types from the merged registry
+	for _, id := range gen.sortedSchemaIDs() {
+		if s := gen.nestedTypeDecl(merged.Schemas[id]); s != "" {
+			parts = append(parts, s)
+		}
+	}
+
+	// Generate each top-level schema's interface
+	for _, s := range schemas {
+		if len(s.Fields) > 0 {
+			g := &TSGenerator{schema: &definition.Schema{
+				BaseSchema: definition.BaseSchema{
+					Name:        s.Name,
+					Description: s.Description,
+					Fields:      s.Fields,
+				},
+				Schemas: merged.Schemas,
+			}}
+			parts = append(parts, g.interfaceDecl(s.Name, s.Fields, s.Description))
+		}
+	}
+
+	return strings.Join(parts, "\n\n") + "\n"
 }
 
 func (g *TSGenerator) sortedSchemaIDs() []definition.SchemaId {
