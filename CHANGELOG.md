@@ -1,3 +1,11 @@
+## [7.1.1](https://github.com/asaidimu/go-anansi/compare/v7.1.0...v7.1.1) (2026-07-05)
+
+
+### Bug Fixes
+
+* add compiled schema and uuidv7 constraint ([e94c867](https://github.com/asaidimu/go-anansi/commit/e94c86799bf5efd7fdd9840f55ee22d2fe122439))
+* fix build command ([4f03b6e](https://github.com/asaidimu/go-anansi/commit/4f03b6e7eaf28ebf57ce30afd98e041e28805b7f))
+
 # [7.1.0](https://github.com/asaidimu/go-anansi/compare/v7.0.1...v7.1.0) (2026-07-01)
 
 
