@@ -1,3 +1,10 @@
+## [8.0.1](https://github.com/asaidimu/go-anansi/compare/v8.0.0...v8.0.1) (2026-07-09)
+
+
+### Bug Fixes
+
+* fix import path ([bf8c374](https://github.com/asaidimu/go-anansi/commit/bf8c374dd48127d34cb8989e82229f0e549ec095))
+
 # [8.0.0](https://github.com/asaidimu/go-anansi/compare/v7.1.1...v8.0.0) (2026-07-09)
 
 
