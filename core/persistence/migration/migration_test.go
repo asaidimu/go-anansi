@@ -146,3 +146,11 @@ func (r *testRegistry) GetSchema(_ context.Context, name string, version ...stri
 	}
 	return r.store[name][ver], nil
 }
+
+func (r *testRegistry) ResolvePhysicalName(_ context.Context, name string, version ...string) (string, error) {
+	ver := "1.0.0"
+	if len(version) > 0 {
+		ver = version[0]
+	}
+	return r.store[name][ver].Name, nil
+}

@@ -167,7 +167,8 @@ func EnrichSchema(sc *schema.Schema) (*schema.Schema, error) {
 func MustEnrichSchema(sc *schema.Schema) *schema.Schema {
 	result, err := EnrichSchema(sc)
 	if err != nil {
-		panic(err)
+		e := common.NewSystemError(fmt.Sprintf("Enrichment failed for schema %s",sc.Name)).WithCause(err)
+		panic(e)
 	}
 	return result
 }
