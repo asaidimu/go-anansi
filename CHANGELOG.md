@@ -1,3 +1,76 @@
+# [8.0.0](https://github.com/asaidimu/go-anansi/compare/v7.1.1...v8.0.0) (2026-07-09)
+
+
+* feat(core)!: introduce comprehensive subquery support and document integrity ([fa9a295](https://github.com/asaidimu/go-anansi/commit/fa9a295233f06a9138f71af0a42617a3e52738f0))
+* feat(schema,document)!: introduce graph-based validator and refactor document internals ([73c66b3](https://github.com/asaidimu/go-anansi/commit/73c66b3d2ade1cad36e464094fde3e4621266049)), closes [hi#performance](https://github.com/hi/issues/performance)
+* refactor(core,errors)!: Revamp error handling with immutable fluent API and i18n ([49e2540](https://github.com/asaidimu/go-anansi/commit/49e25408a8ebe889200798ede17eea34006bf6d1))
+* refactor(core)!: Remove core document data model and schema IR ([95a1a78](https://github.com/asaidimu/go-anansi/commit/95a1a78a24c2bf0fd2ead3396c4cc163b71b63c8))
+
+
+### Bug Fixes
+
+* add compiled schema and uuidv7 constraint ([54e709f](https://github.com/asaidimu/go-anansi/commit/54e709f224c502610ef9c2374964b4d837267620))
+* **document:** implement Document Specification v2.0 ([b3ea318](https://github.com/asaidimu/go-anansi/commit/b3ea318a2347122edf59802a411ac58b21f4558e))
+* fix build command ([b595f05](https://github.com/asaidimu/go-anansi/commit/b595f057acdd60b6b9c7985a70ddface801bb818))
+* fix package version ([781da1e](https://github.com/asaidimu/go-anansi/commit/781da1ed433308df5d1cf94d34e574d6b920d1f4))
+* moved faker to the main binary ([5e4543d](https://github.com/asaidimu/go-anansi/commit/5e4543d383dcb6f8ad25b2f99828dcb9d1b34c16))
+
+
+### Code Refactoring
+
+* **core/document, schema:** Redesign data container and graph-based schema validation ([045f511](https://github.com/asaidimu/go-anansi/commit/045f511221721f1fbc12838170784b78c62f9cee))
+
+
+### Features
+
+* add PaginationInfo metadata to query results ([446cbc8](https://github.com/asaidimu/go-anansi/commit/446cbc83fe4bc556ae99aaee6325de16a74757c2))
+* completed moving core to new schema ([0414e5b](https://github.com/asaidimu/go-anansi/commit/0414e5be8c5b23b5f6bd70bb7c4e9d09bb10bc3d))
+* **core:** introduce JSON Schema validation, patch, and versioning system ([f71b359](https://github.com/asaidimu/go-anansi/commit/f71b359f265599d1557b1400ffb933e2a0f5ebc6))
+* **data-sanitization:** introduce comprehensive and context-aware data sanitization ([3ea7494](https://github.com/asaidimu/go-anansi/commit/3ea7494e50b60df137d3b3255deb26ddf37fcff3))
+* implement migration and some tooling ([5e24709](https://github.com/asaidimu/go-anansi/commit/5e247096270a8decd70dc1ce4d3fed3bb2af677c))
+* implement migration and some tooling ([fcffac5](https://github.com/asaidimu/go-anansi/commit/fcffac594f653797d01d9dbb2097972d67381796))
+* **query:** include total match count in query results ([fe5f1cf](https://github.com/asaidimu/go-anansi/commit/fe5f1cfd2fef7c2defc0e4c991085aecf83facef))
+* **schema/ir:** introduce decimal type and improve schema validation ([b76edcf](https://github.com/asaidimu/go-anansi/commit/b76edcf1b23af0120315e976dd8269bf31f60c37))
+* **schema:** enhance schema definitions and refine JSON serialization ([4a4f654](https://github.com/asaidimu/go-anansi/commit/4a4f654617e7199a62ee46b656bc139f56644246))
+* **schema:** enhance validation engine with recursive schema support and MetaSchema ([61bf48e](https://github.com/asaidimu/go-anansi/commit/61bf48e4e454f5ef9f6834315658c06d08a266f2))
+* **schema:** Introduce FieldSets for explicit conditional field definitions ([b0eb9d5](https://github.com/asaidimu/go-anansi/commit/b0eb9d58fa157cb08d411be410c47a72e657c4c8))
+* **schema:** Introduce schema modification utilities and factory methods ([83c834e](https://github.com/asaidimu/go-anansi/commit/83c834e4f6fc31a99677bf13df95b182be67850f))
+
+
+### BREAKING CHANGES
+
+* All direct imports of "github.com/asaidimu/go-anansi/v6/core/document", "github.com/asaidimu/go-anansi/v6/core/schema/ir", and "github.com/asaidimu/go-anansi/v6/core/schema/validate" must be removed. The core persistence layer will be re-architected with new data structures and schema representation. Existing code relying on `document.Document` for data handling or `ir.Schema` for schema introspection will require significant rewriting.
+* The method signatures for `document.Document.GetRecord`,
+`SetRecord`, and `AppendRecord` have been updated.
+The map value type for nested records has changed from `*document.Document` to `any`.
+Direct consumers of these low-level `Document` methods will need to adjust their
+code to handle `any` when interacting with nested records.
+For example, `doc.GetRecord("path")` will now return `(map[string]any, bool, error)` instead of
+`(map[string]*document.Document, bool, error)`.
+* **core/document, schema:** This refactoring introduces breaking changes to the `core/document` and `core/schema/ir` packages.
+- The `document.DataContainer` type has been removed; its functionality is now directly part of `document.Document`.
+- Field identifiers throughout the `core/schema/ir` package, particularly in `ResolvedConstraints`, `ResolvedIndexes`, and `CompiledSchema.Store`, now use `document.DocumentKey` instead of `document.DataPoint`.
+- The `ir.Predicate` function signature has changed from `func(data *document.DataContainer, fields []document.DataPoint, args any) bool` to `func(data *document.Document, fields []document.DocumentKey, args any) bool`.
+- Any custom `ir.Predicate` implementations or direct interactions with `document.DataContainer` or `document.DataPoint` (when resolving schema fields) will need to be updated.
+* **schema:** - The `data.SanitizationPersistence.Save` method signature has changed from `(ctx context.Context, scope string, config *data.FieldMaskConfig)` to `(ctx context.Context, config *data.FieldMaskConfig)`. The `data.FieldMaskConfig` struct must now embed the `Scope` field. Implementations of this interface need to be updated.
+- The `core/schema.NestedSchemaFields.IsArray()` method was renamed to `IsLegacyFieldsArray()`. Direct calls to `IsArray()` will result in a compilation error. `IsFieldSets()` and `IsConditionalSets()` were added to provide explicit checks for the new structure.
+- While `core/schema.NestedSchemaFields.FieldsArray` is maintained for backward compatibility, new conditional field definitions should utilize the `core/schema.NestedSchemaFields.FieldSets` map for improved clarity and addressability.
+* The core error handling system has undergone a major overhaul.
+- The common.Issue and common.SystemError internal structures have changed. Any direct access to Issue.Message, Issue.Path, SystemError.Message, SystemError.Code may behave differently or require adaptation to the new fluent API.
+- The core/json.ValidationError type has been removed; validation errors from core/json/schema now return *common.SystemError directly.
+- The return type of core/persistence/base.CreateResultSet.Issues() has changed from []CreateIssue to []common.Issue. Consumers of batch creation results must update their error handling logic.
+- The API error response format in the example/api has been standardized to reflect the common.SystemError model, potentially impacting existing API clients that parse error details.
+- Error codes and messages for common persistence and schema operations have been refined.
+* - data.Document.AsMap() has been renamed to data.Document.ToMap(). Update all calls from document.AsMap() to document.ToMap().
+- data.DocumentSlice is deprecated; use data.NewDocumentSet for document slice conversions.
+- data.Document.Flatten() and data.Unflatten() methods have been removed. Re-implement any logic relying on these methods.
+- The base.Collection.Update method signature has changed to return a *base.ReadResult, not an int. Adjust code calling this method to match the new return type.
+- The query.DatabaseInteractor.UpdateDocuments method signature has changed to include a 'returning' boolean and return updated documents. Adjust code calling this method to match the new parameters and return types.
+- base.ReadResult.Data type changed from []*data.Document to data.DocumentSet. Adjust code accessing this field.
+- data.DocumentID constant renamed to data.DocumentIDField. Replace usages of data.DocumentID with data.DocumentIDField.
+- schema.SchemaDefinition.MustAddIndex has been renamed to schema.SchemaDefinition.AddIndex and now returns the modified schema. Update calls accordingly.
+- The CollectionUpdate struct now includes a ReturnDocument boolean field. Set this field as needed for update operations that require returning the modified documents.
+
 ## [7.1.1](https://github.com/asaidimu/go-anansi/compare/v7.1.0...v7.1.1) (2026-07-05)
 
 
