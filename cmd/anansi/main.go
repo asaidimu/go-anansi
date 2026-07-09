@@ -1,58 +1,245 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
 	"github.com/asaidimu/go-anansi/v7/cmd/anansi/internal/schemagen"
+	"github.com/spf13/cobra"
 )
 
-// Version and Release are set at build time via ldflags.
-// See Makefile: -X main.Version=$(VERSION) -X main.Release=$(RELEASE)
 var Version = "dev"
 var Release = "dev"
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: anansi <command> [args]")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "commands:")
-		fmt.Fprintln(os.Stderr, "  scaffold          Create a new anansi project with default config")
-		fmt.Fprintln(os.Stderr, "  schema migrate    Generate migration files from schema changes")
-		fmt.Fprintln(os.Stderr, "  schema new        Create a blank schema file")
-		fmt.Fprintln(os.Stderr, "  schema squash     Consolidate intermediate migrations into one")
-		fmt.Fprintln(os.Stderr, "  schema normalize  Normalize schema IDs to UUID v7")
-		fmt.Fprintln(os.Stderr, "  schema typescript Generate TypeScript types for all schemas")
-		fmt.Fprintln(os.Stderr, "  schema agents     Write comprehensive AGENTS.md reference doc")
-		os.Exit(1)
+	rootCmd := &cobra.Command{
+		Use:     "anansi",
+		Short:   "Anansi CLI — schema-aware document persistence toolkit",
+		Version: Version,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return cmd.Help()
+		},
 	}
+	rootCmd.SetVersionTemplate("{{.Version}}\n")
 
-	switch os.Args[1] {
-	case "scaffold":
-		scaffoldCmd(os.Args[2:])
-	case "schema":
-		schemaCmd(os.Args[2:])
-	case "version":
-		fmt.Println(Version)
-	default:
-		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
+	rootCmd.AddCommand(scaffoldCmd())
+	rootCmd.AddCommand(schemaCmd())
+	rootCmd.AddCommand(fakerCmd())
+	rootCmd.AddCommand(versionCmd())
+
+	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
 }
 
-func scaffoldCmd(args []string) {
-	fs := flag.NewFlagSet("scaffold", flag.ExitOnError)
-	dryRun := fs.Bool("dry-run", false, "print what would be done without making changes")
-	fs.Parse(args)
+func scaffoldCmd() *cobra.Command {
+	var dryRun bool
 
-	dir := "."
-	if fs.NArg() > 0 {
-		dir = fs.Arg(0)
+	cmd := &cobra.Command{
+		Use:   "scaffold [dir]",
+		Short: "Create a new anansi project with default config",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir := "."
+			if len(args) > 0 {
+				dir = args[0]
+			}
+			return schemagen.RunScaffold(dir, dryRun, Release)
+		},
 	}
-	if err := schemagen.RunScaffold(dir, *dryRun, Release); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
+
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
+	return cmd
+}
+
+func schemaCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "schema",
+		Short: "Schema operations",
+	}
+
+	cmd.AddCommand(migrateCmd())
+	cmd.AddCommand(newSchemaCmd())
+	cmd.AddCommand(squashCmd())
+	cmd.AddCommand(normalizeCmd())
+	cmd.AddCommand(typescriptCmd())
+	cmd.AddCommand(agentsCmd())
+
+	return cmd
+}
+
+func migrateCmd() *cobra.Command {
+	var glob, lockfile, out string
+	var check, dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "migrate",
+		Short: "Generate migration files from schema changes",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := loadCfg()
+			if glob != "" {
+				cfg.Schema.Glob = glob
+			}
+			if lockfile != "" {
+				cfg.Schema.Lockfile = lockfile
+			}
+			if out != "" {
+				cfg.Schema.MigrationsDir = out
+			}
+			return schemagen.RunGen(cfg, check, dryRun)
+		},
+	}
+
+	cmd.Flags().StringVar(&glob, "glob", "", "glob pattern for schema files (overrides config)")
+	cmd.Flags().StringVar(&lockfile, "lockfile", "", "lockfile path (overrides config)")
+	cmd.Flags().StringVar(&out, "out", "", "output directory for generated migration files (overrides config)")
+	cmd.Flags().BoolVar(&check, "check", false, "exit with non-zero if migrations need regeneration")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
+	return cmd
+}
+
+func newSchemaCmd() *cobra.Command {
+	var dir string
+	var dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "new <name>",
+		Short: "Create a blank schema file",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return schemagen.RunNewSchema(args[0], dir, dryRun)
+		},
+	}
+
+	cmd.Flags().StringVar(&dir, "dir", ".", "output directory for the new schema file")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
+	return cmd
+}
+
+func squashCmd() *cobra.Command {
+	var lockfile, out string
+	var dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "squash <collection>",
+		Short: "Consolidate intermediate migrations",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := loadCfg()
+			if lockfile != "" {
+				cfg.Schema.Lockfile = lockfile
+			}
+			if out != "" {
+				cfg.Schema.MigrationsDir = out
+			}
+			return schemagen.RunSquash(cfg, args[0], dryRun)
+		},
+	}
+
+	cmd.Flags().StringVar(&lockfile, "lockfile", "", "lockfile path (overrides config)")
+	cmd.Flags().StringVar(&out, "out", "", "migration output directory (overrides config)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
+	return cmd
+}
+
+func normalizeCmd() *cobra.Command {
+	var dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "normalize <path>",
+		Short: "Normalize schema file IDs to UUID v7",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return schemagen.RunNormalize(args[0], dryRun)
+		},
+	}
+
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
+	return cmd
+}
+
+func typescriptCmd() *cobra.Command {
+	var glob, out string
+	var dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "typescript",
+		Short: "Generate TypeScript types for all schemas",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := loadCfg()
+			if glob != "" {
+				cfg.Schema.Glob = glob
+			}
+			if out != "" {
+				cfg.TSGen.Out = out
+			}
+			return schemagen.RunTSGen(cfg, dryRun)
+		},
+	}
+
+	cmd.Flags().StringVar(&glob, "glob", "", "glob pattern for schema files (overrides config)")
+	cmd.Flags().StringVar(&out, "out", "", "output TypeScript file (overrides config)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
+	return cmd
+}
+
+func agentsCmd() *cobra.Command {
+	var out string
+	var dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "agents",
+		Short: "Write comprehensive AGENTS.md reference doc",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return schemagen.RunAgents(out, dryRun)
+		},
+	}
+
+	cmd.Flags().StringVar(&out, "out", ".", "output directory for AGENTS.md")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
+	return cmd
+}
+
+func fakerCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "faker",
+		Short: "Generate fake data from schemas",
+	}
+
+	cmd.AddCommand(fakerGenerateCmd())
+
+	return cmd
+}
+
+func fakerGenerateCmd() *cobra.Command {
+	var seed int64
+	var pretty bool
+	var count int
+	var dir string
+
+	cmd := &cobra.Command{
+		Use:   "generate [schema-files...]",
+		Short: "Generate fake data from schema files",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return schemagen.RunFaker(seed, count, pretty, dir, args)
+		},
+	}
+
+	cmd.Flags().Int64Var(&seed, "seed", 42, "random seed for reproducibility")
+	cmd.Flags().BoolVar(&pretty, "pretty", true, "pretty-print JSON")
+	cmd.Flags().IntVar(&count, "count", 1, "number of records to generate")
+	cmd.Flags().StringVar(&dir, "dir", "", "directory to scan for .schema.json files")
+	return cmd
+}
+
+func versionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the version number",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Println(Version)
+			return nil
+		},
 	}
 }
 
@@ -68,190 +255,4 @@ func loadCfg() *schemagen.Config {
 		os.Exit(1)
 	}
 	return cfg
-}
-
-func schemaCmd(args []string) {
-	if len(args) < 1 {
-		fmt.Fprintln(os.Stderr, "usage: anansi schema <subcommand>")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "subcommands:")
-		fmt.Fprintln(os.Stderr, "  migrate    Generate migration files from schema changes")
-		fmt.Fprintln(os.Stderr, "  new        Create a blank schema file")
-		fmt.Fprintln(os.Stderr, "  squash     Consolidate intermediate migrations")
-		fmt.Fprintln(os.Stderr, "  normalize  Normalize schema file IDs to UUID v7")
-		fmt.Fprintln(os.Stderr, "  typescript Generate TypeScript types for all schemas (single file)")
-		fmt.Fprintln(os.Stderr, "  agents     Write comprehensive AGENTS.md reference doc")
-		os.Exit(1)
-	}
-
-	switch args[0] {
-	case "migrate":
-		migrateCmd(args[1:])
-	case "new":
-		newSchemaCmd(args[1:])
-	case "squash":
-		squashCmd(args[1:])
-	case "normalize":
-		normalizeCmd(args[1:])
-	case "typescript":
-		typescriptCmd(args[1:])
-	case "agents":
-		agentsCmd(args[1:])
-	default:
-		fmt.Fprintf(os.Stderr, "unknown schema subcommand: %s\n", args[0])
-		os.Exit(1)
-	}
-}
-
-func migrateCmd(args []string) {
-	cfg := loadCfg()
-	fs := flag.NewFlagSet("migrate", flag.ExitOnError)
-	var (
-		glob     string
-		lockfile string
-		out      string
-		check    bool
-		dryRun   bool
-	)
-	fs.StringVar(&glob, "glob", "", "glob pattern for schema files (overrides config)")
-	fs.StringVar(&lockfile, "lockfile", "", "lockfile path (overrides config)")
-	fs.StringVar(&out, "out", "", "output directory for generated migration files (overrides config)")
-	fs.BoolVar(&check, "check", false, "exit with non-zero if migrations need regeneration")
-	fs.BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
-	fs.Parse(args)
-
-	if glob != "" {
-		cfg.Schema.Glob = glob
-	}
-	if lockfile != "" {
-		cfg.Schema.Lockfile = lockfile
-	}
-	if out != "" {
-		cfg.Schema.MigrationsDir = out
-	}
-
-	if err := schemagen.RunGen(cfg, check, dryRun); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func newSchemaCmd(args []string) {
-	fs := flag.NewFlagSet("new", flag.ExitOnError)
-	dir := fs.String("dir", ".", "output directory for the new schema file")
-	dryRun := fs.Bool("dry-run", false, "print what would be done without making changes")
-	fs.Parse(args)
-
-	if fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: anansi schema new <name> [flags]")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "flags:")
-		fmt.Fprintln(os.Stderr, "  --dir     output directory (default .)")
-		fmt.Fprintln(os.Stderr, "  --dry-run print what would be done without making changes")
-		os.Exit(1)
-	}
-
-	name := fs.Arg(0)
-	if err := schemagen.RunNewSchema(name, *dir, *dryRun); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func squashCmd(args []string) {
-	fs := flag.NewFlagSet("squash", flag.ExitOnError)
-	var (
-		lockfile string
-		out      string
-		dryRun   bool
-	)
-	fs.StringVar(&lockfile, "lockfile", "", "lockfile path (overrides config)")
-	fs.StringVar(&out, "out", "", "migration output directory (overrides config)")
-	fs.BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
-	fs.Parse(args)
-
-	if fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: anansi schema squash <collection> [flags]")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "flags:")
-		fmt.Fprintln(os.Stderr, "  --lockfile  lockfile path (overrides config)")
-		fmt.Fprintln(os.Stderr, "  --out       migration output directory (overrides config)")
-		fmt.Fprintln(os.Stderr, "  --dry-run   print what would be done without making changes")
-		os.Exit(1)
-	}
-
-	cfg := loadCfg()
-	collection := fs.Arg(0)
-
-	if lockfile != "" {
-		cfg.Schema.Lockfile = lockfile
-	}
-	if out != "" {
-		cfg.Schema.MigrationsDir = out
-	}
-
-	if err := schemagen.RunSquash(cfg, collection, dryRun); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func normalizeCmd(args []string) {
-	fs := flag.NewFlagSet("normalize", flag.ExitOnError)
-	dryRun := fs.Bool("dry-run", false, "print what would be done without making changes")
-	fs.Parse(args)
-
-	if fs.NArg() < 1 {
-		fmt.Fprintln(os.Stderr, "usage: anansi schema normalize <path>")
-		fmt.Fprintln(os.Stderr, "")
-		fmt.Fprintln(os.Stderr, "normalize schema file IDs to UUID v7 in-place")
-		os.Exit(1)
-	}
-
-	if err := schemagen.RunNormalize(fs.Arg(0), *dryRun); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func typescriptCmd(args []string) {
-	cfg := loadCfg()
-	fs := flag.NewFlagSet("typescript", flag.ExitOnError)
-	var (
-		glob   string
-		out    string
-		dryRun bool
-	)
-	fs.StringVar(&glob, "glob", "", "glob pattern for schema files (overrides config)")
-	fs.StringVar(&out, "out", "", "output TypeScript file (overrides config)")
-	fs.BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
-	fs.Parse(args)
-
-	if glob != "" {
-		cfg.Schema.Glob = glob
-	}
-	if out != "" {
-		cfg.TSGen.Out = out
-	}
-
-	if err := schemagen.RunTSGen(cfg, dryRun); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
-}
-
-func agentsCmd(args []string) {
-	fs := flag.NewFlagSet("agents", flag.ExitOnError)
-	var (
-		out    string
-		dryRun bool
-	)
-	fs.StringVar(&out, "out", ".", "output directory for AGENTS.md")
-	fs.BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
-	fs.Parse(args)
-
-	if err := schemagen.RunAgents(out, dryRun); err != nil {
-		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		os.Exit(1)
-	}
 }
