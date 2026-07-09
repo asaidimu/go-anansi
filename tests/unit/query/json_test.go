@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v7/core/query"
-	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/common"
 )
 
 // Helper functions to get pointers to primitive types

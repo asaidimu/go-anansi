@@ -5,8 +5,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
-	"github.com/asaidimu/go-anansi/v7/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/query"
 )
 
 var testRecords = []map[string]any{

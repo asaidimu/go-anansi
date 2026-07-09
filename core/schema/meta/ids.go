@@ -1,6 +1,6 @@
 package meta
 
-import "github.com/asaidimu/go-anansi/v7/core/schema/definition"
+import "github.com/asaidimu/go-anansi/v8/core/schema/definition"
 
 // -----------------------------------------------------------------------------
 // Constraint IDs

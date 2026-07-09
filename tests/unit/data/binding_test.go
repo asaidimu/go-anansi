@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/stretchr/testify/require"
 )
 

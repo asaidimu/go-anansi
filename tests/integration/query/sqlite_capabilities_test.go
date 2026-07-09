@@ -3,11 +3,11 @@ package query_test
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v7/core/query"
-	"github.com/asaidimu/go-anansi/v7/core/query/native"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
-	"github.com/asaidimu/go-anansi/v7/core/utils"
-	sqlite "github.com/asaidimu/go-anansi/v7/sqlite/query"
+	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/query/native"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/utils"
+	sqlite "github.com/asaidimu/go-anansi/v8/sqlite/query"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

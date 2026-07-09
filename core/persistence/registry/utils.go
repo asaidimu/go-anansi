@@ -5,11 +5,11 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
-	"github.com/asaidimu/go-anansi/v7/core/data"
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/schema"
-	"github.com/asaidimu/go-anansi/v7/core/utils"
+	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/schema"
+	"github.com/asaidimu/go-anansi/v8/core/utils"
 )
 
 // generatePhysicalName creates a database-safe identifier from schema name and version

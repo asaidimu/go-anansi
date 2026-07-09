@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/asaidimu/go-anansi/v7/cmd/anansi/internal/schemagen"
+	"github.com/asaidimu/go-anansi/v8/cmd/anansi/internal/schemagen"
 	"github.com/spf13/cobra"
 )
 

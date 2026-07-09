@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"log"
 
-	anansi "github.com/asaidimu/go-anansi/v7"
-	"github.com/asaidimu/go-anansi/v7/core/data"
-	"github.com/asaidimu/go-anansi/v7/core/query"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
-	"github.com/asaidimu/go-anansi/v7/example/migration/migrations"
+	anansi "github.com/asaidimu/go-anansi/v8"
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/example/migration/migrations"
 	_ "github.com/mattn/go-sqlite3"
 )
 

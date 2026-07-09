@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
-	"github.com/asaidimu/go-anansi/v7/core/utils"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/utils"
 )
 
 // toSQLiteValue converts a Go value to its SQLite representation based on the schema.

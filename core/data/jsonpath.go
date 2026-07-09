@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/common"
 )
 
 // JSONPathQuery executes a JSONPath-like query on the document.

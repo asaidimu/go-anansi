@@ -5,8 +5,8 @@
 package migrations
 
 import (
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 // Products_1_0_0_to_1_1_0 returns a migration plan for Products_1_0_0_to_1_1_0 (1.0.0 → 1.1.0).

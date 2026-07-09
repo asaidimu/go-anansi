@@ -6,8 +6,8 @@ package native
 
 import (
 	"context"
-	"github.com/asaidimu/go-anansi/v7/core/query"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 // StatementType represents the type of database operation.

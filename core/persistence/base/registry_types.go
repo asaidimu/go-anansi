@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 // SchemaVersionRecord represents a historical version of a collection's schema and its physical name.

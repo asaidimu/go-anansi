@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v7/core/common" // Added this line
-	"github.com/asaidimu/go-anansi/v7/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/common" // Added this line
+	"github.com/asaidimu/go-anansi/v8/core/data"
 	"go.uber.org/zap"
 )
 

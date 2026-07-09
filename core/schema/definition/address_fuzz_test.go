@@ -3,8 +3,8 @@ package definition_test
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v7/core/document"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/document"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 // FuzzAddressInvariants constructs synthetic CompiledSchemas that stress-test

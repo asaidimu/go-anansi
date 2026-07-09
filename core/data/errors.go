@@ -1,7 +1,7 @@
 package data
 
 import (
-	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/common"
 )
 
 // Common errors

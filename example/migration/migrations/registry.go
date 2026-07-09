@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 // Migration describes a single schema migration.

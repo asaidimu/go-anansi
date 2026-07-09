@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	anansievents "github.com/asaidimu/go-anansi/v7/core/events" // Alias to avoid conflict
-	"github.com/asaidimu/go-anansi/v7/core/persistence/events"
+	anansievents "github.com/asaidimu/go-anansi/v8/core/events" // Alias to avoid conflict
+	"github.com/asaidimu/go-anansi/v8/core/persistence/events"
 	goevents "github.com/asaidimu/go-events"
 	goeventsv2 "github.com/asaidimu/go-events/v2"
 	"github.com/stretchr/testify/assert"

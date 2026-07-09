@@ -3,8 +3,8 @@ package definition
 import (
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
-	"github.com/asaidimu/go-anansi/v7/core/document"
+	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 )
 
 // =============================================================================
