@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"strconv"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
-	"github.com/asaidimu/go-anansi/v7/core/utils"
+	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/utils"
 )
 
 // sumAggregate computes the sum of a numeric field across multiple records.

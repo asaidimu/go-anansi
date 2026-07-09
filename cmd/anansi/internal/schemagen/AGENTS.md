@@ -711,9 +711,9 @@ func Apply(ctx context.Context, p base.Persistence) error
 package main
 
 import (
-    anansi "github.com/asaidimu/go-anansi/v7"
-    "github.com/asaidimu/go-anansi/v7/core/data"
-    "github.com/asaidimu/go-anansi/v7/core/query"
+    anansi "github.com/asaidimu/go-anansi/v8"
+    "github.com/asaidimu/go-anansi/v8/core/data"
+    "github.com/asaidimu/go-anansi/v8/core/query"
     "MPKG"  // replace with actual module path
 )
 

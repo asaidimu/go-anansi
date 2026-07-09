@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
-	"github.com/asaidimu/go-anansi/v7/core/json"
+	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/json"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

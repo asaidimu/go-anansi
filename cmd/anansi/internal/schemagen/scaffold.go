@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 func RunScaffold(dir string, dryRun bool, anansiVersion string) error {
@@ -71,9 +71,9 @@ import (
 	"log"
 	"time"
 
-	anansi "github.com/asaidimu/go-anansi/v7"
-	"github.com/asaidimu/go-anansi/v7/core/data"
-	"github.com/asaidimu/go-anansi/v7/core/query"
+	anansi "github.com/asaidimu/go-anansi/v8"
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/query"
 	"MPKG"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -171,8 +171,8 @@ func main() {
 package migrations
 
 import (
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 // %[1]s returns a migration plan (0.0.0 → %[2]s).

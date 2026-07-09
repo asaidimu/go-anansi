@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v7/core/query"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 // SQLiteDeleteFromClause handles the DELETE FROM clause

@@ -3,9 +3,9 @@ package persistence
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/query"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 // managedPersistence is a decorator that wraps a base.Persistence

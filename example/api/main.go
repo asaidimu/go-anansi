@@ -9,11 +9,11 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
-	"github.com/asaidimu/go-anansi/v7/example/api/internal/api"
-	"github.com/asaidimu/go-anansi/v7/example/api/internal/app"
-	"github.com/asaidimu/go-anansi/v7/example/api/internal/response"
-	"github.com/asaidimu/go-anansi/v7/example/api/schema"
+	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/example/api/internal/api"
+	"github.com/asaidimu/go-anansi/v8/example/api/internal/app"
+	"github.com/asaidimu/go-anansi/v8/example/api/internal/response"
+	"github.com/asaidimu/go-anansi/v8/example/api/schema"
 	"go.uber.org/zap"
 )
 

@@ -6,13 +6,13 @@ package collection
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
-	"github.com/asaidimu/go-anansi/v7/core/data"
-	"github.com/asaidimu/go-anansi/v7/core/events"
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/persistence/transaction"
-	"github.com/asaidimu/go-anansi/v7/core/query"
-	"github.com/asaidimu/go-anansi/v7/core/utils"
+	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/events"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/transaction"
+	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/utils"
 	"go.uber.org/zap"
 )
 

@@ -4,10 +4,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/asaidimu/go-anansi/v7/core/query"
-	"github.com/asaidimu/go-anansi/v7/core/query/native"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
-	sqlite_query "github.com/asaidimu/go-anansi/v7/sqlite/query"
+	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/query/native"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+	sqlite_query "github.com/asaidimu/go-anansi/v8/sqlite/query"
 )
 
 func TestSQLInjection_FieldName(t *testing.T) {

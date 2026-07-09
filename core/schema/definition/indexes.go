@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/common"
 )
 
 // IndexID represents the id of an index.

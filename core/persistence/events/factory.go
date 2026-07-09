@@ -4,10 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
-	"github.com/asaidimu/go-anansi/v7/core/data"
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/persistence/transaction"
+	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/transaction"
 	"go.uber.org/zap"
 )
 

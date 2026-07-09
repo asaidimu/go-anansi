@@ -5,9 +5,9 @@ import (
 	"os"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
-	"github.com/asaidimu/go-anansi/v7/core/schema/meta"
+	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/schema/meta"
 )
 
 // --- Types ---

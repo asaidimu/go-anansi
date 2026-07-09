@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v7/core/data"
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/query"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
-	"github.com/asaidimu/go-anansi/v7/tests/testutils"
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/tests/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

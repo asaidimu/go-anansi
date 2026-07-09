@@ -5,10 +5,10 @@ import (
 	"log"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v7"
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/persistence/collection"
-	appschema "github.com/asaidimu/go-anansi/v7/example/basic/schema"
+	"github.com/asaidimu/go-anansi/v8"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/collection"
+	appschema "github.com/asaidimu/go-anansi/v8/example/basic/schema"
 	"go.uber.org/zap"
 )
 

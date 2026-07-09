@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/google/uuid"
 )
@@ -339,9 +339,9 @@ func renderMigrationTemplate(f SchemaFile, safeName, fromVer, toVer, phase strin
 		importBlock = `import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v7/core/data"
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )`
 		transformerStub = fmt.Sprintf(`
 	m.Transformer = func(ctx context.Context, doc data.Document) (data.Document, error) {
@@ -349,8 +349,8 @@ func renderMigrationTemplate(f SchemaFile, safeName, fromVer, toVer, phase strin
 	}`, funcName)
 	} else {
 		importBlock = `import (
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )`
 		transformerStub = ""
 	}
@@ -418,9 +418,9 @@ func renderSquashTemplate(f SchemaFile, safeName, fromVer, toVer, phase string, 
 	"context"
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v7/core/data"
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )`
 
 	if phase == "full" {
@@ -446,8 +446,8 @@ func renderSquashTemplate(f SchemaFile, safeName, fromVer, toVer, phase string, 
 	}`, strings.Join(subCalls, "\n"))
 	} else {
 		importBlock = `import (
-	"github.com/asaidimu/go-anansi/v7/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )`
 		transformerCode = ""
 	}

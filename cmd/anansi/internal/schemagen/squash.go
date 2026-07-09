@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v7/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/google/uuid"
 )
 

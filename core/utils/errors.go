@@ -1,6 +1,6 @@
 package utils
 
-import "github.com/asaidimu/go-anansi/v7/core/common"
+import "github.com/asaidimu/go-anansi/v8/core/common"
 
 // Pre-defined errors for the utils package.
 var (

@@ -3,7 +3,7 @@ package utils
 import (
 	"encoding/json"
 
-	"github.com/asaidimu/go-anansi/v7/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/common"
 )
 
 // Clonable is an interface for objects that can be cloned.
