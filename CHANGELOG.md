@@ -1,3 +1,10 @@
+## [8.0.2](https://github.com/asaidimu/go-anansi/compare/v8.0.1...v8.0.2) (2026-07-13)
+
+
+### Bug Fixes
+
+* fix validator and implement a schema for queries ([989f8ed](https://github.com/asaidimu/go-anansi/commit/989f8ed52c41c46a7dff3be0679c7ca5a62c5bd6))
+
 ## [8.0.1](https://github.com/asaidimu/go-anansi/compare/v8.0.0...v8.0.1) (2026-07-09)
 
 
