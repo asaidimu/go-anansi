@@ -258,6 +258,69 @@ func (ctx *buildContext) getOrBuildRecursiveGraph(
 	return graph, nil
 }
 
+// getOrBuildRecursiveTypeGraph builds a recursive sub-graph using the
+// createSubGraph approach (synthetic wrapper field) rather than the
+// schema-fields approach of getOrBuildRecursiveGraph.  This is needed for
+// type-level schemas (union, array, record, composite) that have no explicit
+// fields — the wrapper field provides the type/schema context that the graph
+// builder needs to produce the correct validation nodes.
+func (ctx *buildContext) getOrBuildRecursiveTypeGraph(
+	rootFieldName string,
+	rootFieldDef *Field,
+	fieldPath string,
+	topLevelSchema *Schema,
+	skipUnexpectedCheck bool,
+	skipUnexpectedForObjects bool,
+) (*ValidationGraph, error) {
+	// Use (rootFieldName, type, schema ID) as the cache key
+	cacheKey := rootFieldName + ":" + string(rootFieldDef.Type) + ":"
+	if !rootFieldDef.Schema.IsZero() {
+		if rootFieldDef.Schema.IsSingle() {
+			if ref, err := FieldSchemaAs[SchemaReference](rootFieldDef.Schema); err == nil {
+				cacheKey += string(ref.ID)
+			}
+		} else if rootFieldDef.Schema.IsMultiple() {
+			if refs, err := FieldSchemaAs[[]SchemaReference](rootFieldDef.Schema); err == nil {
+				ids := make([]string, 0, len(refs))
+				for _, r := range refs {
+					ids = append(ids, string(r.ID))
+				}
+				sort.Strings(ids)
+				for i, id := range ids {
+					if i > 0 {
+						cacheKey += ","
+					}
+					cacheKey += id
+				}
+			}
+		}
+	}
+	if cached, exists := ctx.recursiveGraphCache[cacheKey]; exists {
+		return cached, nil
+	}
+
+	subGraph := newValidationGraph()
+	ctx.recursiveGraphCache[cacheKey] = subGraph
+
+	tempSchema := &Schema{
+		BaseSchema: BaseSchema{
+			Name:   fmt.Sprintf("recursive_%s_%s", rootFieldName, fieldPath),
+			Fields: map[FieldId]Field{FieldId(rootFieldName): *rootFieldDef},
+		},
+		Schemas: topLevelSchema.Schemas,
+	}
+	addedConstraints := make(map[string]bool)
+	if _, err := subGraph.buildFromSchema(tempSchema, "", nil, addedConstraints, nil, nil, topLevelSchema, ctx, skipUnexpectedCheck, skipUnexpectedForObjects); err != nil {
+		delete(ctx.recursiveGraphCache, cacheKey)
+		return nil, err
+	}
+	if err := subGraph.finalize(); err != nil {
+		delete(ctx.recursiveGraphCache, cacheKey)
+		return nil, err
+	}
+	return subGraph, nil
+}
+
 // =============================================================================
 // GRAPH BUILDER TYPES AND CONSTANTS
 // =============================================================================
@@ -365,6 +428,7 @@ type RecursionMarkerNode struct {
 	baseNode
 	validationGraph *ValidationGraph // Graph with instance constraints baked in
 	schemaName      string
+	rootKey         string // Wrapper key for non-object values ("root", "item", etc.)
 }
 
 // =============================================================================
@@ -1137,6 +1201,50 @@ func (graph *ValidationGraph) buildContainerNode(
 			return nil, ErrSchemaNotFound.WithMessage(fmt.Sprintf("Nested schema '%s' not found for %s", schemaRef.ID, errContext)).WithPath(fieldPath)
 		}
 
+		// Detect recursive container schemas (e.g. array → union → array)
+		if buildCtx != nil && buildCtx.isRecursive(schemaRef.ID) {
+			var itemFieldSchema FieldSchemaReference
+			if nestedDef.Type == 0 && len(nestedDef.Fields) > 0 {
+				itemFieldSchema = NewSchemaReference(SchemaReference{ID: schemaRef.ID})
+			} else {
+				itemFieldSchema = nestedDef.Schema
+			}
+			itemField := &Field{
+				Name: "item",
+				FieldProperties: FieldProperties{
+					Type:    getNestedSchemaEffectiveType(&nestedDef),
+					Schema:  itemFieldSchema,
+					Default: nestedDef.Default,
+				},
+			}
+			et := getNestedSchemaEffectiveType(&nestedDef)
+			skipUnexpected := et == FieldTypeComposite || et == FieldTypeUnion
+			recursiveItemGraph, rerr := buildCtx.getOrBuildRecursiveTypeGraph(
+				"item", itemField, fieldPath, topLevelSchema,
+				skipUnexpected, false,
+			)
+			if rerr != nil {
+				return nil, rerr
+			}
+
+			// Build a minimal sub-graph whose only node is a RecursionMarkerNode
+			// that points back to the cached item graph.
+			markerGraph := newValidationGraph()
+			markerNode := &RecursionMarkerNode{
+				baseNode:        baseNode{id: markerGraph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts},
+				validationGraph: recursiveItemGraph,
+				schemaName:      string(schemaRef.ID),
+				rootKey:         "item",
+			}
+			markerGraph.addNode(markerNode)
+			if rerr = markerGraph.finalize(); rerr != nil {
+				return nil, rerr
+			}
+			return makeNode(markerGraph), nil
+		}
+		buildCtx.markBuilding(schemaRef.ID)
+		defer buildCtx.unmarkBuilding(schemaRef.ID)
+
 		var tempRootFieldSchema FieldSchemaReference
 		if nestedDef.Type == 0 && len(nestedDef.Fields) > 0 {
 			tempRootFieldSchema = NewSchemaReference(SchemaReference{ID: schemaRef.ID})
@@ -1261,6 +1369,34 @@ func (graph *ValidationGraph) buildUnionNode(
 			return nil, ErrSchemaNotFound.WithMessage(fmt.Sprintf("Nested schema '%s' not found for union", ref.ID)).WithPath(fieldPath)
 		}
 
+		// Detect recursive union variants (e.g. union → array → union)
+		if buildCtx.isRecursive(ref.ID) {
+			var recursiveRootField *Field
+			if len(nestedDef.Fields) > 0 {
+				recursiveRootField = &Field{
+					Name: "root",
+					FieldProperties: FieldProperties{
+						Type:   FieldTypeObject,
+						Schema: NewSchemaReference(ref),
+					},
+				}
+			} else {
+				recursiveRootField = &Field{
+					Name:            "root",
+					FieldProperties: nestedDef.FieldProperties,
+				}
+			}
+			recursiveGraph, rerr := buildCtx.getOrBuildRecursiveTypeGraph(
+				"root", recursiveRootField, fieldPath, topLevelSchema, true, false,
+			)
+			if rerr != nil {
+				return nil, rerr
+			}
+			graphs = append(graphs, recursiveGraph)
+			continue
+		}
+		buildCtx.markBuilding(ref.ID)
+
 		var tempRootField *Field
 		if len(nestedDef.Fields) > 0 {
 			tempRootField = &Field{
@@ -1278,6 +1414,7 @@ func (graph *ValidationGraph) buildUnionNode(
 		}
 
 		unionGraph, err := graph.createSubGraph("root", tempRootField, fieldPath, topLevelSchema, buildCtx, true, false)
+		buildCtx.unmarkBuilding(ref.ID)
 		if err != nil {
 			return nil, err
 		}
@@ -1984,23 +2121,74 @@ func (graph *ValidationGraph) buildResolvedUnionNode(
 
 	graphs := make([]*ValidationGraph, 0, len(rf.Union.Variants))
 	for _, variant := range rf.Union.Variants {
-		subGraph := newValidationGraph()
-		subAdded := make(map[string]bool)
+		et := variant.EffectiveType
 
-		itemRF := &ResolvedField{
-			Name:  "root",
-			Path:  "root",
-			Parts: []string{"root"},
-			Type:  variant.EffectiveType,
-		}
-		if variant.EffectiveType == FieldTypeObject {
-			itemRF.Object = &ResolvedObjectField{Schema: variant}
+		// Scalar and object types can be built from the resolved IR directly.
+		isScalar := et == FieldTypeString || et == FieldTypeNumber ||
+			et == FieldTypeInteger || et == FieldTypeDecimal ||
+			et == FieldTypeBoolean || et == FieldTypeBytes ||
+			et == FieldTypeUnknown || et == FieldTypeGeometry
+
+		var subGraph *ValidationGraph
+		var err error
+
+		if isScalar {
+			subGraph = newValidationGraph()
+			subAdded := make(map[string]bool)
+			itemRF := &ResolvedField{
+				Name:   "root",
+				Path:   "root",
+				Parts:  []string{"root"},
+				Type:   et,
+				Scalar: &ResolvedScalar{},
+			}
+			subRs := &ResolvedSchema{Fields: []ResolvedField{*itemRF}, Schemas: rs.Schemas}
+			_, err = subGraph.buildFromResolvedSchema(subRs, "", nil, subAdded, nil, nil, compiler, buildCtx, true, false)
+		} else if et == FieldTypeObject {
+			subGraph = newValidationGraph()
+			subAdded := make(map[string]bool)
+			itemRF := &ResolvedField{
+				Name:   "root",
+				Path:   "root",
+				Parts:  []string{"root"},
+				Type:   et,
+				Object: &ResolvedObjectField{Schema: variant},
+			}
+			subRs := &ResolvedSchema{Fields: []ResolvedField{*itemRF}, Schemas: rs.Schemas}
+			_, err = subGraph.buildFromResolvedSchema(subRs, "", nil, subAdded, nil, nil, compiler, buildCtx, true, false)
+		} else if compiler != nil {
+			// Complex types (union, array, record, composite, enum) cannot be
+			// represented through the resolved IR's scalar/object branches.
+			// Fall back to the raw schema definition to build the subgraph.
+			ns, exists := compiler.source.Schemas[variant.ID]
+			if !exists {
+				return nil, ErrSchemaNotFound.
+					WithMessage(fmt.Sprintf("variant schema '%s' not found", variant.ID)).
+					WithPath(fieldPath)
+			}
+
+			if buildCtx.isRecursive(variant.ID) {
+				var rerr error
+				subGraph, rerr = buildCtx.getOrBuildRecursiveTypeGraph("root", &Field{
+					Name: "root",
+					FieldProperties: ns.FieldProperties,
+				}, fieldPath, compiler.source, true, false)
+				if rerr != nil {
+					return nil, rerr
+				}
+			} else {
+				buildCtx.markBuilding(variant.ID)
+				subGraph, err = graph.createSubGraph("root", &Field{
+					Name: "root",
+					FieldProperties: ns.FieldProperties,
+				}, fieldPath, compiler.source, buildCtx, true, false)
+				buildCtx.unmarkBuilding(variant.ID)
+			}
 		} else {
-			itemRF.Scalar = &ResolvedScalar{}
+			// No compiler available – degenerate node allowing any value.
+			subGraph = newValidationGraph()
 		}
-
-		subRs := &ResolvedSchema{Fields: []ResolvedField{*itemRF}, Schemas: rs.Schemas}
-		if _, err := subGraph.buildFromResolvedSchema(subRs, "", nil, subAdded, nil, nil, compiler, buildCtx, true, false); err != nil {
+		if err != nil {
 			return nil, err
 		}
 		if err := subGraph.finalize(); err != nil {
@@ -2856,19 +3044,6 @@ func (n *RecursionMarkerNode) Execute(ctx *ValidationContext) *NodeResult {
 		return success
 	}
 
-	// CHECK TYPE
-	mapValue, ok := utils.GetMapStringAny(value)
-	if !ok {
-		return &NodeResult{
-			Success: false,
-			Issues: []common.Issue{{
-				Code:    "TYPE_MISMATCH",
-				Message: fmt.Sprintf("Expected object for recursive schema %s, got %T", n.schemaName, value),
-				Path:    n.path,
-			}},
-		}
-	}
-
 	// Check depth limit
 	currentDepth := getPathDepth(n.pathParts)
 	if currentDepth >= ctx.MaxDepth {
@@ -2882,11 +3057,34 @@ func (n *RecursionMarkerNode) Execute(ctx *ValidationContext) *NodeResult {
 		}
 	}
 
+	// Wrap the value so the recursive graph can process it.
+	// For object schemas with no rootKey, pass the map directly (the graph
+	// uses schema fields as top-level nodes).  For type-level schemas
+	// (union, array, record, composite) the graph was built with a synthetic
+	// root field, so we wrap the value under that key.
+	var doc map[string]any
+	if n.rootKey == "" {
+		mv, ok := utils.GetMapStringAny(value)
+		if !ok {
+			return &NodeResult{
+				Success: false,
+				Issues: []common.Issue{{
+					Code:    "TYPE_MISMATCH",
+					Message: fmt.Sprintf("Expected object for recursive schema %s, got %T", n.schemaName, value),
+					Path:    n.path,
+				}},
+			}
+		}
+		doc = mv
+	} else {
+		doc = map[string]any{n.rootKey: value}
+	}
+
 	// Traverse the cached recursive graph
 	// The graph already has instance constraints baked in, which will be inherited
 	issues, _ := n.validationGraph.traverse(
 		ctx.FunctionMap,
-		mapValue, // Pass value directly, do NOT wrap in "root"
+		doc,
 		ctx.Mode,
 		ctx.MaxDepth,
 		ctx.OriginalRoot)

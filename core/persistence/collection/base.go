@@ -24,9 +24,10 @@ type baseCollection struct {
 	engine         *query.QueryEngine
 	interactor     query.DatabaseInteractor
 	logger         *zap.Logger
-	subscriptions  map[string]*base.SubscriptionInfo // To store unsubscribe functions
-	subMu          sync.RWMutex                      // Mutex to protect subscriptions map
-	metadata       *base.CollectionMetadata
+	// TODO: Subscriptions map is moved to parent persistence
+	subscriptions map[string]*base.SubscriptionInfo // To store unsubscribe functions
+	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
+	metadata      *base.CollectionMetadata
 }
 
 var _ base.Collection = (*baseCollection)(nil)
@@ -242,6 +243,7 @@ func (c *baseCollection) Metadata(ctx context.Context, filter *base.MetadataFilt
 }
 
 // Subscribe registers a subscription for an event that is specific to this collection.
+// TODO: Subscribe should return a Subscription directly.
 func (c *baseCollection) Subscribe(ctx context.Context, options base.SubscriptionOptions) string {
 	c.subMu.Lock()
 	defer c.subMu.Unlock()

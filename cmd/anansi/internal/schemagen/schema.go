@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/schema"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/schema/meta"
 	"github.com/bmatcuk/doublestar/v4"
 	"github.com/google/uuid"
 )
@@ -69,7 +71,7 @@ func RunGen(cfg *Config, check, dryRun bool) error {
 			s.Version = common.MustNewVersion("1.0.0")
 		}
 
-		if NormalizeSchema(s) {
+		if meta.NormalizeSchema(s) {
 			normalized := s.ToJSON()
 			if dryRun {
 				fmt.Printf("  would normalize: %s\n", m)
@@ -80,6 +82,14 @@ func RunGen(cfg *Config, check, dryRun bool) error {
 				fmt.Printf("  normalized: %s\n", m)
 			}
 			raw = normalized
+		}
+
+		if issues, ok := schema.SchemaValidator().Validate(s.AsMap()); !ok {
+			if dryRun {
+				fmt.Printf("Schema %s has the following issues:\n %v\n", s.Name, issues)
+			} else {
+				return fmt.Errorf("schema %s failed validation:\n %v", m, issues)
+			}
 		}
 
 		files = append(files, SchemaFile{
@@ -510,7 +520,7 @@ func RunNewSchema(name, dir string, dryRun bool) error {
 	if s.Version == nil {
 		s.Version = common.MustNewVersion("0.1.0")
 	}
-	NormalizeSchema(s)
+	meta.NormalizeSchema(s)
 	raw := s.ToJSON()
 
 	filename := filepath.Join(abs, SafeIdent(name)+".schema.json")

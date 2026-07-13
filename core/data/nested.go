@@ -24,9 +24,10 @@ func (d Document) GetNested(path string) (any, error) {
 
 // SetNested with path validation and intermediate map creation.
 func (d *Document) SetNested(path string, value any) error {
-	if path == DocumentIDField {
-		return common.SystemErrorFrom(ErrReadOnlyField).WithOperation("data.Document.SetNested").WithPath(path).WithMessage(fmt.Sprintf("field '%s' is managed by the library and cannot be set manually", DocumentIDField))
+	if ReservedSystemField(path) {
+		return ErrReadOnlyField.WithPath(path).WithMessage("Attempting to set read only value on a document").WithOperation("data.Document.SetNested")
 	}
+
 	if path == "" {
 		return common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.SetNested").WithPath(path)
 	}

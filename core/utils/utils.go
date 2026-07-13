@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/google/uuid"
 )
 
 // StructToMap converts a Go struct into a map[string]any.
@@ -227,3 +228,16 @@ func IsInteger(v any) bool {
 		return false
 	}
 }
+
+
+func IsUUIDv7(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	u, err := uuid.Parse(s)
+	if err != nil {
+		return false
+	}
+	return u.Version() == 7
+}
+

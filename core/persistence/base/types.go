@@ -270,7 +270,7 @@ type Metadata struct {
 	ConnectionStatus  *string               `json:"connectionStatus,omitempty"`  // ConnectionStatus indicates the health of the main connection to the persistence layer.
 	ConnectionError   *string               `json:"connectionError,omitempty"`   // ConnectionError contains an error message if the main connection has failed.
 	Schemas           []*definition.Schema  `json:"schemas,omitempty"`           // Schemas is a list of all schema definitions available in the system.
-	Collections       []*CollectionMetadata `json:"collections,omitempty"`       // Collections is a list of metadata for all collections in the system.
+	Collections       []*CollectionMetadata `json:"collections,omitempty"`       // Collections is a list of metadata for all collections in the system.0
 	Subscriptions     []*SubscriptionInfo   `json:"subscriptions"`               // Subscriptions is a list of all active subscriptions at the global level.
 }
 
