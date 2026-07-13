@@ -1,0 +1,411 @@
+{
+  "version": "1.0.0",
+  "name": "QueryDefinition",
+  "description": "Meta-schema defining the structure of all valid query definitions",
+  "fields": {
+    "root_field_target": {
+      "name": "target",
+      "type": "object",
+      "schema": { "id": "schema_query_target" }
+    },
+    "root_field_filters": {
+      "name": "filters",
+      "type": "union",
+      "schema": [
+        { "id": "schema_filter_condition" },
+        { "id": "schema_filter_group" },
+        { "id": "schema_text_search_query" }
+      ]
+    },
+    "root_field_projection": {
+      "name": "projection",
+      "type": "object",
+      "schema": { "id": "schema_projection_configuration" }
+    },
+    "root_field_sort": {
+      "name": "sort",
+      "type": "array",
+      "schema": { "id": "schema_sort_configuration" }
+    },
+    "root_field_limit": {
+      "name": "limit",
+      "type": "integer"
+    },
+    "root_field_pagination": {
+      "name": "pagination",
+      "type": "union",
+      "schema": [
+        { "id": "schema_pagination_offset" },
+        { "id": "schema_pagination_cursor" }
+      ]
+    },
+    "root_field_joins": {
+      "name": "joins",
+      "type": "array",
+      "schema": { "id": "schema_join_configuration" }
+    },
+    "root_field_distinct": {
+      "name": "distinct",
+      "type": "union",
+      "schema": [
+        { "id": "schema_query_distinct_config_bool" },
+        { "id": "schema_query_distinct_config_fields" }
+      ]
+    },
+    "root_field_aggregations": {
+      "name": "aggregations",
+      "type": "array",
+      "schema": { "id": "schema_aggregation_configuration" }
+    },
+    "root_field_union": {
+      "name": "union",
+      "type": "object",
+      "schema": { "id": "schema_query_union" }
+    },
+    "root_field_hints": {
+      "name": "hints",
+      "type": "array",
+      "schema": { "id": "schema_query_hint" }
+    },
+    "root_field_raw": {
+      "name": "raw",
+      "type": "object",
+      "schema": { "id": "schema_raw_query" }
+    }
+  },
+  "schemas": {
+    "enum_logical_operator": {
+      "name": "LogicalOperator",
+      "type": "string",
+      "values": ["and", "or", "not", "nor", "xor", "nand", "xnor"]
+    },
+    "enum_comparison_operator": {
+      "name": "ComparisonOperator",
+      "type": "string",
+      "values": ["eq", "neq", "lt", "lte", "gt", "gte", "in", "nin", "contains", "ncontains", "exists", "nexists"]
+    },
+    "enum_sort_direction": {
+      "name": "SortDirection",
+      "type": "string",
+      "values": ["asc", "desc"]
+    },
+    "enum_join_type": {
+      "name": "JoinType",
+      "type": "string",
+      "values": ["inner", "left", "right", "full"]
+    },
+    "enum_aggregation_type": {
+      "name": "AggregationType",
+      "type": "string",
+      "values": ["count", "sum", "avg", "min", "max"]
+    },
+    "enum_union_type": {
+      "name": "UnionType",
+      "type": "string",
+      "values": ["union", "all", "intersect", "except"]
+    },
+    "enum_text_search_type": {
+      "name": "TextSearchType",
+      "type": "string",
+      "values": ["contains", "exact", "phrase"]
+    },
+    "enum_text_operator": {
+      "name": "TextOperator",
+      "type": "string",
+      "values": ["and", "or"]
+    },
+    "enum_pagination_type": {
+      "name": "PaginationType",
+      "type": "string",
+      "values": ["offset", "cursor"]
+    },
+    "enum_field_ref_type": {
+      "name": "FieldRefType",
+      "type": "string",
+      "values": ["field"]
+    },
+    "enum_subquery_type": {
+      "name": "SubqueryType",
+      "type": "string",
+      "values": ["subquery"]
+    },
+    "enum_computed_type": {
+      "name": "ComputedType",
+      "type": "string",
+      "values": ["computed"]
+    },
+    "enum_case_type": {
+      "name": "CaseType",
+      "type": "string",
+      "values": ["case"]
+    },
+    "schema_query_target": {
+      "name": "QueryTarget",
+      "fields": {
+        "qt_name": { "name": "name", "type": "string" },
+        "qt_alias": { "name": "alias", "type": "string" },
+        "qt_schema": { "name": "schema", "type": "record" }
+      }
+    },
+    "schema_query_filter": {
+      "name": "QueryFilter",
+      "type": "union",
+      "schema": [
+        { "id": "schema_filter_condition" },
+        { "id": "schema_filter_group" },
+        { "id": "schema_text_search_query" }
+      ]
+    },
+    "schema_filter_condition": {
+      "name": "FilterCondition",
+      "fields": {
+        "fc_field": { "name": "field", "required": true, "type": "string" },
+        "fc_operator": { "name": "operator", "required": true, "type": "enum", "schema": { "id": "enum_comparison_operator" } },
+        "fc_value": { "name": "value", "required": true, "type": "union", "schema": [
+          { "id": "schema_field_reference" },
+          { "id": "schema_subquery_value" },
+          { "id": "schema_function_call" },
+          { "id": "schema_filter_value_primitive" }
+        ] }
+      }
+    },
+    "schema_filter_value_primitive": {
+      "name": "FilterValuePrimitive",
+      "type": "union",
+      "schema": [
+        { "id": "schema_filter_value_string" },
+        { "id": "schema_filter_value_number" },
+        { "id": "schema_filter_value_boolean" },
+        { "id": "schema_filter_value_array" },
+        { "id": "schema_filter_value_object" }
+      ]
+    },
+    "schema_filter_value_string": { "name": "FilterValueString", "type": "string" },
+    "schema_filter_value_number": { "name": "FilterValueNumber", "type": "number" },
+    "schema_filter_value_boolean": { "name": "FilterValueBoolean", "type": "boolean" },
+    "schema_filter_value_object": { "name": "FilterValueObject", "type": "record" },
+    "schema_filter_value_array": { "name": "FilterValueArray", "type": "array", "schema": { "id": "schema_filter_value_union" } },
+    "schema_filter_value_union": { "name": "FilterValueUnion", "type": "union", "schema": [
+      { "id": "schema_field_reference" },
+      { "id": "schema_subquery_value" },
+      { "id": "schema_function_call" },
+      { "id": "schema_filter_value_primitive" }
+    ] },
+    "schema_filter_group": {
+      "name": "FilterGroup",
+      "fields": {
+        "fg_operator": { "name": "operator", "required": true, "type": "enum", "schema": { "id": "enum_logical_operator" } },
+        "fg_conditions": { "name": "conditions", "required": true, "type": "array", "schema": { "id": "schema_query_filter" } }
+      }
+    },
+    "schema_text_search_query": {
+      "name": "TextSearchQuery",
+      "fields": {
+        "tsq_query": { "name": "query", "required": true, "type": "string" },
+        "tsq_fields": { "name": "fields", "type": "array", "schema": { "id": "schema_text_search_field" } },
+        "tsq_type": { "name": "type", "type": "enum", "schema": { "id": "enum_text_search_type" } },
+        "tsq_operator": { "name": "operator", "type": "enum", "schema": { "id": "enum_text_operator" } },
+        "tsq_case_sensitive": { "name": "case_sensitive", "type": "boolean" }
+      }
+    },
+    "schema_text_search_field": { "name": "TextSearchField", "type": "string" },
+    "schema_field_reference": {
+      "name": "FieldReference",
+      "fields": {
+        "fr_type": { "name": "type", "required": true, "type": "enum", "schema": { "id": "enum_field_ref_type" } },
+        "fr_field": { "name": "field", "required": true, "type": "string" }
+      }
+    },
+    "schema_subquery_value": {
+      "name": "SubqueryValue",
+      "fields": {
+        "sq_type": { "name": "type", "required": true, "type": "enum", "schema": { "id": "enum_subquery_type" } },
+        "sq_query": { "name": "query", "required": true, "type": "object", "schema": { "id": "schema_subquery_inner_query" } }
+      }
+    },
+    "schema_subquery_inner_query": {
+      "name": "SubqueryInnerQuery",
+      "description": "Recursive query definition for subqueries (same structure as the root Query)",
+      "fields": {
+        "siq_target": { "name": "target", "type": "object", "schema": { "id": "schema_query_target" } },
+        "siq_filters": { "name": "filters", "type": "union", "schema": [{ "id": "schema_filter_condition" }, { "id": "schema_filter_group" }, { "id": "schema_text_search_query" }] },
+        "siq_projection": { "name": "projection", "type": "object", "schema": { "id": "schema_projection_configuration" } },
+        "siq_sort": { "name": "sort", "type": "array", "schema": { "id": "schema_sort_configuration" } },
+        "siq_limit": { "name": "limit", "type": "integer" },
+        "siq_pagination": { "name": "pagination", "type": "union", "schema": [{ "id": "schema_pagination_offset" }, { "id": "schema_pagination_cursor" }] },
+        "siq_joins": { "name": "joins", "type": "array", "schema": { "id": "schema_join_configuration" } },
+        "siq_distinct": { "name": "distinct", "type": "union", "schema": [{ "id": "schema_query_distinct_config_bool" }, { "id": "schema_query_distinct_config_fields" }] },
+        "siq_aggregations": { "name": "aggregations", "type": "array", "schema": { "id": "schema_aggregation_configuration" } },
+        "siq_union": { "name": "union", "type": "object", "schema": { "id": "schema_query_union" } },
+        "siq_hints": { "name": "hints", "type": "array", "schema": { "id": "schema_query_hint" } },
+        "siq_raw": { "name": "raw", "type": "object", "schema": { "id": "schema_raw_query" } }
+      }
+    },
+    "schema_function_call": {
+      "name": "FunctionCall",
+      "fields": {
+        "fnc_function": { "name": "function", "required": true, "type": "string" },
+        "fnc_arguments": { "name": "arguments", "required": true, "type": "array", "schema": { "id": "schema_filter_value_union" } }
+      }
+    },
+    "schema_sort_configuration": {
+      "name": "SortConfiguration",
+      "fields": {
+        "sc_field": { "name": "field", "required": true, "type": "string" },
+        "sc_direction": { "name": "direction", "required": true, "type": "enum", "schema": { "id": "enum_sort_direction" } }
+      }
+    },
+    "schema_pagination_offset": {
+      "name": "PaginationOffset",
+      "fields": {
+        "po_type": { "name": "type", "required": true, "type": "enum", "schema": { "id": "enum_pagination_type" } },
+        "po_limit": { "name": "limit", "required": true, "type": "integer" },
+        "po_offset": { "name": "offset", "type": "integer" },
+        "po_include_total": { "name": "include_total", "type": "boolean" }
+      }
+    },
+    "schema_pagination_cursor": {
+      "name": "PaginationCursor",
+      "fields": {
+        "pc_type": { "name": "type", "required": true, "type": "enum", "schema": { "id": "enum_pagination_type" } },
+        "pc_limit": { "name": "limit", "required": true, "type": "integer" },
+        "pc_cursor": { "name": "cursor", "type": "object", "schema": { "id": "schema_pagination_cursor_value" } },
+        "pc_order": { "name": "order", "type": "array", "schema": { "id": "schema_sort_configuration" } },
+        "pc_include_total": { "name": "include_total", "type": "boolean" }
+      }
+    },
+    "schema_pagination_cursor_value": {
+      "name": "PaginationCursorValue",
+      "fields": {
+        "pcv_field": { "name": "field", "type": "string" },
+        "pcv_cursor": { "name": "cursor", "type": "union", "schema": [
+          { "id": "schema_field_reference" },
+          { "id": "schema_filter_value_primitive" }
+        ] }
+      }
+    },
+    "schema_projection_configuration": {
+      "name": "ProjectionConfiguration",
+      "fields": {
+        "prj_include": { "name": "include", "type": "array", "schema": { "id": "schema_projection_field" } },
+        "prj_exclude": { "name": "exclude", "type": "array", "schema": { "id": "schema_projection_field" } },
+        "prj_computed": { "name": "computed", "type": "array", "schema": { "id": "schema_projection_computed_item" } }
+      }
+    },
+    "schema_projection_field": {
+      "name": "ProjectionField",
+      "fields": {
+        "pf_name": { "name": "name", "required": true, "type": "string" },
+        "pf_alias": { "name": "alias", "type": "string" },
+        "pf_nested": { "name": "nested", "type": "object", "schema": { "id": "schema_projection_configuration" } }
+      }
+    },
+    "schema_projection_computed_item": {
+      "name": "ProjectionComputedItem",
+      "type": "union",
+      "schema": [
+        { "id": "schema_computed_field_expression" },
+        { "id": "schema_case_expression" }
+      ]
+    },
+    "schema_computed_field_expression": {
+      "name": "ComputedFieldExpression",
+      "fields": {
+        "cfe_type": { "name": "type", "required": true, "type": "enum", "schema": { "id": "enum_computed_type" } },
+        "cfe_expression": { "name": "expression", "required": true, "type": "object", "schema": { "id": "schema_function_call" } },
+        "cfe_alias": { "name": "alias", "required": true, "type": "string" }
+      }
+    },
+    "schema_case_expression": {
+      "name": "CaseExpression",
+      "fields": {
+        "ce_type": { "name": "type", "required": true, "type": "enum", "schema": { "id": "enum_case_type" } },
+        "ce_conditions": { "name": "conditions", "required": true, "type": "array", "schema": { "id": "schema_case_condition" } },
+        "ce_else": { "name": "else", "required": true, "type": "union", "schema": [
+          { "id": "schema_field_reference" },
+          { "id": "schema_subquery_value" },
+          { "id": "schema_function_call" },
+          { "id": "schema_filter_value_primitive" }
+        ] },
+        "ce_alias": { "name": "alias", "required": true, "type": "string" }
+      }
+    },
+    "schema_case_condition": {
+      "name": "CaseCondition",
+      "fields": {
+        "cc_when": { "name": "when", "required": true, "type": "union", "schema": [
+          { "id": "schema_filter_condition" },
+          { "id": "schema_filter_group" },
+          { "id": "schema_text_search_query" }
+        ] },
+        "cc_then": { "name": "then", "required": true, "type": "union", "schema": [
+          { "id": "schema_field_reference" },
+          { "id": "schema_subquery_value" },
+          { "id": "schema_function_call" },
+          { "id": "schema_filter_value_primitive" }
+        ] }
+      }
+    },
+    "schema_join_configuration": {
+      "name": "JoinConfiguration",
+      "fields": {
+        "jc_type": { "name": "type", "required": true, "type": "enum", "schema": { "id": "enum_join_type" } },
+        "jc_target": { "name": "target", "required": true, "type": "object", "schema": { "id": "schema_query_target" } },
+        "jc_on": { "name": "on", "required": true, "type": "union", "schema": [
+          { "id": "schema_filter_condition" },
+          { "id": "schema_filter_group" },
+          { "id": "schema_text_search_query" }
+        ] },
+        "jc_projection": { "name": "projection", "type": "object", "schema": { "id": "schema_projection_configuration" } }
+      }
+    },
+    "schema_aggregation_configuration": {
+      "name": "AggregationConfiguration",
+      "fields": {
+        "ac_type": { "name": "type", "required": true, "type": "enum", "schema": { "id": "enum_aggregation_type" } },
+        "ac_field": { "name": "field", "required": true, "type": "string" },
+        "ac_alias": { "name": "alias", "type": "string" },
+        "ac_groups": { "name": "groups", "type": "array", "schema": { "id": "schema_aggregation_group" } },
+        "ac_filter": { "name": "filter", "type": "union", "schema": [
+          { "id": "schema_filter_condition" },
+          { "id": "schema_filter_group" },
+          { "id": "schema_text_search_query" }
+        ] }
+      }
+    },
+    "schema_aggregation_group": { "name": "AggregationGroup", "type": "string" },
+    "schema_query_distinct_config_bool": { "name": "QueryDistinctConfigBool", "type": "boolean" },
+    "schema_query_distinct_config_fields": {
+      "name": "QueryDistinctConfigFields",
+      "fields": {
+        "qdcf_fields": { "name": "fields", "type": "array", "schema": { "id": "schema_distinct_field" } }
+      }
+    },
+    "schema_distinct_field": { "name": "DistinctField", "type": "string" },
+    "schema_query_union": {
+      "name": "QueryUnion",
+      "fields": {
+        "qu_queries": { "name": "queries", "required": true, "type": "array", "schema": { "id": "schema_subquery_inner_query" } },
+        "qu_type": { "name": "type", "required": true, "type": "enum", "schema": { "id": "enum_union_type" } }
+      }
+    },
+    "schema_query_hint": { "name": "QueryHint", "type": "record" },
+    "schema_raw_query": {
+      "name": "RawQuery",
+      "fields": {
+        "rq_template": { "name": "template", "type": "string" },
+        "rq_options": { "name": "options", "type": "record" },
+        "rq_from": { "name": "from", "type": "record", "schema": { "id": "schema_raw_query_target" } },
+        "rq_args": { "name": "args", "type": "array", "schema": { "id": "schema_raw_query_arg" } }
+      }
+    },
+    "schema_raw_query_target": {
+      "name": "RawQueryTarget",
+      "fields": {
+        "rqt_collection": { "name": "collection", "required": true, "type": "string" },
+        "rqt_version": { "name": "version", "type": "string" }
+      }
+    },
+    "schema_raw_query_arg": { "name": "RawQueryArg", "type": "unknown" }
+  }
+}

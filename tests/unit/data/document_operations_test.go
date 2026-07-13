@@ -196,7 +196,7 @@ func TestDocument_SetID_ReturnsError(t *testing.T) {
 
 	var sysErr *common.SystemError
 	require.ErrorAs(t, err, &sysErr)
-	require.Equal(t, "data.Document.Set", sysErr.Operation)
+	require.Equal(t, "data.Document.SetNested", sysErr.Operation)
 	require.Equal(t, data.DocumentIDField, sysErr.Path)
 	require.Equal(t, data.ErrReadOnlyField.Code, sysErr.Code)
 }

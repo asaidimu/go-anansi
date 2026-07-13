@@ -210,17 +210,7 @@ func (d *Document) MustGet(key string) any {
 //	doc.Set("_id", "custom")             // ✗ Does nothing - not in user data
 //	doc.SetMetadataValue("author", "me") // ✓ Correct way for metadata
 func (d *Document) Set(key string, value any) error {
-	if ReservedSystemField(key) {
-		return ErrReadOnlyField.WithPath(key).WithMessage("Attempting to set read only value on a document").WithOperation("data.Document.Set")
-	}
-	if key == "" {
-		return common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.Set").WithPath(key)
-	}
-	if d.data == nil {
-		d.data = make(map[string]any)
-	}
-	d.data[key] = value
-	return nil
+	return d.SetNested(key, value)
 }
 
 // SetIfNotExists sets a value only if the key doesn't exist.

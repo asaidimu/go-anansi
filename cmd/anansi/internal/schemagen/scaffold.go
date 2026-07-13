@@ -9,6 +9,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/schema/meta"
 )
 
 func RunScaffold(dir string, dryRun bool, anansiVersion string) error {
@@ -149,7 +150,7 @@ func main() {
 	if schema.Version == nil {
 		schema.Version = common.MustNewVersion("0.1.0")
 	}
-	NormalizeSchema(schema)
+	meta.NormalizeSchema(schema)
 	exampleJSON := schema.ToJSON()
 
 	examplePath := filepath.Join(schemasDir, "example.schema.json")

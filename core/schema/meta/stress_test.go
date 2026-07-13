@@ -3,14 +3,12 @@ package meta_test
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v8/core/schema/meta"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMetaSchema_StressPredicates(t *testing.T) {
-	vd, err := definition.NewDocumentValidator(&meta.MetaSchema, meta.MetaSchemaPredicates)
-	require.NoError(t, err)
+	vd := meta.DevelopmentSchemaValidator()
 
 	tests := []struct {
 		name         string

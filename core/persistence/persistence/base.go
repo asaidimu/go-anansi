@@ -94,6 +94,7 @@ func newBasePersistence(
 }
 
 func (p *basePersistence) Collection(ctx context.Context, name string) (base.Collection, error) {
+	// TODO: Fix memory leak.
 	p.collectionsMu.RLock()
 	c, ok := p.collections[name]
 	p.collectionsMu.RUnlock()
@@ -205,6 +206,8 @@ func (p *basePersistence) Delete(ctx context.Context, id string) (bool, error) {
 }
 
 func (p *basePersistence) Metadata(ctx context.Context, filter *base.MetadataFilter) (base.Metadata, error) {
+	// TODO: IMPLEMENT THIS METHOD PROPERLY
+	// 2026-07-09
 	if p.registry == nil {
 		return base.Metadata{}, registry.ErrRegistryNotInitialized
 	}
@@ -222,7 +225,8 @@ func (p *basePersistence) Metadata(ctx context.Context, filter *base.MetadataFil
 	schemas := make([]*definition.Schema, len(entries))
 	for i, entry := range entries {
 		// For now, we'll just use the entry's schema. A more complete implementation
-		// might fetch detailed metadata from each collection.
+		// might fetch detailed metadata from each collection
+		// using collection.Metadata()
 		sc := entry.Versions[entry.ActiveVersion.String()].Schema
 		schemas[i] = &sc
 		collections[i] = &base.CollectionMetadata{

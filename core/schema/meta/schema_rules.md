@@ -698,7 +698,7 @@ A `geometry` field:
 
 ### **Rule 12: Index Field References**
 
-- Indexes can only reference existing `FieldId`s within the schema
+- Indexes can only reference existing paths within the schema
 - **Spatial indexes** (`IndexTypeSpatial`) can only reference fields of type `geometry`
 
 **Example:**
@@ -718,12 +718,12 @@ A `geometry` field:
     "01934d8a-7c24-7b3e-9f12-0a1b2c3d4e5f": {
       "name": "email_idx",
       "type": "unique",
-      "fields": ["01934d8a-7c24-7b3e-9f12-8a9b0c1d2e3f"]
+      "fields": ["email"]
     },
     "01934d8a-7c24-7b3e-9f12-1a2b3c4d5e6f": {
       "name": "location_idx",
       "type": "spatial",
-      "fields": ["01934d8a-7c24-7b3e-9f12-9a0b1c2d3e4f"]
+      "fields": ["location"]
     }
   }
 }
@@ -748,9 +748,9 @@ Index condition values must match the type of the field being indexed.
     "01934d8a-7c24-7b3e-9f12-3a4b5c6d7e8f": {
       "name": "adult_idx",
       "type": "normal",
-      "fields": ["01934d8a-7c24-7b3e-9f12-2a3b4c5d6e7f"],
+      "fields": ["age"],
       "condition": {
-        "field": "01934d8a-7c24-7b3e-9f12-2a3b4c5d6e7f",
+        "field": "age",
         "operator": "gte",
         "value": 18
       }
@@ -763,7 +763,7 @@ Index condition values must match the type of the field being indexed.
 ```json
 {
   "condition": {
-    "field": "01934d8a-7c24-7b3e-9f12-2a3b4c5d6e7f",
+    "field": "age",
     "operator": "gte",
     "value": "18"
   }
