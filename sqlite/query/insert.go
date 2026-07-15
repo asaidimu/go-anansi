@@ -60,8 +60,12 @@ func (i *SQLiteInsertValues) buildSingleInsert(doc map[string]any) (string, []an
 		return "", nil, err
 	}
 
+	quotedFields := make([]string, len(i.fields))
+	for idx, f := range i.fields {
+		quotedFields[idx] = quoteIdentifier(f)
+	}
 	query := fmt.Sprintf("(%s) VALUES (%s) RETURNING *;",
-		strings.Join(i.fields, ", "),
+		strings.Join(quotedFields, ", "),
 		strings.Join(placeholders, ", "))
 
 	return query, params, nil
@@ -85,8 +89,12 @@ func (i *SQLiteInsertValues) buildBatchInsert(batch []map[string]any) (string, [
 		allParams = append(allParams, params...)
 	}
 
+	quotedFields := make([]string, len(i.fields))
+	for idx, f := range i.fields {
+		quotedFields[idx] = quoteIdentifier(f)
+	}
 	query := fmt.Sprintf("(%s) VALUES %s RETURNING *;",
-		strings.Join(i.fields, ", "),
+		strings.Join(quotedFields, ", "),
 		strings.Join(allPlaceholders, ", "))
 
 	return query, allParams, nil

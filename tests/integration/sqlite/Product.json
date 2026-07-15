@@ -1,0 +1,221 @@
+{
+  "version": "1.0.0",
+  "name": "Product",
+  "description": "A software product that is sold or licensed to customers",
+  "fields": {
+    "019f650f-926c-7ca2-9bbd-4c00d6001096": {
+      "name": "label",
+      "required": true,
+      "type": "string"
+    },
+    "019f650f-926c-7ca3-85ff-ed16ea00f937": {
+      "name": "type",
+      "required": true,
+      "type": "enum",
+      "schema": {
+        "id": "",
+        "type": "string",
+        "values": [
+          "fungible",
+          "non-fungible",
+          "service"
+        ]
+      }
+    },
+    "019f650f-926c-7ca4-ac3e-854488634f63": {
+      "name": "group",
+      "required": true,
+      "type": "string"
+    },
+    "019f650f-926c-7ca5-a25f-081e99f79466": {
+      "name": "tags",
+      "type": "array",
+      "schema": {
+        "id": "",
+        "type": "string"
+      }
+    },
+    "019f650f-926c-7ca6-ac70-d0c221fb5e9d": {
+      "name": "data",
+      "required": true,
+      "type": "object",
+      "schema": {
+        "id": "019f650f-926c-7cb5-9e25-583c2b70a9f8"
+      }
+    },
+    "019f650f-926c-7ca7-972a-75db672025a5": {
+      "name": "metadata",
+      "type": "object",
+      "schema": {
+        "id": "019f650f-926c-7cba-b299-72a2400e5127"
+      }
+    },
+    "019f650f-926c-7ca8-ad06-4f3c5184ec9f": {
+      "name": "id",
+      "required": true,
+      "type": "string"
+    },
+    "019f650f-926c-7ca9-9a4f-31912d1c2fdf": {
+      "name": "description",
+      "required": true,
+      "type": "string"
+    }
+  },
+  "schemas": {
+    "019f650f-926c-7caa-b1b8-d836bfe4497f": {
+      "name": "SoftwareVersion",
+      "fields": {
+        "019f650f-926c-7cab-adb9-956407106e09": {
+          "name": "tag",
+          "required": true,
+          "type": "string"
+        },
+        "019f650f-926c-7cac-83aa-ebdfdfb13e01": {
+          "name": "hash",
+          "required": true,
+          "type": "string"
+        },
+        "019f650f-926c-7cad-99ef-8b79b1ac2c58": {
+          "name": "date",
+          "required": true,
+          "type": "string"
+        },
+        "019f650f-926c-7cae-bf22-9486b2913da5": {
+          "name": "repo",
+          "required": true,
+          "type": "string"
+        }
+      }
+    },
+    "019f650f-926c-7caf-a065-36bf70b09678": {
+      "name": "SoftwareArtifact",
+      "fields": {
+        "019f650f-926c-7cb0-8d06-535a249c9920": {
+          "name": "type",
+          "required": true,
+          "type": "string"
+        },
+        "019f650f-926c-7cb1-b435-3283d6d78047": {
+          "name": "url",
+          "required": true,
+          "type": "string"
+        },
+        "019f650f-926c-7cb2-8b6d-09d4606bc24e": {
+          "name": "checksum",
+          "required": true,
+          "type": "string"
+        },
+        "019f650f-926c-7cb3-b203-844d1d610878": {
+          "name": "platform",
+          "required": true,
+          "type": "string"
+        },
+        "019f650f-926c-7cb4-a222-f9d4c04d43a7": {
+          "name": "architecture",
+          "required": true,
+          "type": "string"
+        }
+      }
+    },
+    "019f650f-926c-7cb5-9e25-583c2b70a9f8": {
+      "name": "SoftwareItemData",
+      "fields": {
+        "019f650f-926c-7cb6-8989-d0485aa47a08": {
+          "name": "version",
+          "required": true,
+          "type": "object",
+          "schema": {
+            "id": "019f650f-926c-7caa-b1b8-d836bfe4497f"
+          }
+        },
+        "019f650f-926c-7cb7-851f-1c5b96cb2edc": {
+          "name": "artifacts",
+          "required": true,
+          "type": "array",
+          "schema": {
+            "id": "019f650f-926c-7caf-a065-36bf70b09678"
+          }
+        },
+        "019f650f-926c-7cb8-96f2-12f03713fca2": {
+          "name": "license",
+          "required": true,
+          "type": "enum",
+          "schema": {
+            "id": "",
+            "type": "string",
+            "values": [
+              "proprietary",
+              "open-source",
+              "trial"
+            ]
+          }
+        },
+        "019f650f-926c-7cb9-b3f5-94c106220f23": {
+          "name": "status",
+          "required": true,
+          "type": "enum",
+          "schema": {
+            "id": "",
+            "type": "string",
+            "values": [
+              "active",
+              "deprecated",
+              "beta"
+            ]
+          }
+        }
+      }
+    },
+    "019f650f-926c-7cba-b299-72a2400e5127": {
+      "name": "ProductMetadata",
+      "description": "Metadata for a licensed software product",
+      "fields": {
+        "019f650f-926c-7cbb-8da8-ada6b0765145": {
+          "name": "sla",
+          "type": "string"
+        },
+        "019f650f-926c-7cbc-a831-870d06e1db5a": {
+          "name": "supportTier",
+          "required": true,
+          "type": "enum",
+          "schema": {
+            "id": "",
+            "type": "string",
+            "values": [
+              "basic",
+              "standard",
+              "premium"
+            ]
+          }
+        },
+        "019f650f-926c-7cbd-bd62-ff650fb2aa6f": {
+          "name": "lifecycleStage",
+          "required": true,
+          "type": "enum",
+          "schema": {
+            "id": "",
+            "type": "string",
+            "values": [
+              "active",
+              "sunset",
+              "end-of-life"
+            ]
+          }
+        },
+        "019f650f-926c-7cbe-8922-319c4bf9bc71": {
+          "name": "owner",
+          "required": true,
+          "type": "string"
+        },
+        "019f650f-926c-7cbf-9054-7381f3b68816": {
+          "name": "maintainers",
+          "type": "array",
+          "schema": {
+            "id": "",
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

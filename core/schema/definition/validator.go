@@ -304,7 +304,6 @@ func (ctx *buildContext) getOrBuildRecursiveTypeGraph(
 
 	tempSchema := &Schema{
 		BaseSchema: BaseSchema{
-			Name:   fmt.Sprintf("recursive_%s_%s", rootFieldName, fieldPath),
 			Fields: map[FieldId]Field{FieldId(rootFieldName): *rootFieldDef},
 		},
 		Schemas: topLevelSchema.Schemas,
@@ -369,11 +368,9 @@ type TypeCheckNode struct {
 type EnumValidationNode struct {
 	baseNode
 	fieldDef      *Field
-	schema        *Schema
-	schemaRef     SchemaReference
 	lookup        map[any]struct{}
 	complex       []any
-	expectNumeric bool // pre-computed when using resolved schema
+	expectNumeric bool
 }
 
 type ArrayValidationNode struct {
@@ -417,10 +414,11 @@ type ConstraintNode struct {
 
 type ConstraintGroupNode struct {
 	baseNode
-	group     ConstraintGroup
-	memberIDs []string
-	Name      string
-	scope     ConstraintScope
+	group               ConstraintGroup
+	precomputedFields   []string
+	precomputedFieldParts [][]string
+	Name                string
+	scope               ConstraintScope
 }
 
 // RecursionMarkerNode marks a recursive schema reference
@@ -503,6 +501,16 @@ func getPathDepth(pathParts []string) int {
 		depth += strings.Count(part, "[")
 	}
 	return depth
+}
+
+// rewriteSubPaths replaces a synthetic sub-graph prefix (e.g. "item" or "root")
+// in issue paths with the real document path at which the sub-graph was mounted.
+func rewriteSubPaths(issues []common.Issue, oldPrefix, newPrefix string) {
+	for j := range issues {
+		if strings.HasPrefix(issues[j].Path, oldPrefix) {
+			issues[j].Path = strings.Replace(issues[j].Path, oldPrefix, newPrefix, 1)
+		}
+	}
 }
 
 // getNodeValue is a helper to retrieve value using pre-split path parts
@@ -859,7 +867,7 @@ func (graph *ValidationGraph) buildFieldTypeNodes(
 
 	switch fieldDef.Type {
 	case FieldTypeEnum:
-		node, err = graph.buildEnumNode(fieldDef, fieldPath, fieldPathParts, currentDeps, sc, topLevelSchema)
+		node, err = graph.buildEnumNode(fieldDef, fieldPath, fieldPathParts, currentDeps, topLevelSchema)
 
 	case FieldTypeArray:
 		node, err = graph.buildArrayNode(fieldDef, fieldPath, fieldPathParts, currentDeps, sc, topLevelSchema, buildCtx)
@@ -918,7 +926,6 @@ func (graph *ValidationGraph) buildEnumNode(
 	fieldPath string,
 	fieldPathParts []string,
 	currentDeps []int,
-	sc *Schema,
 	topLevelSchema *Schema,
 ) (ValidationNode, error) {
 	if fieldDef.Schema.IsZero() {
@@ -999,17 +1006,14 @@ func (graph *ValidationGraph) buildEnumNode(
 		return nil, ErrInvalidSchema.WithMessage("Enum field has no values after merging references").WithPath(fieldPath)
 	}
 
-	// For simplicity, we store the merged lookup and complex values in the node.
-	// The original refs are not needed at runtime; we keep the first ref for metadata.
-	firstRef := refs[0]
+	expectNumeric := enumType == FieldTypeNumber || enumType == FieldTypeDecimal || enumType == FieldTypeInteger
 
 	return &EnumValidationNode{
-		baseNode:  baseNode{id: graph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts, deps: currentDeps},
-		fieldDef:  fieldDef,
-		schema:    sc,
-		schemaRef: firstRef, // just for metadata; not used in validation
-		lookup:    allLookup,
-		complex:   allComplex,
+		baseNode:      baseNode{id: graph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts, deps: currentDeps},
+		fieldDef:      fieldDef,
+		lookup:        allLookup,
+		complex:       allComplex,
+		expectNumeric: expectNumeric,
 	}, nil
 }
 
@@ -1138,7 +1142,6 @@ func (graph *ValidationGraph) createSubGraph(
 ) (*ValidationGraph, error) {
 	tempSchema := &Schema{
 		BaseSchema: BaseSchema{
-			Name:   fmt.Sprintf("subgraph_%s", basePath),
 			Fields: map[FieldId]Field{FieldId(rootFieldName): *rootFieldDef},
 		},
 		Schemas: originalTopLevelSchema.Schemas,
@@ -1209,15 +1212,15 @@ func (graph *ValidationGraph) buildContainerNode(
 			} else {
 				itemFieldSchema = nestedDef.Schema
 			}
+			et := getNestedSchemaEffectiveType(&nestedDef)
 			itemField := &Field{
 				Name: "item",
 				FieldProperties: FieldProperties{
-					Type:    getNestedSchemaEffectiveType(&nestedDef),
+					Type:    et,
 					Schema:  itemFieldSchema,
 					Default: nestedDef.Default,
 				},
 			}
-			et := getNestedSchemaEffectiveType(&nestedDef)
 			skipUnexpected := et == FieldTypeComposite || et == FieldTypeUnion
 			recursiveItemGraph, rerr := buildCtx.getOrBuildRecursiveTypeGraph(
 				"item", itemField, fieldPath, topLevelSchema,
@@ -1689,7 +1692,7 @@ func (graph *ValidationGraph) buildFromConstraintRuleWithScope(
 		ruleDepIDs = append(ruleDepIDs, node.id)
 
 	case ConstraintKindGroup:
-		_, err := ConstraintAs[*ConstraintGroup](rule.ConstraintUnion)
+		g, err := ConstraintAs[*ConstraintGroup](rule.ConstraintUnion)
 		if err != nil {
 			return nil
 		}
@@ -1697,14 +1700,15 @@ func (graph *ValidationGraph) buildFromConstraintRuleWithScope(
 		if addedConstraints[dedupKey] {
 			return nil
 		}
-
-		g, _ := ConstraintAs[*ConstraintGroup](rule.ConstraintUnion)
+		precomputedFields, precomputedFieldParts := precomputeConstraintGroupFieldPaths(basePath, baseParts, g)
 		nodeID := graph.buildNodeID()
 		node := &ConstraintGroupNode{
-			baseNode: baseNode{id: nodeID, path: basePath, pathParts: baseParts, deps: deps},
-			group:    *g,
-			Name:     rule.Name,
-			scope:    scope,
+			baseNode:              baseNode{id: nodeID, path: basePath, pathParts: baseParts, deps: deps},
+			group:                 *g,
+			precomputedFields:     precomputedFields,
+			precomputedFieldParts: precomputedFieldParts,
+			Name:                  rule.Name,
+			scope:                 scope,
 		}
 
 		graph.addNode(node)
@@ -1790,15 +1794,19 @@ func (graph *ValidationGraph) buildFromResolvedConstraintRuleWithScope(
 			memberUnions[i] = mc.ConstraintUnion
 		}
 
+		g := &ConstraintGroup{
+			Operator: rc.Group.Operator,
+			Rules:    memberUnions,
+		}
+		precomputedFields, precomputedFieldParts := precomputeConstraintGroupFieldPaths(basePath, baseParts, g)
 		nodeID := graph.buildNodeID()
 		node := &ConstraintGroupNode{
-			baseNode: baseNode{id: nodeID, path: basePath, pathParts: baseParts, deps: deps},
-			group: ConstraintGroup{
-				Operator: rc.Group.Operator,
-				Rules:    memberUnions,
-			},
-			Name:  rc.Name,
-			scope: rc.Scope,
+			baseNode:              baseNode{id: nodeID, path: basePath, pathParts: baseParts, deps: deps},
+			group:                 *g,
+			precomputedFields:     precomputedFields,
+			precomputedFieldParts: precomputedFieldParts,
+			Name:                  rc.Name,
+			scope:                 rc.Scope,
 		}
 		graph.addNode(node)
 		addedConstraints[dedupKey] = true
@@ -2706,12 +2714,15 @@ func (n *UnexpectedFieldsNode) Execute(ctx *ValidationContext) *NodeResult {
 	var issues []common.Issue
 	for key := range dataMap {
 		if !n.expectedFields[key] {
+			if issues == nil {
+				issues = make([]common.Issue, 0, 1)
+			}
 			issues = append(issues, common.Issue{Code: "UNEXPECTED_FIELD", Message: fmt.Sprintf("Unexpected field '%s'", key), Path: buildPath(n.path, key)})
 		}
 	}
 
-	if len(issues) > 0 {
-		return &NodeResult{Success: len(issues) == 0, Issues: issues}
+	if issues != nil {
+		return &NodeResult{Success: false, Issues: issues}
 	}
 
 	return success
@@ -2817,13 +2828,6 @@ func (n *EnumValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 		}}}
 	}
 
-	expectNumeric := n.expectNumeric
-	// Legacy fallback for old code path
-	if n.schema != nil && n.schemaRef.ID != "" {
-		if nested, ok := n.schema.Schemas[n.schemaRef.ID]; ok {
-			expectNumeric = (nested.Type == FieldTypeNumber || nested.Type == FieldTypeDecimal || nested.Type == FieldTypeInteger)
-		}
-	}
 	switch v := value.(type) {
 	case string, int64, float64, bool:
 		if _, found := n.lookup[v]; found {
@@ -2836,7 +2840,7 @@ func (n *EnumValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 	}
 
 	for _, allowed := range n.complex {
-		if deepEqual(value, allowed, expectNumeric) {
+		if deepEqual(value, allowed, n.expectNumeric) {
 			return success
 		}
 	}
@@ -2884,11 +2888,7 @@ func (n *ArrayValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 		remainingDepth := ctx.MaxDepth - currentDepth
 		itemIssues, _ := n.graph.traverse(ctx.FunctionMap, map[string]any{"item": item}, ctx.Mode, remainingDepth, ctx.OriginalRoot)
 
-		for j := range itemIssues {
-			if strings.HasPrefix(itemIssues[j].Path, "item") {
-				itemIssues[j].Path = strings.Replace(itemIssues[j].Path, "item", itemPath, 1)
-			}
-		}
+		rewriteSubPaths(itemIssues, "item", itemPath)
 		allIssues = append(allIssues, itemIssues...)
 	}
 
@@ -2930,11 +2930,7 @@ func (n *RecordValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 		remainingDepth := ctx.MaxDepth - currentDepth
 		itemIssues, _ := n.graph.traverse(ctx.FunctionMap, map[string]any{"item": item}, ctx.Mode, remainingDepth, ctx.OriginalRoot)
 
-		for j := range itemIssues {
-			if strings.HasPrefix(itemIssues[j].Path, "item") {
-				itemIssues[j].Path = strings.Replace(itemIssues[j].Path, "item", itemPath, 1)
-			}
-		}
+		rewriteSubPaths(itemIssues, "item", itemPath)
 		allIssues = append(allIssues, itemIssues...)
 	}
 
@@ -3135,10 +3131,8 @@ func (n *UnionValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 		issues, ok := graph.traverse(ctx.FunctionMap, wrapped, ctx.Mode, ctx.MaxDepth, ctx.OriginalRoot)
 
 		// Rewrite paths and add variant context
+		rewriteSubPaths(issues, "root", n.path)
 		for i := range issues {
-			if strings.HasPrefix(issues[i].Path, "root") {
-				issues[i].Path = strings.Replace(issues[i].Path, "root", n.path, 1)
-			}
 			issues[i].Message = fmt.Sprintf("[variant %d] %s", idx, issues[i].Message)
 		}
 
@@ -3315,15 +3309,25 @@ func (n *ConstraintGroupNode) Execute(ctx *ValidationContext) *NodeResult {
 }
 
 func (n *ConstraintGroupNode) collectAllRequiredFields() ([]string, [][]string) {
+	if n.precomputedFields != nil {
+		return n.precomputedFields, n.precomputedFieldParts
+	}
+	fields, fieldParts := precomputeConstraintGroupFieldPaths(n.path, n.pathParts, &n.group)
+	n.precomputedFields = fields
+	n.precomputedFieldParts = fieldParts
+	return fields, fieldParts
+}
+
+func precomputeConstraintGroupFieldPaths(basePath string, baseParts []string, g *ConstraintGroup) ([]string, [][]string) {
 	allRequiredFieldsMap := make(map[string][]string)
 
-	for _, ruleUnion := range n.group.Rules {
+	for _, ruleUnion := range g.Rules {
 		r, err := ConstraintAs[*ConstraintRule](ruleUnion)
 		if err != nil {
 			continue
 		}
 
-		absPaths, absPathParts := resolveConstraintFieldPaths(n.path, n.pathParts, r.Fields)
+		absPaths, absPathParts := resolveConstraintFieldPaths(basePath, baseParts, r.Fields)
 		for i, p := range absPaths {
 			allRequiredFieldsMap[p] = absPathParts[i]
 		}
@@ -3421,8 +3425,12 @@ func evaluateWithPresenceCheck(
 	requiredFieldParts [][]string,
 	executor func() *NodeResult,
 ) *NodeResult {
-	var presentFields []string
-	var missingFields []string
+	if len(requiredFields) == 0 {
+		return executor()
+	}
+
+	presentFields := make([]string, 0, len(requiredFields))
+	missingFields := make([]string, 0, len(requiredFields))
 
 	for i, fieldPath := range requiredFields {
 		if _, exists := getNodeValue(ctx, requiredFieldParts[i]); exists {

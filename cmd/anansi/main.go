@@ -22,13 +22,25 @@ func main() {
 	}
 	rootCmd.SetVersionTemplate("{{.Version}}\n")
 
-	rootCmd.AddCommand(scaffoldCmd())
-	rootCmd.AddCommand(schemaCmd())
-	rootCmd.AddCommand(fakerCmd())
 	rootCmd.AddCommand(versionCmd())
+	rootCmd.AddCommand(scaffoldCmd())
+	rootCmd.AddCommand(migrateCmd())
+	rootCmd.AddCommand(codegenCmd())
+	rootCmd.AddCommand(schemaCmd())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
+	}
+}
+
+func versionCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the version number",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Println(Version)
+			return nil
+		},
 	}
 }
 
@@ -52,28 +64,26 @@ func scaffoldCmd() *cobra.Command {
 	return cmd
 }
 
-func schemaCmd() *cobra.Command {
+// --- migrate ---
+
+func migrateCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "schema",
-		Short: "Schema operations",
+		Use:   "migrate",
+		Short: "Manage database schema migrations",
 	}
 
-	cmd.AddCommand(migrateCmd())
-	cmd.AddCommand(newSchemaCmd())
-	cmd.AddCommand(squashCmd())
-	cmd.AddCommand(normalizeCmd())
-	cmd.AddCommand(typescriptCmd())
-	cmd.AddCommand(agentsCmd())
+	cmd.AddCommand(migrateGenerateCmd())
+	cmd.AddCommand(migrateSquashCmd())
 
 	return cmd
 }
 
-func migrateCmd() *cobra.Command {
+func migrateGenerateCmd() *cobra.Command {
 	var glob, lockfile, out string
 	var check, dryRun bool
 
 	cmd := &cobra.Command{
-		Use:   "migrate",
+		Use:   "generate",
 		Short: "Generate migration files from schema changes",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := loadCfg()
@@ -98,25 +108,7 @@ func migrateCmd() *cobra.Command {
 	return cmd
 }
 
-func newSchemaCmd() *cobra.Command {
-	var dir string
-	var dryRun bool
-
-	cmd := &cobra.Command{
-		Use:   "new <name>",
-		Short: "Create a blank schema file",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return schemagen.RunNewSchema(args[0], dir, dryRun)
-		},
-	}
-
-	cmd.Flags().StringVar(&dir, "dir", ".", "output directory for the new schema file")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
-	return cmd
-}
-
-func squashCmd() *cobra.Command {
+func migrateSquashCmd() *cobra.Command {
 	var lockfile, out string
 	var dryRun bool
 
@@ -142,23 +134,22 @@ func squashCmd() *cobra.Command {
 	return cmd
 }
 
-func normalizeCmd() *cobra.Command {
-	var dryRun bool
+// --- codegen ---
 
+func codegenCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "normalize <path>",
-		Short: "Normalize schema file IDs to UUID v7",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			return schemagen.RunNormalize(args[0], dryRun)
-		},
+		Use:   "codegen",
+		Short: "Generate code and data from schemas",
 	}
 
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
+	cmd.AddCommand(codegenTypescriptCmd())
+	cmd.AddCommand(codegenFakerCmd())
+	cmd.AddCommand(codegenAgentsCmd())
+
 	return cmd
 }
 
-func typescriptCmd() *cobra.Command {
+func codegenTypescriptCmd() *cobra.Command {
 	var glob, out string
 	var dryRun bool
 
@@ -183,7 +174,28 @@ func typescriptCmd() *cobra.Command {
 	return cmd
 }
 
-func agentsCmd() *cobra.Command {
+func codegenFakerCmd() *cobra.Command {
+	var seed int64
+	var pretty bool
+	var count int
+	var dir string
+
+	cmd := &cobra.Command{
+		Use:   "faker [schema-files...]",
+		Short: "Generate fake data from schema files",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return schemagen.RunFaker(seed, count, pretty, dir, args)
+		},
+	}
+
+	cmd.Flags().Int64Var(&seed, "seed", 42, "random seed for reproducibility")
+	cmd.Flags().BoolVar(&pretty, "pretty", true, "pretty-print JSON")
+	cmd.Flags().IntVar(&count, "count", 1, "number of records to generate")
+	cmd.Flags().StringVar(&dir, "dir", "", "directory to scan for .schema.json files")
+	return cmd
+}
+
+func codegenAgentsCmd() *cobra.Command {
 	var out string
 	var dryRun bool
 
@@ -200,47 +212,52 @@ func agentsCmd() *cobra.Command {
 	return cmd
 }
 
-func fakerCmd() *cobra.Command {
+// --- schema ---
+
+func schemaCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "faker",
-		Short: "Generate fake data from schemas",
+		Use:   "schema",
+		Short: "Create and maintain schema files",
 	}
 
-	cmd.AddCommand(fakerGenerateCmd())
+	cmd.AddCommand(schemaNewCmd())
+	cmd.AddCommand(schemaNormalizeCmd())
 
 	return cmd
 }
 
-func fakerGenerateCmd() *cobra.Command {
-	var seed int64
-	var pretty bool
-	var count int
+func schemaNewCmd() *cobra.Command {
 	var dir string
+	var dryRun bool
 
 	cmd := &cobra.Command{
-		Use:   "generate [schema-files...]",
-		Short: "Generate fake data from schema files",
+		Use:   "new <name>",
+		Short: "Create a blank schema file",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return schemagen.RunFaker(seed, count, pretty, dir, args)
+			return schemagen.RunNewSchema(args[0], dir, dryRun)
 		},
 	}
 
-	cmd.Flags().Int64Var(&seed, "seed", 42, "random seed for reproducibility")
-	cmd.Flags().BoolVar(&pretty, "pretty", true, "pretty-print JSON")
-	cmd.Flags().IntVar(&count, "count", 1, "number of records to generate")
-	cmd.Flags().StringVar(&dir, "dir", "", "directory to scan for .schema.json files")
+	cmd.Flags().StringVar(&dir, "dir", ".", "output directory for the new schema file")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
 	return cmd
 }
 
-func versionCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print the version number",
+func schemaNormalizeCmd() *cobra.Command {
+	var dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "normalize <path>",
+		Short: "Normalize schema file IDs to UUID v7",
+		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Println(Version)
-			return nil
+			return schemagen.RunNormalize(args[0], dryRun)
 		},
 	}
+
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
+	return cmd
 }
 
 func loadCfg() *schemagen.Config {

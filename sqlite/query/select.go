@@ -162,11 +162,11 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 			for _, alias := range aliases {
 				schemaDef := p.schemas[alias]
 				if schemaDef != nil && len(schemaDef.Fields) > 0 {
-					for _, name := range schemaDef.FieldNames() {
-						_, field := schemaDef.FindField(name)
-						resolvedField := fmt.Sprintf("%s.%s", alias, field.Name)
-						fieldAlias := fmt.Sprintf("'%s.%s'", alias, field.Name)
-						aliasedFields = append(aliasedFields, fmt.Sprintf("%s AS %s", resolvedField, fieldAlias))
+		for _, name := range schemaDef.FieldNames() {
+				_, field := schemaDef.FindField(name)
+				resolvedField := fmt.Sprintf("%s.%s", quoteIdentifier(alias), quoteIdentifier(string(field.Name)))
+				fieldAlias := fmt.Sprintf("'%s.%s'", alias, field.Name)
+				aliasedFields = append(aliasedFields, fmt.Sprintf("%s AS %s", resolvedField, fieldAlias))
 					}
 				}
 			}
