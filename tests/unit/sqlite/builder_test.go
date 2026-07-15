@@ -79,7 +79,7 @@ func TestInsert(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, nq)
 
-	expectedSQL := `INSERT INTO users (age, first_name, last_name) VALUES ($1, $2, $3) RETURNING *;`
+	expectedSQL := `INSERT INTO users ("age", "first_name", "last_name") VALUES ($1, $2, $3) RETURNING *;`
 	assert.Equal(t, expectedSQL, nq.Raw().SQL)
 	assert.Equal(t, 3, len(nq.Raw().Params))
 	// Fields are now in alphabetical order: age, first_name, last_name
@@ -223,7 +223,7 @@ func TestSelectWithInAndNinOperators(t *testing.T) {
 	assert.NoError(t, errIn)
 	assert.NotNil(t, nqIn)
 	// Fields in alphabetical order: region, status
-	expectedSQLIn := `SELECT users.region AS 'users.region', users.status AS 'users.status' FROM users WHERE "region" IN ($1, $2)`
+	expectedSQLIn := `SELECT "users"."region" AS 'users.region', "users"."status" AS 'users.status' FROM users WHERE "region" IN ($1, $2)`
 	assert.Equal(t, expectedSQLIn, nqIn.Raw().SQL)
 	assert.ElementsMatch(t, []any{"East", "West"}, nqIn.Raw().Params)
 
@@ -234,7 +234,7 @@ func TestSelectWithInAndNinOperators(t *testing.T) {
 	assert.NoError(t, errNotIn)
 	assert.NotNil(t, nqNotIn)
 	// Fields in alphabetical order: region, status
-	expectedSQLNotIn := `SELECT users.region AS 'users.region', users.status AS 'users.status' FROM users WHERE "status" NOT IN ($1, $2)`
+	expectedSQLNotIn := `SELECT "users"."region" AS 'users.region', "users"."status" AS 'users.status' FROM users WHERE "status" NOT IN ($1, $2)`
 	assert.Equal(t, expectedSQLNotIn, nqNotIn.Raw().SQL)
 	assert.ElementsMatch(t, []any{"inactive", "pending"}, nqNotIn.Raw().Params)
 }
@@ -291,7 +291,7 @@ func TestSelectWithMultipleJoins(t *testing.T) {
 	assert.NotNil(t, nq)
 
 	// Fields in alphabetical order by table: orders (customer_id, product_id), products (id), users (id)
-	expectedSQL := `SELECT orders.customer_id AS 'orders.customer_id', orders.product_id AS 'orders.product_id', products.id AS 'products.id', users.id AS 'users.id' FROM orders INNER JOIN users ON "orders"."customer_id" = "users"."id" LEFT JOIN products ON "orders"."product_id" = "products"."id"`
+	expectedSQL := `SELECT "orders"."customer_id" AS 'orders.customer_id', "orders"."product_id" AS 'orders.product_id', "products"."id" AS 'products.id', "users"."id" AS 'users.id' FROM orders INNER JOIN users ON "orders"."customer_id" = "users"."id" LEFT JOIN products ON "orders"."product_id" = "products"."id"`
 	assert.Equal(t, expectedSQL, nq.Raw().SQL)
 	assert.Empty(t, nq.Raw().Params)
 }
@@ -369,7 +369,7 @@ func TestSelectWithDifferentDataTypesInWhere(t *testing.T) {
 	nqInt, errInt := builder.Build(&qInt, native.StmtSelect, nil)
 	assert.NoError(t, errInt)
 	assert.NotNil(t, nqInt)
-	expectedSQLInt := `SELECT users.age AS 'users.age' FROM users WHERE "age" > $1`
+	expectedSQLInt := `SELECT "users"."age" AS 'users.age' FROM users WHERE "age" > $1`
 	assert.Equal(t, expectedSQLInt, nqInt.Raw().SQL)
 	assert.Equal(t, []any{float64(30)}, nqInt.Raw().Params)
 
@@ -379,7 +379,7 @@ func TestSelectWithDifferentDataTypesInWhere(t *testing.T) {
 	nqFloat, errFloat := builder.Build(&qFloat, native.StmtSelect, nil)
 	assert.NoError(t, errFloat)
 	assert.NotNil(t, nqFloat)
-	expectedSQLFloat := `SELECT products.in_stock AS 'products.in_stock', products.price AS 'products.price' FROM products WHERE "price" <= $1`
+	expectedSQLFloat := `SELECT "products"."in_stock" AS 'products.in_stock', "products"."price" AS 'products.price' FROM products WHERE "price" <= $1`
 	assert.Equal(t, expectedSQLFloat, nqFloat.Raw().SQL)
 	assert.Equal(t, []any{9.99}, nqFloat.Raw().Params)
 
@@ -389,7 +389,7 @@ func TestSelectWithDifferentDataTypesInWhere(t *testing.T) {
 	nqBool, errBool := builder.Build(&qBool, native.StmtSelect, nil)
 	assert.NoError(t, errBool)
 	assert.NotNil(t, nqBool)
-	expectedSQLBool := `SELECT products.in_stock AS 'products.in_stock', products.price AS 'products.price' FROM products WHERE "in_stock" = $1`
+	expectedSQLBool := `SELECT "products"."in_stock" AS 'products.in_stock', "products"."price" AS 'products.price' FROM products WHERE "in_stock" = $1`
 	assert.Equal(t, expectedSQLBool, nqBool.Raw().SQL)
 	assert.Equal(t, []any{true}, nqBool.Raw().Params)
 }
@@ -420,7 +420,7 @@ func TestSelectWithDistinct(t *testing.T) {
 	nqAll, errAll := builder.Build(&qAll, native.StmtSelect, nil)
 	assert.NoError(t, errAll)
 	assert.NotNil(t, nqAll)
-	expectedSQLAll := `SELECT DISTINCT users.city AS 'users.city', users.country AS 'users.country' FROM users`
+	expectedSQLAll := `SELECT DISTINCT "users"."city" AS 'users.city', "users"."country" AS 'users.country' FROM users`
 	assert.Equal(t, expectedSQLAll, nqAll.Raw().SQL)
 
 	// Test DISTINCT on specific fields - order as specified: country, city
@@ -502,7 +502,7 @@ func TestSQLiteFactory_SelectImplicitFields(t *testing.T) {
 
 	// Assert the generated SQL
 	// The SELECT clause should implicitly include all fields from the schema in alphabetical order: f3 (balance), f1 (id), f2 (name)
-	expectedSQL := `SELECT accounts.balance AS 'accounts.balance', accounts.id AS 'accounts.id', accounts.name AS 'accounts.name' FROM accounts WHERE "id" = $1`
+	expectedSQL := `SELECT "accounts"."balance" AS 'accounts.balance', "accounts"."id" AS 'accounts.id', "accounts"."name" AS 'accounts.name' FROM accounts WHERE "id" = $1`
 	assert.Equal(t, expectedSQL, nq.Raw().SQL)
 	assert.Equal(t, 1, len(nq.Raw().Params))
 	assert.Equal(t, "A", nq.Raw().Params[0])

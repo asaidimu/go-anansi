@@ -60,7 +60,7 @@ func TestSimpleScalarSubquery(t *testing.T) {
 	value, err := factory.Build(q, native.StmtSelect, nil)
 	assert.NoError(t, err)
 
-	expectedSQL := "SELECT users.age AS 'users.age', users.id AS 'users.id', users.name AS 'users.name' FROM users WHERE \"age\" > (SELECT AVG(\"age\") FROM users)"
+	expectedSQL := "SELECT \"users\".\"age\" AS 'users.age', \"users\".\"id\" AS 'users.id', \"users\".\"name\" AS 'users.name' FROM users WHERE \"age\" > (SELECT AVG(\"age\") FROM users)"
 	assert.Equal(t, expectedSQL, value.Raw().SQL)
 	assert.Empty(t, value.Raw().Params)
 }
@@ -132,7 +132,7 @@ func TestSubqueryWithIN(t *testing.T) {
 	value, err := factory.Build(q, native.StmtSelect, nil)
 	require.NoError(t, err)
 
-	expectedSQL := "SELECT orders.id AS 'orders.id', orders.total AS 'orders.total', orders.user_id AS 'orders.user_id' FROM orders WHERE \"user_id\" IN (SELECT \"id\" FROM users WHERE \"department\" = $1)"
+	expectedSQL := "SELECT \"orders\".\"id\" AS 'orders.id', \"orders\".\"total\" AS 'orders.total', \"orders\".\"user_id\" AS 'orders.user_id' FROM orders WHERE \"user_id\" IN (SELECT \"id\" FROM users WHERE \"department\" = $1)"
 	assert.Equal(t, expectedSQL, value.Raw().SQL)
 	assert.Equal(t, []any{"Engineering"}, value.Raw().Params)
 }
@@ -244,7 +244,7 @@ func TestSubqueryWithJoin(t *testing.T) {
 	value, err := factory.Build(q, native.StmtSelect, nil)
 	require.NoError(t, err)
 
-	expectedSQL := `SELECT orders.id AS 'orders.id', orders.user_id AS 'orders.user_id' FROM orders WHERE "user_id" IN (SELECT "u"."id" FROM users AS u INNER JOIN departments AS d ON "u"."department_id" = "d"."id" WHERE "d"."name" = $1)`
+	expectedSQL := `SELECT "orders"."id" AS 'orders.id', "orders"."user_id" AS 'orders.user_id' FROM orders WHERE "user_id" IN (SELECT "u"."id" FROM users AS u INNER JOIN departments AS d ON "u"."department_id" = "d"."id" WHERE "d"."name" = $1)`
 	assert.Equal(t, expectedSQL, value.Raw().SQL)
 	assert.Equal(t, []any{"Engineering"}, value.Raw().Params)
 }
@@ -353,7 +353,7 @@ func TestNestedSubqueries(t *testing.T) {
 	value, err := factory.Build(q, native.StmtSelect, nil)
 	require.NoError(t, err)
 
-	expectedSQL := `SELECT orders.id AS 'orders.id', orders.user_id AS 'orders.user_id' FROM orders WHERE "user_id" IN (SELECT "id" FROM users WHERE "department_id" IN (SELECT "id" FROM departments WHERE "region" = $1))`
+	expectedSQL := `SELECT "orders"."id" AS 'orders.id', "orders"."user_id" AS 'orders.user_id' FROM orders WHERE "user_id" IN (SELECT "id" FROM users WHERE "department_id" IN (SELECT "id" FROM departments WHERE "region" = $1))`
 	assert.Equal(t, expectedSQL, value.Raw().SQL)
 	assert.Equal(t, []any{"East"}, value.Raw().Params)
 }
@@ -441,7 +441,7 @@ func TestCorrelatedSubquery(t *testing.T) {
 	assert.Contains(t, sqlStr, "\"o\".\"user_id\"")
 
 	// Verify the full expected SQL structure
-	expectedSQL := `SELECT u.id AS 'u.id', u.name AS 'u.name' FROM users AS u WHERE "dummy" > (SELECT COUNT(*) FROM orders AS o WHERE "o"."user_id" = "u"."id")`
+	expectedSQL := `SELECT "u"."id" AS 'u.id', "u"."name" AS 'u.name' FROM users AS u WHERE "dummy" > (SELECT COUNT(*) FROM orders AS o WHERE "o"."user_id" = "u"."id")`
 	assert.Equal(t, expectedSQL, sqlStr)
 }
 
