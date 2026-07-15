@@ -1,3 +1,10 @@
+## [8.0.3](https://github.com/asaidimu/go-anansi/compare/v8.0.2...v8.0.3) (2026-07-15)
+
+
+### Bug Fixes
+
+* fix bug in sql generation ([1259821](https://github.com/asaidimu/go-anansi/commit/12598210ef514684bbe76d66dcf62c619a1db790))
+
 ## [8.0.2](https://github.com/asaidimu/go-anansi/compare/v8.0.1...v8.0.2) (2026-07-13)
 
 
