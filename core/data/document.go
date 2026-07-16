@@ -213,6 +213,15 @@ func (d *Document) Set(key string, value any) error {
 	return d.SetNested(key, value)
 }
 
+// Unset removes a key from the document's user data.
+// System-managed fields (_id_, _metadata_) cannot be removed.
+func (d *Document) Unset(key string) {
+	if ReservedSystemField(key) {
+		return
+	}
+	delete(d.data, key)
+}
+
 // SetIfNotExists sets a value only if the key doesn't exist.
 func (d *Document) SetIfNotExists(key string, value any) bool {
 	if d.data == nil {
