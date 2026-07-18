@@ -305,6 +305,29 @@ func (p *SQLiteSelectProjection) buildQueryFilter(filter *query.QueryFilter) (st
 }
 
 func (p *SQLiteSelectProjection) buildFilterCondition(condition *query.FilterCondition) (string, []any, error) {
+	isNull := condition.Value.StringVal == nil &&
+		condition.Value.NumberVal == nil &&
+		condition.Value.BoolVal == nil &&
+		condition.Value.ObjectVal == nil &&
+		condition.Value.ArrayVal == nil &&
+		condition.Value.FieldRefVal == nil &&
+		condition.Value.FunctionCallVal == nil &&
+		condition.Value.SubqueryVal == nil
+
+	if isNull {
+		var resolvedField string
+		resolvedField, err := p.factory.resolveFieldReference(condition.Field, p.schemas)
+		if err != nil {
+			return "", nil, err
+		}
+		switch condition.Operator {
+		case query.ComparisonOperatorEq:
+			return fmt.Sprintf("%s IS NULL", resolvedField), nil, nil
+		case query.ComparisonOperatorNeq:
+			return fmt.Sprintf("%s IS NOT NULL", resolvedField), nil, nil
+		}
+	}
+
 	valueSQL, params, err := p.buildFilterValue(&condition.Value)
 	if err != nil {
 		return "", nil, err
