@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime/debug"
 
 	"github.com/asaidimu/go-anansi/v8/cmd/anansi/internal/schemagen"
 	"github.com/spf13/cobra"
@@ -10,6 +11,16 @@ import (
 
 var Version = "dev"
 var Release = "dev"
+
+func init() {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		mv := info.Main.Version
+		if mv != "" && mv != "(devel)" {
+			Version = mv
+			Release = mv
+		}
+	}
+}
 
 func main() {
 	rootCmd := &cobra.Command{
