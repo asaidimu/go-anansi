@@ -1,3 +1,11 @@
+## [8.0.5](https://github.com/asaidimu/go-anansi/compare/v8.0.4...v8.0.5) (2026-07-19)
+
+
+### Bug Fixes
+
+* fix cmd version ([e50f4ab](https://github.com/asaidimu/go-anansi/commit/e50f4ab8732aabd5de289193c7ed069a504979b6))
+* fix sqlite null check ([4364b4f](https://github.com/asaidimu/go-anansi/commit/4364b4f97918093303ebfb011f1b7876c7267ee1))
+
 ## [8.0.3](https://github.com/asaidimu/go-anansi/compare/v8.0.2...v8.0.3) (2026-07-15)
 
 
