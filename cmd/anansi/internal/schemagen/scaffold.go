@@ -56,7 +56,7 @@ func RunScaffold(dir string, dryRun bool, anansiVersion string) error {
 
 go 1.21
 
-require github.com/asaidimu/go-anansi/v7 %s
+require github.com/asaidimu/go-anansi/v8 %s
 `, modulePath, anansiVersion)
 	if err := os.WriteFile(filepath.Join(abs, "go.mod"), []byte(gomod), 0644); err != nil {
 		return fmt.Errorf("write go.mod: %w", err)
