@@ -1,3 +1,10 @@
+## [8.0.6](https://github.com/asaidimu/go-anansi/compare/v8.0.5...v8.0.6) (2026-07-20)
+
+
+### Bug Fixes
+
+* fast push ([75efbc2](https://github.com/asaidimu/go-anansi/commit/75efbc27f6fdda81bcea5f26a956de3cc10c3027))
+
 ## [8.0.5](https://github.com/asaidimu/go-anansi/compare/v8.0.4...v8.0.5) (2026-07-19)
 
 
