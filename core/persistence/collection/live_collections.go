@@ -22,7 +22,13 @@ import (
 // Mutating a returned value directly corrupts the cache for every other
 // reader and is a data race if a concurrent reader exists. You have been
 // warned.
+//
+// LiveCollection embeds base.Collection: callers can pass a LiveCollection
+// anywhere a base.Collection is expected. Embedded methods (Read, CreateOne,
+// etc.) forward to the underlying collection through cache-aware interceptors.
 type LiveCollection[T any] interface {
+	base.Collection
+
 	// Get returns the cached artifact for key, or the zero value and false
 	// if it is absent (including confirmed-absent via negative caching).
 	// See the interface-level doc comment above for the read-only contract
@@ -94,6 +100,15 @@ type LiveRepositoryOptions[T any] struct {
 	// QueryKey is the document field path used as the cache key (required).
 	QueryKey string
 
+	// QueryFunc is an optional function that, given a key, returns the full
+	// database query to find matching documents. When set, Get(key) calls
+	// QueryFunc(key) for read-through lookups instead of building a simple
+	// QueryKey-equality query. prime() calls QueryFunc("") to determine which
+	// documents to preload. Interceptors use QueryFunc(key) to verify that
+	// a newly written document should be cached (re-reading with the same
+	// query). When nil, behavior is identical to the pre-QueryFunc era.
+	QueryFunc func(key string) query.Query
+
 	// Cache is an optional custom cache implementation. If nil, a managed
 	// cache is constructed from CacheConfig (or cache.DefaultCacheConfig if that
 	// is also nil). If a Cache is shared across repositories, its lifecycle
@@ -105,11 +120,11 @@ type LiveRepositoryOptions[T any] struct {
 	// nil. Ignored when Cache is provided.
 	CacheConfig *cache.CacheConfig
 
-	// Active determines whether to preload all documents on startup. If the
+	// AutoLoad determines whether to preload all documents on startup. If the
 	// configured MaxEntries is smaller than the collection, a warning is
 	// logged and excess entries are silently evicted per the eviction
 	// policy.
-	Active bool
+	AutoLoad bool
 }
 
 // liveRepository implements LiveCollection by wrapping a base.Collection
@@ -118,6 +133,7 @@ type liveRepository[T any] struct {
 	base.Collection
 	processor DocumentProcessor[T]
 	queryKey  string
+	queryFunc func(key string) query.Query
 	cache     cache.RepositoryCache[T]
 	ctx       context.Context
 }
@@ -139,7 +155,7 @@ func NewLiveRepository[T any](ctx context.Context, opts LiveRepositoryOptions[T]
 		if opts.CacheConfig != nil {
 			cfg = *opts.CacheConfig
 		}
-		cacheImpl = cache.NewManagedCache[T](cfg, func(v T) (T, error) {
+		cacheImpl = cache.NewManagedCache(cfg, func(v T) (T, error) {
 			return opts.Processor.CloneState(v)
 		})
 	}
@@ -148,11 +164,12 @@ func NewLiveRepository[T any](ctx context.Context, opts LiveRepositoryOptions[T]
 		Collection: opts.Collection,
 		processor:  opts.Processor,
 		queryKey:   opts.QueryKey,
+		queryFunc:  opts.QueryFunc,
 		cache:      cacheImpl,
 		ctx:        ctx,
 	}
 
-	if opts.Active {
+	if opts.AutoLoad {
 		if err := repo.prime(ctx); err != nil {
 			_ = cacheImpl.Close()
 			return nil, fmt.Errorf("failed to prime live repository: %w", err)
@@ -162,9 +179,14 @@ func NewLiveRepository[T any](ctx context.Context, opts LiveRepositoryOptions[T]
 	return repo, nil
 }
 
-// prime fetches all documents from the collection and populates the cache.
+// prime fetches documents matching the optional query filter from the collection
+// and populates the cache.
 func (r *liveRepository[T]) prime(ctx context.Context) error {
-	docs, err := r.Read(ctx, &query.Query{})
+	var q query.Query
+	if r.queryFunc != nil {
+		q = r.queryFunc("")
+	}
+	docs, err := r.Read(ctx, &q)
 	if err != nil {
 		return err
 	}
@@ -183,11 +205,6 @@ func (r *liveRepository[T]) prime(ctx context.Context) error {
 		}
 		r.cache.Set(key, compiled)
 		attempted++
-	}
-	if attempted > 0 {
-		if retained := len(r.cache.Keys()); retained < attempted {
-			// This is best-effort; cache bound smaller than document count
-		}
 	}
 	return nil
 }
@@ -243,7 +260,12 @@ func (r *liveRepository[T]) Get(key string) (T, bool) {
 	}
 
 	// CacheMiss: read-through to the database.
-	q := query.NewQueryBuilder().Where(r.queryKey).Eq(key).Build()
+	var q query.Query
+	if r.queryFunc != nil {
+		q = r.queryFunc(key)
+	} else {
+		q = query.NewQueryBuilder().Where(r.queryKey).Eq(key).Build()
+	}
 	docs, err := r.Read(context.Background(), &q)
 	if err != nil || docs == nil || docs.Count == 0 {
 		r.cache.Nullify(key)
@@ -305,6 +327,7 @@ func (r *liveRepository[T]) Clone() (LiveCollection[T], error) {
 		Collection: r.Collection,
 		processor:  r.processor,
 		queryKey:   r.queryKey,
+		queryFunc:  r.queryFunc,
 		cache:      clonedCache,
 		ctx:        r.ctx,
 	}, nil
@@ -319,14 +342,33 @@ func (r *liveRepository[T]) Close() error {
 // --- Intercepted database write operations ---
 // Each override keeps the cache consistent with the underlying store.
 
+// maybeCache verifies that a document matches the LiveCollection's query
+// criteria (when QueryFunc is set) before caching it. If the document does
+// not match, it is evicted from the cache (e.g. a soft-deleted user whose
+// document would no longer be found by the active-user query).
+func (r *liveRepository[T]) maybeCache(ctx context.Context, doc *data.Document) {
+	key, keyErr := r.extractKey(doc)
+	if keyErr != nil {
+		return
+	}
+	if r.queryFunc != nil {
+		q := r.queryFunc(key)
+		if docs, readErr := r.Read(ctx, &q); readErr != nil || docs.Count == 0 {
+			r.cache.Evict(key)
+			return
+		}
+	}
+	if compiled, compErr := r.processor.Compile(ctx, doc); compErr == nil {
+		r.cache.Set(key, compiled)
+	} else {
+		r.cache.Evict(key)
+	}
+}
+
 func (r *liveRepository[T]) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
 	result, err := r.Collection.CreateOne(ctx, doc)
 	if err == nil && result.Status == base.StatusCreated && result.Data != nil {
-		if key, keyErr := r.extractKey(result.Data); keyErr == nil {
-			if compiled, compErr := r.processor.Compile(ctx, result.Data); compErr == nil {
-				r.cache.Set(key, compiled)
-			}
-		}
+		r.maybeCache(ctx, result.Data)
 	}
 	return result, err
 }
@@ -336,11 +378,7 @@ func (r *liveRepository[T]) CreateMany(ctx context.Context, docs []*data.Documen
 	if err == nil {
 		for _, res := range results {
 			if res.Status == base.StatusCreated && res.Data != nil {
-				if key, keyErr := r.extractKey(res.Data); keyErr == nil {
-					if compiled, compErr := r.processor.Compile(ctx, res.Data); compErr == nil {
-						r.cache.Set(key, compiled)
-					}
-				}
+				r.maybeCache(ctx, res.Data)
 			}
 		}
 	}
@@ -362,16 +400,7 @@ func (r *liveRepository[T]) Update(ctx context.Context, params *base.CollectionU
 			if doc == nil || doc.ID() == "" {
 				continue
 			}
-			key, keyErr := r.extractKey(doc)
-			if keyErr != nil {
-				r.cache.Clear()
-				break
-			}
-			if compiled, compErr := r.processor.Compile(ctx, doc); compErr == nil {
-				r.cache.Set(key, compiled)
-			} else {
-				r.cache.Evict(key)
-			}
+			r.maybeCache(ctx, doc)
 		}
 	} else if result != nil && result.Count > 0 {
 		r.cache.Clear()
