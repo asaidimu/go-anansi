@@ -1,3 +1,10 @@
+# [8.1.0](https://github.com/asaidimu/go-anansi/compare/v8.0.6...v8.1.0) (2026-07-24)
+
+
+### Features
+
+* **persistence:** add QueryFunc to LiveRepository and update repository options ([e5d6728](https://github.com/asaidimu/go-anansi/commit/e5d6728c18f8c6064959fe5e31335cb86dd67095))
+
 ## [8.0.6](https://github.com/asaidimu/go-anansi/compare/v8.0.5...v8.0.6) (2026-07-20)
 
 
