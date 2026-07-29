@@ -67,11 +67,21 @@ type LiveCollection[T any] interface {
 
 // DocumentProcessor abstracts the conversion from a persistent document to an executable asset.
 type DocumentProcessor[T any] interface {
-	// Compile converts a persisted document into an executable artifact.
+	// Create converts a persisted document into an executable artifact.
 	// Artifacts are treated as read-only once cached (see LiveCollection's
-	// doc comment) — Compile should return a value safe to share across
+	// doc comment) — Create should return a value safe to share across
 	// concurrent readers indefinitely.
+	Create(ctx context.Context, doc *data.Document) (T, error)
+
+	// Deprecated: use Create instead.
 	Compile(ctx context.Context, doc *data.Document) (T, error)
+
+	// Destroy releases any resources held by an artifact before it is
+	// evicted from the cache (e.g. when the cache runs out of capacity,
+	// the entry expires, or Unset is called). The implementation must
+	// treat state as read-only; Destroy must not mutate it. Called at
+	// most once per cached value.
+	Destroy(ctx context.Context, state T) error
 
 	// CloneState deep-copies an artifact. It is NOT called on
 	// LiveCollection.Get's hot path (Get returns the shared cached instance
@@ -155,9 +165,14 @@ func NewLiveRepository[T any](ctx context.Context, opts LiveRepositoryOptions[T]
 		if opts.CacheConfig != nil {
 			cfg = *opts.CacheConfig
 		}
-		cacheImpl = cache.NewManagedCache(cfg, func(v T) (T, error) {
-			return opts.Processor.CloneState(v)
-		})
+		cacheImpl = cache.NewManagedCache(cfg,
+			func(v T) (T, error) {
+				return opts.Processor.CloneState(v)
+			},
+			func(key string, value T) {
+				_ = opts.Processor.Destroy(ctx, value)
+			},
+		)
 	}
 
 	repo := &liveRepository[T]{
@@ -199,7 +214,7 @@ func (r *liveRepository[T]) prime(ctx context.Context) error {
 		if err != nil {
 			continue
 		}
-		compiled, err := r.processor.Compile(ctx, doc)
+		compiled, err := r.processor.Create(ctx, doc)
 		if err != nil {
 			continue
 		}
@@ -273,7 +288,7 @@ func (r *liveRepository[T]) Get(key string) (T, bool) {
 		return zero, false
 	}
 
-	compiled, err := r.processor.Compile(r.ctx, docs.Data[0])
+	compiled, err := r.processor.Create(r.ctx, docs.Data[0])
 	if err != nil {
 		r.cache.Nullify(key)
 		var zero T
@@ -358,7 +373,7 @@ func (r *liveRepository[T]) maybeCache(ctx context.Context, doc *data.Document) 
 			return
 		}
 	}
-	if compiled, compErr := r.processor.Compile(ctx, doc); compErr == nil {
+	if compiled, compErr := r.processor.Create(ctx, doc); compErr == nil {
 		r.cache.Set(key, compiled)
 	} else {
 		r.cache.Evict(key)
