@@ -281,14 +281,21 @@ type cacheShard[T any] struct {
 	// managedCache can cheaply check total size (for watermark eviction)
 	// without locking every shard.
 	globalSize *atomic.Int64
+
+	onEvict func(key string, value T) // optional; called before removal of positive entries
 }
 
-func newCacheShard[T any](maxEntries, compactAt int) *cacheShard[T] {
+func newCacheShard[T any](maxEntries, compactAt int, onEvict ...func(key string, value T)) *cacheShard[T] {
+	var evictFn func(key string, value T)
+	if len(onEvict) > 0 {
+		evictFn = onEvict[0]
+	}
 	return &cacheShard[T]{
 		items:      make(map[string]*list.Element),
 		order:      list.New(),
 		maxEntries: maxEntries,
 		compactAt:  compactAt,
+		onEvict:    evictFn,
 	}
 }
 
@@ -306,6 +313,9 @@ func (s *cacheShard[T]) removeElementLocked(el *list.Element) {
 		}
 	}
 	it := el.Value.(*cacheItem[T])
+	if !it.notAvailable && s.onEvict != nil {
+		s.onEvict(it.key, it.artifact)
+	}
 	delete(s.items, it.key)
 	s.order.Remove(el)
 	s.tombstones++
@@ -442,6 +452,14 @@ func (s *cacheShard[T]) set(key string, artifact T, expiresAt time.Time) bool {
 func (s *cacheShard[T]) nullify(key string, expiresAt time.Time) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.onEvict != nil {
+		if el, ok := s.items[key]; ok {
+			it := el.Value.(*cacheItem[T])
+			if !it.notAvailable {
+				s.onEvict(it.key, it.artifact)
+			}
+		}
+	}
 	var zero T
 	return s.upsertLocked(key, zero, true, expiresAt)
 }
@@ -457,6 +475,14 @@ func (s *cacheShard[T]) evict(key string) {
 func (s *cacheShard[T]) clear() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.onEvict != nil {
+		for _, el := range s.items {
+			it := el.Value.(*cacheItem[T])
+			if !it.notAvailable {
+				s.onEvict(it.key, it.artifact)
+			}
+		}
+	}
 	if s.globalSize != nil {
 		s.globalSize.Add(-int64(len(s.items)))
 	}
@@ -625,6 +651,7 @@ type managedCache[T any] struct {
 	cloneFn   func(T) (T, error)
 	clock     func() time.Time
 	newTicker tickerFactory
+	onEvict   func(key string, value T)
 
 	size atomic.Int64
 
@@ -669,18 +696,27 @@ type managedCache[T any] struct {
 //   - Read-only artifacts: Get returns the cached instance directly with no
 //     defensive copy. Callers must not mutate it in place — see
 //     LiveCollection.Get's doc comment for the full contract.
+//   - onEvict: optional callback invoked synchronously (while holding
+//     the shard lock) each time a positive entry is removed from the
+//     cache, whether by explicit Evict/Clear, capacity-based eviction,
+//     or TTL expiry. Called once per evicted value. The callback must
+//     not call back into the cache.
 //
 // The caller MUST call Close on the returned value to stop background
 // goroutines.
-func NewManagedCache[T any](cfg CacheConfig, cloneFn func(T) (T, error)) RepositoryCache[T] {
-	return newManagedCache[T](cfg, cloneFn, nil, nil)
+func NewManagedCache[T any](cfg CacheConfig, cloneFn func(T) (T, error), onEvict ...func(key string, value T)) RepositoryCache[T] {
+	var evictFn func(key string, value T)
+	if len(onEvict) > 0 {
+		evictFn = onEvict[0]
+	}
+	return newManagedCache[T](cfg, cloneFn, nil, nil, evictFn)
 }
 
 // newManagedCache is the unexported constructor used internally and by
 // tests to inject a deterministic clock and/or ticker factory. Passing nil
 // for either uses the real wall clock / real time.Ticker, identical to
 // NewManagedCache.
-func newManagedCache[T any](cfg CacheConfig, cloneFn func(T) (T, error), clock func() time.Time, tf tickerFactory) *managedCache[T] {
+func newManagedCache[T any](cfg CacheConfig, cloneFn func(T) (T, error), clock func() time.Time, tf tickerFactory, onEvict ...func(key string, value T)) *managedCache[T] {
 	cfg = cfg.normalize()
 	if cloneFn == nil {
 		cloneFn = func(v T) (T, error) { return v, nil }
@@ -700,18 +736,24 @@ func newManagedCache[T any](cfg CacheConfig, cloneFn func(T) (T, error), clock f
 		}
 	}
 
+	var evictFn func(key string, value T)
+	if len(onEvict) > 0 {
+		evictFn = onEvict[0]
+	}
+
 	c := &managedCache[T]{
 		cfg:       cfg,
 		seed:      maphash.MakeSeed(),
 		cloneFn:   cloneFn,
 		clock:     clock,
 		newTicker: tf,
+		onEvict:   evictFn,
 	}
 	c.baseCtx, c.cancel = context.WithCancel(context.Background())
 
 	c.shards = make([]*cacheShard[T], cfg.ShardCount)
 	for i := range c.shards {
-		c.shards[i] = newCacheShard[T](perShard, cfg.CompactionThreshold)
+		c.shards[i] = newCacheShard[T](perShard, cfg.CompactionThreshold, evictFn)
 		c.shards[i].globalSize = &c.size
 	}
 
@@ -824,6 +866,7 @@ func (c *managedCache[T]) Clone() (RepositoryCache[T], error) {
 		cloneFn:   c.cloneFn,
 		clock:     c.clock,
 		newTicker: c.newTicker,
+		onEvict:   c.onEvict,
 	}
 	clone.baseCtx, clone.cancel = context.WithCancel(context.Background())
 	clone.shards = make([]*cacheShard[T], len(c.shards))
@@ -835,7 +878,7 @@ func (c *managedCache[T]) Clone() (RepositoryCache[T], error) {
 			clone.cancel()
 			return nil, err
 		}
-		ns := newCacheShard[T](s.maxEntries, c.cfg.CompactionThreshold)
+		ns := newCacheShard[T](s.maxEntries, c.cfg.CompactionThreshold, c.onEvict)
 		ns.globalSize = &clone.size
 		for _, item := range snap {
 			el := ns.order.PushFront(item)
