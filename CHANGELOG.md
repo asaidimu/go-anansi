@@ -1,3 +1,10 @@
+# [8.2.0](https://github.com/asaidimu/go-anansi/compare/v8.1.0...v8.2.0) (2026-07-29)
+
+
+### Features
+
+* **live_collections:** add Destroy lifecycle method, rename Compile to Create ([8ffd123](https://github.com/asaidimu/go-anansi/commit/8ffd1237aa6473a1079831464ff17733e9ba0506))
+
 # [8.1.0](https://github.com/asaidimu/go-anansi/compare/v8.0.6...v8.1.0) (2026-07-24)
 
 
