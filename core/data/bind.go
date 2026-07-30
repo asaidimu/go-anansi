@@ -263,13 +263,7 @@ func (sb *structBinder) bind(target any) error {
 		}
 
 		if !found {
-			if fInfo.Options.OmitEmpty {
-				continue
-			}
-			return ErrRequiredFieldNotFound.
-				WithOperation("BindTo").
-				WithPath(fInfo.Name).
-				WithMessagef("required field '%s' not found for struct field %s", fInfo.Name, fInfo.StructField.Name)
+			continue
 		}
 
 		if err := sb.setFieldValue(fv, value); err != nil {

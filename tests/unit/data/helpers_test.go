@@ -125,17 +125,17 @@ func TestStructBinder(t *testing.T) {
 	assert.Equal(t, time.Date(2024, 1, 1, 10, 0, 0, 0, time.UTC), user.CreatedAt)
 	assert.Empty(t, user.Email) // omitempty field not present
 
-	// Test with missing required field
+	// BindTo is lenient — missing fields are skipped, not errors
 	docMissing := data.MustNewDocument(map[string]any{
 		"name": "Bob",
 		// age is missing
 	})
 	var userMissing User
 	err = docMissing.BindTo(&userMissing)
-	assert.Error(t, err)
-	sysErr, ok := err.(*common.SystemError)
-	assert.True(t,ok)
-	assert.Equal(t, sysErr.Code, data.ErrRequiredFieldNotFound.Code)
+	require.NoError(t, err)
+	assert.Equal(t, "Bob", userMissing.Name)
+	assert.Equal(t, 0, userMissing.Age) // Age was not set
+	assert.Empty(t, userMissing.Email)
 }
 
 func TestFromStructWithTags(t *testing.T) {

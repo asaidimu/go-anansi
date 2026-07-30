@@ -171,7 +171,9 @@ func TestBindTo_PathTag_MissingField(t *testing.T) {
 
 	var cfg Config
 	err := doc.BindTo(&cfg)
-	require.Error(t, err)
+	require.NoError(t, err)
+	assert.Equal(t, "localhost", cfg.Host)
+	assert.Equal(t, 0, cfg.Port) // Port missing — left at zero value
 }
 
 func TestBindTo_PathTag_NonMapIntermediate(t *testing.T) {
@@ -185,7 +187,9 @@ func TestBindTo_PathTag_NonMapIntermediate(t *testing.T) {
 
 	var cfg Config
 	err := doc.BindTo(&cfg)
-	require.Error(t, err)
+	require.NoError(t, err)
+	// Path can't be traversed — field stays at zero value
+	assert.Empty(t, cfg.Host)
 }
 
 func TestBindTo_PathTag_DeepPath(t *testing.T) {
