@@ -1,6 +1,7 @@
 package data
 
 import (
+	"slices"
 	"bytes"
 	"crypto/sha256"
 	"fmt"
@@ -61,12 +62,12 @@ type syntheticSchema struct {
 // concurrent calls for different types get independent extractors and share
 // nothing).
 type directExtractor struct {
-	discoveryOrdinal  int64
-	registry          map[string]*schemaRegistryEntry
-	schemas           map[string][]byte // Schema ID -> pre-rendered JSON bytes
-	schemaOrder       []string          // Schema IDs in discovery order, for deterministic output
-	enumValues        map[string][]string
-	syntheticSchemas  map[string]map[string]*syntheticSchema // parentSchemaID -> head -> synthetic schema
+	discoveryOrdinal int64
+	registry         map[string]*schemaRegistryEntry
+	schemas          map[string][]byte // Schema ID -> pre-rendered JSON bytes
+	schemaOrder      []string          // Schema IDs in discovery order, for deterministic output
+	enumValues       map[string][]string
+	syntheticSchemas map[string]map[string]*syntheticSchema // parentSchemaID -> head -> synthetic schema
 }
 
 func newDirectExtractor() *directExtractor {
@@ -616,6 +617,10 @@ func (e *directExtractor) inferSchemaType(t reflect.Type, fieldName string, tag 
 		elemSchemaType := primitiveKindToSchemaType(elemType.Kind())
 		return "array", fmt.Sprintf("{\"type\": %q}", elemSchemaType), nil
 	case reflect.Map:
+		// Check if it's map[string]any
+		if t.Key().Kind() == reflect.String && t.Elem().Kind() == reflect.Interface {
+			return "record", "", nil
+		}
 		valType := t.Elem()
 		if valType.Kind() == reflect.Pointer {
 			valType = valType.Elem()
@@ -716,12 +721,7 @@ func coerceDefaultValue(buf *bytes.Buffer, valStr, schemaType, fieldName string)
 }
 
 func containsString(list []string, target string) bool {
-	for _, v := range list {
-		if v == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(list, target)
 }
 
 func primitiveKindToSchemaType(k reflect.Kind) string {

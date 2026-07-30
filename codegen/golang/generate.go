@@ -337,9 +337,9 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 		sort.Slice(fields, func(i, j int) bool {
 			return typeSize(fields[i].Type) > typeSize(fields[j].Type)
 		})
-		sb.WriteString(fmt.Sprintf("type %s struct {\n", name))
+		fmt.Fprintf(&sb, "type %s struct {\n", name)
 		for _, f := range fields {
-			sb.WriteString(fmt.Sprintf("    %s %s `%s`\n", f.Name, f.Type, strings.Trim(f.Tags, "`")))
+			fmt.Fprintf(&sb, "    %s %s `%s`\n", f.Name, f.Type, strings.Trim(f.Tags, "`"))
 		}
 		sb.WriteString("}\n\n")
 	}
@@ -350,7 +350,7 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 		sort.Slice(fields, func(i, j int) bool {
 			return typeSize(fields[i].Type) > typeSize(fields[j].Type)
 		})
-		sb.WriteString(fmt.Sprintf("type %s struct {\n", rootTypeName))
+		fmt.Fprintf(&sb, "type %s struct {\n", rootTypeName)
 		sb.WriteString("    data.DocumentModel\n")
 		for _, f := range fields {
 			sb.WriteString(fmt.Sprintf("    %s %s `%s`\n", f.Name, f.Type, strings.Trim(f.Tags, "`")))
@@ -856,7 +856,7 @@ func buildSchemaTagValue(fd FieldDef, fieldName string) string {
 	// Default value
 	if fd.Default != nil {
 		defaultStr := formatLiteral(fd.Default)
-		tagVal += fmt.Sprintf(",default=%s", defaultStr)
+		tagVal += fmt.Sprintf(",default=%s", strings.Trim(defaultStr, `"`))
 	}
 	return tagVal
 }
@@ -977,7 +977,7 @@ func toSnakeCase(s string) string {
 func formatLiteral(v any) string {
 	switch val := v.(type) {
 	case string:
-		return val
+		return fmt.Sprintf("%q", val)
 	case float64:
 		if val == float64(int64(val)) {
 			return fmt.Sprintf("%d", int64(val))
