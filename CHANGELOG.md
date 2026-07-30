@@ -1,3 +1,10 @@
+## [8.3.4](https://github.com/asaidimu/go-anansi/compare/v8.3.3...v8.3.4) (2026-07-30)
+
+
+### Bug Fixes
+
+* fix code generation ([9e182dd](https://github.com/asaidimu/go-anansi/commit/9e182dd9d04004a1f847afeabb3d15ebeea5b114))
+
 ## [8.3.3](https://github.com/asaidimu/go-anansi/compare/v8.3.2...v8.3.3) (2026-07-30)
 
 
