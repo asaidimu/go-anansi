@@ -221,8 +221,6 @@ A `composite` field:
 - Type mode with Record: Type is FieldTypeRecord, OR
 - Type mode with Union: Type is FieldTypeUnion AND all union variants are themselves effectively objects
 
-
-
 The rationale is that composition only makes semantic sense when merging object structures. You can compose `{a, b}` AND `{c, d}` into `{a, b, c, d}`, but you cannot meaningfully compose `{a, b}` AND `"string"`.
 
 **Example:**
@@ -441,50 +439,7 @@ An `array` field:
 
 ---
 
-### **Rule 8: Set Field Semantics**
-
-A `set` field:
-- Behaves like an array with unique elements enforced
-- **Must** reference a single schema that defines the element type
-- Referenced schema **can be in either Schema mode or Type mode**
-- Uniqueness determination is implementation-defined
-
-**Example:**
-```json
-{
-  "fields": {
-    "01934d8a-7c24-7b3e-9f12-4a5b6c7d8e9f": {
-      "name": "unique_tags",
-      "type": "set",
-      "schema": {"id": "01934d8a-7c24-7b3e-9f12-5a6b7c8d9e0f"}
-    }
-  },
-  "schemas": {
-    "01934d8a-7c24-7b3e-9f12-5a6b7c8d9e0f": {
-      "name": "tag_type",
-      "type": "string"
-    }
-  }
-}
-```
-
-**Valid Data:**
-```json
-{
-  "unique_tags": ["javascript", "golang", "python"]
-}
-```
-
-**Invalid Data (duplicate elements):**
-```json
-{
-  "unique_tags": ["javascript", "golang", "javascript"]
-}
-```
-
----
-
-### **Rule 9: Object Field Semantics**
+### **Rule 8: Object Field Semantics**
 
 An `object` field:
 - Represents a typed map with string keys
@@ -552,7 +507,7 @@ An `object` field:
 
 ---
 
-### **Rule 10: Record Field Semantics**
+### **Rule 9: Record Field Semantics**
 
 A `record` field:
 - Without schema reference: untyped map (`map[string]any`)
@@ -662,7 +617,7 @@ A `record` field:
 
 ---
 
-### **Rule 11: Geometry Field Semantics**
+### **Rule 10: Geometry Field Semantics**
 
 A `geometry` field:
 - Represents an array of numerical tuples: `Array<Array<number>>`
@@ -696,7 +651,7 @@ A `geometry` field:
 
 ---
 
-### **Rule 12: Index Field References**
+### **Rule 11: Index Field References**
 
 - Indexes can only reference existing paths within the schema
 - **Spatial indexes** (`IndexTypeSpatial`) can only reference fields of type `geometry`
@@ -731,7 +686,7 @@ A `geometry` field:
 
 ---
 
-### **Rule 13: Index Value Type Matching**
+### **Rule 12: Index Value Type Matching**
 
 Index condition values must match the type of the field being indexed.
 
@@ -772,7 +727,7 @@ Index condition values must match the type of the field being indexed.
 
 ---
 
-### **Rule 14: Constraint Field References**
+### **Rule 13: Constraint Field References**
 
 Constraints reference fields by path notation and must reference existing fields.
 
@@ -811,7 +766,7 @@ Constraints reference fields by path notation and must reference existing fields
 
 ---
 
-### **Rule 15: Schema Reference Integrity**
+### **Rule 14: Schema Reference Integrity**
 
 All schema references (in `FieldSchemaReference`, constraints, etc.) must resolve to existing schemas in the schema hierarchy.
 
@@ -849,7 +804,7 @@ All schema references (in `FieldSchemaReference`, constraints, etc.) must resolv
 
 ---
 
-### **Rule 16: Default Value Constraints**
+### **Rule 15: Default Value Constraints**
 
 Default values **must** match the field's declared type.
 
@@ -903,7 +858,7 @@ Default values **must** match the field's declared type.
 
 ---
 
-### **Rule 17: Circular References**
+### **Rule 16: Circular References**
 
 Schemas **may** reference themselves directly or transitively. Depth validation is a runtime/validation concern, not a schema definition concern.
 
@@ -954,7 +909,7 @@ Schemas **may** reference themselves directly or transitively. Depth validation 
 
 ---
 
-### **Rule 18: Unknown Field Type**
+### **Rule 17: Unknown Field Type**
 
 `FieldTypeUnknown` is an escape hatch with no structural rules. Validation is handled exclusively through user-defined constraints.
 
@@ -994,7 +949,7 @@ Schemas **may** reference themselves directly or transitively. Depth validation 
 
 ---
 
-### **Rule 19: Constraint Specificity and Override**
+### **Rule 18: Constraint Specificity and Override**
 
 Constraints follow a specificity hierarchy where more specific constraints override less specific ones. Constraint names determine override behavior:
 
@@ -1184,7 +1139,7 @@ For the `email` field, the following constraints are applied in order of specifi
 
 ---
 
-### **Rule 20: Bytes Field Semantics**
+### **Rule 19: Bytes Field Semantics**
 
 A `bytes` field represents a raw binary payload. It:
 - Is a primitive type and **cannot** have a `Schema` reference
@@ -1225,7 +1180,7 @@ A `bytes` field represents a raw binary payload. It:
 
 ---
 
-### **Rule 21: Schema Reference Forms and Mutual Exclusivity**
+### **Rule 20: Schema Reference Forms and Mutual Exclusivity**
 
 A field's `schema` property must take **exactly one** of the following three forms. These forms are mutually exclusive — they must never be mixed.
 
@@ -1237,7 +1192,7 @@ A single object with an `id` pointing to a named nested schema. Optional `constr
 { "id": "01934d8a-7c24-7b3e-9f12-1a2b3c4d5e6f" }
 ```
 
-Used when the field type is `array`, `set`, `record`, `object`, or `enum`.
+Used when the field type is `array`, `record`, `object`, or `enum`.
 
 #### Form 2: Named Reference Array
 
@@ -1263,7 +1218,7 @@ A single object with `type`, `values`, or both — never an `id`. Optional `cons
 
 Used as a shorthand where a full named schema would be unnecessary overhead — specifically when the type information is self-contained and the schema is only needed in one place.
 
-**Valid inline types:** `string`, `number`, `integer`, `decimal`, `boolean`, `bytes`, `unknown`, `record`. The structural types `array`, `set`, `object`, `enum`, `union`, `composite`, `geometry` are **never valid** as inline types — they either require `fields`, `values`, or a nested `schema` reference that an inline cannot carry.
+**Valid inline types:** `string`, `number`, `integer`, `decimal`, `boolean`, `bytes`, `unknown`, `record`. The structural types `array`,`object`, `enum`, `union`, `composite`, `geometry` are **never valid** as inline types — they either require `fields`, `values`, or a nested `schema` reference that an inline cannot carry.
 
 **`values` is only valid** alongside a scalar primitive inline type (`string`, `number`, `integer`, `decimal`, `boolean`). It defines a closed enumeration inline, avoiding the need for a named Enum mode schema when the enum is single-use.
 
@@ -1409,7 +1364,7 @@ Used as a shorthand where a full named schema would be unnecessary overhead — 
 
 ## Summary
 
-These 21 rules provide a complete and deterministic specification for schema definition. Key principles:
+These 20 rules provide a complete and deterministic specification for schema definition. Key principles:
 
 1. **Uniqueness**: FieldIds are globally unique within a schema
 2. **Mode Exclusivity**: Nested schemas use exactly one mode (Schema/Type/Enum); `object` is never valid in Type mode

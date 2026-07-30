@@ -9,12 +9,11 @@ const CartsCollectionName = "Carts" // from carts.schema.json/#/name
 
 type Cart struct { // from carts.schema.json/#/fields
 	data.DocumentModel
-	UserID  string   `doc:"user_id"`
-	ProductIDs []string `doc:"product_ids"`
-	Quantity int      `doc:"quantity"`
+	UserID     string   `anansi:"user_id"`
+	ProductIDs []string `anansi:"product_ids"`
+	Quantity   int      `anansi:"quantity"`
 }
 
 type Carts struct { // this is just obvious
 	base.ModelCollection[Cart, *Cart]
 }
-

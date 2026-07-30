@@ -1,18 +1,18 @@
 {
-  "name": "Users",
   "version": "1.0.0",
+  "name": "Users",
   "fields": {
-    "username": {
+    "019fb22d-bbdd-7e5a-9616-c61a35e563a6": {
       "name": "username",
-      "type": "string",
       "required": true,
-      "unique": true
+      "unique": true,
+      "type": "string"
     },
-    "email": {
+    "019fb22d-bbdd-7e5b-acfb-dc895b53ee44": {
       "name": "email",
-      "type": "string",
       "required": true,
-      "unique": true
+      "unique": true,
+      "type": "string"
     }
   }
 }

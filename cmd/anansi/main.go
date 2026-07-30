@@ -5,7 +5,7 @@ import (
 	"os"
 	"runtime/debug"
 
-	"github.com/asaidimu/go-anansi/v8/cmd/anansi/internal/schemagen"
+	"github.com/asaidimu/go-anansi/v8/cmd/anansi/internal"
 	"github.com/spf13/cobra"
 )
 
@@ -153,6 +153,7 @@ func codegenCmd() *cobra.Command {
 		Short: "Generate code and data from schemas",
 	}
 
+	cmd.AddCommand(codegenGolangCmd())
 	cmd.AddCommand(codegenTypescriptCmd())
 	cmd.AddCommand(codegenFakerCmd())
 	cmd.AddCommand(codegenAgentsCmd())
@@ -181,6 +182,27 @@ func codegenTypescriptCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&glob, "glob", "", "glob pattern for schema files (overrides config)")
 	cmd.Flags().StringVar(&out, "out", "", "output TypeScript file (overrides config)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
+	return cmd
+}
+
+func codegenGolangCmd() *cobra.Command {
+	var glob string
+	var dryRun bool
+
+	cmd := &cobra.Command{
+		Use:   "golang",
+		Short: "Generate Go structs for all schemas",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg := loadCfg()
+			if glob != "" {
+				cfg.Schema.Glob = glob
+			}
+			return schemagen.RunGoGen(cfg, dryRun)
+		},
+	}
+
+	cmd.Flags().StringVar(&glob, "glob", "", "glob pattern for schema files (overrides config)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
 	return cmd
 }

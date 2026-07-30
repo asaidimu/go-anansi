@@ -49,7 +49,7 @@ func main() {
 
 	// --- CRUD Operations with Type Safety ---
 
-	p1 := data.New(Product{
+	p1 := data.New(&Product{
 		Name:  "Laptop",
 		Price: 1200.00,
 		Stock: 50,
@@ -76,7 +76,7 @@ func main() {
 	)
 
 	// Create multiple products
-	newProducts := []Product{
+	newProducts := []*Product{
 		{Name: "Mouse", Price: 25.00, Stock: 200},
 		{Name: "Keyboard", Price: 75.00, Stock: 150},
 		{Name: "Monitor", Price: 300.00, Stock: 75},
@@ -129,7 +129,7 @@ func main() {
 	}
 
 	// Update single product (partial update)
-	updatedProduct, err := products.UpdateProduct(ctx, p1.ID, Product{
+	updatedProduct, err := products.UpdateProduct(ctx, p1.ID, &Product{
 		Stock: 45, // Only update stock
 	})
 	if err != nil {
@@ -143,7 +143,7 @@ func main() {
 
 	// Update multiple products matching a filter
 	filter := query.NewQueryBuilder().Where("price").Lt(100.0).Build().Filters
-	count, err := products.UpdateProducts(ctx, filter, Product{
+	count, err := products.UpdateProducts(ctx, filter, &Product{
 		Stock: 500, // Increase stock for all cheap items
 	})
 	if err != nil {
@@ -189,18 +189,17 @@ func main() {
 	logger.Info("Typed Users collection ready.")
 
 	// Create single user
-	u1 := User{
+	u1, err := users.CreateUser(ctx, &User{
 		Username: "john.doe",
 		Email:    "john.doe@example.com",
-	}
-	u1, err = users.CreateUser(ctx, u1)
+	})
 	if err != nil {
 		log.Fatalf("Failed to create user: %v", err)
 	}
 	logger.Info("Created user", zap.String("id", u1.ID), zap.String("username", u1.Username))
 
 	// Create multiple users
-	newUsers := []User{
+	newUsers := []*User{
 		{Username: "jane.doe", Email: "jane.doe@example.com"},
 		{Username: "peter.jones", Email: "peter.jones@example.com"},
 	}
@@ -225,7 +224,7 @@ func main() {
 	logger.Info("Found user by ID", zap.String("id", foundUser.ID), zap.String("username", foundUser.Username))
 
 	// Update user
-	updatedUser, err := users.UpdateUser(ctx, u1.ID, User{Username: "john.doe.updated"})
+	updatedUser, err := users.UpdateUser(ctx, u1.ID, &User{Username: "john.doe.updated"})
 	if err != nil {
 		log.Fatalf("Update user failed: %v", err)
 	}
@@ -244,19 +243,18 @@ func main() {
 	logger.Info("Typed Carts collection ready.")
 
 	// Create single cart
-	c1 := Cart{
+	c1, err := carts.Create(ctx, &Cart{
 		UserID:     createdUsers[0].ID, // Associate with one of the created users
 		ProductIDs: []string{finalProducts[0].ID, finalProducts[1].ID},
 		Quantity:   1,
-	}
-	c1, err = carts.Create(ctx, c1)
+	})
 	if err != nil {
 		log.Fatalf("Failed to create cart: %v", err)
 	}
 	logger.Info("Created cart", zap.String("id", c1.ID), zap.String("user_id", c1.UserID))
 
 	// Update cart
-	updatedCart, err := carts.Update(ctx, c1.ID, Cart{Quantity: 2})
+	updatedCart, err := carts.Update(ctx, c1.ID, &Cart{Quantity: 2})
 	if err != nil {
 		log.Fatalf("Update cart failed: %v", err)
 	}

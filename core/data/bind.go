@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
@@ -12,19 +13,41 @@ import (
 )
 
 // ============================================================================
-// Predefined Errors
+// Predefined Errors & Constants
 // ============================================================================
 
 var (
 	ErrInvalidDocTag = common.NewSystemError("ERR_BIND_INVALID_DOC_TAG").
-		WithMessage("invalid doc tag format")
+				WithMessage("invalid doc tag format")
 
 	ErrUnknownDocTagOption = common.NewSystemError("ERR_BIND_UNKNOWN_DOC_TAG_OPTION").
-		WithMessage("unknown doc tag option")
+				WithMessage("unknown doc tag option")
 
 	ErrEmptyFieldName = common.NewSystemError("ERR_BIND_EMPTY_FIELD_NAME").
-		WithMessage("doc tag has empty field name")
+				WithMessage("doc tag has empty field name")
 )
+
+const AnansiDocTag = "doc"
+const AnansiTag = "anansi"
+
+var (
+	docModelType = reflect.TypeFor[DocumentModel]()
+	timeType     = reflect.TypeFor[time.Time]()
+	typeCache    sync.Map // map[reflect.Type]*cachedTypeInfo
+)
+
+type cachedTypeInfo struct {
+	fields []parsedField
+	err    *common.SystemError
+}
+
+type parsedField struct {
+	Index         []int
+	Name          string
+	Options       tagOptions
+	StructField   reflect.StructField
+	IsSystemEmbed bool
+}
 
 // ============================================================================
 // Binding API - Primary Methods
@@ -52,12 +75,7 @@ func NewDocumentFromStruct(s any, ctx ...context.Context) (*Document, error) {
 		return nil, err
 	}
 
-	dctx := context.Background()
-	if len(ctx) > 0 && ctx[0] != nil {
-		dctx = ctx[0]
-	}
-
-	return getFactory().newDocument(dctx, docData)
+	return getFactory().newDocument(extractContext(ctx), docData)
 }
 
 func NewPartialDocumentFromStruct(s any, ctx ...context.Context) (*Document, error) {
@@ -66,12 +84,7 @@ func NewPartialDocumentFromStruct(s any, ctx ...context.Context) (*Document, err
 		return nil, err
 	}
 
-	dctx := context.Background()
-	if len(ctx) > 0 && ctx[0] != nil {
-		dctx = ctx[0]
-	}
-
-	return Patch(docData).Document(dctx), nil
+	return Patch(docData).Document(extractContext(ctx)), nil
 }
 
 func MustNewDocumentFromStruct(s any, ctx ...context.Context) *Document {
@@ -82,18 +95,81 @@ func MustNewDocumentFromStruct(s any, ctx ...context.Context) *Document {
 	return doc
 }
 
+func extractContext(ctx []context.Context) context.Context {
+	if len(ctx) > 0 && ctx[0] != nil {
+		return ctx[0]
+	}
+	return context.Background()
+}
+
 // ============================================================================
-// Internal Core Logic (Centralized Reflection)
+// Internal Core Logic (Cached Reflection & Field Walking)
 // ============================================================================
 
 type fieldMetadata struct {
-	Name      string
-	Options   tagOptions
-	Value     reflect.Value
+	Name        string
+	Options     tagOptions
+	Value       reflect.Value
 	StructField reflect.StructField
 }
 
-// walkFields now takes a 'partial' hint to decide whether to skip system embeddings
+func getTypeInfo(t reflect.Type) ([]parsedField, *common.SystemError) {
+	if val, ok := typeCache.Load(t); ok {
+		info := val.(*cachedTypeInfo)
+		return info.fields, info.err
+	}
+
+	fields, sysErr := buildTypeFields(t, nil, false)
+	info := &cachedTypeInfo{fields: fields, err: sysErr}
+	typeCache.Store(t, info)
+	return fields, sysErr
+}
+
+func buildTypeFields(t reflect.Type, indexPrefix []int, isSystemEmbed bool) ([]parsedField, *common.SystemError) {
+	var fields []parsedField
+
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		indexPath := append(append([]int(nil), indexPrefix...), i)
+
+		sysEmbed := isSystemEmbed
+		if f.Anonymous && f.Type.Kind() == reflect.Struct {
+			if f.Type == docModelType || ReservedSystemField(f.Name) {
+				sysEmbed = true
+			}
+			subFields, err := buildTypeFields(f.Type, indexPath, sysEmbed)
+			if err != nil {
+				return nil, err
+			}
+			fields = append(fields, subFields...)
+			continue
+		}
+
+		docTag := f.Tag.Get(AnansiTag)
+		if docTag == "" || docTag == "-" {
+			docTag = f.Tag.Get(AnansiDocTag)
+			if docTag == "" || docTag == "-" {
+				continue
+			}
+		}
+
+		fieldName, options, sysErr := parseDocTag(docTag)
+		if sysErr != nil {
+			return nil, sysErr.WithPath(f.Name)
+		}
+
+		fields = append(fields, parsedField{
+			Index:         indexPath,
+			Name:          fieldName,
+			Options:       options,
+			StructField:   f,
+			IsSystemEmbed: sysEmbed,
+		})
+	}
+
+	return fields, nil
+}
+
 func walkFields(v reflect.Value, partial bool, fn func(meta fieldMetadata) error) error {
 	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
@@ -101,37 +177,27 @@ func walkFields(v reflect.Value, partial bool, fn func(meta fieldMetadata) error
 		}
 		v = v.Elem()
 	}
-	t := v.Type()
+	if v.Kind() != reflect.Struct {
+		return nil
+	}
 
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		fv := v.Field(i)
+	fields, sysErr := getTypeInfo(v.Type())
+	if sysErr != nil {
+		return sysErr
+	}
 
-		if f.Anonymous && f.Type.Kind() == reflect.Struct {
-			if partial && (f.Type == reflect.TypeOf(DocumentModel{}) || ReservedSystemField(f.Name)) {
-				continue
-			}
-			if err := walkFields(fv, partial, fn); err != nil {
-				return err
-			}
+	for i := range fields {
+		fInfo := &fields[i]
+		if partial && fInfo.IsSystemEmbed {
 			continue
 		}
 
-		docTag := f.Tag.Get("doc")
-		if docTag == "" || docTag == "-" {
-			continue
-		}
-
-		fieldName, options, err := parseDocTag(docTag)
-		if err != nil {
-			return err.WithPath(f.Name)
-		}
-
+		fv := v.FieldByIndex(fInfo.Index)
 		if err := fn(fieldMetadata{
-			Name:        fieldName,
-			Options:     options,
+			Name:        fInfo.Name,
+			Options:     fInfo.Options,
 			Value:       fv,
-			StructField: f,
+			StructField: fInfo.StructField,
 		}); err != nil {
 			return err
 		}
@@ -154,22 +220,34 @@ func (sb *structBinder) bind(target any) error {
 		return ErrInvalidTargetType.WithOperation("BindTo")
 	}
 
-	return walkFields(rv, false, func(meta fieldMetadata) error {
-		// Check for context cancellation
-		select {
-		case <-sb.ctx.Done():
-			return common.SystemErrorFrom(sb.ctx.Err()).WithOperation("BindTo")
-		default:
+	v := rv.Elem()
+	fields, sysErr := getTypeInfo(v.Type())
+	if sysErr != nil {
+		return sysErr
+	}
+
+	ctxDone := sb.ctx.Done()
+
+	for i := range fields {
+		fInfo := &fields[i]
+
+		if ctxDone != nil {
+			select {
+			case <-ctxDone:
+				return common.SystemErrorFrom(sb.ctx.Err()).WithOperation("BindTo")
+			default:
+			}
 		}
 
-		if !meta.Value.CanSet() {
-			return nil
+		fv := v.FieldByIndex(fInfo.Index)
+		if !fv.CanSet() {
+			continue
 		}
 
 		var value any
 		var found bool
 
-		switch meta.Name {
+		switch fInfo.Name {
 		case DocumentIDField:
 			if sb.doc.id != "" {
 				value = sb.doc.id
@@ -180,29 +258,30 @@ func (sb *structBinder) bind(target any) error {
 			found = true
 		default:
 			var er error
-			value, er = sb.doc.Get(meta.Name)
+			value, er = sb.doc.Get(fInfo.Name)
 			found = (er == nil)
 		}
 
 		if !found {
-			if meta.Options.Has("omitempty") {
-				return nil
+			if fInfo.Options.OmitEmpty {
+				continue
 			}
 			return ErrRequiredFieldNotFound.
 				WithOperation("BindTo").
-				WithPath(meta.Name).
-				WithMessagef("required field '%s' not found for struct field %s", meta.Name, meta.StructField.Name)
+				WithPath(fInfo.Name).
+				WithMessagef("required field '%s' not found for struct field %s", fInfo.Name, fInfo.StructField.Name)
 		}
 
-		if err := sb.setFieldValue(meta.Value, value); err != nil {
+		if err := sb.setFieldValue(fv, value); err != nil {
 			return ErrFailedToSetField.
 				WithOperation("BindTo").
-				WithPath(meta.Name).
+				WithPath(fInfo.Name).
 				WithCause(err).
-				WithMessagef("failed to set field %s: %v", meta.StructField.Name, err)
+				WithMessagef("failed to set field %s: %v", fInfo.StructField.Name, err)
 		}
-		return nil
-	})
+	}
+
+	return nil
 }
 
 func (sb *structBinder) setFieldValue(field reflect.Value, value any) error {
@@ -245,7 +324,7 @@ func (sb *structBinder) setFieldValue(field reflect.Value, value any) error {
 			return nil
 		}
 	case reflect.Struct:
-		if fieldType == reflect.TypeOf(time.Time{}) {
+		if fieldType == timeType {
 			if t, ok := utils.CoerceTime(value); ok {
 				field.Set(reflect.ValueOf(t))
 				return nil
@@ -297,7 +376,7 @@ func (sb *structBinder) setSliceField(field reflect.Value, values []any) error {
 
 func (sb *structBinder) setMapField(field reflect.Value, values map[string]any) error {
 	mapType := field.Type()
-	newMap := reflect.MakeMap(mapType)
+	newMap := reflect.MakeMapWithSize(mapType, len(values))
 	for k, v := range values {
 		valueVal := reflect.New(mapType.Elem()).Elem()
 		if err := sb.setFieldValue(valueVal, v); err != nil {
@@ -326,41 +405,60 @@ func structToMap(s any, partial bool) (map[string]any, error) {
 		return nil, ErrInvalidTargetType.WithMessagef("expected struct, got %T", s)
 	}
 
-	docData := make(map[string]any)
-	err := walkFields(rv, partial, func(meta fieldMetadata) error {
-		omitEmpty := meta.Options.Has("omitempty")
-		if (partial && meta.Value.IsZero()) || (!partial && omitEmpty && meta.Value.IsZero()) {
-			return nil
+	fields, sysErr := getTypeInfo(rv.Type())
+	if sysErr != nil {
+		return nil, sysErr
+	}
+
+	docData := make(map[string]any, len(fields))
+	for i := range fields {
+		fInfo := &fields[i]
+		if partial && fInfo.IsSystemEmbed {
+			continue
 		}
 
-		value, err := convertInterface(meta.Value.Interface())
+		fv := rv.FieldByIndex(fInfo.Index)
+		if (partial && fv.IsZero()) || (!partial && fInfo.Options.OmitEmpty && fv.IsZero()) {
+			continue
+		}
+
+		value, err := convertInterface(fv.Interface())
 		if err != nil {
-			return err
+			return nil, err
 		}
-		docData[meta.Name] = value
-		return nil
-	})
+		docData[fInfo.Name] = value
+	}
 
-	return docData, err
+	return docData, nil
 }
 
 func convertInterface(v any) (any, error) {
 	if v == nil {
 		return nil, nil
 	}
-	rv := reflect.ValueOf(v)
-	if rv.Kind() == reflect.Pointer {
-		if rv.IsNil() { return nil, nil }
-		rv = rv.Elem()
+
+	// Fast path for primitives and standard types without reflection overhead
+	switch val := v.(type) {
+	case string, int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64,
+		float32, float64, bool, time.Time:
+		return val, nil
 	}
 
-	// 1. Handle standard non-primitive types
-	v = rv.Interface()
-	if _, ok := v.(time.Time); ok { return v, nil }
+	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return nil, nil
+		}
+		rv = rv.Elem()
+		v = rv.Interface()
+	}
+
+	if _, ok := v.(time.Time); ok {
+		return v, nil
+	}
 
 	switch rv.Kind() {
-	// 2. Normalize Custom Types to Primitives
-	// This fixes the Enum validation error
 	case reflect.String:
 		return rv.String(), nil
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
@@ -372,16 +470,14 @@ func convertInterface(v any) (any, error) {
 	case reflect.Bool:
 		return rv.Bool(), nil
 
-	// 3. Normalize Maps
-	// This fixes the [OBJECT_TYPE_MISMATCH] error
 	case reflect.Map:
-		ret := make(map[string]any)
+		ret := make(map[string]any, rv.Len())
 		for _, key := range rv.MapKeys() {
-			// Convert the key to string (Go maps in our context use string keys)
 			k := fmt.Sprintf("%v", key.Interface())
-			// Recursively normalize the map value
 			elem, err := convertInterface(rv.MapIndex(key).Interface())
-			if err != nil { return nil, err }
+			if err != nil {
+				return nil, err
+			}
 			ret[k] = elem
 		}
 		return ret, nil
@@ -393,7 +489,9 @@ func convertInterface(v any) (any, error) {
 		ret := make([]any, rv.Len())
 		for i := 0; i < rv.Len(); i++ {
 			elem, err := convertInterface(rv.Index(i).Interface())
-			if err != nil { return nil, err }
+			if err != nil {
+				return nil, err
+			}
 			ret[i] = elem
 		}
 		return ret, nil
@@ -407,20 +505,50 @@ func convertInterface(v any) (any, error) {
 // Tag Parsing & Helpers
 // ============================================================================
 
-type tagOptions map[string]bool
-func (opts tagOptions) Has(option string) bool { return opts[option] }
+type tagOptions struct {
+	OmitEmpty bool
+}
+
+func (opts tagOptions) Has(option string) bool {
+	return option == "omitempty" && opts.OmitEmpty
+}
 
 func parseDocTag(tag string) (string, tagOptions, *common.SystemError) {
-	parts := strings.Split(tag, ",")
-	name := strings.TrimSpace(parts[0])
-	if name == "" { return "", nil, ErrEmptyFieldName }
+	commaIdx := strings.IndexByte(tag, ',')
+	if commaIdx == -1 {
+		name := strings.TrimSpace(tag)
+		if name == "" {
+			return "", tagOptions{}, ErrEmptyFieldName
+		}
+		return name, tagOptions{}, nil
+	}
 
-	opts := make(tagOptions)
-	for _, opt := range parts[1:] {
-		opt = strings.TrimSpace(opt)
-		if opt == "omitempty" { opts[opt] = true } else if opt != "" {
-			return "", nil, ErrUnknownDocTagOption.WithMessagef("unknown option: %q", opt)
+	name := strings.TrimSpace(tag[:commaIdx])
+	if name == "" {
+		return "", tagOptions{}, ErrEmptyFieldName
+	}
+
+	var opts tagOptions
+	rest := tag[commaIdx+1:]
+	for len(rest) > 0 {
+		var opt string
+		if idx := strings.IndexByte(rest, ','); idx != -1 {
+			opt = strings.TrimSpace(rest[:idx])
+			rest = rest[idx+1:]
+		} else {
+			opt = strings.TrimSpace(rest)
+			rest = ""
+		}
+
+		if opt == "omitempty" {
+			opts.OmitEmpty = true
+		} else if strings.Contains(opt, "=") {
+			// schema-only options (e.g. required=true, type=enum, values=...)
+			// silently ignored by the binding layer
+		} else if opt != "" {
+			return "", tagOptions{}, ErrUnknownDocTagOption.WithMessagef("unknown option: %q", opt)
 		}
 	}
+
 	return name, opts, nil
 }
