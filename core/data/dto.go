@@ -1,43 +1,59 @@
 package data
 
 import (
-	"slices"
 	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
-	"unicode"
+	"sync"
 
 	"github.com/google/uuid"
 )
 
 // FixedEpochMS is 2026-01-01T00:00:00.000Z in Unix milliseconds. Discovery
 // and field ordinals are added to this to produce a monotonically
-// increasing UUIDv7 timestamp component, which is what lets consumers
-// recover Go declaration order by sorting map keys as strings (see spec.md
-// §4). ~285,000 years of ordinal headroom at 1ms resolution.
+// increasing UUIDv7 timestamp component.
 const FixedEpochMS int64 = 1767225600000
 
+// Thread-safe global schema cache keyed by reflect.Type
+var schemaCache sync.Map
+
+type cachedSchema struct {
+	data []byte
+	err  error
+}
+
 // SchemaFrom extracts a meta-schema JSON document for any struct type.
-// The returned JSON describes the struct's full field shape (names, types,
-// required/nullable, enums, composites, unions) as declared by anansi tags.
-// If the struct embeds DocumentModel, its _id_ and _metadata_ fields are
-// included in the output automatically via the standard embedding promotion.
-//
-// The output is a self-contained contract schema suitable for validation and
-// serialization contracts. It is NOT designed to be enriched by the schema
-// registry — persistence schemas backing collections should be authored or
-// imported independently rather than derived from Go type tags.
+// Results are cached globally per type for zero-allocation subsequent calls.
 func SchemaFrom[T any]() ([]byte, error) {
 	var v T
-	return ExtractDTOSchemaDirect(v)
+	t := reflect.TypeOf(v)
+	if t == nil {
+		return nil, fmt.Errorf("root DTO target cannot be nil")
+	}
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+
+	if cached, ok := schemaCache.Load(t); ok {
+		res := cached.(cachedSchema)
+		return res.data, res.err
+	}
+
+	data, err := ExtractDTOSchemaDirect(v)
+	schemaCache.Store(t, cachedSchema{data: data, err: err})
+	return data, err
 }
 
 // ExtractDTOSchemaDirect streams JSON bytes directly into a buffer without
 // intermediate maps or struct serialization.
 func ExtractDTOSchemaDirect(target any) ([]byte, error) {
+	if target == nil {
+		return nil, fmt.Errorf("root DTO target cannot be nil")
+	}
 	e := newDirectExtractor()
 	return e.Extract(target)
 }
@@ -48,26 +64,25 @@ type schemaRegistryEntry struct {
 }
 
 type syntheticSchema struct {
-	name       string
-	schemaID   string
-	ordinal    int64
-	buf        bytes.Buffer
-	fieldCount int
+	name          string
+	schemaID      string
+	parentFieldID string
+	ordinal       int64
+	buf           bytes.Buffer
+	fieldCount    int
+	isRequired    bool
+	childSynOrder []string
 }
 
-// directExtractor performs a single, single-threaded extraction run. It is
-// not safe for concurrent use — each call to Extract creates its own
-// extractor, so this is not a concern in practice (concurrent Schema()
-// calls for the same type are serialized by schemaComputation.once instead;
-// concurrent calls for different types get independent extractors and share
-// nothing).
 type directExtractor struct {
 	discoveryOrdinal int64
 	registry         map[string]*schemaRegistryEntry
-	schemas          map[string][]byte // Schema ID -> pre-rendered JSON bytes
-	schemaOrder      []string          // Schema IDs in discovery order, for deterministic output
+	schemas          map[string][]byte
+	schemaOrder      []string
 	enumValues       map[string][]string
-	syntheticSchemas map[string]map[string]*syntheticSchema // parentSchemaID -> head -> synthetic schema
+	syntheticSchemas map[string]map[string]*syntheticSchema
+	rootSchemaID     string
+	rootReferenced   bool
 }
 
 func newDirectExtractor() *directExtractor {
@@ -83,6 +98,9 @@ func newDirectExtractor() *directExtractor {
 
 func (e *directExtractor) Extract(target any) ([]byte, error) {
 	t := reflect.TypeOf(target)
+	if t == nil {
+		return nil, fmt.Errorf("root DTO target cannot be nil")
+	}
 	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
@@ -92,7 +110,7 @@ func (e *directExtractor) Extract(target any) ([]byte, error) {
 
 	rootTypeKey := getFullyQualifiedName(t)
 	rootSchemaID := e.registerType(rootTypeKey)
-	e.schemaOrder = append(e.schemaOrder, rootSchemaID)
+	e.rootSchemaID = rootSchemaID
 
 	var fieldsBuf bytes.Buffer
 	fieldOrdinal := int64(0)
@@ -101,15 +119,39 @@ func (e *directExtractor) Extract(target any) ([]byte, error) {
 		return nil, err
 	}
 
-	// Finalize synthetic schemas: write accumulated fields into e.schemas
 	for _, synMap := range e.syntheticSchemas {
 		for _, syn := range synMap {
 			var sBuf bytes.Buffer
 			sBuf.WriteString("{\n      \"name\": ")
 			writeJSONString(&sBuf, syn.name)
-			if syn.fieldCount > 0 {
+
+			childMap := e.syntheticSchemas[syn.schemaID]
+			totalFields := syn.fieldCount + len(childMap)
+
+			if totalFields > 0 {
 				sBuf.WriteString(",\n      \"fields\": {\n")
 				sBuf.Write(syn.buf.Bytes())
+
+				if len(childMap) > 0 {
+					first := syn.fieldCount == 0
+					for _, childHead := range syn.childSynOrder {
+						childSyn := childMap[childHead]
+						if !first {
+							sBuf.WriteString(",\n")
+						}
+						first = false
+						sBuf.WriteString("    ")
+						writeJSONString(&sBuf, childSyn.parentFieldID)
+						sBuf.WriteString(": {\n      \"name\": ")
+						writeJSONString(&sBuf, childSyn.name)
+						if childSyn.isRequired {
+							sBuf.WriteString(",\n      \"required\": true")
+						}
+						sBuf.WriteString(",\n      \"type\": \"object\",\n      \"schema\": {\"id\": ")
+						writeJSONString(&sBuf, childSyn.schemaID)
+						sBuf.WriteString("}\n    }")
+					}
+				}
 				sBuf.WriteString("\n      }")
 			}
 			sBuf.WriteString("\n    }")
@@ -117,27 +159,19 @@ func (e *directExtractor) Extract(target any) ([]byte, error) {
 		}
 	}
 
-	// Mirror the root schema into the schemas registry too. The root's ID
-	// is otherwise only reachable via the top-level document (its "fields"
-	// live there, not under "schemas"). If any field anywhere in the type
-	// graph references the root type itself — directly or through a cycle
-	// — that reference resolves to rootSchemaID, which would otherwise be a
-	// dangling ID with no entry in "schemas" to back it. Mirroring costs a
-	// small duplication (the root's fields appear twice: once at the top
-	// level, once under schemas[rootSchemaID]) but guarantees every "id"
-	// reference in the document resolves to something.
-	var rootMirror bytes.Buffer
-	rootMirror.WriteString("{\n      \"name\": ")
-	writeJSONString(&rootMirror, t.Name())
-	if fieldCount > 0 {
-		rootMirror.WriteString(",\n      \"fields\": {\n")
-		rootMirror.Write(fieldsBuf.Bytes())
-		rootMirror.WriteString("\n      }")
+	if e.rootReferenced {
+		var rootMirror bytes.Buffer
+		rootMirror.WriteString("{\n      \"name\": ")
+		writeJSONString(&rootMirror, t.Name())
+		if fieldCount > 0 {
+			rootMirror.WriteString(",\n      \"fields\": {\n")
+			rootMirror.Write(fieldsBuf.Bytes())
+			rootMirror.WriteString("\n      }")
+		}
+		rootMirror.WriteString("\n    }")
+		e.schemas[e.rootSchemaID] = rootMirror.Bytes()
 	}
-	rootMirror.WriteString("\n    }")
-	e.schemas[rootSchemaID] = rootMirror.Bytes()
 
-	// Stream the root MetaSchema directly to the final output buffer.
 	var out bytes.Buffer
 	out.WriteString("{\n  \"version\": \"1.0.0\",\n  \"name\": ")
 	writeJSONString(&out, t.Name())
@@ -169,19 +203,20 @@ func (e *directExtractor) registerType(typeKey string) string {
 	}
 	ord := e.discoveryOrdinal
 	e.discoveryOrdinal++
-	id := GenerateDeterministicUUIDv7(ord, typeKey)
+	id := generateDeterministicUUIDv7(ord, typeKey)
 	e.registry[typeKey] = &schemaRegistryEntry{ID: id, Ordinal: ord}
 	return id
 }
 
 func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID string, buf *bytes.Buffer, fieldOrdinal *int64, fieldCount *int) error {
+	var localSynOrder []string
+
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		tag := parseSchemaTag(field.Tag.Get(AnansiTag))
 		if tag.Skip {
 			continue
 		}
-		// Pattern A: Default Embeddings (Promote inline)
 		if field.Anonymous && field.Type.Kind() == reflect.Struct && tag.TypeOverride == "" {
 			if err := e.extractStructFields(field.Type, owningSchemaID, buf, fieldOrdinal, fieldCount); err != nil {
 				return err
@@ -195,7 +230,7 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 			fieldName = toSnakeCase(fieldName)
 		}
 		if strings.Contains(fieldName, ".") {
-			if err := e.writePathField(buf, field, owningSchemaID, fieldOrdinal, fieldCount, fieldName, tag); err != nil {
+			if _, err := e.writePathField(owningSchemaID, fieldOrdinal, &localSynOrder, field, fieldName, tag); err != nil {
 				return err
 			}
 			continue
@@ -204,7 +239,7 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 			return fmt.Errorf("field %q: default values are not supported for %s fields", fieldName, tag.TypeOverride)
 		}
 		(*fieldOrdinal)++
-		fieldID := GenerateDeterministicUUIDv7(*fieldOrdinal, owningSchemaID+fieldName)
+		fieldID := generateDeterministicUUIDv7(*fieldOrdinal, owningSchemaID+fieldName)
 		if *fieldCount > 0 {
 			buf.WriteString(",\n")
 		}
@@ -215,9 +250,9 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 		var err error
 		switch tag.TypeOverride {
 		case "composite":
-			err = e.writeCompositeField(buf, field, fieldName)
+			err = e.writeCompositeField(buf, field, fieldName, tag)
 		case "union":
-			err = e.writeUnionField(buf, field, fieldName)
+			err = e.writeUnionField(buf, field, fieldName, tag)
 		default:
 			err = e.writeStandardField(buf, field, fieldName, tag)
 		}
@@ -225,10 +260,38 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 			return err
 		}
 	}
+
+	if synMap, ok := e.syntheticSchemas[owningSchemaID]; ok {
+		for _, head := range localSynOrder {
+			syn := synMap[head]
+			if *fieldCount > 0 {
+				buf.WriteString(",\n")
+			}
+			*fieldCount++
+			buf.WriteString("    ")
+			writeJSONString(buf, syn.parentFieldID)
+			buf.WriteString(": {\n      \"name\": ")
+			writeJSONString(buf, syn.name)
+			if syn.isRequired {
+				buf.WriteString(",\n      \"required\": true")
+			}
+			buf.WriteString(",\n      \"type\": \"object\",\n      \"schema\": {\"id\": ")
+			writeJSONString(buf, syn.schemaID)
+			buf.WriteString("}\n    }")
+		}
+	}
+
 	return nil
 }
 
-func (e *directExtractor) writePathField(buf *bytes.Buffer, field reflect.StructField, owningSchemaID string, fieldOrdinal *int64, fieldCount *int, fieldName string, tag parsedSchemaTag) error {
+func (e *directExtractor) writePathField(
+	owningSchemaID string,
+	fieldOrdinal *int64,
+	localSynOrder *[]string,
+	field reflect.StructField,
+	fieldName string,
+	tag parsedSchemaTag,
+) (bool, error) {
 	dotIdx := strings.IndexByte(fieldName, '.')
 	head := fieldName[:dotIdx]
 	tail := fieldName[dotIdx+1:]
@@ -240,38 +303,56 @@ func (e *directExtractor) writePathField(buf *bytes.Buffer, field reflect.Struct
 	if !exists {
 		schemaID := e.registerType(owningSchemaID + "." + head)
 		e.schemaOrder = append(e.schemaOrder, schemaID)
-		syn = &syntheticSchema{name: head, schemaID: schemaID}
-		e.syntheticSchemas[owningSchemaID][head] = syn
 
 		(*fieldOrdinal)++
-		parentFieldID := GenerateDeterministicUUIDv7(*fieldOrdinal, owningSchemaID+head)
-		if *fieldCount > 0 {
-			buf.WriteString(",\n")
+		parentFieldID := generateDeterministicUUIDv7(*fieldOrdinal, owningSchemaID+head)
+
+		syn = &syntheticSchema{
+			name:          head,
+			schemaID:      schemaID,
+			parentFieldID: parentFieldID,
 		}
-		*fieldCount++
-		buf.WriteString("    ")
-		writeJSONString(buf, parentFieldID)
-		buf.WriteString(": {\n      \"name\": ")
-		writeJSONString(buf, head)
-		buf.WriteString(",\n      \"required\": true,\n      \"type\": \"object\",\n      \"schema\": {\"id\": ")
-		writeJSONString(buf, schemaID)
-		buf.WriteString("}\n    }")
+		e.syntheticSchemas[owningSchemaID][head] = syn
+		*localSynOrder = append(*localSynOrder, head)
 	}
+
+	var childRequired bool
+	var err error
 
 	if strings.Contains(tail, ".") {
-		return e.writePathField(&syn.buf, field, syn.schemaID, &syn.ordinal, &syn.fieldCount, tail, tag)
+		childRequired, err = e.writePathField(syn.schemaID, &syn.ordinal, &syn.childSynOrder, field, tail, tag)
+	} else {
+		syn.ordinal++
+		fieldID := generateDeterministicUUIDv7(syn.ordinal, syn.schemaID+tail)
+		if syn.fieldCount > 0 {
+			syn.buf.WriteString(",\n")
+		}
+		syn.fieldCount++
+		syn.buf.WriteString("    ")
+		writeJSONString(&syn.buf, fieldID)
+		syn.buf.WriteString(": ")
+
+		switch tag.TypeOverride {
+		case "composite":
+			err = e.writeCompositeField(&syn.buf, field, tail, tag)
+		case "union":
+			err = e.writeUnionField(&syn.buf, field, tail, tag)
+		default:
+			err = e.writeStandardField(&syn.buf, field, tail, tag)
+		}
+
+		childRequired = tag.Required != nil && *tag.Required
 	}
 
-	syn.ordinal++
-	fieldID := GenerateDeterministicUUIDv7(syn.ordinal, syn.schemaID+tail)
-	if syn.fieldCount > 0 {
-		syn.buf.WriteString(",\n")
+	if err != nil {
+		return false, err
 	}
-	syn.fieldCount++
-	syn.buf.WriteString("    ")
-	writeJSONString(&syn.buf, fieldID)
-	syn.buf.WriteString(": ")
-	return e.writeStandardField(&syn.buf, field, tail, tag)
+
+	if childRequired {
+		syn.isRequired = true
+	}
+
+	return syn.isRequired, nil
 }
 
 func (e *directExtractor) writeStandardField(buf *bytes.Buffer, field reflect.StructField, fieldName string, tag parsedSchemaTag) error {
@@ -280,10 +361,8 @@ func (e *directExtractor) writeStandardField(buf *bytes.Buffer, field reflect.St
 	if isPointer {
 		fieldType = fieldType.Elem()
 	}
-	required := !isPointer
-	if tag.Required != nil {
-		required = *tag.Required
-	}
+
+	required := tag.Required != nil && *tag.Required
 	nullable := isPointer
 	if tag.Nullable != nil {
 		nullable = *tag.Nullable
@@ -298,7 +377,6 @@ func (e *directExtractor) writeStandardField(buf *bytes.Buffer, field reflect.St
 		buf.WriteString(",\n      \"nullable\": true")
 	}
 
-	// Pattern D: Enums (inline or named/shared) — spec.md §7 Pattern D.
 	if tag.TypeOverride == "enum" {
 		scalarType, refJSON, inlineValues, err := e.resolveEnumSchema(fieldType, tag, field.Name)
 		if err != nil {
@@ -323,9 +401,6 @@ func (e *directExtractor) writeStandardField(buf *bytes.Buffer, field reflect.St
 		if tag.Default != nil {
 			allowedValues := inlineValues
 			if refJSON != "" {
-				// Named/shared enum: validate against the values declared
-				// at the type's first registration, not this occurrence's
-				// (possibly absent or differing) tag.
 				allowedValues = e.enumValues[getFullyQualifiedName(fieldType)]
 			}
 			if !containsString(allowedValues, *tag.Default) {
@@ -360,20 +435,6 @@ func (e *directExtractor) writeStandardField(buf *bytes.Buffer, field reflect.St
 	return nil
 }
 
-// resolveEnumSchema implements spec.md §7 Pattern D. Two modes:
-//
-//   - Inline: fieldType is a bare builtin (e.g. plain `string`, `int`) with
-//     no distinct package-qualified identity. tag.Values is rendered
-//     directly as an inline descriptor; nothing is registered.
-//   - Named/shared: fieldType is a distinct defined Go type (e.g.
-//     `type StatusEnum string`, PkgPath != ""). The dedup key is the Go
-//     type itself. The first field encountered with this type and
-//     type=enum registers a shared schema using *that* field's values=;
-//     every subsequent field of the same named type reuses the same
-//     schema ID regardless of what (if anything) its own values= says.
-//
-// Returns (scalarType, refJSON, inlineValues, err). Exactly one of refJSON
-// or inlineValues is populated on success.
 func (e *directExtractor) resolveEnumSchema(fieldType reflect.Type, tag parsedSchemaTag, goFieldName string) (scalarType string, refJSON string, inlineValues []string, err error) {
 	scalarType = primitiveKindToSchemaType(fieldType.Kind())
 	if scalarType != "string" && scalarType != "integer" && scalarType != "number" {
@@ -418,7 +479,7 @@ func (e *directExtractor) resolveEnumSchema(fieldType reflect.Type, tag parsedSc
 	return scalarType, fmt.Sprintf("{\"id\": %q}", id), nil, nil
 }
 
-func (e *directExtractor) writeCompositeField(buf *bytes.Buffer, field reflect.StructField, fieldName string) error {
+func (e *directExtractor) writeCompositeField(buf *bytes.Buffer, field reflect.StructField, fieldName string, tag parsedSchemaTag) error {
 	ft := field.Type
 	if ft.Kind() == reflect.Pointer {
 		ft = ft.Elem()
@@ -432,7 +493,9 @@ func (e *directExtractor) writeCompositeField(buf *bytes.Buffer, field reflect.S
 	buf.WriteString("{\n      \"name\": ")
 	writeJSONString(buf, fieldName)
 	buf.WriteString(",\n      \"type\": \"composite\"")
-	buf.WriteString(",\n      \"required\": true")
+	if tag.Required != nil && *tag.Required {
+		buf.WriteString(",\n      \"required\": true")
+	}
 	buf.WriteString(",\n      \"schema\": [")
 	for i := 0; i < ft.NumField(); i++ {
 		sf := ft.Field(i)
@@ -460,7 +523,7 @@ func (e *directExtractor) writeCompositeField(buf *bytes.Buffer, field reflect.S
 	return nil
 }
 
-func (e *directExtractor) writeUnionField(buf *bytes.Buffer, field reflect.StructField, fieldName string) error {
+func (e *directExtractor) writeUnionField(buf *bytes.Buffer, field reflect.StructField, fieldName string, tag parsedSchemaTag) error {
 	ft := field.Type
 	if ft.Kind() == reflect.Pointer {
 		ft = ft.Elem()
@@ -474,7 +537,9 @@ func (e *directExtractor) writeUnionField(buf *bytes.Buffer, field reflect.Struc
 	buf.WriteString("{\n      \"name\": ")
 	writeJSONString(buf, fieldName)
 	buf.WriteString(",\n      \"type\": \"union\"")
-	buf.WriteString(",\n      \"required\": true")
+	if tag.Required != nil && *tag.Required {
+		buf.WriteString(",\n      \"required\": true")
+	}
 	buf.WriteString(",\n      \"schema\": [")
 	for i := 0; i < ft.NumField(); i++ {
 		sf := ft.Field(i)
@@ -503,10 +568,6 @@ func (e *directExtractor) writeUnionField(buf *bytes.Buffer, field reflect.Struc
 	return nil
 }
 
-// ensurePrimitiveUnionSchemaRegistered implements spec.md §3.1: a primitive
-// scalar used as a union variant pointee gets a shared, globally-deduplicated
-// Type-mode schema keyed by its bare Go kind name, since Form 2
-// (SchemaReferenceArray) never permits inline entries.
 func (e *directExtractor) ensurePrimitiveUnionSchemaRegistered(t reflect.Type) string {
 	bareName := t.Kind().String()
 	typeKey := "primitive_" + bareName
@@ -532,9 +593,13 @@ func (e *directExtractor) ensureStructRegistered(t reflect.Type, fieldName strin
 	}
 	typeKey := getFullyQualifiedName(t)
 	if typeKey == "" {
-		typeKey = fmt.Sprintf("Anon_%s", fieldName)
+		typeKey = "Anon_" + fieldName
 	}
 	if entry, ok := e.registry[typeKey]; ok {
+		if entry.ID == e.rootSchemaID && !e.rootReferenced {
+			e.rootReferenced = true
+			e.schemaOrder = append(e.schemaOrder, e.rootSchemaID)
+		}
 		return entry.ID, nil
 	}
 	id := e.registerType(typeKey)
@@ -543,11 +608,6 @@ func (e *directExtractor) ensureStructRegistered(t reflect.Type, fieldName strin
 	if schemaName == "" {
 		schemaName = typeKey
 	}
-	// Placeholder prevents re-entrant reprocessing: typeKey is already
-	// present in e.registry (via registerType above) before we recurse into
-	// its fields below, so a self-referencing field encountered during that
-	// recursion resolves to this same id immediately via the registry-hit
-	// branch above, rather than recursing again.
 	e.schemas[id] = nil
 	var fieldsBuf bytes.Buffer
 	fieldOrdinal := int64(0)
@@ -574,10 +634,6 @@ func (e *directExtractor) inferSchemaType(t reflect.Type, fieldName string, tag 
 		case "decimal", "geometry", "bytes", "unknown":
 			return tag.TypeOverride, "", nil
 		default:
-			// "enum" is handled upstream in writeStandardField and should
-			// never reach here; "union"/"composite" are dispatched before
-			// writeStandardField is ever called. Anything else is a typo
-			// or an unsupported directive.
 			return "", "", fmt.Errorf("field %q: unsupported type override %q", fieldName, tag.TypeOverride)
 		}
 	}
@@ -617,7 +673,6 @@ func (e *directExtractor) inferSchemaType(t reflect.Type, fieldName string, tag 
 		elemSchemaType := primitiveKindToSchemaType(elemType.Kind())
 		return "array", fmt.Sprintf("{\"type\": %q}", elemSchemaType), nil
 	case reflect.Map:
-		// Check if it's map[string]any
 		if t.Key().Kind() == reflect.String && t.Elem().Kind() == reflect.Interface {
 			return "record", "", nil
 		}
@@ -644,7 +699,9 @@ func (e *directExtractor) inferSchemaType(t reflect.Type, fieldName string, tag 
 	return "unknown", "", nil
 }
 
-// Low-level JSON formatting helpers
+// Low-level fast JSON formatting helper
+
+const hexDigits = "0123456789abcdef"
 
 func writeJSONString(buf *bytes.Buffer, s string) {
 	buf.WriteByte('"')
@@ -667,9 +724,9 @@ func writeJSONString(buf *bytes.Buffer, s string) {
 			buf.WriteString("\\f")
 		default:
 			if c < 0x20 {
-				// Any other control character must be escaped per RFC 8259;
-				// raw bytes < 0x20 are not valid inside a JSON string.
-				fmt.Fprintf(buf, "\\u%04x", c)
+				buf.WriteString("\\u00")
+				buf.WriteByte(hexDigits[c>>4])
+				buf.WriteByte(hexDigits[c&0xF])
 			} else {
 				buf.WriteByte(c)
 			}
@@ -678,14 +735,6 @@ func writeJSONString(buf *bytes.Buffer, s string) {
 	buf.WriteByte('"')
 }
 
-// coerceDefaultValue writes the JSON representation of a default value for
-// a scalar field type, validating that the raw tag string is actually
-// compatible with that type (spec.md §9: "the generator must perform a type
-// check and produce a validation error if the default value cannot be
-// coerced to the field type"). Defaults are rejected outright for
-// structural types (object, array, record, geometry, bytes, unknown) —
-// none of them have a single-value default that means anything at the
-// schema level.
 func coerceDefaultValue(buf *bytes.Buffer, valStr, schemaType, fieldName string) error {
 	switch schemaType {
 	case "integer":
@@ -708,11 +757,7 @@ func coerceDefaultValue(buf *bytes.Buffer, valStr, schemaType, fieldName string)
 		} else {
 			buf.WriteString("false")
 		}
-	case "string":
-		writeJSONString(buf, valStr)
-	case "decimal":
-		// Arbitrary-precision: represented as a JSON string so the exact
-		// literal survives round-tripping without float64 precision loss.
+	case "string", "decimal":
 		writeJSONString(buf, valStr)
 	default:
 		return fmt.Errorf("field %q: default values are not supported for type %q", fieldName, schemaType)
@@ -747,7 +792,7 @@ func getFullyQualifiedName(t reflect.Type) string {
 	return t.PkgPath() + "." + t.Name()
 }
 
-func GenerateDeterministicUUIDv7(ordinal int64, seedString string) string {
+func generateDeterministicUUIDv7(ordinal int64, seedString string) string {
 	ms := FixedEpochMS + ordinal
 	hash := sha256.Sum256([]byte(seedString))
 	var buf [16]byte
@@ -761,9 +806,6 @@ func GenerateDeterministicUUIDv7(ordinal int64, seedString string) string {
 	buf[7] = hash[1]
 	buf[8] = 0x80 | (hash[2] & 0x3F)
 	copy(buf[9:], hash[3:10])
-	// buf is always exactly 16 bytes, so uuid.FromBytes cannot fail here;
-	// uuid.Must documents that invariant instead of silently discarding an
-	// error that can never occur.
 	return uuid.Must(uuid.FromBytes(buf[:])).String()
 }
 
@@ -787,9 +829,17 @@ func parseSchemaTag(tag string) parsedSchemaTag {
 		parsed.Skip = true
 		return parsed
 	}
-	parts := strings.Split(tag, ",")
-	for i, part := range parts {
-		part = strings.TrimSpace(part)
+
+	for i := 0; len(tag) > 0; i++ {
+		var part string
+		if idx := strings.IndexByte(tag, ','); idx >= 0 {
+			part = strings.TrimSpace(tag[:idx])
+			tag = tag[idx+1:]
+		} else {
+			part = strings.TrimSpace(tag)
+			tag = ""
+		}
+
 		if part == "" {
 			continue
 		}
@@ -816,7 +866,8 @@ func parseSchemaTag(tag string) parsedSchemaTag {
 			b := val == "true"
 			parsed.Nullable = &b
 		case "default":
-			parsed.Default = &val
+			v := val
+			parsed.Default = &v
 		case "type":
 			parsed.TypeOverride = val
 		case "values":
@@ -828,19 +879,27 @@ func parseSchemaTag(tag string) parsedSchemaTag {
 	return parsed
 }
 
+// Zero-allocation byte scanner for snake_case field name conversion.
 func toSnakeCase(s string) string {
+	if s == "" {
+		return ""
+	}
 	var b strings.Builder
-	runes := []rune(s)
-	for i := 0; i < len(runes); i++ {
-		r := runes[i]
-		if i > 0 && unicode.IsUpper(r) {
-			prev := runes[i-1]
-			nextIsLower := i+1 < len(runes) && unicode.IsLower(runes[i+1])
-			if unicode.IsLower(prev) || nextIsLower {
-				b.WriteRune('_')
+	b.Grow(len(s) + 4)
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if i > 0 && c >= 'A' && c <= 'Z' {
+			prev := s[i-1]
+			nextIsLower := i+1 < len(s) && (s[i+1] >= 'a' && s[i+1] <= 'z')
+			if (prev >= 'a' && prev <= 'z') || nextIsLower {
+				b.WriteByte('_')
 			}
 		}
-		b.WriteRune(unicode.ToLower(r))
+		if c >= 'A' && c <= 'Z' {
+			b.WriteByte(c + ('a' - 'A'))
+		} else {
+			b.WriteByte(c)
+		}
 	}
 	return b.String()
 }

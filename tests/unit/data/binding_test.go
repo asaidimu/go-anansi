@@ -358,7 +358,7 @@ func TestSchemaFrom_PathTag(t *testing.T) {
 
 func TestSchemaFrom_DeepPath(t *testing.T) {
 	type Deep struct {
-		Value string `anansi:"a.b.c"`
+		Value string `anansi:"a.b.c,required"`
 	}
 
 	schemaJSON, err := data.SchemaFrom[Deep]()
