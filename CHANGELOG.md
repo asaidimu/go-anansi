@@ -1,3 +1,10 @@
+## [8.3.1](https://github.com/asaidimu/go-anansi/compare/v8.3.0...v8.3.1) (2026-07-30)
+
+
+### Bug Fixes
+
+* add path binding to DTOs to make them more flexible ([b434cf2](https://github.com/asaidimu/go-anansi/commit/b434cf298a0a5c36cf5768a0d4b832cc5b3f9017))
+
 # [8.3.0](https://github.com/asaidimu/go-anansi/compare/v8.2.0...v8.3.0) (2026-07-30)
 
 
