@@ -46,6 +46,14 @@ type schemaRegistryEntry struct {
 	Ordinal int64
 }
 
+type syntheticSchema struct {
+	name       string
+	schemaID   string
+	ordinal    int64
+	buf        bytes.Buffer
+	fieldCount int
+}
+
 // directExtractor performs a single, single-threaded extraction run. It is
 // not safe for concurrent use — each call to Extract creates its own
 // extractor, so this is not a concern in practice (concurrent Schema()
@@ -53,11 +61,12 @@ type schemaRegistryEntry struct {
 // concurrent calls for different types get independent extractors and share
 // nothing).
 type directExtractor struct {
-	discoveryOrdinal int64
-	registry         map[string]*schemaRegistryEntry
-	schemas          map[string][]byte // Schema ID -> pre-rendered JSON bytes
-	schemaOrder      []string          // Schema IDs in discovery order, for deterministic output
-	enumValues       map[string][]string
+	discoveryOrdinal  int64
+	registry          map[string]*schemaRegistryEntry
+	schemas           map[string][]byte // Schema ID -> pre-rendered JSON bytes
+	schemaOrder       []string          // Schema IDs in discovery order, for deterministic output
+	enumValues        map[string][]string
+	syntheticSchemas  map[string]map[string]*syntheticSchema // parentSchemaID -> head -> synthetic schema
 }
 
 func newDirectExtractor() *directExtractor {
@@ -67,6 +76,7 @@ func newDirectExtractor() *directExtractor {
 		schemas:          make(map[string][]byte),
 		schemaOrder:      make([]string, 0, 8),
 		enumValues:       make(map[string][]string),
+		syntheticSchemas: make(map[string]map[string]*syntheticSchema),
 	}
 }
 
@@ -88,6 +98,22 @@ func (e *directExtractor) Extract(target any) ([]byte, error) {
 	fieldCount := 0
 	if err := e.extractStructFields(t, rootSchemaID, &fieldsBuf, &fieldOrdinal, &fieldCount); err != nil {
 		return nil, err
+	}
+
+	// Finalize synthetic schemas: write accumulated fields into e.schemas
+	for _, synMap := range e.syntheticSchemas {
+		for _, syn := range synMap {
+			var sBuf bytes.Buffer
+			sBuf.WriteString("{\n      \"name\": ")
+			writeJSONString(&sBuf, syn.name)
+			if syn.fieldCount > 0 {
+				sBuf.WriteString(",\n      \"fields\": {\n")
+				sBuf.Write(syn.buf.Bytes())
+				sBuf.WriteString("\n      }")
+			}
+			sBuf.WriteString("\n    }")
+			e.schemas[syn.schemaID] = sBuf.Bytes()
+		}
 	}
 
 	// Mirror the root schema into the schemas registry too. The root's ID
@@ -167,6 +193,12 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 		} else {
 			fieldName = toSnakeCase(fieldName)
 		}
+		if strings.Contains(fieldName, ".") {
+			if err := e.writePathField(buf, field, owningSchemaID, fieldOrdinal, fieldCount, fieldName, tag); err != nil {
+				return err
+			}
+			continue
+		}
 		if tag.Default != nil && (tag.TypeOverride == "composite" || tag.TypeOverride == "union") {
 			return fmt.Errorf("field %q: default values are not supported for %s fields", fieldName, tag.TypeOverride)
 		}
@@ -193,6 +225,52 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 		}
 	}
 	return nil
+}
+
+func (e *directExtractor) writePathField(buf *bytes.Buffer, field reflect.StructField, owningSchemaID string, fieldOrdinal *int64, fieldCount *int, fieldName string, tag parsedSchemaTag) error {
+	dotIdx := strings.IndexByte(fieldName, '.')
+	head := fieldName[:dotIdx]
+	tail := fieldName[dotIdx+1:]
+
+	if e.syntheticSchemas[owningSchemaID] == nil {
+		e.syntheticSchemas[owningSchemaID] = make(map[string]*syntheticSchema)
+	}
+	syn, exists := e.syntheticSchemas[owningSchemaID][head]
+	if !exists {
+		schemaID := e.registerType(owningSchemaID + "." + head)
+		e.schemaOrder = append(e.schemaOrder, schemaID)
+		syn = &syntheticSchema{name: head, schemaID: schemaID}
+		e.syntheticSchemas[owningSchemaID][head] = syn
+
+		(*fieldOrdinal)++
+		parentFieldID := GenerateDeterministicUUIDv7(*fieldOrdinal, owningSchemaID+head)
+		if *fieldCount > 0 {
+			buf.WriteString(",\n")
+		}
+		*fieldCount++
+		buf.WriteString("    ")
+		writeJSONString(buf, parentFieldID)
+		buf.WriteString(": {\n      \"name\": ")
+		writeJSONString(buf, head)
+		buf.WriteString(",\n      \"required\": true,\n      \"type\": \"object\",\n      \"schema\": {\"id\": ")
+		writeJSONString(buf, schemaID)
+		buf.WriteString("}\n    }")
+	}
+
+	if strings.Contains(tail, ".") {
+		return e.writePathField(&syn.buf, field, syn.schemaID, &syn.ordinal, &syn.fieldCount, tail, tag)
+	}
+
+	syn.ordinal++
+	fieldID := GenerateDeterministicUUIDv7(syn.ordinal, syn.schemaID+tail)
+	if syn.fieldCount > 0 {
+		syn.buf.WriteString(",\n")
+	}
+	syn.fieldCount++
+	syn.buf.WriteString("    ")
+	writeJSONString(&syn.buf, fieldID)
+	syn.buf.WriteString(": ")
+	return e.writeStandardField(&syn.buf, field, tail, tag)
 }
 
 func (e *directExtractor) writeStandardField(buf *bytes.Buffer, field reflect.StructField, fieldName string, tag parsedSchemaTag) error {

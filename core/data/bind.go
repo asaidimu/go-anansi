@@ -426,10 +426,34 @@ func structToMap(s any, partial bool) (map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		docData[fInfo.Name] = value
+		if err := setNestedMap(docData, fInfo.Name, value); err != nil {
+			return nil, err
+		}
 	}
 
 	return docData, nil
+}
+
+func setNestedMap(data map[string]any, path string, value any) error {
+	parts := strings.Split(path, ".")
+	current := data
+	for i, part := range parts {
+		if i == len(parts)-1 {
+			current[part] = value
+			return nil
+		}
+		next, ok := current[part]
+		if !ok {
+			next = make(map[string]any)
+			current[part] = next
+		}
+		m, ok := next.(map[string]any)
+		if !ok {
+			return ErrCannotTraverse.WithPath(path)
+		}
+		current = m
+	}
+	return nil
 }
 
 func convertInterface(v any) (any, error) {
