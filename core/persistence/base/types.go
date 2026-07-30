@@ -548,26 +548,26 @@ type Transaction interface {
 }
 
 // ModelCollection defines a set of type-safe operations for a specific model T.
-// It acts as a bridge between the untyped persistence layer and the domain models,
-// enabling robust business logic while maintaining strict type safety.
+// P is the pointer type (*T), used consistently for inputs and outputs so that
+// data.New[T] can attach a parent reference to enable Document()/Patch() methods.
 type ModelCollection[T any, P any] interface {
 	// Create persists a new model and returns the hydrated version (with IDs/timestamps).
-	Create(ctx context.Context, doc T) (T, error)
+	Create(ctx context.Context, doc P) (P, error)
 
 	// CreateMany performs a bulk insertion of multiple models.
-	CreateMany(ctx context.Context, docs []T) ([]T, error)
+	CreateMany(ctx context.Context, docs []P) ([]P, error)
 
 	// FindByID retrieves a single model by its unique identifier.
-	FindByID(ctx context.Context, id string) (T, error)
+	FindByID(ctx context.Context, id string) (P, error)
 
 	// Read executes a structured query and returns a slice of matching models.
-	Read(ctx context.Context, q *query.Query) ([]T, error)
+	Read(ctx context.Context, q *query.Query) ([]P, error)
 
 	// Update applies partial changes to a model by ID and returns the updated state.
-	Update(ctx context.Context, id string, update T) (T, error)
+	Update(ctx context.Context, id string, update P) (P, error)
 
 	// UpdateMany applies a partial update to all models matching the filter.
-	UpdateMany(ctx context.Context, filter *query.QueryFilter, update T) (int, error)
+	UpdateMany(ctx context.Context, filter *query.QueryFilter, update P) (int, error)
 
 	// DeleteByID removes a single model from the collection.
 	DeleteByID(ctx context.Context, id string) error
@@ -578,8 +578,7 @@ type ModelCollection[T any, P any] interface {
 	// --- Business Logic & Lifecycle ---
 
 	// Validate checks if the model instance conforms to the collection's schema.
-	// This allows for "dry-run" validation in business logic.
-	Validate(ctx context.Context, doc T, loose bool) error
+	Validate(ctx context.Context, doc P, loose bool) error
 
 	// Subscribe registers a listener for real-time events on this model type.
 	Subscribe(ctx context.Context, options SubscriptionOptions) string

@@ -6,6 +6,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/asaidimu/go-anansi/v8/core/cache"
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
@@ -16,67 +17,133 @@ import (
 // Model Collection Implementation
 // ============================================================================
 
-// modelCollection provides type-safe operations on a raw collection.
-// It automatically handles struct <-> document conversions.
-type modelCollection[T any, P data.DocumentModelProvider] struct {
-	raw            base.Collection
-	collectionName string
-	logger         *zap.Logger
+// ModelCollectionOptions configures the creation of a model collection.
+type ModelCollectionOptions[T any, P any] struct {
+	// Cache is an optional pre-built cache for model instances. If nil, a
+	// managed cache is constructed from CacheConfig. If both are nil, the
+	// model collection operates without caching.
+	Cache cache.RepositoryCache[P]
+
+	// CacheConfig optionally tunes the managed cache created when Cache is
+	// nil and CacheConfig is non-nil. Ignored when Cache is provided.
+	CacheConfig *cache.CacheConfig
+
+	// AutoLoad determines whether to preload all documents into the cache
+	// on startup. Requires Cache or CacheConfig to be set. Useful for small
+	// collections such as application settings.
+	AutoLoad bool
 }
 
-// NewModelCollection creates a type-safe wrapper around a raw collection.
+type modelCollection[T any, P data.DocumentModelProvider] struct {
+	base.Collection
+	collectionName string
+	logger         *zap.Logger
+	cache          cache.RepositoryCache[P]
+}
+
 func NewModelCollection[T any, P interface {
 	*T
 	data.DocumentModelProvider
-}](raw base.Collection, logger *zap.Logger) *modelCollection[T, P] {
+}](raw base.Collection, logger *zap.Logger, opts ...ModelCollectionOptions[T, P]) (*modelCollection[T, P], error) {
 	metadata := raw.Metadata(context.Background(), nil, false)
-	return &modelCollection[T, P]{
-		raw:            raw,
+
+	var opt ModelCollectionOptions[T, P]
+	if len(opts) > 0 {
+		opt = opts[0]
+	}
+
+	var cacheImpl cache.RepositoryCache[P]
+	if opt.Cache != nil {
+		cacheImpl = opt.Cache
+	} else if opt.CacheConfig != nil {
+		cfg := *opt.CacheConfig
+		cacheImpl = cache.NewManagedCache(cfg,
+			func(v P) (P, error) { return v, nil },
+			func(key string, value P) {},
+		)
+	}
+
+	mc := &modelCollection[T, P]{
+		Collection:     raw,
 		collectionName: metadata.Name,
 		logger:         logger,
+		cache:          cacheImpl,
 	}
+
+	if opt.AutoLoad {
+		if err := mc.prime(context.Background()); err != nil {
+			if cacheImpl != nil {
+				_ = cacheImpl.Close()
+			}
+			return nil, fmt.Errorf("failed to auto-load model collection: %w", err)
+		}
+	}
+
+	return mc, nil
+}
+
+// newModelPtr allocates a new *T and converts it to P.
+// P is constrained to *T, so this is always safe at runtime.
+func newModelPtr[T any, P any]() P {
+	var v T
+	return any(&v).(P)
+}
+
+// prime preloads all documents into the cache.
+func (mc *modelCollection[T, P]) prime(ctx context.Context) error {
+	_, err := mc.Read(ctx, &query.Query{})
+	return err
+}
+
+// Close stops the underlying cache's background goroutines and releases
+// resources. Idempotent. Does not affect the embedded base.Collection.
+func (mc *modelCollection[T, P]) Close() error {
+	if mc.cache != nil {
+		return mc.cache.Close()
+	}
+	return nil
 }
 
 // ============================================================================
 // Create Operations
 // ============================================================================
 
-// Create inserts a single model into the collection.
-func (mc *modelCollection[T, P]) Create(ctx context.Context, doc T) (T, error) {
-	var zero T
-
+func (mc *modelCollection[T, P]) Create(ctx context.Context, doc P) (P, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
+
 	d, err := data.NewDocumentFromStruct(doc, ctx)
 	if err != nil {
-		return zero, common.SystemErrorFrom(err).
+		return newModelPtr[T, P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Create").
 			WithMessage("failed to convert model to document")
 	}
 
-	res, err := mc.raw.CreateOne(ctx, d)
+	res, err := mc.CreateOne(ctx, d)
 	if err != nil {
-		return zero, common.SystemErrorFrom(err).
+		return newModelPtr[T, P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Create")
 	}
 
-	err = res.Data.BindToWithContext(ctx, &zero)
-	if err != nil {
-		return zero, common.SystemErrorFrom(err).
+	result := newModelPtr[T, P]()
+	if err := res.Data.BindToWithContext(ctx, result); err != nil {
+		return newModelPtr[T, P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Create").
 			WithMessage("failed to bind result document to model")
 	}
 
-	return zero, nil
-}
-
-// CreateMany inserts multiple models into the collection.
-func (mc *modelCollection[T, P]) CreateMany(ctx context.Context, docs []T) ([]T, error) {
-	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
-	if len(docs) == 0 {
-		return []T{}, nil
+	if mc.cache != nil {
+		mc.cache.Set(result.Model().ID, result)
 	}
 
-	// Convert all structs to documents
+	return result, nil
+}
+
+func (mc *modelCollection[T, P]) CreateMany(ctx context.Context, docs []P) ([]P, error) {
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
+	if len(docs) == 0 {
+		return []P{}, nil
+	}
+
 	input := make([]*data.Document, len(docs))
 	for i, doc := range docs {
 		d, err := data.NewDocumentFromStruct(doc, ctx)
@@ -89,25 +156,25 @@ func (mc *modelCollection[T, P]) CreateMany(ctx context.Context, docs []T) ([]T,
 		input[i] = d
 	}
 
-	// Create all documents
-	results, err := mc.raw.CreateMany(ctx, input)
+	results, err := mc.Collection.CreateMany(ctx, input)
 	if err != nil {
 		return nil, common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.CreateMany")
 	}
 
-	// Bind all results back to models
-	output := make([]T, len(results))
+	output := make([]P, len(results))
 	for i, res := range results {
-		var model T
-		err := res.Data.BindToWithContext(ctx, &model)
-		if err != nil {
+		result := newModelPtr[T, P]()
+		if err := res.Data.BindToWithContext(ctx, result); err != nil {
 			return nil, common.SystemErrorFrom(err).
 				WithOperation("ModelCollection.CreateMany").
 				WithPath(fmt.Sprintf("results[%d]", i)).
 				WithMessagef("failed to bind result at index %d to model", i)
 		}
-		output[i] = model
+		if mc.cache != nil {
+			mc.cache.Set(result.Model().ID, result)
+		}
+		output[i] = result
 	}
 
 	return output, nil
@@ -117,9 +184,19 @@ func (mc *modelCollection[T, P]) CreateMany(ctx context.Context, docs []T) ([]T,
 // Read Operations
 // ============================================================================
 
-// FindByID retrieves a single model by its ID.
-func (mc *modelCollection[T, P]) FindByID(ctx context.Context, id string) (T, error) {
-	var zero T
+func (mc *modelCollection[T, P]) FindByID(ctx context.Context, id string) (P, error) {
+	if mc.cache != nil {
+		val, status := mc.cache.GetStatus(id)
+		switch status {
+		case cache.CacheHitPositive:
+			return val, nil
+		case cache.CacheHitNegative:
+			return newModelPtr[T, P](), ErrRecordNotFound.
+				WithOperation("ModelCollection.FindByID").
+				WithPath(id).
+				WithMessagef("record with id '%s' not found", id)
+		}
+	}
 
 	q := query.NewQueryBuilder().
 		Where(data.DocumentIDField).Eq(id).
@@ -128,13 +205,16 @@ func (mc *modelCollection[T, P]) FindByID(ctx context.Context, id string) (T, er
 
 	results, err := mc.Read(ctx, &q)
 	if err != nil {
-		return zero, common.SystemErrorFrom(err).
+		return newModelPtr[T, P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.FindByID").
 			WithPath(id)
 	}
 
 	if len(results) == 0 {
-		return zero, ErrRecordNotFound.
+		if mc.cache != nil {
+			mc.cache.Nullify(id)
+		}
+		return newModelPtr[T, P](), ErrRecordNotFound.
 			WithOperation("ModelCollection.FindByID").
 			WithPath(id).
 			WithMessagef("record with id '%s' not found", id)
@@ -143,31 +223,36 @@ func (mc *modelCollection[T, P]) FindByID(ctx context.Context, id string) (T, er
 	return results[0], nil
 }
 
-// Read retrieves multiple models matching the query.
-func (mc *modelCollection[T, P]) Read(ctx context.Context, q *query.Query) ([]T, error) {
+func (mc *modelCollection[T, P]) Read(ctx context.Context, q *query.Query) ([]P, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
-	res, err := mc.raw.Read(ctx, q)
+	res, err := mc.Collection.Read(ctx, q)
 	if err != nil {
 		return nil, common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Read")
 	}
 
 	if len(res.Data) == 0 {
-		return []T{}, nil
+		return []P{}, nil
 	}
 
-	// Bind all documents to models
-	output := make([]T, len(res.Data))
+	output := make([]P, len(res.Data))
 	for i, doc := range res.Data {
-		var model T
-		err := doc.BindToWithContext(ctx, &model)
-		if err != nil {
+		result := newModelPtr[T, P]()
+		if err := doc.BindToWithContext(ctx, result); err != nil {
 			return nil, common.SystemErrorFrom(err).
 				WithOperation("ModelCollection.Read").
 				WithPath(fmt.Sprintf("results[%d]", i)).
 				WithMessagef("failed to bind document at index %d to model", i)
 		}
-		output[i] = model
+		output[i] = result
+	}
+
+	if mc.cache != nil {
+		for _, m := range output {
+			if id := m.Model().ID; id != "" {
+				mc.cache.Set(id, m)
+			}
+		}
 	}
 
 	return output, nil
@@ -177,16 +262,12 @@ func (mc *modelCollection[T, P]) Read(ctx context.Context, q *query.Query) ([]T,
 // Update Operations
 // ============================================================================
 
-// Update updates a single model by ID and returns the updated model.
-// Only non-zero fields in the update model are applied (partial update).
-func (mc *modelCollection[T, P]) Update(ctx context.Context, id string, update T) (T, error) {
+func (mc *modelCollection[T, P]) Update(ctx context.Context, id string, update P) (P, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
-	var zero T
 
-	// Create partial document (only non-zero fields)
 	d, err := data.NewPartialDocumentFromStruct(update, ctx)
 	if err != nil {
-		return zero, common.SystemErrorFrom(err).
+		return newModelPtr[T, P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Update").
 			WithPath(id).
 			WithMessage("failed to convert update model to partial document")
@@ -196,35 +277,41 @@ func (mc *modelCollection[T, P]) Update(ctx context.Context, id string, update T
 		Where(data.DocumentIDField).Eq(id).
 		Build().Filters
 
-	result, err := mc.raw.Update(ctx, &base.CollectionUpdate{
+	result, err := mc.Collection.Update(ctx, &base.CollectionUpdate{
 		Filter:         filter,
 		Set:            d,
 		ReturnDocument: true,
 	})
 	if err != nil {
-		return zero, common.SystemErrorFrom(err).
+		return newModelPtr[T, P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Update").
 			WithPath(id)
 	}
 
-	if result.Count == 0 {
-		return zero, ErrRecordNotFound.
+	if result.Count == 0 || len(result.Data) == 0 {
+		return newModelPtr[T, P](), ErrRecordNotFound.
 			WithOperation("ModelCollection.Update").
 			WithPath(id).
 			WithMessagef("record with id '%s' not found", id)
 	}
 
-	doc := result.Data[0]
-	doc.BindTo(&zero)
-	// Fetch and return the updated model
-	return zero, nil
+	updated := newModelPtr[T, P]()
+	if err := result.Data[0].BindToWithContext(ctx, updated); err != nil {
+		return newModelPtr[T, P](), common.SystemErrorFrom(err).
+			WithOperation("ModelCollection.Update").
+			WithPath(id).
+			WithMessage("failed to bind updated document to model")
+	}
+
+	if mc.cache != nil {
+		mc.cache.Set(id, updated)
+	}
+
+	return updated, nil
 }
 
-// UpdateMany updates multiple models matching the filter.
-// Returns the count of updated records.
-func (mc *modelCollection[T, P]) UpdateMany(ctx context.Context, f *query.QueryFilter, update T) (int, error) {
+func (mc *modelCollection[T, P]) UpdateMany(ctx context.Context, f *query.QueryFilter, update P) (int, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
-	// Create partial document (only non-zero fields)
 	d, err := data.NewPartialDocumentFromStruct(update, ctx)
 	if err != nil {
 		return 0, common.SystemErrorFrom(err).
@@ -232,7 +319,7 @@ func (mc *modelCollection[T, P]) UpdateMany(ctx context.Context, f *query.QueryF
 			WithMessage("failed to convert update model to partial document")
 	}
 
-	result, err := mc.raw.Update(ctx, &base.CollectionUpdate{
+	result, err := mc.Collection.Update(ctx, &base.CollectionUpdate{
 		Filter: f,
 		Set:    d,
 	})
@@ -244,19 +331,18 @@ func (mc *modelCollection[T, P]) UpdateMany(ctx context.Context, f *query.QueryF
 	if result.Total == nil {
 		return 0, nil
 	}
+	if mc.cache != nil {
+		mc.cache.Clear()
+	}
 	return *result.Total, nil
 }
 
-// Replace replaces an entire model by ID (all fields, not partial).
-// Use Update for partial updates.
-func (mc *modelCollection[T, P]) Replace(ctx context.Context, id string, replacement T) (T, error) {
+func (mc *modelCollection[T, P]) Replace(ctx context.Context, id string, replacement P) (P, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
-	var zero T
 
-	// Create full document
 	d, err := data.NewDocumentFromStruct(replacement, ctx)
 	if err != nil {
-		return zero, common.SystemErrorFrom(err).
+		return newModelPtr[T, P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Replace").
 			WithPath(id).
 			WithMessage("failed to convert replacement model to document")
@@ -266,39 +352,50 @@ func (mc *modelCollection[T, P]) Replace(ctx context.Context, id string, replace
 		Where(data.DocumentIDField).Eq(id).
 		Build().Filters
 
-	result, err := mc.raw.Update(ctx, &base.CollectionUpdate{
-		Filter: filter,
-		Set:    d,
+	result, err := mc.Collection.Update(ctx, &base.CollectionUpdate{
+		Filter:         filter,
+		Set:            d,
+		ReturnDocument: true,
 	})
 	if err != nil {
-		return zero, common.SystemErrorFrom(err).
+		return newModelPtr[T, P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Replace").
 			WithPath(id)
 	}
 
-	if result.Count == 0 {
-		return zero, ErrRecordNotFound.
+	if result.Count == 0 || len(result.Data) == 0 {
+		return newModelPtr[T, P](), ErrRecordNotFound.
 			WithOperation("ModelCollection.Replace").
 			WithPath(id).
 			WithMessagef("record with id '%s' not found", id)
 	}
 
-	// Fetch and return the replaced model
-	return mc.FindByID(ctx, id)
+	replaced := newModelPtr[T, P]()
+	if err := result.Data[0].BindToWithContext(ctx, replaced); err != nil {
+		return newModelPtr[T, P](), common.SystemErrorFrom(err).
+			WithOperation("ModelCollection.Replace").
+			WithPath(id).
+			WithMessage("failed to bind replaced document to model")
+	}
+
+	if mc.cache != nil {
+		mc.cache.Set(id, replaced)
+	}
+
+	return replaced, nil
 }
 
 // ============================================================================
 // Delete Operations
 // ============================================================================
 
-// DeleteByID deletes a single model by ID.
 func (mc *modelCollection[T, P]) DeleteByID(ctx context.Context, id string) error {
+	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	filter := query.NewQueryBuilder().
 		Where(data.DocumentIDField).Eq(id).
 		Build().Filters
 
-	ctx = context.WithValue(ctx, common.CollectionNameContextKey, mc.collectionName)
-	count, err := mc.raw.Delete(ctx, filter, false)
+	count, err := mc.Delete(ctx, filter, false)
 	if err != nil {
 		return common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.DeleteByID").
@@ -312,18 +409,22 @@ func (mc *modelCollection[T, P]) DeleteByID(ctx context.Context, id string) erro
 			WithMessagef("record with id '%s' not found", id)
 	}
 
+	if mc.cache != nil {
+		mc.cache.Evict(id)
+	}
+
 	return nil
 }
 
-// DeleteMany deletes multiple models matching the filter.
-// Returns the count of deleted records.
-// Set unsafe=true to allow deleting without filters (deletes all).
 func (mc *modelCollection[T, P]) DeleteMany(ctx context.Context, f *query.QueryFilter, unsafe bool) (int, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
-	count, err := mc.raw.Delete(ctx, f, unsafe)
+	count, err := mc.Delete(ctx, f, unsafe)
 	if err != nil {
 		return 0, common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.DeleteMany")
+	}
+	if mc.cache != nil {
+		mc.cache.Clear()
 	}
 	return count, nil
 }
@@ -332,9 +433,7 @@ func (mc *modelCollection[T, P]) DeleteMany(ctx context.Context, f *query.QueryF
 // Validation Operations
 // ============================================================================
 
-// Validate validates a model against the collection's schema.
-// Set loose=true for partial validation (allows missing optional fields).
-func (mc *modelCollection[T, P]) Validate(ctx context.Context, doc T, loose bool) error {
+func (mc *modelCollection[T, P]) Validate(ctx context.Context, doc P, loose bool) error {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	d, err := data.NewDocumentFromStruct(doc, ctx)
 	if err != nil {
@@ -343,7 +442,7 @@ func (mc *modelCollection[T, P]) Validate(ctx context.Context, doc T, loose bool
 			WithMessage("failed to convert model to document for validation")
 	}
 
-	if issues, ok := mc.raw.Validate(ctx, d, loose); !ok {
+	if issues, ok := mc.Collection.Validate(ctx, d, loose); !ok {
 		return common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Validate").WithIssues(issues)
 	}
@@ -351,9 +450,7 @@ func (mc *modelCollection[T, P]) Validate(ctx context.Context, doc T, loose bool
 	return nil
 }
 
-// ValidatePartial validates a partial model (only non-zero fields).
-// Useful for validating updates before applying them.
-func (mc *modelCollection[T, P]) ValidatePartial(ctx context.Context, doc T) error {
+func (mc *modelCollection[T, P]) ValidatePartial(ctx context.Context, doc P) error {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	d, err := data.NewPartialDocumentFromStruct(doc, ctx)
 	if err != nil {
@@ -362,8 +459,7 @@ func (mc *modelCollection[T, P]) ValidatePartial(ctx context.Context, doc T) err
 			WithMessage("failed to convert partial model to document for validation")
 	}
 
-	// Always use loose=true for partials
-	if issues, ok := mc.raw.Validate(ctx, d, true); !ok {
+	if issues, ok := mc.Collection.Validate(ctx, d, true); !ok {
 		return common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.ValidatePartial").WithIssues(issues)
 	}
@@ -375,15 +471,12 @@ func (mc *modelCollection[T, P]) ValidatePartial(ctx context.Context, doc T) err
 // Subscription Operations
 // ============================================================================
 
-// Subscribe creates a subscription for real-time updates.
-// Returns a subscription ID that can be used to unsubscribe.
 func (mc *modelCollection[T, P]) Subscribe(ctx context.Context, opt base.SubscriptionOptions) string {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
-	return mc.raw.Subscribe(ctx, opt)
+	return mc.Collection.Subscribe(ctx, opt)
 }
 
-// Unsubscribe removes a subscription by ID.
 func (mc *modelCollection[T, P]) Unsubscribe(ctx context.Context, id string) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
-	mc.raw.Unsubscribe(ctx, id)
+	mc.Collection.Unsubscribe(ctx, id)
 }

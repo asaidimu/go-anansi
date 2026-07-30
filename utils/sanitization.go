@@ -79,7 +79,11 @@ func (p *sanitizationStore) ensureCollection(ctx context.Context) (base.ModelCol
 			WithMessage("failed to instantiate sanitization policies collection")
 	}
 	// Wrap in model collection
-	p.collection = collection.NewModelCollection[data.FieldMaskConfig](col, p.logger)
+	mc, err := collection.NewModelCollection[data.FieldMaskConfig](col, p.logger)
+	if err != nil {
+		return nil, err
+	}
+	p.collection = mc
 	return p.collection, nil
 }
 
@@ -193,7 +197,7 @@ func (p *sanitizationStore) Save(ctx context.Context, config *data.FieldMaskConf
 	isUpdate := err == nil && existing != nil
 
 	if isUpdate {
-		_, err = col.Update(ctx, existing.ID, *config)
+		_, err = col.Update(ctx, existing.ID, config)
 		if err != nil {
 			return common.SystemErrorFrom(err).
 				WithOperation("sanitizationStore.Save").
@@ -201,7 +205,7 @@ func (p *sanitizationStore) Save(ctx context.Context, config *data.FieldMaskConf
 		}
 	} else {
 		// Create new document
-		_, err := col.Create(ctx, *config)
+		_, err := col.Create(ctx, config)
 		if err != nil {
 			return common.SystemErrorFrom(err).
 				WithOperation("sanitizationStore.Save").
@@ -253,7 +257,7 @@ func (p *sanitizationStore) findByScope(ctx context.Context, scope string) (*dat
 			WithMessagef("policy not found for scope %q", scope)
 	}
 
-	return &results[0], nil
+	return results[0], nil
 }
 
 // LoadAll retrieves all persisted sanitization policies
@@ -278,7 +282,7 @@ func (p *sanitizationStore) LoadAll(ctx context.Context) ([]*data.FieldMaskConfi
 	// Convert all document models to domain models
 	configs := make([]*data.FieldMaskConfig, 0, len(results))
 	for i := range results {
-		configs = append(configs, &results[i])
+		configs = append(configs, results[i])
 	}
 
 	return configs, nil

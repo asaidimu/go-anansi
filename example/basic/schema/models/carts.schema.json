@@ -1,24 +1,25 @@
 {
-  "name": "Carts",
   "version": "1.0.0",
+  "name": "Carts",
   "fields": {
-    "user_id": {
+    "019fb22d-91cd-7dc3-98aa-2442035092a4": {
       "name": "user_id",
-      "type": "string",
-      "required": true
+      "required": true,
+      "type": "string"
     },
-    "product_ids": {
+    "019fb22d-91cd-7dc4-927a-cb25a37c3ac4": {
       "name": "product_ids",
+      "required": true,
       "type": "array",
       "schema": {
+        "id": "",
         "type": "string"
-      },
-      "required": true
+      }
     },
-    "quantity": {
+    "019fb22d-91cd-7dc5-9db2-3eb692329635": {
       "name": "quantity",
-      "type": "integer",
-      "required": true
+      "required": true,
+      "type": "integer"
     }
   }
 }

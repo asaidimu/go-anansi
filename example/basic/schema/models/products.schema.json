@@ -1,23 +1,22 @@
 {
-  "name": "Products",
   "version": "1.0.0",
+  "name": "Products",
   "fields": {
-    "name": {
+    "019fb22d-a9a1-7e3e-8924-8f09eb81a096": {
       "name": "name",
-      "type": "string",
       "required": true,
-      "unique": true
+      "unique": true,
+      "type": "string"
     },
-    "price": {
+    "019fb22d-a9a1-7e3f-8e2c-3427aaf6b775": {
       "name": "price",
-      "type": "number",
-      "required": true
+      "required": true,
+      "type": "number"
     },
-    "stock": {
+    "019fb22d-a9a1-7e40-b7e2-8ca46b4c788a": {
       "name": "stock",
-      "type": "integer",
-      "required": true
+      "required": true,
+      "type": "integer"
     }
   }
 }
-

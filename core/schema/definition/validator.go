@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/types/decimal"
 	"github.com/asaidimu/go-anansi/v8/core/utils"
 )
 
@@ -264,20 +265,17 @@ func (ctx *buildContext) getOrBuildRecursiveGraph(
 // type-level schemas (union, array, record, composite) that have no explicit
 // fields — the wrapper field provides the type/schema context that the graph
 // builder needs to produce the correct validation nodes.
-func (ctx *buildContext) getOrBuildRecursiveTypeGraph(
-	rootFieldName string,
-	rootFieldDef *Field,
-	fieldPath string,
-	topLevelSchema *Schema,
-	skipUnexpectedCheck bool,
-	skipUnexpectedForObjects bool,
-) (*ValidationGraph, error) {
+func (ctx *buildContext) getOrBuildRecursiveTypeGraph(rootFieldName string, rootFieldDef *Field, topLevelSchema *Schema, skipUnexpectedCheck, skipUnexpectedForObjects bool) (*ValidationGraph, error) {
 	// Use (rootFieldName, type, schema ID) as the cache key
-	cacheKey := rootFieldName + ":" + string(rootFieldDef.Type) + ":"
+	var cacheKey strings.Builder
+	cacheKey.WriteString(rootFieldName)
+	cacheKey.WriteString(":")
+	cacheKey.WriteString(string(rootFieldDef.Type))
+	cacheKey.WriteString(":")
 	if !rootFieldDef.Schema.IsZero() {
 		if rootFieldDef.Schema.IsSingle() {
 			if ref, err := FieldSchemaAs[SchemaReference](rootFieldDef.Schema); err == nil {
-				cacheKey += string(ref.ID)
+				cacheKey.WriteString(string(ref.ID))
 			}
 		} else if rootFieldDef.Schema.IsMultiple() {
 			if refs, err := FieldSchemaAs[[]SchemaReference](rootFieldDef.Schema); err == nil {
@@ -288,19 +286,19 @@ func (ctx *buildContext) getOrBuildRecursiveTypeGraph(
 				sort.Strings(ids)
 				for i, id := range ids {
 					if i > 0 {
-						cacheKey += ","
+						cacheKey.WriteString(",")
 					}
-					cacheKey += id
+					cacheKey.WriteString(id)
 				}
 			}
 		}
 	}
-	if cached, exists := ctx.recursiveGraphCache[cacheKey]; exists {
+	if cached, exists := ctx.recursiveGraphCache[cacheKey.String()]; exists {
 		return cached, nil
 	}
 
 	subGraph := newValidationGraph()
-	ctx.recursiveGraphCache[cacheKey] = subGraph
+	ctx.recursiveGraphCache[cacheKey.String()] = subGraph
 
 	tempSchema := &Schema{
 		BaseSchema: BaseSchema{
@@ -310,11 +308,11 @@ func (ctx *buildContext) getOrBuildRecursiveTypeGraph(
 	}
 	addedConstraints := make(map[string]bool)
 	if _, err := subGraph.buildFromSchema(tempSchema, "", nil, addedConstraints, nil, nil, topLevelSchema, ctx, skipUnexpectedCheck, skipUnexpectedForObjects); err != nil {
-		delete(ctx.recursiveGraphCache, cacheKey)
+		delete(ctx.recursiveGraphCache, cacheKey.String())
 		return nil, err
 	}
 	if err := subGraph.finalize(); err != nil {
-		delete(ctx.recursiveGraphCache, cacheKey)
+		delete(ctx.recursiveGraphCache, cacheKey.String())
 		return nil, err
 	}
 	return subGraph, nil
@@ -414,11 +412,11 @@ type ConstraintNode struct {
 
 type ConstraintGroupNode struct {
 	baseNode
-	group               ConstraintGroup
-	precomputedFields   []string
+	group                 ConstraintGroup
+	precomputedFields     []string
 	precomputedFieldParts [][]string
-	Name                string
-	scope               ConstraintScope
+	Name                  string
+	scope                 ConstraintScope
 }
 
 // RecursionMarkerNode marks a recursive schema reference
@@ -660,8 +658,8 @@ func getTopLevelConstraintsForPath(topLevelSchema *Schema, fieldPath string) Sch
 				continue
 			}
 			if slices.ContainsFunc(r.Fields, fieldMatches) {
-					result[id] = constraint
-				}
+				result[id] = constraint
+			}
 
 		case ConstraintKindGroup:
 			g, err := ConstraintAs[*ConstraintGroup](constraint.ConstraintUnion)
@@ -669,8 +667,8 @@ func getTopLevelConstraintsForPath(topLevelSchema *Schema, fieldPath string) Sch
 				continue
 			}
 			if slices.ContainsFunc(collectGroupFieldNames(g), fieldMatches) {
-					result[id] = constraint
-				}
+				result[id] = constraint
+			}
 		}
 	}
 
@@ -1006,7 +1004,7 @@ func (graph *ValidationGraph) buildEnumNode(
 		return nil, ErrInvalidSchema.WithMessage("Enum field has no values after merging references").WithPath(fieldPath)
 	}
 
-	expectNumeric := enumType == FieldTypeNumber || enumType == FieldTypeDecimal || enumType == FieldTypeInteger
+	expectNumeric := enumType == FieldTypeNumber || enumType == FieldTypeInteger
 
 	return &EnumValidationNode{
 		baseNode:      baseNode{id: graph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts, deps: currentDeps},
@@ -1131,15 +1129,7 @@ func (graph *ValidationGraph) buildFromEffectiveConstraints(
 }
 
 // createSubGraph builds a standalone validation graph for a single field definition
-func (graph *ValidationGraph) createSubGraph(
-	rootFieldName string,
-	rootFieldDef *Field,
-	basePath string,
-	originalTopLevelSchema *Schema,
-	buildCtx *buildContext,
-	skipUnexpectedCheck bool,
-	skipUnexpectedForObjects bool,
-) (*ValidationGraph, error) {
+func (graph *ValidationGraph) createSubGraph(rootFieldName string, rootFieldDef *Field, originalTopLevelSchema *Schema, buildCtx *buildContext, skipUnexpectedCheck, skipUnexpectedForObjects bool) (*ValidationGraph, error) {
 	tempSchema := &Schema{
 		BaseSchema: BaseSchema{
 			Fields: map[FieldId]Field{FieldId(rootFieldName): *rootFieldDef},
@@ -1222,10 +1212,7 @@ func (graph *ValidationGraph) buildContainerNode(
 				},
 			}
 			skipUnexpected := et == FieldTypeComposite || et == FieldTypeUnion
-			recursiveItemGraph, rerr := buildCtx.getOrBuildRecursiveTypeGraph(
-				"item", itemField, fieldPath, topLevelSchema,
-				skipUnexpected, false,
-			)
+			recursiveItemGraph, rerr := buildCtx.getOrBuildRecursiveTypeGraph("item", itemField, topLevelSchema, skipUnexpected, false)
 			if rerr != nil {
 				return nil, rerr
 			}
@@ -1267,7 +1254,7 @@ func (graph *ValidationGraph) buildContainerNode(
 			},
 		}
 
-		subGraph, err := graph.createSubGraph("item", tempRootField, fieldPath, topLevelSchema, buildCtx, skipUnexpected, false)
+		subGraph, err := graph.createSubGraph("item", tempRootField, topLevelSchema, buildCtx, skipUnexpected, false)
 		if err != nil {
 			return nil, err
 		}
@@ -1389,9 +1376,7 @@ func (graph *ValidationGraph) buildUnionNode(
 					FieldProperties: nestedDef.FieldProperties,
 				}
 			}
-			recursiveGraph, rerr := buildCtx.getOrBuildRecursiveTypeGraph(
-				"root", recursiveRootField, fieldPath, topLevelSchema, true, false,
-			)
+			recursiveGraph, rerr := buildCtx.getOrBuildRecursiveTypeGraph("root", recursiveRootField, topLevelSchema, true, false)
 			if rerr != nil {
 				return nil, rerr
 			}
@@ -1416,7 +1401,7 @@ func (graph *ValidationGraph) buildUnionNode(
 			}
 		}
 
-		unionGraph, err := graph.createSubGraph("root", tempRootField, fieldPath, topLevelSchema, buildCtx, true, false)
+		unionGraph, err := graph.createSubGraph("root", tempRootField, topLevelSchema, buildCtx, true, false)
 		buildCtx.unmarkBuilding(ref.ID)
 		if err != nil {
 			return nil, err
@@ -1614,7 +1599,7 @@ func (graph *ValidationGraph) buildCompositeNode(
 				// nested object expansions also skip their own
 				// UnexpectedFieldsNode — the composite's unified node is
 				// the sole boundary for the whole flat merged object.
-				vGraph, err := graph.createSubGraph("root", tempRootField, fieldPath, topLevelSchema, buildCtx, true, true)
+				vGraph, err := graph.createSubGraph("root", tempRootField, topLevelSchema, buildCtx, true, true)
 				if err != nil {
 					return nil, err
 				}
@@ -2025,7 +2010,7 @@ func (graph *ValidationGraph) buildResolvedContainerNode(
 						Schema: ns.Schema,
 					},
 				}
-				subGraph, err := graph.createSubGraph("item", tempRootField, fieldPath, compiler.source, buildCtx, skipUnexpected, false)
+				subGraph, err := graph.createSubGraph("item", tempRootField, compiler.source, buildCtx, skipUnexpected, false)
 				if err != nil {
 					return nil, err
 				}
@@ -2177,19 +2162,13 @@ func (graph *ValidationGraph) buildResolvedUnionNode(
 
 			if buildCtx.isRecursive(variant.ID) {
 				var rerr error
-				subGraph, rerr = buildCtx.getOrBuildRecursiveTypeGraph("root", &Field{
-					Name: "root",
-					FieldProperties: ns.FieldProperties,
-				}, fieldPath, compiler.source, true, false)
+				subGraph, rerr = buildCtx.getOrBuildRecursiveTypeGraph("root", &Field{Name: "root", FieldProperties: ns.FieldProperties}, compiler.source, true, false)
 				if rerr != nil {
 					return nil, rerr
 				}
 			} else {
 				buildCtx.markBuilding(variant.ID)
-				subGraph, err = graph.createSubGraph("root", &Field{
-					Name: "root",
-					FieldProperties: ns.FieldProperties,
-				}, fieldPath, compiler.source, buildCtx, true, false)
+				subGraph, err = graph.createSubGraph("root", &Field{Name: "root", FieldProperties: ns.FieldProperties}, compiler.source, buildCtx, true, false)
 				buildCtx.unmarkBuilding(variant.ID)
 			}
 		} else {
@@ -2788,8 +2767,7 @@ func (n *TypeCheckNode) Execute(ctx *ValidationContext) *NodeResult {
 			return success
 		}
 	case FieldTypeDecimal:
-		switch value.(type) {
-		case float64, float32:
+		if ok := decimal.IsValid(value); ok {
 			return success
 		}
 	case FieldTypeBytes:
