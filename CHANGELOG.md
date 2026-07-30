@@ -1,3 +1,10 @@
+## [8.3.3](https://github.com/asaidimu/go-anansi/compare/v8.3.2...v8.3.3) (2026-07-30)
+
+
+### Bug Fixes
+
+* relax BindTo so that it skips missing fields. This enables us to bind patches ([1cd0739](https://github.com/asaidimu/go-anansi/commit/1cd073939203f1999a7a624dffc4c9f5ee09da29))
+
 ## [8.3.2](https://github.com/asaidimu/go-anansi/compare/v8.3.1...v8.3.2) (2026-07-30)
 
 
