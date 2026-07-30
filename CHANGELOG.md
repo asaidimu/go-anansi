@@ -1,3 +1,10 @@
+## [8.3.2](https://github.com/asaidimu/go-anansi/compare/v8.3.1...v8.3.2) (2026-07-30)
+
+
+### Bug Fixes
+
+* set parent when binding using BindTo ([e3e818a](https://github.com/asaidimu/go-anansi/commit/e3e818a01fdf62f4e538e45d05f70ec2088b5023))
+
 ## [8.3.1](https://github.com/asaidimu/go-anansi/compare/v8.3.0...v8.3.1) (2026-07-30)
 
 
