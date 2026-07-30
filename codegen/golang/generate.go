@@ -977,7 +977,7 @@ func toSnakeCase(s string) string {
 func formatLiteral(v any) string {
 	switch val := v.(type) {
 	case string:
-		return fmt.Sprintf("%q", val)
+		return val
 	case float64:
 		if val == float64(int64(val)) {
 			return fmt.Sprintf("%d", int64(val))
