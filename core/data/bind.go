@@ -281,6 +281,13 @@ func (sb *structBinder) bind(target any) error {
 		}
 	}
 
+	// Set parent reference so promoted methods (Document(), Patch()) work
+	if provider, ok := target.(DocumentModelProvider); ok {
+		if dm := provider.Model(); dm != nil {
+			dm.parent = target
+		}
+	}
+
 	return nil
 }
 

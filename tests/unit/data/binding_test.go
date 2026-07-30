@@ -454,3 +454,226 @@ func TestSchemaFrom_PathTag_WithFlatField(t *testing.T) {
 	require.NotNil(t, addressField, "dotted 'address.city' should produce 'address' field")
 	assert.Equal(t, "object", addressField["type"])
 }
+
+type Contact struct {
+	PrimaryAddress string `anansi:"primary.address"`
+	PrimaryEmail   string `anansi:"primary.email"`
+}
+
+type UserWithNestedPath struct {
+	Contact Contact `anansi:"contact"`
+}
+
+func TestBindTo_NestedStructWithPathTags(t *testing.T) {
+	doc := data.MustNewDocument(map[string]any{
+		"contact": map[string]any{
+			"primary": map[string]any{
+				"address": "123 Main St",
+				"email":   "user@example.com",
+			},
+		},
+	})
+
+	var u UserWithNestedPath
+	err := doc.BindTo(&u)
+	require.NoError(t, err)
+	assert.Equal(t, "123 Main St", u.Contact.PrimaryAddress)
+	assert.Equal(t, "user@example.com", u.Contact.PrimaryEmail)
+}
+
+func TestNewDocumentFromStruct_NestedStructWithPathTags(t *testing.T) {
+	u := UserWithNestedPath{
+		Contact: Contact{
+			PrimaryAddress: "456 Oak Ave",
+			PrimaryEmail:   "test@example.com",
+		},
+	}
+
+	doc, err := data.NewDocumentFromStruct(u)
+	require.NoError(t, err)
+
+	contact, err := doc.Get("contact")
+	require.NoError(t, err)
+	contactMap, ok := contact.(map[string]any)
+	require.True(t, ok)
+
+	primary, ok := contactMap["primary"].(map[string]any)
+	require.True(t, ok, "contact should have nested 'primary' map")
+	assert.Equal(t, "456 Oak Ave", primary["address"])
+	assert.Equal(t, "test@example.com", primary["email"])
+}
+
+func TestRoundTrip_NestedStructWithPathTags(t *testing.T) {
+	original := UserWithNestedPath{
+		Contact: Contact{
+			PrimaryAddress: "789 Pine St",
+			PrimaryEmail:   "roundtrip@example.com",
+		},
+	}
+
+	doc, err := data.NewDocumentFromStruct(original)
+	require.NoError(t, err)
+
+	var restored UserWithNestedPath
+	err = doc.BindTo(&restored)
+	require.NoError(t, err)
+
+	assert.Equal(t, original.Contact.PrimaryAddress, restored.Contact.PrimaryAddress)
+	assert.Equal(t, original.Contact.PrimaryEmail, restored.Contact.PrimaryEmail)
+}
+
+func TestSchemaFrom_NestedStructWithPathTags(t *testing.T) {
+	schemaJSON, err := data.SchemaFrom[UserWithNestedPath]()
+	require.NoError(t, err)
+
+	var schema map[string]any
+	err = json.Unmarshal(schemaJSON, &schema)
+	require.NoError(t, err)
+
+	fields, ok := schema["fields"].(map[string]any)
+	require.True(t, ok)
+
+	// Top-level: "contact" is an object
+	var contactField map[string]any
+	for _, f := range fields {
+		fm := f.(map[string]any)
+		if fm["name"] == "contact" {
+			contactField = fm
+			break
+		}
+	}
+	require.NotNil(t, contactField)
+	assert.Equal(t, "object", contactField["type"])
+
+	contactSchema := contactField["schema"].(map[string]any)
+	contactSchemaID := contactSchema["id"].(string)
+
+	schemas, ok := schema["schemas"].(map[string]any)
+	require.True(t, ok)
+
+	contactSchemaDef := schemas[contactSchemaID].(map[string]any)
+	assert.Equal(t, "Contact", contactSchemaDef["name"])
+
+	// Contact schema has "primary" as object
+	contactFields := contactSchemaDef["fields"].(map[string]any)
+	var primaryField map[string]any
+	for _, f := range contactFields {
+		fm := f.(map[string]any)
+		if fm["name"] == "primary" {
+			primaryField = fm
+			break
+		}
+	}
+	require.NotNil(t, primaryField, "Contact schema should have 'primary' field")
+	assert.Equal(t, "object", primaryField["type"])
+
+	primarySchema := primaryField["schema"].(map[string]any)
+	primarySchemaID := primarySchema["id"].(string)
+
+	primarySchemaDef := schemas[primarySchemaID].(map[string]any)
+	assert.Equal(t, "primary", primarySchemaDef["name"])
+
+	// Primary schema has "address" and "email"
+	primaryFields := primarySchemaDef["fields"].(map[string]any)
+	var addressFound, emailFound bool
+	for _, f := range primaryFields {
+		fm := f.(map[string]any)
+		switch fm["name"] {
+		case "address":
+			addressFound = true
+			assert.Equal(t, "string", fm["type"])
+		case "email":
+			emailFound = true
+			assert.Equal(t, "string", fm["type"])
+		}
+	}
+	assert.True(t, addressFound, "primary schema should have 'address'")
+	assert.True(t, emailFound, "primary schema should have 'email'")
+}
+
+func TestBindTo_SetsParentForDocument(t *testing.T) {
+	type Item struct {
+		data.DocumentModel
+		Name string `anansi:"name"`
+	}
+
+	doc := data.MustNewDocument(map[string]any{
+		"name": "Widget",
+	})
+
+	var item Item
+	err := doc.BindTo(&item)
+	require.NoError(t, err)
+	assert.Equal(t, "Widget", item.Name)
+
+	// Document() should work because parent is set
+	docOut, err := item.Document()
+	require.NoError(t, err)
+	assert.Equal(t, doc.ID(), docOut.ID())
+
+	name, err := docOut.Get("name")
+	require.NoError(t, err)
+	assert.Equal(t, "Widget", name)
+}
+
+func TestBindTo_SetsParentForPatch(t *testing.T) {
+	type Item struct {
+		data.DocumentModel
+		Name  string `anansi:"name"`
+		Price int    `anansi:"price,omitempty"`
+	}
+
+	doc := data.MustNewDocument(map[string]any{
+		"name": "Widget",
+		"price": 100,
+	})
+
+	var item Item
+	err := doc.BindTo(&item)
+	require.NoError(t, err)
+
+	// Patch() should work because parent is set
+	patch, err := item.Patch()
+	require.NoError(t, err)
+
+	// Patch should contain the fields (zero-valued Price is omitted by omitempty)
+	pName, err := patch.Get("name")
+	require.NoError(t, err)
+	assert.Equal(t, "Widget", pName)
+}
+
+func TestBindTo_SetsParentOnNestedStruct(t *testing.T) {
+	type Address struct {
+		data.DocumentModel
+		Street string `anansi:"street"`
+	}
+
+	type User struct {
+		data.DocumentModel
+		Name    string  `anansi:"name"`
+		Address Address `anansi:"address"`
+	}
+
+	doc := data.MustNewDocument(map[string]any{
+		"name": "Alice",
+		"address": map[string]any{
+			"street": "123 Main St",
+		},
+	})
+
+	var user User
+	err := doc.BindTo(&user)
+	require.NoError(t, err)
+
+	// Top-level Document() works
+	userDoc, err := user.Document()
+	require.NoError(t, err)
+	assert.Equal(t, doc.ID(), userDoc.ID())
+
+	// Nested Address Document() works because parent was set recursively
+	addrDoc, err := user.Address.Document()
+	require.NoError(t, err)
+	street, err := addrDoc.Get("street")
+	require.NoError(t, err)
+	assert.Equal(t, "123 Main St", street)
+}
