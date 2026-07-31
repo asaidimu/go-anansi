@@ -211,12 +211,12 @@ func TestProjections_EmitRequiredOverride(t *testing.T) {
 	assert.Contains(t, out, "Total *decimal.Decimal `anansi:\"total,required=false\" json:\"total,omitempty\"`")
 	assert.Contains(t, out, `anansi:"total,required=false"`)
 
-	// Collection wrapper methods delegate to the generic shape methods.
-	assert.Contains(t, out, "func (o *Orders) FindOrderSummaryByID(ctx context.Context, id string) (*OrderSummary, error)")
-	assert.Contains(t, out, "    return o.FindByIDAs[*OrderSummary](ctx, id)")
-	assert.Contains(t, out, "func (o *Orders) ReadOrderSummary(ctx context.Context, q *query.Query) ([]*OrderSummary, error)")
-	assert.Contains(t, out, "func (o *Orders) CreateOrderSummary(ctx context.Context, doc *OrderSummary) (*OrderSummary, error)")
-	assert.Contains(t, out, "func (o *Orders) UpdateOrderSummary(ctx context.Context, id string, update *OrderSummary) (*OrderSummary, error)")
+	// No projection accessors on the collection wrapper — projections are
+	// consumed via the generic shape methods (ReadAs/CreateFrom/UpdateFrom).
+	assert.NotContains(t, out, "func (o *Orders) FindOrderSummaryByID")
+	assert.NotContains(t, out, "func (o *Orders) ReadOrderSummary")
+	assert.NotContains(t, out, "func (o *Orders) CreateOrderSummary")
+	assert.NotContains(t, out, "func (o *Orders) UpdateOrderSummary")
 
 	// Structs mode must not emit projections (no DocumentModel layer).
 	structs := generate(t, &GeneratorConfig{Mode: ModeStructs})

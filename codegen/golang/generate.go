@@ -459,9 +459,6 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 			"\"github.com/asaidimu/go-anansi/v8/core/persistence/collection\"",
 			"\"go.uber.org/zap\"",
 		)
-		if len(projections) > 0 {
-			imports = append(imports, "\"github.com/asaidimu/go-anansi/v8/core/query\"")
-		}
 	}
 
 	var sb strings.Builder
@@ -547,10 +544,6 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 		// Projections share the model treatment (DocumentModel embed).
 		for _, name := range sortedKeys(projections) {
 			emitStruct(&sb, name, projections[name], true)
-		}
-
-		if emitCollection {
-			emitProjectionMethods(&sb, rootTypeName+"s", projections)
 		}
 	}
 
@@ -647,32 +640,6 @@ func emitCollectionScaffold(sb *strings.Builder, scoped bool, rootTypeName, root
 	sb.WriteString(fmt.Sprintf("    }\n"))
 	sb.WriteString(fmt.Sprintf("    return %s, nil\n", varName))
 	sb.WriteString(fmt.Sprintf("}\n"))
-}
-
-// emitProjectionMethods writes type-safe projection accessors on the
-// collection wrapper, delegating to the generic shape methods.
-func emitProjectionMethods(sb *strings.Builder, collectionName string, projections map[string][]StructField) {
-	for _, name := range sortedKeys(projections) {
-		fmt.Fprintf(sb, "// Find%sByID retrieves a single document bound to %s\n", name, name)
-		fmt.Fprintf(sb, "func (o *%s) Find%sByID(ctx context.Context, id string) (*%s, error) {\n", collectionName, name, name)
-		fmt.Fprintf(sb, "    return o.FindByIDAs[*%s](ctx, id)\n", name)
-		sb.WriteString("}\n\n")
-
-		fmt.Fprintf(sb, "// Read%s reads documents matching q bound to %s\n", name, name)
-		fmt.Fprintf(sb, "func (o *%s) Read%s(ctx context.Context, q *query.Query) ([]*%s, error) {\n", collectionName, name, name)
-		fmt.Fprintf(sb, "    return o.ReadAs[*%s](ctx, q)\n", name)
-		sb.WriteString("}\n\n")
-
-		fmt.Fprintf(sb, "// Create%s persists a new document bound to %s\n", name, name)
-		fmt.Fprintf(sb, "func (o *%s) Create%s(ctx context.Context, doc *%s) (*%s, error) {\n", collectionName, name, name, name)
-		fmt.Fprintf(sb, "    return o.CreateAs[*%s](ctx, doc)\n", name)
-		sb.WriteString("}\n\n")
-
-		fmt.Fprintf(sb, "// Update%s applies a partial update bound to %s\n", name, name)
-		fmt.Fprintf(sb, "func (o *%s) Update%s(ctx context.Context, id string, update *%s) (*%s, error) {\n", collectionName, name, name, name)
-		fmt.Fprintf(sb, "    return o.UpdateAs[*%s](ctx, id, update)\n", name)
-		sb.WriteString("}\n\n")
-	}
 }
 
 // sortedKeys returns the keys of a string-keyed map in ascending order.

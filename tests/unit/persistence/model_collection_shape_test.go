@@ -39,19 +39,21 @@ func newShapeModelCollection(t *testing.T) (*collection.ModelCollection[*shapePr
 func TestModelCollection_Shape_CreateFindUpdateRead(t *testing.T) {
 	mc, ctx := newShapeModelCollection(t)
 
-	created, err := mc.CreateAs[*shapeProductSummary](ctx, &shapeProductSummary{Name: "Widget"})
+	created, err := mc.CreateFrom[*shapeProductSummary](ctx, &shapeProductSummary{Name: "Widget"})
 	require.NoError(t, err)
 	assert.NotEmpty(t, created.Model().ID)
 	assert.Equal(t, "Widget", created.Name)
 
 	id := created.Model().ID
 
-	got, err := mc.FindByIDAs[*shapeProductSummary](ctx, id)
+	q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build()
+	got, err := mc.ReadAs[*shapeProductSummary](ctx, &q)
 	require.NoError(t, err)
-	assert.Equal(t, "Widget", got.Name)
-	assert.Equal(t, id, got.Model().ID)
+	require.Len(t, got, 1)
+	assert.Equal(t, "Widget", got[0].Name)
+	assert.Equal(t, id, got[0].Model().ID)
 
-	updated, err := mc.UpdateAs[*shapeProductSummary](ctx, id, &shapeProductSummary{Name: "Widget Pro"})
+	updated, err := mc.UpdateFrom[*shapeProductSummary](ctx, id, &shapeProductSummary{Name: "Widget Pro"})
 	require.NoError(t, err)
 	assert.Equal(t, "Widget Pro", updated.Name)
 	assert.Equal(t, id, updated.Model().ID)
@@ -60,7 +62,7 @@ func TestModelCollection_Shape_CreateFindUpdateRead(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Widget Pro", full.Name)
 
-	q := query.NewQueryBuilder().Where("name").Eq("Widget Pro").Build()
+	q = query.NewQueryBuilder().Where("name").Eq("Widget Pro").Build()
 	results, err := mc.ReadAs[*shapeProductSummary](ctx, &q)
 	require.NoError(t, err)
 	require.Len(t, results, 1)
@@ -86,18 +88,19 @@ func TestModelCollection_Shape_InteropsWithFullModel(t *testing.T) {
 	assert.Equal(t, "active", full.Status)
 }
 
-func TestModelCollection_Shape_FindByIDAs_NotFound(t *testing.T) {
+func TestModelCollection_Shape_ReadAs_NotFound(t *testing.T) {
 	mc, ctx := newShapeModelCollection(t)
 
-	_, err := mc.FindByIDAs[*shapeProductSummary](ctx, "does-not-exist")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "not found")
+	q := query.NewQueryBuilder().Where(data.DocumentIDField).Eq("does-not-exist").Build()
+	results, err := mc.ReadAs[*shapeProductSummary](ctx, &q)
+	require.NoError(t, err)
+	assert.Empty(t, results)
 }
 
-func TestModelCollection_Shape_UpdateAs_NotFound(t *testing.T) {
+func TestModelCollection_Shape_UpdateFrom_NotFound(t *testing.T) {
 	mc, ctx := newShapeModelCollection(t)
 
-	_, err := mc.UpdateAs[*shapeProductSummary](ctx, "does-not-exist", &shapeProductSummary{Name: "Nope"})
+	_, err := mc.UpdateFrom[*shapeProductSummary](ctx, "does-not-exist", &shapeProductSummary{Name: "Nope"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }

@@ -39,9 +39,8 @@ type ModelCollectionOptions[P data.DocumentModelProvider] struct {
 // single model P — a pointer to a struct embedding data.DocumentModel. All
 // standard CRUD operations are fixed to P. Documents can additionally be
 // read or written through alternative shapes (projections) R that also embed
-// data.DocumentModel via the generic ReadAs/CreateAs/UpdateAs/FindByIDAs
-// methods, so one collection instance serves any subset of the underlying
-// schema.
+// data.DocumentModel via the generic ReadAs/CreateFrom/UpdateFrom methods, so
+// one collection instance serves any subset of the underlying schema.
 type ModelCollection[P data.DocumentModelProvider] struct {
 	base.Collection
 	collectionName string
@@ -528,69 +527,43 @@ func (mc *ModelCollection[P]) ReadAs[R data.DocumentModelProvider](ctx context.C
 	return output, nil
 }
 
-// FindByIDAs reads a single document by id and binds it into R.
-func (mc *ModelCollection[P]) FindByIDAs[R data.DocumentModelProvider](ctx context.Context, id string) (R, error) {
-	var zero R
-
-	q := query.NewQueryBuilder().
-		Where(data.DocumentIDField).Eq(id).
-		Limit(1).
-		Build()
-
-	results, err := mc.ReadAs[R](ctx, &q)
-	if err != nil {
-		return zero, common.SystemErrorFrom(err).
-			WithOperation("ModelCollection.FindByIDAs").
-			WithPath(id)
-	}
-
-	if len(results) == 0 {
-		return zero, ErrRecordNotFound.
-			WithOperation("ModelCollection.FindByIDAs").
-			WithPath(id).
-			WithMessagef("record with id '%s' not found", id)
-	}
-
-	return results[0], nil
-}
-
-// CreateAs persists a new document built from shape R and returns the
+// CreateFrom persists a new document built from shape R and returns the
 // hydrated shape.
-func (mc *ModelCollection[P]) CreateAs[R data.DocumentModelProvider](ctx context.Context, doc R) (R, error) {
+func (mc *ModelCollection[P]) CreateFrom[R data.DocumentModelProvider](ctx context.Context, doc R) (R, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 
 	d, err := data.NewDocumentFromStruct(doc, ctx)
 	if err != nil {
 		return newModelPtr[R](), common.SystemErrorFrom(err).
-			WithOperation("ModelCollection.CreateAs").
+			WithOperation("ModelCollection.CreateFrom").
 			WithMessage("failed to convert shape to document")
 	}
 
 	res, err := mc.CreateOne(ctx, d)
 	if err != nil {
 		return newModelPtr[R](), common.SystemErrorFrom(err).
-			WithOperation("ModelCollection.CreateAs")
+			WithOperation("ModelCollection.CreateFrom")
 	}
 
 	result := newModelPtr[R]()
 	if err := res.Data.BindToWithContext(ctx, result); err != nil {
 		return newModelPtr[R](), common.SystemErrorFrom(err).
-			WithOperation("ModelCollection.CreateAs").
+			WithOperation("ModelCollection.CreateFrom").
 			WithMessage("failed to bind result document to shape")
 	}
 
 	return result, nil
 }
 
-// UpdateAs applies a partial update built from shape R (system fields are
+// UpdateFrom applies a partial update built from shape R (system fields are
 // ignored) and returns the updated document bound into R.
-func (mc *ModelCollection[P]) UpdateAs[R data.DocumentModelProvider](ctx context.Context, id string, update R) (R, error) {
+func (mc *ModelCollection[P]) UpdateFrom[R data.DocumentModelProvider](ctx context.Context, id string, update R) (R, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 
 	d, err := data.NewPartialDocumentFromStruct(update, ctx)
 	if err != nil {
 		return newModelPtr[R](), common.SystemErrorFrom(err).
-			WithOperation("ModelCollection.UpdateAs").
+			WithOperation("ModelCollection.UpdateFrom").
 			WithPath(id).
 			WithMessage("failed to convert update shape to partial document")
 	}
@@ -606,13 +579,13 @@ func (mc *ModelCollection[P]) UpdateAs[R data.DocumentModelProvider](ctx context
 	})
 	if err != nil {
 		return newModelPtr[R](), common.SystemErrorFrom(err).
-			WithOperation("ModelCollection.UpdateAs").
+			WithOperation("ModelCollection.UpdateFrom").
 			WithPath(id)
 	}
 
 	if result.Count == 0 || len(result.Data) == 0 {
 		return newModelPtr[R](), ErrRecordNotFound.
-			WithOperation("ModelCollection.UpdateAs").
+			WithOperation("ModelCollection.UpdateFrom").
 			WithPath(id).
 			WithMessagef("record with id '%s' not found", id)
 	}
@@ -620,7 +593,7 @@ func (mc *ModelCollection[P]) UpdateAs[R data.DocumentModelProvider](ctx context
 	updated := newModelPtr[R]()
 	if err := result.Data[0].BindToWithContext(ctx, updated); err != nil {
 		return newModelPtr[R](), common.SystemErrorFrom(err).
-			WithOperation("ModelCollection.UpdateAs").
+			WithOperation("ModelCollection.UpdateFrom").
 			WithPath(id).
 			WithMessage("failed to bind updated document to shape")
 	}
