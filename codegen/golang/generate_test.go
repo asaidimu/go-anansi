@@ -8,6 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var update = flag.Bool("update", false, "update golden files")
@@ -31,6 +34,13 @@ const testSchema = `{
     "cat_b": {"name": "CategoryB", "fields": {"x2": {"name": "label", "type": "string"}}},
     "color": {"name": "Color", "type": "string", "values": ["red", "green", "blue"]},
     "size_list": {"name": "SizeList", "type": "array", "schema": {"id": "addr"}}
+  },
+  "metadata": {
+    "projections": {
+      "OrderSummary": { "fields": { "include": ["total", "status"] } },
+      "OrderCreate": { "fields": { "include": ["total"], "required": ["total"], "tags": { "total": { "input": "arguments.{name}", "schema": "{type}:{required}" } } } },
+      "OrderUpdate": { "fields": { "exclude": ["total"], "optional": ["status"] } }
+    }
   }
 }`
 
@@ -144,6 +154,91 @@ func TestGenerate_Deterministic(t *testing.T) {
 		t.Error("generation is not deterministic across runs")
 	}
 }
+
+// schemaWithProjections builds a minimal schema whose metadata declares a
+// single projection with the given fields DSL body.
+func schemaWithProjections(projName, fieldsBody string) string {
+	return `{
+  "name": "Order",
+  "fields": {"f1": {"name": "total", "type": "decimal"}, "f2": {"name": "status", "type": "string"}},
+  "metadata": {"projections": {"` + projName + `": {"fields": ` + fieldsBody + `}}}
+}`
+}
+
+func TestProjections_ValidationErrors(t *testing.T) {
+	cases := []struct {
+		name    string
+		fields  string
+		wantErr string
+	}{
+		{"unknown field", `{"include": ["nope"]}`, "unknown field"},
+		{"include and exclude", `{"include": ["total"], "exclude": ["total"]}`, "both included and excluded"},
+		{"required and optional", `{"required": ["total"], "optional": ["total"]}`, "both required and optional"},
+		{"required excluded", `{"exclude": ["total"], "required": ["total"]}`, "required field"},
+		{"required not included", `{"include": ["status"], "required": ["total"]}`, "not part of the projection"},
+		{"optional not included", `{"include": ["total"], "optional": ["status"]}`, "not part of the projection"},
+		{"fields not an object", `["total"]`, "missing 'fields'"},
+		{"include not an array", `{"include": "total"}`, "must be an array"},
+		{"tags reference missing field", `{"include": ["total"], "tags": {"status": {"input": "x"}}}`, "not part of the projection"},
+		{"tags value not a string", `{"include": ["total"], "tags": {"total": {"input": 1}}}`, "must be a string"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := NewGoGenerator(nil).Generate([]byte(schemaWithProjections("Proj", c.fields)))
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), c.wantErr)
+		})
+	}
+
+	t.Run("projection conflicts with root type", func(t *testing.T) {
+		_, err := NewGoGenerator(nil).Generate([]byte(schemaWithProjections("Order", `{"include": ["total"]}`)))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "conflicts with the root model type")
+	})
+}
+
+func TestProjections_EmitRequiredOverride(t *testing.T) {
+	gen := NewGoGenerator(&GeneratorConfig{TagConfig: DefaultTagConfig()})
+	out, err := gen.Generate([]byte(testSchema))
+	require.NoError(t, err)
+
+	// OrderCreate forces total required: value type + required=true tag.
+	assert.Contains(t, out, "type OrderCreate struct {\n    data.DocumentModel\n    Total decimal.Decimal `anansi:\"total,required=true\" json:\"total\" input:\"arguments.total\" schema:\"decimal:true\"`\n}")
+	assert.Contains(t, out, `anansi:"total,required=true"`)
+
+	// OrderSummary inherits optional: pointer type + required=false tag.
+	assert.Contains(t, out, "type OrderSummary struct {\n    data.DocumentModel")
+	assert.Contains(t, out, "Total *decimal.Decimal `anansi:\"total,required=false\" json:\"total,omitempty\"`")
+	assert.Contains(t, out, `anansi:"total,required=false"`)
+
+	// Collection wrapper methods delegate to the generic shape methods.
+	assert.Contains(t, out, "func (o *Orders) FindOrderSummaryByID(ctx context.Context, id string) (*OrderSummary, error)")
+	assert.Contains(t, out, "    return o.FindByIDAs[*OrderSummary](ctx, id)")
+	assert.Contains(t, out, "func (o *Orders) ReadOrderSummary(ctx context.Context, q *query.Query) ([]*OrderSummary, error)")
+	assert.Contains(t, out, "func (o *Orders) CreateOrderSummary(ctx context.Context, doc *OrderSummary) (*OrderSummary, error)")
+	assert.Contains(t, out, "func (o *Orders) UpdateOrderSummary(ctx context.Context, id string, update *OrderSummary) (*OrderSummary, error)")
+
+	// Structs mode must not emit projections (no DocumentModel layer).
+	structs := generate(t, &GeneratorConfig{Mode: ModeStructs})
+	assert.NotContains(t, structs, "OrderSummary")
+}
+
+func TestProjections_Tags(t *testing.T) {
+	gen := NewGoGenerator(&GeneratorConfig{TagConfig: DefaultTagConfig()})
+	out, err := gen.Generate([]byte(testSchema))
+	require.NoError(t, err)
+
+	// {name}, {type} and {required} placeholders expand from the field.
+	assert.Contains(t, out, `Total decimal.Decimal `+"`anansi:\"total,required=true\" json:\"total\" input:\"arguments.total\" schema:\"decimal:true\"`")
+
+	t.Run("unknown property fails fast", func(t *testing.T) {
+		schema := schemaWithProjections("Proj", `{"include": ["total"], "tags": {"total": {"input": "arguments.{frobnicate}"}}}`)
+		_, err := NewGoGenerator(nil).Generate([]byte(schema))
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unknown field property")
+	})
+}
+
 
 func TestParseGenerationMode(t *testing.T) {
 	cases := []struct {

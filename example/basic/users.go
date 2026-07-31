@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/asaidimu/go-anansi/v8/core/data"
-	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/collection"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 )
 
@@ -17,7 +17,7 @@ type User struct {
 }
 
 type Users struct {
-	base.ModelCollection[User, *User]
+	*collection.ModelCollection[*User]
 }
 
 func (us *Users) CreateUser(ctx context.Context, user *User) (*User, error) {

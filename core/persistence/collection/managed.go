@@ -13,7 +13,6 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
-	"github.com/asaidimu/go-anansi/v8/core/utils"
 )
 
 // managedCollection is a decorator that wraps a base.PersistenceCollectionInterface to provide
@@ -80,6 +79,7 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []*data.Documen
 	validCount := 0
 
 	for _, doc := range docs {
+		// TODO: Investigate why we do this
 		d, err := data.NewDocument(doc)
 		if err != nil {
 			issue := common.SystemErrorFrom(err).ToIssue()
@@ -119,7 +119,7 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []*data.Documen
 
 // Read fetches documents and enriches them with the metadata block for transport.
 func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
-	var fq *query.Query = q
+	var fq  = q
 	var allTranslations map[string]string
 
 	if fq.Raw != nil && c.rawQueryProcessor != nil {
@@ -172,10 +172,10 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
 
 	if fq.Pagination == nil {
 		fq.Pagination = &query.PaginationOptions{
-			IncludeTotal: utils.PrimitivePtr(true),
+			IncludeTotal: new(true),
 		}
 	} else {
-		fq.Pagination.IncludeTotal = utils.PrimitivePtr(true)
+		fq.Pagination.IncludeTotal = new(true)
 	}
 
 	result, err := c.wrapped.Read(ctx, fq)

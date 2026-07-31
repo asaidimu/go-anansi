@@ -81,7 +81,7 @@ func UseModel[T any](app *App, name string, factory func(base.Collection) *T) (*
 // ProductsModel returns a singleton instance of the Products model.
 func (app *App) ProductsModel() (*Products, error) {
 	return UseModel(app, ProductsCollectionName, func(raw base.Collection) *Products {
-		mc, _ := collection.NewModelCollection[Product, *Product](raw, app.Logger)
+		mc, _ := collection.NewModelCollection[*Product](raw, app.Logger)
 		return &Products{ModelCollection: mc}
 	})
 }
@@ -90,8 +90,8 @@ func (app *App) ProductsModel() (*Products, error) {
 func (app *App) UsersModel() (*Users, error) {
 	return UseModel(app, UsersCollectionName, func(raw base.Collection) *Users {
 		wrappedUsersModel := raw // we can wrap this in custom functionality here
-		mc, err := collection.NewModelCollection[User, *User](wrappedUsersModel, app.Logger,
-			collection.ModelCollectionOptions[User, *User]{
+		mc, err := collection.NewModelCollection[*User](wrappedUsersModel, app.Logger,
+			collection.ModelCollectionOptions[*User]{
 				CacheConfig: &cache.CacheConfig{MaxEntries: 100},
 				AutoLoad:    true,
 			},
@@ -106,7 +106,7 @@ func (app *App) UsersModel() (*Users, error) {
 // CartsModel returns a singleton instance of the Carts model.
 func (app *App) CartsModel() (*Carts, error) {
 	return UseModel(app, CartsCollectionName, func(raw base.Collection) *Carts {
-		mc, _ := collection.NewModelCollection[Cart, *Cart](raw, app.Logger)
+		mc, _ := collection.NewModelCollection[*Cart](raw, app.Logger)
 		return &Carts{ModelCollection: mc}
 	})
 }
