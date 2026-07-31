@@ -1,3 +1,10 @@
+## [8.4.4](https://github.com/asaidimu/go-anansi/compare/v8.4.3...v8.4.4) (2026-07-31)
+
+
+### Bug Fixes
+
+* **codegen:** allow exclusion of system fields in schema extraction ([c8397be](https://github.com/asaidimu/go-anansi/commit/c8397bef2d4d626fecc966fd0f84d4bf60e70f77))
+
 ## [8.4.3](https://github.com/asaidimu/go-anansi/compare/v8.4.2...v8.4.3) (2026-07-31)
 
 
