@@ -1,3 +1,10 @@
+## [8.4.1](https://github.com/asaidimu/go-anansi/compare/v8.4.0...v8.4.1) (2026-07-31)
+
+
+### Bug Fixes
+
+* **codegen:** restructure projection handling and generic shape methods ([9d942fa](https://github.com/asaidimu/go-anansi/commit/9d942fa0062ae369a3d2e7460693157d20189480))
+
 # [8.4.0](https://github.com/asaidimu/go-anansi/compare/v8.3.8...v8.4.0) (2026-07-31)
 
 
