@@ -59,7 +59,7 @@ import (
 
 const (
 	compiledSchemaMagic        = "ANSC"
-	compiledSchemaFormatVersion uint8 = 1
+	compiledSchemaFormatVersion uint8 = 2
 )
 
 // =============================================================================
@@ -1841,6 +1841,12 @@ func SerializeCompiledSchema(cs *CompiledSchema) ([]byte, error) {
 		w.u8(byte(ft))
 	}
 
+	// LocalOffsets
+	w.u32(uint32(len(cs.LocalOffsets)))
+	for _, lo := range cs.LocalOffsets {
+		w.u32(lo)
+	}
+
 	// FieldsMeta
 	w.u32(uint32(len(cs.FieldsMeta)))
 	for _, fm := range cs.FieldsMeta {
@@ -1979,6 +1985,20 @@ func DeserializeCompiledSchema(data []byte) (*CompiledSchema, error) {
 			return nil, err
 		}
 		cs.FieldTypes[i] = FieldType(v)
+	}
+
+	// LocalOffsets
+	loCount, err := r.u32()
+	if err != nil {
+		return nil, err
+	}
+	cs.LocalOffsets = make([]uint32, loCount)
+	for i := range cs.LocalOffsets {
+		v, err := r.u32()
+		if err != nil {
+			return nil, err
+		}
+		cs.LocalOffsets[i] = v
 	}
 
 	// FieldsMeta

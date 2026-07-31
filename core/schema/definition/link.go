@@ -10,7 +10,26 @@ import (
 // LINK PHASE
 // =============================================================================
 
+const (
+	// maxSchemaSlots bounds the total number of schema slots (including the
+	// root) that Link can produce. SchemaIdx/ChildSchemaIdx are 6-bit fields
+	// in FieldDescriptor, and 0x3F (FdNoChild) is reserved as the "no child"
+	// sentinel, so valid slot indices are [0, 62] — 63 slots total. This is
+	// derived from FdNoChild (compiled.go) so the two can never drift apart.
+	maxSchemaSlots = int(FdNoChild) // 63
+
+	// maxFieldsPerSchema bounds the number of fields any single schema slot
+	// may declare. FieldIdx is a 7-bit field in FieldDescriptor, giving 128
+	// distinct values (0-127). Exceeding this would silently alias field
+	// indices via the &0x7F mask in MakeFieldDescriptor.
+	maxFieldsPerSchema = 128
+)
+
 func Link(rs *ResolvedSchema) (*CompiledSchema, error) {
+	if rs == nil {
+		return nil, fmt.Errorf("cannot link a nil ResolvedSchema")
+	}
+
 	defaults := document.NewDocument()
 
 	lc := &linkContext{
@@ -40,8 +59,12 @@ func Link(rs *ResolvedSchema) (*CompiledSchema, error) {
 		FieldCount: rootCount,
 	}
 
-	if len(lc.schemas) > 63 {
-		return nil, fmt.Errorf("compiled schema exceeds maximum of 63 nested schemas (got %d): reduce schema nesting or inline complexity", len(lc.schemas))
+	// Defensive invariant: assignSlot() already rejects any request that
+	// would push the slot count past maxSchemaSlots, so this should be
+	// unreachable. Kept as a guard against internal bugs (e.g. a future
+	// code path that appends to lc.schemas without going through assignSlot).
+	if len(lc.schemas) > maxSchemaSlots {
+		return nil, fmt.Errorf("compiled schema exceeds maximum of %d nested schemas (got %d): reduce schema nesting or inline complexity", maxSchemaSlots, len(lc.schemas))
 	}
 
 	// Compute footprints bottom-up (schemas are indexed DFS: parent before child).
@@ -108,7 +131,14 @@ type linkContext struct {
 	rs                  *ResolvedSchema
 }
 
-func (lc *linkContext) assignSlot(rns *ResolvedNestedSchema) uint8 {
+// assignSlot allocates a new schema slot for rns. It rejects the request
+// once the slot count reaches maxSchemaSlots, before the next index would
+// collide with the FdNoChild sentinel (0x3F) or, in extreme cases, before
+// the uint8 conversion below could silently wrap around.
+func (lc *linkContext) assignSlot(rns *ResolvedNestedSchema) (uint8, error) {
+	if len(lc.schemas) >= maxSchemaSlots {
+		return 0, fmt.Errorf("schema definition exceeds maximum of %d nested schemas while assigning a slot for %q: reduce schema nesting or inline complexity", maxSchemaSlots, rns.Name)
+	}
 	idx := uint8(len(lc.schemas))
 	lc.schemas = append(lc.schemas, SchemaSlot{})
 	lc.schemasMeta = append(lc.schemasMeta, SchemaMeta{
@@ -117,7 +147,7 @@ func (lc *linkContext) assignSlot(rns *ResolvedNestedSchema) uint8 {
 	})
 	lc.slots[rns] = append(lc.slots[rns], idx)
 	lc.schemaConstraints = append(lc.schemaConstraints, rns.RawConstraints)
-	return idx
+	return idx, nil
 }
 
 // childSlotForField pre-assigns a child schema slot for a non-terminal field
@@ -125,26 +155,33 @@ func (lc *linkContext) assignSlot(rns *ResolvedNestedSchema) uint8 {
 // For recursive fields the field's own schema slot is stored as the child,
 // allowing the graph builder to identify the recursive target.
 // Returns the child slot index, or 0x7F if the field has no flattenable child.
-func (lc *linkContext) childSlotForField(rf *ResolvedField, schemaIdx uint8) uint8 {
+func (lc *linkContext) childSlotForField(rf *ResolvedField, schemaIdx uint8) (uint8, error) {
 	switch {
 	case rf.Recursive != nil:
-		return schemaIdx
+		return schemaIdx, nil
 	case rf.Object != nil:
 		return lc.assignSlot(rf.Object.Schema)
 	case rf.Container != nil && rf.Container.ItemSchema != nil:
 		return lc.assignSlot(rf.Container.ItemSchema)
 	}
-	return 0x7F
+	return 0x7F, nil
 }
 
 func (lc *linkContext) linkFields(fields []ResolvedField, schemaIdx uint8) (uint16, error) {
+	if len(fields) > maxFieldsPerSchema {
+		return 0, fmt.Errorf("schema slot %d declares %d fields, exceeds maximum of %d fields per schema (FieldIdx is a 7-bit descriptor field)", schemaIdx, len(fields), maxFieldsPerSchema)
+	}
+
 	start := uint16(len(lc.descriptors))
 
 	for i := range fields {
 		rf := &fields[i]
 		dt, kind, terminal := classifyField(rf)
 
-		childSchemaIdx := lc.childSlotForField(rf, schemaIdx)
+		childSchemaIdx, err := lc.childSlotForField(rf, schemaIdx)
+		if err != nil {
+			return 0, err
+		}
 		hasDefault := !rf.Default.IsZero()
 
 		fd := MakeFieldDescriptor(
@@ -225,7 +262,10 @@ func (lc *linkContext) linkChildFields(rf *ResolvedField, fd FieldDescriptor) er
 	case rf.Union != nil:
 		var variantSlots []uint8
 		for _, variant := range rf.Union.Variants {
-			childIdx := lc.assignSlot(variant)
+			childIdx, err := lc.assignSlot(variant)
+			if err != nil {
+				return err
+			}
 			variantSlots = append(variantSlots, childIdx)
 			childStart := uint16(len(lc.descriptors))
 			childCount, err := lc.linkFields(variant.Fields, childIdx)
@@ -242,7 +282,10 @@ func (lc *linkContext) linkChildFields(rf *ResolvedField, fd FieldDescriptor) er
 	case rf.Composite != nil:
 		var partSlots []uint8
 		for _, part := range rf.Composite.ObjectParts {
-			childIdx := lc.assignSlot(part)
+			childIdx, err := lc.assignSlot(part)
+			if err != nil {
+				return err
+			}
 			partSlots = append(partSlots, childIdx)
 			childStart := uint16(len(lc.descriptors))
 			childCount, err := lc.linkFields(part.Fields, childIdx)
@@ -256,7 +299,10 @@ func (lc *linkContext) linkChildFields(rf *ResolvedField, fd FieldDescriptor) er
 		}
 		for _, up := range rf.Composite.UnionParts {
 			for _, variant := range up.Variants {
-				childIdx := lc.assignSlot(variant)
+				childIdx, err := lc.assignSlot(variant)
+				if err != nil {
+					return err
+				}
 				partSlots = append(partSlots, childIdx)
 				childStart := uint16(len(lc.descriptors))
 				childCount, err := lc.linkFields(variant.Fields, childIdx)

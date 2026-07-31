@@ -6,6 +6,7 @@ import (
 	"runtime/debug"
 
 	"github.com/asaidimu/go-anansi/v8/cmd/anansi/internal"
+	"github.com/asaidimu/go-anansi/v8/codegen/golang"
 	"github.com/spf13/cobra"
 )
 
@@ -187,22 +188,40 @@ func codegenTypescriptCmd() *cobra.Command {
 }
 
 func codegenGolangCmd() *cobra.Command {
-	var glob string
-	var dryRun bool
+	var glob, mode string
+	var scoped, noTags, dryRun bool
 
 	cmd := &cobra.Command{
-		Use:   "golang",
+		Use:   "golang [glob...]",
 		Short: "Generate Go structs for all schemas",
+		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg := loadCfg()
 			if glob != "" {
 				cfg.Schema.Glob = glob
 			}
-			return schemagen.RunGoGen(cfg, dryRun)
+			if mode != "" {
+				m, err := golang.ParseGenerationMode(mode)
+				if err != nil {
+					return err
+				}
+				cfg.GoGen.Mode = m
+			}
+			if cmd.Flags().Changed("scoped") {
+				cfg.GoGen.ScopedPackages = scoped
+			}
+			if noTags {
+				cfg.GoGen.Tags = nil
+				cfg.GoGen.TagsSet = true
+			}
+			return schemagen.RunGoGen(cfg, dryRun, args...)
 		},
 	}
 
 	cmd.Flags().StringVar(&glob, "glob", "", "glob pattern for schema files (overrides config)")
+	cmd.Flags().StringVar(&mode, "mode", "", "generation mode: structs, model, or full (overrides config)")
+	cmd.Flags().BoolVar(&scoped, "scoped", false, "emit scoped (unexported) model accessors (overrides config)")
+	cmd.Flags().BoolVar(&noTags, "no-tags", false, "omit all struct tags (overrides config)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would be done without making changes")
 	return cmd
 }
