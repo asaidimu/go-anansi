@@ -62,7 +62,9 @@ func (s *Schema) AsMap() map[string]any {
 			if schema.Version != nil {
 				root["version"] = schema.Version.String()
 			}
-			root["name"] = schema.Name
+			if schema.Name != "" {
+				root["name"] = schema.Name
+			}
 			if schema.Description != "" {
 				root["description"] = schema.Description
 			}
@@ -107,6 +109,9 @@ func (s *Schema) AsMap() map[string]any {
 			}
 			if field.Unique {
 				m["unique"] = true
+			}
+			if field.Nullable {
+				m["nullable"] = true
 			}
 			if field.Type != 0 {
 				m["type"] = field.Type.String()

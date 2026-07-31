@@ -82,6 +82,15 @@ type Schema struct {
 	Schemas map[SchemaId]NestedSchema `json:"schemas,omitempty"`
 }
 
+// MarshalJSON serializes the schema via the walker-based ToJSON pipeline, so
+// that encoding/json output matches ToJSON exactly. The default struct-tag
+// marshaling would otherwise leak internal state — most notably it emits an
+// empty "id" on inline schema references (see Rule 20 in schema_rules.md,
+// which forbids ids on inline descriptors).
+func (s Schema) MarshalJSON() ([]byte, error) {
+	return s.ToJSON(), nil
+}
+
 // Helper function to check if schema effectively represents an object
 func (schema NestedSchema) isEffectivelyObject(parentSchema *Schema, depth ...int) bool {
 	d := 0
