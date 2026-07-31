@@ -69,3 +69,26 @@ func NewOrder(model Order) *Order {
     return data.New(&model)
 }
 
+type OrderCreate struct {
+    data.DocumentModel
+    Total decimal.Decimal `input:"arguments.total" schema:"decimal:true"`
+}
+
+type OrderSummary struct {
+    data.DocumentModel
+    Status *OrderStatusEnum
+    Total *decimal.Decimal
+}
+
+type OrderUpdate struct {
+    data.DocumentModel
+    Tags []string
+    ID string
+    Combo *OrderComboComposite
+    Meta map[string]any
+    Payload *OrderPayloadUnion
+    Quantity *int64
+    Shipping *Address
+    Status *OrderStatusEnum
+}
+

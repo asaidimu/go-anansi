@@ -1,6 +1,6 @@
 module github.com/asaidimu/go-anansi/v8
 
-go 1.26
+go 1.27rc1
 
 require (
 	github.com/ThreeDotsLabs/watermill v1.5.1

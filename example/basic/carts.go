@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/asaidimu/go-anansi/v8/core/data"
-	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/collection"
 )
 
 const CartsCollectionName = "Carts" // from carts.schema.json/#/name
@@ -15,5 +15,5 @@ type Cart struct { // from carts.schema.json/#/fields
 }
 
 type Carts struct { // this is just obvious
-	base.ModelCollection[Cart, *Cart]
+	*collection.ModelCollection[*Cart]
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/collection"
 	"go.uber.org/zap"
+	"github.com/asaidimu/go-anansi/v8/core/query"
 )
 
 type SizeList = []Address
@@ -77,7 +78,7 @@ func NewOrder(model Order) *Order {
 
 // Orders is a type-safe collection for Order
 type Orders struct {
-    base.ModelCollection[Order, *Order]
+    *collection.ModelCollection[*Order]
 }
 
 const OrdersCollectionName = "Order"
@@ -91,7 +92,7 @@ var (
 // construct the Order model. Idempotent — subsequent calls return
 // the existing instance. Retry-safe: if the first call fails, the
 // caller can fix the underlying issue and call again.
-func InitOrdersModel(p base.Persistence, logger *zap.Logger, opts ...collection.ModelCollectionOptions[Order, *Order]) (*Orders, error) {
+func InitOrdersModel(p base.Persistence, logger *zap.Logger, opts ...collection.ModelCollectionOptions[*Order]) (*Orders, error) {
     ordersModelMu.Lock()
     defer ordersModelMu.Unlock()
     if ordersModel != nil {
@@ -103,7 +104,7 @@ func InitOrdersModel(p base.Persistence, logger *zap.Logger, opts ...collection.
             WithOperation("InitOrdersModel").
             WithPath("Order")
     }
-    mc, err := collection.NewModelCollection[Order, *Order](raw, logger, opts...)
+    mc, err := collection.NewModelCollection[*Order](raw, logger, opts...)
     if err != nil {
         return nil, common.SystemErrorFrom(err, "ERR_MODEL_INIT_FAILED").
             WithOperation("InitOrdersModel").
@@ -124,3 +125,86 @@ func OrdersModel() (*Orders, error) {
     }
     return ordersModel, nil
 }
+type OrderCreate struct {
+    data.DocumentModel
+    Total decimal.Decimal `input:"arguments.total" schema:"decimal:true"`
+}
+
+type OrderSummary struct {
+    data.DocumentModel
+    Status *OrderStatusEnum
+    Total *decimal.Decimal
+}
+
+type OrderUpdate struct {
+    data.DocumentModel
+    Tags []string
+    ID string
+    Combo *OrderComboComposite
+    Meta map[string]any
+    Payload *OrderPayloadUnion
+    Quantity *int64
+    Shipping *Address
+    Status *OrderStatusEnum
+}
+
+// FindOrderCreateByID retrieves a single document bound to OrderCreate
+func (o *Orders) FindOrderCreateByID(ctx context.Context, id string) (*OrderCreate, error) {
+    return o.FindByIDAs[*OrderCreate](ctx, id)
+}
+
+// ReadOrderCreate reads documents matching q bound to OrderCreate
+func (o *Orders) ReadOrderCreate(ctx context.Context, q *query.Query) ([]*OrderCreate, error) {
+    return o.ReadAs[*OrderCreate](ctx, q)
+}
+
+// CreateOrderCreate persists a new document bound to OrderCreate
+func (o *Orders) CreateOrderCreate(ctx context.Context, doc *OrderCreate) (*OrderCreate, error) {
+    return o.CreateAs[*OrderCreate](ctx, doc)
+}
+
+// UpdateOrderCreate applies a partial update bound to OrderCreate
+func (o *Orders) UpdateOrderCreate(ctx context.Context, id string, update *OrderCreate) (*OrderCreate, error) {
+    return o.UpdateAs[*OrderCreate](ctx, id, update)
+}
+
+// FindOrderSummaryByID retrieves a single document bound to OrderSummary
+func (o *Orders) FindOrderSummaryByID(ctx context.Context, id string) (*OrderSummary, error) {
+    return o.FindByIDAs[*OrderSummary](ctx, id)
+}
+
+// ReadOrderSummary reads documents matching q bound to OrderSummary
+func (o *Orders) ReadOrderSummary(ctx context.Context, q *query.Query) ([]*OrderSummary, error) {
+    return o.ReadAs[*OrderSummary](ctx, q)
+}
+
+// CreateOrderSummary persists a new document bound to OrderSummary
+func (o *Orders) CreateOrderSummary(ctx context.Context, doc *OrderSummary) (*OrderSummary, error) {
+    return o.CreateAs[*OrderSummary](ctx, doc)
+}
+
+// UpdateOrderSummary applies a partial update bound to OrderSummary
+func (o *Orders) UpdateOrderSummary(ctx context.Context, id string, update *OrderSummary) (*OrderSummary, error) {
+    return o.UpdateAs[*OrderSummary](ctx, id, update)
+}
+
+// FindOrderUpdateByID retrieves a single document bound to OrderUpdate
+func (o *Orders) FindOrderUpdateByID(ctx context.Context, id string) (*OrderUpdate, error) {
+    return o.FindByIDAs[*OrderUpdate](ctx, id)
+}
+
+// ReadOrderUpdate reads documents matching q bound to OrderUpdate
+func (o *Orders) ReadOrderUpdate(ctx context.Context, q *query.Query) ([]*OrderUpdate, error) {
+    return o.ReadAs[*OrderUpdate](ctx, q)
+}
+
+// CreateOrderUpdate persists a new document bound to OrderUpdate
+func (o *Orders) CreateOrderUpdate(ctx context.Context, doc *OrderUpdate) (*OrderUpdate, error) {
+    return o.CreateAs[*OrderUpdate](ctx, doc)
+}
+
+// UpdateOrderUpdate applies a partial update bound to OrderUpdate
+func (o *Orders) UpdateOrderUpdate(ctx context.Context, id string, update *OrderUpdate) (*OrderUpdate, error) {
+    return o.UpdateAs[*OrderUpdate](ctx, id, update)
+}
+

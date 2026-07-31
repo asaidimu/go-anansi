@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -356,8 +358,41 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 	}
 	structs[rootTypeName] = rootFieldsGo
 
+	// Resolve projections declared under metadata.projections. Resolution and
+	// validation run in every mode so that schema errors surface regardless of
+	// which layers are emitted; only render decides whether they appear.
+	projections := make(map[string][]StructField)
+	projectionSpecs, err := parseProjections(data)
+	if err != nil {
+		return "", err
+	}
+	for _, projName := range sortedKeys(projectionSpecs) {
+		projGoName := g.goTypeName(projName)
+		if projGoName == rootTypeName {
+			return "", fmt.Errorf("projection %s conflicts with the root model type %s", projName, projGoName)
+		}
+		if _, ok := structs[projGoName]; ok {
+			return "", fmt.Errorf("projection %s produces a type name (%s) that collides with an existing type", projName, projGoName)
+		}
+		projFields, projTags, err := resolveProjection(projName, projectionSpecs[projName], rootFields)
+		if err != nil {
+			return "", err
+		}
+		// Reuse the root as parentName so inline containers (enum/union/
+		// composite/record) are shared with the root struct instead of being
+		// regenerated per projection.
+		projFieldsGo, err := generateFields(projFields, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, rootName, tagConfig)
+		if err != nil {
+			return "", fmt.Errorf("failed to generate fields for projection %s: %w", projName, err)
+		}
+		if err := applyProjectionTags(projFieldsGo, projFields, projTags); err != nil {
+			return "", fmt.Errorf("projection %s: %w", projName, err)
+		}
+		projections[projGoName] = projFieldsGo
+	}
+
 	// Build output
-	return g.render(rootName, rootTypeName, structs, typeAliases, enumDefs)
+	return g.render(rootName, rootTypeName, structs, typeAliases, enumDefs, projections)
 }
 
 // ============================================================================
@@ -368,7 +403,7 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 // generation mode controls which layers are emitted; all type-generation work
 // happens before this point and is shared across modes. Output is deterministic:
 // every map is emitted in sorted key order.
-func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef) (string, error) {
+func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, projections map[string][]StructField) (string, error) {
 	mode := g.mode
 	emitRootModel := mode.emitsRootModel()
 	emitCollection := mode.emitsCollection()
@@ -383,6 +418,19 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 	}
 	if !needsDecimal {
 		for _, fields := range structs {
+			for _, f := range fields {
+				if strings.Contains(f.Type, "decimal.Decimal") {
+					needsDecimal = true
+					break
+				}
+			}
+			if needsDecimal {
+				break
+			}
+		}
+	}
+	if !needsDecimal {
+		for _, fields := range projections {
 			for _, f := range fields {
 				if strings.Contains(f.Type, "decimal.Decimal") {
 					needsDecimal = true
@@ -411,6 +459,9 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 			"\"github.com/asaidimu/go-anansi/v8/core/persistence/collection\"",
 			"\"go.uber.org/zap\"",
 		)
+		if len(projections) > 0 {
+			imports = append(imports, "\"github.com/asaidimu/go-anansi/v8/core/query\"")
+		}
 	}
 
 	var sb strings.Builder
@@ -492,6 +543,15 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 		if emitCollection {
 			emitCollectionScaffold(&sb, g.scoped, rootTypeName, rootSchemaName)
 		}
+
+		// Projections share the model treatment (DocumentModel embed).
+		for _, name := range sortedKeys(projections) {
+			emitStruct(&sb, name, projections[name], true)
+		}
+
+		if emitCollection {
+			emitProjectionMethods(&sb, rootTypeName+"s", projections)
+		}
 	}
 
 	return sb.String(), nil
@@ -526,7 +586,7 @@ func emitCollectionScaffold(sb *strings.Builder, scoped bool, rootTypeName, root
 	collectionName := rootTypeName + "s"
 	sb.WriteString(fmt.Sprintf("// %s is a type-safe collection for %s\n", collectionName, rootTypeName))
 	sb.WriteString(fmt.Sprintf("type %s struct {\n", collectionName))
-	sb.WriteString(fmt.Sprintf("    base.ModelCollection[%s, *%s]\n", rootTypeName, rootTypeName))
+	sb.WriteString(fmt.Sprintf("    *collection.ModelCollection[*%s]\n", rootTypeName))
 	sb.WriteString("}\n\n")
 
 	// Singleton model access — unexported vars, exported functions.
@@ -554,7 +614,7 @@ func emitCollectionScaffold(sb *strings.Builder, scoped bool, rootTypeName, root
 	sb.WriteString(fmt.Sprintf("// construct the %s model. Idempotent — subsequent calls return\n", rootTypeName))
 	sb.WriteString(fmt.Sprintf("// the existing instance. Retry-safe: if the first call fails, the\n"))
 	sb.WriteString(fmt.Sprintf("// caller can fix the underlying issue and call again.\n"))
-	sb.WriteString(fmt.Sprintf("func Init%sModel(p base.Persistence, logger *zap.Logger, opts ...collection.ModelCollectionOptions[%s, *%s]) (*%s, error) {\n", fnPrefix, rootTypeName, rootTypeName, collectionName))
+	sb.WriteString(fmt.Sprintf("func Init%sModel(p base.Persistence, logger *zap.Logger, opts ...collection.ModelCollectionOptions[*%s]) (*%s, error) {\n", fnPrefix, rootTypeName, collectionName))
 	sb.WriteString(fmt.Sprintf("    %sMu.Lock()\n", varName))
 	sb.WriteString(fmt.Sprintf("    defer %sMu.Unlock()\n", varName))
 	sb.WriteString(fmt.Sprintf("    if %s != nil {\n", varName))
@@ -566,7 +626,7 @@ func emitCollectionScaffold(sb *strings.Builder, scoped bool, rootTypeName, root
 	sb.WriteString(fmt.Sprintf("            WithOperation(\"Init%sModel\").\n", fnPrefix))
 	sb.WriteString(fmt.Sprintf("            WithPath(%q)\n", rootSchemaName))
 	sb.WriteString(fmt.Sprintf("    }\n"))
-	sb.WriteString(fmt.Sprintf("    mc, err := collection.NewModelCollection[%s, *%s](raw, logger, opts...)\n", rootTypeName, rootTypeName))
+	sb.WriteString(fmt.Sprintf("    mc, err := collection.NewModelCollection[*%s](raw, logger, opts...)\n", rootTypeName))
 	sb.WriteString(fmt.Sprintf("    if err != nil {\n"))
 	sb.WriteString(fmt.Sprintf("        return nil, common.SystemErrorFrom(err, \"ERR_MODEL_INIT_FAILED\").\n"))
 	sb.WriteString(fmt.Sprintf("            WithOperation(\"Init%sModel\").\n", fnPrefix))
@@ -587,6 +647,32 @@ func emitCollectionScaffold(sb *strings.Builder, scoped bool, rootTypeName, root
 	sb.WriteString(fmt.Sprintf("    }\n"))
 	sb.WriteString(fmt.Sprintf("    return %s, nil\n", varName))
 	sb.WriteString(fmt.Sprintf("}\n"))
+}
+
+// emitProjectionMethods writes type-safe projection accessors on the
+// collection wrapper, delegating to the generic shape methods.
+func emitProjectionMethods(sb *strings.Builder, collectionName string, projections map[string][]StructField) {
+	for _, name := range sortedKeys(projections) {
+		fmt.Fprintf(sb, "// Find%sByID retrieves a single document bound to %s\n", name, name)
+		fmt.Fprintf(sb, "func (o *%s) Find%sByID(ctx context.Context, id string) (*%s, error) {\n", collectionName, name, name)
+		fmt.Fprintf(sb, "    return o.FindByIDAs[*%s](ctx, id)\n", name)
+		sb.WriteString("}\n\n")
+
+		fmt.Fprintf(sb, "// Read%s reads documents matching q bound to %s\n", name, name)
+		fmt.Fprintf(sb, "func (o *%s) Read%s(ctx context.Context, q *query.Query) ([]*%s, error) {\n", collectionName, name, name)
+		fmt.Fprintf(sb, "    return o.ReadAs[*%s](ctx, q)\n", name)
+		sb.WriteString("}\n\n")
+
+		fmt.Fprintf(sb, "// Create%s persists a new document bound to %s\n", name, name)
+		fmt.Fprintf(sb, "func (o *%s) Create%s(ctx context.Context, doc *%s) (*%s, error) {\n", collectionName, name, name, name)
+		fmt.Fprintf(sb, "    return o.CreateAs[*%s](ctx, doc)\n", name)
+		sb.WriteString("}\n\n")
+
+		fmt.Fprintf(sb, "// Update%s applies a partial update bound to %s\n", name, name)
+		fmt.Fprintf(sb, "func (o *%s) Update%s(ctx context.Context, id string, update *%s) (*%s, error) {\n", collectionName, name, name, name)
+		fmt.Fprintf(sb, "    return o.UpdateAs[*%s](ctx, id, update)\n", name)
+		sb.WriteString("}\n\n")
+	}
 }
 
 // sortedKeys returns the keys of a string-keyed map in ascending order.
@@ -702,6 +788,291 @@ func parseSchemaInfo(id string, raw any) (*SchemaInfo, error) {
 		return nil, fmt.Errorf("schema %s has neither 'fields' nor 'type'", id)
 	}
 	return info, nil
+}
+
+// ----------------------------------------------------------------------------
+// Projections
+// ----------------------------------------------------------------------------
+
+// projectionSpec is the parsed form of a single projection declaration.
+type projectionSpec struct {
+	Include  []string
+	Exclude  []string
+	Required []string
+	Optional []string
+	// Tags maps a field name to custom struct tags (tag key -> template).
+	// Templates may reference field properties via {prop} placeholders.
+	Tags map[string]map[string]string
+}
+
+// parseProjections extracts the projections declared under
+// metadata.projections. Each projection maps a name to a field DSL:
+//
+//	"fields": {
+//	    "include":  ["total", "status"],   // whitelist (default: all fields)
+//	    "exclude":  ["internal"],          // removed from the final set
+//	    "required": ["total"],             // force required=true
+//	    "optional": ["status"],            // force required=false
+//	    "tags": {
+//	        "total": { "input": "arguments.{name}" }
+//	    }
+//	}
+func parseProjections(data map[string]any) (map[string]projectionSpec, error) {
+	metadata, ok := data["metadata"].(map[string]any)
+	if !ok {
+		return nil, nil
+	}
+	rawProjections, ok := metadata["projections"].(map[string]any)
+	if !ok || len(rawProjections) == 0 {
+		return nil, nil
+	}
+
+	projections := make(map[string]projectionSpec, len(rawProjections))
+	for name, raw := range rawProjections {
+		pm, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("projection %s must be an object", name)
+		}
+		fieldsRaw, ok := pm["fields"].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("projection %s missing 'fields'", name)
+		}
+
+		var spec projectionSpec
+		var err error
+		if spec.Include, err = parseProjectionFieldList(fieldsRaw, "include"); err != nil {
+			return nil, fmt.Errorf("projection %s: %w", name, err)
+		}
+		if spec.Exclude, err = parseProjectionFieldList(fieldsRaw, "exclude"); err != nil {
+			return nil, fmt.Errorf("projection %s: %w", name, err)
+		}
+		if spec.Required, err = parseProjectionFieldList(fieldsRaw, "required"); err != nil {
+			return nil, fmt.Errorf("projection %s: %w", name, err)
+		}
+		if spec.Optional, err = parseProjectionFieldList(fieldsRaw, "optional"); err != nil {
+			return nil, fmt.Errorf("projection %s: %w", name, err)
+		}
+		if spec.Tags, err = parseProjectionTags(fieldsRaw); err != nil {
+			return nil, fmt.Errorf("projection %s: %w", name, err)
+		}
+		projections[name] = spec
+	}
+	return projections, nil
+}
+
+func parseProjectionTags(fields map[string]any) (map[string]map[string]string, error) {
+	rawTags, ok := fields["tags"].(map[string]any)
+	if !ok {
+		return nil, nil
+	}
+	tags := make(map[string]map[string]string, len(rawTags))
+	for fieldName, raw := range rawTags {
+		tagMap, ok := raw.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("tags for field %q must be an object", fieldName)
+		}
+		entry := make(map[string]string, len(tagMap))
+		for key, val := range tagMap {
+			sv, ok := val.(string)
+			if !ok {
+				return nil, fmt.Errorf("tag %q on field %q must be a string", key, fieldName)
+			}
+			entry[key] = sv
+		}
+		tags[fieldName] = entry
+	}
+	return tags, nil
+}
+
+func parseProjectionFieldList(fields map[string]any, key string) ([]string, error) {
+	raw, ok := fields[key]
+	if !ok {
+		return nil, nil
+	}
+	arr, ok := raw.([]any)
+	if !ok {
+		return nil, fmt.Errorf("'%s' must be an array of field names", key)
+	}
+	out := make([]string, 0, len(arr))
+	for _, e := range arr {
+		s, ok := e.(string)
+		if !ok {
+			return nil, fmt.Errorf("'%s' entries must be strings", key)
+		}
+		out = append(out, s)
+	}
+	return out, nil
+}
+
+// resolveProjection computes the effective field set for a projection by
+// applying the include/exclude/required/optional DSL over the root fields.
+// It fails fast on any self-inconsistent or unknown reference. The returned
+// tags map is keyed by field name; every key is guaranteed to be part of the
+// final field set.
+func resolveProjection(name string, spec projectionSpec, rootFields map[string]FieldDef) (map[string]FieldDef, map[string]map[string]string, error) {
+	byName := make(map[string]FieldDef, len(rootFields))
+	for _, fd := range rootFields {
+		if fd.Name != "" {
+			byName[fd.Name] = fd
+		}
+	}
+
+	// Every referenced field must exist in the root schema.
+	for _, list := range [][]string{spec.Include, spec.Exclude, spec.Required, spec.Optional} {
+		for _, f := range list {
+			if _, ok := byName[f]; !ok {
+				return nil, nil, fmt.Errorf("projection %s references unknown field %q", name, f)
+			}
+		}
+	}
+
+	// A field cannot be both included and excluded.
+	excluded := make(map[string]bool, len(spec.Exclude))
+	for _, f := range spec.Exclude {
+		if slices.Contains(spec.Include, f) {
+			return nil, nil, fmt.Errorf("projection %s: field %q cannot be both included and excluded", name, f)
+		}
+		excluded[f] = true
+	}
+
+	// A field cannot be both required and optional.
+	required := make(map[string]bool, len(spec.Required))
+	for _, f := range spec.Required {
+		if slices.Contains(spec.Optional, f) {
+			return nil, nil, fmt.Errorf("projection %s: field %q cannot be both required and optional", name, f)
+		}
+		required[f] = true
+	}
+	optional := make(map[string]bool, len(spec.Optional))
+	for _, f := range spec.Optional {
+		optional[f] = true
+	}
+
+	// Membership: whitelist if given, otherwise all root fields, minus excludes.
+	var names []string
+	if len(spec.Include) > 0 {
+		names = spec.Include
+	} else {
+		names = make([]string, 0, len(byName))
+		for n := range byName {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+	}
+
+	result := make(map[string]FieldDef, len(names))
+	for _, n := range names {
+		if excluded[n] {
+			continue
+		}
+		fd := byName[n]
+		if required[n] {
+			fd.Required = true
+		}
+		if optional[n] {
+			fd.Required = false
+		}
+		result[n] = fd
+	}
+
+	// required/optional fields must survive the membership filter.
+	for _, f := range spec.Required {
+		if _, ok := result[f]; !ok {
+			return nil, nil, fmt.Errorf("projection %s: required field %q is not part of the projection", name, f)
+		}
+	}
+	for _, f := range spec.Optional {
+		if _, ok := result[f]; !ok {
+			return nil, nil, fmt.Errorf("projection %s: optional field %q is not part of the projection", name, f)
+		}
+	}
+
+	// Tagged fields must survive the membership filter.
+	for f := range spec.Tags {
+		if _, ok := result[f]; !ok {
+			return nil, nil, fmt.Errorf("projection %s: tags reference field %q which is not part of the projection", name, f)
+		}
+	}
+
+	return result, spec.Tags, nil
+}
+
+// applyProjectionTags appends the custom tags declared on a projection to the
+// matching generated struct fields. Placeholders in tag values are expanded
+// from the field's resolved properties.
+func applyProjectionTags(fields []StructField, defs map[string]FieldDef, tags map[string]map[string]string) error {
+	if len(tags) == 0 {
+		return nil
+	}
+
+	goToName := make(map[string]string, len(defs))
+	for schemaName := range defs {
+		goToName[toCamelCase(schemaName)] = schemaName
+	}
+
+	for i := range fields {
+		sf := &fields[i]
+		schemaName, ok := goToName[sf.Name]
+		if !ok {
+			continue
+		}
+		fieldTags, ok := tags[schemaName]
+		if !ok {
+			continue
+		}
+		fd := defs[schemaName]
+
+		var parts []string
+		for _, key := range sortedKeys(fieldTags) {
+			value, err := expandFieldTemplate(fieldTags[key], fd, schemaName)
+			if err != nil {
+				return fmt.Errorf("projection tag %q on field %q: %w", key, schemaName, err)
+			}
+			parts = append(parts, fmt.Sprintf(`%s:%q`, key, value))
+		}
+		if sf.Tags != "" {
+			sf.Tags += " " + strings.Join(parts, " ")
+		} else {
+			sf.Tags = strings.Join(parts, " ")
+		}
+	}
+	return nil
+}
+
+// expandFieldTemplate substitutes {prop} placeholders with the field's
+// resolved properties. Unknown properties are an error so typos surface at
+// codegen time rather than silently producing malformed tags.
+func expandFieldTemplate(tmpl string, fd FieldDef, schemaName string) (string, error) {
+	if !strings.Contains(tmpl, "{") {
+		return tmpl, nil
+	}
+
+	props := map[string]string{
+		"name":     schemaName,
+		"type":     fd.Type,
+		"required": strconv.FormatBool(fd.Required),
+		"nullable": strconv.FormatBool(fd.Nullable),
+		"goName":   toCamelCase(schemaName),
+		"default":  "",
+	}
+	if fd.Default != nil {
+		props["default"] = strings.Trim(formatLiteral(fd.Default), `"`)
+	}
+
+	tokenRe := regexp.MustCompile(`\{([a-zA-Z0-9_]+)\}`)
+	var firstErr error
+	out := tokenRe.ReplaceAllStringFunc(tmpl, func(m string) string {
+		prop := m[1 : len(m)-1]
+		v, ok := props[prop]
+		if !ok {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("unknown field property {%s}", prop)
+			}
+			return m
+		}
+		return v
+	})
+	return out, firstErr
 }
 
 // ----------------------------------------------------------------------------

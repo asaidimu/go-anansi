@@ -25,7 +25,7 @@ const (
 // sanitizationStore implements SanitizationPersistence using ModelCollection.
 type sanitizationStore struct {
 	persistence    base.Persistence
-	collection     base.ModelCollection[data.FieldMaskConfig, *data.FieldMaskConfig]
+	collection     *collection.ModelCollection[*data.FieldMaskConfig]
 	collectionName string
 	logger         *zap.Logger
 }
@@ -53,7 +53,7 @@ func NewSanitizationPolicyStore(persistence base.Persistence, logger *zap.Logger
 }
 
 // ensureCollection ensures the sanitization policies collection exists and returns model collection
-func (p *sanitizationStore) ensureCollection(ctx context.Context) (base.ModelCollection[data.FieldMaskConfig, *data.FieldMaskConfig], error) {
+func (p *sanitizationStore) ensureCollection(ctx context.Context) (*collection.ModelCollection[*data.FieldMaskConfig], error) {
 	if p.collection != nil {
 		return p.collection, nil
 	}
@@ -79,7 +79,7 @@ func (p *sanitizationStore) ensureCollection(ctx context.Context) (base.ModelCol
 			WithMessage("failed to instantiate sanitization policies collection")
 	}
 	// Wrap in model collection
-	mc, err := collection.NewModelCollection[data.FieldMaskConfig](col, p.logger)
+	mc, err := collection.NewModelCollection[*data.FieldMaskConfig](col, p.logger)
 	if err != nil {
 		return nil, err
 	}

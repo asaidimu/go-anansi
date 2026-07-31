@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/asaidimu/go-anansi/v8/core/data"
-	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/persistence/collection"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 )
 
@@ -20,7 +20,7 @@ type Product struct {
 
 // Products wraps a base Collection to provide type-safe operations
 type Products struct {
-	base.ModelCollection[Product, *Product]
+	*collection.ModelCollection[*Product]
 }
 
 // CreateProduct creates a single product and returns it with auto-generated ID
