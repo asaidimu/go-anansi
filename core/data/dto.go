@@ -18,7 +18,11 @@ import (
 // increasing UUIDv7 timestamp component.
 const FixedEpochMS int64 = 1767225600000
 
-// Thread-safe global schema cache keyed by reflect.Type
+// Thread-safe global schema cache keyed by reflect.Type and tag.
+type schemaCacheKey struct {
+	t   reflect.Type
+	tag string
+}
 var schemaCache sync.Map
 
 type cachedSchema struct {
@@ -26,9 +30,22 @@ type cachedSchema struct {
 	err  error
 }
 
-// SchemaFrom extracts a meta-schema JSON document for any struct type.
+// SchemaFrom extracts a meta-schema JSON document for any struct type using
+// the default "anansi" tag for field names (and all other metadata).
 // Results are cached globally per type for zero-allocation subsequent calls.
 func SchemaFrom[T any]() ([]byte, error) {
+	return SchemaFromWithTag[T]("")
+}
+
+// SchemaFromWithTag extracts a meta-schema JSON document for any struct type
+// using a custom struct tag for field name/path resolution only.
+// The custom tag is used as the primary source for field names (dot‑separated
+// paths are allowed), falling back to the "anansi" tag's name if the custom
+// tag is absent or empty, and finally to the snake‑cased Go field name.
+// All other field metadata (required, nullable, type overrides, defaults, values)
+// are taken exclusively from the "anansi" tag.
+// Results are cached globally per (type, tag) pair.
+func SchemaFromWithTag[T any](tag string) ([]byte, error) {
 	var v T
 	t := reflect.TypeOf(v)
 	if t == nil {
@@ -38,23 +55,30 @@ func SchemaFrom[T any]() ([]byte, error) {
 		t = t.Elem()
 	}
 
-	if cached, ok := schemaCache.Load(t); ok {
+	key := schemaCacheKey{t: t, tag: tag}
+	if cached, ok := schemaCache.Load(key); ok {
 		res := cached.(cachedSchema)
 		return res.data, res.err
 	}
 
-	data, err := ExtractDTOSchemaDirect(v)
-	schemaCache.Store(t, cachedSchema{data: data, err: err})
+	data, err := ExtractDTOSchemaDirectWithTag(v, tag)
+	schemaCache.Store(key, cachedSchema{data: data, err: err})
 	return data, err
 }
 
 // ExtractDTOSchemaDirect streams JSON bytes directly into a buffer without
-// intermediate maps or struct serialization.
+// intermediate maps or struct serialization. Uses the default "anansi" tag.
 func ExtractDTOSchemaDirect(target any) ([]byte, error) {
+	return ExtractDTOSchemaDirectWithTag(target, "")
+}
+
+// ExtractDTOSchemaDirectWithTag does the same as ExtractDTOSchemaDirect but
+// uses the given custom tag for name/path resolution (see SchemaFromWithTag).
+func ExtractDTOSchemaDirectWithTag(target any, tag string) ([]byte, error) {
 	if target == nil {
 		return nil, fmt.Errorf("root DTO target cannot be nil")
 	}
-	e := newDirectExtractor()
+	e := newDirectExtractor(tag)
 	return e.Extract(target)
 }
 
@@ -83,9 +107,10 @@ type directExtractor struct {
 	syntheticSchemas map[string]map[string]*syntheticSchema
 	rootSchemaID     string
 	rootReferenced   bool
+	customTag        string // the custom tag to use for name/path resolution
 }
 
-func newDirectExtractor() *directExtractor {
+func newDirectExtractor(customTag string) *directExtractor {
 	return &directExtractor{
 		discoveryOrdinal: 0,
 		registry:         make(map[string]*schemaRegistryEntry),
@@ -93,6 +118,7 @@ func newDirectExtractor() *directExtractor {
 		schemaOrder:      make([]string, 0, 8),
 		enumValues:       make(map[string][]string),
 		syntheticSchemas: make(map[string]map[string]*syntheticSchema),
+		customTag:        customTag,
 	}
 }
 
@@ -213,31 +239,57 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		tag := parseSchemaTag(field.Tag.Get(AnansiTag))
-		if tag.Skip {
+
+		// First parse the anansi tag to get all metadata (skip, required, etc.)
+		anansiTag := parseSchemaTag(field.Tag.Get(AnansiTag))
+		if anansiTag.Skip {
 			continue
 		}
-		if field.Anonymous && field.Type.Kind() == reflect.Struct && tag.TypeOverride == "" {
+
+		// If field is embedded (anonymous) and no type override, flatten its fields.
+		if field.Anonymous && field.Type.Kind() == reflect.Struct && anansiTag.TypeOverride == "" {
 			if err := e.extractStructFields(field.Type, owningSchemaID, buf, fieldOrdinal, fieldCount); err != nil {
 				return err
 			}
 			continue
 		}
-		fieldName := field.Name
-		if tag.HasName {
-			fieldName = tag.Name
-		} else {
-			fieldName = toSnakeCase(fieldName)
+
+		// Resolve the field name:
+		// 1. If a custom tag is provided, use its first part (before comma) as the name.
+		// 2. Else if the anansi tag has an explicit name, use that.
+		// 3. Otherwise fall back to snake-cased Go field name.
+		fieldName := ""
+		if e.customTag != "" {
+			ct := field.Tag.Get(e.customTag)
+			if ct != "" && ct != "-" {
+				// Take the first comma-separated part as the name (ignore options)
+				parts := strings.SplitN(ct, ",", 2)
+				name := strings.TrimSpace(parts[0])
+				if name != "" {
+					fieldName = name
+				}
+			}
 		}
+		if fieldName == "" && anansiTag.HasName {
+			fieldName = anansiTag.Name
+		}
+		if fieldName == "" {
+			fieldName = toSnakeCase(field.Name)
+		}
+
+		// Dotted paths are handled by synthetic schemas.
 		if strings.Contains(fieldName, ".") {
-			if _, err := e.writePathField(owningSchemaID, fieldOrdinal, &localSynOrder, field, fieldName, tag); err != nil {
+			if _, err := e.writePathField(owningSchemaID, fieldOrdinal, &localSynOrder, field, fieldName, anansiTag); err != nil {
 				return err
 			}
 			continue
 		}
-		if tag.Default != nil && (tag.TypeOverride == "composite" || tag.TypeOverride == "union") {
-			return fmt.Errorf("field %q: default values are not supported for %s fields", fieldName, tag.TypeOverride)
+
+		// For non-path fields, we write a standard field entry.
+		if anansiTag.Default != nil && (anansiTag.TypeOverride == "composite" || anansiTag.TypeOverride == "union") {
+			return fmt.Errorf("field %q: default values are not supported for %s fields", fieldName, anansiTag.TypeOverride)
 		}
+
 		(*fieldOrdinal)++
 		fieldID := generateDeterministicUUIDv7(*fieldOrdinal, owningSchemaID+fieldName)
 		if *fieldCount > 0 {
@@ -248,19 +300,20 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 		writeJSONString(buf, fieldID)
 		buf.WriteString(": ")
 		var err error
-		switch tag.TypeOverride {
+		switch anansiTag.TypeOverride {
 		case "composite":
-			err = e.writeCompositeField(buf, field, fieldName, tag)
+			err = e.writeCompositeField(buf, field, fieldName, anansiTag)
 		case "union":
-			err = e.writeUnionField(buf, field, fieldName, tag)
+			err = e.writeUnionField(buf, field, fieldName, anansiTag)
 		default:
-			err = e.writeStandardField(buf, field, fieldName, tag)
+			err = e.writeStandardField(buf, field, fieldName, anansiTag)
 		}
 		if err != nil {
 			return err
 		}
 	}
 
+	// Append synthetic schemas (dotted paths) to the current owning schema's fields.
 	if synMap, ok := e.syntheticSchemas[owningSchemaID]; ok {
 		for _, head := range localSynOrder {
 			syn := synMap[head]
