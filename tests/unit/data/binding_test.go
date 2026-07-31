@@ -13,17 +13,17 @@ import (
 
 func TestStructBinder_To(t *testing.T) {
 	type Address struct {
-		Street string `doc:"street"`
-		City   string `doc:"city"`
+		Street string `anansi:"street"`
+		City   string `anansi:"city"`
 	}
 
 	type User struct {
-		ID        int       `doc:"user_id"`
-		Name      string    `doc:"full_name,omitempty"`
-		Active    bool      `doc:"is_active"`
-		CreatedAt time.Time `doc:"created_at"`
-		Address   Address   `doc:"address"`
-		Tags      []string  `doc:"tags"`
+		ID        int       `anansi:"user_id"`
+		Name      string    `anansi:"full_name,omitempty"`
+		Active    bool      `anansi:"is_active"`
+		CreatedAt time.Time `anansi:"created_at"`
+		Address   Address   `anansi:"address"`
+		Tags      []string  `anansi:"tags"`
 	}
 
 	doc, err := data.NewDocument(map[string]any{
@@ -59,8 +59,8 @@ func TestStructBinder_To(t *testing.T) {
 
 func TestBindTo_Generic(t *testing.T) {
 	type Product struct {
-		SKU   string  `doc:"sku"`
-		Price float64 `doc:"price"`
+		SKU   string  `anansi:"sku"`
+		Price float64 `anansi:"price"`
 	}
 
 	doc, err := data.NewDocument(map[string]any{

@@ -91,7 +91,7 @@ func initializeModelReflect(model any) {
 	}
 
 	// Leverage shared type cache from bind.go
-	fields, sysErr := getTypeInfo(v.Type())
+	fields, sysErr := getTypeInfo(v.Type(), AnansiTag)
 	if sysErr != nil {
 		return
 	}
