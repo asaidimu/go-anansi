@@ -1,3 +1,10 @@
+## [8.4.2](https://github.com/asaidimu/go-anansi/compare/v8.4.1...v8.4.2) (2026-07-31)
+
+
+### Bug Fixes
+
+* **data:** add support for custom struct tags in document binding ([52989b4](https://github.com/asaidimu/go-anansi/commit/52989b48021e7d64dcd48b567e2b2b4cbef571e5))
+
 ## [8.4.1](https://github.com/asaidimu/go-anansi/compare/v8.4.0...v8.4.1) (2026-07-31)
 
 
