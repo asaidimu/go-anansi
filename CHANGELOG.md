@@ -1,3 +1,10 @@
+## [8.4.3](https://github.com/asaidimu/go-anansi/compare/v8.4.2...v8.4.3) (2026-07-31)
+
+
+### Bug Fixes
+
+* **data:** add support for custom struct tags in schema generation ([df08ae3](https://github.com/asaidimu/go-anansi/commit/df08ae31a2c50f26d986f077493fbe417b1ba0ca))
+
 ## [8.4.2](https://github.com/asaidimu/go-anansi/compare/v8.4.1...v8.4.2) (2026-07-31)
 
 
