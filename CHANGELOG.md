@@ -1,3 +1,10 @@
+## [8.3.8](https://github.com/asaidimu/go-anansi/compare/v8.3.7...v8.3.8) (2026-07-31)
+
+
+### Bug Fixes
+
+* fix json marshalling ([c77906a](https://github.com/asaidimu/go-anansi/commit/c77906a74475f33876d03d36901e24833adc673b))
+
 ## [8.3.7](https://github.com/asaidimu/go-anansi/compare/v8.3.6...v8.3.7) (2026-07-31)
 
 
