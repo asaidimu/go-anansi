@@ -1,3 +1,10 @@
+## [8.3.6](https://github.com/asaidimu/go-anansi/compare/v8.3.5...v8.3.6) (2026-07-30)
+
+
+### Bug Fixes
+
+* fix schema generation in DTOs ([26d9ebc](https://github.com/asaidimu/go-anansi/commit/26d9ebc830e61841605991ad5d47d4e14ff75538))
+
 ## [8.3.5](https://github.com/asaidimu/go-anansi/compare/v8.3.4...v8.3.5) (2026-07-30)
 
 
