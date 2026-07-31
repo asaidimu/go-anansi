@@ -1,3 +1,10 @@
+## [8.4.5](https://github.com/asaidimu/go-anansi/compare/v8.4.4...v8.4.5) (2026-07-31)
+
+
+### Bug Fixes
+
+* **persistence:** allow decoupling input and output shapes in collection methods ([47c4d8a](https://github.com/asaidimu/go-anansi/commit/47c4d8a00cc13d5a1f16e9dc2981c10b467cb5ca))
+
 ## [8.4.4](https://github.com/asaidimu/go-anansi/compare/v8.4.3...v8.4.4) (2026-07-31)
 
 
