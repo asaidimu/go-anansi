@@ -20,7 +20,9 @@ type ResourceReference struct {
 
 // SchemaReference defines a reference to a nested schema.
 type SchemaReference struct {
-	ID          SchemaId                    `json:"id"`
+	// ID is empty for inline (Form 3) references — omitempty keeps an inline
+	// descriptor from ever emitting a blank "id" (schema_rules.md Rule 20).
+	ID          SchemaId                    `json:"id,omitempty"`
 	Indexes     map[IndexID]Index           `json:"indexes,omitempty"`
 	Constraints map[ConstraintId]Constraint `json:"constraints,omitempty"`
 	Type        FieldType                   `json:"type,omitempty"`

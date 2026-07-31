@@ -266,12 +266,17 @@ func (s *Schema) ToJSON() []byte {
 				jb.endObject()
 			case NodeTypeField, NodeTypeNestedSchema, NodeTypeConstraint, NodeTypeIndex:
 				jb.endObject()
-			case NodeTypeConstraintGroup:
-				// Close the rules array
-				jb.endArray()
+			case NodeTypeConstraintRule, NodeTypeIndexCondition:
 				jb.endObject()
+			case NodeTypeConstraintGroup:
+				// Close the rules array; the object is only closed here
+				// when the group opened its own (nested) object
+				jb.endArray()
+				if prev.inArray {
+					jb.endObject()
+				}
 			case NodeTypeIndexConditionGroup:
-				// Close the conditions array
+				// Close the conditions array and the condition object
 				jb.endArray()
 				jb.endObject()
 			}
@@ -282,9 +287,15 @@ func (s *Schema) ToJSON() []byte {
 			schema := ctx.Value.(*Schema)
 			jb.startObject()
 			jb.writeKey("version")
-			jb.writeString(schema.Version.String())
-			jb.writeKey("name")
-			jb.writeString(schema.Name)
+			if schema.Version != nil {
+				jb.writeString(schema.Version.String())
+			} else {
+				jb.writeNull()
+			}
+			if schema.Name != "" {
+				jb.writeKey("name")
+				jb.writeString(schema.Name)
+			}
 			if schema.Description != "" {
 				jb.writeKey("description")
 				jb.writeString(schema.Description)
@@ -313,6 +324,10 @@ func (s *Schema) ToJSON() []byte {
 			}
 			if field.Unique {
 				jb.writeKey("unique")
+				jb.writeBool(true)
+			}
+			if field.Nullable {
+				jb.writeKey("nullable")
 				jb.writeBool(true)
 			}
 			if field.Type != 0 {
@@ -398,21 +413,28 @@ func (s *Schema) ToJSON() []byte {
 			contextStack = append(contextStack, contextInfo{ctx.Type, ctx.Depth, false})
 		case NodeTypeConstraintRule:
 			rule := ctx.Value.(*ConstraintRule)
+			if len(contextStack) > 0 && contextStack[len(contextStack)-1].nodeType == NodeTypeConstraintGroup {
+				// Inside a group's rules array, each rule is its own object
+				jb.writeComma()
+				jb.startObject()
+				contextStack = append(contextStack, contextInfo{ctx.Type, ctx.Depth, false})
+			}
 			jb.writeKey("predicate")
 			jb.writeString(string(rule.Predicate))
 			// fields and parameters are now written by their respective child nodes
 		case NodeTypeConstraintGroup:
 			group := ctx.Value.(*ConstraintGroup)
+			nested := len(contextStack) > 0 && contextStack[len(contextStack)-1].nodeType == NodeTypeConstraintGroup
+			if nested {
+				// Nested group inside another group's rules array
+				jb.writeComma()
+				jb.startObject()
+			}
 			jb.writeKey("operator")
 			jb.writeString(group.Operator.String())
 			jb.writeKey("rules")
 			jb.startArray()
-			contextStack = append(contextStack, contextInfo{ctx.Type, ctx.Depth, true})
-			// Each rule in the group will be an object in the array
-			for range group.Rules {
-				jb.writeComma()
-				jb.startObject()
-			}
+			contextStack = append(contextStack, contextInfo{ctx.Type, ctx.Depth, nested})
 		case NodeTypeIndexesMap:
 			jb.writeKey("indexes")
 			jb.startObject()
@@ -441,26 +463,37 @@ func (s *Schema) ToJSON() []byte {
 			contextStack = append(contextStack, contextInfo{ctx.Type, ctx.Depth, false})
 		case NodeTypeIndexCondition:
 			condition := ctx.Value.(*IndexCondition)
-			jb.writeKey("condition")
-			jb.startObject()
+			nested := len(contextStack) > 0 && contextStack[len(contextStack)-1].nodeType == NodeTypeIndexConditionGroup
+			if nested {
+				// Inside a conditions array, each condition is its own object
+				jb.writeComma()
+				jb.startObject()
+			} else {
+				jb.writeKey("condition")
+				jb.startObject()
+			}
 			jb.writeKey("field")
 			jb.writeString(string(condition.Field))
 			jb.writeKey("operator")
 			jb.writeString(condition.Operator.String())
-			if !condition.Value.IsZero() && !condition.Value.IsNull() {
-				jb.writeKey("value")
-				jb.writeLiteralValue(condition.Value)
-			}
-			jb.endObject()
+			// value is now written by NodeTypeLiteralValue
+			contextStack = append(contextStack, contextInfo{ctx.Type, ctx.Depth, nested})
 		case NodeTypeIndexConditionGroup:
 			group := ctx.Value.(*IndexConditionGroup)
-			jb.writeKey("condition")
-			jb.startObject()
+			nested := len(contextStack) > 0 && contextStack[len(contextStack)-1].nodeType == NodeTypeIndexConditionGroup
+			if nested {
+				// Nested group inside another conditions array
+				jb.writeComma()
+				jb.startObject()
+			} else {
+				jb.writeKey("condition")
+				jb.startObject()
+			}
 			jb.writeKey("operator")
 			jb.writeString(group.Operator.String())
 			jb.writeKey("conditions")
 			jb.startArray()
-			contextStack = append(contextStack, contextInfo{ctx.Type, ctx.Depth, true})
+			contextStack = append(contextStack, contextInfo{ctx.Type, ctx.Depth, nested})
 		case NodeTypeFieldSchema:
 			ref := ctx.Value.(FieldSchemaReference)
 			jb.writeKey("schema")
@@ -572,9 +605,13 @@ func (s *Schema) ToJSON() []byte {
 			jb.endObject()
 		case NodeTypeField, NodeTypeNestedSchema, NodeTypeConstraint, NodeTypeIndex:
 			jb.endObject()
+		case NodeTypeConstraintRule, NodeTypeIndexCondition:
+			jb.endObject()
 		case NodeTypeConstraintGroup:
 			jb.endArray()
-			jb.endObject()
+			if prev.inArray {
+				jb.endObject()
+			}
 		case NodeTypeIndexConditionGroup:
 			jb.endArray()
 			jb.endObject()
