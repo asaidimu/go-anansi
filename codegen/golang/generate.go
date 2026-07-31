@@ -77,6 +77,100 @@ type GoGenerator struct {
 	scoped      bool
 	nameRules   []NameRule
 	packageName string
+	mode        GenerationMode
+}
+
+// ============================================================================
+// Generation modes
+// ============================================================================
+
+// GenerationMode is a bitmask selecting which layers of generated output to
+// emit. Layers are cumulative: each higher layer implies everything below it,
+// so the flags express "emit at least up to this layer".
+//
+// A zero value is valid and selects ModeFull (the default).
+type GenerationMode uint32
+
+const (
+	// ModeStructs emits type declarations only (aliases, enums, structs). The
+	// root schema is emitted like any other schema — no DocumentModel embed,
+	// no constructor. Suitable for plain DTOs that don't touch persistence.
+	ModeStructs GenerationMode = 1 << iota
+
+	// ModeModel emits ModeStructs plus the root model treatment: the root
+	// struct embeds data.DocumentModel and a New constructor is emitted.
+	ModeModel
+
+	// ModeCollection emits ModeModel plus the typed collection wrapper, the
+	// collection-name constant, the singleton instance, and the Init/accessor
+	// functions. This is the full persistence stack.
+	ModeCollection
+
+	// ModeFull is the default: every layer is emitted.
+	ModeFull = ModeStructs | ModeModel | ModeCollection
+)
+
+// emitsStructs reports whether type declarations are included in the mode.
+func (m GenerationMode) emitsStructs() bool {
+	return m&(ModeStructs|ModeModel|ModeCollection) != 0
+}
+
+// emitsRootModel reports whether the root struct gets a DocumentModel embed.
+func (m GenerationMode) emitsRootModel() bool {
+	return m&(ModeModel|ModeCollection) != 0
+}
+
+// emitsCollection reports whether the collection scaffold is included.
+func (m GenerationMode) emitsCollection() bool {
+	return m&ModeCollection != 0
+}
+
+// String returns the canonical string form of the mode: the highest layer
+// requested ("structs", "model", or "full"), or "" for an empty mode.
+func (m GenerationMode) String() string {
+	switch {
+	case m == 0:
+		return ""
+	case m.emitsCollection():
+		return "full"
+	case m.emitsRootModel():
+		return "model"
+	case m.emitsStructs():
+		return "structs"
+	default:
+		return ""
+	}
+}
+
+// ParseGenerationMode parses a mode from its string form. Accepted tokens are
+// "structs", "model", "collection", and "full"; multiple tokens may be
+// comma-separated (e.g. "structs,collection"). Each token expands to include
+// the layers it implies.
+func ParseGenerationMode(s string) (GenerationMode, error) {
+	trimmed := strings.ToLower(strings.TrimSpace(s))
+	if trimmed == "" {
+		return 0, fmt.Errorf("generation mode is empty (valid: structs, model, collection, full)")
+	}
+	if trimmed == "full" {
+		return ModeFull, nil
+	}
+
+	var mode GenerationMode
+	for _, tok := range strings.Split(trimmed, ",") {
+		switch strings.TrimSpace(tok) {
+		case "full":
+			mode |= ModeFull
+		case "collection":
+			mode |= ModeStructs | ModeModel | ModeCollection
+		case "model":
+			mode |= ModeStructs | ModeModel
+		case "structs":
+			mode |= ModeStructs
+		default:
+			return 0, fmt.Errorf("unknown generation mode %q (valid: structs, model, collection, full)", tok)
+		}
+	}
+	return mode, nil
 }
 
 // ============================================================================
@@ -88,6 +182,8 @@ type GeneratorConfig struct {
 	ScopedPackages bool
 	NameRules      []NameRule
 	PackageName    string
+	// Mode selects which layers of output to emit. Zero selects ModeFull.
+	Mode GenerationMode
 }
 
 func NewGoGenerator(config *GeneratorConfig) *GoGenerator {
@@ -97,7 +193,11 @@ func NewGoGenerator(config *GeneratorConfig) *GoGenerator {
 			NameRules: make([]NameRule, 0),
 		}
 	}
-	return &GoGenerator{tagConfig: config.TagConfig, scoped: config.ScopedPackages, nameRules: config.NameRules, packageName: config.PackageName}
+	mode := config.Mode
+	if mode == 0 {
+		mode = ModeFull
+	}
+	return &GoGenerator{tagConfig: config.TagConfig, scoped: config.ScopedPackages, nameRules: config.NameRules, packageName: config.PackageName, mode: mode}
 }
 
 // goTypeName converts a schema name to a Go type name by:
@@ -158,23 +258,24 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 	structs := make(map[string][]StructField)  // struct name -> fields
 	typeAliases := make(map[string]string)     // name -> underlying type expr
 	enumDefs := make(map[string]EnumDef)       // name -> enum definition
-	inlineEnumNames := make(map[string]string) // key -> generated type name for inline enum
+	inlineNames := make(map[string]string) // key -> generated type name for inline container
 
-	// Helper to generate inline enum types (unique name per parent+field)
-	genInlineEnumName := func(parent, field string) string {
-		key := parent + "_" + field + "_enum"
-		if name, ok := inlineEnumNames[key]; ok {
+	// Helper to generate inline container types (unique name per parent+field).
+	// kind is the container kind: "enum", "union", or "composite".
+	genInlineName := func(parent, field, kind string) string {
+		key := parent + "_" + field + "_" + kind
+		if name, ok := inlineNames[key]; ok {
 			return name
 		}
-		name := toCamelCase(parent + "_" + field + "_enum")
-		inlineEnumNames[key] = name
+		name := toCamelCase(parent + "_" + field + "_" + kind)
+		inlineNames[key] = name
 		return name
 	}
 
 	// Process all nested schemas
 	for id, info := range schemaInfos {
 		if info.IsSchema {
-			fields, err := generateFields(info.Fields, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineEnumNames, genInlineEnumName, info.Name, tagConfig)
+			fields, err := generateFields(info.Fields, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, info.Name, tagConfig)
 			if err != nil {
 				return "", fmt.Errorf("failed to generate fields for schema %s: %w", id, err)
 			}
@@ -229,17 +330,17 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 					if err != nil {
 						return "", err
 					}
-					fields = append(fields, StructField{
-						Name: refType, // use the type name as field name
-						Type: "*" + refType,
-						Tags: fmt.Sprintf("`json:\"%s,omitempty\"`", toSnakeCase(refType)),
-					})
+				fields = append(fields, StructField{
+					Name: refType, // use the type name as field name
+					Type: "*" + refType,
+					Tags: buildVariantTags(toSnakeCase(refType), tagConfig),
+				})
 				}
 				structs[typeNames[id]] = fields
 
 			default:
 				// array, record, or primitive
-				goType, err := resolveTypeMode(info.Type, info.SchemaRef, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineEnumNames, genInlineEnumName, info.Name)
+				goType, err := resolveTypeMode(info.Type, info.SchemaRef, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, info.Name)
 				if err != nil {
 					return "", fmt.Errorf("failed to resolve type mode for schema %s: %w", id, err)
 				}
@@ -249,30 +350,70 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 	}
 
 	// Process root schema
-	rootFieldsGo, err := generateFields(rootFields, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineEnumNames, genInlineEnumName, rootName, tagConfig)
+	rootFieldsGo, err := generateFields(rootFields, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, rootName, tagConfig)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate root fields: %w", err)
 	}
 	structs[rootTypeName] = rootFieldsGo
 
 	// Build output
-	var sb strings.Builder
+	return g.render(rootName, rootTypeName, structs, typeAliases, enumDefs)
+}
 
-	_, hasRootStruct := structs[rootTypeName]
+// ============================================================================
+// Output rendering
+// ============================================================================
 
-	// Determine if any struct field uses decimal.Decimal
+// render assembles the generated source from the parsed type definitions. The
+// generation mode controls which layers are emitted; all type-generation work
+// happens before this point and is shared across modes. Output is deterministic:
+// every map is emitted in sorted key order.
+func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef) (string, error) {
+	mode := g.mode
+	emitRootModel := mode.emitsRootModel()
+	emitCollection := mode.emitsCollection()
+
+	// Determine which imports the emitted layers reference.
 	needsDecimal := false
-	for _, fields := range structs {
-		for _, f := range fields {
-			if f.Type == "decimal.Decimal" {
-				needsDecimal = true
-				break
-			}
-		}
-		if needsDecimal {
+	for _, typ := range typeAliases {
+		if strings.Contains(typ, "decimal.Decimal") {
+			needsDecimal = true
 			break
 		}
 	}
+	if !needsDecimal {
+		for _, fields := range structs {
+			for _, f := range fields {
+				if strings.Contains(f.Type, "decimal.Decimal") {
+					needsDecimal = true
+					break
+				}
+			}
+			if needsDecimal {
+				break
+			}
+		}
+	}
+
+	var imports []string
+	if emitRootModel {
+		imports = append(imports, "\"github.com/asaidimu/go-anansi/v8/core/data\"")
+	}
+	if needsDecimal {
+		imports = append(imports, "\"github.com/asaidimu/go-anansi/v8/core/types/decimal\"")
+	}
+	if emitCollection {
+		imports = append(imports,
+			"\"context\"",
+			"\"sync\"",
+			"\"github.com/asaidimu/go-anansi/v8/core/common\"",
+			"\"github.com/asaidimu/go-anansi/v8/core/persistence/base\"",
+			"\"github.com/asaidimu/go-anansi/v8/core/persistence/collection\"",
+			"\"go.uber.org/zap\"",
+		)
+	}
+
+	var sb strings.Builder
 
 	// File header
 	sb.WriteString("// Code generated by anansi. DO NOT EDIT.\n")
@@ -294,31 +435,25 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 	}
 
 	// Imports
-	sb.WriteString("import (\n")
-	sb.WriteString("\t\"github.com/asaidimu/go-anansi/v8/core/data\"\n")
-	if needsDecimal {
-		sb.WriteString("\t\"github.com/asaidimu/go-anansi/v8/core/types/decimal\"\n")
+	if len(imports) > 0 {
+		sb.WriteString("import (\n")
+		for _, imp := range imports {
+			sb.WriteString("\t" + imp + "\n")
+		}
+		sb.WriteString(")\n\n")
 	}
-	if hasRootStruct {
-		sb.WriteString("\t\"context\"\n")
-		sb.WriteString("\t\"sync\"\n")
-		sb.WriteString("\t\"github.com/asaidimu/go-anansi/v8/core/common\"\n")
-		sb.WriteString("\t\"github.com/asaidimu/go-anansi/v8/core/persistence/base\"\n")
-		sb.WriteString("\t\"github.com/asaidimu/go-anansi/v8/core/persistence/collection\"\n")
-		sb.WriteString("\t\"go.uber.org/zap\"\n")
-	}
-	sb.WriteString(")\n\n")
 
-	// Output type aliases (non-enum)
-	for name, underlying := range typeAliases {
-		fmt.Fprintf(&sb, "type %s = %s\n", name, underlying)
+	// Type aliases (non-enum)
+	for _, name := range sortedKeys(typeAliases) {
+		fmt.Fprintf(&sb, "type %s = %s\n", name, typeAliases[name])
 	}
 	if len(typeAliases) > 0 {
 		sb.WriteString("\n")
 	}
 
-	// Output enum types
-	for name, enum := range enumDefs {
+	// Enum types
+	for _, name := range sortedKeys(enumDefs) {
+		enum := enumDefs[name]
 		fmt.Fprintf(&sb, "type %s %s\n\n", name, enum.Underlying)
 		sb.WriteString("const (\n")
 		for _, v := range enum.Values {
@@ -329,33 +464,17 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 		sb.WriteString(")\n\n")
 	}
 
-	// Output nested structs (everything except root, which gets the model treatment)
-	for name, fields := range structs {
-		if name == rootTypeName {
+	// Structs. The root struct is emitted in sorted order like any other schema
+	// unless it receives the model treatment, in which case it is emitted last
+	// with the DocumentModel embed.
+	for _, name := range sortedKeys(structs) {
+		if name == rootTypeName && emitRootModel {
 			continue
 		}
-		sort.Slice(fields, func(i, j int) bool {
-			return typeSize(fields[i].Type) > typeSize(fields[j].Type)
-		})
-		fmt.Fprintf(&sb, "type %s struct {\n", name)
-		for _, f := range fields {
-			fmt.Fprintf(&sb, "    %s %s `%s`\n", f.Name, f.Type, strings.Trim(f.Tags, "`"))
-		}
-		sb.WriteString("}\n\n")
+		emitStruct(&sb, name, structs[name], false)
 	}
-
-	// Output root struct with DocumentModel embed
-	if hasRootStruct {
-		fields := structs[rootTypeName]
-		sort.Slice(fields, func(i, j int) bool {
-			return typeSize(fields[i].Type) > typeSize(fields[j].Type)
-		})
-		fmt.Fprintf(&sb, "type %s struct {\n", rootTypeName)
-		sb.WriteString("    data.DocumentModel\n")
-		for _, f := range fields {
-			sb.WriteString(fmt.Sprintf("    %s %s `%s`\n", f.Name, f.Type, strings.Trim(f.Tags, "`")))
-		}
-		sb.WriteString("}\n\n")
+	if emitRootModel {
+		emitStruct(&sb, rootTypeName, structs[rootTypeName], true)
 
 		// Constructor
 		if g.scoped {
@@ -370,74 +489,114 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 			sb.WriteString("}\n\n")
 		}
 
-		// Typed collection wrapper
-		collectionName := rootTypeName + "s"
-		sb.WriteString(fmt.Sprintf("// %s is a type-safe collection for %s\n", collectionName, rootTypeName))
-		sb.WriteString(fmt.Sprintf("type %s struct {\n", collectionName))
-		sb.WriteString(fmt.Sprintf("    base.ModelCollection[%s, *%s]\n", rootTypeName, rootTypeName))
-		sb.WriteString("}\n\n")
-
-		// Singleton model access — unexported vars, exported functions.
-		// In scoped mode (one model per package) the function prefix is
-		// empty — InitModel / Model. In non-scoped mode the collection
-		// name is used — InitUsersModel / UsersModel.
-		var fnPrefix string
-		var constName string
-		var varName string
-		if g.scoped {
-			constName = "CollectionName"
-			varName = "model"
-		} else {
-			fnPrefix = collectionName
-			constName = collectionName + "CollectionName"
-			varName = lowerFirst(collectionName) + "Model"
+		if emitCollection {
+			emitCollectionScaffold(&sb, g.scoped, rootTypeName, rootSchemaName)
 		}
-		sb.WriteString(fmt.Sprintf("const %s = %q\n\n", constName, rootName))
-		sb.WriteString(fmt.Sprintf("var (\n"))
-		sb.WriteString(fmt.Sprintf("    %sMu sync.Mutex\n", varName))
-		sb.WriteString(fmt.Sprintf("    %s   *%s\n", varName, collectionName))
-		sb.WriteString(fmt.Sprintf(")\n\n"))
-
-		sb.WriteString(fmt.Sprintf("// Init%sModel must be called once at startup to configure and\n", fnPrefix))
-		sb.WriteString(fmt.Sprintf("// construct the %s model. Idempotent — subsequent calls return\n", rootTypeName))
-		sb.WriteString(fmt.Sprintf("// the existing instance. Retry-safe: if the first call fails, the\n"))
-		sb.WriteString(fmt.Sprintf("// caller can fix the underlying issue and call again.\n"))
-		sb.WriteString(fmt.Sprintf("func Init%sModel(p base.Persistence, logger *zap.Logger, opts ...collection.ModelCollectionOptions[%s, *%s]) (*%s, error) {\n", fnPrefix, rootTypeName, rootTypeName, collectionName))
-		sb.WriteString(fmt.Sprintf("    %sMu.Lock()\n", varName))
-		sb.WriteString(fmt.Sprintf("    defer %sMu.Unlock()\n", varName))
-		sb.WriteString(fmt.Sprintf("    if %s != nil {\n", varName))
-		sb.WriteString(fmt.Sprintf("        return %s, nil\n", varName))
-		sb.WriteString(fmt.Sprintf("    }\n"))
-		sb.WriteString(fmt.Sprintf("    raw, err := p.Collection(context.Background(), %s)\n", constName))
-		sb.WriteString(fmt.Sprintf("    if err != nil {\n"))
-		sb.WriteString(fmt.Sprintf("        return nil, common.SystemErrorFrom(err, \"ERR_MODEL_INIT_FAILED\").\n"))
-		sb.WriteString(fmt.Sprintf("            WithOperation(\"Init%sModel\").\n", fnPrefix))
-		sb.WriteString(fmt.Sprintf("            WithPath(%q)\n", rootName))
-		sb.WriteString(fmt.Sprintf("    }\n"))
-		sb.WriteString(fmt.Sprintf("    mc, err := collection.NewModelCollection[%s, *%s](raw, logger, opts...)\n", rootTypeName, rootTypeName))
-		sb.WriteString(fmt.Sprintf("    if err != nil {\n"))
-		sb.WriteString(fmt.Sprintf("        return nil, common.SystemErrorFrom(err, \"ERR_MODEL_INIT_FAILED\").\n"))
-		sb.WriteString(fmt.Sprintf("            WithOperation(\"Init%sModel\").\n", fnPrefix))
-		sb.WriteString(fmt.Sprintf("            WithPath(%q)\n", rootName))
-		sb.WriteString(fmt.Sprintf("    }\n"))
-		sb.WriteString(fmt.Sprintf("    %s = &%s{ModelCollection: mc}\n", varName, collectionName))
-		sb.WriteString(fmt.Sprintf("    return %s, nil\n", varName))
-		sb.WriteString(fmt.Sprintf("}\n\n"))
-
-		sb.WriteString(fmt.Sprintf("// %sModel returns the singleton %s model.\n", fnPrefix, rootTypeName))
-		sb.WriteString(fmt.Sprintf("func %sModel() (*%s, error) {\n", fnPrefix, collectionName))
-		sb.WriteString(fmt.Sprintf("    %sMu.Lock()\n", varName))
-		sb.WriteString(fmt.Sprintf("    defer %sMu.Unlock()\n", varName))
-		sb.WriteString(fmt.Sprintf("    if %s == nil {\n", varName))
-		sb.WriteString(fmt.Sprintf("        return nil, common.NewSystemError(\"ERR_MODEL_NOT_INITIALIZED\",\n"))
-		sb.WriteString(fmt.Sprintf("            \"%sModel not initialized — call Init%sModel first\").\n", fnPrefix, fnPrefix))
-		sb.WriteString(fmt.Sprintf("            WithOperation(\"%sModel\")\n", fnPrefix))
-		sb.WriteString(fmt.Sprintf("    }\n"))
-		sb.WriteString(fmt.Sprintf("    return %s, nil\n", varName))
-		sb.WriteString(fmt.Sprintf("}\n"))
 	}
 
 	return sb.String(), nil
+}
+
+// emitStruct writes a single struct declaration. Fields are sorted by size so
+// that padding is minimized. embedModel embeds data.DocumentModel first.
+func emitStruct(sb *strings.Builder, name string, fields []StructField, embedModel bool) {
+	sort.Slice(fields, func(i, j int) bool {
+		return typeSize(fields[i].Type) > typeSize(fields[j].Type)
+	})
+	fmt.Fprintf(sb, "type %s struct {\n", name)
+	if embedModel {
+		sb.WriteString("    data.DocumentModel\n")
+	}
+	for _, f := range fields {
+		tagStr := strings.Trim(f.Tags, "`")
+		if tagStr == "" {
+			fmt.Fprintf(sb, "    %s %s\n", f.Name, f.Type)
+			continue
+		}
+		fmt.Fprintf(sb, "    %s %s `%s`\n", f.Name, f.Type, tagStr)
+	}
+	sb.WriteString("}\n\n")
+}
+
+// emitCollectionScaffold writes the typed collection wrapper, the collection
+// name constant, the singleton instance, and the Init/accessor functions.
+// rootTypeName is the Go name of the model type; rootSchemaName is the raw
+// schema/collection name used as the collection identifier.
+func emitCollectionScaffold(sb *strings.Builder, scoped bool, rootTypeName, rootSchemaName string) {
+	collectionName := rootTypeName + "s"
+	sb.WriteString(fmt.Sprintf("// %s is a type-safe collection for %s\n", collectionName, rootTypeName))
+	sb.WriteString(fmt.Sprintf("type %s struct {\n", collectionName))
+	sb.WriteString(fmt.Sprintf("    base.ModelCollection[%s, *%s]\n", rootTypeName, rootTypeName))
+	sb.WriteString("}\n\n")
+
+	// Singleton model access — unexported vars, exported functions.
+	// In scoped mode (one model per package) the function prefix is
+	// empty — InitModel / Model. In non-scoped mode the collection
+	// name is used — InitUsersModel / UsersModel.
+	var fnPrefix string
+	var constName string
+	var varName string
+	if scoped {
+		constName = "CollectionName"
+		varName = "model"
+	} else {
+		fnPrefix = collectionName
+		constName = collectionName + "CollectionName"
+		varName = lowerFirst(collectionName) + "Model"
+	}
+	sb.WriteString(fmt.Sprintf("const %s = %q\n\n", constName, rootSchemaName))
+	sb.WriteString(fmt.Sprintf("var (\n"))
+	sb.WriteString(fmt.Sprintf("    %sMu sync.Mutex\n", varName))
+	sb.WriteString(fmt.Sprintf("    %s   *%s\n", varName, collectionName))
+	sb.WriteString(fmt.Sprintf(")\n\n"))
+
+	sb.WriteString(fmt.Sprintf("// Init%sModel must be called once at startup to configure and\n", fnPrefix))
+	sb.WriteString(fmt.Sprintf("// construct the %s model. Idempotent — subsequent calls return\n", rootTypeName))
+	sb.WriteString(fmt.Sprintf("// the existing instance. Retry-safe: if the first call fails, the\n"))
+	sb.WriteString(fmt.Sprintf("// caller can fix the underlying issue and call again.\n"))
+	sb.WriteString(fmt.Sprintf("func Init%sModel(p base.Persistence, logger *zap.Logger, opts ...collection.ModelCollectionOptions[%s, *%s]) (*%s, error) {\n", fnPrefix, rootTypeName, rootTypeName, collectionName))
+	sb.WriteString(fmt.Sprintf("    %sMu.Lock()\n", varName))
+	sb.WriteString(fmt.Sprintf("    defer %sMu.Unlock()\n", varName))
+	sb.WriteString(fmt.Sprintf("    if %s != nil {\n", varName))
+	sb.WriteString(fmt.Sprintf("        return %s, nil\n", varName))
+	sb.WriteString(fmt.Sprintf("    }\n"))
+	sb.WriteString(fmt.Sprintf("    raw, err := p.Collection(context.Background(), %s)\n", constName))
+	sb.WriteString(fmt.Sprintf("    if err != nil {\n"))
+	sb.WriteString(fmt.Sprintf("        return nil, common.SystemErrorFrom(err, \"ERR_MODEL_INIT_FAILED\").\n"))
+	sb.WriteString(fmt.Sprintf("            WithOperation(\"Init%sModel\").\n", fnPrefix))
+	sb.WriteString(fmt.Sprintf("            WithPath(%q)\n", rootSchemaName))
+	sb.WriteString(fmt.Sprintf("    }\n"))
+	sb.WriteString(fmt.Sprintf("    mc, err := collection.NewModelCollection[%s, *%s](raw, logger, opts...)\n", rootTypeName, rootTypeName))
+	sb.WriteString(fmt.Sprintf("    if err != nil {\n"))
+	sb.WriteString(fmt.Sprintf("        return nil, common.SystemErrorFrom(err, \"ERR_MODEL_INIT_FAILED\").\n"))
+	sb.WriteString(fmt.Sprintf("            WithOperation(\"Init%sModel\").\n", fnPrefix))
+	sb.WriteString(fmt.Sprintf("            WithPath(%q)\n", rootSchemaName))
+	sb.WriteString(fmt.Sprintf("    }\n"))
+	sb.WriteString(fmt.Sprintf("    %s = &%s{ModelCollection: mc}\n", varName, collectionName))
+	sb.WriteString(fmt.Sprintf("    return %s, nil\n", varName))
+	sb.WriteString(fmt.Sprintf("}\n\n"))
+
+	sb.WriteString(fmt.Sprintf("// %sModel returns the singleton %s model.\n", fnPrefix, rootTypeName))
+	sb.WriteString(fmt.Sprintf("func %sModel() (*%s, error) {\n", fnPrefix, collectionName))
+	sb.WriteString(fmt.Sprintf("    %sMu.Lock()\n", varName))
+	sb.WriteString(fmt.Sprintf("    defer %sMu.Unlock()\n", varName))
+	sb.WriteString(fmt.Sprintf("    if %s == nil {\n", varName))
+	sb.WriteString(fmt.Sprintf("        return nil, common.NewSystemError(\"ERR_MODEL_NOT_INITIALIZED\",\n"))
+	sb.WriteString(fmt.Sprintf("            \"%sModel not initialized — call Init%sModel first\").\n", fnPrefix, fnPrefix))
+	sb.WriteString(fmt.Sprintf("            WithOperation(\"%sModel\")\n", fnPrefix))
+	sb.WriteString(fmt.Sprintf("    }\n"))
+	sb.WriteString(fmt.Sprintf("    return %s, nil\n", varName))
+	sb.WriteString(fmt.Sprintf("}\n"))
+}
+
+// sortedKeys returns the keys of a string-keyed map in ascending order.
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // ============================================================================
@@ -503,7 +662,7 @@ func parseFields(raw map[string]any) map[string]FieldDef {
 		fd := FieldDef{
 			Name:      getString(fm, "name"),
 			Type:      getString(fm, "type"),
-			Required:  getBool(fm, "required", true),
+			Required:  getBool(fm, "required", false),
 			Nullable:  getBool(fm, "nullable", false),
 			Default:   fm["default"],
 			SchemaRef: fm["schema"],
@@ -572,7 +731,7 @@ func mapPrimitiveTypeToGo(schemaType string) string {
 	}
 }
 
-func resolveInlineTypeDescriptor(desc map[string]any, parent, field string, typeNames map[string]string, schemaInfos map[string]*SchemaInfo, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, inlineEnumNames map[string]string, genInlineEnumName func(string, string) string, parentName string) (string, error) {
+func resolveInlineTypeDescriptor(desc map[string]any, parent, field string, typeNames map[string]string, schemaInfos map[string]*SchemaInfo, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, inlineNames map[string]string, genInlineName func(string, string, string) string, parentName string) (string, error) {
 	typ := getString(desc, "type")
 	if typ == "" {
 		return "", fmt.Errorf("inline descriptor missing 'type'")
@@ -580,7 +739,7 @@ func resolveInlineTypeDescriptor(desc map[string]any, parent, field string, type
 	values, hasValues := desc["values"].([]any)
 
 	if hasValues && len(values) > 0 {
-		enumName := genInlineEnumName(parent, field)
+		enumName := genInlineName(parent, field, "enum")
 		underlying := mapPrimitiveTypeToGo(typ)
 		if underlying == "" {
 			return "", fmt.Errorf("inline enum has unsupported underlying type %q", typ)
@@ -611,13 +770,13 @@ func resolveSchemaReference(ref map[string]any, typeNames map[string]string, sch
 	return name, nil
 }
 
-func resolveTypeMode(schemaType string, schemaRef any, typeNames map[string]string, schemaInfos map[string]*SchemaInfo, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, inlineEnumNames map[string]string, genInlineEnumName func(string, string) string, parentName string) (string, error) {
+func resolveTypeMode(schemaType string, schemaRef any, typeNames map[string]string, schemaInfos map[string]*SchemaInfo, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, inlineNames map[string]string, genInlineName func(string, string, string) string, parentName string) (string, error) {
 	switch schemaType {
 	case "array":
 		if schemaRef == nil {
 			return "", fmt.Errorf("array type missing schema reference")
 		}
-		elemType, err := resolveReferenceOrInline(schemaRef, "", "", typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineEnumNames, genInlineEnumName, parentName)
+		elemType, err := resolveReferenceOrInline(schemaRef, "", "", typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, parentName)
 		if err != nil {
 			return "", err
 		}
@@ -626,7 +785,7 @@ func resolveTypeMode(schemaType string, schemaRef any, typeNames map[string]stri
 		if schemaRef == nil {
 			return "map[string]any", nil
 		}
-		valType, err := resolveReferenceOrInline(schemaRef, "", "", typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineEnumNames, genInlineEnumName, parentName)
+		valType, err := resolveReferenceOrInline(schemaRef, "", "", typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, parentName)
 		if err != nil {
 			return "", err
 		}
@@ -640,7 +799,7 @@ func resolveTypeMode(schemaType string, schemaRef any, typeNames map[string]stri
 	}
 }
 
-func resolveReferenceOrInline(ref any, parent, field string, typeNames map[string]string, schemaInfos map[string]*SchemaInfo, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, inlineEnumNames map[string]string, genInlineEnumName func(string, string) string, parentName string) (string, error) {
+func resolveReferenceOrInline(ref any, parent, field string, typeNames map[string]string, schemaInfos map[string]*SchemaInfo, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, inlineNames map[string]string, genInlineName func(string, string, string) string, parentName string) (string, error) {
 	if ref == nil {
 		return "", nil
 	}
@@ -650,7 +809,7 @@ func resolveReferenceOrInline(ref any, parent, field string, typeNames map[strin
 			return resolveSchemaReference(v, typeNames, schemaInfos)
 		}
 		if _, hasType := v["type"]; hasType {
-			return resolveInlineTypeDescriptor(v, parent, field, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineEnumNames, genInlineEnumName, parentName)
+			return resolveInlineTypeDescriptor(v, parent, field, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, parentName)
 		}
 		return "", fmt.Errorf("invalid schema reference: neither 'id' nor 'type'")
 	case []any:
@@ -664,10 +823,28 @@ func resolveReferenceOrInline(ref any, parent, field string, typeNames map[strin
 // Field generation with configurable tags
 // ----------------------------------------------------------------------------
 
-func generateFields(fields map[string]FieldDef, typeNames map[string]string, schemaInfos map[string]*SchemaInfo, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, inlineEnumNames map[string]string, genInlineEnumName func(string, string) string, parentName string, tagConfig TagConfig) ([]StructField, error) {
+func generateFields(fields map[string]FieldDef, typeNames map[string]string, schemaInfos map[string]*SchemaInfo, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, inlineNames map[string]string, genInlineName func(string, string, string) string, parentName string, tagConfig TagConfig) ([]StructField, error) {
 	var result []StructField
 
-	for _, fd := range fields {
+	// Iterate deterministically: field names ascending, falling back to the
+	// map key (the field ID) as a tie-breaker for duplicate names.
+	type fieldEntry struct {
+		id string
+		fd FieldDef
+	}
+	entries := make([]fieldEntry, 0, len(fields))
+	for id, fd := range fields {
+		entries = append(entries, fieldEntry{id: id, fd: fd})
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].fd.Name != entries[j].fd.Name {
+			return entries[i].fd.Name < entries[j].fd.Name
+		}
+		return entries[i].id < entries[j].id
+	})
+
+	for _, e := range entries {
+		fd := e.fd
 		fieldName := fd.Name
 		if fieldName == "" {
 			continue
@@ -682,7 +859,7 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 			if !ok || len(refs) == 0 {
 				return nil, fmt.Errorf("union field %s.%s: missing or invalid schema refs", parentName, fieldName)
 			}
-			containerName := genInlineEnumName(parentName, fieldName) + "Union"
+			containerName := genInlineName(parentName, fieldName, "union")
 			containerFields := []StructField{}
 			for _, r := range refs {
 				rmap, ok := r.(map[string]any)
@@ -696,7 +873,7 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 				containerFields = append(containerFields, StructField{
 					Name: refType,
 					Type: "*" + refType,
-					Tags: fmt.Sprintf("json:\"%s,omitempty\" schema:\"%s,omitempty\"", toSnakeCase(refType), toSnakeCase(refType)),
+					Tags: buildVariantTags(toSnakeCase(refType), tagConfig),
 				})
 			}
 			structs[containerName] = containerFields
@@ -707,7 +884,7 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 			if !ok || len(refs) == 0 {
 				return nil, fmt.Errorf("composite field %s.%s: missing or invalid schema refs", parentName, fieldName)
 			}
-			containerName := genInlineEnumName(parentName, fieldName) + "Composite"
+			containerName := genInlineName(parentName, fieldName, "composite")
 			containerFields := []StructField{}
 			for _, r := range refs {
 				rmap, ok := r.(map[string]any)
@@ -731,7 +908,7 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 			if fd.SchemaRef == nil {
 				return nil, fmt.Errorf("array field %s.%s missing schema reference", parentName, fieldName)
 			}
-			elemType, err := resolveReferenceOrInline(fd.SchemaRef, parentName, fieldName, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineEnumNames, genInlineEnumName, parentName)
+			elemType, err := resolveReferenceOrInline(fd.SchemaRef, parentName, fieldName, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, parentName)
 			if err != nil {
 				return nil, err
 			}
@@ -744,7 +921,7 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 			if fd.SchemaRef == nil {
 				goType = "map[string]any"
 			} else {
-				valType, err := resolveReferenceOrInline(fd.SchemaRef, parentName, fieldName, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineEnumNames, genInlineEnumName, parentName)
+				valType, err := resolveReferenceOrInline(fd.SchemaRef, parentName, fieldName, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, parentName)
 				if err != nil {
 					return nil, err
 				}
@@ -769,7 +946,7 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 			if fd.SchemaRef == nil {
 				return nil, fmt.Errorf("enum field %s.%s missing schema reference", parentName, fieldName)
 			}
-			enumType, err := resolveReferenceOrInline(fd.SchemaRef, parentName, fieldName, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineEnumNames, genInlineEnumName, parentName)
+			enumType, err := resolveReferenceOrInline(fd.SchemaRef, parentName, fieldName, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, parentName)
 			if err != nil {
 				return nil, err
 			}
@@ -835,13 +1012,35 @@ func buildTags(fd FieldDef, jsonName, goFieldName string, tagConfig TagConfig) s
 	return strings.Join(parts, " ")
 }
 
+// buildVariantTags constructs struct tags for union container variant fields.
+// Variants are always optional (at most one is set), so omitempty is applied
+// where configured. The anansi key is skipped: variant fields are not
+// independently DTO-extracted — the containing field carries the type=union
+// annotation.
+func buildVariantTags(name string, tagConfig TagConfig) string {
+	var parts []string
+	for _, rule := range tagConfig {
+		if rule.Key == "anansi" {
+			continue
+		}
+		tagVal := name
+		if rule.OmitEmpty {
+			tagVal += ",omitempty"
+		}
+		parts = append(parts, fmt.Sprintf(`%s:"%s"`, rule.Key, tagVal))
+	}
+	return strings.Join(parts, " ")
+}
+
 // buildSchemaTagValue creates the value for the "anansi" tag with full metadata.
 func buildSchemaTagValue(fd FieldDef, fieldName string) string {
 	// Start with field name
 	tagVal := fieldName
 
 	// Required flag
-	if !fd.Required {
+	if fd.Required {
+		tagVal += ",required=true"
+	} else {
 		tagVal += ",required=false"
 	}
 	// Nullable flag

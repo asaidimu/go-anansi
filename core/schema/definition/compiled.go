@@ -64,10 +64,7 @@ const (
 //        - The INTERNAL DataPoint answers: "which field definition is this?"
 //        - The USER-DATA DataPoint answers: "at which path was this value stored?"
 //
-// =============================================================================
-// FIELD DESCRIPTOR
-// =============================================================================
-//
+
 // FieldDescriptor is a packed uint32 that identifies a field in the flat
 // CompiledSchema field table. Every unique (schema instance, field) pair
 // gets its own descriptor.
@@ -253,6 +250,13 @@ type CompiledSchema struct {
 	// Indexed by absolute descriptor index (parallel to Descriptors/FieldsMeta).
 	FieldTypes []FieldType
 
+	// LocalOffsets[i] is the prefix-sum offset of descriptor i within its own
+	// schema's address block — the sum of sizes (1 per terminal, Footprint(child)
+	// per non-terminal) of every field declared before it in the same schema.
+	// Parallel to Descriptors. Precomputed once at link time so Address() can
+	// resolve a path in O(depth) with a single array lookup per step.
+	LocalOffsets []uint32
+
 	// SchemaConstraints holds per-slot raw constraints from the source
 	// NestedSchema definitions. Indexed by schema slot index.
 	SchemaConstraints []SchemaConstraint
@@ -332,81 +336,9 @@ func (ac *AddressCache) DataPoint(cs *CompiledSchema, path ResolvedPath) uint32 
 		return dp
 	}
 	ac.mu.RUnlock()
-	dp := resolveDataPoint(cs, path)
+	dp := Address(cs, path)
 	ac.mu.Lock()
 	ac.cache[key] = dp
 	ac.mu.Unlock()
 	return dp
-}
-
-// resolveDataPoint computes the user-data address for a ResolvedPath.
-//
-// A single-step path (root-level field) resolves directly into the
-// single-step region [0, SingleStepRegion). A multi-step path resolves
-// into the multi-step region [MultiStepBase, 2^27) by summing the local
-// offset of every step along the path: each step's local offset is the
-// prefix sum of sizes (1 per terminal field, Footprint(child) per
-// non-terminal field) of the fields declared before it within its own
-// schema slot. This correctly distinguishes the same field descriptor
-// occurring at different nesting depths/positions (e.g. sibling nodes in
-// a recursive schema), since each occurrence accumulates a different sum
-// of ancestor offsets.
-//
-// Returns 0 if the path is empty or references an out-of-range schema/field.
-func resolveDataPoint(cs *CompiledSchema, path ResolvedPath) uint32 {
-	if len(path) == 0 {
-		return 0
-	}
-
-	var total uint32
-	for _, step := range path {
-		off, ok := localFieldOffset(cs, step)
-		if !ok {
-			return 0
-		}
-		total += off
-	}
-
-	if len(path) == 1 {
-		return total
-	}
-	return MultiStepBase + total
-}
-
-// localFieldOffset returns the offset of step's field within its own
-// schema slot's block — i.e. the prefix sum of sizes of the fields
-// declared before it in that schema. Terminal fields have size 1;
-// non-terminal fields have size equal to their child schema's Footprint.
-// Returns (0, false) if the step references an out-of-range schema or
-// field index.
-func localFieldOffset(cs *CompiledSchema, step ResolvedStep) (uint32, bool) {
-	schemaIdx := step.SchemaIdx()
-	fieldIdx := step.FieldIdx()
-
-	if int(schemaIdx) >= len(cs.Schemas) {
-		return 0, false
-	}
-	slot := cs.Schemas[schemaIdx]
-	if uint16(fieldIdx) >= slot.FieldCount {
-		return 0, false
-	}
-
-	var offset uint32
-	for j := uint16(0); j < uint16(fieldIdx); j++ {
-		absIdx := int(slot.FieldStart) + int(j)
-		if absIdx >= len(cs.Descriptors) {
-			return 0, false
-		}
-		fd := cs.Descriptors[absIdx]
-		if fd.Terminal() {
-			offset++
-		} else if fd.ChildSchemaIdx() != FdNoChild {
-			childIdx := fd.ChildSchemaIdx()
-			if int(childIdx) >= len(cs.Schemas) {
-				return 0, false
-			}
-			offset += cs.Schemas[childIdx].Footprint
-		}
-	}
-	return offset, true
 }

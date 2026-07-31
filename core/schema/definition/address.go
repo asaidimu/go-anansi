@@ -29,55 +29,42 @@ package definition
 //   terminal inside child m's block because the blocks are disjoint by
 //   construction.
 
+// Address computes the user-data address for a ResolvedPath in O(depth).
+//
+// Each step's sibling-offset sum is precomputed at link time in
+// CompiledSchema.LocalOffsets (parallel to Descriptors), so every step here
+// is a single array lookup instead of a rescan of the fields declared before
+// it in the same schema slot.
 func Address(cs *CompiledSchema, path ResolvedPath) uint32 {
 	if len(path) == 0 {
 		return 0
 	}
-
-	// --- Single-step: terminal field's slot position ---
 	if len(path) == 1 {
 		step := path[0]
 		slot := &cs.Schemas[step.SchemaIdx()]
-		fd := cs.Descriptors[int(slot.FieldStart)+int(step.FieldIdx())]
-		if !fd.Terminal() {
+		abs := int(slot.FieldStart) + int(step.FieldIdx())
+		if !cs.Descriptors[abs].Terminal() {
 			return 0
 		}
-		return uint32(slot.FieldStart) + uint32(step.FieldIdx())
+		return uint32(abs)
 	}
 
-	// --- Multi-step: traverse path accumulating slot positions ---
 	base := uint32(MultiStepBase)
-
-	for i := 0; i < len(path); i++ {
-		step := path[i]
+	for i, step := range path {
 		slot := &cs.Schemas[step.SchemaIdx()]
 		abs := int(slot.FieldStart) + int(step.FieldIdx())
 		fd := cs.Descriptors[abs]
-
-		// Skip fields before this one in the same schema: terminals get
-		// one slot; non-terminals consume their child's Footprint.
-		for j := int(slot.FieldStart); j < abs; j++ {
-			f := cs.Descriptors[j]
-			if f.Terminal() {
-				base++
-			} else if f.ChildSchemaIdx() != FdNoChild {
-				base += cs.Schemas[f.ChildSchemaIdx()].Footprint
-			}
-		}
+		base += cs.LocalOffsets[abs]
 
 		if i == len(path)-1 {
-			// Final step: the target field itself.
 			if !fd.Terminal() {
 				return 0
 			}
 			return base
 		}
-
-		// Intermediate step: must be non-terminal so we can descend.
 		if fd.Terminal() {
 			return 0
 		}
 	}
-
 	return base
 }

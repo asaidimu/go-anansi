@@ -16,17 +16,22 @@ import (
 // For example the extension name on generated files and
 // the default package name
 
-func RunGoGen(cfg *Config, dryRun bool) error {
-	matches, err := doublestar.FilepathGlob(cfg.Schema.Glob)
+func RunGoGen(cfg *Config, dryRun bool, globs ...string) error {
+	patterns := globs
+	if len(patterns) == 0 {
+		patterns = []string{cfg.Schema.Glob}
+	}
+	matches, err := globFiles(patterns...)
 	if err != nil {
-		return fmt.Errorf("glob pattern %q: %w", cfg.Schema.Glob, err)
+		return err
 	}
 	if len(matches) == 0 {
-		return fmt.Errorf("no schema files matching %q", cfg.Schema.Glob)
+		return fmt.Errorf("no schema files matching %q", patterns)
 	}
 
-	// Default tags if none specified in cfg.GoGen
-	if len(cfg.GoGen.Tags) == 0 {
+	// Default tags if none specified in cfg.GoGen. An explicit empty tags
+	// block (cfg.GoGen.TagsSet) opts out of tags entirely.
+	if !cfg.GoGen.TagsSet && len(cfg.GoGen.Tags) == 0 {
 		cfg.GoGen.Tags = golang.TagConfigFromMap(map[string]string{
 			"json":   "name",
 			"anansi": "name",
@@ -53,9 +58,10 @@ func RunGoGen(cfg *Config, dryRun bool) error {
 
 		// 3. Generate Go source code
 		gen := golang.NewGoGenerator(&golang.GeneratorConfig{
-			TagConfig: cfg.GoGen.Tags,
+			TagConfig:      cfg.GoGen.Tags,
 			ScopedPackages: cfg.GoGen.ScopedPackages,
-			NameRules: cfg.GoGen.NameRules,
+			NameRules:      cfg.GoGen.NameRules,
+			Mode:           cfg.GoGen.Mode,
 		})
 
 		result, err := gen.Generate(raw)
@@ -86,6 +92,29 @@ func RunGoGen(cfg *Config, dryRun bool) error {
 	}
 
 	return nil
+}
+
+// globFiles expands one or more glob patterns and returns the de-duplicated
+// set of matching file paths in a deterministic order.
+func globFiles(patterns ...string) ([]string, error) {
+	seen := make(map[string]bool)
+	var matches []string
+	for _, pattern := range patterns {
+		if pattern == "" {
+			continue
+		}
+		ms, err := doublestar.FilepathGlob(pattern)
+		if err != nil {
+			return nil, fmt.Errorf("glob pattern %q: %w", pattern, err)
+		}
+		for _, m := range ms {
+			if !seen[m] {
+				seen[m] = true
+				matches = append(matches, m)
+			}
+		}
+	}
+	return matches, nil
 }
 
 // DerivePackageName extracts and cleans the parent directory name into a valid Go package identifier.

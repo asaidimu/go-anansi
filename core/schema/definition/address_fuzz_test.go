@@ -191,10 +191,28 @@ func buildChain(n, nFields int, terminals uint8, recursiveDepth int8) *definitio
 		slots[i].Footprint = fp
 	}
 
+	// Compute per-descriptor local offsets (prefix sums within each slot),
+	// mirroring the forward pass done at link time.
+	localOffsets := make([]uint32, len(descriptors))
+	for i := 0; i < n; i++ {
+		var running uint32
+		for j := 0; j < nFields; j++ {
+			abs := i*nFields + j
+			localOffsets[abs] = running
+			fd := descriptors[abs]
+			if fd.Terminal() {
+				running++
+			} else if fd.ChildSchemaIdx() != definition.FdNoChild {
+				running += slots[fd.ChildSchemaIdx()].Footprint
+			}
+		}
+	}
+
 	return &definition.CompiledSchema{
-		Descriptors: descriptors,
-		Schemas:     slots,
-		SchemasMeta: meta,
+		Descriptors:  descriptors,
+		LocalOffsets: localOffsets,
+		Schemas:      slots,
+		SchemasMeta:  meta,
 	}
 }
 

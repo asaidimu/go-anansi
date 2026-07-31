@@ -157,6 +157,19 @@ Generates a TypeScript types file for all schemas (single .ts file).
     --out       output TypeScript file (overrides anansi.json)
     --dry-run   print what would be done without making changes
 
+### `anansi codegen golang [glob...]`
+
+Generates Go structs/models for schemas, one `*.model.go` alongside each schema file. Positional args are glob patterns that override the configured glob; when omitted, the config glob is used.
+
+  Flags:
+    --mode       generation mode: structs, model, or full (overrides anansi.json)
+    --glob       glob pattern for schema files (overrides anansi.json)
+    --scoped     emit scoped (unexported) model accessors — InitModel/Model instead of InitUsersModel/UsersModel (overrides anansi.json)
+    --no-tags    omit all struct tags (overrides anansi.json)
+    --dry-run    print what would be done without making changes
+
+The `gogen` config section in anansi.json mirrors these: `mode`, `scoped`, `name_rules`, and `tags`. An explicit `"tags": []` opts out of tags entirely; a non-empty `tags` array (e.g. `[{"Key":"json","Property":"name","OmitEmpty":true}]`) replaces the default `{json, anansi}` set.
+
 ### `anansi schema agents`
 
 Generates a comprehensive AGENTS.md file in the current directory documenting the project's architecture, schema format, API, migration flow, and best practices.

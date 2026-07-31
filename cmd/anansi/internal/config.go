@@ -35,24 +35,29 @@ type NameRuleJSON struct {
 // GoGenConfig holds configuration specific to Go code generation.
 type GoGenConfig struct {
 	Tags               golang.TagConfig
+	TagsSet            bool // true when "tags" was explicitly provided (even if empty) in config
 	ScopedPackages     bool
 	NameRules          []golang.NameRule
+	Mode               golang.GenerationMode
 }
 
 // UnmarshalJSON implements json.Unmarshaler for GoGenConfig.
-// It deserializes name_rules from string-pattern JSON and compiles them.
+// It deserializes name_rules from string-pattern JSON and compiles them,
+// and parses the generation mode from its string form.
 func (g *GoGenConfig) UnmarshalJSON(data []byte) error {
 	type inner struct {
 		Tags               golang.TagConfig `json:"tags"`
 		PointerForOptional bool             `json:"pointer_for_optional"`
 		ScopedPackages     bool             `json:"scoped"`
 		NameRules          []NameRuleJSON   `json:"name_rules"`
+		Mode               string           `json:"mode"`
 	}
 	var raw inner
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
 	g.Tags = raw.Tags
+	g.TagsSet = raw.Tags != nil
 	g.ScopedPackages = raw.ScopedPackages
 	g.NameRules = make([]golang.NameRule, 0, len(raw.NameRules))
 	for _, nr := range raw.NameRules {
@@ -61,6 +66,13 @@ func (g *GoGenConfig) UnmarshalJSON(data []byte) error {
 			return fmt.Errorf("invalid name rule pattern %q: %w", nr.Pattern, err)
 		}
 		g.NameRules = append(g.NameRules, golang.NameRule{Pattern: re, Prefix: nr.Prefix})
+	}
+	if raw.Mode != "" {
+		mode, err := golang.ParseGenerationMode(raw.Mode)
+		if err != nil {
+			return fmt.Errorf("gogen mode: %w", err)
+		}
+		g.Mode = mode
 	}
 	return nil
 }
@@ -108,7 +120,17 @@ func LoadConfig(path string) (*Config, error) {
 		cfg.TSGen.Out = fileCfg.TSGen.Out
 	}
 	if len(fileCfg.GoGen.NameRules) > 0 {
-		cfg.GoGen = fileCfg.GoGen
+		cfg.GoGen.NameRules = fileCfg.GoGen.NameRules
+	}
+	if fileCfg.GoGen.Tags != nil {
+		cfg.GoGen.Tags = fileCfg.GoGen.Tags
+		cfg.GoGen.TagsSet = true
+	}
+	if fileCfg.GoGen.ScopedPackages {
+		cfg.GoGen.ScopedPackages = true
+	}
+	if fileCfg.GoGen.Mode != 0 {
+		cfg.GoGen.Mode = fileCfg.GoGen.Mode
 	}
 
 	return cfg, nil
