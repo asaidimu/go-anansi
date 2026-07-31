@@ -27,14 +27,22 @@ var (
 				WithMessage("doc tag has empty field name")
 )
 
-const AnansiDocTag = "doc"
 const AnansiTag = "anansi"
 
 var (
 	docModelType = reflect.TypeFor[DocumentModel]()
 	timeType     = reflect.TypeFor[time.Time]()
-	typeCache    sync.Map // map[reflect.Type]*cachedTypeInfo
+	typeCache    sync.Map // map[typeCacheKey]*cachedTypeInfo
 )
+
+// typeCacheKey identifies a cached field-parse result for a given struct
+// type under a given tag configuration. tag == "" means the default
+// resolution chain (anansi -> doc). Any other value means that tag is
+// tried first, falling back to anansi -> doc.
+type typeCacheKey struct {
+	t   reflect.Type
+	tag string
+}
 
 type cachedTypeInfo struct {
 	fields []parsedField
@@ -53,14 +61,37 @@ type parsedField struct {
 // Binding API - Primary Methods
 // ============================================================================
 
+// BindTo binds document fields into target using the default tag
+// resolution chain: the "anansi" struct tag, falling back to "doc".
 func (d *Document) BindTo(target any) error {
 	return d.BindToWithContext(context.Background(), target)
 }
 
+// BindToWithContext is BindTo with an explicit context for cancellation.
 func (d *Document) BindToWithContext(ctx context.Context, target any) error {
 	binder := &structBinder{
 		doc: d,
 		ctx: ctx,
+		tag: "",
+	}
+	return binder.bind(target)
+}
+
+// BindToTag binds document fields into target using a custom struct tag
+// name. Field resolution for each struct field tries, in order: the given
+// tag, then "anansi", then "doc". This allows reusing a single struct
+// definition across multiple binding schemes (e.g. a custom "api" tag)
+// without redefining the struct.
+func (d *Document) BindToTag(target any, tag string) error {
+	return d.BindToTagWithContext(context.Background(), target, tag)
+}
+
+// BindToTagWithContext is BindToTag with an explicit context for cancellation.
+func (d *Document) BindToTagWithContext(ctx context.Context, target any, tag string) error {
+	binder := &structBinder{
+		doc: d,
+		ctx: ctx,
+		tag: tag,
 	}
 	return binder.bind(target)
 }
@@ -69,8 +100,10 @@ func (d *Document) BindToWithContext(ctx context.Context, target any) error {
 // Document Creation from Structs
 // ============================================================================
 
+// NewDocumentFromStruct creates a full Document from s using the default
+// tag resolution chain ("anansi" falling back to "doc").
 func NewDocumentFromStruct(s any, ctx ...context.Context) (*Document, error) {
-	docData, err := structToMap(s, false)
+	docData, err := structToMap(s, false, "")
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +111,34 @@ func NewDocumentFromStruct(s any, ctx ...context.Context) (*Document, error) {
 	return getFactory().newDocument(extractContext(ctx), docData)
 }
 
+// NewDocumentFromStructWithTag creates a full Document from s, resolving
+// field names via the given custom tag first, falling back to "anansi"
+// then "doc" for any field lacking the custom tag.
+func NewDocumentFromStructWithTag(s any, tag string, ctx ...context.Context) (*Document, error) {
+	docData, err := structToMap(s, false, tag)
+	if err != nil {
+		return nil, err
+	}
+
+	return getFactory().newDocument(extractContext(ctx), docData)
+}
+
+// NewPartialDocumentFromStruct creates a Patch from the non-zero fields of
+// s using the default tag resolution chain ("anansi" falling back to "doc").
 func NewPartialDocumentFromStruct(s any, ctx ...context.Context) (*Document, error) {
-	docData, err := structToMap(s, true)
+	docData, err := structToMap(s, true, "")
+	if err != nil {
+		return nil, err
+	}
+
+	return Patch(docData).Document(extractContext(ctx)), nil
+}
+
+// NewPartialDocumentFromStructWithTag creates a Patch from the non-zero
+// fields of s, resolving field names via the given custom tag first,
+// falling back to "anansi" then "doc" for any field lacking the custom tag.
+func NewPartialDocumentFromStructWithTag(s any, tag string, ctx ...context.Context) (*Document, error) {
+	docData, err := structToMap(s, true, tag)
 	if err != nil {
 		return nil, err
 	}
@@ -91,6 +150,16 @@ func MustNewDocumentFromStruct(s any, ctx ...context.Context) *Document {
 	doc, err := NewDocumentFromStruct(s, ctx...)
 	if err != nil {
 		panic(fmt.Sprintf("MustNewDocumentFromStruct failed with type %T: %v", s, err))
+	}
+	return doc
+}
+
+// MustNewDocumentFromStructWithTag is NewDocumentFromStructWithTag but
+// panics on error, mirroring MustNewDocumentFromStruct.
+func MustNewDocumentFromStructWithTag(s any, tag string, ctx ...context.Context) *Document {
+	doc, err := NewDocumentFromStructWithTag(s, tag, ctx...)
+	if err != nil {
+		panic(fmt.Sprintf("MustNewDocumentFromStructWithTag failed with type %T: %v", s, err))
 	}
 	return doc
 }
@@ -113,19 +182,39 @@ type fieldMetadata struct {
 	StructField reflect.StructField
 }
 
-func getTypeInfo(t reflect.Type) ([]parsedField, *common.SystemError) {
-	if val, ok := typeCache.Load(t); ok {
+// resolveTagChain builds the ordered list of struct tag names to try for a
+// given field, based on an optional custom tag. An empty customTag yields
+// the default chain (anansi -> doc). A non-empty customTag is tried first,
+// still falling back to anansi -> doc so existing struct definitions keep
+// working unchanged.
+func resolveTagChain(customTag string) []string {
+	if customTag == "" {
+		return []string{AnansiTag}
+	}
+	return []string{customTag, AnansiTag}
+}
+
+// getTypeInfo returns the parsed, cached field metadata for type t under
+// the given tag configuration. tag == "" selects the default resolution
+// chain (anansi -> doc); any other value selects tag -> anansi -> doc.
+func getTypeInfo(t reflect.Type, tag string) ([]parsedField, *common.SystemError) {
+	key := typeCacheKey{t: t, tag: tag}
+	if val, ok := typeCache.Load(key); ok {
 		info := val.(*cachedTypeInfo)
 		return info.fields, info.err
 	}
 
-	fields, sysErr := buildTypeFields(t, nil, false)
+	tagChain := resolveTagChain(tag)
+	fields, sysErr := buildTypeFields(t, nil, false, tagChain)
 	info := &cachedTypeInfo{fields: fields, err: sysErr}
-	typeCache.Store(t, info)
+	typeCache.Store(key, info)
 	return fields, sysErr
 }
 
-func buildTypeFields(t reflect.Type, indexPrefix []int, isSystemEmbed bool) ([]parsedField, *common.SystemError) {
+// buildTypeFields walks the fields of t, resolving each field's binding tag
+// by trying each tag name in tagChain, in order, and using the first
+// present, non-"-" value found.
+func buildTypeFields(t reflect.Type, indexPrefix []int, isSystemEmbed bool, tagChain []string) ([]parsedField, *common.SystemError) {
 	var fields []parsedField
 
 	for i := 0; i < t.NumField(); i++ {
@@ -137,7 +226,7 @@ func buildTypeFields(t reflect.Type, indexPrefix []int, isSystemEmbed bool) ([]p
 			if f.Type == docModelType || ReservedSystemField(f.Name) {
 				sysEmbed = true
 			}
-			subFields, err := buildTypeFields(f.Type, indexPath, sysEmbed)
+			subFields, err := buildTypeFields(f.Type, indexPath, sysEmbed, tagChain)
 			if err != nil {
 				return nil, err
 			}
@@ -145,12 +234,16 @@ func buildTypeFields(t reflect.Type, indexPrefix []int, isSystemEmbed bool) ([]p
 			continue
 		}
 
-		docTag := f.Tag.Get(AnansiTag)
-		if docTag == "" || docTag == "-" {
-			docTag = f.Tag.Get(AnansiDocTag)
-			if docTag == "" || docTag == "-" {
-				continue
+		var docTag string
+		for _, tagName := range tagChain {
+			v := f.Tag.Get(tagName)
+			if v != "" && v != "-" {
+				docTag = v
+				break
 			}
+		}
+		if docTag == "" {
+			continue
 		}
 
 		fieldName, options, sysErr := parseDocTag(docTag)
@@ -170,6 +263,8 @@ func buildTypeFields(t reflect.Type, indexPrefix []int, isSystemEmbed bool) ([]p
 	return fields, nil
 }
 
+// walkFields iterates the bindable fields of v using the default tag
+// resolution chain (anansi -> doc).
 func walkFields(v reflect.Value, partial bool, fn func(meta fieldMetadata) error) error {
 	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
@@ -181,7 +276,7 @@ func walkFields(v reflect.Value, partial bool, fn func(meta fieldMetadata) error
 		return nil
 	}
 
-	fields, sysErr := getTypeInfo(v.Type())
+	fields, sysErr := getTypeInfo(v.Type(), "")
 	if sysErr != nil {
 		return sysErr
 	}
@@ -212,6 +307,7 @@ func walkFields(v reflect.Value, partial bool, fn func(meta fieldMetadata) error
 type structBinder struct {
 	doc *Document
 	ctx context.Context
+	tag string // custom tag name to resolve fields with; "" selects the default chain
 }
 
 func (sb *structBinder) bind(target any) error {
@@ -221,7 +317,7 @@ func (sb *structBinder) bind(target any) error {
 	}
 
 	v := rv.Elem()
-	fields, sysErr := getTypeInfo(v.Type())
+	fields, sysErr := getTypeInfo(v.Type(), sb.tag)
 	if sysErr != nil {
 		return sysErr
 	}
@@ -333,7 +429,7 @@ func (sb *structBinder) setFieldValue(field reflect.Value, value any) error {
 		} else if valMap, ok := value.(map[string]any); ok {
 			nestedDoc := &Document{ctx: sb.ctx, data: valMap}
 			newStruct := reflect.New(fieldType).Interface()
-			nestedBinder := &structBinder{doc: nestedDoc, ctx: sb.ctx}
+			nestedBinder := &structBinder{doc: nestedDoc, ctx: sb.ctx, tag: sb.tag}
 			if err := nestedBinder.bind(newStruct); err != nil {
 				return err
 			}
@@ -393,7 +489,10 @@ func (sb *structBinder) setMapField(field reflect.Value, values map[string]any) 
 // Struct to Map Conversion
 // ============================================================================
 
-func structToMap(s any, partial bool) (map[string]any, error) {
+// structToMap converts s into a document-shaped map, resolving field names
+// via the given tag configuration (see resolveTagChain). tag == "" selects
+// the default chain (anansi -> doc).
+func structToMap(s any, partial bool, tag string) (map[string]any, error) {
 	rv := reflect.ValueOf(s)
 	if rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
@@ -406,7 +505,7 @@ func structToMap(s any, partial bool) (map[string]any, error) {
 		return nil, ErrInvalidTargetType.WithMessagef("expected struct, got %T", s)
 	}
 
-	fields, sysErr := getTypeInfo(rv.Type())
+	fields, sysErr := getTypeInfo(rv.Type(), tag)
 	if sysErr != nil {
 		return nil, sysErr
 	}
@@ -423,7 +522,7 @@ func structToMap(s any, partial bool) (map[string]any, error) {
 			continue
 		}
 
-		value, err := convertInterface(fv.Interface())
+		value, err := convertInterface(fv.Interface(), tag)
 		if err != nil {
 			return nil, err
 		}
@@ -457,7 +556,10 @@ func setNestedMap(data map[string]any, path string, value any) error {
 	return nil
 }
 
-func convertInterface(v any) (any, error) {
+// convertInterface recursively converts v into document-compatible values
+// (primitives, map[string]any, []any), resolving any nested struct fields
+// via the given tag configuration.
+func convertInterface(v any, tag string) (any, error) {
 	if v == nil {
 		return nil, nil
 	}
@@ -499,7 +601,7 @@ func convertInterface(v any) (any, error) {
 		ret := make(map[string]any, rv.Len())
 		for _, key := range rv.MapKeys() {
 			k := fmt.Sprintf("%v", key.Interface())
-			elem, err := convertInterface(rv.MapIndex(key).Interface())
+			elem, err := convertInterface(rv.MapIndex(key).Interface(), tag)
 			if err != nil {
 				return nil, err
 			}
@@ -508,12 +610,12 @@ func convertInterface(v any) (any, error) {
 		return ret, nil
 
 	case reflect.Struct:
-		return structToMap(v, false)
+		return structToMap(v, false, tag)
 
 	case reflect.Slice:
 		ret := make([]any, rv.Len())
 		for i := 0; i < rv.Len(); i++ {
-			elem, err := convertInterface(rv.Index(i).Interface())
+			elem, err := convertInterface(rv.Index(i).Interface(), tag)
 			if err != nil {
 				return nil, err
 			}

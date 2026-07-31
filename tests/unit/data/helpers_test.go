@@ -91,15 +91,15 @@ func TestMustHelper(t *testing.T) {
 
 func TestStructBinder(t *testing.T) {
 	type User struct {
-		Name    string `doc:"name"`
-		Age     int    `doc:"age"`
-		IsAdmin bool   `doc:"is_admin,omitempty"`
-		Email   string `doc:"email,omitempty"`
+		Name    string `anansi:"name"`
+		Age     int    `anansi:"age"`
+		IsAdmin bool   `anansi:"is_admin,omitempty"`
+		Email   string `anansi:"email,omitempty"`
 		Address struct {
-			Street string `doc:"street"`
-			City   string `doc:"city"`
-		} `doc:"address"`
-		CreatedAt time.Time `doc:"created_at"`
+			Street string `anansi:"street"`
+			City   string `anansi:"city"`
+		} `anansi:"address"`
+		CreatedAt time.Time `anansi:"created_at"`
 	}
 
 	doc := data.MustNewDocument(map[string]any{
@@ -140,11 +140,11 @@ func TestStructBinder(t *testing.T) {
 
 func TestFromStructWithTags(t *testing.T) {
 	type Product struct {
-		ID    string  `doc:"product_id"`
-		Name  string  `doc:"product_name"`
-		Price float64 `doc:"price"`
-		Stock int     `doc:"stock,omitempty"`
-		Desc  string  `doc:"-"` // Ignored field
+		ID    string  `anansi:"product_id"`
+		Name  string  `anansi:"product_name"`
+		Price float64 `anansi:"price"`
+		Stock int     `anansi:"stock,omitempty"`
+		Desc  string  `anansi:"-"` // Ignored field
 	}
 
 	product := Product{

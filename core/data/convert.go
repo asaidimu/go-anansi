@@ -8,7 +8,7 @@ package data
 // This is a lightweight alternative to NewDocumentFromStruct that skips the
 // factory pipeline (no UUID generation, no metadata initialization).
 func ToDoc(s any) (*Document, error) {
-	docData, err := structToMap(s, false)
+	docData, err := structToMap(s, false, AnansiTag)
 	if err != nil {
 		return nil, err
 	}
