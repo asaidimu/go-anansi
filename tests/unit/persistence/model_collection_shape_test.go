@@ -39,7 +39,7 @@ func newShapeModelCollection(t *testing.T) (*collection.ModelCollection[*shapePr
 func TestModelCollection_Shape_CreateFindUpdateRead(t *testing.T) {
 	mc, ctx := newShapeModelCollection(t)
 
-	created, err := mc.CreateFrom[*shapeProductSummary](ctx, &shapeProductSummary{Name: "Widget"})
+	created, err := mc.CreateFrom[*shapeProductSummary, *shapeProductSummary](ctx, &shapeProductSummary{Name: "Widget"})
 	require.NoError(t, err)
 	assert.NotEmpty(t, created.Model().ID)
 	assert.Equal(t, "Widget", created.Name)
@@ -53,7 +53,7 @@ func TestModelCollection_Shape_CreateFindUpdateRead(t *testing.T) {
 	assert.Equal(t, "Widget", got[0].Name)
 	assert.Equal(t, id, got[0].Model().ID)
 
-	updated, err := mc.UpdateFrom[*shapeProductSummary](ctx, id, &shapeProductSummary{Name: "Widget Pro"})
+	updated, err := mc.UpdateFrom[*shapeProductSummary, *shapeProductSummary](ctx, id, &shapeProductSummary{Name: "Widget Pro"})
 	require.NoError(t, err)
 	assert.Equal(t, "Widget Pro", updated.Name)
 	assert.Equal(t, id, updated.Model().ID)
@@ -100,7 +100,7 @@ func TestModelCollection_Shape_ReadAs_NotFound(t *testing.T) {
 func TestModelCollection_Shape_UpdateFrom_NotFound(t *testing.T) {
 	mc, ctx := newShapeModelCollection(t)
 
-	_, err := mc.UpdateFrom[*shapeProductSummary](ctx, "does-not-exist", &shapeProductSummary{Name: "Nope"})
+	_, err := mc.UpdateFrom[*shapeProductSummary, *shapeProductSummary](ctx, "does-not-exist", &shapeProductSummary{Name: "Nope"})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
 }
