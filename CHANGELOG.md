@@ -1,3 +1,10 @@
+# [8.4.0](https://github.com/asaidimu/go-anansi/compare/v8.3.8...v8.4.0) (2026-07-31)
+
+
+### Features
+
+* **codegen:** add schema projection support and optimize model collection ([7851a77](https://github.com/asaidimu/go-anansi/commit/7851a77dd0b473f64e893dc23b9c71653c8f3cfd))
+
 ## [8.3.8](https://github.com/asaidimu/go-anansi/compare/v8.3.7...v8.3.8) (2026-07-31)
 
 
