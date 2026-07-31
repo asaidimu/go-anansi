@@ -1,4 +1,4 @@
-# Schema IR Specification
+# Schema IR Specification. THIS IS A PROPOSAL AND NOT IN EFFECT
 
 The IR is the compiled form of a human-authored JSON schema definition. It sits
 between the source schema and all downstream consumers: a structural validator,
