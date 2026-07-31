@@ -257,10 +257,10 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 	rootTypeName := g.goTypeName(rootName)
 
 	// Maps to hold generated definitions
-	structs := make(map[string][]StructField)  // struct name -> fields
-	typeAliases := make(map[string]string)     // name -> underlying type expr
-	enumDefs := make(map[string]EnumDef)       // name -> enum definition
-	inlineNames := make(map[string]string) // key -> generated type name for inline container
+	structs := make(map[string][]StructField) // struct name -> fields
+	typeAliases := make(map[string]string)    // name -> underlying type expr
+	enumDefs := make(map[string]EnumDef)      // name -> enum definition
+	inlineNames := make(map[string]string)    // key -> generated type name for inline container
 
 	// Helper to generate inline container types (unique name per parent+field).
 	// kind is the container kind: "enum", "union", or "composite".
@@ -332,11 +332,11 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 					if err != nil {
 						return "", err
 					}
-				fields = append(fields, StructField{
-					Name: refType, // use the type name as field name
-					Type: "*" + refType,
-					Tags: buildVariantTags(toSnakeCase(refType), tagConfig),
-				})
+					fields = append(fields, StructField{
+						Name: refType, // use the type name as field name
+						Type: "*" + refType,
+						Tags: buildVariantTags(toSnakeCase(refType), tagConfig),
+					})
 				}
 				structs[typeNames[id]] = fields
 
@@ -470,8 +470,18 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 	sb.WriteString("// Always run codegen alongside database migrations so that the\n")
 	sb.WriteString("// generated models stay in sync with the schema on file.\n")
 	sb.WriteString("//\n")
-	sb.WriteString("// Extend model functionality in separate Go files (e.g. ")
-	sb.WriteString(toSnakeCase(rootTypeName) + "_utils.go).\n")
+	sb.WriteString("// Add custom methods to the ")
+	sb.WriteString(rootTypeName)
+	sb.WriteString(" model in separate Go files,\n")
+	sb.WriteString("// using filenames that reflect their purpose (e.g., ")
+	sb.WriteString(toSnakeCase(rootTypeName))
+	sb.WriteString("_validation.go,\n")
+	sb.WriteString("// ")
+	sb.WriteString(toSnakeCase(rootTypeName))
+	sb.WriteString("_serialization.go). Avoid throwing all logic into a\n")
+	sb.WriteString("// single ")
+	sb.WriteString(toSnakeCase(rootTypeName))
+	sb.WriteString("_utils.go file.\n")
 	sb.WriteString("// This file is overwritten on each codegen run — never edit it directly.\n")
 	if g.packageName != "" {
 		sb.WriteString("//\n")
@@ -486,7 +496,7 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 	if len(imports) > 0 {
 		sb.WriteString("import (\n")
 		for _, imp := range imports {
-			sb.WriteString("\t" + imp + "\n")
+			sb.WriteString("\t");sb.WriteString(imp);sb.WriteString("\n")
 		}
 		sb.WriteString(")\n\n")
 	}

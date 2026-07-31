@@ -18,10 +18,11 @@ import (
 // increasing UUIDv7 timestamp component.
 const FixedEpochMS int64 = 1767225600000
 
-// Thread-safe global schema cache keyed by reflect.Type and tag.
+// Thread-safe global schema cache keyed by reflect.Type, tag, and omitSystem flag.
 type schemaCacheKey struct {
 	t   reflect.Type
 	tag string
+	omit bool
 }
 var schemaCache sync.Map
 
@@ -32,9 +33,14 @@ type cachedSchema struct {
 
 // SchemaFrom extracts a meta-schema JSON document for any struct type using
 // the default "anansi" tag for field names (and all other metadata).
-// Results are cached globally per type for zero-allocation subsequent calls.
-func SchemaFrom[T any]() ([]byte, error) {
-	return SchemaFromWithTag[T]("")
+// Results are cached globally per (type, tag="", omit) for zero-allocation subsequent calls.
+// If omitSystemField is true, any embedded DocumentModel field is skipped.
+func SchemaFrom[T any](omitSystemField ...bool) ([]byte, error) {
+	omit := false
+	if len(omitSystemField) > 0 {
+		omit = omitSystemField[0]
+	}
+	return SchemaFromWithTag[T]("", omit)
 }
 
 // SchemaFromWithTag extracts a meta-schema JSON document for any struct type
@@ -44,8 +50,12 @@ func SchemaFrom[T any]() ([]byte, error) {
 // tag is absent or empty, and finally to the snake‑cased Go field name.
 // All other field metadata (required, nullable, type overrides, defaults, values)
 // are taken exclusively from the "anansi" tag.
-// Results are cached globally per (type, tag) pair.
-func SchemaFromWithTag[T any](tag string) ([]byte, error) {
+// Results are cached globally per (type, tag, omit).
+func SchemaFromWithTag[T any](tag string, omitSystemField ...bool) ([]byte, error) {
+	omit := false
+	if len(omitSystemField) > 0 {
+		omit = omitSystemField[0]
+	}
 	var v T
 	t := reflect.TypeOf(v)
 	if t == nil {
@@ -55,30 +65,39 @@ func SchemaFromWithTag[T any](tag string) ([]byte, error) {
 		t = t.Elem()
 	}
 
-	key := schemaCacheKey{t: t, tag: tag}
+	key := schemaCacheKey{t: t, tag: tag, omit: omit}
 	if cached, ok := schemaCache.Load(key); ok {
 		res := cached.(cachedSchema)
 		return res.data, res.err
 	}
 
-	data, err := ExtractDTOSchemaDirectWithTag(v, tag)
+	data, err := ExtractDTOSchemaDirectWithTag(v, tag, omit)
 	schemaCache.Store(key, cachedSchema{data: data, err: err})
 	return data, err
 }
 
 // ExtractDTOSchemaDirect streams JSON bytes directly into a buffer without
 // intermediate maps or struct serialization. Uses the default "anansi" tag.
-func ExtractDTOSchemaDirect(target any) ([]byte, error) {
-	return ExtractDTOSchemaDirectWithTag(target, "")
+// omitSystemField controls whether embedded DocumentModel is skipped.
+func ExtractDTOSchemaDirect(target any, omitSystemField ...bool) ([]byte, error) {
+	omit := false
+	if len(omitSystemField) > 0 {
+		omit = omitSystemField[0]
+	}
+	return ExtractDTOSchemaDirectWithTag(target, "", omit)
 }
 
 // ExtractDTOSchemaDirectWithTag does the same as ExtractDTOSchemaDirect but
 // uses the given custom tag for name/path resolution (see SchemaFromWithTag).
-func ExtractDTOSchemaDirectWithTag(target any, tag string) ([]byte, error) {
+func ExtractDTOSchemaDirectWithTag(target any, tag string, omitSystemField ...bool) ([]byte, error) {
 	if target == nil {
 		return nil, fmt.Errorf("root DTO target cannot be nil")
 	}
-	e := newDirectExtractor(tag)
+	omit := false
+	if len(omitSystemField) > 0 {
+		omit = omitSystemField[0]
+	}
+	e := newDirectExtractor(tag, omit)
 	return e.Extract(target)
 }
 
@@ -107,10 +126,11 @@ type directExtractor struct {
 	syntheticSchemas map[string]map[string]*syntheticSchema
 	rootSchemaID     string
 	rootReferenced   bool
-	customTag        string // the custom tag to use for name/path resolution
+	customTag        string
+	omitSystem       bool // if true, skip embedded DocumentModel
 }
 
-func newDirectExtractor(customTag string) *directExtractor {
+func newDirectExtractor(customTag string, omitSystem bool) *directExtractor {
 	return &directExtractor{
 		discoveryOrdinal: 0,
 		registry:         make(map[string]*schemaRegistryEntry),
@@ -119,6 +139,7 @@ func newDirectExtractor(customTag string) *directExtractor {
 		enumValues:       make(map[string][]string),
 		syntheticSchemas: make(map[string]map[string]*syntheticSchema),
 		customTag:        customTag,
+		omitSystem:       omitSystem,
 	}
 }
 
@@ -246,8 +267,15 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 			continue
 		}
 
+		// If field is anonymous and we are omitting system fields, check if it's DocumentModel.
+		if field.Anonymous && e.omitSystem && field.Type == docModelType {
+			continue // skip the entire DocumentModel embed
+		}
+
 		// If field is embedded (anonymous) and no type override, flatten its fields.
 		if field.Anonymous && field.Type.Kind() == reflect.Struct && anansiTag.TypeOverride == "" {
+			// But if we are omitting system fields, we already skipped DocumentModel above.
+			// For other anonymous structs, flatten them recursively.
 			if err := e.extractStructFields(field.Type, owningSchemaID, buf, fieldOrdinal, fieldCount); err != nil {
 				return err
 			}

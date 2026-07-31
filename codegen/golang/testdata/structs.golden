@@ -4,7 +4,10 @@
 // Always run codegen alongside database migrations so that the
 // generated models stay in sync with the schema on file.
 //
-// Extend model functionality in separate Go files (e.g. order_utils.go).
+// Add custom methods to the Order model in separate Go files,
+// using filenames that reflect their purpose (e.g., order_validation.go,
+// order_serialization.go). Avoid throwing all logic into a
+// single order_utils.go file.
 // This file is overwritten on each codegen run — never edit it directly.
 
 import (
