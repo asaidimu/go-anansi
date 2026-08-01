@@ -403,6 +403,18 @@ func (c *managedCollection) resolveTargetWithTranslations(ctx context.Context, t
 // Update verifies the integrity of the metadata block, performs an optimistic lock check,
 // and updates the document and its metadata.
 func (c *managedCollection) Update(ctx context.Context, params *base.CollectionUpdate) (*base.ReadResult, error) {
+	if params == nil || params.Filter == nil {
+		return nil, base.ErrInvalidUpdateParams
+	}
+
+	// Reject updates that carry no user payload. This must happen before the
+	// system metadata (version bump, updated timestamp) is injected below.
+	if params.Set == nil || (params.Set.Len() == 0 && len(params.Compute) == 0) {
+		return nil, base.ErrEmptyUpdate.
+			WithOperation("ManagedCollection.Update").
+			WithMessagef("update for '%s' must set or compute at least one field", c.logicalName)
+	}
+
 	validate := func() error {
 		result, ok := c.Validate(ctx, params.Set, true)
 		if !ok {
@@ -548,6 +560,10 @@ func (c *managedCollection) Subscriptions(ctx context.Context) ([]base.Subscript
 
 func (c *managedCollection) Capabilities(ctx context.Context) *query.Capabilities {
 	return c.wrapped.Capabilities(ctx)
+}
+
+func (c *managedCollection) Transact(ctx context.Context, fn func(ctx context.Context) (any, error)) (any, error) {
+	return c.wrapped.Transact(ctx, fn)
 }
 
 func ensureMetadataProjection(q *query.Query) *query.Query {

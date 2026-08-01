@@ -71,6 +71,16 @@ func (c *baseCollection) withTransaction(
 	})
 }
 
+// Transact executes fn atomically. All collection operations performed with the
+// provided context are part of the transaction: if fn returns an error the
+// transaction is rolled back, otherwise it is committed. When called inside an
+// existing transaction, fn joins it instead of starting a new one.
+func (c *baseCollection) Transact(ctx context.Context, fn func(ctx context.Context) (any, error)) (any, error) {
+	return transaction.Execute(ctx, c.getCurrentInteractor(ctx), c.logger, func(tctx context.Context, _ query.DatabaseInteractor) (any, error) {
+		return fn(tctx)
+	})
+}
+
 // CreateOne creates a single document.
 func (c *baseCollection) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
 	results, err := c.CreateMany(ctx, []*data.Document{doc})
@@ -156,7 +166,7 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 		if err != nil {
 			return nil, err
 		}
-		docs, count, err := interactor.UpdateDocuments(ctx, sc, updatesMap, params.Compute, params.Filter, params.ReturnDocument)
+		docs, count, err := interactor.UpdateDocuments(ctx, sc, updatesMap, params.Compute, params.Filter, params.ReturnsDocument())
 		if err != nil {
 			return nil, err
 		}

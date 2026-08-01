@@ -328,8 +328,8 @@ func (h *QueryHelper) validateProjectionConfiguration(proj *ProjectionConfigurat
 		setFields := 0
 		if computed.ComputedFieldExpression != nil {
 			setFields++
-			if computed.ComputedFieldExpression.Type != "computed_field" {
-				return common.NewSystemError("ERR_QUERY_COMPUTED_FIELD_TYPE_INVALID", "computed field expression type must be 'computed_field'")
+			if computed.ComputedFieldExpression.Type != "computed" {
+				return common.NewSystemError("ERR_QUERY_COMPUTED_FIELD_TYPE_INVALID", "computed field expression type must be 'computed'")
 			}
 			if computed.ComputedFieldExpression.Expression == nil {
 				return common.NewSystemError("ERR_QUERY_COMPUTED_FIELD_EXPRESSION_NIL", "computed field expression cannot be nil")
@@ -344,8 +344,8 @@ func (h *QueryHelper) validateProjectionConfiguration(proj *ProjectionConfigurat
 		}
 		if computed.CaseExpression != nil {
 			setFields++
-			if computed.CaseExpression.Type != "case_expression" {
-				return common.NewSystemError("ERR_QUERY_CASE_EXPRESSION_TYPE_INVALID", "case expression type must be 'case_expression'")
+			if computed.CaseExpression.Type != "case" {
+				return common.NewSystemError("ERR_QUERY_CASE_EXPRESSION_TYPE_INVALID", "case expression type must be 'case'")
 			}
 			if len(computed.CaseExpression.Conditions) == 0 {
 				return common.NewSystemError("ERR_QUERY_CASE_EXPRESSION_NO_CONDITIONS", "case expression must have at least one condition")

@@ -247,6 +247,28 @@ func TestRoundTrip_DeepPath(t *testing.T) {
 	assert.Equal(t, original, restored)
 }
 
+func TestDocumentModel_Len(t *testing.T) {
+	type Product struct {
+		data.DocumentModel
+		SKU   string  `anansi:"sku"`
+		Price float64 `anansi:"price"`
+		Stock int     `anansi:"stock"`
+	}
+
+	empty := data.New(&Product{})
+	require.Equal(t, 0, empty.Len())
+
+	full := data.New(&Product{SKU: "ABC-123", Price: 9.99, Stock: 5})
+	require.Equal(t, 3, full.Len())
+
+	partial := data.New(&Product{SKU: "ABC-123"})
+	require.Equal(t, 1, partial.Len())
+
+	// Uninitialized models report 0 rather than panicking.
+	var uninit Product
+	require.Equal(t, 0, uninit.Len())
+}
+
 func TestPathTag_WithDocumentModel(t *testing.T) {
 	type User struct {
 		data.DocumentModel

@@ -12,6 +12,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/utils"
 )
 
 // ============================================================================
@@ -270,7 +271,37 @@ func (mc *ModelCollection[P]) Read(ctx context.Context, q *query.Query) ([]P, er
 // Update Operations
 // ============================================================================
 
-func (mc *ModelCollection[P]) Update(ctx context.Context, id string, update P) (P, error) {
+// mergeUpdateOptions overlays caller-provided update options onto the
+// method-generated CollectionUpdate. Set from the options is ignored (the
+// shape-derived document always wins); a caller-supplied Filter overrides the
+// id filter; Compute maps are merged; and Version is passed through.
+// ReturnDocument is merged only when explicitly set (non-nil), so the
+// method-generated default (true for the binding operations) is preserved
+// unless the caller opts out.
+func mergeUpdateOptions(cu base.CollectionUpdate, opts ...base.CollectionUpdate) base.CollectionUpdate {
+	for _, opt := range opts {
+		if opt.Filter != nil {
+			cu.Filter = opt.Filter
+		}
+		if len(opt.Compute) > 0 {
+			if cu.Compute == nil {
+				cu.Compute = make(map[string]query.Query, len(opt.Compute))
+			}
+			for k, v := range opt.Compute {
+				cu.Compute[k] = v
+			}
+		}
+		if opt.Version != nil {
+			cu.Version = opt.Version
+		}
+		if opt.ReturnDocument != nil {
+			cu.ReturnDocument = opt.ReturnDocument
+		}
+	}
+	return cu
+}
+
+func (mc *ModelCollection[P]) Update(ctx context.Context, id string, update P, opts ...base.CollectionUpdate) (P, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 
 	d, err := data.NewPartialDocumentFromStruct(update, ctx)
@@ -285,15 +316,26 @@ func (mc *ModelCollection[P]) Update(ctx context.Context, id string, update P) (
 		Where(data.DocumentIDField).Eq(id).
 		Build().Filters
 
-	result, err := mc.Collection.Update(ctx, &base.CollectionUpdate{
+	cu := mergeUpdateOptions(base.CollectionUpdate{
 		Filter:         filter,
 		Set:            d,
-		ReturnDocument: true,
-	})
+		ReturnDocument: utils.BoolPtr(true),
+	}, opts...)
+
+	result, err := mc.Collection.Update(ctx, &cu)
+
 	if err != nil {
 		return newModelPtr[P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Update").
 			WithPath(id)
+	}
+
+	if !cu.ReturnsDocument() {
+		if mc.cache != nil {
+			mc.cache.Evict(id)
+		}
+		var zero P
+		return zero, nil
 	}
 
 	if result.Count == 0 || len(result.Data) == 0 {
@@ -318,7 +360,7 @@ func (mc *ModelCollection[P]) Update(ctx context.Context, id string, update P) (
 	return updated, nil
 }
 
-func (mc *ModelCollection[P]) UpdateMany(ctx context.Context, f *query.QueryFilter, update P) (int, error) {
+func (mc *ModelCollection[P]) UpdateMany(ctx context.Context, f *query.QueryFilter, update P, opts ...base.CollectionUpdate) (int, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	d, err := data.NewPartialDocumentFromStruct(update, ctx)
 	if err != nil {
@@ -327,10 +369,12 @@ func (mc *ModelCollection[P]) UpdateMany(ctx context.Context, f *query.QueryFilt
 			WithMessage("failed to convert update model to partial document")
 	}
 
-	result, err := mc.Collection.Update(ctx, &base.CollectionUpdate{
+	cu := mergeUpdateOptions(base.CollectionUpdate{
 		Filter: f,
 		Set:    d,
-	})
+	}, opts...)
+
+	result, err := mc.Collection.Update(ctx, &cu)
 	if err != nil {
 		return 0, common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.UpdateMany")
@@ -345,7 +389,7 @@ func (mc *ModelCollection[P]) UpdateMany(ctx context.Context, f *query.QueryFilt
 	return *result.Total, nil
 }
 
-func (mc *ModelCollection[P]) Replace(ctx context.Context, id string, replacement P) (P, error) {
+func (mc *ModelCollection[P]) Replace(ctx context.Context, id string, replacement P, opts ...base.CollectionUpdate) (P, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 
 	d, err := data.NewDocumentFromStruct(replacement, ctx)
@@ -360,15 +404,25 @@ func (mc *ModelCollection[P]) Replace(ctx context.Context, id string, replacemen
 		Where(data.DocumentIDField).Eq(id).
 		Build().Filters
 
-	result, err := mc.Collection.Update(ctx, &base.CollectionUpdate{
+	cu := mergeUpdateOptions(base.CollectionUpdate{
 		Filter:         filter,
 		Set:            d,
-		ReturnDocument: true,
-	})
+		ReturnDocument: utils.BoolPtr(true),
+	}, opts...)
+
+	result, err := mc.Collection.Update(ctx, &cu)
 	if err != nil {
 		return newModelPtr[P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Replace").
 			WithPath(id)
+	}
+
+	if !cu.ReturnsDocument() {
+		if mc.cache != nil {
+			mc.cache.Evict(id)
+		}
+		var zero P
+		return zero, nil
 	}
 
 	if result.Count == 0 || len(result.Data) == 0 {
@@ -556,8 +610,16 @@ func (mc *ModelCollection[P]) CreateFrom[R data.DocumentModelProvider, S data.Do
 }
 
 // UpdateFrom applies a partial update built from shape R (system fields are
-// ignored) and returns the updated document bound into R.
-func (mc *ModelCollection[P]) UpdateFrom[R data.DocumentModelProvider, S data.DocumentModelProvider](ctx context.Context, id string, update R) (S, error){
+// ignored) and returns the updated document bound into R. Additional update
+// options may be supplied, e.g. Compute expressions for atomic server-side
+// increments; see mergeUpdateOptions for how they overlay the built-in
+// id filter and shape-derived set.
+func (mc *ModelCollection[P]) UpdateFrom[R data.DocumentModelProvider, S data.DocumentModelProvider](
+	ctx context.Context,
+	id string,
+	update R,
+	opts ...base.CollectionUpdate,
+) (S, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 
 	d, err := data.NewPartialDocumentFromStruct(update, ctx)
@@ -572,16 +634,23 @@ func (mc *ModelCollection[P]) UpdateFrom[R data.DocumentModelProvider, S data.Do
 		Where(data.DocumentIDField).Eq(id).
 		Build().Filters
 
-	result, err := mc.Collection.Update(ctx, &base.CollectionUpdate{
+	cu := mergeUpdateOptions(base.CollectionUpdate{
 		Filter:         filter,
 		Set:            d,
-		ReturnDocument: true,
-	})
+		ReturnDocument: utils.BoolPtr(true),
+	}, opts...)
+
+	result, err := mc.Collection.Update(ctx, &cu)
 
 	if err != nil {
 		return newModelPtr[S](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.UpdateFrom").
 			WithPath(id)
+	}
+
+	if !cu.ReturnsDocument() {
+		var zero S
+		return zero, nil
 	}
 
 	if result.Count == 0 || len(result.Data) == 0 {

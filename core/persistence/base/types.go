@@ -442,14 +442,61 @@ type Persistence interface {
 type CollectionUpdate struct {
 	// For simple SET operations, mapping a field path to its new literal value.
 	Set *data.Document `json:"set,omitempty"`
-
 	// For advanced updates where a field's value is computed by an expression or subquery.
 	Compute map[string]query.Query `json:"compute,omitempty"`
-
 	Filter  *query.QueryFilter `json:"filter"`
 	Version *int               `json:"version,omitempty"`
-	// ReturnDocument indicates if the updated document(s) should be returned by the update operation.
-	ReturnDocument bool `json:"returnDocument,omitempty"`
+	// ReturnDocument indicates if the updated document(s) should be returned by the update
+	// operation. A nil value means "not specified": consumers fall back to their own default.
+	ReturnDocument *bool `json:"returnDocument,omitempty"`
+}
+
+// ReturnsDocument reports whether the update should return the updated document(s),
+// treating a nil ReturnDocument as "not specified" (false).
+func (cu *CollectionUpdate) ReturnsDocument() bool {
+	return cu != nil && cu.ReturnDocument != nil && *cu.ReturnDocument
+}
+
+// NewCollectionUpdate returns an empty CollectionUpdate for fluent building.
+func NewCollectionUpdate() *CollectionUpdate {
+	return &CollectionUpdate{}
+}
+
+// SetField sets a literal value for a field path in the SET clause.
+func (cu *CollectionUpdate) SetField(field string, value any) *CollectionUpdate {
+	if cu.Set == nil {
+		cu.Set, _ = data.NewDocument(nil)
+	}
+	_ = cu.Set.Set(field, value)
+	return cu
+}
+
+// WithComputedField assigns a server-side computed expression to a field path.
+func (cu *CollectionUpdate) WithComputedField(field string, q query.Query) *CollectionUpdate {
+	if cu.Compute == nil {
+		cu.Compute = make(map[string]query.Query)
+	}
+	cu.Compute[field] = q
+	return cu
+}
+
+// WithFilter sets the query filter, overriding any id-derived filter.
+func (cu *CollectionUpdate) WithFilter(f *query.QueryFilter) *CollectionUpdate {
+	cu.Filter = f
+	return cu
+}
+
+// WithVersion sets the optimistic-locking version constraint.
+func (cu *CollectionUpdate) WithVersion(v int) *CollectionUpdate {
+	cu.Version = &v
+	return cu
+}
+
+// WithReturnDocument controls whether updated documents are returned and bound.
+// A nil ReturnDocument (the default) means "not specified".
+func (cu *CollectionUpdate) WithReturnDocument(rd bool) *CollectionUpdate {
+	cu.ReturnDocument = &rd
+	return cu
 }
 
 // Collection defines the contract for operations on a specific collection.
@@ -466,10 +513,11 @@ type Collection interface {
 	// Read retrieves documents from the collection that match the given QueryDSL.
 	Read(ctx context.Context, query *query.Query) (*ReadResult, error)
 
-	// Update performs an update operation. When ReturnDocument is true, it attempts
-	// to return the updated documents. However, if the final fetch fails, it returns
-	// a result with Count > 0 but empty Data, indicating that the update succeeded
-	// but document retrieval failed. Callers should check both Count and len(Data).
+	// Update performs an update operation. When ReturnDocument is set to true, it
+	// attempts to return the updated documents. However, if the final fetch fails,
+	// it returns a result with Count > 0 but empty Data, indicating that the update
+	// succeeded but document retrieval failed. Callers should check both Count and
+	// len(Data).
 	Update(ctx context.Context, params *CollectionUpdate) (*ReadResult, error)
 
 	// Delete removes documents from the collection that match the given query filter.
@@ -499,6 +547,12 @@ type Collection interface {
 
 	// Capabilities returns the features and limitations of the underlying database backend.
 	Capabilities(ctx context.Context) *query.Capabilities
+
+	// Transact executes fn atomically. All collection operations performed with
+	// the provided context are part of the transaction: if fn returns an error
+	// the transaction is rolled back, otherwise it is committed. When called
+	// inside an existing transaction, fn joins it instead of starting a new one.
+	Transact(ctx context.Context, fn func(ctx context.Context) (any, error)) (any, error)
 }
 
 // ReadResult represents the result of a database query.

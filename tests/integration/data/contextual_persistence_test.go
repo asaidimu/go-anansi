@@ -8,6 +8,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/utils"
 	"github.com/asaidimu/go-anansi/v8/tests/testutils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -124,9 +125,9 @@ func TestContextIsPropagatedOnUpdateWithReturning(t *testing.T) {
 
 	// 4. Perform an update with returning
 	updateParams := &base.CollectionUpdate{
-		Filter: query.NewQueryBuilder().Where(data.DocumentIDField).Eq(docID).Build().Filters,
-		Set:    data.Patch{"name": "updated_name"}.Document(),
-		ReturnDocument: true, // Crucial for this test
+		Filter:         query.NewQueryBuilder().Where(data.DocumentIDField).Eq(docID).Build().Filters,
+		Set:            data.Patch{"name": "updated_name"}.Document(),
+		ReturnDocument: utils.BoolPtr(true), // Crucial for this test
 	}
 	updateResult, err := collection.Update(updateCtx, updateParams)
 	require.NoError(t, err)

@@ -15,6 +15,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/utils"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v8/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v8/sqlite/query"
 	testEvents "github.com/asaidimu/go-anansi/v8/utils" // Import from the correct events package
@@ -159,7 +160,7 @@ func TestPersistenceEvents(t *testing.T) {
 		// Update the document
 		updatePatch := data.Patch{"name": "updated_name", "value": 200}.Document()
 		filter := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(initialDocID).Build().Filters
-		_, err = collection.Update(context.Background(), &base.CollectionUpdate{Set: updatePatch, Filter: filter, ReturnDocument: true})
+		_, err = collection.Update(context.Background(), &base.CollectionUpdate{Set: updatePatch, Filter: filter, ReturnDocument: utils.BoolPtr(true)})
 		require.NoError(t, err)
 
 		// Wait for the event
@@ -273,7 +274,7 @@ func TestPersistenceEvents(t *testing.T) {
 			// Update the existing document within the transaction
 			updatePatch := data.Patch{"value": 25}.Document()
 			filter := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(existingDocID).Build().Filters
-			_, err = txCollection.Update(tctx, &base.CollectionUpdate{Set: updatePatch, Filter: filter, ReturnDocument: true})
+			_, err = txCollection.Update(tctx, &base.CollectionUpdate{Set: updatePatch, Filter: filter, ReturnDocument: utils.BoolPtr(true)})
 			require.NoError(t, err)
 
 			// Crucial: Check that events have NOT been emitted yet
