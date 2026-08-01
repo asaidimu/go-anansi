@@ -1,3 +1,10 @@
+## [8.4.7](https://github.com/asaidimu/go-anansi/compare/v8.4.6...v8.4.7) (2026-08-01)
+
+
+### Bug Fixes
+
+* **data:** rename document to data container ([1d7eaad](https://github.com/asaidimu/go-anansi/commit/1d7eaadacd7d7095fe74ea333546faeb2feda8cf))
+
 ## [8.4.6](https://github.com/asaidimu/go-anansi/compare/v8.4.5...v8.4.6) (2026-08-01)
 
 
