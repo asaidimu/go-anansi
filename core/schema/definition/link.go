@@ -3,7 +3,7 @@ package definition
 import (
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v8/core/document"
+	"github.com/asaidimu/go-anansi/v8/core/data/container"
 )
 
 // =============================================================================
@@ -30,18 +30,18 @@ func Link(rs *ResolvedSchema) (*CompiledSchema, error) {
 		return nil, fmt.Errorf("cannot link a nil ResolvedSchema")
 	}
 
-	defaults := document.NewDocument()
+	defaults := container.NewDataContainer()
 
 	lc := &linkContext{
-		schemas:              make([]SchemaSlot, 0, 16),
-		schemasMeta:          make([]SchemaMeta, 0, 16),
-		slots:                make(map[*ResolvedNestedSchema][]uint8),
-		defaults:             defaults,
-		enums:                document.NewDocument(),
-		variants:             make(map[uint32][]uint8),
-		schemaConstraints:    make([]SchemaConstraint, 0, 16),
-		fieldRefConstraints:  make(map[uint32]SchemaConstraint),
-		rs:                   rs,
+		schemas:             make([]SchemaSlot, 0, 16),
+		schemasMeta:         make([]SchemaMeta, 0, 16),
+		slots:               make(map[*ResolvedNestedSchema][]uint8),
+		defaults:            defaults,
+		enums:               container.NewDataContainer(),
+		variants:            make(map[uint32][]uint8),
+		schemaConstraints:   make([]SchemaConstraint, 0, 16),
+		fieldRefConstraints: make(map[uint32]SchemaConstraint),
+		rs:                  rs,
 	}
 
 	// Root schema slot 0.
@@ -95,6 +95,26 @@ func Link(rs *ResolvedSchema) (*CompiledSchema, error) {
 		return nil, fmt.Errorf("schema tree too large: need %d address slots but multi-step region has %d", rootFP, MultiStepSize)
 	}
 
+	// Compute LocalOffsets: the prefix-sum offset of each descriptor within its
+	// own schema's address block. Within a block, a terminal field consumes one
+	// slot and a non-terminal field consumes Footprint(child) slots. Address()
+	// relies on this table to resolve a multi-step path in O(depth).
+	localOffsets := make([]uint32, len(lc.descriptors))
+	for s := range lc.schemas {
+		slot := &lc.schemas[s]
+		var acc uint32
+		for j := uint16(0); j < slot.FieldCount; j++ {
+			abs := int(slot.FieldStart) + int(j)
+			fd := lc.descriptors[abs]
+			localOffsets[abs] = acc
+			if fd.Terminal() {
+				acc++
+			} else if fd.ChildSchemaIdx() != FdNoChild {
+				acc += lc.schemas[fd.ChildSchemaIdx()].Footprint
+			}
+		}
+	}
+
 	return &CompiledSchema{
 		Descriptors:         lc.descriptors,
 		FieldsMeta:          lc.fieldsMeta,
@@ -108,6 +128,7 @@ func Link(rs *ResolvedSchema) (*CompiledSchema, error) {
 		Indexes:             rs.Indexes,
 		SchemaConstraints:   lc.schemaConstraints,
 		FieldRefConstraints: lc.fieldRefConstraints,
+		LocalOffsets:        localOffsets,
 	}, nil
 }
 
@@ -122,12 +143,12 @@ type linkContext struct {
 	schemas     []SchemaSlot
 	schemasMeta []SchemaMeta
 	slots       map[*ResolvedNestedSchema][]uint8
-	defaults    *document.Document
-	enums       *document.Document
+	defaults    *container.DataContainer
+	enums       *container.DataContainer
 	variants    map[uint32][]uint8
 
 	schemaConstraints   []SchemaConstraint          // per slot
-	fieldRefConstraints map[uint32]SchemaConstraint  // keyed by DataPoint
+	fieldRefConstraints map[uint32]SchemaConstraint // keyed by DataPoint
 	rs                  *ResolvedSchema
 }
 
@@ -172,7 +193,21 @@ func (lc *linkContext) linkFields(fields []ResolvedField, schemaIdx uint8) (uint
 		return 0, fmt.Errorf("schema slot %d declares %d fields, exceeds maximum of %d fields per schema (FieldIdx is a 7-bit descriptor field)", schemaIdx, len(fields), maxFieldsPerSchema)
 	}
 
-	start := uint16(len(lc.descriptors))
+	// Descriptors must be laid out grouped per schema: a schema's own fields are
+	// contiguous (FieldStart..FieldStart+FieldCount), and every non-terminal
+	// child subtree is linked after all sibling descriptors. Address() relies on
+	// this so that slot.FieldStart+fieldIdx indexes the field's descriptor and
+	// single-step paths map to unique absolute descriptor indices.
+	//
+	// Pass 1: create the descriptors and metadata for every field in this
+	// schema. Pass 2: link non-terminal child subtrees, now that the whole
+	// sibling block is in place.
+	type childWork struct {
+		rf       *ResolvedField
+		fd       FieldDescriptor
+		childIdx uint8
+	}
+	var children []childWork
 
 	for i := range fields {
 		rf := &fields[i]
@@ -209,7 +244,7 @@ func (lc *linkContext) linkFields(fields []ResolvedField, schemaIdx uint8) (uint
 			lc.fieldRefConstraints[dp] = rf.Object.RefConstraints
 		}
 
-		// Set default value in the defaults Document if present.
+		// Set default value in the defaults DataContainer if present.
 		if hasDefault {
 			if err := setDefault(lc.defaults, dp, dt, rf.Default); err != nil {
 				return 0, err
@@ -224,39 +259,41 @@ func (lc *linkContext) linkFields(fields []ResolvedField, schemaIdx uint8) (uint
 		}
 
 		if !terminal {
-			if err := lc.linkChildFields(rf, fd); err != nil {
-				return 0, err
-			}
+			children = append(children, childWork{rf: rf, fd: fd, childIdx: childSchemaIdx})
 		}
 	}
 
-	return uint16(len(lc.descriptors) - int(start)), nil
+	for _, cw := range children {
+		if err := lc.linkChildFields(cw.rf, cw.fd, cw.childIdx); err != nil {
+			return 0, err
+		}
+	}
+
+	return uint16(len(fields)), nil
 }
 
-func (lc *linkContext) linkChildFields(rf *ResolvedField, fd FieldDescriptor) error {
+func (lc *linkContext) linkChildFields(rf *ResolvedField, fd FieldDescriptor, childIdx uint8) error {
 	switch {
 	case rf.Object != nil && rf.Recursive == nil:
 		childStart := uint16(len(lc.descriptors))
-		childIdx := lc.slots[rf.Object.Schema][len(lc.slots[rf.Object.Schema])-1]
-		_, err := lc.linkFields(rf.Object.Schema.Fields, childIdx)
+		childCount, err := lc.linkFields(rf.Object.Schema.Fields, childIdx)
 		if err != nil {
 			return err
 		}
 		lc.schemas[childIdx] = SchemaSlot{
 			FieldStart: childStart,
-			FieldCount: uint16(len(lc.descriptors)) - childStart,
+			FieldCount: childCount,
 		}
 
 	case rf.Container != nil && rf.Recursive == nil && rf.Container.ItemSchema != nil:
 		childStart := uint16(len(lc.descriptors))
-		childIdx := lc.slots[rf.Container.ItemSchema][len(lc.slots[rf.Container.ItemSchema])-1]
-		_, err := lc.linkFields(rf.Container.ItemSchema.Fields, childIdx)
+		childCount, err := lc.linkFields(rf.Container.ItemSchema.Fields, childIdx)
 		if err != nil {
 			return err
 		}
 		lc.schemas[childIdx] = SchemaSlot{
 			FieldStart: childStart,
-			FieldCount: uint16(len(lc.descriptors)) - childStart,
+			FieldCount: childCount,
 		}
 
 	case rf.Union != nil:
@@ -325,9 +362,9 @@ func (lc *linkContext) linkChildFields(rf *ResolvedField, fd FieldDescriptor) er
 // DEFAULT VALUE SETUP
 // =============================================================================
 
-func setDefault(doc *document.Document, dp uint32, dt document.DataType, lv LiteralValue) error {
-	// DocumentKey with descriptor=0 (not used for defaults).
-	key := document.NewDocumentKey(document.DataPoint(dp), 0)
+func setDefault(doc *container.DataContainer, dp uint32, dt container.DataType, lv LiteralValue) error {
+	// DataContainerKey with descriptor=0 (not used for defaults).
+	key := container.NewDataContainerKey(container.DataPoint(dp), 0)
 	if lv.IsNull() {
 		doc.SetNull(key)
 		return nil
@@ -338,35 +375,35 @@ func setDefault(doc *document.Document, dp uint32, dt document.DataType, lv Lite
 	}
 
 	switch dt {
-	case document.TypeInt:
+	case container.TypeInt:
 		v, ok := val.(int64)
 		if !ok {
 			return nil
 		}
 		return doc.SetInt(key, v)
 
-	case document.TypeFloat:
+	case container.TypeFloat:
 		v, ok := val.(float64)
 		if !ok {
 			return nil
 		}
 		return doc.SetFloat(key, v)
 
-	case document.TypeString:
+	case container.TypeString:
 		v, ok := val.(string)
 		if !ok {
 			return nil
 		}
 		return doc.SetString(key, v)
 
-	case document.TypeBool:
+	case container.TypeBool:
 		v, ok := val.(bool)
 		if !ok {
 			return nil
 		}
 		return doc.SetBool(key, v)
 
-	case document.TypeBytes:
+	case container.TypeBytes:
 		v, ok := val.([]byte)
 		if !ok {
 			return nil
@@ -381,76 +418,80 @@ func setDefault(doc *document.Document, dp uint32, dt document.DataType, lv Lite
 // FIELD CLASSIFICATION
 // =============================================================================
 
-func classifyField(rf *ResolvedField) (document.DataType, FieldKind, bool) {
+func classifyField(rf *ResolvedField) (container.DataType, FieldKind, bool) {
 	switch {
 	case rf.Type == FieldTypeGeometry:
-		return document.TypeGeometry, KindSimple, true
+		return container.TypeGeometry, KindSimple, true
 	case rf.Scalar != nil:
 		return scalarDataType(rf.Type), KindSimple, true
 	case rf.Enum != nil:
 		return enumDataType(rf), KindSimple, true
 	case rf.Recursive != nil:
-		return document.TypeRecord, KindObject, true
+		return container.TypeRecord, KindObject, true
 	case rf.Object != nil:
-		return document.TypeRecord, KindObject, false
+		return container.TypeRecord, KindObject, false
 	case rf.Container != nil:
 		terminal := rf.Container.ItemSchema == nil
 		return containerDataType(rf.Container.ItemSchema, rf.Container.ItemType), KindArrayField, terminal
 	case rf.Union != nil:
-		return document.TypeRecord, KindComplex, false
+		return container.TypeRecord, KindComplex, false
 	case rf.Composite != nil:
-		return document.TypeRecord, KindComplex, false
+		return container.TypeRecord, KindComplex, false
 	}
-	return document.TypeUnknown, KindSimple, true
+	return container.TypeUnknown, KindSimple, true
 }
 
-func scalarDataType(ft FieldType) document.DataType {
+func scalarDataType(ft FieldType) container.DataType {
 	switch ft {
 	case FieldTypeString:
-		return document.TypeString
-	case FieldTypeNumber, FieldTypeDecimal:
-		return document.TypeFloat
+		return container.TypeString
+	case FieldTypeNumber:
+		return container.TypeFloat
+	case FieldTypeDecimal:
+		return container.TypeString // canonical decimal string
 	case FieldTypeInteger:
-		return document.TypeInt
+		return container.TypeInt
 	case FieldTypeBoolean:
-		return document.TypeBool
+		return container.TypeBool
 	case FieldTypeBytes:
-		return document.TypeBytes
+		return container.TypeBytes
 	default:
-		return document.TypeUnknown
+		return container.TypeUnknown
 	}
 }
 
-func enumDataType(rf *ResolvedField) document.DataType {
+func enumDataType(rf *ResolvedField) container.DataType {
 	if rf.Enum != nil && rf.Enum.ExpectNumeric {
-		return document.TypeInt
+		return container.TypeInt
 	}
-	return document.TypeString
+	return container.TypeString
 }
 
-func containerDataType(itemSchema *ResolvedNestedSchema, itemType FieldType) document.DataType {
+func containerDataType(itemSchema *ResolvedNestedSchema, itemType FieldType) container.DataType {
 	if itemSchema != nil {
-		return document.TypeArrayObject
+		return container.TypeArrayObject
 	}
 	switch itemType {
 	case FieldTypeString:
-		return document.TypeArrayString
-	case FieldTypeNumber, FieldTypeDecimal:
-		return document.TypeArrayFloat
+		return container.TypeArrayString
+	case FieldTypeNumber:
+		return container.TypeArrayFloat
+	case FieldTypeDecimal:
+		return container.TypeArrayString // array of canonical decimal strings
 	case FieldTypeInteger:
-		return document.TypeArrayInt
+		return container.TypeArrayInt
 	case FieldTypeBoolean:
-		return document.TypeArrayBool
+		return container.TypeArrayBool
 	case FieldTypeBytes:
-		return document.TypeArrayBytes
+		return container.TypeArrayBytes
 	case FieldTypeGeometry:
-		return document.TypeArrayGeometry
+		return container.TypeArrayGeometry
 	default:
-		return document.TypeArrayUnknown
+		return container.TypeArrayUnknown
 	}
 }
 
-func setEnumValues(doc *document.Document, fd FieldDescriptor, re *ResolvedEnum) error {
+func setEnumValues(doc *container.DataContainer, fd FieldDescriptor, re *ResolvedEnum) error {
 	// Extract the 27-bit field ID from the field descriptor's DataPoint.
 	dp := fd.DataPoint()
 	id := int32(dp) >> 5 // bits 5-31
@@ -458,11 +499,11 @@ func setEnumValues(doc *document.Document, fd FieldDescriptor, re *ResolvedEnum)
 	// Store based on enum type. ExpectNumeric=true means the values are int64;
 	// otherwise they're strings (or complex/mixed).
 	if len(re.Complex) > 0 {
-		edp, err := document.NewDataPoint(document.TypeArrayUnknown, id)
+		edp, err := container.NewDataPoint(container.TypeArrayUnknown, id)
 		if err != nil {
 			return err
 		}
-		ek := document.NewDocumentKey(edp, 0)
+		ek := container.NewDataContainerKey(edp, 0)
 		all := make([]any, 0, len(re.Lookup)+len(re.Complex))
 		for v := range re.Lookup {
 			all = append(all, v)
@@ -472,11 +513,11 @@ func setEnumValues(doc *document.Document, fd FieldDescriptor, re *ResolvedEnum)
 	}
 
 	if re.ExpectNumeric {
-		edp, err := document.NewDataPoint(document.TypeArrayInt, id)
+		edp, err := container.NewDataPoint(container.TypeArrayInt, id)
 		if err != nil {
 			return err
 		}
-		ek := document.NewDocumentKey(edp, 0)
+		ek := container.NewDataContainerKey(edp, 0)
 		vals := make([]int64, 0, len(re.Lookup))
 		for v := range re.Lookup {
 			if vi, ok := v.(int64); ok {
@@ -487,11 +528,11 @@ func setEnumValues(doc *document.Document, fd FieldDescriptor, re *ResolvedEnum)
 	}
 
 	// String enum (default)
-	edp, err := document.NewDataPoint(document.TypeArrayString, id)
+	edp, err := container.NewDataPoint(container.TypeArrayString, id)
 	if err != nil {
 		return err
 	}
-	ek := document.NewDocumentKey(edp, 0)
+	ek := container.NewDataContainerKey(edp, 0)
 	vals := make([]string, 0, len(re.Lookup))
 	for v := range re.Lookup {
 		if vs, ok := v.(string); ok {

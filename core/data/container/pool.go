@@ -1,11 +1,11 @@
-package document
+package container
 
 import (
 	"sync"
 	"unsafe"
 )
 
-// Pool is a sync.Pool for Documents.
+// Pool is a sync.Pool for DataContainers.
 //
 // Pool.Put recurses into TypeArrayObject slots before calling Clear, returning
 // any child documents embedded in array-object fields back to the pool before
@@ -24,32 +24,30 @@ type Pool struct {
 	pool sync.Pool
 }
 
-// NewPool constructs a Pool with size-appropriate New functions for each tier.
+// NewPool constructs a Pool whose New function produces DataContainers with an
+// empty positions map.
 func NewPool() *Pool {
 	p := &Pool{}
 
 	p.pool.New = func() any {
-		d := &Document{positions: make(map[int64]int32, 0)}
+		d := &DataContainer{positions: make(map[int64]int32, 0)}
 		return d
 	}
 
 	return p
 }
 
-// Get retrieves a cleared Document sized to the given tier.
-func (p *Pool) Get() *Document {
-	return p.pool.Get().(*Document)
+// Get retrieves a cleared DataContainer from the pool.
+func (p *Pool) Get() *DataContainer {
+	return p.pool.Get().(*DataContainer)
 }
 
 // Put returns a document to the pool.
 //
-// Before clearing, Put recurses into any TypeArrayObject slots to return child
-// documents to the pool. This means the caller must not hold references to
-// child documents after calling Put — they are cleared and reused.
-//
-// Put re-tiers the document by its actual int slice length so that a document
-// that grew beyond its original tier is returned to the correct bucket.
-func (p *Pool) Put(doc *Document) {
+// Before clearing, Put recurses into any TypeRecord and TypeArrayObject slots to
+// return child documents to the pool. This means the caller must not hold
+// references to child documents after calling Put — they are cleared and reused.
+func (p *Pool) Put(doc *DataContainer) {
 	if doc == nil {
 		return
 	}
@@ -58,13 +56,13 @@ func (p *Pool) Put(doc *Document) {
 	// slot() is not used here because we do not want to allocate a new slice
 	// if the type was never initialised.
 	if ptr := doc.data[TypeRecord]; ptr != nil {
-		children := *(*[]*Document)(ptr)
+		children := *(*[]*DataContainer)(ptr)
 		for _, child := range children {
 			p.Put(child)
 		}
 	}
 	if ptr := doc.data[TypeArrayObject]; ptr != nil {
-		children := *(*[][]*Document)(ptr)
+		children := *(*[][]*DataContainer)(ptr)
 		for _, group := range children {
 			for _, child := range group {
 				p.Put(child) // recursive: handles nested array objects
@@ -81,11 +79,11 @@ func (p *Pool) Put(doc *Document) {
 // then returns it to the pool regardless of whether f returns an error.
 // This is the recommended pattern for request handlers.
 //
-//	err := pool.Acquire(SizeSmall, func(doc *Document) error {
+//	err := pool.Acquire(func(doc *DataContainer) error {
 //	    doc.SetInt(keySaleTotal, 935_000)
 //	    return handler(doc)
 //	})
-func (p *Pool) Acquire(f func(*Document) error) error {
+func (p *Pool) Acquire(f func(*DataContainer) error) error {
 	doc := p.Get()
 	defer p.Put(doc)
 	return f(doc)
@@ -96,8 +94,8 @@ func (p *Pool) Acquire(f func(*Document) error) error {
 // Use this when a deserializer fills a document and immediately hands it off
 // to a collection rather than returning it to the caller.
 func (p *Pool) Walk(
-	walker func(*Document, map[int64]int32, func(DataType, ...int) unsafe.Pointer) error,
-) (*Document, error) {
+	walker func(*DataContainer, map[int64]int32, func(DataType, ...int) unsafe.Pointer) error,
+) (*DataContainer, error) {
 	doc := p.Get()
 	var walkErr error
 	_, err := doc.Walk(func(positions map[int64]int32, slot func(DataType, ...int) unsafe.Pointer) (any, error) {

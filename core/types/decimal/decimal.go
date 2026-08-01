@@ -314,7 +314,7 @@ func scaleUp(val *big.Int, factor int32) *big.Int {
 func IsValid(value any) bool {
 	if s, ok := value.(string); ok {
 		_, err := NewFromString(s)
-		return err != nil
+		return err == nil
 	}
 	return false
 }
