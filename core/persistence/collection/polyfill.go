@@ -8,6 +8,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/utils"
 	"go.uber.org/zap"
 )
 
@@ -144,7 +145,7 @@ func (p *polyfillCollection) Update(ctx context.Context, params *base.Collection
 	}
 
 	// Determine if the polyfill is needed: documents are requested, but the driver can't return them on update.
-	needsPolyfill := params.ReturnDocument && !p.Capabilities(ctx).ReturnOnUpdate
+	needsPolyfill := params.ReturnsDocument() && !p.Capabilities(ctx).ReturnOnUpdate
 	if !needsPolyfill {
 		return p.Collection.Update(ctx, params)
 	}
@@ -197,7 +198,7 @@ func (p *polyfillCollection) Update(ctx context.Context, params *base.Collection
 			Set:            params.Set,
 			Compute:        params.Compute,
 			Version:        params.Version,
-			ReturnDocument: false, // Polyfill is handling the return.
+			ReturnDocument: utils.BoolPtr(false), // Polyfill is handling the return.
 		}
 
 		updateResult, err := p.Collection.Update(transactionCtx, updateOnlyParams)

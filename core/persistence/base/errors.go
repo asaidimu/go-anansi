@@ -26,6 +26,7 @@ var (
 	ErrVersionAlreadyExists                          = common.NewSystemError("ERR_PERSISTENCE_VERSION_ALREADY_EXISTS", "version already exists")
 	ErrVersionNotFound                               = common.NewSystemError("ERR_PERSISTENCE_VERSION_NOT_FOUND", "version not found")
 	ErrInvalidUpdateParams                           = common.NewSystemError("ERR_PERSISTENCE_INVALID_UPDATE_PARAMS", "Invalid update parameters provided")
+	ErrEmptyUpdate                                   = common.NewSystemError("ERR_PERSISTENCE_EMPTY_UPDATE", "update must set or compute at least one field")
 	ErrDeleteRequiresFilter                          = common.NewSystemError("ERR_PERSISTENCE_DELETE_REQUIRES_FILTER", "Delete operation requires a filter or unsafe flag")
 	ErrValidationFailed                              = common.NewSystemError("ERR_PERSISTENCE_VALIDATION_FAILED", "document validation failed")
 	ErrUnexpectedType                                = common.NewSystemError("ERR_PERSISTENCE_UNEXPECTED_TYPE", "unexpected type")

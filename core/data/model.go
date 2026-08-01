@@ -166,6 +166,21 @@ func (dm *DocumentModel) Patch() (*Document, error) {
 	return NewPartialDocumentFromStruct(dm.parent)
 }
 
+// Len returns the number of non-zero user data fields set on the outer
+// struct, excluding system fields (_id, _metadata_). A Len of 0 indicates
+// the model carries no update payload. Requires the model to have been
+// initialized via data.New[T]; returns 0 otherwise.
+func (dm *DocumentModel) Len() int {
+	if dm.parent == nil {
+		return 0
+	}
+	patch, err := dm.Patch()
+	if err != nil {
+		return 0
+	}
+	return patch.Len()
+}
+
 // formatUUIDNoDashes converts UUID to 32-char hex string in 1 allocation
 func formatUUIDNoDashes(id *uuid.UUID) string {
 	return hex.EncodeToString(id[:])

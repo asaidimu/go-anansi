@@ -161,7 +161,7 @@ func TestQueryBuilder_ProjectionWithComputed(t *testing.T) {
 			Computed: []query.ProjectionComputedItem{
 				{
 					ComputedFieldExpression: &query.ComputedFieldExpression{
-						Type: "computed_field",
+						Type: "computed",
 						Expression: &query.FunctionCall{
 							Function: "concat",
 							Arguments: []query.FilterValue{

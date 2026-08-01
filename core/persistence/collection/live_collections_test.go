@@ -123,7 +123,7 @@ func (s *docStore) Update(_ context.Context, params *base.CollectionUpdate) (*ba
 	s.byKey[newName] = doc.ID()
 
 	out := &base.ReadResult{Data: data.DocumentSet{doc}, Count: 1}
-	if params.ReturnDocument {
+	if params.ReturnsDocument() {
 		return out, nil
 	}
 	out.Data = nil
@@ -171,6 +171,10 @@ func (s *docStore) Subscriptions(_ context.Context) ([]base.SubscriptionInfo, er
 
 func (s *docStore) Capabilities(_ context.Context) *query.Capabilities {
 	return &query.Capabilities{}
+}
+
+func (s *docStore) Transact(ctx context.Context, fn func(ctx context.Context) (any, error)) (any, error) {
+	return fn(ctx)
 }
 
 func (s *docStore) indexKey(keyField, keyValue, docID string) {

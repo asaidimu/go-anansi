@@ -778,7 +778,7 @@ func (pb *ProjectionBuilder) AddComputed(alias string, functionName string, args
 
 	computed := ProjectionComputedItem{
 		ComputedFieldExpression: &ComputedFieldExpression{
-			Type: "computed_field",
+			Type: "computed",
 			Expression: &FunctionCall{
 				Function:  functionName,
 				Arguments: filterArgs,
@@ -950,4 +950,14 @@ func convertToFilterValue(value any) FilterValue {
 		str := fmt.Sprintf("%v", v)
 		return FilterValue{StringVal: &str}
 	}
+}
+
+// Increment adds a computed field expression for an atomic, server-side
+// increment of field by delta (e.g. SET field = field + delta). It is intended
+// for use as a computed update value in base.CollectionUpdate.Compute, where
+// the target column is the key in that map. It returns the projection builder
+// so the select clause can be extended further; finish with End() and Build().
+func (qb *QueryBuilder) Increment(field string, delta int64) *ProjectionBuilder {
+	return qb.Select().
+		AddComputed(field, "ADD", FieldReference{Field: field, Type: "field"}, float64(delta))
 }

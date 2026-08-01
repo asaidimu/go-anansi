@@ -13,6 +13,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+	"github.com/asaidimu/go-anansi/v8/core/utils"
 	"go.uber.org/zap"
 
 	"github.com/asaidimu/go-anansi/v8/example/api/internal/app"
@@ -524,7 +525,7 @@ func (s *APIServer) updateSingleDocument(w http.ResponseWriter, r *http.Request,
 	updateParams := &base.CollectionUpdate{
 		Filter:         query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build().Filters,
 		Set:            patchData.Document(),
-		ReturnDocument: true,
+		ReturnDocument: utils.BoolPtr(true),
 	}
 
 	result, err := col.Update(r.Context(), updateParams)

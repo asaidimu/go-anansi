@@ -9,6 +9,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/utils"
 )
 
 // LiveCollection provides a clean, local key-value repository for processed artifacts.
@@ -403,7 +404,7 @@ func (r *liveRepository[T]) CreateMany(ctx context.Context, docs []*data.Documen
 func (r *liveRepository[T]) Update(ctx context.Context, params *base.CollectionUpdate) (*base.ReadResult, error) {
 	// Force ReturnDocument=true so we can refresh specific cache entries.
 	updateParams := *params
-	updateParams.ReturnDocument = true
+	updateParams.ReturnDocument = utils.BoolPtr(true)
 
 	result, err := r.Collection.Update(ctx, &updateParams)
 	if err != nil {
@@ -421,7 +422,7 @@ func (r *liveRepository[T]) Update(ctx context.Context, params *base.CollectionU
 		r.cache.Clear()
 	}
 
-	if !params.ReturnDocument && result != nil {
+	if !params.ReturnsDocument() && result != nil {
 		result.Data = nil
 	}
 
