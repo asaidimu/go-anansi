@@ -1,3 +1,10 @@
+## [8.4.6](https://github.com/asaidimu/go-anansi/compare/v8.4.5...v8.4.6) (2026-08-01)
+
+
+### Bug Fixes
+
+* **persistence:** add atomic updates and transaction support ([fc28560](https://github.com/asaidimu/go-anansi/commit/fc285608cbd174865624d5e9ec90d4fe7a6e985e))
+
 ## [8.4.5](https://github.com/asaidimu/go-anansi/compare/v8.4.4...v8.4.5) (2026-07-31)
 
 
