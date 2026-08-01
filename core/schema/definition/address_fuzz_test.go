@@ -3,7 +3,7 @@ package definition_test
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v8/core/document"
+	"github.com/asaidimu/go-anansi/v8/core/data/container"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
@@ -149,7 +149,7 @@ func buildChain(n, nFields int, terminals uint8, recursiveDepth int8) *definitio
 				kind = definition.KindObject
 				terminal = true
 				fd := definition.MakeFieldDescriptor(
-					document.TypeUnknown, kind, uint8(i), uint8(j),
+					container.TypeUnknown, kind, uint8(i), uint8(j),
 					false, false, false, false, terminal, false, true,
 					childSchemaIdx,
 				)
@@ -169,7 +169,7 @@ func buildChain(n, nFields int, terminals uint8, recursiveDepth int8) *definitio
 			}
 
 			fd := definition.MakeFieldDescriptor(
-				document.TypeUnknown, kind, uint8(i), uint8(j),
+				container.TypeUnknown, kind, uint8(i), uint8(j),
 				false, false, false, false, terminal, false, false,
 				childSchemaIdx,
 			)

@@ -25,10 +25,10 @@ package definition
 // caller should recompile from source rather than attempt to migrate an
 // old binary layout forward.
 //
-// document.Document (used for CompiledSchema.Defaults / CompiledSchema.Enums)
+// container.DataContainer (used for CompiledSchema.Defaults / CompiledSchema.Enums)
 // is not reflection-serializable — its backing storage is a set of
 // unsafe.Pointer-typed slices. It exposes Walk specifically so callers can
-// implement custom serialization; encodeDocument/decodeDocument below do so.
+// implement custom serialization; encodeDataContainer/decodeDataContainer below do so.
 //
 // A note on LiteralValue and nested object/array values: LiteralValue itself
 // preserves the exact concrete Go integer/float type it was constructed with
@@ -54,11 +54,11 @@ import (
 	"unsafe"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
-	"github.com/asaidimu/go-anansi/v8/core/document"
+	"github.com/asaidimu/go-anansi/v8/core/data/container"
 )
 
 const (
-	compiledSchemaMagic        = "ANSC"
+	compiledSchemaMagic               = "ANSC"
 	compiledSchemaFormatVersion uint8 = 2
 )
 
@@ -371,7 +371,7 @@ func decodeBytesSlice(r *reader) ([][]byte, error) {
 	return out, nil
 }
 
-// encodeFloat2D / decodeFloat2D handle the document.TypeGeometry value shape
+// encodeFloat2D / decodeFloat2D handle the container.TypeGeometry value shape
 // ([][]float64 — a single geometry, a list of coordinate rings).
 func encodeFloat2D(w *writer, v [][]float64) {
 	w.u32(uint32(len(v)))
@@ -396,7 +396,7 @@ func decodeFloat2D(r *reader) ([][]float64, error) {
 	return out, nil
 }
 
-// encodeFloat3D / decodeFloat3D handle the document.TypeArrayGeometry value
+// encodeFloat3D / decodeFloat3D handle the container.TypeArrayGeometry value
 // shape ([][][]float64 — an array of geometries).
 func encodeFloat3D(w *writer, v [][][]float64) {
 	w.u32(uint32(len(v)))
@@ -421,24 +421,24 @@ func decodeFloat3D(r *reader) ([][][]float64, error) {
 	return out, nil
 }
 
-func encodeDocumentSlice(w *writer, v []*document.Document) error {
+func encodeDataContainerSlice(w *writer, v []*container.DataContainer) error {
 	w.u32(uint32(len(v)))
 	for _, d := range v {
-		if err := encodeDocument(w, d); err != nil {
+		if err := encodeDataContainer(w, d); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func decodeDocumentSlice(r *reader) ([]*document.Document, error) {
+func decodeDataContainerSlice(r *reader) ([]*container.DataContainer, error) {
 	n, err := r.u32()
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*document.Document, n)
+	out := make([]*container.DataContainer, n)
 	for i := range out {
-		d, err := decodeDocument(r)
+		d, err := decodeDataContainer(r)
 		if err != nil {
 			return nil, err
 		}
@@ -1537,14 +1537,14 @@ func decodeIndexConditionGroup(r *reader) (IndexConditionGroup, error) {
 // DOCUMENT CODEC (for CompiledSchema.Defaults / CompiledSchema.Enums)
 // =============================================================================
 
-func encodeDocument(w *writer, doc *document.Document) error {
+func encodeDataContainer(w *writer, doc *container.DataContainer) error {
 	if doc == nil {
 		w.u8(0)
 		return nil
 	}
 	w.u8(1)
 
-	_, err := doc.Walk(func(positions map[int64]int32, slot func(t document.DataType, initialSize ...int) unsafe.Pointer) (any, error) {
+	_, err := doc.Walk(func(positions map[int64]int32, slot func(t container.DataType, initialSize ...int) unsafe.Pointer) (any, error) {
 		keys := make([]int64, 0, len(positions))
 		for k := range positions {
 			keys = append(keys, k)
@@ -1553,8 +1553,8 @@ func encodeDocument(w *writer, doc *document.Document) error {
 
 		w.u32(uint32(len(keys)))
 
-		slotCache := make(map[document.DataType]unsafe.Pointer)
-		getSlot := func(t document.DataType) unsafe.Pointer {
+		slotCache := make(map[container.DataType]unsafe.Pointer)
+		getSlot := func(t container.DataType) unsafe.Pointer {
 			if p, ok := slotCache[t]; ok {
 				return p
 			}
@@ -1565,7 +1565,7 @@ func encodeDocument(w *writer, doc *document.Document) error {
 
 		for _, k := range keys {
 			idx := positions[k]
-			key := document.DocumentKey(k)
+			key := container.DataContainerKey(k)
 			w.u64(uint64(k))
 			if idx < 0 {
 				w.u8(1)
@@ -1575,58 +1575,58 @@ func encodeDocument(w *writer, doc *document.Document) error {
 
 			dt := key.Type()
 			switch dt {
-			case document.TypeInt:
+			case container.TypeInt:
 				v := (*[]int64)(getSlot(dt))
 				w.i64((*v)[idx])
-			case document.TypeFloat:
+			case container.TypeFloat:
 				v := (*[]float64)(getSlot(dt))
 				w.f64((*v)[idx])
-			case document.TypeString:
+			case container.TypeString:
 				v := (*[]string)(getSlot(dt))
 				w.str((*v)[idx])
-			case document.TypeBool:
+			case container.TypeBool:
 				v := (*[]bool)(getSlot(dt))
 				w.boolean((*v)[idx])
-			case document.TypeBytes:
+			case container.TypeBytes:
 				v := (*[][]byte)(getSlot(dt))
 				w.bytesLP((*v)[idx])
-			case document.TypeGeometry:
+			case container.TypeGeometry:
 				v := (*[][][]float64)(getSlot(dt))
 				encodeFloat2D(w, (*v)[idx])
-			case document.TypeRecord:
-				v := (*[]*document.Document)(getSlot(dt))
-				if err := encodeDocument(w, (*v)[idx]); err != nil {
+			case container.TypeRecord:
+				v := (*[]*container.DataContainer)(getSlot(dt))
+				if err := encodeDataContainer(w, (*v)[idx]); err != nil {
 					return nil, err
 				}
-			case document.TypeArrayUnknown:
+			case container.TypeArrayUnknown:
 				v := (*[][]any)(getSlot(dt))
 				if err := encodeAnySlice(w, (*v)[idx]); err != nil {
 					return nil, err
 				}
-			case document.TypeArrayInt:
+			case container.TypeArrayInt:
 				v := (*[][]int64)(getSlot(dt))
 				encodeInt64Slice(w, (*v)[idx])
-			case document.TypeArrayFloat:
+			case container.TypeArrayFloat:
 				v := (*[][]float64)(getSlot(dt))
 				encodeFloat64Slice(w, (*v)[idx])
-			case document.TypeArrayString:
+			case container.TypeArrayString:
 				v := (*[][]string)(getSlot(dt))
 				w.strSlice((*v)[idx])
-			case document.TypeArrayBool:
+			case container.TypeArrayBool:
 				v := (*[][]bool)(getSlot(dt))
 				encodeBoolSlice(w, (*v)[idx])
-			case document.TypeArrayBytes:
+			case container.TypeArrayBytes:
 				v := (*[][][]byte)(getSlot(dt))
 				encodeBytesSlice(w, (*v)[idx])
-			case document.TypeArrayObject:
-				v := (*[][]*document.Document)(getSlot(dt))
-				if err := encodeDocumentSlice(w, (*v)[idx]); err != nil {
+			case container.TypeArrayObject:
+				v := (*[][]*container.DataContainer)(getSlot(dt))
+				if err := encodeDataContainerSlice(w, (*v)[idx]); err != nil {
 					return nil, err
 				}
-			case document.TypeArrayGeometry:
+			case container.TypeArrayGeometry:
 				v := (*[][][][]float64)(getSlot(dt))
 				encodeFloat3D(w, (*v)[idx])
-			case document.TypeUnknown:
+			case container.TypeUnknown:
 				v := (*[]any)(getSlot(dt))
 				if err := encodeAnyValue(w, (*v)[idx]); err != nil {
 					return nil, err
@@ -1643,7 +1643,7 @@ func encodeDocument(w *writer, doc *document.Document) error {
 	return nil
 }
 
-func decodeDocument(r *reader) (*document.Document, error) {
+func decodeDataContainer(r *reader) (*container.DataContainer, error) {
 	presence, err := r.u8()
 	if err != nil {
 		return nil, err
@@ -1652,7 +1652,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 		return nil, nil
 	}
 
-	doc := document.NewDocument()
+	doc := container.NewDataContainer()
 
 	count, err := r.u32()
 	if err != nil {
@@ -1664,7 +1664,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 		if err != nil {
 			return nil, err
 		}
-		key := document.DocumentKey(int64(kRaw))
+		key := container.DataContainerKey(int64(kRaw))
 
 		isNull, err := r.u8()
 		if err != nil {
@@ -1677,7 +1677,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 
 		dt := key.Type()
 		switch dt {
-		case document.TypeInt:
+		case container.TypeInt:
 			v, err := r.i64()
 			if err != nil {
 				return nil, err
@@ -1685,7 +1685,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetInt(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeFloat:
+		case container.TypeFloat:
 			v, err := r.f64()
 			if err != nil {
 				return nil, err
@@ -1693,7 +1693,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetFloat(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeString:
+		case container.TypeString:
 			v, err := r.str()
 			if err != nil {
 				return nil, err
@@ -1701,7 +1701,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetString(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeBool:
+		case container.TypeBool:
 			v, err := r.boolean()
 			if err != nil {
 				return nil, err
@@ -1709,7 +1709,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetBool(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeBytes:
+		case container.TypeBytes:
 			v, err := r.bytesLP()
 			if err != nil {
 				return nil, err
@@ -1717,7 +1717,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetBytes(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeGeometry:
+		case container.TypeGeometry:
 			v, err := decodeFloat2D(r)
 			if err != nil {
 				return nil, err
@@ -1725,15 +1725,15 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetGeometry(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeRecord:
-			v, err := decodeDocument(r)
+		case container.TypeRecord:
+			v, err := decodeDataContainer(r)
 			if err != nil {
 				return nil, err
 			}
 			if err := doc.SetRecord(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeArrayUnknown:
+		case container.TypeArrayUnknown:
 			v, err := decodeAnySlice(r)
 			if err != nil {
 				return nil, err
@@ -1741,7 +1741,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetArrayUnknown(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeArrayInt:
+		case container.TypeArrayInt:
 			v, err := decodeInt64Slice(r)
 			if err != nil {
 				return nil, err
@@ -1749,7 +1749,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetArrayInt(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeArrayFloat:
+		case container.TypeArrayFloat:
 			v, err := decodeFloat64Slice(r)
 			if err != nil {
 				return nil, err
@@ -1757,7 +1757,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetArrayFloat(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeArrayString:
+		case container.TypeArrayString:
 			v, err := r.strSlice()
 			if err != nil {
 				return nil, err
@@ -1765,7 +1765,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetArrayString(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeArrayBool:
+		case container.TypeArrayBool:
 			v, err := decodeBoolSlice(r)
 			if err != nil {
 				return nil, err
@@ -1773,7 +1773,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetArrayBool(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeArrayBytes:
+		case container.TypeArrayBytes:
 			v, err := decodeBytesSlice(r)
 			if err != nil {
 				return nil, err
@@ -1781,15 +1781,15 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetArrayBytes(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeArrayObject:
-			v, err := decodeDocumentSlice(r)
+		case container.TypeArrayObject:
+			v, err := decodeDataContainerSlice(r)
 			if err != nil {
 				return nil, err
 			}
 			if err := doc.SetArrayObject(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeArrayGeometry:
+		case container.TypeArrayGeometry:
 			v, err := decodeFloat3D(r)
 			if err != nil {
 				return nil, err
@@ -1797,7 +1797,7 @@ func decodeDocument(r *reader) (*document.Document, error) {
 			if err := doc.SetArrayGeometry(key, v); err != nil {
 				return nil, err
 			}
-		case document.TypeUnknown:
+		case container.TypeUnknown:
 			v, err := decodeAnyValue(r)
 			if err != nil {
 				return nil, err
@@ -1876,16 +1876,22 @@ func SerializeCompiledSchema(cs *CompiledSchema) ([]byte, error) {
 	}
 
 	// Defaults / Enums documents
-	if err := encodeDocument(w, cs.Defaults); err != nil {
+	if err := encodeDataContainer(w, cs.Defaults); err != nil {
 		return nil, fmt.Errorf("compiled schema serialize: defaults: %w", err)
 	}
-	if err := encodeDocument(w, cs.Enums); err != nil {
+	if err := encodeDataContainer(w, cs.Enums); err != nil {
 		return nil, fmt.Errorf("compiled schema serialize: enums: %w", err)
 	}
 
 	// Variants
 	w.u32(uint32(len(cs.Variants)))
-	for k, v := range cs.Variants {
+	variantKeys := make([]uint32, 0, len(cs.Variants))
+	for k := range cs.Variants {
+		variantKeys = append(variantKeys, k)
+	}
+	sort.Slice(variantKeys, func(i, j int) bool { return variantKeys[i] < variantKeys[j] })
+	for _, k := range variantKeys {
+		v := cs.Variants[k]
 		w.u32(k)
 		w.u32(uint32(len(v)))
 		for _, b := range v {
@@ -1903,8 +1909,14 @@ func SerializeCompiledSchema(cs *CompiledSchema) ([]byte, error) {
 
 	// Indexes
 	w.u32(uint32(len(cs.Indexes)))
-	for id, idx := range cs.Indexes {
-		w.str(string(id))
+	indexKeys := make([]string, 0, len(cs.Indexes))
+	for id := range cs.Indexes {
+		indexKeys = append(indexKeys, string(id))
+	}
+	sort.Strings(indexKeys)
+	for _, id := range indexKeys {
+		idx := cs.Indexes[IndexID(id)]
+		w.str(id)
 		if err := encodeIndex(w, idx); err != nil {
 			return nil, fmt.Errorf("compiled schema serialize: indexes: %w", err)
 		}
@@ -1920,7 +1932,13 @@ func SerializeCompiledSchema(cs *CompiledSchema) ([]byte, error) {
 
 	// FieldRefConstraints
 	w.u32(uint32(len(cs.FieldRefConstraints)))
-	for k, sc := range cs.FieldRefConstraints {
+	refKeys := make([]uint32, 0, len(cs.FieldRefConstraints))
+	for k := range cs.FieldRefConstraints {
+		refKeys = append(refKeys, k)
+	}
+	sort.Slice(refKeys, func(i, j int) bool { return refKeys[i] < refKeys[j] })
+	for _, k := range refKeys {
+		sc := cs.FieldRefConstraints[k]
 		w.u32(k)
 		if err := encodeSchemaConstraint(w, sc); err != nil {
 			return nil, fmt.Errorf("compiled schema serialize: field ref constraints: %w", err)
@@ -2083,13 +2101,13 @@ func DeserializeCompiledSchema(data []byte) (*CompiledSchema, error) {
 	}
 
 	// Defaults / Enums documents
-	defaults, err := decodeDocument(r)
+	defaults, err := decodeDataContainer(r)
 	if err != nil {
 		return nil, fmt.Errorf("compiled schema deserialize: defaults: %w", err)
 	}
 	cs.Defaults = defaults
 
-	enums, err := decodeDocument(r)
+	enums, err := decodeDataContainer(r)
 	if err != nil {
 		return nil, fmt.Errorf("compiled schema deserialize: enums: %w", err)
 	}

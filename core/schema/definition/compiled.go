@@ -4,7 +4,7 @@ import (
 	"sync"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
-	"github.com/asaidimu/go-anansi/v8/core/document"
+	"github.com/asaidimu/go-anansi/v8/core/data/container"
 )
 
 // =============================================================================
@@ -37,7 +37,7 @@ const (
 //
 //      Formula:  DataPoint = (descriptor & 0xFFFFFFE0) | (DataType << 1)
 //
-//      The DocumentKey (64-bit) embeds BOTH the internal DataPoint (for
+//      The DataContainerKey (64-bit) embeds BOTH the internal DataPoint (for
 //      type-directed storage lookup) and the full FieldDescriptor (for
 //      rule evaluation), making each document value self-describing.
 //
@@ -101,7 +101,7 @@ const (
 	FdNoChild     uint8  = 0x3F // terminal/no-child sentinel
 )
 
-func MakeFieldDescriptor(dt document.DataType, kind FieldKind, schemaIdx, fieldIdx uint8, required, hasDefault, deprecated, unique, terminal, nullable, recursive bool, childSchemaIdx uint8) FieldDescriptor {
+func MakeFieldDescriptor(dt container.DataType, kind FieldKind, schemaIdx, fieldIdx uint8, required, hasDefault, deprecated, unique, terminal, nullable, recursive bool, childSchemaIdx uint8) FieldDescriptor {
 	var fd uint32
 	fd |= uint32(dt) << 28
 	fd |= uint32(schemaIdx&0x3F) << 22
@@ -132,8 +132,8 @@ func MakeFieldDescriptor(dt document.DataType, kind FieldKind, schemaIdx, fieldI
 	return FieldDescriptor(fd)
 }
 
-func (f FieldDescriptor) DataType() document.DataType {
-	return document.DataType((uint32(f) & fdTypeMask) >> 28)
+func (f FieldDescriptor) DataType() container.DataType {
+	return container.DataType((uint32(f) & fdTypeMask) >> 28)
 }
 
 func (f FieldDescriptor) SchemaIdx() uint8 {
@@ -240,8 +240,8 @@ type CompiledSchema struct {
 	FieldsMeta  []FieldMeta
 	Schemas     []SchemaSlot
 	SchemasMeta []SchemaMeta
-	Defaults    *document.Document
-	Enums       *document.Document // keyed by DataPoint; value is []string (string enum), []int64 (int enum), or []any (complex enum)
+	Defaults    *container.DataContainer
+	Enums       *container.DataContainer // keyed by DataPoint; value is []string (string enum), []int64 (int enum), or []any (complex enum)
 	Variants    map[uint32][]uint8 // keyed by DataPoint; variant schema slot indices for union/composite fields
 	Constraints []ResolvedConstraint
 	Indexes     map[IndexID]Index
