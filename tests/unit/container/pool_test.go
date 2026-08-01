@@ -29,20 +29,16 @@ func TestPool_ReusesDataContainers(t *testing.T) {
 	assert.Equal(t, 0, again.Length(), "reused documents must be cleared")
 }
 
-func TestPool_PutRecursesRecordChildren(t *testing.T) {
+func TestPool_PutClearsRecordValues(t *testing.T) {
 	p := container.NewPool()
-
-	child := p.Get()
-	require.NoError(t, child.SetString(key(t, container.TypeString, 1), "nested"))
 
 	parent := p.Get()
 	rkey := key(t, container.TypeRecord, 1)
-	require.NoError(t, parent.SetRecord(rkey, child))
+	require.NoError(t, parent.SetRecord(rkey, map[string]any{"name": "nested"}))
 
 	p.Put(parent)
 
-	// The child must have been returned and cleared when the parent was put.
-	assert.Equal(t, 0, child.Length())
+	// Record maps are values (not pool children) and must be cleared on reuse.
 	assert.Equal(t, 0, parent.Length())
 }
 

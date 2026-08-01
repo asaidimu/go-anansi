@@ -7,10 +7,25 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/utils"
 )
+
+// ============================================================================
+// Zero-Reflection Interfaces (Codegen Hooks)
+// ============================================================================
+
+// DocumentUnmarshaler allows generated structs to bypass reflection completely.
+type DocumentUnmarshaler interface {
+	UnmarshalDocument(doc *Document) error
+}
+
+// DocumentTagUnmarshaler allows tag-aware custom unmarshaling without reflection.
+type DocumentTagUnmarshaler interface {
+	UnmarshalDocumentTag(doc *Document, tag string) error
+}
 
 // ============================================================================
 // Predefined Errors & Constants
@@ -35,10 +50,10 @@ var (
 	typeCache    sync.Map // map[typeCacheKey]*cachedTypeInfo
 )
 
-// typeCacheKey identifies a cached field-parse result for a given struct
-// type under a given tag configuration. tag == "" means the default
-// resolution chain (anansi -> doc). Any other value means that tag is
-// tried first, falling back to anansi -> doc.
+// ============================================================================
+// Cached Type Metadata
+// ============================================================================
+
 type typeCacheKey struct {
 	t   reflect.Type
 	tag string
@@ -49,26 +64,32 @@ type cachedTypeInfo struct {
 	err    *common.SystemError
 }
 
+type fieldSetterFunc func(structPtr unsafe.Pointer, value any, ctx context.Context, tag string) error
+
 type parsedField struct {
 	Index         []int
 	Name          string
 	Options       tagOptions
 	StructField   reflect.StructField
 	IsSystemEmbed bool
+	Offset        uintptr
+	Setter        fieldSetterFunc
 }
 
 // ============================================================================
 // Binding API - Primary Methods
 // ============================================================================
 
-// BindTo binds document fields into target using the default tag
-// resolution chain: the "anansi" struct tag, falling back to "doc".
+// BindTo binds document fields into target using the default tag resolution chain.
 func (d *Document) BindTo(target any) error {
 	return d.BindToWithContext(context.Background(), target)
 }
 
 // BindToWithContext is BindTo with an explicit context for cancellation.
 func (d *Document) BindToWithContext(ctx context.Context, target any) error {
+	if unmarshaler, ok := target.(DocumentUnmarshaler); ok {
+		return unmarshaler.UnmarshalDocument(d)
+	}
 	binder := &structBinder{
 		doc: d,
 		ctx: ctx,
@@ -77,17 +98,16 @@ func (d *Document) BindToWithContext(ctx context.Context, target any) error {
 	return binder.bind(target)
 }
 
-// BindToTag binds document fields into target using a custom struct tag
-// name. Field resolution for each struct field tries, in order: the given
-// tag, then "anansi", then "doc". This allows reusing a single struct
-// definition across multiple binding schemes (e.g. a custom "api" tag)
-// without redefining the struct.
+// BindToTag binds document fields into target using a custom struct tag name.
 func (d *Document) BindToTag(target any, tag string) error {
 	return d.BindToTagWithContext(context.Background(), target, tag)
 }
 
-// BindToTagWithContext is BindToTag with an explicit context for cancellation.
+// BindToTagWithContext is BindToTagWithContext with an explicit context for cancellation.
 func (d *Document) BindToTagWithContext(ctx context.Context, target any, tag string) error {
+	if unmarshaler, ok := target.(DocumentTagUnmarshaler); ok {
+		return unmarshaler.UnmarshalDocumentTag(d, tag)
+	}
 	binder := &structBinder{
 		doc: d,
 		ctx: ctx,
@@ -100,49 +120,35 @@ func (d *Document) BindToTagWithContext(ctx context.Context, target any, tag str
 // Document Creation from Structs
 // ============================================================================
 
-// NewDocumentFromStruct creates a full Document from s using the default
-// tag resolution chain ("anansi" falling back to "doc").
 func NewDocumentFromStruct(s any, ctx ...context.Context) (*Document, error) {
 	docData, err := structToMap(s, false, "")
 	if err != nil {
 		return nil, err
 	}
-
 	return getFactory().newDocument(extractContext(ctx), docData)
 }
 
-// NewDocumentFromStructWithTag creates a full Document from s, resolving
-// field names via the given custom tag first, falling back to "anansi"
-// then "doc" for any field lacking the custom tag.
 func NewDocumentFromStructWithTag(s any, tag string, ctx ...context.Context) (*Document, error) {
 	docData, err := structToMap(s, false, tag)
 	if err != nil {
 		return nil, err
 	}
-
 	return getFactory().newDocument(extractContext(ctx), docData)
 }
 
-// NewPartialDocumentFromStruct creates a Patch from the non-zero fields of
-// s using the default tag resolution chain ("anansi" falling back to "doc").
 func NewPartialDocumentFromStruct(s any, ctx ...context.Context) (*Document, error) {
 	docData, err := structToMap(s, true, "")
 	if err != nil {
 		return nil, err
 	}
-
 	return Patch(docData).Document(extractContext(ctx)), nil
 }
 
-// NewPartialDocumentFromStructWithTag creates a Patch from the non-zero
-// fields of s, resolving field names via the given custom tag first,
-// falling back to "anansi" then "doc" for any field lacking the custom tag.
 func NewPartialDocumentFromStructWithTag(s any, tag string, ctx ...context.Context) (*Document, error) {
 	docData, err := structToMap(s, true, tag)
 	if err != nil {
 		return nil, err
 	}
-
 	return Patch(docData).Document(extractContext(ctx)), nil
 }
 
@@ -154,8 +160,6 @@ func MustNewDocumentFromStruct(s any, ctx ...context.Context) *Document {
 	return doc
 }
 
-// MustNewDocumentFromStructWithTag is NewDocumentFromStructWithTag but
-// panics on error, mirroring MustNewDocumentFromStruct.
 func MustNewDocumentFromStructWithTag(s any, tag string, ctx ...context.Context) *Document {
 	doc, err := NewDocumentFromStructWithTag(s, tag, ctx...)
 	if err != nil {
@@ -182,11 +186,6 @@ type fieldMetadata struct {
 	StructField reflect.StructField
 }
 
-// resolveTagChain builds the ordered list of struct tag names to try for a
-// given field, based on an optional custom tag. An empty customTag yields
-// the default chain (anansi -> doc). A non-empty customTag is tried first,
-// still falling back to anansi -> doc so existing struct definitions keep
-// working unchanged.
 func resolveTagChain(customTag string) []string {
 	if customTag == "" {
 		return []string{AnansiTag}
@@ -194,9 +193,6 @@ func resolveTagChain(customTag string) []string {
 	return []string{customTag, AnansiTag}
 }
 
-// getTypeInfo returns the parsed, cached field metadata for type t under
-// the given tag configuration. tag == "" selects the default resolution
-// chain (anansi -> doc); any other value selects tag -> anansi -> doc.
 func getTypeInfo(t reflect.Type, tag string) ([]parsedField, *common.SystemError) {
 	key := typeCacheKey{t: t, tag: tag}
 	if val, ok := typeCache.Load(key); ok {
@@ -205,28 +201,26 @@ func getTypeInfo(t reflect.Type, tag string) ([]parsedField, *common.SystemError
 	}
 
 	tagChain := resolveTagChain(tag)
-	fields, sysErr := buildTypeFields(t, nil, false, tagChain)
+	fields, sysErr := buildTypeFields(t, nil, 0, false, tagChain)
 	info := &cachedTypeInfo{fields: fields, err: sysErr}
 	typeCache.Store(key, info)
 	return fields, sysErr
 }
 
-// buildTypeFields walks the fields of t, resolving each field's binding tag
-// by trying each tag name in tagChain, in order, and using the first
-// present, non-"-" value found.
-func buildTypeFields(t reflect.Type, indexPrefix []int, isSystemEmbed bool, tagChain []string) ([]parsedField, *common.SystemError) {
+func buildTypeFields(t reflect.Type, indexPrefix []int, baseOffset uintptr, isSystemEmbed bool, tagChain []string) ([]parsedField, *common.SystemError) {
 	var fields []parsedField
 
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
 		indexPath := append(append([]int(nil), indexPrefix...), i)
+		fieldOffset := baseOffset + f.Offset
 
 		sysEmbed := isSystemEmbed
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
 			if f.Type == docModelType || ReservedSystemField(f.Name) {
 				sysEmbed = true
 			}
-			subFields, err := buildTypeFields(f.Type, indexPath, sysEmbed, tagChain)
+			subFields, err := buildTypeFields(f.Type, indexPath, fieldOffset, sysEmbed, tagChain)
 			if err != nil {
 				return nil, err
 			}
@@ -251,20 +245,22 @@ func buildTypeFields(t reflect.Type, indexPrefix []int, isSystemEmbed bool, tagC
 			return nil, sysErr.WithPath(f.Name)
 		}
 
+		setter := compileSetter(f.Type, fieldOffset)
+
 		fields = append(fields, parsedField{
 			Index:         indexPath,
 			Name:          fieldName,
 			Options:       options,
 			StructField:   f,
 			IsSystemEmbed: sysEmbed,
+			Offset:        fieldOffset,
+			Setter:        setter,
 		})
 	}
 
 	return fields, nil
 }
 
-// walkFields iterates the bindable fields of v using the default tag
-// resolution chain (anansi -> doc).
 func walkFields(v reflect.Value, partial bool, fn func(meta fieldMetadata) error) error {
 	if v.Kind() == reflect.Pointer {
 		if v.IsNil() {
@@ -307,7 +303,7 @@ func walkFields(v reflect.Value, partial bool, fn func(meta fieldMetadata) error
 type structBinder struct {
 	doc *Document
 	ctx context.Context
-	tag string // custom tag name to resolve fields with; "" selects the default chain
+	tag string
 }
 
 func (sb *structBinder) bind(target any) error {
@@ -322,6 +318,7 @@ func (sb *structBinder) bind(target any) error {
 		return sysErr
 	}
 
+	structPtr := rv.UnsafePointer()
 	ctxDone := sb.ctx.Done()
 
 	for i := range fields {
@@ -333,11 +330,6 @@ func (sb *structBinder) bind(target any) error {
 				return common.SystemErrorFrom(sb.ctx.Err()).WithOperation("BindTo")
 			default:
 			}
-		}
-
-		fv := v.FieldByIndex(fInfo.Index)
-		if !fv.CanSet() {
-			continue
 		}
 
 		var value any
@@ -358,20 +350,33 @@ func (sb *structBinder) bind(target any) error {
 			found = (er == nil)
 		}
 
-		if !found {
+		if !found || value == nil {
 			continue
 		}
 
-		if err := sb.setFieldValue(fv, value); err != nil {
-			return ErrFailedToSetField.
-				WithOperation("BindTo").
-				WithPath(fInfo.Name).
-				WithCause(err).
-				WithMessagef("failed to set field %s: %v", fInfo.StructField.Name, err)
+		if fInfo.Setter != nil {
+			if err := fInfo.Setter(structPtr, value, sb.ctx, sb.tag); err != nil {
+				return ErrFailedToSetField.
+					WithOperation("BindTo").
+					WithPath(fInfo.Name).
+					WithCause(err).
+					WithMessagef("failed to set field %s: %v", fInfo.StructField.Name, err)
+			}
+		} else {
+			fv := v.FieldByIndex(fInfo.Index)
+			if !fv.CanSet() {
+				continue
+			}
+			if err := sb.setFieldValue(fv, value); err != nil {
+				return ErrFailedToSetField.
+					WithOperation("BindTo").
+					WithPath(fInfo.Name).
+					WithCause(err).
+					WithMessagef("failed to set field %s: %v", fInfo.StructField.Name, err)
+			}
 		}
 	}
 
-	// Set parent reference so promoted methods (Document(), Patch()) work
 	if provider, ok := target.(DocumentModelProvider); ok {
 		if dm := provider.Model(); dm != nil {
 			dm.parent = target
@@ -486,12 +491,87 @@ func (sb *structBinder) setMapField(field reflect.Value, values map[string]any) 
 }
 
 // ============================================================================
+// Direct Pointer Setters Compilation
+// ============================================================================
+
+func compileSetter(fieldType reflect.Type, offset uintptr) fieldSetterFunc {
+	switch fieldType.Kind() {
+	case reflect.String:
+		return func(ptr unsafe.Pointer, val any, ctx context.Context, tag string) error {
+			targetPtr := (*string)(unsafe.Pointer(uintptr(ptr) + offset))
+			if str, ok := val.(string); ok {
+				*targetPtr = str
+				return nil
+			}
+			if str, ok := utils.CoerceToPrimitiveValue[string](val); ok {
+				*targetPtr = str
+				return nil
+			}
+			return ErrTypeConversionFailed
+		}
+
+	case reflect.Int:
+		return func(ptr unsafe.Pointer, val any, ctx context.Context, tag string) error {
+			targetPtr := (*int)(unsafe.Pointer(uintptr(ptr) + offset))
+			if num, ok := utils.CoerceToPrimitiveValue[int](val); ok {
+				*targetPtr = num
+				return nil
+			}
+			return ErrTypeConversionFailed
+		}
+
+	case reflect.Int64:
+		return func(ptr unsafe.Pointer, val any, ctx context.Context, tag string) error {
+			targetPtr := (*int64)(unsafe.Pointer(uintptr(ptr) + offset))
+			if num, ok := utils.CoerceToPrimitiveValue[int64](val); ok {
+				*targetPtr = num
+				return nil
+			}
+			return ErrTypeConversionFailed
+		}
+
+	case reflect.Float64:
+		return func(ptr unsafe.Pointer, val any, ctx context.Context, tag string) error {
+			targetPtr := (*float64)(unsafe.Pointer(uintptr(ptr) + offset))
+			if num, ok := utils.CoerceToPrimitiveValue[float64](val); ok {
+				*targetPtr = num
+				return nil
+			}
+			return ErrTypeConversionFailed
+		}
+
+	case reflect.Bool:
+		return func(ptr unsafe.Pointer, val any, ctx context.Context, tag string) error {
+			targetPtr := (*bool)(unsafe.Pointer(uintptr(ptr) + offset))
+			if b, ok := utils.CoerceToPrimitiveValue[bool](val); ok {
+				*targetPtr = b
+				return nil
+			}
+			return ErrTypeConversionFailed
+		}
+
+	case reflect.Struct:
+		if fieldType == timeType {
+			return func(ptr unsafe.Pointer, val any, ctx context.Context, tag string) error {
+				targetPtr := (*time.Time)(unsafe.Pointer(uintptr(ptr) + offset))
+				if t, ok := utils.CoerceTime(val); ok {
+					*targetPtr = t
+					return nil
+				}
+				return ErrTypeConversionFailed
+			}
+		}
+		return nil
+
+	default:
+		return nil
+	}
+}
+
+// ============================================================================
 // Struct to Map Conversion
 // ============================================================================
 
-// structToMap converts s into a document-shaped map, resolving field names
-// via the given tag configuration (see resolveTagChain). tag == "" selects
-// the default chain (anansi -> doc).
 func structToMap(s any, partial bool, tag string) (map[string]any, error) {
 	rv := reflect.ValueOf(s)
 	if rv.Kind() == reflect.Pointer {
@@ -556,15 +636,11 @@ func setNestedMap(data map[string]any, path string, value any) error {
 	return nil
 }
 
-// convertInterface recursively converts v into document-compatible values
-// (primitives, map[string]any, []any), resolving any nested struct fields
-// via the given tag configuration.
 func convertInterface(v any, tag string) (any, error) {
 	if v == nil {
 		return nil, nil
 	}
 
-	// Fast path for primitives and standard types without reflection overhead
 	switch val := v.(type) {
 	case string, int, int8, int16, int32, int64,
 		uint, uint8, uint16, uint32, uint64,
@@ -670,8 +746,7 @@ func parseDocTag(tag string) (string, tagOptions, *common.SystemError) {
 		if opt == "omitempty" {
 			opts.OmitEmpty = true
 		} else if strings.Contains(opt, "=") {
-			// schema-only options (e.g. required=true, type=enum, values=...)
-			// silently ignored by the binding layer
+			// schema-only options silently ignored by binding layer
 		} else if opt != "" {
 			return "", tagOptions{}, ErrUnknownDocTagOption.WithMessagef("unknown option: %q", opt)
 		}

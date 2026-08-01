@@ -115,8 +115,7 @@ func snapshotDoc(t *testing.T, doc *container.DataContainer) map[int64]any {
 			case container.TypeGeometry:
 				out[k] = (*(*[][][]float64)(slot(container.TypeGeometry)))[idx]
 			case container.TypeRecord:
-				child := (*(*[]*container.DataContainer)(slot(container.TypeRecord)))[idx]
-				out[k] = snapshotDoc(t, child)
+				out[k] = (*(*[]map[string]any)(slot(container.TypeRecord)))[idx]
 			case container.TypeArrayUnknown:
 				out[k] = (*(*[][]any)(slot(container.TypeArrayUnknown)))[idx]
 			case container.TypeArrayInt:

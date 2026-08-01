@@ -99,16 +99,13 @@ func TestCollection_FilterCopy_DeepCopiesScalar(t *testing.T) {
 	src.Release()
 }
 
-func TestCollection_FilterCopy_DeepCopiesRecordChild(t *testing.T) {
+func TestCollection_FilterCopy_ClonesRecordMap(t *testing.T) {
 	pool := container.NewPool()
 	src := container.NewCollection(pool)
 
-	child := pool.Get()
-	require.NoError(t, child.SetString(key(t, container.TypeString, 1), "original"))
-
 	parent := pool.Get()
 	rkey := key(t, container.TypeRecord, 1)
-	require.NoError(t, parent.SetRecord(rkey, child))
+	require.NoError(t, parent.SetRecord(rkey, map[string]any{"name": "original"}))
 	require.NoError(t, src.Append(parent))
 
 	copy, err := src.FilterCopy(func(*container.DataContainer) bool { return true })
@@ -116,23 +113,15 @@ func TestCollection_FilterCopy_DeepCopiesRecordChild(t *testing.T) {
 	require.Equal(t, 1, copy.Len())
 	defer copy.Release()
 
-	origChild, _, err := parent.GetRecord(rkey)
+	origMap, _, err := parent.GetRecord(rkey)
 	require.NoError(t, err)
-	copiedChild, _, err := copy.At(0).GetRecord(rkey)
+	copiedMap, _, err := copy.At(0).GetRecord(rkey)
 	require.NoError(t, err)
 
-	// Regression test: the copy must own its own child document, not share the
-	// source's pointer. Sharing would double-return the child on Release.
-	assert.NotSame(t, origChild, copiedChild)
+	// Mutating the source map must not leak into the copy (the copy is cloned).
+	origMap["name"] = "mutated"
+	assert.Equal(t, "original", copiedMap["name"])
 
-	// Mutating the source child must not leak into the copy.
-	require.NoError(t, origChild.SetString(key(t, container.TypeString, 1), "mutated"))
-	v, ok, err := copiedChild.GetString(key(t, container.TypeString, 1))
-	require.NoError(t, err)
-	assert.True(t, ok)
-	assert.Equal(t, "original", v)
-
-	// Releasing both collections is safe: children are distinct pool entries.
 	src.Release()
 }
 
@@ -209,32 +198,26 @@ func TestCollection_Project_SelectsKeysOnly(t *testing.T) {
 	src.Release()
 }
 
-func TestCollection_Project_DeepCopiesChildren(t *testing.T) {
+func TestCollection_Project_ClonesRecordMaps(t *testing.T) {
 	pool := container.NewPool()
 	src := container.NewCollection(pool)
 
-	child := pool.Get()
-	require.NoError(t, child.SetString(key(t, container.TypeString, 1), "nested"))
 	parent := pool.Get()
 	rkey := key(t, container.TypeRecord, 1)
-	require.NoError(t, parent.SetRecord(rkey, child))
+	require.NoError(t, parent.SetRecord(rkey, map[string]any{"name": "nested"}))
 	require.NoError(t, src.Append(parent))
 
 	out, err := src.Project([]container.DataContainerKey{rkey})
 	require.NoError(t, err)
 	defer out.Release()
 
-	origChild, _, err := parent.GetRecord(rkey)
+	origMap, _, err := parent.GetRecord(rkey)
 	require.NoError(t, err)
-	copiedChild, _, err := out.At(0).GetRecord(rkey)
+	copiedMap, _, err := out.At(0).GetRecord(rkey)
 	require.NoError(t, err)
-	assert.NotSame(t, origChild, copiedChild)
 
-	require.NoError(t, origChild.SetString(key(t, container.TypeString, 1), "changed"))
-	v, ok, err := copiedChild.GetString(key(t, container.TypeString, 1))
-	require.NoError(t, err)
-	assert.True(t, ok)
-	assert.Equal(t, "nested", v)
+	origMap["name"] = "changed"
+	assert.Equal(t, "nested", copiedMap["name"])
 
 	src.Release()
 }

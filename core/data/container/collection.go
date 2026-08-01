@@ -162,10 +162,11 @@ func (c *Collection) Release() {
 
 // copyDataContainer copies every set field from src into dst.
 //
-// TypeRecord and TypeArrayObject values are deep-copied: child documents are
-// allocated from pool and copied recursively, so the copy shares no child
-// pointers with src. This keeps the pool safe when both the source and the
-// copy are later released. pool must be non-nil.
+// TypeArrayObject values are deep-copied: child documents are allocated from
+// pool and copied recursively, so the copy shares no child pointers with src.
+// TypeRecord values (map[string]any) are cloned so the copy does not share
+// nested maps/slices with src. This keeps the pool safe when both the source
+// and the copy are later released. pool must be non-nil.
 func copyDataContainer(src, dst *DataContainer, pool *Pool) error {
 	for k, idx := range src.positions {
 		dk := DataContainerKey(k)
@@ -239,15 +240,7 @@ func copyField(src, dst *DataContainer, key DataContainerKey, pool *Pool) error 
 		if err != nil {
 			return err
 		}
-		if v == nil {
-			return dst.SetRecord(key, nil)
-		}
-		child := pool.Get()
-		if err := copyDataContainer(v, child, pool); err != nil {
-			pool.Put(child)
-			return err
-		}
-		return dst.SetRecord(key, child)
+		return dst.SetRecord(key, cloneMap(v))
 	case TypeArrayInt:
 		v, _, err := src.GetArrayInt(key)
 		if err != nil {
@@ -316,5 +309,35 @@ func copyField(src, dst *DataContainer, key DataContainerKey, pool *Pool) error 
 		return dst.SetArrayUnknown(key, v)
 	default:
 		return fmt.Errorf("collection: copyField: unhandled type %d", key.Type())
+	}
+}
+
+// cloneMap deep-copies a record's map so the collection copy does not share
+// nested maps/slices with its source.
+func cloneMap(v map[string]any) map[string]any {
+	if v == nil {
+		return nil
+	}
+	out := make(map[string]any, len(v))
+	for k, e := range v {
+		out[k] = cloneAny(e)
+	}
+	return out
+}
+
+// cloneAny deep-copies map[string]any and []any values recursively, leaving
+// scalars and typed slices untouched.
+func cloneAny(v any) any {
+	switch t := v.(type) {
+	case map[string]any:
+		return cloneMap(t)
+	case []any:
+		out := make([]any, len(t))
+		for i, e := range t {
+			out[i] = cloneAny(e)
+		}
+		return out
+	default:
+		return v
 	}
 }

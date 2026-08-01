@@ -35,10 +35,10 @@ func TestFieldTypeToDataTypeMapping(t *testing.T) {
 		"f_array_geometry": container.TypeArrayGeometry,
 		"f_array_unknown":  container.TypeArrayUnknown,
 		"f_array_object":   container.TypeArrayObject,
-		"f_object":         container.TypeRecord,
-		"f_record":         container.TypeArrayObject, // record uses container semantics: a set of records
-		"f_union":          container.TypeRecord,
-		"f_composite":      container.TypeRecord,
+		"f_object":         container.TypeUnknown, // flattened; children get flat keys
+		"f_record":         container.TypeRecord,  // record is a map[string]any in the dedicated record slot
+		"f_union":          container.TypeUnknown, // union values live in the any channel
+		"f_composite":      container.TypeUnknown, // flattened; children get flat keys
 	}
 
 	for name, want := range expected {

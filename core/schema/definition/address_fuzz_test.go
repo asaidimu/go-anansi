@@ -47,7 +47,7 @@ func FuzzAddressInvariants(f *testing.F) {
 		seen := make(map[uint32]string)
 		zeroCnt := 0
 		for _, p := range paths {
-			addr := definition.Address(cs, p)
+			addr := cs.Address(p)
 			key := p.PathKey()
 
 			if addr == 0 {
