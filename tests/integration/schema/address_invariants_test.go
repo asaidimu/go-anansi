@@ -27,7 +27,7 @@ func TestAddressInvariants(t *testing.T) {
 
 		// Single-step path for every root field.
 		step := definition.NewResolvedStep(0, fd.FieldIdx())
-		addr := definition.Address(cs, definition.ResolvedPath{step})
+		addr := cs.Address(definition.ResolvedPath{step})
 
 		if fd.Terminal() {
 			assert.Less(t, addr, uint32(definition.SingleStepRegion), "single-step address of %q must stay in [0, 2^14)", meta.Name)
@@ -61,7 +61,7 @@ func TestAddressInvariants(t *testing.T) {
 				definition.NewResolvedStep(0, fd.FieldIdx()),
 				definition.NewResolvedStep(childIdx, cFd.FieldIdx()),
 			}
-			maddr := definition.Address(cs, path)
+			maddr := cs.Address(path)
 			assert.GreaterOrEqual(t, maddr, uint32(definition.MultiStepBase), "multi-step address of %q.%q must live in [2^14, 2^27)", meta.Name, childMeta.Name)
 			assert.Less(t, maddr, uint32(1<<definition.AddrBits), "multi-step address of %q.%q exceeds address space", meta.Name, childMeta.Name)
 			multiSeen = append(multiSeen, maddr)
@@ -89,7 +89,7 @@ func TestAddressInvariants(t *testing.T) {
 // TestAddress_EmptyPath verifies the degenerate path yields address 0.
 func TestAddress_EmptyPath(t *testing.T) {
 	cs := compileSchema(t, allTypesSchema)
-	assert.Equal(t, uint32(0), definition.Address(cs, nil))
+	assert.Equal(t, uint32(0), cs.Address(nil))
 }
 
 // TestAddress_TerminalityAgreement ensures the descriptor's Terminal() flag and
@@ -103,7 +103,7 @@ func TestAddress_TerminalityAgreement(t *testing.T) {
 		if fd.SchemaIdx() != 0 {
 			continue
 		}
-		addr := definition.Address(cs, definition.ResolvedPath{definition.NewResolvedStep(0, fd.FieldIdx())})
+		addr := cs.Address(definition.ResolvedPath{definition.NewResolvedStep(0, fd.FieldIdx())})
 		if fd.Terminal() {
 			assert.Less(t, addr, uint32(definition.SingleStepRegion))
 		} else {

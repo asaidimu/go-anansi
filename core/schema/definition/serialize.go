@@ -1594,10 +1594,8 @@ func encodeDataContainer(w *writer, doc *container.DataContainer) error {
 				v := (*[][][]float64)(getSlot(dt))
 				encodeFloat2D(w, (*v)[idx])
 			case container.TypeRecord:
-				v := (*[]*container.DataContainer)(getSlot(dt))
-				if err := encodeDataContainer(w, (*v)[idx]); err != nil {
-					return nil, err
-				}
+				v := (*[]map[string]any)(getSlot(dt))
+				encodeAnyMap(w, (*v)[idx])
 			case container.TypeArrayUnknown:
 				v := (*[][]any)(getSlot(dt))
 				if err := encodeAnySlice(w, (*v)[idx]); err != nil {
@@ -1726,7 +1724,7 @@ func decodeDataContainer(r *reader) (*container.DataContainer, error) {
 				return nil, err
 			}
 		case container.TypeRecord:
-			v, err := decodeDataContainer(r)
+			v, err := decodeAnyMap(r)
 			if err != nil {
 				return nil, err
 			}

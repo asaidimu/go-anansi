@@ -97,7 +97,7 @@ func (d *DataContainer) initSlice(typ DataType, size int) {
 		s := make([][][]float64, 0, size)
 		d.data[typ] = unsafe.Pointer(&s)
 	case TypeRecord:
-		s := make([]*DataContainer, 0, size)
+		s := make([]map[string]any, 0, size)
 		d.data[typ] = unsafe.Pointer(&s)
 	case TypeArrayUnknown:
 		s := make([][]any, 0, size)
@@ -447,28 +447,31 @@ func (d *DataContainer) GetGeometry(key DataContainerKey) ([][]float64, bool, er
 
 // --- Record ---
 
-func (d *DataContainer) SetRecord(key DataContainerKey, value *DataContainer) error {
+// SetRecord stores a record value as map[string]any in the dedicated
+// TypeRecord slot. Records are schema-free sub-objects; the map's values are
+// ordinary Go values (scalars, slices, nested map[string]any).
+func (d *DataContainer) SetRecord(key DataContainerKey, value map[string]any) error {
 	if key.Type() != TypeRecord {
 		return ErrTypeMismatch
 	}
 	k := int64(key)
 	if idx, exists := d.positions[k]; exists && idx >= 0 {
-		(*(*[]*DataContainer)(d.slot(TypeRecord)))[idx] = value
+		(*(*[]map[string]any)(d.slot(TypeRecord)))[idx] = value
 		return nil
 	}
 	if idx := d.claimHole(TypeRecord); idx >= 0 {
-		(*(*[]*DataContainer)(d.slot(TypeRecord)))[idx] = value
+		(*(*[]map[string]any)(d.slot(TypeRecord)))[idx] = value
 		d.positions[k] = idx
 		return nil
 	}
 	return d.AppendRecord(key, value)
 }
 
-func (d *DataContainer) AppendRecord(key DataContainerKey, value *DataContainer) error {
+func (d *DataContainer) AppendRecord(key DataContainerKey, value map[string]any) error {
 	if key.Type() != TypeRecord {
 		return ErrTypeMismatch
 	}
-	ptr := (*[]*DataContainer)(d.slot(TypeRecord))
+	ptr := (*[]map[string]any)(d.slot(TypeRecord))
 	idx := int32(len(*ptr))
 	if idx >= identifierMask {
 		return ErrBucketFull
@@ -478,7 +481,7 @@ func (d *DataContainer) AppendRecord(key DataContainerKey, value *DataContainer)
 	return nil
 }
 
-func (d *DataContainer) GetRecord(key DataContainerKey) (*DataContainer, bool, error) {
+func (d *DataContainer) GetRecord(key DataContainerKey) (map[string]any, bool, error) {
 	if key.Type() != TypeRecord {
 		return nil, false, ErrTypeMismatch
 	}
@@ -489,7 +492,7 @@ func (d *DataContainer) GetRecord(key DataContainerKey) (*DataContainer, bool, e
 	if idx < 0 {
 		return nil, true, nil
 	}
-	return (*(*[]*DataContainer)(d.slot(TypeRecord)))[idx], true, nil
+	return (*(*[]map[string]any)(d.slot(TypeRecord)))[idx], true, nil
 }
 
 // --- Unknown ---
@@ -991,7 +994,7 @@ func (d *DataContainer) Clear() {
 		case TypeGeometry:
 			*(*[][][]float64)(ptr) = (*(*[][][]float64)(ptr))[:0]
 		case TypeRecord:
-			*(*[]*DataContainer)(ptr) = (*(*[]*DataContainer)(ptr))[:0]
+			*(*[]map[string]any)(ptr) = (*(*[]map[string]any)(ptr))[:0]
 		case TypeArrayUnknown:
 			*(*[][]any)(ptr) = (*(*[][]any)(ptr))[:0]
 		case TypeArrayInt:

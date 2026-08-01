@@ -182,6 +182,9 @@ func (lc *linkContext) childSlotForField(rf *ResolvedField, schemaIdx uint8) (ui
 		return schemaIdx, nil
 	case rf.Object != nil:
 		return lc.assignSlot(rf.Object.Schema)
+	case rf.Composite != nil:
+		// Composites collapse to a single child schema, just like an object.
+		return lc.assignSlot(&ResolvedNestedSchema{Name: "composite:" + string(rf.Name)})
 	case rf.Container != nil && rf.Container.ItemSchema != nil:
 		return lc.assignSlot(rf.Container.ItemSchema)
 	}
@@ -317,45 +320,56 @@ func (lc *linkContext) linkChildFields(rf *ResolvedField, fd FieldDescriptor, ch
 		lc.variants[fd.DataPoint()] = variantSlots
 
 	case rf.Composite != nil:
-		var partSlots []uint8
-		for _, part := range rf.Composite.ObjectParts {
-			childIdx, err := lc.assignSlot(part)
-			if err != nil {
-				return err
-			}
-			partSlots = append(partSlots, childIdx)
-			childStart := uint16(len(lc.descriptors))
-			childCount, err := lc.linkFields(part.Fields, childIdx)
-			if err != nil {
-				return err
-			}
-			lc.schemas[childIdx] = SchemaSlot{
-				FieldStart: childStart,
-				FieldCount: childCount,
-			}
+		// All parts collapse into the single pre-assigned child slot, exactly
+		// as if the composite were one object schema.
+		merged, err := collapsedCompositeFields(rf)
+		if err != nil {
+			return err
 		}
-		for _, up := range rf.Composite.UnionParts {
-			for _, variant := range up.Variants {
-				childIdx, err := lc.assignSlot(variant)
-				if err != nil {
-					return err
-				}
-				partSlots = append(partSlots, childIdx)
-				childStart := uint16(len(lc.descriptors))
-				childCount, err := lc.linkFields(variant.Fields, childIdx)
-				if err != nil {
-					return err
-				}
-				lc.schemas[childIdx] = SchemaSlot{
-					FieldStart: childStart,
-					FieldCount: childCount,
-				}
-			}
+		childStart := uint16(len(lc.descriptors))
+		childCount, err := lc.linkFields(merged, childIdx)
+		if err != nil {
+			return err
 		}
-		lc.variants[fd.DataPoint()] = partSlots
+		lc.schemas[childIdx] = SchemaSlot{
+			FieldStart: childStart,
+			FieldCount: childCount,
+		}
+		lc.variants[fd.DataPoint()] = []uint8{childIdx}
 	}
 
 	return nil
+}
+
+// collapsedCompositeFields merges every part of a composite field into a single
+// field list, as if the composite were one object schema. Duplicate field names
+// across parts are rejected — they would collide in the flattened key space.
+func collapsedCompositeFields(rf *ResolvedField) ([]ResolvedField, error) {
+	var merged []ResolvedField
+	seen := make(map[FieldName]struct{}, len(rf.Composite.ObjectParts))
+	appendPart := func(fields []ResolvedField) error {
+		for _, f := range fields {
+			if _, dup := seen[f.Name]; dup {
+				return fmt.Errorf("composite %q: field %q is declared by more than one part and cannot be collapsed", rf.Name, f.Name)
+			}
+			seen[f.Name] = struct{}{}
+			merged = append(merged, f)
+		}
+		return nil
+	}
+	for _, part := range rf.Composite.ObjectParts {
+		if err := appendPart(part.Fields); err != nil {
+			return nil, err
+		}
+	}
+	for _, up := range rf.Composite.UnionParts {
+		for _, variant := range up.Variants {
+			if err := appendPart(variant.Fields); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return merged, nil
 }
 
 // =============================================================================
@@ -427,16 +441,28 @@ func classifyField(rf *ResolvedField) (container.DataType, FieldKind, bool) {
 	case rf.Enum != nil:
 		return enumDataType(rf), KindSimple, true
 	case rf.Recursive != nil:
-		return container.TypeRecord, KindObject, true
+		return container.TypeUnknown, KindObject, true
 	case rf.Object != nil:
-		return container.TypeRecord, KindObject, false
+		// Named objects flatten their children into the key space (no nested
+		// container value), so the field itself carries no value type.
+		return container.TypeUnknown, KindObject, false
 	case rf.Container != nil:
 		terminal := rf.Container.ItemSchema == nil
+		if rf.Container.Record {
+			// Records are schema-free sub-objects: stored as map[string]any in
+			// the dedicated TypeRecord slot.
+			return container.TypeRecord, KindObject, terminal
+		}
 		return containerDataType(rf.Container.ItemSchema, rf.Container.ItemType), KindArrayField, terminal
 	case rf.Union != nil:
-		return container.TypeRecord, KindComplex, false
+		// Union values live in the TypeUnknown (any) channel; the variant
+		// children are still flattened into the key space.
+		return container.TypeUnknown, KindComplex, false
 	case rf.Composite != nil:
-		return container.TypeRecord, KindComplex, false
+		// Composites are variadic objects — their parts collapse into a single
+		// child schema at link time, so the field is classified exactly like an
+		// object: children flatten into the key space.
+		return container.TypeUnknown, KindObject, false
 	}
 	return container.TypeUnknown, KindSimple, true
 }

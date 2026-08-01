@@ -115,9 +115,12 @@ type ResolvedObjectField struct {
 
 // ResolvedContainer covers FieldTypeArray and FieldTypeRecord.
 // ItemSchema and ItemType are mutually exclusive.
+// Record distinguishes a record (sub-object, stored as map[string]any via the
+// TypeUnknown channel) from an array (stored in the typed array slots).
 type ResolvedContainer struct {
 	ItemSchema *ResolvedNestedSchema // set for named item schemas
 	ItemType   FieldType             // set for inline descriptors
+	Record     bool                  // true for FieldTypeRecord, false for FieldTypeArray
 }
 
 // ResolvedUnion holds ordered variant schemas for a union-typed field.
@@ -518,8 +521,9 @@ func (c *SchemaCompiler) compileObjectField(f Field, path string) (*ResolvedObje
 // compileContainerField resolves array/record item schema.
 // Returns (container, nil, nil) on success, (nil, rec, nil) on recursive cycle.
 func (c *SchemaCompiler) compileContainerField(f Field, path string) (*ResolvedContainer, *ResolvedRecursiveRef, error) {
+	record := f.Type == FieldTypeRecord
 	if f.Schema.IsZero() {
-		return &ResolvedContainer{}, nil, nil
+		return &ResolvedContainer{Record: record}, nil, nil
 	}
 	if !f.Schema.IsSingle() {
 		return nil, nil, ErrInvalidSchema.
@@ -538,7 +542,7 @@ func (c *SchemaCompiler) compileContainerField(f Field, path string) (*ResolvedC
 			return nil, nil, ErrInvalidSchema.
 				WithMessage("inline container descriptor missing 'type'").WithPath(path)
 		}
-		return &ResolvedContainer{ItemType: ref.Type}, nil, nil
+		return &ResolvedContainer{ItemType: ref.Type, Record: record}, nil, nil
 	}
 
 	rns, rec, err := c.lookupSchema(ref.ID, ref.Constraints, path)
@@ -552,7 +556,7 @@ func (c *SchemaCompiler) compileContainerField(f Field, path string) (*ResolvedC
 		return nil, rec, nil
 	}
 
-	return &ResolvedContainer{ItemSchema: rns}, nil, nil
+	return &ResolvedContainer{ItemSchema: rns, Record: record}, nil, nil
 }
 
 // compileUnionField resolves a union field's variant schemas.

@@ -44,23 +44,18 @@ func (p *Pool) Get() *DataContainer {
 
 // Put returns a document to the pool.
 //
-// Before clearing, Put recurses into any TypeRecord and TypeArrayObject slots to
-// return child documents to the pool. This means the caller must not hold
-// references to child documents after calling Put — they are cleared and reused.
+// Before clearing, Put recurses into the TypeArrayObject slot to return child
+// documents to the pool. TypeRecord values are map[string]any and hold no pool
+// children, so they are not recursed into. The caller must not hold references
+// to child documents after calling Put — they are cleared and reused.
 func (p *Pool) Put(doc *DataContainer) {
 	if doc == nil {
 		return
 	}
 
-	// Recurse into TypeRecord and TypeArrayObject children before clearing the parent.
+	// Recurse into TypeArrayObject children before clearing the parent.
 	// slot() is not used here because we do not want to allocate a new slice
 	// if the type was never initialised.
-	if ptr := doc.data[TypeRecord]; ptr != nil {
-		children := *(*[]*DataContainer)(ptr)
-		for _, child := range children {
-			p.Put(child)
-		}
-	}
 	if ptr := doc.data[TypeArrayObject]; ptr != nil {
 		children := *(*[][]*DataContainer)(ptr)
 		for _, group := range children {

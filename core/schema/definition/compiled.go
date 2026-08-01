@@ -226,7 +226,7 @@ type SchemaMeta struct {
 
 const (
 	AddrBits         = 27
-	SingleStepRegion = 1 << 14                        // [0, 2^14) — single-step paths
+	SingleStepRegion = 1 << 14                        // [1, 2^14) — single-step paths (0 reserved)
 	MultiStepBase    = SingleStepRegion               // 2^14
 	MultiStepSize    = (1 << AddrBits) - MultiStepBase // 2^27 - 2^14
 )
@@ -264,6 +264,27 @@ type CompiledSchema struct {
 	// FieldRefConstraints holds per-field call-site constraint overrides
 	// for object/recursive fields. Keyed by the field's DataPoint.
 	FieldRefConstraints map[uint32]SchemaConstraint
+
+	// addrCache memoises Address() results keyed by ResolvedPath.PathKey().
+	// pathByAddr is the reverse mapping (flat address -> ResolvedPath), filled
+	// together with addrCache on the same memoization path: a user must always
+	// resolve a path to an address before reading a value, so populating the
+	// reverse here means downstream code can recover a stored value's path from
+	// its address without re-walking the schema. Only addressable paths
+	// (terminal leaves) are recorded — Address() returns 0 for non-terminals.
+	//
+	// Both derive entirely from Descriptors, Schemas, and LocalOffsets, so they
+	// are invalidated by construction and never serialized (unexported fields
+	// are skipped by SerializeCompiledSchema). Initialised lazily so any
+	// construction path (Link, Deserialize, or a test fixture building the
+	// struct directly) gets a working cache.
+	addrMu     sync.RWMutex
+	addrCache  map[string]uint32
+	pathByAddr map[uint32]ResolvedPath
+	// nameByAddr is the dotted-string form of pathByAddr, stored alongside it
+	// so downstream readers can render a value's path with a single map lookup
+	// instead of re-joining the steps every time.
+	nameByAddr map[uint32]string
 }
 
 // =============================================================================
@@ -313,32 +334,4 @@ type CompiledIndex struct {
 type CompiledIndexCondition struct {
 	Field    ResolvedStep
 	Operator common.ComparisonOperator
-}
-
-// =============================================================================
-// ADDRESS CACHE
-// =============================================================================
-
-type AddressCache struct {
-	mu    sync.RWMutex
-	cache map[string]uint32
-}
-
-func NewAddressCache() *AddressCache {
-	return &AddressCache{cache: make(map[string]uint32)}
-}
-
-func (ac *AddressCache) DataPoint(cs *CompiledSchema, path ResolvedPath) uint32 {
-	key := path.PathKey()
-	ac.mu.RLock()
-	if dp, ok := ac.cache[key]; ok {
-		ac.mu.RUnlock()
-		return dp
-	}
-	ac.mu.RUnlock()
-	dp := Address(cs, path)
-	ac.mu.Lock()
-	ac.cache[key] = dp
-	ac.mu.Unlock()
-	return dp
 }

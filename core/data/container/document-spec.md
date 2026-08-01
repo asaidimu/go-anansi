@@ -70,15 +70,17 @@ concern; DataContainer stores only the typed value.
 
 ### `object`
 
-An `object` field is stored as `TypeRecord`, holding a **nested `*DataContainer`** compiled
-from the referenced object schema. Objects are *not* flattened into leaf DataPoints at
-the DataContainer layer; nesting is preserved so the codec and validator can recurse.
+A named `object` field is **flattened**: its children are compiled into the flat key
+space, each child field resolving to its own `DataPoint`/`DataContainerKey` (multi-step
+addresses). The object field itself carries no value — it maps to `TypeUnknown` (the
+`any` slot) and acts purely as an address namespace.
 
 ### `record`
 
-A `record` (`Record<string, T>`) is treated like a **container** at the DataContainer
-layer — identical to `array`. String-key semantics are a schema-layer concern; DataContainer
-stores an ordered collection of typed values.
+A `record` is a schema-free sub-object stored as `map[string]any` in the dedicated
+`TypeRecord` slot. Unlike `object`, a record holds a value: the map is the record's
+materialised form (a JSON object). String-key semantics live in the map; DataContainer
+stores it as an opaque `map[string]any` alongside its typed slots.
 
 ### `array`
 
@@ -98,10 +100,16 @@ Array element type determines which `TypeArray*` slot is used.
 
 ### `union` and `composite`
 
-Both map to `TypeRecord` — the field value is a nested `*DataContainer`. The compiler records
-the variant / part schema slots for each field so the validator and codec can interpret
-the nested container. There is no `TypeUnknown` fallback for unions: the discriminator is
-carried by the variant schemas, not by the storage type.
+Both are **flattened namespaces**: their variant / part children are compiled into the
+flat key space. Union values live in the `TypeUnknown` (`any`) channel, so a union field
+can hold a scalar, array, map, or open value without a dedicated storage type. The
+compiler records the variant schema slots for each union field so the validator and codec
+can interpret the value and its children.
+
+A composite is a **variadic object**: at link time its parts are collapsed into a single
+child schema (rejecting duplicate field names across parts), so a composite field is
+classified and addressed exactly like an `object` — its children flatten into the key
+space and are reachable by dotted path.
 
 ### Full mapping table
 
@@ -117,19 +125,21 @@ carried by the variant schemas, not by the storage type.
 | `geometry` | — | `TypeGeometry` | Simple |
 | `enum` | numeric values | `TypeInt` | Simple |
 | `enum` | string values | `TypeString` | Simple |
-| `object` | — | `TypeRecord` | Object (non-terminal) |
-| `recursive` | — | `TypeRecord` | Object (terminal) |
-| `array` / `record` | named element schema | `TypeArrayObject` | ArrayField (non-terminal) |
-| `array` / `record` | inline `integer` element | `TypeArrayInt` | ArrayField |
-| `array` / `record` | inline `number` element | `TypeArrayFloat` | ArrayField |
-| `array` / `record` | inline `decimal` element | `TypeArrayString` | ArrayField |
-| `array` / `record` | inline `string` element | `TypeArrayString` | ArrayField |
-| `array` / `record` | inline `boolean` element | `TypeArrayBool` | ArrayField |
-| `array` / `record` | inline `bytes` element | `TypeArrayBytes` | ArrayField |
-| `array` / `record` | inline `geometry` element | `TypeArrayGeometry` | ArrayField |
-| `array` / `record` | bare / open element | `TypeArrayUnknown` | ArrayField |
-| `union` | — | `TypeRecord` | Complex (non-terminal) |
-| `composite` | — | `TypeRecord` | Complex (non-terminal) |
+| `object` | — | `TypeUnknown` (flattened) | Object (non-terminal) |
+| `recursive` | — | `TypeUnknown` (flattened) | Object (terminal) |
+| `record` | named element schema | `TypeRecord` (`map[string]any`) | Object (non-terminal) |
+| `record` | bare / open | `TypeRecord` (`map[string]any`) | Object (terminal) |
+| `array` | named element schema | `TypeArrayObject` | ArrayField (non-terminal) |
+| `array` | inline `integer` element | `TypeArrayInt` | ArrayField |
+| `array` | inline `number` element | `TypeArrayFloat` | ArrayField |
+| `array` | inline `decimal` element | `TypeArrayString` | ArrayField |
+| `array` | inline `string` element | `TypeArrayString` | ArrayField |
+| `array` | inline `boolean` element | `TypeArrayBool` | ArrayField |
+| `array` | inline `bytes` element | `TypeArrayBytes` | ArrayField |
+| `array` | inline `geometry` element | `TypeArrayGeometry` | ArrayField |
+| `array` | bare / open element | `TypeArrayUnknown` | ArrayField |
+| `union` | — | `TypeUnknown` (flattened) | Complex (non-terminal) |
+| `composite` | — | `TypeUnknown` (flattened) | Object (non-terminal) |
 
 Inline element types come from the `InlineTypeKind` enum
 (`string, number, integer, decimal, boolean, bytes, unknown, record`) — a subset of
@@ -152,7 +162,7 @@ const (
 	TypeBool                          // bool
 	TypeBytes                         // []byte
 	TypeGeometry                      // [][]float64
-	TypeRecord                        // *DataContainer
+	TypeRecord                        // map[string]any
 	TypeArrayUnknown                  // []any
 	TypeArrayInt                      // []int64
 	TypeArrayFloat                    // []float64
@@ -178,7 +188,7 @@ There are exactly 16 types and exactly 16 slots — this is intentional and must
 | `TypeBool` | `bool` | |
 | `TypeBytes` | `[]byte` | Binary blobs, hashes, UUIDs, encoded payloads |
 | `TypeGeometry` | `[][]float64` | Array of coordinate rings |
-| `TypeRecord` | `*DataContainer` | Nested typed sub-document (object/union/composite/recursive) |
+| `TypeRecord` | `map[string]any` | Record sub-object; objects/unions/composites are flattened and do not use this slot |
 | `TypeArrayUnknown` | `[]any` | Also covers open / bare container elements |
 | `TypeArrayInt` | `[]int64` | |
 | `TypeArrayFloat` | `[]float64` | |
@@ -290,7 +300,7 @@ The compiler derives a `DataPoint` from a descriptor as:
 DataPoint = (descriptor & 0xFFFFFFE0) | ((descriptor >> 28) & 0xF) << 1
 ```
 
-so the 27-bit ID encodes the descriptor's structural fields. The `AddressCache`
+so the 27-bit ID encodes the descriptor's structural fields. `CompiledSchema.Address`
 (`compiled.go`) memoises `path → DataPoint` so that after warmup a nested path
 resolves in a single map lookup.
 
@@ -622,10 +632,11 @@ func (c *Collection) Release()
 - `Release` — returns all owned documents to the pool (via `Pool.Put`, which recurses
   into nested children) and resets the collection. No-op on documents for views.
 
-`FilterCopy` and `Project` deep-copy each document: `TypeRecord` and `TypeArrayObject`
-children are copied recursively (allocated from the pool), so copies share no child
-pointers with the source. Releasing both the copy and the source is therefore safe —
-each collection returns its own documents and children to the pool exactly once.
+`FilterCopy` and `Project` deep-copy each document: `TypeArrayObject` children are
+copied recursively (allocated from the pool), and `TypeRecord` maps are cloned so the
+copy shares no nested maps/slices with the source. Releasing both the copy and the
+source is therefore safe — each collection returns its own documents and children to
+the pool exactly once.
 
 ---
 
@@ -647,8 +658,9 @@ func (p *Pool) Acquire(f func(*DataContainer) error) error
 func (p *Pool) Walk(walker func(*DataContainer, map[int64]int32, func(DataType, ...int) unsafe.Pointer) error) (*DataContainer, error)
 ```
 
-`Put` recurses into `TypeRecord` and `TypeArrayObject` slots before clearing, returning
-any child documents back to the pool first. This prevents child documents from leaking
+`Put` recurses into the `TypeArrayObject` slot before clearing, returning any child
+documents back to the pool first. `TypeRecord` values are `map[string]any` and hold no
+pool children, so they are not recursed into. This prevents child documents from leaking
 when a parent is returned. The caller must not hold references to a document (or its
 children) after calling `Put` — they are cleared and reused.
 
@@ -682,7 +694,7 @@ var (
 | `IsSet` / `IsNull` / `HasValue` | O(1) | Single map lookup |
 | `Walk` | O(1) | Delegation only; walker cost is caller's |
 | `Clear` | O(16 + m) | 16-slot sweep + map reset; m = set fields |
-| path → `DataContainerKey` (cached) | O(1) | `AddressCache` lock-free read |
+| path → `DataContainerKey` (cached) | O(1) | `CompiledSchema.Address` memoised read |
 
 ---
 
@@ -806,8 +818,8 @@ already accepts string values for `decimal` fields.
 6. **Pooling** — acquire, populate, release, re-acquire; verify state is fully reset
 7. **Decimal mapping** — decimal fields round-trip as canonical strings through
    Set/Get and through the schema compiler (`TypeString` / `TypeArrayString`)
-8. **Concurrent access** — `Pool` and `AddressCache` are safe for concurrent use;
-   `DataContainer` is not
+ 8. **Concurrent access** — `Pool` and `CompiledSchema.Address` are safe for concurrent use;
+    `DataContainer` is not
 
 ### Property Tests (invariants that must always hold)
 
@@ -835,10 +847,12 @@ all three problems.
 
 ### Q: How does this handle nested structures?
 
-**A:** Nested fields (object/union/composite) are stored as nested `*DataContainer`s in
-`TypeRecord` slots. The schema compiler resolves a path to a `DataContainerKey` at
-definition time (cached in `AddressCache`), so access after warmup is a single map
-lookup regardless of nesting depth.
+**A:** Named objects, unions, and composites are **flattened**: their children compile
+into the flat key space and each child resolves to its own `DataContainerKey` (multi-step
+address). The schema compiler resolves a path to a key at definition time (cached in
+`CompiledSchema.Address`), so access after warmup is a single map lookup regardless of
+nesting depth. Records are the exception: they hold a `map[string]any` value in the
+`TypeRecord` slot rather than flattening.
 
 ### Q: What about arrays and typed lists?
 
@@ -859,8 +873,8 @@ silent type confusion or wrong-slot access.
 
 **A:** Use `Walk`, which exposes `positions` and the `slot` accessor. Iterate
 `positions`, extract the `DataContainerKey`, use `.Type()` to determine which slice to read
-from, and use the index to read the value. `TypeRecord` values recurse as nested
-documents.
+from, and use the index to read the value. `TypeRecord` values are `map[string]any`
+encoded with the same map framing as `any`-channel maps.
 
 ### Q: What is the maximum number of fields?
 
@@ -870,6 +884,7 @@ and each typed slice is bounded by `identifierMask` (134,217,727) entries per co
 ### Q: Is DataContainer thread-safe?
 
 **A:** No. `DataContainer` is not thread-safe — use one document per goroutine. `Pool`,
-`Collection` (as a read-only bag after build), and `AddressCache` are safe for
-concurrent use. The intended pattern is: share the pool/compiled schema across all
-goroutines; each goroutine acquires its own `DataContainer` for the duration of a request.
+`Collection` (as a read-only bag after build), and `CompiledSchema` (including its
+`Address` cache) are safe for concurrent use. The intended pattern is: share the
+pool/compiled schema across all goroutines; each goroutine acquires its own
+`DataContainer` for the duration of a request.
