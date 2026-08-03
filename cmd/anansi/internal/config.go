@@ -11,9 +11,10 @@ import (
 )
 
 type Config struct {
-	Schema SchemaConfig `json:"schema"`
-	TSGen  TSGenConfig  `json:"tsgen"`
-	GoGen  GoGenConfig  `json:"gogen"`
+	Schema   SchemaConfig   `json:"schema"`
+	TSGen    TSGenConfig    `json:"tsgen"`
+	GoGen    GoGenConfig    `json:"gogen"`
+	Metadata MetadataConfig `json:"metadata"`
 }
 
 type SchemaConfig struct {
@@ -24,6 +25,16 @@ type SchemaConfig struct {
 
 type TSGenConfig struct {
 	Out string `json:"out"`
+}
+
+// MetadataConfig configures the declarative user-defined metadata source and
+// where its generated Go exports are written.
+type MetadataConfig struct {
+	// SchemaPath is the path to the declarative metadata.schema.json file.
+	SchemaPath string `json:"schema_path"`
+	// OutDir is where metadata.go and providers.go are generated. Empty means
+	// the schema migrations_dir is used.
+	OutDir string `json:"out_dir"`
 }
 
 // NameRuleJSON is the JSON-serializable form of a name rule.
@@ -39,6 +50,33 @@ type GoGenConfig struct {
 	ScopedPackages     bool
 	NameRules          []golang.NameRule
 	Mode               golang.GenerationMode
+}
+
+// MarshalJSON implements json.Marshaler for GoGenConfig so the on-disk
+// anansi.json round-trips through UnmarshalJSON: tags use the TagConfig form,
+// name_rules serialize as string patterns, and mode uses its canonical string
+// form (a zero mode is written as "" so loading falls back to ModeFull).
+func (g GoGenConfig) MarshalJSON() ([]byte, error) {
+	type ruleJSON struct {
+		Pattern string `json:"pattern"`
+		Prefix  string `json:"prefix"`
+	}
+	nrs := make([]ruleJSON, 0, len(g.NameRules))
+	for _, nr := range g.NameRules {
+		nrs = append(nrs, ruleJSON{Pattern: nr.Pattern.String(), Prefix: nr.Prefix})
+	}
+	type jsonForm struct {
+		Tags           golang.TagConfig `json:"tags"`
+		ScopedPackages bool             `json:"scoped"`
+		NameRules      []ruleJSON       `json:"name_rules"`
+		Mode           string           `json:"mode"`
+	}
+	return json.Marshal(jsonForm{
+		Tags:           g.Tags,
+		ScopedPackages: g.ScopedPackages,
+		NameRules:      nrs,
+		Mode:           g.Mode.String(),
+	})
 }
 
 // UnmarshalJSON implements json.Unmarshaler for GoGenConfig.
@@ -87,6 +125,10 @@ func DefaultConfig() *Config {
 		TSGen: TSGenConfig{
 			Out: "types.ts",
 		},
+		Metadata: MetadataConfig{
+			SchemaPath: "metadata.schema.json",
+			OutDir:     "",
+		},
 	}
 }
 
@@ -131,6 +173,12 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if fileCfg.GoGen.Mode != 0 {
 		cfg.GoGen.Mode = fileCfg.GoGen.Mode
+	}
+	if fileCfg.Metadata.SchemaPath != "" {
+		cfg.Metadata.SchemaPath = fileCfg.Metadata.SchemaPath
+	}
+	if fileCfg.Metadata.OutDir != "" {
+		cfg.Metadata.OutDir = fileCfg.Metadata.OutDir
 	}
 
 	return cfg, nil

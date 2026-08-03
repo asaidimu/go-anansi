@@ -304,7 +304,7 @@ func schemaNormalizeCmd() *cobra.Command {
 		Short: "Normalize schema file IDs to UUID v7",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return schemagen.RunNormalize(args[0], dryRun)
+			return schemagen.RunNormalize(loadCfg(), args[0], dryRun)
 		},
 	}
 

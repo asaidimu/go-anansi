@@ -407,6 +407,209 @@ func TestDiff_NestedSchemaModified(t *testing.T) {
 	assert.Equal(t, SchemaModified, diff.Changes[0].Kind)
 }
 
+func TestDiff_NestedSchemaFieldAdded(t *testing.T) {
+	newField := Field{Name: "country", FieldProperties: FieldProperties{Type: FieldTypeString}}
+
+	old := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {BaseSchema: BaseSchema{Name: "address"}, FieldProperties: FieldProperties{Type: FieldTypeObject}},
+	}}
+	new := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {
+			BaseSchema:      BaseSchema{Name: "address", Fields: map[FieldId]Field{"f1": newField}},
+			FieldProperties: FieldProperties{Type: FieldTypeObject},
+		},
+	}}
+
+	diff, err := Diff(old, new)
+	require.NoError(t, err)
+	require.Len(t, diff.Changes, 1)
+	change := diff.Changes[0]
+	assert.Equal(t, SchemaModified, change.Kind)
+	require.NotEmpty(t, change.Forward)
+	op := change.Forward[0]
+	assert.Equal(t, OpAdd, op.Type)
+	assert.True(t, IsNestedEntityPath(op.Path))
+	assert.Equal(t, PathEntity, op.Path.Segments[0].Type)
+	assert.Equal(t, "s1", op.Path.Segments[0].Key)
+	assert.Equal(t, PathEntity, op.Path.Segments[1].Type)
+	assert.Equal(t, "f1", op.Path.Segments[1].Key)
+
+	require.Equal(t, BumpMinor, VersionImpact(diff))
+}
+
+func TestDiff_NestedSchemaFieldAdded_Required(t *testing.T) {
+	old := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {BaseSchema: BaseSchema{Name: "address"}, FieldProperties: FieldProperties{Type: FieldTypeObject}},
+	}}
+	new := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {
+			BaseSchema: BaseSchema{Name: "address", Fields: map[FieldId]Field{
+				"f1": {Name: "country", Required: true, FieldProperties: FieldProperties{Type: FieldTypeString}},
+			}},
+			FieldProperties: FieldProperties{Type: FieldTypeObject},
+		},
+	}}
+
+	diff, err := Diff(old, new)
+	require.NoError(t, err)
+	require.Len(t, diff.Changes, 1)
+	assert.Equal(t, BumpMajor, VersionImpact(diff))
+}
+
+func TestDiff_NestedSchemaFieldRemoved(t *testing.T) {
+	old := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {
+			BaseSchema: BaseSchema{Name: "address", Fields: map[FieldId]Field{
+				"f1": {Name: "country", FieldProperties: FieldProperties{Type: FieldTypeString}},
+			}},
+			FieldProperties: FieldProperties{Type: FieldTypeObject},
+		},
+	}}
+	new := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {BaseSchema: BaseSchema{Name: "address"}, FieldProperties: FieldProperties{Type: FieldTypeObject}},
+	}}
+
+	diff, err := Diff(old, new)
+	require.NoError(t, err)
+	require.Len(t, diff.Changes, 1)
+	change := diff.Changes[0]
+	assert.Equal(t, SchemaModified, change.Kind)
+	require.NotEmpty(t, change.Forward)
+	assert.Equal(t, OpRemove, change.Forward[0].Type)
+	assert.True(t, IsNestedEntityPath(change.Forward[0].Path))
+	assert.Equal(t, BumpMajor, VersionImpact(diff))
+}
+
+func TestDiff_NestedSchemaFieldModified_Type(t *testing.T) {
+	old := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {
+			BaseSchema: BaseSchema{Name: "address", Fields: map[FieldId]Field{
+				"f1": {Name: "country", FieldProperties: FieldProperties{Type: FieldTypeString}},
+			}},
+			FieldProperties: FieldProperties{Type: FieldTypeObject},
+		},
+	}}
+	new := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {
+			BaseSchema: BaseSchema{Name: "address", Fields: map[FieldId]Field{
+				"f1": {Name: "country", FieldProperties: FieldProperties{Type: FieldTypeInteger}},
+			}},
+			FieldProperties: FieldProperties{Type: FieldTypeObject},
+		},
+	}}
+
+	diff, err := Diff(old, new)
+	require.NoError(t, err)
+	require.Len(t, diff.Changes, 1)
+	change := diff.Changes[0]
+	assert.Equal(t, SchemaModified, change.Kind)
+	require.NotEmpty(t, change.Forward)
+	assert.Equal(t, OpSet, change.Forward[0].Type)
+	assert.True(t, IsNestedEntityPath(change.Forward[0].Path))
+	assert.Equal(t, PathType, change.Forward[0].Path.Segments[2].Type)
+	assert.Equal(t, BumpMajor, VersionImpact(diff))
+}
+
+func TestDiff_NestedSchemaIndexAdded_Unique(t *testing.T) {
+	old := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {BaseSchema: BaseSchema{Name: "address"}, FieldProperties: FieldProperties{Type: FieldTypeObject}},
+	}}
+	new := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {
+			BaseSchema: BaseSchema{Name: "address", Indexes: map[IndexID]Index{
+				"i1": {Name: "by_country", Fields: []FieldName{"country"}, Unique: true},
+			}},
+			FieldProperties: FieldProperties{Type: FieldTypeObject},
+		},
+	}}
+
+	diff, err := Diff(old, new)
+	require.NoError(t, err)
+	require.Len(t, diff.Changes, 1)
+	assert.Equal(t, SchemaModified, diff.Changes[0].Kind)
+	assert.Equal(t, BumpMajor, VersionImpact(diff))
+}
+
+func TestDiff_NestedSchemaConstraintAdded(t *testing.T) {
+	old := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {BaseSchema: BaseSchema{Name: "address"}, FieldProperties: FieldProperties{Type: FieldTypeObject}},
+	}}
+	new := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {
+			BaseSchema: BaseSchema{Name: "address", Constraints: map[ConstraintId]Constraint{
+				"c1": {Name: "zip_format", ConstraintUnion: NewConstrainUnion(&ConstraintRule{Fields: []FieldName{"zip"}, Predicate: "regex_match"})},
+			}},
+			FieldProperties: FieldProperties{Type: FieldTypeObject},
+		},
+	}}
+
+	diff, err := Diff(old, new)
+	require.NoError(t, err)
+	require.Len(t, diff.Changes, 1)
+	assert.Equal(t, SchemaModified, diff.Changes[0].Kind)
+	assert.Equal(t, BumpMajor, VersionImpact(diff))
+}
+
+func TestDiff_NestedSchemaModified_NoEntityChanges(t *testing.T) {
+	old := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {
+			BaseSchema:      BaseSchema{Name: "address"},
+			FieldProperties: FieldProperties{Type: FieldTypeObject},
+		},
+	}}
+	new := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"s1": {
+			BaseSchema:      BaseSchema{Name: "address", Description: "shipping address"},
+			FieldProperties: FieldProperties{Type: FieldTypeObject},
+		},
+	}}
+
+	diff, err := Diff(old, new)
+	require.NoError(t, err)
+	require.Len(t, diff.Changes, 1)
+	change := diff.Changes[0]
+	assert.Equal(t, SchemaModified, change.Kind)
+	for _, op := range change.Forward {
+		assert.False(t, IsNestedEntityPath(op.Path), "description change must not be treated as a nested entity change")
+	}
+	assert.Equal(t, BumpPatch, VersionImpact(diff))
+}
+
+func TestDiff_SystemNestedSchemaInvisible(t *testing.T) {
+	// The _metadata_ nested schema is injected by EnrichSchema. Even when its
+	// contents differ, it must never surface in the diff.
+	old := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"sys1": {
+			BaseSchema:      BaseSchema{Name: "_metadata_"},
+			FieldProperties: FieldProperties{Type: FieldTypeObject},
+		},
+	}}
+	new := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"sys1": {
+			BaseSchema: BaseSchema{Name: "_metadata_", Fields: map[FieldId]Field{
+				"f1": {Name: "trace_id", FieldProperties: FieldProperties{Type: FieldTypeString}},
+			}},
+			FieldProperties: FieldProperties{Type: FieldTypeObject},
+		},
+	}}
+
+	diff, err := Diff(old, new)
+	require.NoError(t, err)
+	assert.Empty(t, diff.Changes)
+	assert.Equal(t, BumpPatch, VersionImpact(diff))
+}
+
+func TestDiff_SystemNestedSchemaAddRemoveInvisible(t *testing.T) {
+	old := &Schema{Schemas: map[SchemaId]NestedSchema{}}
+	new := &Schema{Schemas: map[SchemaId]NestedSchema{
+		"sys1": {BaseSchema: BaseSchema{Name: "_metadata_"}, FieldProperties: FieldProperties{Type: FieldTypeObject}},
+	}}
+
+	diff, err := Diff(old, new)
+	require.NoError(t, err)
+	assert.Empty(t, diff.Changes)
+}
+
 func TestDiff_MetadataAdded(t *testing.T) {
 	old := &Schema{BaseSchema: BaseSchema{Metadata: map[string]any{}}}
 	new := &Schema{BaseSchema: BaseSchema{
@@ -667,8 +870,8 @@ func TestVersionImpact_FieldRemoved(t *testing.T) {
 	diff := &SchemaDiff{
 		Changes: []SemanticChange{
 			{
-				Kind: FieldRemoved,
-				Forward: []Operation{{Type: OpRemove}},
+				Kind:     FieldRemoved,
+				Forward:  []Operation{{Type: OpRemove}},
 				Backward: []Operation{{Type: OpAdd, Value: Field{Name: "email"}}},
 			},
 		},
@@ -682,8 +885,8 @@ func TestVersionImpact_FieldModified_TypeChange(t *testing.T) {
 			{
 				Kind: FieldModified,
 				Forward: []Operation{{
-					Type: OpSet,
-					Path: Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathType}}},
+					Type:  OpSet,
+					Path:  Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathType}}},
 					Value: FieldTypeString,
 				}},
 			},
@@ -698,8 +901,8 @@ func TestVersionImpact_FieldModified_NameChange(t *testing.T) {
 			{
 				Kind: FieldModified,
 				Forward: []Operation{{
-					Type: OpSet,
-					Path: Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathName}}},
+					Type:  OpSet,
+					Path:  Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathName}}},
 					Value: "new_name",
 				}},
 			},
@@ -714,8 +917,8 @@ func TestVersionImpact_FieldModified_RequiredTrue(t *testing.T) {
 			{
 				Kind: FieldModified,
 				Forward: []Operation{{
-					Type: OpSet,
-					Path: Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathRequired}}},
+					Type:  OpSet,
+					Path:  Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathRequired}}},
 					Value: true,
 				}},
 			},
@@ -730,8 +933,8 @@ func TestVersionImpact_FieldModified_RequiredFalse(t *testing.T) {
 			{
 				Kind: FieldModified,
 				Forward: []Operation{{
-					Type: OpSet,
-					Path: Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathRequired}}},
+					Type:  OpSet,
+					Path:  Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathRequired}}},
 					Value: false,
 				}},
 			},
@@ -746,8 +949,8 @@ func TestVersionImpact_FieldModified_DefaultChange(t *testing.T) {
 			{
 				Kind: FieldModified,
 				Forward: []Operation{{
-					Type: OpSet,
-					Path: Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathDefault}}},
+					Type:  OpSet,
+					Path:  Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathDefault}}},
 					Value: "new_default",
 				}},
 			},
@@ -762,8 +965,8 @@ func TestVersionImpact_FieldModified_Deprecated(t *testing.T) {
 			{
 				Kind: FieldModified,
 				Forward: []Operation{{
-					Type: OpSet,
-					Path: Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathDeprecated}}},
+					Type:  OpSet,
+					Path:  Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathDeprecated}}},
 					Value: true,
 				}},
 			},
@@ -778,8 +981,8 @@ func TestVersionImpact_FieldModified_UniqueTrue(t *testing.T) {
 			{
 				Kind: FieldModified,
 				Forward: []Operation{{
-					Type: OpSet,
-					Path: Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathUnique}}},
+					Type:  OpSet,
+					Path:  Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathUnique}}},
 					Value: true,
 				}},
 			},
@@ -794,8 +997,8 @@ func TestVersionImpact_FieldModified_SchemaRef(t *testing.T) {
 			{
 				Kind: FieldModified,
 				Forward: []Operation{{
-					Type: OpSet,
-					Path: Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathFieldSchema}}},
+					Type:  OpSet,
+					Path:  Path{Segments: []PathSegment{{Type: PathEntity, Key: "f1"}, {Type: PathFieldSchema}}},
 					Value: NewSchemaReference(SchemaReference{ID: "s1"}),
 				}},
 			},
@@ -810,7 +1013,7 @@ func TestVersionImpact_IndexAdded_Unique(t *testing.T) {
 			{
 				Kind: IndexAdded,
 				Forward: []Operation{{
-					Type: OpAdd,
+					Type:  OpAdd,
 					Value: Index{Name: "idx", Fields: []FieldName{"email"}, Unique: true},
 				}},
 			},
@@ -823,10 +1026,10 @@ func TestVersionImpact_IndexRemoved_Unique(t *testing.T) {
 	diff := &SchemaDiff{
 		Changes: []SemanticChange{
 			{
-				Kind: IndexRemoved,
+				Kind:    IndexRemoved,
 				Forward: []Operation{{Type: OpRemove}},
 				Backward: []Operation{{
-					Type: OpAdd,
+					Type:  OpAdd,
 					Value: Index{Name: "idx", Fields: []FieldName{"email"}, Unique: true},
 				}},
 			},
@@ -841,8 +1044,8 @@ func TestVersionImpact_IndexModified_UniqueTrue(t *testing.T) {
 			{
 				Kind: IndexModified,
 				Forward: []Operation{{
-					Type: OpSet,
-					Path: Path{Segments: []PathSegment{{Type: PathEntity, Key: "i1"}, {Type: PathIndexUnique}}},
+					Type:  OpSet,
+					Path:  Path{Segments: []PathSegment{{Type: PathEntity, Key: "i1"}, {Type: PathIndexUnique}}},
 					Value: true,
 				}},
 			},
@@ -857,8 +1060,8 @@ func TestVersionImpact_IndexModified_FieldsChanged(t *testing.T) {
 			{
 				Kind: IndexModified,
 				Forward: []Operation{{
-					Type: OpSet,
-					Path: Path{Segments: []PathSegment{{Type: PathEntity, Key: "i1"}, {Type: PathFields}}},
+					Type:  OpSet,
+					Path:  Path{Segments: []PathSegment{{Type: PathEntity, Key: "i1"}, {Type: PathFields}}},
 					Value: []FieldName{"a", "b"},
 				}},
 			},

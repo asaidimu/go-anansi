@@ -2,20 +2,20 @@ package data
 
 // DocumentCache provides simple in-memory caching for documents.
 type DocumentCache struct {
-	cache   map[string]*Document
+	cache   map[string]Documenter
 	maxSize int
 }
 
 // NewDocumentCache creates a new document cache with specified maximum size.
 func NewDocumentCache(maxSize int) *DocumentCache {
 	return &DocumentCache{
-		cache:   make(map[string]*Document),
+		cache:   make(map[string]Documenter),
 		maxSize: maxSize,
 	}
 }
 
 // Get retrieves a document from cache.
-func (dc *DocumentCache) Get(key string) (*Document, bool) {
+func (dc *DocumentCache) Get(key string) (Documenter, bool) {
 	doc, ok := dc.cache[key]
 	return doc, ok
 }
@@ -34,5 +34,5 @@ func (dc *DocumentCache) Set(key string, doc *Document) {
 
 // Clear removes all cached documents.
 func (dc *DocumentCache) Clear() {
-	dc.cache = make(map[string]*Document)
+	dc.cache = make(map[string]Documenter)
 }

@@ -5,8 +5,8 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v8/core/persistence/transaction"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/utils"
 	"go.uber.org/zap"
@@ -43,6 +43,12 @@ func (p *polyfillCollection) getCurrentInteractor(ctx context.Context) query.Dat
 		return result
 	}
 	return p.interactor
+}
+
+// DocumentPool forwards to the wrapped collection's container-backed document
+// pool when available, otherwise compiles one from the active schema.
+func (p *polyfillCollection) DocumentPool(ctx context.Context) (*document.DocumentPool, error) {
+	return documentPoolFor(ctx, p.Collection)
 }
 
 // findCandidateIDs recursively traverses a query filter to find a bounding
@@ -153,7 +159,7 @@ func (p *polyfillCollection) Update(ctx context.Context, params *base.Collection
 	// --- Polyfill execution ---
 	// The operation is wrapped in a transaction to ensure atomicity for the multi-step process.
 	// We use `getCurrentInteractor` to correctly join an existing transaction if one is present.
-	result, err := transaction.Execute(ctx, p.getCurrentInteractor(ctx), p.logger, func(transactionCtx context.Context, _ query.DatabaseInteractor) (any, error) {
+	result, err := p.Transact(ctx, func(transactionCtx context.Context) (any, error) {
 		// Use the new `transactionCtx` for all subsequent operations to ensure they run within the same transaction.
 
 		var affectedIDs []query.FilterValue
@@ -176,10 +182,10 @@ func (p *polyfillCollection) Update(ctx context.Context, params *base.Collection
 				return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_POLYFILL_FETCH_IDS_FAILED")
 			}
 			if idResult.Count == 0 {
-				return &base.ReadResult{Count: 0, Data: []*data.Document{}}, nil
+				return &base.ReadResult{Count: 0, Data: data.DocumentSet{}}, nil
 			}
 
-			affectedIDs = data.MapDocumentSet(idResult.Data, func(d *data.Document) query.FilterValue {
+			affectedIDs = data.MapDocumentSet(idResult.Data, func(d data.Documenter) query.FilterValue {
 				idStr := d.ID()
 				idCopy := idStr // Create a copy
 				return query.FilterValue{StringVal: &idCopy}
@@ -188,7 +194,7 @@ func (p *polyfillCollection) Update(ctx context.Context, params *base.Collection
 		}
 
 		if len(affectedIDs) == 0 {
-			return &base.ReadResult{Count: 0, Data: []*data.Document{}}, nil
+			return &base.ReadResult{Count: 0, Data: data.DocumentSet{}}, nil
 		}
 
 		// 2. Perform the actual update. We create a new params object with ReturnDocument set to false
@@ -207,7 +213,7 @@ func (p *polyfillCollection) Update(ctx context.Context, params *base.Collection
 		}
 
 		if updateResult.Total == nil || *updateResult.Total == 0 {
-			return &base.ReadResult{Count: 0, Data: []*data.Document{}}, nil
+			return &base.ReadResult{Count: 0, Data: data.DocumentSet{}}, nil
 		}
 
 		// 3. Fetch the full, updated documents using the IDs.
@@ -224,7 +230,7 @@ func (p *polyfillCollection) Update(ctx context.Context, params *base.Collection
 		fetchResult, err := p.Collection.Read(transactionCtx, &fetchQuery)
 		if err != nil {
 			// The update succeeded, but the final fetch failed. Return an empty document list with the correct count.
-			return &base.ReadResult{Count: 0, Total: updateResult.Total, Data: []*data.Document{}}, nil
+			return &base.ReadResult{Count: 0, Total: updateResult.Total, Data: data.DocumentSet{}}, nil
 		}
 
 		// The final result uses the documents from the final fetch and the count from the update.

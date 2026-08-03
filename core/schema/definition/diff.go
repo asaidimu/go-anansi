@@ -132,6 +132,32 @@ func rootPropPath(prop PathSegmentType) Path {
 	return Path{Segments: []PathSegment{{Type: prop}}}
 }
 
+// nestedEntityPath builds a composite entity path referencing an entity (field,
+// index, or constraint) inside a nested schema. Composite entity paths are how
+// nested entity changes are represented (see the PathEntity docs: "possibly
+// composite for nested").
+func nestedEntityPath(schemaID, entityID string) Path {
+	return Path{Segments: []PathSegment{
+		{Type: PathEntity, Key: schemaID},
+		{Type: PathEntity, Key: entityID},
+	}}
+}
+
+func nestedPropertyPath(schemaID, entityID string, prop PathSegmentType) Path {
+	return Path{Segments: []PathSegment{
+		{Type: PathEntity, Key: schemaID},
+		{Type: PathEntity, Key: entityID},
+		{Type: prop},
+	}}
+}
+
+// IsNestedEntityPath reports whether the path refers to an entity inside a
+// nested schema (i.e. a composite entity path). Consumers use it to
+// distinguish nested-schema entity changes from top-level ones.
+func IsNestedEntityPath(p Path) bool {
+	return len(p.Segments) >= 2 && p.Segments[0].Type == PathEntity && p.Segments[1].Type == PathEntity
+}
+
 // --- Fields ---
 
 func diffFields(old, new *Schema, diff *SchemaDiff) {
@@ -168,86 +194,54 @@ func diffFields(old, new *Schema, diff *SchemaDiff) {
 }
 
 func diffModifiedField(id FieldId, old, new *Field, diff *SchemaDiff) {
-	var changes SemanticChange
-	changes.Kind = FieldModified
-	changes.EntityId = string(new.Name)
+	forward, backward := collectModifiedFieldOps(id, old, new, propertyPath)
+	if len(forward) > 0 {
+		diff.Changes = append(diff.Changes, SemanticChange{
+			Kind:     FieldModified,
+			EntityId: string(new.Name),
+			Forward:  forward,
+			Backward: backward,
+		})
+	}
+}
+
+// collectModifiedFieldOps emits OpSet operations for every differing field
+// property, using the given path builder. Top-level fields use propertyPath;
+// nested fields use a composite nested entity path.
+func collectModifiedFieldOps(id FieldId, old, new *Field, propPath func(fieldID string, prop PathSegmentType) Path) (forward, backward []Operation) {
+	emit := func(prop PathSegmentType, val, oldVal any) {
+		forward = append(forward, Operation{Type: OpSet, Path: propPath(string(id), prop), Value: val})
+		backward = append(backward, Operation{Type: OpSet, Path: propPath(string(id), prop), Value: oldVal})
+	}
 
 	if old.Name != new.Name {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathName), Value: string(new.Name),
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathName), Value: string(old.Name),
-		})
+		emit(PathName, string(new.Name), string(old.Name))
 	}
 	if old.Description != new.Description {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathDescription), Value: new.Description,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathDescription), Value: old.Description,
-		})
+		emit(PathDescription, new.Description, old.Description)
 	}
 	if old.Required != new.Required {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathRequired), Value: new.Required,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathRequired), Value: old.Required,
-		})
+		emit(PathRequired, new.Required, old.Required)
 	}
 	if old.Deprecated != new.Deprecated {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathDeprecated), Value: new.Deprecated,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathDeprecated), Value: old.Deprecated,
-		})
+		emit(PathDeprecated, new.Deprecated, old.Deprecated)
 	}
 	if old.Unique != new.Unique {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathUnique), Value: new.Unique,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathUnique), Value: old.Unique,
-		})
+		emit(PathUnique, new.Unique, old.Unique)
 	}
 	if old.Nullable != new.Nullable {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathNullable), Value: new.Nullable,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathNullable), Value: old.Nullable,
-		})
+		emit(PathNullable, new.Nullable, old.Nullable)
 	}
 	if old.Type != new.Type {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathType), Value: new.Type,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathType), Value: old.Type,
-		})
+		emit(PathType, new.Type, old.Type)
 	}
 	if !literalValueEqual(old.Default, new.Default) {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathDefault), Value: new.Default,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathDefault), Value: old.Default,
-		})
+		emit(PathDefault, new.Default, old.Default)
 	}
 	if !fieldSchemaRefEqual(old.Schema, new.Schema) {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathFieldSchema), Value: new.Schema,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathFieldSchema), Value: old.Schema,
-		})
+		emit(PathFieldSchema, new.Schema, old.Schema)
 	}
-
-	if len(changes.Forward) > 0 {
-		diff.Changes = append(diff.Changes, changes)
-	}
+	return forward, backward
 }
 
 // --- Indexes ---
@@ -286,70 +280,48 @@ func diffIndexes(old, new *Schema, diff *SchemaDiff) {
 }
 
 func diffModifiedIndex(id IndexID, old, new *Index, diff *SchemaDiff) {
-	var changes SemanticChange
-	changes.Kind = IndexModified
-	changes.EntityId = new.Name
+	forward, backward := collectModifiedIndexOps(id, old, new, propertyPath)
+	if len(forward) > 0 {
+		diff.Changes = append(diff.Changes, SemanticChange{
+			Kind:     IndexModified,
+			EntityId: new.Name,
+			Forward:  forward,
+			Backward: backward,
+		})
+	}
+}
+
+// collectModifiedIndexOps emits OpSet operations for every differing index
+// property, using the given path builder. Top-level indexes use propertyPath;
+// nested indexes use a composite nested entity path.
+func collectModifiedIndexOps(id IndexID, old, new *Index, propPath func(entityID string, prop PathSegmentType) Path) (forward, backward []Operation) {
+	emit := func(prop PathSegmentType, val, oldVal any) {
+		forward = append(forward, Operation{Type: OpSet, Path: propPath(string(id), prop), Value: val})
+		backward = append(backward, Operation{Type: OpSet, Path: propPath(string(id), prop), Value: oldVal})
+	}
 
 	if old.Name != new.Name {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathName), Value: new.Name,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathName), Value: old.Name,
-		})
+		emit(PathName, new.Name, old.Name)
 	}
 	if old.Description != new.Description {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathDescription), Value: new.Description,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathDescription), Value: old.Description,
-		})
+		emit(PathDescription, new.Description, old.Description)
 	}
 	if old.Type != new.Type {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathIndexType), Value: new.Type,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathIndexType), Value: old.Type,
-		})
+		emit(PathIndexType, new.Type, old.Type)
 	}
 	if old.Order != new.Order {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathOrder), Value: new.Order,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathOrder), Value: old.Order,
-		})
+		emit(PathOrder, new.Order, old.Order)
 	}
 	if old.Unique != new.Unique {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathIndexUnique), Value: new.Unique,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathIndexUnique), Value: old.Unique,
-		})
+		emit(PathIndexUnique, new.Unique, old.Unique)
 	}
 	if !fieldNamesEqual(old.Fields, new.Fields) {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathFields), Value: new.Fields,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathFields), Value: old.Fields,
-		})
+		emit(PathFields, new.Fields, old.Fields)
 	}
 	if !indexConditionEqual(old.Condition, new.Condition) {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathCondition), Value: new.Condition,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathCondition), Value: old.Condition,
-		})
+		emit(PathCondition, new.Condition, old.Condition)
 	}
-
-	if len(changes.Forward) > 0 {
-		diff.Changes = append(diff.Changes, changes)
-	}
+	return forward, backward
 }
 
 // --- Constraints ---
@@ -388,70 +360,54 @@ func diffConstraints(old, new *Schema, diff *SchemaDiff) {
 }
 
 func diffModifiedConstraint(id ConstraintId, old, new *Constraint, diff *SchemaDiff) {
-	var changes SemanticChange
-	changes.Kind = ConstraintModified
-	changes.EntityId = new.Name
-
-	if old.Name != new.Name {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathName), Value: new.Name,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathName), Value: old.Name,
+	forward, backward := collectModifiedConstraintOps(id, old, new, propertyPath)
+	if len(forward) > 0 {
+		diff.Changes = append(diff.Changes, SemanticChange{
+			Kind:     ConstraintModified,
+			EntityId: new.Name,
+			Forward:  forward,
+			Backward: backward,
 		})
 	}
+}
+
+// collectModifiedConstraintOps emits OpSet operations for every differing
+// constraint property, using the given path builder. Top-level constraints use
+// propertyPath; nested constraints use a composite nested entity path.
+func collectModifiedConstraintOps(id ConstraintId, old, new *Constraint, propPath func(entityID string, prop PathSegmentType) Path) (forward, backward []Operation) {
+	emit := func(prop PathSegmentType, val, oldVal any) {
+		forward = append(forward, Operation{Type: OpSet, Path: propPath(string(id), prop), Value: val})
+		backward = append(backward, Operation{Type: OpSet, Path: propPath(string(id), prop), Value: oldVal})
+	}
+
+	if old.Name != new.Name {
+		emit(PathName, new.Name, old.Name)
+	}
 	if old.Description != new.Description {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathDescription), Value: new.Description,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathDescription), Value: old.Description,
-		})
+		emit(PathDescription, new.Description, old.Description)
 	}
 
 	oldKind := old.ConstraintUnion.Kind()
 	newKind := new.ConstraintUnion.Kind()
 	if oldKind != newKind {
-		changes.Forward = append(changes.Forward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathConstraintKind), Value: new.ConstraintUnion,
-		})
-		changes.Backward = append(changes.Backward, Operation{
-			Type: OpSet, Path: propertyPath(string(id), PathConstraintKind), Value: old.ConstraintUnion,
-		})
+		emit(PathConstraintKind, new.ConstraintUnion, old.ConstraintUnion)
 	} else if oldKind == ConstraintKindRule && newKind == ConstraintKindRule {
 		oldRule, _ := ConstraintAs[*ConstraintRule](old.ConstraintUnion)
 		newRule, _ := ConstraintAs[*ConstraintRule](new.ConstraintUnion)
 		if oldRule != nil && newRule != nil {
 			if !fieldNamesEqual(oldRule.Fields, newRule.Fields) {
-				changes.Forward = append(changes.Forward, Operation{
-					Type: OpSet, Path: propertyPath(string(id), PathConstraintFields), Value: newRule.Fields,
-				})
-				changes.Backward = append(changes.Backward, Operation{
-					Type: OpSet, Path: propertyPath(string(id), PathConstraintFields), Value: oldRule.Fields,
-				})
+				emit(PathConstraintFields, newRule.Fields, oldRule.Fields)
 			}
 			if oldRule.Predicate != newRule.Predicate {
-				changes.Forward = append(changes.Forward, Operation{
-					Type: OpSet, Path: propertyPath(string(id), PathPredicate), Value: newRule.Predicate,
-				})
-				changes.Backward = append(changes.Backward, Operation{
-					Type: OpSet, Path: propertyPath(string(id), PathPredicate), Value: oldRule.Predicate,
-				})
+				emit(PathPredicate, newRule.Predicate, oldRule.Predicate)
 			}
 			if !literalValueEqual(oldRule.Parameters, newRule.Parameters) {
-				changes.Forward = append(changes.Forward, Operation{
-					Type: OpSet, Path: propertyPath(string(id), PathParameters), Value: newRule.Parameters,
-				})
-				changes.Backward = append(changes.Backward, Operation{
-					Type: OpSet, Path: propertyPath(string(id), PathParameters), Value: oldRule.Parameters,
-				})
+				emit(PathParameters, newRule.Parameters, oldRule.Parameters)
 			}
 		}
 	}
 
-	if len(changes.Forward) > 0 {
-		diff.Changes = append(diff.Changes, changes)
-	}
+	return forward, backward
 }
 
 // --- Nested Schemas ---
@@ -460,6 +416,11 @@ func diffNestedSchemas(old, new *Schema, diff *SchemaDiff) {
 	handled := make(map[string]bool)
 
 	for id, newSchema := range new.Schemas {
+		// System nested schemas (e.g. _metadata_) are injected by EnrichSchema
+		// and must stay invisible to the migration engine.
+		if isSystemEntityName(newSchema.Name) {
+			continue
+		}
 		oldSchema, exists := old.Schemas[id]
 		if !exists {
 			diff.Changes = append(diff.Changes, SemanticChange{
@@ -478,6 +439,9 @@ func diffNestedSchemas(old, new *Schema, diff *SchemaDiff) {
 
 	for id, oldSchema := range old.Schemas {
 		if handled[string(id)] {
+			continue
+		}
+		if isSystemEntityName(oldSchema.Name) {
 			continue
 		}
 		diff.Changes = append(diff.Changes, SemanticChange{
@@ -539,8 +503,136 @@ func diffModifiedNestedSchema(id SchemaId, old, new *NestedSchema, diff *SchemaD
 		})
 	}
 
+	// Recurse into the nested schema's fields, indexes, and constraints so that
+	// structural changes produce migration-relevant operations (mirroring how
+	// top-level schema entities are diffed). See migration_semantics.md:
+	// modifySchema carries nested addField/modifyField/removeField changes.
+	diffNestedSchemaContents(id, old, new, &changes)
+
 	if len(changes.Forward) > 0 {
 		diff.Changes = append(diff.Changes, changes)
+	}
+}
+
+// diffNestedSchemaContents appends operations describing structural changes to
+// a nested schema's fields, indexes, and constraints into the given change.
+// All emitted paths are composite entity paths ([PathEntity{schemaID},
+// PathEntity{entityID}, ...]) so consumers can distinguish nested entity
+// changes from top-level ones via IsNestedEntityPath.
+func diffNestedSchemaContents(id SchemaId, old, new *NestedSchema, changes *SemanticChange) {
+	diffNestedFields(id, old.Fields, new.Fields, changes)
+	diffNestedIndexes(id, old.Indexes, new.Indexes, changes)
+	diffNestedConstraints(id, old.Constraints, new.Constraints, changes)
+}
+
+func diffNestedFields(id SchemaId, old, new map[FieldId]Field, changes *SemanticChange) {
+	handled := make(map[string]bool)
+
+	for fid, newField := range new {
+		oldField, exists := old[fid]
+		if !exists {
+			changes.Forward = append(changes.Forward, Operation{
+				Type: OpAdd, Path: nestedEntityPath(string(id), string(fid)), Value: newField,
+			})
+			changes.Backward = append(changes.Backward, Operation{
+				Type: OpRemove, Path: nestedEntityPath(string(id), string(fid)),
+			})
+			handled[string(fid)] = true
+			continue
+		}
+
+		handled[string(fid)] = true
+		forward, backward := collectModifiedFieldOps(fid, &oldField, &newField, func(eid string, prop PathSegmentType) Path {
+			return nestedPropertyPath(string(id), eid, prop)
+		})
+		changes.Forward = append(changes.Forward, forward...)
+		changes.Backward = append(changes.Backward, backward...)
+	}
+
+	for fid, oldField := range old {
+		if handled[string(fid)] {
+			continue
+		}
+		changes.Forward = append(changes.Forward, Operation{
+			Type: OpRemove, Path: nestedEntityPath(string(id), string(fid)),
+		})
+		changes.Backward = append(changes.Backward, Operation{
+			Type: OpAdd, Path: nestedEntityPath(string(id), string(fid)), Value: oldField,
+		})
+	}
+}
+
+func diffNestedIndexes(id SchemaId, old, new map[IndexID]Index, changes *SemanticChange) {
+	handled := make(map[string]bool)
+
+	for iid, newIdx := range new {
+		oldIdx, exists := old[iid]
+		if !exists {
+			changes.Forward = append(changes.Forward, Operation{
+				Type: OpAdd, Path: nestedEntityPath(string(id), string(iid)), Value: newIdx,
+			})
+			changes.Backward = append(changes.Backward, Operation{
+				Type: OpRemove, Path: nestedEntityPath(string(id), string(iid)),
+			})
+			handled[string(iid)] = true
+			continue
+		}
+
+		handled[string(iid)] = true
+		forward, backward := collectModifiedIndexOps(iid, &oldIdx, &newIdx, func(eid string, prop PathSegmentType) Path {
+			return nestedPropertyPath(string(id), eid, prop)
+		})
+		changes.Forward = append(changes.Forward, forward...)
+		changes.Backward = append(changes.Backward, backward...)
+	}
+
+	for iid, oldIdx := range old {
+		if handled[string(iid)] {
+			continue
+		}
+		changes.Forward = append(changes.Forward, Operation{
+			Type: OpRemove, Path: nestedEntityPath(string(id), string(iid)),
+		})
+		changes.Backward = append(changes.Backward, Operation{
+			Type: OpAdd, Path: nestedEntityPath(string(id), string(iid)), Value: oldIdx,
+		})
+	}
+}
+
+func diffNestedConstraints(id SchemaId, old, new map[ConstraintId]Constraint, changes *SemanticChange) {
+	handled := make(map[string]bool)
+
+	for cid, newCons := range new {
+		oldCons, exists := old[cid]
+		if !exists {
+			changes.Forward = append(changes.Forward, Operation{
+				Type: OpAdd, Path: nestedEntityPath(string(id), string(cid)), Value: newCons,
+			})
+			changes.Backward = append(changes.Backward, Operation{
+				Type: OpRemove, Path: nestedEntityPath(string(id), string(cid)),
+			})
+			handled[string(cid)] = true
+			continue
+		}
+
+		handled[string(cid)] = true
+		forward, backward := collectModifiedConstraintOps(cid, &oldCons, &newCons, func(eid string, prop PathSegmentType) Path {
+			return nestedPropertyPath(string(id), eid, prop)
+		})
+		changes.Forward = append(changes.Forward, forward...)
+		changes.Backward = append(changes.Backward, backward...)
+	}
+
+	for cid, oldCons := range old {
+		if handled[string(cid)] {
+			continue
+		}
+		changes.Forward = append(changes.Forward, Operation{
+			Type: OpRemove, Path: nestedEntityPath(string(id), string(cid)),
+		})
+		changes.Backward = append(changes.Backward, Operation{
+			Type: OpAdd, Path: nestedEntityPath(string(id), string(cid)), Value: oldCons,
+		})
 	}
 }
 
@@ -748,11 +840,53 @@ func VersionImpact(diff *SchemaDiff) VersionBump {
 
 		case SchemaModified:
 			for _, op := range c.Forward {
-				if op.Type == OpSet {
-					switch op.Path.Segments[len(op.Path.Segments)-1].Type {
-					case PathType, PathValues:
+				if op.Type == OpAdd && IsNestedEntityPath(op.Path) {
+					switch v := op.Value.(type) {
+					case Field:
+						if v.Required {
+							return BumpMajor
+						}
+						if impact < BumpMinor {
+							impact = BumpMinor
+						}
+					case Index:
+						if v.Unique {
+							return BumpMajor
+						}
+					case Constraint:
 						return BumpMajor
 					}
+					continue
+				}
+				if op.Type == OpRemove && IsNestedEntityPath(op.Path) {
+					return BumpMajor
+				}
+				if op.Type != OpSet {
+					continue
+				}
+				lastSeg := op.Path.Segments[len(op.Path.Segments)-1].Type
+				if IsNestedEntityPath(op.Path) {
+					switch lastSeg {
+					case PathName, PathType, PathDefault, PathFieldSchema, PathIndexType, PathFields,
+						PathPredicate, PathParameters, PathConstraintFields, PathConstraintKind:
+						return BumpMajor
+					case PathRequired, PathUnique, PathIndexUnique:
+						if v, ok := op.Value.(bool); ok && v {
+							return BumpMajor
+						}
+						if impact < BumpMinor {
+							impact = BumpMinor
+						}
+					case PathDeprecated:
+						if impact < BumpMinor {
+							impact = BumpMinor
+						}
+					}
+					continue
+				}
+				switch lastSeg {
+				case PathType, PathValues:
+					return BumpMajor
 				}
 			}
 		}
@@ -822,5 +956,3 @@ func indexConditionEqual(a, b IndexConditionUnion) bool {
 	}
 	return false
 }
-
-

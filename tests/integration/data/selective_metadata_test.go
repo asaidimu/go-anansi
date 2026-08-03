@@ -27,7 +27,7 @@ func setupSelectiveTest(t *testing.T) (base.Persistence, func()) {
 				},
 			},
 		},
-		Provider: func(ctx context.Context, _ *data.Document) (map[string]any, error) {
+		Provider: func(ctx context.Context, _ data.Documenter) (map[string]any, error) {
 			if name, ok := ctx.Value(common.CollectionNameContextKey).(string); ok && name == "sensitive_documents" {
 				return map[string]any{"sensitivity_level": "high"}, nil
 			}
@@ -45,7 +45,7 @@ func setupSelectiveTest(t *testing.T) (base.Persistence, func()) {
 				},
 			},
 		},
-		Provider: func(ctx context.Context, _ *data.Document) (map[string]any, error) {
+		Provider: func(ctx context.Context, _ data.Documenter) (map[string]any, error) {
 			if name, ok := ctx.Value(common.CollectionNameContextKey).(string); ok && name == "audited_records" {
 				return map[string]any{"audit_required": true}, nil
 			}

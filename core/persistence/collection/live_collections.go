@@ -72,10 +72,10 @@ type DocumentProcessor[T any] interface {
 	// Artifacts are treated as read-only once cached (see LiveCollection's
 	// doc comment) — Create should return a value safe to share across
 	// concurrent readers indefinitely.
-	Create(ctx context.Context, doc *data.Document) (T, error)
+	Create(ctx context.Context, doc data.Documenter) (T, error)
 
 	// Deprecated: use Create instead.
-	Compile(ctx context.Context, doc *data.Document) (T, error)
+	Compile(ctx context.Context, doc data.Documenter) (T, error)
 
 	// Destroy releases any resources held by an artifact before it is
 	// evicted from the cache (e.g. when the cache runs out of capacity,
@@ -226,7 +226,7 @@ func (r *liveRepository[T]) prime(ctx context.Context) error {
 }
 
 // extractKey retrieves the queryKey field value from a document as a string.
-func (r *liveRepository[T]) extractKey(doc *data.Document) (string, error) {
+func (r *liveRepository[T]) extractKey(doc data.Documenter) (string, error) {
 	val, err := doc.Get(r.queryKey)
 	if err != nil {
 		return "", err
@@ -362,7 +362,7 @@ func (r *liveRepository[T]) Close() error {
 // criteria (when QueryFunc is set) before caching it. If the document does
 // not match, it is evicted from the cache (e.g. a soft-deleted user whose
 // document would no longer be found by the active-user query).
-func (r *liveRepository[T]) maybeCache(ctx context.Context, doc *data.Document) {
+func (r *liveRepository[T]) maybeCache(ctx context.Context, doc data.Documenter) {
 	key, keyErr := r.extractKey(doc)
 	if keyErr != nil {
 		return
@@ -381,7 +381,7 @@ func (r *liveRepository[T]) maybeCache(ctx context.Context, doc *data.Document) 
 	}
 }
 
-func (r *liveRepository[T]) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
+func (r *liveRepository[T]) CreateOne(ctx context.Context, doc data.Documenter) (base.CreateResult, error) {
 	result, err := r.Collection.CreateOne(ctx, doc)
 	if err == nil && result.Status == base.StatusCreated && result.Data != nil {
 		r.maybeCache(ctx, result.Data)
@@ -389,7 +389,7 @@ func (r *liveRepository[T]) CreateOne(ctx context.Context, doc *data.Document) (
 	return result, err
 }
 
-func (r *liveRepository[T]) CreateMany(ctx context.Context, docs []*data.Document) ([]base.CreateResult, error) {
+func (r *liveRepository[T]) CreateMany(ctx context.Context, docs []data.Documenter) ([]base.CreateResult, error) {
 	results, err := r.Collection.CreateMany(ctx, docs)
 	if err == nil {
 		for _, res := range results {

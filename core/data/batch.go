@@ -8,7 +8,7 @@ import (
 )
 
 // DocumentSet represents a collection of documents with batch operations.
-type DocumentSet []*Document
+type DocumentSet []Documenter
 
 // NewDocumentSet creates a new DocumentSet from a variety of slice types.
 // It intelligently converts []map[string]any, []any, and []Document into a
@@ -18,14 +18,20 @@ func NewDocumentSet(v any, ctx ...context.Context) (DocumentSet, bool) {
 	switch val := v.(type) {
 	case DocumentSet:
 		return val, true
-	case []*Document:
+	case []Documenter:
 		return DocumentSet(val), true
+	case []*Document:
+		result := make(DocumentSet, len(val))
+		for i, doc := range val {
+			result[i] = doc
+		}
+		return result, true
 	case []Document:
-		docs := make([]*Document, len(val))
+		docs := make(DocumentSet, len(val))
 		for i := range val {
 			docs[i] = &val[i]
 		}
-		return DocumentSet(docs), true
+		return docs, true
 	case []any:
 		docs := make(DocumentSet, 0, len(val))
 		for _, item := range val {
@@ -50,26 +56,26 @@ func NewDocumentSet(v any, ctx ...context.Context) (DocumentSet, bool) {
 		return nil, false
 	}
 }
-
 // MapDocumentSet transforms each document into a value of type T.
 // This is the generic, type-safe implementation of map.
-func MapDocumentSet[T any](ds DocumentSet, transformer func(*Document) T) []T {
+func MapDocumentSet[T any](ds DocumentSet, transformer func(Documenter) T) []T {
 	result := make([]T, len(ds))
 	for i, doc := range ds {
 		result[i] = transformer(doc)
 	}
+
 	return result
 }
 
 // Map applies a transformation to all documents in the set.
 // This is the non-generic version that returns []any for backwards compatibility.
-func (ds DocumentSet) Map(transformer func(*Document) any) []any {
+func (ds DocumentSet) Map(transformer func(Documenter) any) []any {
 	return MapDocumentSet(ds, transformer)
 }
 
 // ReduceDocumentSet accumulates all documents into a single value of type T.
 // This is the generic, type-safe implementation of reduce.
-func ReduceDocumentSet[T any](ds DocumentSet, initial T, reducer func(T, *Document) T) T {
+func ReduceDocumentSet[T any](ds DocumentSet, initial T, reducer func(T, Documenter) T) T {
 	result := initial
 	for _, doc := range ds {
 		result = reducer(result, doc)
@@ -79,12 +85,12 @@ func ReduceDocumentSet[T any](ds DocumentSet, initial T, reducer func(T, *Docume
 
 // Reduce applies a reducer function to all documents.
 // This is the non-generic version that works with any for backwards compatibility.
-func (ds DocumentSet) Reduce(initial any, reducer func(any, *Document) any) any {
+func (ds DocumentSet) Reduce(initial any, reducer func(any, Documenter) any) any {
 	return ReduceDocumentSet(ds, initial, reducer)
 }
 
 // Filter applies a filter to all documents in the set.
-func (ds DocumentSet) Filter(predicate func(*Document) bool) DocumentSet {
+func (ds DocumentSet) Filter(predicate func(Documenter) bool) DocumentSet {
 	result := make(DocumentSet, 0)
 	for _, doc := range ds {
 		if predicate(doc) {
@@ -95,7 +101,7 @@ func (ds DocumentSet) Filter(predicate func(*Document) bool) DocumentSet {
 }
 
 // Find returns the first document matching the predicate.
-func (ds DocumentSet) Find(predicate func(*Document) bool) (*Document, bool) {
+func (ds DocumentSet) Find(predicate func(Documenter) bool) (Documenter, bool) {
 	for _, doc := range ds {
 		if predicate(doc) {
 			return doc, true
@@ -106,7 +112,7 @@ func (ds DocumentSet) Find(predicate func(*Document) bool) (*Document, bool) {
 
 // Where returns documents where the specified key equals the value.
 func (ds DocumentSet) Where(key string, value any) DocumentSet {
-	return ds.Filter(func(d *Document) bool {
+	return ds.Filter(func(d Documenter) bool {
 		val, err := d.Get(key)
 		if err != nil {
 			return false

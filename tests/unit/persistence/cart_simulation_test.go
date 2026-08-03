@@ -36,7 +36,7 @@ func newCartTestSchema(name string) *definition.Schema {
 	}
 }
 
-func setupCartTest(t *testing.T) (base.Persistence, *data.Document, func()) {
+func setupCartTest(t *testing.T) (base.Persistence, data.Documenter, func()) {
 	interactor := ephemeral.NewEphemeral()
 
 	logger := zap.NewNop()
@@ -96,8 +96,8 @@ func TestCartSimulation_Success(t *testing.T) {
 	p, d, cleanup := setupCartTest(t)
 	defer cleanup()
 
-	var sale data.Document
-	var payment data.Document
+	var sale data.Documenter
+	var payment data.Documenter
 	// Simulate a successful cart checkout
 	_, err := p.Transact(context.Background(), func(ctx context.Context, tx base.BasePersistence) (any, error) {
 		inventory, err := tx.Collection(ctx, "inventory")
@@ -137,7 +137,7 @@ func TestCartSimulation_Success(t *testing.T) {
 			t.Logf("Error creating sales record: %v", err)
 		}
 		require.NoError(t, err)
-		sale = *s.Data
+		sale = s.Data
 
 		// 4. Create payment record
 		p, err := payments.CreateOne(ctx, data.MustNewDocument(map[string]any{"saleId": "sale1", "amount": 100}))
@@ -145,7 +145,7 @@ func TestCartSimulation_Success(t *testing.T) {
 			t.Logf("Error creating payment record: %v", err)
 		}
 		require.NoError(t, err)
-		payment = *p.Data
+		payment = p.Data
 
 		return nil, nil
 	})

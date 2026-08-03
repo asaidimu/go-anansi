@@ -11,7 +11,7 @@
 // This file is overwritten on each codegen run — never edit it directly.
 
 import (
-	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/types/decimal"
 	"context"
 	"sync"
@@ -61,9 +61,10 @@ type OrderPayloadUnion struct {
 }
 
 type Order struct {
-    data.DocumentModel
+    document.DocumentModel
     Tags []string
     ID string
+    ModelID string `json:"id,omitempty" anansi:"_id_,required=true,omitempty"`
     Combo *OrderComboComposite
     Meta map[string]any
     Payload *OrderPayloadUnion
@@ -71,11 +72,17 @@ type Order struct {
     Shipping *Address
     Status *OrderStatusEnum
     Total *decimal.Decimal
+    Metadata map[string]any `json:"metadata,omitempty" anansi:"_metadata_,required=true,omitempty"`
+}
+
+// GetID returns the document identifier for Order.
+func (m *Order) GetID() string {
+    return m.ModelID
 }
 
 // NewOrder creates and initializes a new Order
 func NewOrder(model Order) *Order {
-    return data.New(&model)
+    return document.New(&model)
 }
 
 // Orders is a type-safe collection for Order
@@ -127,19 +134,33 @@ func OrdersModel() (*Orders, error) {
     }
     return ordersModel, nil
 }
+
+// Deprecated: DangerouslyResetOrdersModel clears the cached singleton so
+// InitOrdersModel can be called again — for example after rebuilding the
+// persistence layer in tests. It closes the previous instance's managed
+// cache, if any. Never use in production code.
+func DangerouslyResetOrdersModel() {
+    ordersModelMu.Lock()
+    defer ordersModelMu.Unlock()
+    if ordersModel == nil {
+        return
+    }
+    _ = ordersModel.Close()
+    ordersModel = nil
+}
 type OrderCreate struct {
-    data.DocumentModel
+    document.DocumentModel
     Total decimal.Decimal `input:"arguments.total" schema:"decimal:true"`
 }
 
 type OrderSummary struct {
-    data.DocumentModel
+    document.DocumentModel
     Status *OrderStatusEnum
     Total *decimal.Decimal
 }
 
 type OrderUpdate struct {
-    data.DocumentModel
+    document.DocumentModel
     Tags []string
     ID string
     Combo *OrderComboComposite

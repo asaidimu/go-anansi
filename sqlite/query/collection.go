@@ -19,7 +19,7 @@ func (t *createTableTree) Value() (string, []any, error) {
 
 	sc := (*t.schema)
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n", t.schema.Name))
+	sb.WriteString(fmt.Sprintf("CREATE TABLE IF NOT EXISTS %s (\n", quoteIdentifier(t.schema.Name)))
 
 
 	var columns []string

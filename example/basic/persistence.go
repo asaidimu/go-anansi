@@ -57,7 +57,7 @@ func (app *App) Init() (func(), error) {
 
 // UseModel is a generic function to get or create a model singleton.
 // It uses a factory function to construct the model if it doesn't exist.
-func UseModel[T any](app *App, name string, factory func(base.Collection) *T) (*T, error) {
+func UseModel[T any](app *App, name string, factory func(base.Collection) (*T, error)) (*T, error) {
 	app.mu.Lock()
 	defer app.mu.Unlock()
 
@@ -73,40 +73,49 @@ func UseModel[T any](app *App, name string, factory func(base.Collection) *T) (*
 	}
 
 	// Use the factory to create a new instance of the model.
-	model := factory(collection)
+	model, err := factory(collection)
+	if err != nil {
+		return nil, err
+	}
 	app.models[name] = model
 	return model, nil
 }
 
 // ProductsModel returns a singleton instance of the Products model.
 func (app *App) ProductsModel() (*Products, error) {
-	return UseModel(app, ProductsCollectionName, func(raw base.Collection) *Products {
-		mc, _ := collection.NewModelCollection[*Product](raw, app.Logger)
-		return &Products{ModelCollection: mc}
+	return UseModel(app, ProductsCollectionName, func(raw base.Collection) (*Products, error) {
+		mc, err := collection.NewModelCollection[*Product](raw, app.Logger)
+		if err != nil {
+			return nil, err
+		}
+		return &Products{ModelCollection: mc}, nil
 	})
 }
 
 // UsersModel returns a singleton instance of the Users model.
 func (app *App) UsersModel() (*Users, error) {
-	return UseModel(app, UsersCollectionName, func(raw base.Collection) *Users {
-		wrappedUsersModel := raw // we can wrap this in custom functionality here
-		mc, err := collection.NewModelCollection[*User](wrappedUsersModel, app.Logger,
+	return UseModel(app, UsersCollectionName, func(raw base.Collection) (*Users, error) {
+		// we can wrap this in custom functionality here
+		mc, err := collection.NewModelCollection[*User](raw, app.Logger,
 			collection.ModelCollectionOptions[*User]{
 				CacheConfig: &cache.CacheConfig{MaxEntries: 100},
 				AutoLoad:    true,
 			},
 		)
 		if err != nil {
-			return nil
+			return nil, err
 		}
-		return &Users{ModelCollection: mc}
+		return &Users{ModelCollection: mc}, nil
 	})
 }
 
 // CartsModel returns a singleton instance of the Carts model.
 func (app *App) CartsModel() (*Carts, error) {
-	return UseModel(app, CartsCollectionName, func(raw base.Collection) *Carts {
-		mc, _ := collection.NewModelCollection[*Cart](raw, app.Logger)
-		return &Carts{ModelCollection: mc}
+	return UseModel(app, CartsCollectionName, func(raw base.Collection) (*Carts, error) {
+		mc, err := collection.NewModelCollection[*Cart](raw, app.Logger)
+		if err != nil {
+			return nil, err
+		}
+		return &Carts{ModelCollection: mc}, nil
 	})
 }

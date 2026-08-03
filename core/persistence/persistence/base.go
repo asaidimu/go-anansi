@@ -573,11 +573,26 @@ func applyDDLInPlace(ctx context.Context, interactor query.DatabaseInteractor, c
 				return fmt.Errorf("drop constraint not supported by backend")
 			}
 
-		case definition.ConstraintModified, definition.SchemaAdded, definition.SchemaRemoved,
-			definition.SchemaModified, definition.MetadataAdded, definition.MetadataModified,
+		case definition.ConstraintModified, definition.MetadataAdded, definition.MetadataModified,
 			definition.MetadataRemoved, definition.RootModified, definition.IndexModified:
 			// These are schema-level metadata changes that don't have a direct DDL equivalent.
 			// For PhaseSchemaOnly we allow them (they'll be recorded in the new schema version).
+			continue
+
+		case definition.SchemaAdded, definition.SchemaRemoved:
+			// Adding/removing a nested schema changes the physical table tree and
+			// cannot be expressed as in-place DDL on the parent collection.
+			return fmt.Errorf("nested schema add/remove requires full migration")
+
+		case definition.SchemaModified:
+			for _, op := range change.Forward {
+				if definition.IsNestedEntityPath(op.Path) {
+					// A nested field/index/constraint changed: it requires the
+					// nested table tree to be recreated from the target schema.
+					return fmt.Errorf("nested schema entity change requires full migration")
+				}
+			}
+			// Root-property-only changes (name/description/type/values) are metadata.
 			continue
 		}
 	}
@@ -622,8 +637,19 @@ func canApplyAllInPlace(diff *definition.SchemaDiff, se query.SchemaEvolution) b
 			if !se.DropConstraint {
 				return false
 			}
-		case definition.ConstraintModified, definition.SchemaAdded, definition.SchemaRemoved,
-			definition.SchemaModified, definition.MetadataAdded, definition.MetadataModified,
+		case definition.SchemaAdded, definition.SchemaRemoved:
+			// Nested schema add/remove recreates the nested table tree; not in-place safe.
+			return false
+		case definition.SchemaModified:
+			for _, op := range change.Forward {
+				if definition.IsNestedEntityPath(op.Path) {
+					// Nested field/index/constraint changes need a table-tree
+					// rebuild; not in-place safe.
+					return false
+				}
+			}
+			// Root-property-only changes have no DDL equivalent; safe for schema-only.
+		case definition.ConstraintModified, definition.MetadataAdded, definition.MetadataModified,
 			definition.MetadataRemoved, definition.RootModified, definition.IndexModified:
 			// These are schema-level or metadata changes that have no DDL equivalent.
 			// They are always safe for schema-only phase.

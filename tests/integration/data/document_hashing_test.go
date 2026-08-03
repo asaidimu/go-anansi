@@ -24,7 +24,7 @@ func TestDocumentHashingIntegrity(t *testing.T) {
 	require.NotNil(t, initialDoc)
 
 	// 2. Insert the document
-	results, err := col.CreateMany(ctx, []*data.Document{initialDoc})
+	results, err := col.CreateMany(ctx, []data.Documenter{initialDoc})
 	require.NoError(t, err)
 
 	resultSet := base.CreateResultSet(results)

@@ -30,8 +30,10 @@ import (
 // Metadata Provider Types
 // ============================================================================
 
-// MetadataProvider is a function that returns metadata to be merged into a document.
-type MetadataProvider func(ctx context.Context, doc *Document) (map[string]any, error)
+// MetadataProvider is a function that returns metadata to be merged into a
+// document. It receives the document being built as a Documenter so both
+// container-backed and map-backed implementations can serve as provider inputs.
+type MetadataProvider func(ctx context.Context, doc Documenter) (map[string]any, error)
 
 // MetadataProviderConfig holds a nested schema, its dependencies and its corresponding provider.
 type MetadataProviderConfig struct {
@@ -273,12 +275,12 @@ func (f *documentFactory) newDocument(ctx context.Context, inputData map[string]
 	}
 
 	// Step 5: Apply metadata providers
-	if err := f.applyMetadataProviders(ctx, doc); err != nil {
+	if err := ApplyMetadataProviders(ctx, doc); err != nil {
 		return nil, err
 	}
 
 	// Step 6: Normalize and preserve context
-	normalizedDoc := doc.Normalize()
+	normalizedDoc := doc.Normalize().(*Document)
 
 	// Step 7: Calculate hash based on document with complete metadata
 	if err := normalizedDoc.Hash(); err != nil {
@@ -327,8 +329,15 @@ func (f *documentFactory) extractOrCreateMetadata(data map[string]any) map[strin
 	return metadata
 }
 
-// applyMetadataProviders applies all configured metadata providers to the document.
-func (f *documentFactory) applyMetadataProviders(ctx context.Context, doc *Document) error {
+// ApplyMetadataProviders runs every configured metadata provider against d and
+// merges the returned metadata into it. Providers may not set reserved system
+// fields. It is the single application point for provider metadata — the
+// map-backed and container-backed document layers both use it.
+func ApplyMetadataProviders(ctx context.Context, d Documenter) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	f := getFactory()
 	// Copy provider configs while holding lock, then release immediately
 	f.mu.RLock()
 	providers := make([]MetadataProviderConfig, len(f.config.Providers))
@@ -337,10 +346,10 @@ func (f *documentFactory) applyMetadataProviders(ctx context.Context, doc *Docum
 
 	// Apply user-defined metadata providers without holding the lock
 	for _, providerConfig := range providers {
-		providerMeta, err := providerConfig.Provider(ctx, doc)
+		providerMeta, err := providerConfig.Provider(ctx, d)
 		if err != nil {
 			return common.SystemErrorFrom(ErrMetadataProviderFailed).
-				WithOperation("data.documentFactory.applyMetadataProviders").
+				WithOperation("data.ApplyMetadataProviders").
 				WithMessagef("metadata provider %q failed", providerConfig.Name).
 				WithCause(err)
 		}
@@ -352,16 +361,20 @@ func (f *documentFactory) applyMetadataProviders(ctx context.Context, doc *Docum
 		for key := range providerMeta {
 			if isReservedMetadataField(key) {
 				return common.SystemErrorFrom(ErrInvalidMetadata).
-					WithOperation("data.documentFactory.applyMetadataProviders").
+					WithOperation("data.ApplyMetadataProviders").
 					WithMessagef("provider %q attempted to set reserved field %q", providerConfig.Name, key)
 			}
 		}
 
 		// Merge provider metadata
-		if doc.metadata == nil {
-			doc.metadata = make(map[string]any)
+		for key, value := range providerMeta {
+			if err := d.SetMetadataValue(key, value); err != nil {
+				return common.SystemErrorFrom(ErrInvalidMetadata).
+					WithOperation("data.ApplyMetadataProviders").
+					WithPath(key).
+					WithCause(err)
+			}
 		}
-		maps.Copy(doc.metadata, providerMeta)
 	}
 
 	return nil
@@ -446,10 +459,10 @@ func (f *documentFactory) calculateHash(doc *Document) (string, error) {
 	dataToHash := doc.Clone()
 
 	// Remove checksum and signature from metadata for hash calculation
-	if dataToHash.metadata != nil {
-		delete(dataToHash.metadata, MetadataSignature)
-		delete(dataToHash.metadata, MetadataChecksum)
-	}
+	md := dataToHash.Metadata()
+	delete(md, MetadataSignature)
+	delete(md, MetadataChecksum)
+	dataToHash.SetMetadata(md)
 
 	// Use canonicalMarshal to ensure consistent key ordering for hashing
 	toHash, err := canonicalMarshal(dataToHash)
@@ -468,10 +481,10 @@ func (f *documentFactory) calculateHash(doc *Document) (string, error) {
 func (f *documentFactory) signDocument(doc *Document, privateKey *rsa.PrivateKey) (string, error) {
 	// Clone document and remove signature/checksum
 	docToSign := doc.Clone()
-	if docToSign.metadata != nil {
-		delete(docToSign.metadata, MetadataSignature)
-		delete(docToSign.metadata, MetadataChecksum)
-	}
+	md := docToSign.Metadata()
+	delete(md, MetadataSignature)
+	delete(md, MetadataChecksum)
+	docToSign.SetMetadata(md)
 
 	// Marshal the document to a canonical byte slice
 	canonicalBytes, err := canonicalMarshal(docToSign)
@@ -509,10 +522,10 @@ func (f *documentFactory) verifySignature(doc *Document, publicKey *rsa.PublicKe
 
 	// Clone document and remove signature/checksum
 	docToVerify := doc.Clone()
-	if docToVerify.metadata != nil {
-		delete(docToVerify.metadata, MetadataSignature)
-		delete(docToVerify.metadata, MetadataChecksum)
-	}
+	md := docToVerify.Metadata()
+	delete(md, MetadataSignature)
+	delete(md, MetadataChecksum)
+	docToVerify.SetMetadata(md)
 
 	// Marshal the document to a canonical byte slice
 	canonicalBytes, err := canonicalMarshal(docToVerify)

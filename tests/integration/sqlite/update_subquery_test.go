@@ -12,7 +12,7 @@ import (
 )
 
 func TestUpdateWithScalarSubquery(t *testing.T) {
-	// Test: UPDATE employees SET salary = (SELECT AVG(salary) FROM employees WHERE department = 'Engineering')
+	// Test: UPDATE employees SET salary = (SELECT AVG(salary) FROM "employees" WHERE department = 'Engineering')
 	// WHERE id = 'emp1'
 
 	employeesSchema := &definition.Schema{
@@ -75,14 +75,14 @@ func TestUpdateWithScalarSubquery(t *testing.T) {
 	value, err := factory.Build(q, native.StmtUpdate, updatePayload)
 	require.NoError(t, err)
 
-	expectedSQL := `UPDATE "employees" SET "salary" = (SELECT AVG("salary") FROM employees WHERE "department" = $1) WHERE "id" = $2`
+	expectedSQL := `UPDATE "employees" SET "salary" = (SELECT AVG("salary") FROM "employees" WHERE "department" = $1) WHERE "id" = $2`
 	assert.Equal(t, expectedSQL, value.Raw().SQL)
 	assert.Equal(t, []any{"Engineering", "emp1"}, value.Raw().Params)
 }
 
 func TestUpdateWithSubqueryInWHERE(t *testing.T) {
 	// Test: UPDATE employees SET bonus = 1000
-	// WHERE department_id IN (SELECT id FROM departments WHERE budget > 100000)
+	// WHERE department_id IN (SELECT id FROM "departments" WHERE budget > 100000)
 
 	employeesSchema := &definition.Schema{
 		BaseSchema: definition.BaseSchema{
@@ -156,15 +156,15 @@ func TestUpdateWithSubqueryInWHERE(t *testing.T) {
 	value, err := factory.Build(q, native.StmtUpdate, updatePayload)
 	require.NoError(t, err)
 
-	expectedSQL := `UPDATE "employees" SET "bonus" = $1 WHERE "department_id" IN (SELECT "id" FROM departments WHERE "budget" > $2)`
+	expectedSQL := `UPDATE "employees" SET "bonus" = $1 WHERE "department_id" IN (SELECT "id" FROM "departments" WHERE "budget" > $2)`
 	assert.Equal(t, expectedSQL, value.Raw().SQL)
 	assert.Equal(t, []any{1000.0, 100000.0}, value.Raw().Params)
 }
 
 func TestUpdateWithSubqueryContainingJoin(t *testing.T) {
 	// Test: UPDATE employees SET salary = (
-	//   SELECT AVG(e.salary) FROM employees e
-	//   INNER JOIN departments d ON e.department_id = d.id
+	//   SELECT AVG(e.salary) FROM "employees" e
+	//   INNER JOIN "departments" d ON e.department_id = d.id
 	//   WHERE d.name = 'Engineering'
 	// )
 	// WHERE id = 'emp1'
@@ -265,8 +265,8 @@ func TestUpdateWithSubqueryContainingJoin(t *testing.T) {
 
 	sqlStr := value.Raw().SQL
 	assert.Contains(t, sqlStr, `UPDATE "employees"`)
-	assert.Contains(t, sqlStr, `SET "salary" = (SELECT AVG("e"."salary") FROM employees AS e`)
-	assert.Contains(t, sqlStr, `INNER JOIN departments AS d ON "e"."department_id" = "d"."id"`)
+	assert.Contains(t, sqlStr, `SET "salary" = (SELECT AVG("e"."salary") FROM "employees" AS "e"`)
+	assert.Contains(t, sqlStr, `INNER JOIN "departments" AS "d" ON "e"."department_id" = "d"."id"`)
 	assert.Contains(t, sqlStr, `WHERE "d"."name" = $1)`)
 	assert.Contains(t, sqlStr, `WHERE "id" = $2`)
 	assert.Equal(t, []any{"Engineering", "emp1"}, value.Raw().Params)
@@ -274,9 +274,9 @@ func TestUpdateWithSubqueryContainingJoin(t *testing.T) {
 
 func TestUpdateWithNestedSubqueries(t *testing.T) {
 	// Test: UPDATE employees SET salary = (
-	//   SELECT AVG(salary) FROM employees
+	//   SELECT AVG(salary) FROM "employees"
 	//   WHERE department_id IN (
-	//     SELECT id FROM departments WHERE region = 'West'
+	//     SELECT id FROM "departments" WHERE region = 'West'
 	//   )
 	// )
 	// WHERE id = 'emp1'
@@ -373,14 +373,14 @@ func TestUpdateWithNestedSubqueries(t *testing.T) {
 	value, err := factory.Build(q, native.StmtUpdate, updatePayload)
 	require.NoError(t, err)
 
-	expectedSQL := `UPDATE "employees" SET "salary" = (SELECT AVG("salary") FROM employees WHERE "department_id" IN (SELECT "id" FROM departments WHERE "region" = $1)) WHERE "id" = $2`
+	expectedSQL := `UPDATE "employees" SET "salary" = (SELECT AVG("salary") FROM "employees" WHERE "department_id" IN (SELECT "id" FROM "departments" WHERE "region" = $1)) WHERE "id" = $2`
 	assert.Equal(t, expectedSQL, value.Raw().SQL)
 	assert.Equal(t, []any{"West", "emp1"}, value.Raw().Params)
 }
 
 func TestUpdateWithCorrelatedSubquery(t *testing.T) {
 	// Test: UPDATE employees e1 SET salary = (
-	//   SELECT AVG(e2.salary) FROM employees e2
+	//   SELECT AVG(e2.salary) FROM "employees" e2
 	//   WHERE e2.department_id = e1.department_id
 	// )
 	// WHERE e1.id = 'emp1'
@@ -459,8 +459,8 @@ func TestUpdateWithCorrelatedSubquery(t *testing.T) {
 
 func TestUpdateMultipleFieldsWithSubqueries(t *testing.T) {
 	// Test: UPDATE employees SET
-	//   salary = (SELECT AVG(salary) FROM employees WHERE department = 'Engineering'),
-	//   bonus = (SELECT MAX(bonus) FROM employees WHERE department = 'Sales')
+	//   salary = (SELECT AVG(salary) FROM "employees" WHERE department = 'Engineering'),
+	//   bonus = (SELECT MAX(bonus) FROM "employees" WHERE department = 'Sales')
 	// WHERE id = 'emp1'
 
 	employeesSchema := &definition.Schema{
@@ -548,8 +548,8 @@ func TestUpdateMultipleFieldsWithSubqueries(t *testing.T) {
 
 	sqlStr := value.Raw().SQL
 	// Both subqueries should be present
-	assert.Contains(t, sqlStr, `"bonus" = (SELECT MAX("bonus") FROM employees WHERE "department" = $1)`)
-	assert.Contains(t, sqlStr, `"salary" = (SELECT AVG("salary") FROM employees WHERE "department" = $2)`)
+	assert.Contains(t, sqlStr, `"bonus" = (SELECT MAX("bonus") FROM "employees" WHERE "department" = $1)`)
+	assert.Contains(t, sqlStr, `"salary" = (SELECT AVG("salary") FROM "employees" WHERE "department" = $2)`)
 	assert.Contains(t, sqlStr, `WHERE "id" = $3`)
 
 	// Verify all three parameters are present

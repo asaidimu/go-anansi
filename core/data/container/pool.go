@@ -70,6 +70,19 @@ func (p *Pool) Put(doc *DataContainer) {
 	p.pool.Put(doc)
 }
 
+// Clone returns a deep copy of src allocated from the pool. Array-object
+// children are copied recursively from the same pool, so the copy shares no
+// child pointers with src. The caller owns the returned container and must
+// return it to the pool with Put (or via the owning document's Release).
+func (p *Pool) Clone(src *DataContainer) (*DataContainer, error) {
+	dst := p.Get()
+	if err := copyDataContainer(src, dst, p); err != nil {
+		p.Put(dst)
+		return nil, err
+	}
+	return dst, nil
+}
+
 // Acquire is a convenience wrapper that gets a document, calls f with it,
 // then returns it to the pool regardless of whether f returns an error.
 // This is the recommended pattern for request handlers.

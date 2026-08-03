@@ -75,7 +75,7 @@ func (d *securityDecorator) checkAccess(ctx context.Context, doc *data.Document)
 	return nil
 }
 
-func (d *securityDecorator) getOwnerId(doc *data.Document) (string, error) {
+func (d *securityDecorator) getOwnerId(doc data.Documenter) (string, error) {
 	ownerID, err := doc.GetString("ownerId")
 
 	if err != nil {
@@ -87,7 +87,7 @@ func (d *securityDecorator) getOwnerId(doc *data.Document) (string, error) {
 	return ownerID, nil
 }
 
-func (d *securityDecorator) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
+func (d *securityDecorator) CreateOne(ctx context.Context, doc data.Documenter) (base.CreateResult, error) {
 	// For creation, ensure the ownerId matches the user in context if provided
 	if ownerID, err := d.getOwnerId(doc); err == nil {
 		userID, err := d.getUserIDFromContext(ctx)
@@ -101,7 +101,7 @@ func (d *securityDecorator) CreateOne(ctx context.Context, doc *data.Document) (
 	return d.Collection.CreateOne(ctx, doc)
 }
 
-func (d *securityDecorator) CreateMany(ctx context.Context, docs []*data.Document) ([]base.CreateResult, error) {
+func (d *securityDecorator) CreateMany(ctx context.Context, docs []data.Documenter) ([]base.CreateResult, error) {
 	for _, doc := range docs {
 		if ownerID, err := d.getOwnerId(doc); err == nil {
 			userID, err := d.getUserIDFromContext(ctx)

@@ -42,7 +42,7 @@ func main() {
 
 	// Seed data
 	coll, _ := p.Collection(ctx, "Products")
-	docs, _ := coll.CreateMany(ctx, []*data.Document{
+	docs, _ := coll.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"name": "Widget", "price": 9.99, "stock": 100}),
 		data.MustNewDocument(map[string]any{"name": "Gadget", "price": 24.99, "stock": 50}),
 	})

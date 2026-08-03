@@ -204,7 +204,7 @@ func TestPersistence_Transact(t *testing.T) {
 	accounts, err := p.CreateCollection(context.Background(), sc)
 	require.NoError(t, err)
 
-	_, err = accounts.CreateMany(context.Background(), []*data.Document{
+	_, err = accounts.CreateMany(context.Background(), []data.Documenter{
 		data.MustNewDocument(map[string]any{"name": "Alice", "balance": 100.0}),
 		data.MustNewDocument(map[string]any{"name": "Bob", "balance": 50.0}),
 	})
@@ -489,7 +489,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	bob := data.MustNewDocument(
 		map[string]any{"name": "Bob", "balance": 100.0},
 	)
-	_, err = accounts.CreateMany(context.Background(), []*data.Document{alice, bob})
+	_, err = accounts.CreateMany(context.Background(), []data.Documenter{alice, bob})
 
 	require.NoError(t, err)
 
@@ -578,7 +578,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	require.NoError(t, err)
 
 	// 3. Insert Data
-	_, err = usersCollection.CreateMany(context.Background(), []*data.Document{
+	_, err = usersCollection.CreateMany(context.Background(), []data.Documenter{
 		data.MustNewDocument(map[string]any{"uid": "user1", "name": "Alice"}),
 		data.MustNewDocument(map[string]any{"uid": "user2", "name": "Bob"}),
 		data.MustNewDocument(map[string]any{"uid": "user3", "name": "Charlie"}),
@@ -586,7 +586,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = profilesCollection.CreateMany(context.Background(), []*data.Document{
+	_, err = profilesCollection.CreateMany(context.Background(), []data.Documenter{
 		data.MustNewDocument(map[string]any{"user": "user1", "bio": "Loves Go programming"}),
 		data.MustNewDocument(map[string]any{"user": "user2", "bio": "Enjoys testing"}),
 	})
@@ -698,7 +698,7 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 	// 3. Insert Data
 	usersCollection, err := p.Collection(ctx, "users")
 	require.NoError(t, err)
-	_, err = usersCollection.CreateMany(context.Background(), []*data.Document{
+	_, err = usersCollection.CreateMany(context.Background(), []data.Documenter{
 		data.MustNewDocument(map[string]any{"uid": "user1", "name": "Alice"}),
 		data.MustNewDocument(map[string]any{"uid": "user2", "name": "Bob"}),
 		data.MustNewDocument(map[string]any{"uid": "user3", "name": "Charlie"}),
@@ -707,7 +707,7 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 
 	ordersCollection, err := p.Collection(ctx, "orders")
 	require.NoError(t, err)
-	_, err = ordersCollection.CreateMany(ctx, []*data.Document{
+	_, err = ordersCollection.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"order_id": "orderA", "user_id": "user1", "amount": 100.0}),
 		data.MustNewDocument(map[string]any{"order_id": "orderB", "user_id": "user2", "amount": 200.0}),
 		data.MustNewDocument(map[string]any{"order_id": "orderC", "user_id": "user1", "amount": 150.0}),
@@ -787,7 +787,7 @@ func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {
 	require.NoError(t, err)
 
 	// 3. Insert Data
-	_, err = productsCollection.CreateMany(ctx, []*data.Document{
+	_, err = productsCollection.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"pid": "prod1", "name": "Laptop", "price": 1200.0}),
 		data.MustNewDocument(map[string]any{"pid": "prod2", "name": "Mouse", "price": 25.0}),
 		data.MustNewDocument(map[string]any{"pid": "prod3", "name": "Keyboard", "price": 75.0}),

@@ -81,7 +81,7 @@ type negativeAmountValidator struct {
 // Ensure negativeAmountValidator implements base.Collection
 var _ base.Collection = (*negativeAmountValidator)(nil)
 
-func (d *negativeAmountValidator) validateAmount(doc *data.Document) error {
+func (d *negativeAmountValidator) validateAmount(doc data.Documenter) error {
 	// 1. Check if the "amount" key even exists in this document/update.
 	// If it's missing, we skip validation (typical for partial updates).
 	if !doc.HasKey("amount") {
@@ -106,14 +106,14 @@ func (d *negativeAmountValidator) validateAmount(doc *data.Document) error {
 	return nil
 }
 
-func (d *negativeAmountValidator) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
+func (d *negativeAmountValidator) CreateOne(ctx context.Context, doc data.Documenter) (base.CreateResult, error) {
 	if err := d.validateAmount(doc); err != nil {
 		return base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: []common.Issue{{Message: err.Error()}}}, err
 	}
 	return d.Collection.CreateOne(ctx, doc)
 }
 
-func (d *negativeAmountValidator) CreateMany(ctx context.Context, docs []*data.Document) ([]base.CreateResult, error) {
+func (d *negativeAmountValidator) CreateMany(ctx context.Context, docs []data.Documenter) ([]base.CreateResult, error) {
 	for _, doc := range docs {
 		if err := d.validateAmount(doc); err != nil {
 			return nil, err // Or return a partial result with errors
@@ -214,7 +214,7 @@ func main() {
 	logger.Info("Populating data...")
 	user1 := data.MustNewDocument(map[string]any{"_id_": "U001", "name": "Alice", "email": "alice@example.com"})
 	user2 := data.MustNewDocument(map[string]any{"_id_": "U002", "name": "Bob", "email": "bob@example.com"})
-	_, err = usersCollection.CreateMany(ctx, []*data.Document{user1, user2})
+	_, err = usersCollection.CreateMany(ctx, []data.Documenter{user1, user2})
 	if err != nil {
 		log.Fatalf("Failed to create users: %v", err)
 	}
@@ -222,7 +222,7 @@ func main() {
 
 	account1 := data.MustNewDocument(map[string]any{"_id_": "A001", "userId": "U001", "balance": 1000.00})
 	account2 := data.MustNewDocument(map[string]any{"_id_": "A002", "userId": "U002", "balance": 500.00})
-	_, err = accountsCollection.CreateMany(ctx, []*data.Document{account1, account2})
+	_, err = accountsCollection.CreateMany(ctx, []data.Documenter{account1, account2})
 	if err != nil {
 		log.Fatalf("Failed to create accounts: %v", err)
 	}
@@ -231,7 +231,7 @@ func main() {
 	// Create valid transactions
 	tx1 := data.MustNewDocument(map[string]any{"_id_": "T001", "accountId": "A001", "amount": 200.00, "type": "deposit", "timestamp": time.Now().Unix()})
 	tx2 := data.MustNewDocument(map[string]any{"_id_": "T002", "accountId": "A002", "amount": 50.00, "type": "withdrawal", "timestamp": time.Now().Unix()})
-	_, err = transactionsCollection.CreateMany(ctx, []*data.Document{tx1, tx2})
+	_, err = transactionsCollection.CreateMany(ctx, []data.Documenter{tx1, tx2})
 	if err != nil {
 		log.Fatalf("Failed to create valid transactions: %v", err)
 	}

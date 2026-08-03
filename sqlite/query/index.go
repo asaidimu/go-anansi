@@ -8,7 +8,6 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
-
 func (f *sqliteFactory) buildCreateIndexTree(q *query.Query, extra any) (SQLNode, error) {
 	index, ok := extra.(*definition.Index)
 	if !ok {
@@ -30,7 +29,7 @@ func (t *createIndexTree) Value() (string, []any, error) {
 		return "", nil, ErrIndexIndexNotDefined
 	}
 
-	collection := t.collection
+	collection := quoteIdentifier(t.collection)
 	index := t.index
 
 	var sb strings.Builder
@@ -91,5 +90,5 @@ func (t *dropIndexTree) Value() (string, []any, error) {
 		return "", nil, ErrIndexIndexNotDefined
 	}
 
-	return fmt.Sprintf("DROP INDEX IF EXISTS %s;", t.index.Name), nil, nil
+	return fmt.Sprintf("DROP INDEX IF EXISTS %s;", quoteIdentifier(t.index.Name)), nil, nil
 }

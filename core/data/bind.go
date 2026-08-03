@@ -50,6 +50,103 @@ var (
 	typeCache    sync.Map // map[typeCacheKey]*cachedTypeInfo
 )
 
+// Registered system-model embed types beyond data.DocumentModel. Packages that
+// provide their own embedded model (e.g. document.DocumentModel) register it so
+// struct binding, struct extraction, and DTO schema generation treat it exactly
+// like data.DocumentModel.
+type systemModelRegistration struct {
+	typ reflect.Type
+	// linkParent restores the embedded model's parent-struct reference after
+	// binding so promoted methods (Document, Patch) work on materialized
+	// results. It is provided by the registering package, keeping parent
+	// manipulation internal to that package.
+	linkParent func(embed any, parent any)
+}
+
+var (
+	systemModelRegistrationsMu sync.RWMutex
+	systemModelRegistrations   = []systemModelRegistration{
+		{typ: docModelType, linkParent: linkDocumentModelParent},
+	}
+)
+
+func linkDocumentModelParent(embed any, parent any) {
+	if dm, ok := embed.(*DocumentModel); ok {
+		dm.parent = parent
+	}
+}
+
+// RegisterSystemModelType registers an embedded model type that carries system
+// document fields (_id_, _metadata_) and must be treated like data.DocumentModel
+// by struct binding, struct extraction, and DTO schema generation. Register at
+// package init, before any documents are built.
+//
+// linkParent restores the embedded model's parent-struct reference after
+// binding, enabling promoted methods (e.g. Document, Patch) on materialized read
+// results. It lives in the registering package so parent manipulation stays
+// internal; pass nil to skip parent linking.
+func RegisterSystemModelType(t reflect.Type, linkParent func(embed any, parent any)) {
+	systemModelRegistrationsMu.Lock()
+	defer systemModelRegistrationsMu.Unlock()
+	for _, existing := range systemModelRegistrations {
+		if existing.typ == t {
+			return
+		}
+	}
+	systemModelRegistrations = append(systemModelRegistrations, systemModelRegistration{typ: t, linkParent: linkParent})
+}
+
+// isSystemModelType reports whether t is a registered system-model embed.
+func isSystemModelType(t reflect.Type) bool {
+	systemModelRegistrationsMu.RLock()
+	defer systemModelRegistrationsMu.RUnlock()
+	for _, reg := range systemModelRegistrations {
+		if reg.typ == t {
+			return true
+		}
+	}
+	return false
+}
+
+// linkSystemModelParents restores the parent reference on every embedded
+// registered system model within outer, so promoted methods can access the
+// outer struct on read-back results.
+func linkSystemModelParents(outer reflect.Value, parent any) {
+	systemModelRegistrationsMu.RLock()
+	defer systemModelRegistrationsMu.RUnlock()
+	for _, reg := range systemModelRegistrations {
+		if reg.linkParent == nil {
+			continue
+		}
+		if idx, ok := findEmbeddedTypeIndex(outer.Type(), reg.typ); ok {
+			fv := outer.FieldByIndex(idx)
+			if fv.Kind() == reflect.Struct && fv.CanAddr() {
+				reg.linkParent(fv.Addr().Interface(), parent)
+			}
+		}
+	}
+}
+
+// findEmbeddedTypeIndex returns the field index path of the first anonymous
+// embed of type target within t, or (nil, false).
+func findEmbeddedTypeIndex(t reflect.Type, target reflect.Type) ([]int, bool) {
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !f.Anonymous {
+			continue
+		}
+		if f.Type == target {
+			return []int{i}, true
+		}
+		if f.Type.Kind() == reflect.Struct {
+			if sub, ok := findEmbeddedTypeIndex(f.Type, target); ok {
+				return append([]int{i}, sub...), true
+			}
+		}
+	}
+	return nil, false
+}
+
 // ============================================================================
 // Cached Type Metadata
 // ============================================================================
@@ -217,7 +314,7 @@ func buildTypeFields(t reflect.Type, indexPrefix []int, baseOffset uintptr, isSy
 
 		sysEmbed := isSystemEmbed
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
-			if f.Type == docModelType || ReservedSystemField(f.Name) {
+			if isSystemModelType(f.Type) || ReservedSystemField(f.Name) {
 				sysEmbed = true
 			}
 			subFields, err := buildTypeFields(f.Type, indexPath, fieldOffset, sysEmbed, tagChain)
@@ -377,10 +474,11 @@ func (sb *structBinder) bind(target any) error {
 		}
 	}
 
-	if provider, ok := target.(DocumentModelProvider); ok {
-		if dm := provider.Model(); dm != nil {
-			dm.parent = target
-		}
+	// Restore the parent reference on any embedded registered system model so
+	// promoted methods (Document, Patch) can access the outer struct on read-back
+	// results.
+	if rv.Kind() == reflect.Pointer && rv.Elem().Kind() == reflect.Struct {
+		linkSystemModelParents(rv.Elem(), target)
 	}
 
 	return nil
@@ -572,11 +670,33 @@ func compileSetter(fieldType reflect.Type, offset uintptr) fieldSetterFunc {
 // Struct to Map Conversion
 // ============================================================================
 
-func structToMap(s any, partial bool, tag string) (map[string]any, error) {
+// StructFieldValue pairs a tagged struct field's document path with its
+// normalized value.
+type StructFieldValue struct {
+	Path  string
+	Value any
+}
+
+// StructFieldValues walks s and returns each anansi-tagged field as a
+// (path, value) pair without materializing a map. When partial is true,
+// system-embedded fields (data.DocumentModel) and zero-valued fields are
+// skipped. This is the field-walking core shared with NewDocumentFromStruct;
+// callers can use it to populate other document implementations (e.g. a
+// container-backed document.Document) field-by-field.
+func StructFieldValues(s any, partial bool) ([]StructFieldValue, error) {
+	return structFieldValues(s, partial, "")
+}
+
+// StructFieldValuesWithTag is StructFieldValues with a custom struct tag name.
+func StructFieldValuesWithTag(s any, partial bool, tag string) ([]StructFieldValue, error) {
+	return structFieldValues(s, partial, tag)
+}
+
+func structFieldValues(s any, partial bool, tag string) ([]StructFieldValue, error) {
 	rv := reflect.ValueOf(s)
 	if rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
-			return make(map[string]any), nil
+			return nil, nil
 		}
 		rv = rv.Elem()
 	}
@@ -590,7 +710,7 @@ func structToMap(s any, partial bool, tag string) (map[string]any, error) {
 		return nil, sysErr
 	}
 
-	docData := make(map[string]any, len(fields))
+	out := make([]StructFieldValue, 0, len(fields))
 	for i := range fields {
 		fInfo := &fields[i]
 		if partial && fInfo.IsSystemEmbed {
@@ -606,11 +726,23 @@ func structToMap(s any, partial bool, tag string) (map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := setNestedMap(docData, fInfo.Name, value); err != nil {
+		out = append(out, StructFieldValue{Path: fInfo.Name, Value: value})
+	}
+	return out, nil
+}
+
+func structToMap(s any, partial bool, tag string) (map[string]any, error) {
+	values, err := structFieldValues(s, partial, tag)
+	if err != nil {
+		return nil, err
+	}
+
+	docData := make(map[string]any, len(values))
+	for _, fv := range values {
+		if err := setNestedMap(docData, fv.Path, fv.Value); err != nil {
 			return nil, err
 		}
 	}
-
 	return docData, nil
 }
 

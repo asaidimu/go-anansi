@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"time"
@@ -109,7 +110,7 @@ func main() {
 		Callback: func(ctx context.Context, event base.PersistenceEvent) error {
 			input, ok := data.DocumentFrom(event.Input)
 			if ok {
-				pretty, _ := input.ToJSON(true)
+				pretty, _ := json.MarshalIndent(input, "", "  ")
 				logger.Info(fmt.Sprintf("Product created in '%s' \n %s", *event.Collection, pretty))
 			}
 			return nil

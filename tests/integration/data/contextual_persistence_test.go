@@ -25,7 +25,7 @@ func setupTest(t *testing.T) (base.Collection, func()) {
 				},
 			},
 		},
-		Provider: func(ctx context.Context, _ *data.Document) (map[string]any, error) {
+		Provider: func(ctx context.Context, _ data.Documenter) (map[string]any, error) {
 			if traceID, ok := ctx.Value(testutils.TraceIDKey).(string); ok {
 				return map[string]any{"trace_id": traceID}, nil
 			}

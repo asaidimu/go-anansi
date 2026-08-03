@@ -1,0 +1,17 @@
+{
+  "schema": {
+    "glob": "schemas/**/*.schema.json",
+    "lockfile": "schemas.lock.json",
+    "migrations_dir": "migrations/"
+  },
+  "tsgen": {
+    "out": "types.ts"
+  },
+  "gogen": {
+    "mode": "full"
+  },
+  "metadata": {
+    "schema_path": "metadata.schema.json",
+    "out_dir": ""
+  }
+}

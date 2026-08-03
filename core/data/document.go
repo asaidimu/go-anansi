@@ -3,6 +3,7 @@ package data
 import (
 	"context"
 	"crypto/rsa"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -99,6 +100,8 @@ func convertToDocumentMap(data any) (map[string]any, error) {
 		return v.ToMap(), nil
 	case Document:
 		return v.ToMap(), nil
+	case DocumentReader:
+		return v.ToMap(), nil
 	default:
 		rv := reflect.ValueOf(data)
 		if rv.Kind() == reflect.Map && rv.Type().Key().Kind() == reflect.String {
@@ -154,10 +157,13 @@ func (d *Document) Context() context.Context {
 }
 
 // WithContext returns a new Document with the provided context.
-func (d *Document) WithContext(ctx context.Context) *Document {
-	newDoc := d.Clone()
-	newDoc.ctx = ctx
-	return newDoc
+func (d *Document) WithContext(ctx context.Context) Documenter {
+	return &Document{
+		id:       d.id,
+		ctx:      ctx,
+		data:     deepCloneValue(d.data).(map[string]any),
+		metadata: deepCloneValue(d.metadata).(map[string]any),
+	}
 }
 
 // Get retrieves a value from the document's user data with detailed error information.
@@ -211,6 +217,41 @@ func (d *Document) MustGet(key string) any {
 //	doc.SetMetadataValue("author", "me") // ✓ Correct way for metadata
 func (d *Document) Set(key string, value any) error {
 	return d.SetNested(key, value)
+}
+
+// Typed setters write straight to the underlying map. The map-backed document
+// has no schema, so no by-construction type check applies here — these exist
+// for API symmetry with container-backed documents and callers can rely on the
+// map storing exactly the value given.
+
+// SetString stores a string value.
+func (d *Document) SetString(key string, value string) error {
+	return d.Set(key, value)
+}
+
+// SetInt stores an integer value.
+func (d *Document) SetInt(key string, value int) error {
+	return d.Set(key, value)
+}
+
+// SetFloat64 stores a number value.
+func (d *Document) SetFloat64(key string, value float64) error {
+	return d.Set(key, value)
+}
+
+// SetBool stores a boolean value.
+func (d *Document) SetBool(key string, value bool) error {
+	return d.Set(key, value)
+}
+
+// SetStringArray stores an array of strings.
+func (d *Document) SetStringArray(key string, value []string) error {
+	return d.Set(key, value)
+}
+
+// SetIntArray stores an array of integers.
+func (d *Document) SetIntArray(key string, value []int) error {
+	return d.Set(key, value)
 }
 
 // Unset removes a key from the document's user data.
@@ -280,7 +321,7 @@ func (d *Document) GetTime(keyOrPath string) (time.Time, error) {
 }
 
 // GetDocument retrieves a nested document with path support.
-func (d *Document) GetDocument(keyOrPath string) (*Document, error) {
+func (d *Document) GetDocument(keyOrPath string) (Documenter, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(&Document{}), "GetDocument")
 	if err != nil {
 		return nil, err
@@ -289,12 +330,17 @@ func (d *Document) GetDocument(keyOrPath string) (*Document, error) {
 }
 
 // GetDocumentArray retrieves an array of documents with path support.
-func (d *Document) GetDocumentArray(keyOrPath string) ([]*Document, error) {
+func (d *Document) GetDocumentArray(keyOrPath string) ([]Documenter, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]*Document{}), "GetDocumentArray")
 	if err != nil {
 		return nil, err
 	}
-	return val.([]*Document), nil
+	docs := val.([]*Document)
+	result := make([]Documenter, len(docs))
+	for i, doc := range docs {
+		result[i] = doc
+	}
+	return result, nil
 }
 
 // GetStringArray retrieves a slice of strings with path support.
@@ -396,7 +442,7 @@ func (d *Document) Values() []any {
 }
 
 // Clone creates a deep copy of the document.
-func (d *Document) Clone() *Document {
+func (d *Document) Clone() Documenter {
 	if d == nil {
 		return nil
 	}
@@ -435,7 +481,7 @@ func deepCloneValue(v any) any {
 	case []*Document:
 		arr := make([]*Document, len(val))
 		for i, doc := range val {
-			arr[i] = doc.Clone()
+			arr[i] = doc.Clone().(*Document)
 		}
 		return arr
 	default:
@@ -444,19 +490,19 @@ func deepCloneValue(v any) any {
 }
 
 // Merge combines multiple documents. The receiving document is modified in place.
-func (d *Document) Merge(others ...*Document) {
+func (d *Document) Merge(others ...Documenter) {
 	for _, other := range others {
-		if other != nil && other.data != nil {
+		if other != nil {
 			if d.data == nil {
 				d.data = make(map[string]any)
 			}
-			maps.Copy(d.data, other.data)
+			maps.Copy(d.data, other.Data())
 		}
 	}
 }
 
 // DeepMerge performs a recursive merge of nested objects. The receiving document is modified in place.
-func (d *Document) DeepMerge(others ...*Document) {
+func (d *Document) DeepMerge(others ...Documenter) {
 	for _, other := range others {
 		if other != nil {
 			d.deepMergeInto(other)
@@ -465,11 +511,11 @@ func (d *Document) DeepMerge(others ...*Document) {
 }
 
 // deepMergeInto recursively merges the content of 'other' Document into 'd'.
-func (d *Document) deepMergeInto(other *Document) {
+func (d *Document) deepMergeInto(other Documenter) {
 	if d.data == nil {
 		d.data = make(map[string]any)
 	}
-	for k, v := range other.data {
+	for k, v := range other.Data() {
 		if existing, ok := d.data[k]; ok {
 			// If existing value is a Document struct, recurse
 			if existingDoc, ok := existing.(*Document); ok {
@@ -498,7 +544,7 @@ func (d *Document) String() string {
 	if d == nil {
 		return "Document{nil}"
 	}
-	data, err := d.ToJSON(true)
+	data, err := json.MarshalIndent(d, "", "  ")
 	if err != nil {
 		return fmt.Sprintf("Document{error: %v}", err)
 	}
@@ -542,28 +588,28 @@ func (d *Document) HasPath(keyOrPath string) bool {
 }
 
 // Is performs deep equality comparison on two documents, including ID and metadata.
-func (d *Document) Is(other *Document) bool {
+func (d *Document) Is(other Documenter) bool {
 	if d == nil && other == nil {
 		return true
 	}
 	if d == nil || other == nil {
 		return false
 	}
-	return d.id == other.id &&
-		reflect.DeepEqual(d.data, other.data) &&
-		reflect.DeepEqual(d.metadata, other.metadata)
+	return d.id == other.ID() &&
+		reflect.DeepEqual(d.data, other.Data()) &&
+		reflect.DeepEqual(d.metadata, other.Metadata())
 }
 
 // Equals performs content-only deep equality comparison on the user data,
 // ignoring auto-generated IDs and metadata.
-func (d *Document) Equals(other *Document) bool {
+func (d *Document) Equals(other Documenter) bool {
 	if d == nil && other == nil {
 		return true
 	}
 	if d == nil || other == nil {
 		return false
 	}
-	return reflect.DeepEqual(d.data, other.data)
+	return reflect.DeepEqual(d.data, other.Data())
 }
 
 // ToMap returns a complete map representation of the document suitable
@@ -708,7 +754,7 @@ func (d *Document) SetMetadata(metadata map[string]any) {
 }
 
 // StripMetadata removes metadata and returns a clean copy.
-func (d *Document) StripMetadata() *Document {
+func (d *Document) StripMetadata() Documenter {
 	return &Document{
 		id:   d.id,
 		ctx:  d.ctx,
@@ -751,6 +797,10 @@ func (d *Document) VerifyHash() (bool, error) {
 
 	return providedHash == calculatedHash, nil
 }
+
+// Release is a no-op for the map-backed Document: it holds no pooled
+// containers.
+func (d *Document) Release() {}
 
 // Sign computes and sets the RSA signature for the entire document.
 func (d *Document) Sign(privateKey *rsa.PrivateKey) error {

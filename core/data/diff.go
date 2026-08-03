@@ -24,7 +24,7 @@ func ReservedSystemField(key string) bool {
 }
 
 // Diff computes differences between two documents.
-func (d *Document) Diff(other *Document) DocumentDiff {
+func (d *Document) Diff(other Documenter) DocumentDiff {
 	diff := DocumentDiff{
 		Added:    make(map[string]any),
 		Removed:  make(map[string]any),
@@ -37,7 +37,7 @@ func (d *Document) Diff(other *Document) DocumentDiff {
 	}
 
 	// Find added and modified
-	for k, v := range other.data {
+	for k, v := range other.Data() {
 		if existing, ok := d.data[k]; ok {
 			if !reflect.DeepEqual(existing, v) {
 				diff.Modified[k] = DiffValue{Old: existing, New: v}
@@ -49,7 +49,7 @@ func (d *Document) Diff(other *Document) DocumentDiff {
 
 	// Find removed
 	for k, v := range d.data {
-		if _, ok := other.data[k]; !ok {
+		if _, ok := other.Data()[k]; !ok {
 			diff.Removed[k] = v
 		}
 	}
@@ -63,8 +63,8 @@ func (dd DocumentDiff) HasChanges() bool {
 }
 
 // Apply applies the diff to create a new document.
-func (d *Document) Apply(diff DocumentDiff) *Document {
-	result := d.Clone()
+func (d *Document) Apply(diff DocumentDiff) Documenter {
+	result := d.Clone().(*Document)
 
 	// Remove deleted keys
 	for k := range diff.Removed {

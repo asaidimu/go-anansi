@@ -39,7 +39,7 @@ func TestPersistence_RawQuery_Update(t *testing.T) {
 	productsCollection, err := p.CreateCollection(ctx, &productSchema)
 	require.NoError(t, err)
 
-	_, err = productsCollection.CreateMany(ctx, []*data.Document{
+	_, err = productsCollection.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"pid": "prod1", "name": "Laptop", "price": 1200.0}),
 		data.MustNewDocument(map[string]any{"pid": "prod2", "name": "Mouse", "price": 25.0}),
 	})
@@ -103,14 +103,14 @@ func TestPersistence_RawQuery_LeftJoin(t *testing.T) {
 	profilesCollection, err := p.CreateCollection(ctx, &profileSchema)
 	require.NoError(t, err)
 
-	_, err = usersCollection.CreateMany(ctx, []*data.Document{
+	_, err = usersCollection.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"uid": "user1", "name": "Alice"}),
 		data.MustNewDocument(map[string]any{"uid": "user2", "name": "Bob"}),
 		data.MustNewDocument(map[string]any{"uid": "user3", "name": "Charlie"}),
 	})
 	require.NoError(t, err)
 
-	_, err = profilesCollection.CreateMany(ctx, []*data.Document{
+	_, err = profilesCollection.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"user_id": "user1", "bio": "Engineer"}),
 		data.MustNewDocument(map[string]any{"user_id": "user3", "bio": "Artist"}),
 	})
@@ -187,7 +187,7 @@ func TestPersistence_RawQuery_Delete(t *testing.T) {
 	productsCollection, err := p.CreateCollection(ctx, &productSchema)
 	require.NoError(t, err)
 
-	_, err = productsCollection.CreateMany(ctx, []*data.Document{
+	_, err = productsCollection.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"pid": "prod1", "name": "Laptop", "price": 1200.0}),
 		data.MustNewDocument(map[string]any{"pid": "prod2", "name": "Mouse", "price": 25.0}),
 	})
@@ -239,7 +239,7 @@ func TestPersistence_RawQuery_GroupConcat(t *testing.T) {
 	ordersCollection, err := p.CreateCollection(ctx, &orderSchema)
 	require.NoError(t, err)
 
-	_, err = ordersCollection.CreateMany(ctx, []*data.Document{
+	_, err = ordersCollection.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"order_id": "orderA", "user_id": "user1", "product": "Laptop"}),
 		data.MustNewDocument(map[string]any{"order_id": "orderB", "user_id": "user2", "product": "Mouse"}),
 		data.MustNewDocument(map[string]any{"order_id": "orderC", "user_id": "user1", "product": "Keyboard"}),
@@ -318,7 +318,7 @@ func TestPersistence_RawQuery_CollectionRead(t *testing.T) {
 	productsCollection, err := p.CreateCollection(ctx, &productSchema)
 	require.NoError(t, err)
 
-	_, err = productsCollection.CreateMany(ctx, []*data.Document{
+	_, err = productsCollection.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"pid": "prod1", "name": "Laptop", "price": 1200.0}),
 		data.MustNewDocument(map[string]any{"pid": "prod2", "name": "Mouse", "price": 25.0}),
 		data.MustNewDocument(map[string]any{"pid": "prod3", "name": "Keyboard", "price": 75.0}),

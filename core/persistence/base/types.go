@@ -11,6 +11,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
@@ -302,7 +303,7 @@ type CreateResult struct {
 	// Data is the document that was processed.
 	// - On success, this is the final, enriched document as it was persisted.
 	// - On failure, this is the original document that was submitted.
-	Data *data.Document `json:"data"`
+	Data data.Documenter `json:"data"`
 
 	// Issues contains detailed validation errors if the status is FAILED_VALIDATION.
 	Issues []common.Issue `json:"issues,omitempty"`
@@ -318,10 +319,10 @@ type DeleteResult struct {
 
 // CreateCollectionOptions defines the parameters required to create a new collection.
 type CreateCollectionOptions struct {
-	Name        string                  `json:"name"`             // Name is the logical name for the new collection.
-	Description string                  `json:"description"`      // Description is a human-readable summary of the collection's purpose.
+	Name        string            `json:"name"`             // Name is the logical name for the new collection.
+	Description string            `json:"description"`      // Description is a human-readable summary of the collection's purpose.
 	Schema      definition.Schema `json:"schema"`           // Schema is the schema definition that documents in this collection must adhere to.
-	Labels      []string                `json:"labels,omitempty"` // Labels are optional tags to associate with the collection for organization.
+	Labels      []string          `json:"labels,omitempty"` // Labels are optional tags to associate with the collection for organization.
 }
 
 // MigrateOptions defines the parameters for a schema migration operation.
@@ -441,11 +442,11 @@ type Persistence interface {
 // It specifies the data to be updated and a filter to select which documents to update.
 type CollectionUpdate struct {
 	// For simple SET operations, mapping a field path to its new literal value.
-	Set *data.Document `json:"set,omitempty"`
+	Set data.Documenter `json:"set,omitempty"`
 	// For advanced updates where a field's value is computed by an expression or subquery.
 	Compute map[string]query.Query `json:"compute,omitempty"`
-	Filter  *query.QueryFilter `json:"filter"`
-	Version *int               `json:"version,omitempty"`
+	Filter  *query.QueryFilter     `json:"filter"`
+	Version *int                   `json:"version,omitempty"`
 	// ReturnDocument indicates if the updated document(s) should be returned by the update
 	// operation. A nil value means "not specified": consumers fall back to their own default.
 	ReturnDocument *bool `json:"returnDocument,omitempty"`
@@ -505,10 +506,10 @@ func (cu *CollectionUpdate) WithReturnDocument(rd bool) *CollectionUpdate {
 // observability (metadata and subscriptions).
 type Collection interface {
 	// CreateOne creates a single document, returning a rich result object.
-	CreateOne(ctx context.Context, doc *data.Document) (CreateResult, error)
+	CreateOne(ctx context.Context, doc data.Documenter) (CreateResult, error)
 
 	// CreateMany creates multiple documents, returning a rich result for each.
-	CreateMany(ctx context.Context, docs []*data.Document) ([]CreateResult, error) // considering whether we should use array of pointers
+	CreateMany(ctx context.Context, docs []data.Documenter) ([]CreateResult, error)
 
 	// Read retrieves documents from the collection that match the given QueryDSL.
 	Read(ctx context.Context, query *query.Query) (*ReadResult, error)
@@ -526,7 +527,11 @@ type Collection interface {
 
 	// Validate checks if the given data conforms to the collection's schema.
 	// The 'partial' flag allows for partial validation.
-	Validate(ctx context.Context, data *data.Document, partial bool) ([]common.Issue, bool)
+	Validate(ctx context.Context, data data.Documenter, partial bool) ([]common.Issue, bool)
+
+	// Schema returns the active schema definition documents in this collection
+	// must conform to.
+	Schema(ctx context.Context) (*definition.Schema, error)
 
 	// Metadata retrieves metadata specifically for this collection, with an option to
 	// force a refresh of the data.
@@ -553,6 +558,12 @@ type Collection interface {
 	// the transaction is rolled back, otherwise it is committed. When called
 	// inside an existing transaction, fn joins it instead of starting a new one.
 	Transact(ctx context.Context, fn func(ctx context.Context) (any, error)) (any, error)
+
+	// DocumentPoolProvider is embedded so every collection exposes its
+	// container-backed document pool. The pool is schema-bound and owned by the
+	// lowest collection level; model collections and decorators reuse it
+	// instead of compiling a second pool from the schema.
+	document.DocumentPoolProvider
 }
 
 // ReadResult represents the result of a database query.
@@ -600,4 +611,3 @@ type Transaction interface {
 	// OnRollback adds a function to be executed after the transaction rollbacks.
 	OnRollback(hook func())
 }
-

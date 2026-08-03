@@ -33,5 +33,13 @@ func DocumentSlice(v any, ctx ...context.Context) ([]*Document, bool) {
 	if !ok {
 		return nil, false
 	}
-	return []*Document(set), true
+	result := make([]*Document, len(set))
+	for i, doc := range set {
+		doc, ok := doc.(*Document)
+		if !ok {
+			return nil, false
+		}
+		result[i] = doc
+	}
+	return result, true
 }

@@ -144,7 +144,7 @@ func TestCollection_Create(t *testing.T) {
 	})
 
 	t.Run("multiple documents success", func(t *testing.T) {
-		docs := []*data.Document{data.MustNewDocument(map[string]any{"name": "Test8"}), data.MustNewDocument(map[string]any{"name": "Test3"})}
+		docs := []data.Documenter{data.MustNewDocument(map[string]any{"name": "Test8"}), data.MustNewDocument(map[string]any{"name": "Test3"})}
 
 		result, err := collection.CreateMany(ctx, docs)
 		if err != nil {

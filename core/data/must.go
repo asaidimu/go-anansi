@@ -67,7 +67,7 @@ func (m *MustHelper) GetTime(keyOrPath string) time.Time {
 }
 
 // GetDocument retrieves a *Document with path support, panics if not found or not convertible
-func (m *MustHelper) GetDocument(keyOrPath string) *Document {
+func (m *MustHelper) GetDocument(keyOrPath string) Documenter {
 	val, err := m.doc.GetDocument(keyOrPath)
 	if err != nil {
 		panic(err)
@@ -76,7 +76,7 @@ func (m *MustHelper) GetDocument(keyOrPath string) *Document {
 }
 
 // GetDocumentArray retrieves a []*Document with path support, panics if not found or not convertible
-func (m *MustHelper) GetDocumentArray(keyOrPath string) []*Document {
+func (m *MustHelper) GetDocumentArray(keyOrPath string) []Documenter {
 	val, err := m.doc.GetDocumentArray(keyOrPath)
 	if err != nil {
 		panic(err)

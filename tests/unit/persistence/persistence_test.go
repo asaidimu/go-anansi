@@ -129,7 +129,7 @@ func TestPersistence_Transact(t *testing.T) {
 	accounts, err := p.CreateCollection(context.Background(), sc)
 	require.NoError(t, err)
 
-	r, err := accounts.CreateMany(context.Background(), []*data.Document{
+	r, err := accounts.CreateMany(context.Background(), []data.Documenter{
 		data.MustNewDocument(map[string]any{"name": "Alice", "balance": 100.0}),
 		data.MustNewDocument(map[string]any{"name": "Bob", "balance": 50.0}),
 	})
@@ -390,7 +390,7 @@ func TestPersistence_TransactWithPanic(t *testing.T) {
 	accounts, err := p.CreateCollection(context.Background(), sc)
 	require.NoError(t, err)
 
-	r, err := accounts.CreateMany(context.Background(), []*data.Document{
+	r, err := accounts.CreateMany(context.Background(), []data.Documenter{
 		data.MustNewDocument(map[string]any{"name": "Alice", "balance": 100.0}),
 	})
 	if err != nil {
@@ -501,7 +501,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	require.NoError(t, err)
 
 	// 3. Insert Data
-	_, err = usersCollection.CreateMany(context.Background(), []*data.Document{
+	_, err = usersCollection.CreateMany(context.Background(), []data.Documenter{
 		data.MustNewDocument(map[string]any{"idi": "user1", "name": "Alice"}),
 		data.MustNewDocument(map[string]any{"idi": "user2", "name": "Bob"}),
 		data.MustNewDocument(map[string]any{"idi": "user3", "name": "Charlie"}),
@@ -512,7 +512,7 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = profilesCollection.CreateMany(context.Background(), []*data.Document{
+	_, err = profilesCollection.CreateMany(context.Background(), []data.Documenter{
 		data.MustNewDocument(map[string]any{"user": "user1", "bio": "Loves Go programming"}),
 		data.MustNewDocument(map[string]any{"user": "user2", "bio": "Enjoys testing"}),
 	})
@@ -619,7 +619,7 @@ func TestPersistence_Migrate_PhaseSchemaOnly_ReactivePropagation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a document with the original schema
-	_, err = coll.CreateMany(ctx, []*data.Document{
+	_, err = coll.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"name": "Alice"}),
 	})
 	require.NoError(t, err)
@@ -640,13 +640,13 @@ func TestPersistence_Migrate_PhaseSchemaOnly_ReactivePropagation(t *testing.T) {
 	require.NoError(t, err)
 
 	// The old collection reference should see the new schema reactively
-	_, err = coll.CreateMany(ctx, []*data.Document{
+	_, err = coll.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"name": "Bob", "email": "bob@test.com"}),
 	})
 	assert.NoError(t, err, "old collection reference should accept new fields after reactive propagation")
 
 	// Verify the returned collection can also use the new field
-	_, err = newColl.CreateMany(ctx, []*data.Document{
+	_, err = newColl.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"name": "Charlie", "email": "charlie@test.com"}),
 	})
 	assert.NoError(t, err)
@@ -674,7 +674,7 @@ func TestPersistence_Migrate_PhaseFull(t *testing.T) {
 	coll, err := p.CreateCollection(ctx, schema)
 	require.NoError(t, err)
 
-	_, err = coll.CreateMany(ctx, []*data.Document{
+	_, err = coll.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"name": "Alice"}),
 		data.MustNewDocument(map[string]any{"name": "Bob"}),
 	})
@@ -727,7 +727,7 @@ func TestPersistence_Migrate_PhaseDDL_FallbackToFull(t *testing.T) {
 	coll, err := p.CreateCollection(ctx, schema)
 	require.NoError(t, err)
 
-	_, err = coll.CreateMany(ctx, []*data.Document{
+	_, err = coll.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"name": "Alice"}),
 	})
 	require.NoError(t, err)
@@ -870,7 +870,7 @@ func TestPersistence_E2E_MigrateWithTransformer(t *testing.T) {
 	coll, err := p.CreateCollection(ctx, schema)
 	require.NoError(t, err)
 
-	docs := []*data.Document{
+	docs := []data.Documenter{
 		data.MustNewDocument(map[string]any{"name": "Alice", "age": 30}),
 		data.MustNewDocument(map[string]any{"name": "Bob", "age": 25}),
 	}

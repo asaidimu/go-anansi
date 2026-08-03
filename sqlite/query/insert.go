@@ -193,7 +193,7 @@ func (i *SQLiteInsertTargetClause) Value() (string, []any, error) {
 	if i.target == nil {
 		return "", nil, ErrInsertNoTargetSpecified
 	}
-	return fmt.Sprintf("INSERT INTO %s", i.target.Name), nil, nil
+	return fmt.Sprintf("INSERT INTO %s", quoteIdentifier(i.target.Name)), nil, nil
 }
 
 // buildInsertTree builds a SQLNode for an INSERT statement.

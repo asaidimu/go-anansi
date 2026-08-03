@@ -146,7 +146,7 @@ func (cs *CompiledSchema) ResolvePath(path string) (ResolvedPath, error) {
 	rp := make(ResolvedPath, 0, len(segments))
 	schemaIdx := uint8(0) // root schema slot
 	for i, segment := range segments {
-		step, fd, err := cs.resolveFieldStep(schemaIdx, segment)
+		step, fd, err := cs.ResolveFieldStep(schemaIdx, segment)
 		if err != nil {
 			return nil, err
 		}
@@ -169,9 +169,12 @@ func (cs *CompiledSchema) ResolvePath(path string) (ResolvedPath, error) {
 	return rp, nil
 }
 
-// resolveFieldStep finds the (SchemaIdx, FieldIdx) step and FieldDescriptor for
-// the field named name within schema slot schemaIdx.
-func (cs *CompiledSchema) resolveFieldStep(schemaIdx uint8, name string) (ResolvedStep, FieldDescriptor, error) {
+// ResolveFieldStep finds the (SchemaIdx, FieldIdx) step and FieldDescriptor for
+// the field named name within schema slot schemaIdx. It is exported so
+// downstream consumers that resolve view-relative paths (e.g. the document
+// layer, whose nested views are anchored at a non-root slot) can share the
+// single field-lookup implementation instead of re-walking the schema.
+func (cs *CompiledSchema) ResolveFieldStep(schemaIdx uint8, name string) (ResolvedStep, FieldDescriptor, error) {
 	if int(schemaIdx) >= len(cs.Schemas) {
 		return 0, 0, ErrInvalidSchema.WithMessage(
 			fmt.Sprintf("schema slot %d is out of range (compiled schema has %d)", schemaIdx, len(cs.Schemas)),
