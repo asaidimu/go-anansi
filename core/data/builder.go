@@ -46,6 +46,6 @@ func (db *DocumentBuilder) WithMetadata(metadata map[string]any) (*DocumentBuild
 }
 
 // Build returns the constructed document.
-func (db *DocumentBuilder) Build() *Document {
+func (db *DocumentBuilder) Build() Documenter {
 	return db.doc.Clone()
 }

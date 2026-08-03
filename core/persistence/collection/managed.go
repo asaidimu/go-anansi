@@ -10,6 +10,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -58,8 +59,8 @@ func (c *managedCollection) currentSchema(ctx context.Context) (*definition.Sche
 // --- Core Method Overrides ---
 
 // CreateOne handles the creation of a single document.
-func (c *managedCollection) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
-	results, err := c.CreateMany(ctx, []*data.Document{doc})
+func (c *managedCollection) CreateOne(ctx context.Context, doc data.Documenter) (base.CreateResult, error) {
+	results, err := c.CreateMany(ctx, []data.Documenter{doc})
 	result := base.CreateResult{}
 
 	if len(results) > 0 {
@@ -74,7 +75,7 @@ func (c *managedCollection) CreateOne(ctx context.Context, doc *data.Document) (
 }
 
 // CreateMany handles the creation of multiple documents, providing a rich result for each.
-func (c *managedCollection) CreateMany(ctx context.Context, docs []*data.Document) ([]base.CreateResult, error) {
+func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Documenter) ([]base.CreateResult, error) {
 	results := make([]base.CreateResult, 0)
 	validCount := 0
 
@@ -538,8 +539,18 @@ func (c *managedCollection) Delete(ctx context.Context, q *query.QueryFilter, un
 	return count, nil
 }
 
-func (c *managedCollection) Validate(ctx context.Context, data *data.Document, partial bool) ([]common.Issue, bool) {
+func (c *managedCollection) Validate(ctx context.Context, data data.Documenter, partial bool) ([]common.Issue, bool) {
 	return c.wrapped.Validate(ctx, data, partial)
+}
+
+func (c *managedCollection) Schema(ctx context.Context) (*definition.Schema, error) {
+	return c.currentSchema(ctx)
+}
+
+// DocumentPool forwards to the wrapped collection's container-backed document
+// pool when available, otherwise compiles one from the active schema.
+func (c *managedCollection) DocumentPool(ctx context.Context) (*document.DocumentPool, error) {
+	return documentPoolFor(ctx, c.wrapped)
 }
 
 func (c *managedCollection) Metadata(ctx context.Context, filter *base.MetadataFilter, forceRefresh bool) *base.CollectionMetadata {

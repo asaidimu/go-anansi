@@ -562,9 +562,9 @@ func (f *SQLiteFromClause) Value() (string, []any, error) {
 		return "", nil, ErrSelectNoTargetSpecified
 	}
 
-	sql := fmt.Sprintf("FROM %s", f.target.Name)
+	sql := fmt.Sprintf("FROM %s", quoteIdentifier(f.target.Name))
 	if f.target.Alias != nil {
-		sql = fmt.Sprintf("%s AS %s", sql, *f.target.Alias)
+		sql = fmt.Sprintf("%s AS %s", sql, quoteIdentifier(*f.target.Alias))
 		f.factory.addAlias(f.target.Name, *f.target.Alias)
 	}
 
@@ -601,9 +601,9 @@ func (j *SQLiteJoinClause) Value() (string, []any, error) {
 			return "", nil, ErrSelectUnsupportedJoinType.WithCause(fmt.Errorf("unsupported join type: %s", join.Type))
 		}
 
-		joinSQL := fmt.Sprintf("%s %s", joinType, join.Target.Name)
+		joinSQL := fmt.Sprintf("%s %s", joinType, quoteIdentifier(join.Target.Name))
 		if join.Target.Alias != nil {
-			joinSQL = fmt.Sprintf("%s AS %s", joinSQL, *join.Target.Alias)
+			joinSQL = fmt.Sprintf("%s AS %s", joinSQL, quoteIdentifier(*join.Target.Alias))
 			j.factory.addAlias(join.Target.Name, *join.Target.Alias)
 		}
 

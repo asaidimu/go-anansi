@@ -12,9 +12,11 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/cache"
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/collection"
 	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v8/tests/testutils"
 )
 
@@ -31,18 +33,18 @@ func TestMain(m *testing.M) {
 // enough of base.Collection to exercise LiveRepository's cache interceptors.
 type docStore struct {
 	mu    sync.RWMutex
-	docs  map[string]*data.Document
+	docs  map[string]data.Documenter
 	byKey map[string]string
 }
 
 func newDocStore() *docStore {
 	return &docStore{
-		docs:  make(map[string]*data.Document),
+		docs:  make(map[string]data.Documenter),
 		byKey: make(map[string]string),
 	}
 }
 
-func (s *docStore) CreateOne(_ context.Context, doc *data.Document) (base.CreateResult, error) {
+func (s *docStore) CreateOne(_ context.Context, doc data.Documenter) (base.CreateResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := doc.ID()
@@ -53,7 +55,7 @@ func (s *docStore) CreateOne(_ context.Context, doc *data.Document) (base.Create
 	return base.CreateResult{Status: base.StatusCreated, Data: doc}, nil
 }
 
-func (s *docStore) CreateMany(_ context.Context, docs []*data.Document) ([]base.CreateResult, error) {
+func (s *docStore) CreateMany(_ context.Context, docs []data.Documenter) ([]base.CreateResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	res := make([]base.CreateResult, len(docs))
@@ -135,7 +137,7 @@ func (s *docStore) Delete(_ context.Context, filter *query.QueryFilter, _ bool) 
 	defer s.mu.Unlock()
 	if filter == nil {
 		count := len(s.docs)
-		s.docs = make(map[string]*data.Document)
+		s.docs = make(map[string]data.Documenter)
 		s.byKey = make(map[string]string)
 		return count, nil
 	}
@@ -155,12 +157,31 @@ func (s *docStore) Delete(_ context.Context, filter *query.QueryFilter, _ bool) 
 	return 0, nil
 }
 
-func (s *docStore) Validate(_ context.Context, _ *data.Document, _ bool) ([]common.Issue, bool) {
+func (s *docStore) Validate(_ context.Context, _ data.Documenter, _ bool) ([]common.Issue, bool) {
 	return nil, true
 }
 
 func (s *docStore) Metadata(_ context.Context, _ *base.MetadataFilter, _ bool) *base.CollectionMetadata {
 	return &base.CollectionMetadata{Name: "test"}
+}
+
+func (s *docStore) Schema(_ context.Context) (*definition.Schema, error) {
+	return &definition.Schema{
+		Version: common.MustNewVersion("1.0.0"),
+		BaseSchema: definition.BaseSchema{
+			Name: "test",
+			Fields: map[definition.FieldId]definition.Field{
+				"name": {
+					Name: "name",
+					FieldProperties: definition.FieldProperties{
+						Type: definition.FieldTypeString,
+					},
+					Required: true,
+					Unique:   true,
+				},
+			},
+		},
+	}, nil
 }
 
 func (s *docStore) Subscribe(_ context.Context, _ base.SubscriptionOptions) string { return "" }
@@ -175,6 +196,10 @@ func (s *docStore) Capabilities(_ context.Context) *query.Capabilities {
 
 func (s *docStore) Transact(ctx context.Context, fn func(ctx context.Context) (any, error)) (any, error) {
 	return fn(ctx)
+}
+
+func (s *docStore) DocumentPool(_ context.Context) (*document.DocumentPool, error) {
+	return nil, common.SystemErrorFrom(fmt.Errorf("docStore: no document pool"))
 }
 
 func (s *docStore) indexKey(keyField, keyValue, docID string) {
@@ -213,7 +238,7 @@ type recordingProcessor struct {
 	destroyErr error
 }
 
-func (p *recordingProcessor) Create(_ context.Context, doc *data.Document) (string, error) {
+func (p *recordingProcessor) Create(_ context.Context, doc data.Documenter) (string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.createErr != nil {
@@ -225,7 +250,7 @@ func (p *recordingProcessor) Create(_ context.Context, doc *data.Document) (stri
 	return keyStr, nil
 }
 
-func (p *recordingProcessor) Compile(ctx context.Context, doc *data.Document) (string, error) {
+func (p *recordingProcessor) Compile(ctx context.Context, doc data.Documenter) (string, error) {
 	return p.Create(ctx, doc)
 }
 
@@ -250,14 +275,14 @@ type recordingProcessorInt struct {
 	destroyed []int
 }
 
-func (p *recordingProcessorInt) Create(_ context.Context, doc *data.Document) (int, error) {
+func (p *recordingProcessorInt) Create(_ context.Context, doc data.Documenter) (int, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.created++
 	return p.created, nil
 }
 
-func (p *recordingProcessorInt) Compile(ctx context.Context, doc *data.Document) (int, error) {
+func (p *recordingProcessorInt) Compile(ctx context.Context, doc data.Documenter) (int, error) {
 	return p.Create(ctx, doc)
 }
 
@@ -294,7 +319,7 @@ func newHarness(t *testing.T, opts ...func(*collection.LiveRepositoryOptions[str
 		Processor:  proc,
 		QueryKey:   "name",
 		CacheConfig: &cache.CacheConfig{
-			MaxEntries:     100,
+			MaxEntries:      100,
 			JanitorInterval: 0,
 		},
 	}
@@ -319,7 +344,7 @@ func newHarness(t *testing.T, opts ...func(*collection.LiveRepositoryOptions[str
 	}
 }
 
-func (h *testHarness) insertDoc(name string) *data.Document {
+func (h *testHarness) insertDoc(name string) data.Documenter {
 	doc := data.MustNewDocument(map[string]any{"name": name})
 	res, err := h.store.CreateOne(h.ctx, doc)
 	if err != nil {
@@ -363,7 +388,7 @@ func TestLiveRepository_CreateOne_ProcessorError(t *testing.T) {
 		Processor:  proc,
 		QueryKey:   "name",
 		CacheConfig: &cache.CacheConfig{
-			MaxEntries:     100,
+			MaxEntries:      100,
 			JanitorInterval: 0,
 		},
 	})
@@ -544,8 +569,8 @@ func TestLiveRepository_CapacityEviction_CallsDestroy(t *testing.T) {
 		Processor:  proc,
 		QueryKey:   "name",
 		CacheConfig: &cache.CacheConfig{
-			MaxEntries:     2,
-			ShardCount:     1,
+			MaxEntries:      2,
+			ShardCount:      1,
 			JanitorInterval: 0,
 		},
 	})
@@ -573,8 +598,8 @@ func TestLiveRepository_ReadThrough_EvictionCallsDestroy(t *testing.T) {
 		Processor:  proc,
 		QueryKey:   "name",
 		CacheConfig: &cache.CacheConfig{
-			MaxEntries:     2,
-			ShardCount:     1,
+			MaxEntries:      2,
+			ShardCount:      1,
 			JanitorInterval: 0,
 		},
 	})
@@ -620,7 +645,7 @@ func TestLiveRepository_AutoLoad(t *testing.T) {
 		Processor:  proc,
 		QueryKey:   "name",
 		CacheConfig: &cache.CacheConfig{
-			MaxEntries:     100,
+			MaxEntries:      100,
 			JanitorInterval: 0,
 		},
 		AutoLoad: true,

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"math"
@@ -47,7 +48,7 @@ func main() {
 	doc := db.Build()
 
 	fmt.Println("Original document:")
-	pretty, _ := doc.ToJSON(true)
+	pretty, _ := json.MarshalIndent(doc, "", "  ")
 	fmt.Println(string(pretty))
 
 	// 2. Use Must helpers for quick access (panics on error – great for examples/scripts)
@@ -65,7 +66,7 @@ func main() {
 
 	// 6. In-memory query on a set of documents
 	// Build three documents correctly handling SetNested errors
-	buildUser := func(username, email string, age int, bio string) *data.Document {
+	buildUser := func(username, email string, age int, bio string) data.Documenter {
 		db := data.NewDocumentBuilder().
 			Set("username", username).
 			Set("email", email).
@@ -87,7 +88,7 @@ func main() {
 
 	// Fluent query: users older than 28
 	results := data.Query(docs).
-		WhereFunc(func(d *data.Document) bool {
+		WhereFunc(func(d data.Documenter) bool {
 			age, _ := d.GetInt("age")
 			return age > 28
 		}).
@@ -169,6 +170,6 @@ func main() {
 	// 10. Normalization (strips nested metadata – useful before persistence)
 	clean := doc.Normalize()
 	fmt.Println("\nNormalized (nested metadata stripped):")
-	pretty, _ = clean.ToJSON(true)
+	pretty, _ = json.MarshalIndent(clean, "", "  ")
 	fmt.Println(string(pretty))
 }

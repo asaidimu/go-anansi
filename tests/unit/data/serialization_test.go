@@ -17,8 +17,8 @@ func TestDocument_ToJSON(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	// Test without pretty print
-	jsonBytes, err := doc.ToJSON()
+	// Without pretty print
+	jsonBytes, err := json.Marshal(doc)
 	require.NoError(t, err)
 	var result map[string]any
 	err = json.Unmarshal(jsonBytes, &result)
@@ -27,8 +27,8 @@ func TestDocument_ToJSON(t *testing.T) {
 	require.Contains(t, result, "age")
 	require.Contains(t, result, data.MetadataField) // Top-level metadata should now be present
 
-	// Test with pretty print
-	prettyBytes, err := doc.ToJSON(true)
+	// With pretty print
+	prettyBytes, err := json.MarshalIndent(doc, "", "  ")
 	require.NoError(t, err)
 	require.True(t, len(prettyBytes) > len(jsonBytes))
 	require.Contains(t, string(prettyBytes), "  ") // Check for indentation

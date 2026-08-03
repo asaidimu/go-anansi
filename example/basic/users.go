@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/collection"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 )
@@ -11,7 +11,7 @@ import (
 const UsersCollectionName = "Users"
 
 type User struct {
-	data.DocumentModel
+	document.DocumentModel
 	Username string `anansi:"username"`
 	Email    string `anansi:"email"`
 }

@@ -13,19 +13,19 @@ import (
 // the flat user-data address (memoised on the CompiledSchema) which, combined
 // with the leaf descriptor, forms the key under which the value is stored.
 func keyForPath(cs *definition.CompiledSchema, path string) (container.DataContainerKey, definition.FieldDescriptor, error) {
-	// rp, err := cs.ResolvePath(path)
-	// if err != nil {
-		return 0, 0, nil
-	// }
-	// last := rp[len(rp)-1]
-	// slot := cs.Schemas[last.SchemaIdx()]
-	// abs := int(slot.FieldStart) + int(last.FieldIdx())
-	// fd := cs.Descriptors[abs]
-	// key, err := leafKey(cs, fd, rp)
-	// if err != nil {
-	// 	return 0, 0, err
-	// }
-	// return key, fd, nil
+	rp, err := cs.ResolvePath(path)
+	if err != nil {
+		return 0, 0, err
+	}
+	last := rp[len(rp)-1]
+	slot := cs.Schemas[last.SchemaIdx()]
+	abs := int(slot.FieldStart) + int(last.FieldIdx())
+	fd := cs.Descriptors[abs]
+	key, err := computeLeafKey(cs, fd, rp)
+	if err != nil {
+		return 0, 0, err
+	}
+	return key, fd, nil
 }
 
 // Lookup reads the value stored at a dotted schema path, e.g. "address.zip" or

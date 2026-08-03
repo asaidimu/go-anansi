@@ -8,6 +8,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/events"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/transaction"
@@ -86,7 +87,7 @@ func (e *eventsCollection) withEventEmission(
 }
 
 // CreateOne overrides the embedded Collection's CreateOne to add event emission.
-func (e *eventsCollection) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
+func (e *eventsCollection) CreateOne(ctx context.Context, doc data.Documenter) (base.CreateResult, error) {
 	config := events.OperationConfig{
 		Operation:         "createOne",
 		StartEventTypes:   []string{string(base.DocumentCreateStart)},
@@ -108,7 +109,7 @@ func (e *eventsCollection) CreateOne(ctx context.Context, doc *data.Document) (b
 }
 
 // CreateMany overrides the embedded Collection's CreateMany to add event emission.
-func (e *eventsCollection) CreateMany(ctx context.Context, docs []*data.Document) ([]base.CreateResult, error) {
+func (e *eventsCollection) CreateMany(ctx context.Context, docs []data.Documenter) ([]base.CreateResult, error) {
 	config := events.OperationConfig{
 		Operation:         "createMany",
 		StartEventTypes:   []string{string(base.DocumentCreateStart)},
@@ -129,8 +130,7 @@ func (e *eventsCollection) CreateMany(ctx context.Context, docs []*data.Document
 }
 
 // Read overrides the embedded Collection's Read to add event emission.
-func (e *eventsCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {
-	config := events.OperationConfig{
+func (e *eventsCollection) Read(ctx context.Context, q *query.Query) (*base.ReadResult, error) {	config := events.OperationConfig{
 		Operation:         "read",
 		StartEventTypes:   []string{string(base.DocumentReadStart)},
 		SuccessEventTypes: []string{string(base.DocumentReadSuccess)},
@@ -189,4 +189,10 @@ func (e *eventsCollection) Delete(ctx context.Context, filter *query.QueryFilter
 	}
 
 	return result.(int), nil
+}
+
+// DocumentPool forwards to the wrapped collection's container-backed document
+// pool when available, otherwise compiles one from the active schema.
+func (e *eventsCollection) DocumentPool(ctx context.Context) (*document.DocumentPool, error) {
+	return documentPoolFor(ctx, e.Collection)
 }

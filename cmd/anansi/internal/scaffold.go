@@ -5,12 +5,51 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v8/core/schema/meta"
 )
+
+// starterMetadataJSON is the declarative user-defined metadata template
+// scaffolded alongside a new project. It declares a "trace" provider with two
+// fields; the schema-level metadata file drives provider stub generation.
+const starterMetadataJSON = `{
+  "name": "_metadata_",
+  "providers": {
+    "trace": {
+      "description": "Tracing correlation ids",
+      "fields": {
+        "trace_id": {
+          "name": "trace_id",
+          "type": "string"
+        },
+        "span_id": {
+          "name": "span_id",
+          "type": "string"
+        }
+      }
+    }
+  }
+}
+`
+
+// scaffoldModuleVersion returns a valid v8 module version for the generated
+// go.mod. The CLI may run without a release tag (e.g. `go run ./cmd/anansi`),
+// in which case anansiVersion is "dev" and unusable in a require directive.
+func scaffoldModuleVersion(anansiVersion string) string {
+	if semverV8Re.MatchString(anansiVersion) {
+		return anansiVersion
+	}
+	return defaultAnansiVersion
+}
+
+const defaultAnansiVersion = "v8.4.7"
+
+var semverV8Re = regexp.MustCompile(`^v8\.\d+\.\d+(-[0-9A-Za-z.\-]+)?(\+[0-9A-Za-z.\-]+)?$`)
 
 func RunScaffold(dir string, dryRun bool, anansiVersion string) error {
 	abs, err := filepath.Abs(dir)
@@ -30,6 +69,7 @@ func RunScaffold(dir string, dryRun bool, anansiVersion string) error {
 		fmt.Printf("  would create: %s/go.mod\n", abs)
 		fmt.Printf("  would create: %s/main.go\n", abs)
 		fmt.Printf("  would create: %s/anansi.json\n", abs)
+		fmt.Printf("  would create: %s/metadata.schema.json\n", abs)
 		fmt.Printf("  would create: %s/example.schema.json\n", schemasDir)
 		fmt.Printf("  would create: %s/schemas.lock.json\n", abs)
 		fmt.Printf("  would create: %s/AGENTS.md\n", abs)
@@ -57,7 +97,7 @@ func RunScaffold(dir string, dryRun bool, anansiVersion string) error {
 go 1.21
 
 require github.com/asaidimu/go-anansi/v8 %s
-`, modulePath, anansiVersion)
+`, modulePath, scaffoldModuleVersion(anansiVersion))
 	if err := os.WriteFile(filepath.Join(abs, "go.mod"), []byte(gomod), 0644); err != nil {
 		return fmt.Errorf("write go.mod: %w", err)
 	}
@@ -101,7 +141,7 @@ func main() {
 		log.Fatalf("get collection: %v", err)
 	}
 
-	_, err = coll.CreateMany(ctx, []*data.Document{
+	_, err = coll.CreateMany(ctx, []data.Documenter{
 		data.MustNewDocument(map[string]any{"name": "hello world"}),
 	})
 	if err != nil {
@@ -130,13 +170,29 @@ func main() {
 		return fmt.Errorf("write config: %w", err)
 	}
 
+	// metadata.schema.json — declarative user-defined metadata. Written, then
+	// canonicalized so the on-disk file carries stable UUID v7 field IDs.
+	metadataPath := filepath.Join(abs, cfg.Metadata.SchemaPath)
+	if err := os.WriteFile(metadataPath, []byte(starterMetadataJSON), 0644); err != nil {
+		return fmt.Errorf("write metadata schema: %w", err)
+	}
+	md, mdChanged, err := LoadMetadata(metadataPath)
+	if err != nil {
+		return err
+	}
+	if mdChanged {
+		if err := writeMetadataFile(metadataPath, md); err != nil {
+			return err
+		}
+	}
+
 	// Example schema — parse, set version, normalize, then write to disk
 	// so the JSON always includes a version field.
 	exampleRaw := `{
   "name": "Example",
   "description": "Example schema — replace with your own",
   "fields": {
-    "019d7775-6563-7c55-a6f3-ac8f087d89d1": {
+    "019f4066-6563-7c55-a6f3-ac8f087d89d1": {
       "name": "name",
       "type": "string",
       "required": true
@@ -151,7 +207,16 @@ func main() {
 		schema.Version = common.MustNewVersion("0.1.0")
 	}
 	meta.NormalizeSchema(schema)
-	exampleJSON := schema.ToJSON()
+	enriched, err := data.EnrichSchema(schema, md.MergedSchema(), md.Dependencies())
+	if err != nil {
+		return fmt.Errorf("enrich example schema: %w", err)
+	}
+	out, err := json.MarshalIndent(enriched.AsMap(), "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal example schema: %w", err)
+	}
+	out = append(out, '\n')
+	exampleJSON := out
 
 	examplePath := filepath.Join(schemasDir, "example.schema.json")
 	if err := os.WriteFile(examplePath, exampleJSON, 0644); err != nil {
@@ -210,7 +275,7 @@ func %[3]s() *definition.Schema {
 				Path:          "schemas/example.schema.json",
 				Hash:          hash,
 				Version:       exampleVer,
-				Schema:        schema,
+				Schema:        enriched,
 				MigrationFile: fileName,
 			},
 		},
@@ -222,6 +287,11 @@ func %[3]s() *definition.Schema {
 
 	if err := GenerateRegistry(lock, migrationsDir); err != nil {
 		return fmt.Errorf("generate registry: %w", err)
+	}
+
+	cfg.Schema.MigrationsDir = migrationsDir
+	if _, err := GenerateMetadataFiles(cfg, md, false); err != nil {
+		return fmt.Errorf("generate metadata files: %w", err)
 	}
 
 	// AGENTS.md
@@ -239,6 +309,8 @@ func %[3]s() *definition.Schema {
 	fmt.Printf("  created: %s\n", filepath.Join(abs, "schemas.lock.json"))
 	fmt.Printf("  created: %s\n", filepath.Join(migrationsDir, fileName))
 	fmt.Printf("  created: %s\n", filepath.Join(migrationsDir, "registry.go"))
+	fmt.Printf("  created: %s\n", filepath.Join(migrationsDir, "metadata.go"))
+	fmt.Printf("  created: %s\n", filepath.Join(migrationsDir, "providers.go"))
 	fmt.Printf("  created: %s\n", filepath.Join(abs, "AGENTS.md"))
 	fmt.Println()
 	fmt.Println("next steps:")

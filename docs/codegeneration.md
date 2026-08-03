@@ -84,27 +84,51 @@ const (
 
 ### 3.2 The model struct
 
-The root struct embeds `data.DocumentModel` (the `id`/`metadata` system
+The root struct embeds `document.DocumentModel` (the `_id_`/`_metadata_` system
 fields) and every field carries its `anansi` tag. Field shape is driven by
 `required`/`nullable`:
 
 - **Required, non-nullable** → value type (`Email string`).
 - **Optional or nullable** → pointer type (`Age *int64`, `Role *UserRoleEnum`).
 
+When the schema does **not** declare the system fields, codegen additionally
+emits shadow `ID`/`Metadata` fields mirroring the embedded model's fields, plus
+an explicit `GetID()`. The shadows expose the system fields as ordinary struct
+fields (so `document.New` keeps them in sync with the embed); if the schema
+already declares a field that would claim the Go name `ID` or `Metadata`, the
+shadow is renamed to `ModelID`/`ModelMetadata`. When the schema **does** declare
+`_id_`/`_metadata_` (e.g. after `anansi schema normalize`), they are emitted as
+ordinary schema fields instead — never duplicated:
+
 ```go
 type User struct {
-    data.DocumentModel
-    Email string        `anansi:"email,required=true" json:"email"`
-    Name  string        `anansi:"name,required=true" json:"name"`
-    Age   *int64        `anansi:"age,required=false,nullable=true" json:"age,omitempty"`
-    Role  *UserRoleEnum `anansi:"role,required=false,type=enum" json:"role,omitempty"`
+    document.DocumentModel
+    ID string            `json:"id,omitempty" anansi:"_id_,required=true,omitempty"`
+    Email string         `anansi:"email,required=true" json:"email"`
+    Name  string         `anansi:"name,required=true" json:"name"`
+    Age   *int64         `anansi:"age,required=false,nullable=true" json:"age,omitempty"`
+    Role  *UserRoleEnum  `anansi:"role,required=false,type=enum" json:"role,omitempty"`
+    Metadata map[string]any `json:"metadata,omitempty" anansi:"_metadata_,required=true,omitempty"`
+}
+
+// GetID returns the document identifier for User.
+func (m *User) GetID() string {
+    return m.ID
 }
 
 // NewUser creates and initializes a new User
 func NewUser(model User) *User {
-    return data.New(&model)
+    return document.New(&model)
 }
 ```
+
+> **Shadow naming.** The `_id_` shadow is emitted as `ID` unless the schema
+> already declares a field that claims that Go name (e.g. a field named `id`),
+> in which case the shadow is renamed to `ModelID`. `GetID()` always returns the
+> `_id_` shadow, so `GetID()` is the record identifier. The shadow `Metadata`
+> field is the readable form of `_metadata_` on the struct; it is populated on
+> reads and left out of partial updates so system-managed metadata is never
+> clobbered.
 
 ### 3.3 The collection wrapper
 

@@ -104,12 +104,12 @@ func TestInsert_Integration(t *testing.T) {
 			Name: "users_1_0_0",
 			Fields: map[definition.FieldId]definition.Field{
 				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"first_name": {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"last_name":  {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"email":      {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"age":        {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
-				"status":     {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"region":     {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"first_name":                             {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"last_name":                              {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"email":                                  {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":                                    {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"status":                                 {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"region":                                 {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 			},
 		},
 	}
@@ -146,13 +146,13 @@ func TestUpdate_Integration(t *testing.T) {
 			Name: "users_1_0_0",
 			Fields: map[definition.FieldId]definition.Field{
 				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"first_name": {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"last_name":  {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"email":      {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"age":        {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
-				"status":     {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"region":     {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"metadata":   {Name: "_metadata_", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeRecord}},
+				"first_name":                             {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"last_name":                              {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"email":                                  {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":                                    {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"status":                                 {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"region":                                 {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"metadata":                               {Name: "_metadata_", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeRecord}},
 			},
 		},
 	}
@@ -189,12 +189,12 @@ func TestDelete_Integration(t *testing.T) {
 			Name: "users_1_0_0",
 			Fields: map[definition.FieldId]definition.Field{
 				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"first_name": {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"last_name":  {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"email":      {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"age":        {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
-				"status":     {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"region":     {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"first_name":                             {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"last_name":                              {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"email":                                  {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":                                    {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"status":                                 {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"region":                                 {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 			},
 		},
 	}
@@ -238,8 +238,8 @@ func TestComplexTypes_Integration(t *testing.T) {
 			Name: "complex_docs_01",
 			Fields: map[definition.FieldId]definition.Field{
 				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"tags":     {Name: "tags", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeArray}},
-				"metadata": {Name: "_metadata_", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
+				"tags":                                   {Name: "tags", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeArray}},
+				"metadata":                               {Name: "_metadata_", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
 			},
 		},
 	}
@@ -308,9 +308,9 @@ func TestSelectComplex_Integration(t *testing.T) {
 			Name: "orders_1_0_0",
 			Fields: map[definition.FieldId]definition.Field{
 				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"customer_id":  {Name: "customer_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"order_date":   {Name: "order_date", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"total_amount": {Name: "total_amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"customer_id":                            {Name: "customer_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"order_date":                             {Name: "order_date", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"total_amount":                           {Name: "total_amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
 			},
 		},
 	}
@@ -320,12 +320,12 @@ func TestSelectComplex_Integration(t *testing.T) {
 			Name: "users_1_0_0",
 			Fields: map[definition.FieldId]definition.Field{
 				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"first_name": {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"last_name":  {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"email":      {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"age":        {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
-				"status":     {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"region":     {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"first_name":                             {Name: "first_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"last_name":                              {Name: "last_name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"email":                                  {Name: "email", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"age":                                    {Name: "age", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
+				"status":                                 {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"region":                                 {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 			},
 		},
 	}
@@ -390,7 +390,7 @@ func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
 			Name: "users_1_0_0",
 			Fields: map[definition.FieldId]definition.Field{
 				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"profile": {Name: "profile", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeRecord}},
+				"profile":                                {Name: "profile", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeRecord}},
 			},
 		},
 	}
@@ -401,9 +401,9 @@ func TestSelectWithNestedFieldInJoin_Integration(t *testing.T) {
 			Name: "orders_1_0_0",
 			Fields: map[definition.FieldId]definition.Field{
 				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"customer_id":  {Name: "customer_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"order_date":   {Name: "order_date", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"total_amount": {Name: "total_amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"customer_id":                            {Name: "customer_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"order_date":                             {Name: "order_date", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"total_amount":                           {Name: "total_amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
 			},
 		},
 	}
@@ -470,8 +470,8 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 			Name: "docs",
 			Fields: map[definition.FieldId]definition.Field{
 				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"metadata": {Name: "_metadata_", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
-				"status":   {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"metadata":                               {Name: "_metadata_", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
+				"status":                                 {Name: "status", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
 			},
 		},
 	}
@@ -519,8 +519,8 @@ func TestSelectWithAggregations_Integration(t *testing.T) {
 			Name: "sales",
 			Fields: map[definition.FieldId]definition.Field{
 				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeInteger}},
-				"region": {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"amount": {Name: "amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"region":                                 {Name: "region", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"amount":                                 {Name: "amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
 			},
 		},
 	}
@@ -587,7 +587,7 @@ func TestComputedFieldTranslation(t *testing.T) {
 			Name: "docs",
 			Fields: map[definition.FieldId]definition.Field{
 				definition.FieldId(data.DocumentIDField): {Name: definition.FieldName(data.DocumentIDField), FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
-				"metadata": {Name: "metadata", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
+				"metadata":                               {Name: "metadata", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeObject}},
 			},
 		},
 	}
@@ -611,7 +611,7 @@ func TestComputedFieldTranslation(t *testing.T) {
 		// This assertion demonstrates the desired SQL output.
 		// It is expected to fail with the current implementation, and the failure
 		// will show the actual generated SQL, guiding the necessary changes.
-		expectedSQL := `SELECT (json_extract("metadata", '$.version') + $1) AS next_version FROM docs`
+		expectedSQL := `SELECT (json_extract("metadata", '$.version') + $1) AS next_version FROM "docs"`
 		assert.Equal(t, expectedSQL, nq.Raw().SQL)
 		assert.Equal(t, []any{float64(1)}, nq.Raw().Params)
 	})

@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
-	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	_ "github.com/mattn/go-sqlite3"
@@ -49,7 +49,7 @@ func main() {
 
 	// --- CRUD Operations with Type Safety ---
 
-	p1 := data.New(&Product{
+	p1 := document.New(&Product{
 		Name:  "Laptop",
 		Price: 1200.00,
 		Stock: 50,

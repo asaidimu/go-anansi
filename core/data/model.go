@@ -96,7 +96,9 @@ func initializeModelReflect(model any) {
 		return
 	}
 
-	// Find system embed field path
+	// Find system embed field path. Only data.DocumentModel is initialized here —
+	// the assertion targets *DocumentModel specifically; other registered system
+	// models (e.g. document.DocumentModel) have their own New entry point.
 	for i := range fields {
 		if fields[i].IsSystemEmbed && fields[i].StructField.Type == docModelType {
 			fv := v.FieldByIndex(fields[i].Index)

@@ -17,7 +17,7 @@ func (c *SQLiteDeleteFromClause) Value() (string, []any, error) {
 	if c.target == nil {
 		return "", nil, ErrDeleteNoTarget
 	}
-	return fmt.Sprintf("DELETE FROM %s", c.target.Name), nil, nil
+	return fmt.Sprintf("DELETE FROM %s", quoteIdentifier(c.target.Name)), nil, nil
 }
 
 // SQLiteDeleteStatement represents a complete DELETE statement

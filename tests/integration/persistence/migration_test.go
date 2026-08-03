@@ -110,7 +110,7 @@ func TestE2E_MultipleMigrations_WithSQLite(t *testing.T) {
 	require.NoError(t, err)
 
 	// Seed data
-	docs := []*data.Document{
+	docs := []data.Documenter{
 		data.MustNewDocument(map[string]any{"name": "Alice", "age": 30}),
 		data.MustNewDocument(map[string]any{"name": "Bob", "age": 25}),
 		data.MustNewDocument(map[string]any{"name": "Charlie", "age": 35}),

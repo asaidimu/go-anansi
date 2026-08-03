@@ -100,7 +100,7 @@ const (
 	ModeStructs GenerationMode = 1 << iota
 
 	// ModeModel emits ModeStructs plus the root model treatment: the root
-	// struct embeds data.DocumentModel and a New constructor is emitted.
+	// struct embeds document.DocumentModel and a New constructor is emitted.
 	ModeModel
 
 	// ModeCollection emits ModeModel plus the typed collection wrapper, the
@@ -358,6 +358,18 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 	}
 	structs[rootTypeName] = rootFieldsGo
 
+	// Detect whether the root schema already declares the reserved system
+	// fields. When they are absent the generated root model embeds
+	// document.DocumentModel and additionally emits shadow ID/Metadata fields;
+	// when present they are emitted as ordinary schema fields instead.
+	rootHasSystemFields := false
+	for _, fd := range rootFields {
+		if fd.Name == "_id_" || fd.Name == "_metadata_" {
+			rootHasSystemFields = true
+			break
+		}
+	}
+
 	// Resolve projections declared under metadata.projections. Resolution and
 	// validation run in every mode so that schema errors surface regardless of
 	// which layers are emitted; only render decides whether they appear.
@@ -392,7 +404,7 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 	}
 
 	// Build output
-	return g.render(rootName, rootTypeName, structs, typeAliases, enumDefs, projections)
+	return g.render(rootName, rootTypeName, structs, typeAliases, enumDefs, projections, rootHasSystemFields)
 }
 
 // ============================================================================
@@ -403,7 +415,7 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 // generation mode controls which layers are emitted; all type-generation work
 // happens before this point and is shared across modes. Output is deterministic:
 // every map is emitted in sorted key order.
-func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, projections map[string][]StructField) (string, error) {
+func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, projections map[string][]StructField, rootHasSystemFields bool) (string, error) {
 	mode := g.mode
 	emitRootModel := mode.emitsRootModel()
 	emitCollection := mode.emitsCollection()
@@ -445,7 +457,7 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 
 	var imports []string
 	if emitRootModel {
-		imports = append(imports, "\"github.com/asaidimu/go-anansi/v8/core/data\"")
+		imports = append(imports, "\"github.com/asaidimu/go-anansi/v8/core/document\"")
 	}
 	if needsDecimal {
 		imports = append(imports, "\"github.com/asaidimu/go-anansi/v8/core/types/decimal\"")
@@ -496,7 +508,9 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 	if len(imports) > 0 {
 		sb.WriteString("import (\n")
 		for _, imp := range imports {
-			sb.WriteString("\t");sb.WriteString(imp);sb.WriteString("\n")
+			sb.WriteString("\t")
+			sb.WriteString(imp)
+			sb.WriteString("\n")
 		}
 		sb.WriteString(")\n\n")
 	}
@@ -532,18 +546,39 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 		emitStruct(&sb, name, structs[name], false)
 	}
 	if emitRootModel {
-		emitStruct(&sb, rootTypeName, structs[rootTypeName], true)
+		// When the schema does not declare the system fields, the root model
+		// embeds document.DocumentModel and emits shadow ID/Metadata fields so
+		// the struct exposes the system fields with canonical (and
+		// customizable) tags. When the schema declares them, they are already
+		// emitted as ordinary fields and nothing extra is added.
+		rootFields := structs[rootTypeName]
+		shadowIDName := ""
+		if !rootHasSystemFields {
+			rootFields, shadowIDName = appendSystemShadows(rootFields)
+		}
+		emitStruct(&sb, rootTypeName, rootFields, true)
+
+		// GetID returns the document identifier carried by the _id_ field —
+		// either the shadow (schema without system fields) or the ordinary
+		// schema field named _id_ (enriched schema). It shadows the promoted
+		// DocumentModel.GetID so the struct's own field is authoritative.
+		idName := shadowIDName
+		if idName == "" {
+			idName = "ID"
+		}
+		fmt.Fprintf(&sb, "// GetID returns the document identifier for %s.\n", rootTypeName)
+		fmt.Fprintf(&sb, "func (m *%s) GetID() string {\n    return m.%s\n}\n\n", rootTypeName, idName)
 
 		// Constructor
 		if g.scoped {
 			sb.WriteString(fmt.Sprintf("// New creates and initializes a new %s\n", rootTypeName))
 			sb.WriteString(fmt.Sprintf("func New(model %s) *%s {\n", rootTypeName, rootTypeName))
-			sb.WriteString(fmt.Sprintf("    return data.New(&model)\n"))
+			sb.WriteString(fmt.Sprintf("    return document.New(&model)\n"))
 			sb.WriteString("}\n\n")
 		} else {
 			sb.WriteString(fmt.Sprintf("// New%s creates and initializes a new %s\n", rootTypeName, rootTypeName))
 			sb.WriteString(fmt.Sprintf("func New%s(model %s) *%s {\n", rootTypeName, rootTypeName, rootTypeName))
-			sb.WriteString(fmt.Sprintf("    return data.New(&model)\n"))
+			sb.WriteString(fmt.Sprintf("    return document.New(&model)\n"))
 			sb.WriteString("}\n\n")
 		}
 
@@ -561,14 +596,14 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 }
 
 // emitStruct writes a single struct declaration. Fields are sorted by size so
-// that padding is minimized. embedModel embeds data.DocumentModel first.
+// that padding is minimized. embedModel embeds document.DocumentModel first.
 func emitStruct(sb *strings.Builder, name string, fields []StructField, embedModel bool) {
 	sort.Slice(fields, func(i, j int) bool {
 		return typeSize(fields[i].Type) > typeSize(fields[j].Type)
 	})
 	fmt.Fprintf(sb, "type %s struct {\n", name)
 	if embedModel {
-		sb.WriteString("    data.DocumentModel\n")
+		sb.WriteString("    document.DocumentModel\n")
 	}
 	for _, f := range fields {
 		tagStr := strings.Trim(f.Tags, "`")
@@ -579,6 +614,36 @@ func emitStruct(sb *strings.Builder, name string, fields []StructField, embedMod
 		fmt.Fprintf(sb, "    %s %s `%s`\n", f.Name, f.Type, tagStr)
 	}
 	sb.WriteString("}\n\n")
+}
+
+// appendSystemShadows appends shadow fields for the reserved _id_/_metadata_
+// system fields to the root model's field list. The shadows mirror the
+// embedded document.DocumentModel's fields with canonical tags, so the
+// generated model exposes the system fields as ordinary struct fields (and
+// document.New keeps them in sync with the embed). If the schema already
+// declares a Go field named ID or Metadata, the shadow is renamed to
+// ModelID/ModelMetadata to avoid a declaration collision. Returns the
+// augmented field list and the chosen _id_ shadow's Go field name.
+func appendSystemShadows(fields []StructField) ([]StructField, string) {
+	used := make(map[string]bool, len(fields))
+	for _, f := range fields {
+		used[f.Name] = true
+	}
+
+	idName := "ID"
+	if used[idName] {
+		idName = "ModelID"
+	}
+	metaName := "Metadata"
+	if used[metaName] {
+		metaName = "ModelMetadata"
+	}
+
+	shadows := append(append([]StructField(nil), fields...),
+		StructField{Name: idName, Type: "string", Tags: `json:"id,omitempty" anansi:"_id_,required=true,omitempty"`},
+		StructField{Name: metaName, Type: "map[string]any", Tags: `json:"metadata,omitempty" anansi:"_metadata_,required=true,omitempty"`},
+	)
+	return shadows, idName
 }
 
 // emitCollectionScaffold writes the typed collection wrapper, the collection
@@ -649,6 +714,23 @@ func emitCollectionScaffold(sb *strings.Builder, scoped bool, rootTypeName, root
 	sb.WriteString(fmt.Sprintf("            WithOperation(\"%sModel\")\n", fnPrefix))
 	sb.WriteString(fmt.Sprintf("    }\n"))
 	sb.WriteString(fmt.Sprintf("    return %s, nil\n", varName))
+	sb.WriteString(fmt.Sprintf("}\n\n"))
+
+	// DangerouslyReset%[1]sModel clears the cached singleton so Init%[1]sModel
+	// can be called again — for example after rebuilding the persistence layer
+	// in tests. It closes the previous instance's managed cache, if any.
+	sb.WriteString(fmt.Sprintf("// Deprecated: DangerouslyReset%sModel clears the cached singleton so\n", fnPrefix))
+	sb.WriteString(fmt.Sprintf("// Init%sModel can be called again — for example after rebuilding the\n", fnPrefix))
+	sb.WriteString(fmt.Sprintf("// persistence layer in tests. It closes the previous instance's managed\n"))
+	sb.WriteString(fmt.Sprintf("// cache, if any. Never use in production code.\n"))
+	sb.WriteString(fmt.Sprintf("func DangerouslyReset%sModel() {\n", fnPrefix))
+	sb.WriteString(fmt.Sprintf("    %sMu.Lock()\n", varName))
+	sb.WriteString(fmt.Sprintf("    defer %sMu.Unlock()\n", varName))
+	sb.WriteString(fmt.Sprintf("    if %s == nil {\n", varName))
+	sb.WriteString(fmt.Sprintf("        return\n"))
+	sb.WriteString(fmt.Sprintf("    }\n"))
+	sb.WriteString(fmt.Sprintf("    _ = %s.Close()\n", varName))
+	sb.WriteString(fmt.Sprintf("    %s = nil\n", varName))
 	sb.WriteString(fmt.Sprintf("}\n"))
 }
 
@@ -1198,6 +1280,14 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 			continue
 		}
 		goFieldName := toCamelCase(fieldName)
+		// Reserved system fields keep their canonical Go names so generated
+		// models can shadow the embedded document model's fields cleanly.
+		switch fieldName {
+		case "_id_":
+			goFieldName = "ID"
+		case "_metadata_":
+			goFieldName = "Metadata"
+		}
 
 		var goType string
 
@@ -1503,7 +1593,7 @@ func typeSize(typ string) int {
 		return 24
 	case "decimal.Decimal":
 		return 16
-	case "data.DocumentModel":
+	case "document.DocumentModel":
 		return 40
 	default:
 		return 8

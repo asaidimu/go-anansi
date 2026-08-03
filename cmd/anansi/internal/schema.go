@@ -29,9 +29,31 @@ func RunGen(cfg *Config, check, dryRun bool) error {
 		return fmt.Errorf("read lockfile: %w", err)
 	}
 
+	md, mdChanged, err := LoadMetadata(cfg.Metadata.SchemaPath)
+	if err != nil {
+		return err
+	}
+	generateMetadata := metadataFileExists(cfg.Metadata.SchemaPath) || cfg.Metadata.OutDir != ""
+	if mdChanged && !dryRun {
+		if err := writeMetadataFile(cfg.Metadata.SchemaPath, md); err != nil {
+			return err
+		}
+	}
+
 	matches, err := doublestar.FilepathGlob(cfg.Schema.Glob)
 	if err != nil {
 		return fmt.Errorf("glob pattern %q: %w", cfg.Schema.Glob, err)
+	}
+	// The declarative metadata file is not a collection schema; keep it out of
+	// the migration scan even when it matches the schema glob.
+	if cfg.Metadata.SchemaPath != "" {
+		filtered := matches[:0]
+		for _, m := range matches {
+			if m != cfg.Metadata.SchemaPath {
+				filtered = append(filtered, m)
+			}
+		}
+		matches = filtered
 	}
 
 	if len(matches) == 0 {
@@ -57,31 +79,12 @@ func RunGen(cfg *Config, check, dryRun bool) error {
 
 	var files []SchemaFile
 	for _, m := range matches {
-		raw, err := os.ReadFile(m)
+		// Migrate runs the normalize/enrich step first so the on-disk schema,
+		// lockfile, and migration targets all agree on the system fields and
+		// user-declared metadata (same code path as `schema normalize`).
+		s, enrichedJSON, err := normalizeSchemaFile(m, md, dryRun)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", m, err)
-		}
-
-		s, err := definition.FromJSON(raw)
-		if err != nil {
-			return fmt.Errorf("parse %s: %w", m, err)
-		}
-
-		if s.Version == nil {
-			s.Version = common.MustNewVersion("1.0.0")
-		}
-
-		if meta.NormalizeSchema(s) {
-			normalized := s.ToJSON()
-			if dryRun {
-				fmt.Printf("  would normalize: %s\n", m)
-			} else {
-				if err := os.WriteFile(m, normalized, 0644); err != nil {
-					return fmt.Errorf("write normalized %s: %w", m, err)
-				}
-				fmt.Printf("  normalized: %s\n", m)
-			}
-			raw = normalized
+			return err
 		}
 
 		if issues, ok := schema.SchemaValidator().Validate(s.AsMap()); !ok {
@@ -96,8 +99,8 @@ func RunGen(cfg *Config, check, dryRun bool) error {
 			Path:   m,
 			Name:   s.Name,
 			Schema: s,
-			Raw:    s.ToJSON(),
-			Hash:   ContentHash(raw),
+			Raw:    enrichedJSON,
+			Hash:   ContentHash(enrichedJSON),
 		})
 	}
 
@@ -157,9 +160,27 @@ func RunGen(cfg *Config, check, dryRun bool) error {
 
 	for _, f := range pending {
 		prev := lock.Schemas[f.Name]
-		migFile, newVer, err := GenerateMigration(f, prev, cfg.Schema.MigrationsDir)
+		migFile, newVer, noChanges, err := GenerateMigration(f, prev, cfg.Schema.MigrationsDir)
 		if err != nil {
 			return fmt.Errorf("generate migration for %s: %w", f.Name, err)
+		}
+
+		if noChanges {
+			// Only the platform-managed system fields changed (enrichment).
+			// Keep the previous migration/version/history and just record the
+			// enriched schema and its new hash.
+			fmt.Printf("  no migration needed (system fields only): %s\n", f.Name)
+			ref := &SchemaRef{
+				Path:          f.Path,
+				Hash:          f.Hash,
+				Version:       prev.Version,
+				Schema:        f.Schema,
+				MigrationFile: prev.MigrationFile,
+				History:       prev.History,
+				SubMigrations: prev.SubMigrations,
+			}
+			lock.Schemas[f.Name] = ref
+			continue
 		}
 
 		ref := &SchemaRef{
@@ -193,13 +214,19 @@ func RunGen(cfg *Config, check, dryRun bool) error {
 		return fmt.Errorf("generate registry: %w", err)
 	}
 
+	if generateMetadata {
+		if _, err := GenerateMetadataFiles(cfg, md, dryRun); err != nil {
+			return err
+		}
+	}
+
 	fmt.Println("migrations generated successfully")
 	return nil
 }
 
-func GenerateMigration(f SchemaFile, prev *SchemaRef, outDir string) (migFile, newVersion string, err error) {
+func GenerateMigration(f SchemaFile, prev *SchemaRef, outDir string) (migFile, newVersion string, noChanges bool, err error) {
 	if err := os.MkdirAll(outDir, 0755); err != nil {
-		return "", "", fmt.Errorf("create output dir: %w", err)
+		return "", "", false, fmt.Errorf("create output dir: %w", err)
 	}
 
 	oldSchema := &definition.Schema{}
@@ -209,7 +236,15 @@ func GenerateMigration(f SchemaFile, prev *SchemaRef, outDir string) (migFile, n
 
 	diff, err := definition.Diff(oldSchema, f.Schema)
 	if err != nil {
-		return "", "", fmt.Errorf("compute diff: %w", err)
+		return "", "", false, fmt.Errorf("compute diff: %w", err)
+	}
+
+	// definition.Diff hides the platform-managed system fields (_id_,
+	// _metadata_), so a pending schema whose only delta is enrichment produces
+	// an empty diff. No user-facing change means no migration and no version
+	// bump — just record the new schema/hash in the lockfile.
+	if prev != nil && len(diff.Changes) == 0 {
+		return "", prev.Version, true, nil
 	}
 
 	bump := definition.VersionImpact(diff)
@@ -222,7 +257,7 @@ func GenerateMigration(f SchemaFile, prev *SchemaRef, outDir string) (migFile, n
 
 	toVer, err := bumpVersion(fromVer, bump)
 	if err != nil {
-		return "", "", fmt.Errorf("compute target version: %w", err)
+		return "", "", false, fmt.Errorf("compute target version: %w", err)
 	}
 
 	safeName := SafeIdent(f.Name)
@@ -232,12 +267,12 @@ func GenerateMigration(f SchemaFile, prev *SchemaRef, outDir string) (migFile, n
 	code := BuildMigrationCode(f, safeName, fromVer, toVer, phase, bump)
 
 	if err := os.WriteFile(migrationPath, []byte(code), 0644); err != nil {
-		return "", "", fmt.Errorf("write migration file: %w", err)
+		return "", "", false, fmt.Errorf("write migration file: %w", err)
 	}
 
 	rel, _ := filepath.Rel(outDir, migrationPath)
 	fmt.Printf("  generated: %s\n", migrationPath)
-	return rel, toVer, nil
+	return rel, toVer, false, nil
 }
 
 func bumpVersion(from string, bump definition.VersionBump) (string, error) {

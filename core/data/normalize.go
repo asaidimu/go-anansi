@@ -8,7 +8,7 @@ import "context"
 // This ensures that only the top-level document retains its system fields,
 // providing a clean data structure for operations that do not require metadata
 // on nested elements.
-func (d *Document) Normalize() *Document {
+func (d *Document) Normalize() Documenter {
 	if d == nil {
 		return nil
 	}

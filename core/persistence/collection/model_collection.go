@@ -10,6 +10,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/cache"
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/utils"
@@ -19,8 +20,23 @@ import (
 // Model Collection Implementation
 // ============================================================================
 
+// ModelIdentity is the minimal contract ModelCollection requires of its model
+// type P and shape types R/S: it must expose the document ID used as the cache
+// key. Both data.DocumentModel and document.DocumentModel embeds promote GetID
+// to the embedding struct, so models built on either pipeline satisfy it.
+type ModelIdentity interface {
+	GetID() string
+}
+
+// ModelConverter converts a model (or projection shape) instance into the
+// Documenter that will be persisted. Both the collection's model P and shape
+// R satisfy ModelIdentity, so a single converter serves every operation. It
+// receives the model as any so the shape-typed methods (CreateFrom/UpdateFrom)
+// can reuse the same hook.
+type ModelConverter func(ctx context.Context, model any) (data.Documenter, error)
+
 // ModelCollectionOptions configures the creation of a model collection.
-type ModelCollectionOptions[P data.DocumentModelProvider] struct {
+type ModelCollectionOptions[P ModelIdentity] struct {
 	// Cache is an optional pre-built cache for model instances. If nil, a
 	// managed cache is constructed from CacheConfig. If both are nil, the
 	// model collection operates without caching.
@@ -34,22 +50,59 @@ type ModelCollectionOptions[P data.DocumentModelProvider] struct {
 	// on startup. Requires Cache or CacheConfig to be set. Useful for small
 	// collections such as application settings.
 	AutoLoad bool
+
+	// ToDocumenter converts a model instance into the Documenter that is
+	// persisted. Defaults to the data-factory pipeline
+	// (data.NewDocumentFromStruct). Set it to produce a different document
+	// implementation — e.g. a container-backed document.Document built from
+	// the embedded document.DocumentPool — or to inject custom
+	// identity/metadata.
+	ToDocumenter ModelConverter
+
+	// ToPartialDocumenter converts a model instance into the partial
+	// Documenter used for updates. Defaults to
+	// data.NewPartialDocumentFromStruct.
+	ToPartialDocumenter ModelConverter
 }
 
 // ModelCollection is a type-safe wrapper over base.Collection bound to a
-// single model P — a pointer to a struct embedding data.DocumentModel. All
-// standard CRUD operations are fixed to P. Documents can additionally be
-// read or written through alternative shapes (projections) R that also embed
-// data.DocumentModel via the generic ReadAs/CreateFrom/UpdateFrom methods, so
-// one collection instance serves any subset of the underlying schema.
-type ModelCollection[P data.DocumentModelProvider] struct {
+// single model P — a pointer to a struct embedding a document model
+// (data.DocumentModel or document.DocumentModel). All standard CRUD operations
+// are fixed to P. Documents can additionally be read or written through
+// alternative shapes (projections) R that also satisfy ModelIdentity via the
+// generic ReadAs/CreateFrom/UpdateFrom methods, so one collection instance
+// serves any subset of the underlying schema.
+//
+// ModelCollection embeds base.Collection — so it remains usable wherever a
+// base.Collection is expected — alongside *document.DocumentPool, the
+// schema-bound container-backed document factory owned by the wrapped
+// collection (the base collection's pool is reused; a fresh pool is compiled
+// from the active schema only when the wrapped collection exposes none).
+// Promoted methods (FromStruct, FromPartialStruct, FromMap, New, ...) construct
+// container-backed document.Documents that share the pool, and the default
+// ToDocumenter/ToPartialDocumenter hooks are the pool's
+// FromStruct/FromPartialStruct.
+type ModelCollection[P ModelIdentity] struct {
 	base.Collection
-	collectionName string
-	logger         *zap.Logger
-	cache          cache.RepositoryCache[P]
+	*document.DocumentPool
+	collectionName      string
+	logger              *zap.Logger
+	cache               cache.RepositoryCache[P]
+	toDocumenter        ModelConverter
+	toPartialDocumenter ModelConverter
 }
 
-func NewModelCollection[P data.DocumentModelProvider](raw base.Collection, logger *zap.Logger, opts ...ModelCollectionOptions[P]) (*ModelCollection[P], error) {
+func NewModelCollection[P ModelIdentity](raw base.Collection, logger *zap.Logger, opts ...ModelCollectionOptions[P]) (*ModelCollection[P], error) {
+	// The container-backed document factory is mandatory: reuse the wrapped
+	// collection's pool when it exposes one (the base collection owns it),
+	// otherwise resolve the active schema and build the pool eagerly.
+	dc, err := documentPoolFor(context.Background(), raw)
+	if err != nil {
+		return nil, common.SystemErrorFrom(err).
+			WithOperation("ModelCollection.NewModelCollection").
+			WithMessage("failed to resolve container-backed document pool")
+	}
+
 	metadata := raw.Metadata(context.Background(), nil, false)
 
 	var opt ModelCollectionOptions[P]
@@ -68,11 +121,27 @@ func NewModelCollection[P data.DocumentModelProvider](raw base.Collection, logge
 		)
 	}
 
+	toDocumenter := opt.ToDocumenter
+	if toDocumenter == nil {
+		toDocumenter = func(ctx context.Context, model any) (data.Documenter, error) {
+			return dc.FromStruct(model, document.WithContext(ctx))
+		}
+	}
+	toPartialDocumenter := opt.ToPartialDocumenter
+	if toPartialDocumenter == nil {
+		toPartialDocumenter = func(ctx context.Context, model any) (data.Documenter, error) {
+			return dc.FromPartialStruct(model, document.WithContext(ctx))
+		}
+	}
+
 	mc := &ModelCollection[P]{
-		Collection:     raw,
-		collectionName: metadata.Name,
-		logger:         logger,
-		cache:          cacheImpl,
+		Collection:          raw,
+		DocumentPool:        dc,
+		collectionName:      metadata.Name,
+		logger:              logger,
+		cache:               cacheImpl,
+		toDocumenter:        toDocumenter,
+		toPartialDocumenter: toPartialDocumenter,
 	}
 
 	if opt.AutoLoad {
@@ -88,9 +157,9 @@ func NewModelCollection[P data.DocumentModelProvider](raw base.Collection, logge
 }
 
 // newModelPtr allocates a fresh zero value of P. P is a pointer-to-struct via
-// the DocumentModelProvider constraint (Model() has a pointer receiver), but
-// value types are also handled for robustness.
-func newModelPtr[P data.DocumentModelProvider]() P {
+// the ModelIdentity constraint (GetID has a pointer receiver on the embedded
+// document model), but value types are also handled for robustness.
+func newModelPtr[P ModelIdentity]() P {
 	typ := reflect.TypeFor[P]()
 	if typ.Kind() == reflect.Pointer {
 		return reflect.New(typ.Elem()).Interface().(P)
@@ -120,14 +189,15 @@ func (mc *ModelCollection[P]) Close() error {
 func (mc *ModelCollection[P]) Create(ctx context.Context, doc P) (P, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 
-	d, err := data.NewDocumentFromStruct(doc, ctx)
+	d, err := mc.toDocumenter(ctx, doc)
 	if err != nil {
 		return newModelPtr[P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Create").
 			WithMessage("failed to convert model to document")
 	}
 
-	res, err := mc.CreateOne(ctx, d)
+	res, err := mc.Collection.CreateOne(ctx, d)
+	d.Release() // converted doc is consumed by persistence; return pooled containers
 	if err != nil {
 		return newModelPtr[P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Create")
@@ -141,7 +211,7 @@ func (mc *ModelCollection[P]) Create(ctx context.Context, doc P) (P, error) {
 	}
 
 	if mc.cache != nil {
-		mc.cache.Set(result.Model().ID, result)
+		mc.cache.Set(result.GetID(), result)
 	}
 
 	return result, nil
@@ -153,9 +223,9 @@ func (mc *ModelCollection[P]) CreateMany(ctx context.Context, docs []P) ([]P, er
 		return []P{}, nil
 	}
 
-	input := make([]*data.Document, len(docs))
+	input := make([]data.Documenter, len(docs))
 	for i, doc := range docs {
-		d, err := data.NewDocumentFromStruct(doc, ctx)
+		d, err := mc.toDocumenter(ctx, doc)
 		if err != nil {
 			return nil, common.SystemErrorFrom(err).
 				WithOperation("ModelCollection.CreateMany").
@@ -166,6 +236,9 @@ func (mc *ModelCollection[P]) CreateMany(ctx context.Context, docs []P) ([]P, er
 	}
 
 	results, err := mc.Collection.CreateMany(ctx, input)
+	for _, d := range input {
+		d.Release() // converted docs are consumed by persistence; return pooled containers
+	}
 	if err != nil {
 		return nil, common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.CreateMany")
@@ -181,7 +254,7 @@ func (mc *ModelCollection[P]) CreateMany(ctx context.Context, docs []P) ([]P, er
 				WithMessagef("failed to bind result at index %d to model", i)
 		}
 		if mc.cache != nil {
-			mc.cache.Set(result.Model().ID, result)
+			mc.cache.Set(result.GetID(), result)
 		}
 		output[i] = result
 	}
@@ -258,7 +331,7 @@ func (mc *ModelCollection[P]) Read(ctx context.Context, q *query.Query) ([]P, er
 
 	if mc.cache != nil {
 		for _, m := range output {
-			if id := m.Model().ID; id != "" {
+			if id := m.GetID(); id != "" {
 				mc.cache.Set(id, m)
 			}
 		}
@@ -304,7 +377,7 @@ func mergeUpdateOptions(cu base.CollectionUpdate, opts ...base.CollectionUpdate)
 func (mc *ModelCollection[P]) Update(ctx context.Context, id string, update P, opts ...base.CollectionUpdate) (P, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 
-	d, err := data.NewPartialDocumentFromStruct(update, ctx)
+	d, err := mc.toPartialDocumenter(ctx, update)
 	if err != nil {
 		return newModelPtr[P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Update").
@@ -323,6 +396,7 @@ func (mc *ModelCollection[P]) Update(ctx context.Context, id string, update P, o
 	}, opts...)
 
 	result, err := mc.Collection.Update(ctx, &cu)
+	d.Release() // converted partial doc is consumed by persistence; return pooled containers
 
 	if err != nil {
 		return newModelPtr[P](), common.SystemErrorFrom(err).
@@ -362,7 +436,7 @@ func (mc *ModelCollection[P]) Update(ctx context.Context, id string, update P, o
 
 func (mc *ModelCollection[P]) UpdateMany(ctx context.Context, f *query.QueryFilter, update P, opts ...base.CollectionUpdate) (int, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
-	d, err := data.NewPartialDocumentFromStruct(update, ctx)
+	d, err := mc.toPartialDocumenter(ctx, update)
 	if err != nil {
 		return 0, common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.UpdateMany").
@@ -375,6 +449,7 @@ func (mc *ModelCollection[P]) UpdateMany(ctx context.Context, f *query.QueryFilt
 	}, opts...)
 
 	result, err := mc.Collection.Update(ctx, &cu)
+	d.Release() // converted partial doc is consumed by persistence; return pooled containers
 	if err != nil {
 		return 0, common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.UpdateMany")
@@ -392,7 +467,7 @@ func (mc *ModelCollection[P]) UpdateMany(ctx context.Context, f *query.QueryFilt
 func (mc *ModelCollection[P]) Replace(ctx context.Context, id string, replacement P, opts ...base.CollectionUpdate) (P, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 
-	d, err := data.NewDocumentFromStruct(replacement, ctx)
+	d, err := mc.toDocumenter(ctx, replacement)
 	if err != nil {
 		return newModelPtr[P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Replace").
@@ -411,6 +486,7 @@ func (mc *ModelCollection[P]) Replace(ctx context.Context, id string, replacemen
 	}, opts...)
 
 	result, err := mc.Collection.Update(ctx, &cu)
+	d.Release() // converted doc is consumed by persistence; return pooled containers
 	if err != nil {
 		return newModelPtr[P](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Replace").
@@ -457,7 +533,7 @@ func (mc *ModelCollection[P]) DeleteByID(ctx context.Context, id string) error {
 		Where(data.DocumentIDField).Eq(id).
 		Build().Filters
 
-	count, err := mc.Delete(ctx, filter, false)
+	count, err := mc.Collection.Delete(ctx, filter, false)
 	if err != nil {
 		return common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.DeleteByID").
@@ -480,7 +556,7 @@ func (mc *ModelCollection[P]) DeleteByID(ctx context.Context, id string) error {
 
 func (mc *ModelCollection[P]) DeleteMany(ctx context.Context, f *query.QueryFilter, unsafe bool) (int, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
-	count, err := mc.Delete(ctx, f, unsafe)
+	count, err := mc.Collection.Delete(ctx, f, unsafe)
 	if err != nil {
 		return 0, common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.DeleteMany")
@@ -497,7 +573,7 @@ func (mc *ModelCollection[P]) DeleteMany(ctx context.Context, f *query.QueryFilt
 
 func (mc *ModelCollection[P]) Validate(ctx context.Context, doc P, loose bool) error {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
-	d, err := data.NewDocumentFromStruct(doc, ctx)
+	d, err := mc.toDocumenter(ctx, doc)
 	if err != nil {
 		return common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Validate").
@@ -505,16 +581,18 @@ func (mc *ModelCollection[P]) Validate(ctx context.Context, doc P, loose bool) e
 	}
 
 	if issues, ok := mc.Collection.Validate(ctx, d, loose); !ok {
+		d.Release()
 		return common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.Validate").WithIssues(issues)
 	}
 
+	d.Release()
 	return nil
 }
 
 func (mc *ModelCollection[P]) ValidatePartial(ctx context.Context, doc P) error {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
-	d, err := data.NewPartialDocumentFromStruct(doc, ctx)
+	d, err := mc.toPartialDocumenter(ctx, doc)
 	if err != nil {
 		return common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.ValidatePartial").
@@ -522,10 +600,12 @@ func (mc *ModelCollection[P]) ValidatePartial(ctx context.Context, doc P) error 
 	}
 
 	if issues, ok := mc.Collection.Validate(ctx, d, true); !ok {
+		d.Release()
 		return common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.ValidatePartial").WithIssues(issues)
 	}
 
+	d.Release()
 	return nil
 }
 
@@ -548,14 +628,14 @@ func (mc *ModelCollection[P]) Unsubscribe(ctx context.Context, id string) {
 // ============================================================================
 //
 // The collection is fixed to a single model P, but documents can be read or
-// written through alternative shapes R — projections that embed
-// data.DocumentModel and thus satisfy data.DocumentModelProvider. Shape
+// written through alternative shapes R — projections that embed a document
+// model and thus satisfy ModelIdentity. Shape
 // operations bind the same underlying documents into R, so one collection
 // instance serves any subset of the schema. Shape results are not stored in
 // the model-typed cache.
 
 // ReadAs reads documents matching q and binds each into a fresh R.
-func (mc *ModelCollection[P]) ReadAs[R data.DocumentModelProvider](ctx context.Context, q *query.Query) ([]R, error) {
+func (mc *ModelCollection[P]) ReadAs[R ModelIdentity](ctx context.Context, q *query.Query) ([]R, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 	res, err := mc.Collection.Read(ctx, q)
 	if err != nil {
@@ -583,17 +663,17 @@ func (mc *ModelCollection[P]) ReadAs[R data.DocumentModelProvider](ctx context.C
 
 // CreateFrom persists a new document built from shape R and returns the
 // hydrated shape.
-func (mc *ModelCollection[P]) CreateFrom[R data.DocumentModelProvider, S data.DocumentModelProvider](ctx context.Context, doc R) (S, error) {
+func (mc *ModelCollection[P]) CreateFrom[R ModelIdentity, S ModelIdentity](ctx context.Context, doc R) (S, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 
-	d, err := data.NewDocumentFromStruct(doc, ctx)
+	d, err := mc.toDocumenter(ctx, doc)
 	if err != nil {
 		return newModelPtr[S](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.CreateFrom").
 			WithMessage("failed to convert shape to document")
 	}
 
-	res, err := mc.CreateOne(ctx, d)
+	res, err := mc.Collection.CreateOne(ctx, d)
 	if err != nil {
 		return newModelPtr[S](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.CreateFrom")
@@ -614,7 +694,7 @@ func (mc *ModelCollection[P]) CreateFrom[R data.DocumentModelProvider, S data.Do
 // options may be supplied, e.g. Compute expressions for atomic server-side
 // increments; see mergeUpdateOptions for how they overlay the built-in
 // id filter and shape-derived set.
-func (mc *ModelCollection[P]) UpdateFrom[R data.DocumentModelProvider, S data.DocumentModelProvider](
+func (mc *ModelCollection[P]) UpdateFrom[R ModelIdentity, S ModelIdentity](
 	ctx context.Context,
 	id string,
 	update R,
@@ -622,7 +702,7 @@ func (mc *ModelCollection[P]) UpdateFrom[R data.DocumentModelProvider, S data.Do
 ) (S, error) {
 	ctx = common.ContextWithCollectionName(ctx, mc.collectionName)
 
-	d, err := data.NewPartialDocumentFromStruct(update, ctx)
+	d, err := mc.toPartialDocumenter(ctx, update)
 	if err != nil {
 		return newModelPtr[S](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.UpdateFrom").

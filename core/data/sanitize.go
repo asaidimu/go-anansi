@@ -786,7 +786,7 @@ func mergeConfigs(globalConfig *FieldMaskConfig, scopedConfig FieldMaskConfig) F
 //   - Sanitization operation fails
 //
 // The returned document is a new instance; the original is unchanged.
-func (d *Document) Sanitize(ctx ...context.Context) (*Document, error) {
+func (d *Document) Sanitize(ctx ...context.Context) (Documenter, error) {
 	sanitizer, err := getFactory().getSanitizersForContexts(d.ctx, ctx...)
 	if err != nil {
 		return nil, err
@@ -838,15 +838,14 @@ func (d *Document) SafeString(ctx ...context.Context) string {
 
 // SanitizeDocumentArray sanitizes an array of documents.
 // Each document uses its own embedded context for scope resolution.
-func SanitizeDocumentArray(docs []*Document) ([]*Document, error) {
+func SanitizeDocumentArray(docs []*Document) ([]Documenter, error) {
 	if len(docs) == 0 {
-		return docs, nil
+		return nil, nil
 	}
 
-	sanitized := make([]*Document, len(docs))
+	sanitized := make([]Documenter, len(docs))
 	for i, doc := range docs {
-		var err error
-		sanitized[i], err = doc.Sanitize()
+		res, err := doc.Sanitize()
 		if err != nil {
 			return nil, common.SystemErrorFrom(err).
 				WithOperation("data.SanitizeDocumentArray").
@@ -857,22 +856,22 @@ func SanitizeDocumentArray(docs []*Document) ([]*Document, error) {
 					Index:   &i,
 				})
 		}
+		sanitized[i] = res
 	}
 	return sanitized, nil
 }
 
 // SanitizeDocumentArrayWithContexts sanitizes documents with per-document contexts.
-func SanitizeDocumentArrayWithContexts(docs []*Document, contexts []context.Context) ([]*Document, error) {
+func SanitizeDocumentArrayWithContexts(docs []*Document, contexts []context.Context) ([]Documenter, error) {
 	if len(docs) != len(contexts) {
 		return nil, common.NewSystemError("ERR_SANITIZATION_CONFIG_INVALID").
 			WithMessage("docs and contexts length mismatch").
 			WithMessagef("expected %d contexts for %d documents", len(docs), len(contexts))
 	}
 
-	sanitized := make([]*Document, len(docs))
+	sanitized := make([]Documenter, len(docs))
 	for i, doc := range docs {
-		var err error
-		sanitized[i], err = doc.Sanitize(contexts[i])
+		res, err := doc.Sanitize(contexts[i])
 		if err != nil {
 			return nil, common.SystemErrorFrom(err).
 				WithOperation("data.SanitizeDocumentArrayWithContexts").
@@ -883,6 +882,7 @@ func SanitizeDocumentArrayWithContexts(docs []*Document, contexts []context.Cont
 					Index:   &i,
 				})
 		}
+		sanitized[i] = res
 	}
 	return sanitized, nil
 }
@@ -922,7 +922,7 @@ func SanitizeValue(ctx context.Context, value any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return sanitized.data, nil
+		return sanitized.Data(), nil
 
 	case []map[string]any:
 		sanitized := make([]map[string]any, len(v))
@@ -937,7 +937,7 @@ func SanitizeValue(ctx context.Context, value any) (any, error) {
 					WithOperation("data.SanitizeValue").
 					WithMessagef("failed to sanitize map at index %d", i)
 			}
-			sanitized[i] = sanitizedDoc.data
+			sanitized[i] = sanitizedDoc.Data()
 		}
 		return sanitized, nil
 

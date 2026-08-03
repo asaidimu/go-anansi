@@ -16,44 +16,44 @@ var RegistryCollectionSchemaJson = fmt.Sprintf(`
   "version": "1.0.0",
   "description": "Stores schema definitions for all collections in the database.",
   "fields": {
-    "019f2c3f-37cd-77c1-acac-9f6ade24120d": {
+    "019f4066-0000-7000-8000-000000000001": {
       "name": "name",
       "type": "string",
       "description": "The logical name of the schema."
     },
-    "019f2c3f-37cd-77f9-b5f4-42b7f3906d83": {
+    "019f4066-0000-7000-8000-000000000002": {
       "name": "description",
       "type": "string",
       "description": "A description of the schema."
     },
-    "019f2c3f-37cd-7801-a648-b7d414d50b62": {
+    "019f4066-0000-7000-8000-000000000003": {
       "name": "version",
       "type": "string",
       "required": true,
       "description": "The current active version of the schema."
     },
-    "019f2c3f-37cd-7808-a681-97b38228f6b5": {
+    "019f4066-0000-7000-8000-000000000004": {
       "name": "versions",
       "type": "record",
    	  "schema": {
-        "id": "019f2c3f-37cd-7810-b000-b7a83b05b848"
+        "id": "019f4066-0000-7000-8000-000000000005"
    	  },
       "required": false,
       "description": "A list of legacy schemas, their physical name & their corresponding schema."
     }
   },
   "schemas": {
-    "019f2c3f-37cd-7810-b000-b7a83b05b848": {
+    "019f4066-0000-7000-8000-000000000005": {
       "name": "SchemaVersions",
       "description": "A list of legacy schemas, their physical name & their corresponding schema.",
       "fields": {
-        "019f2c3f-37cd-7816-b965-fd3d3f676215": {
+        "019f4066-0000-7000-8000-000000000006": {
           "name": "physical",
           "type": "string",
           "required": false,
           "description": "The physical name of the collection in the database."
         },
-   	    "019f2c3f-37cd-781d-8fd2-6792d1fc83ad": {
+   	    "019f4066-0000-7000-8000-000000000007": {
           "name": "schema",
           "type": "record",
           "required": true,
@@ -63,7 +63,7 @@ var RegistryCollectionSchemaJson = fmt.Sprintf(`
     }
   },
   "indexes": {
-    "019f2c3f-37cd-7823-b029-4f9781c97ae3": {
+    "019f4066-0000-7000-8000-000000000008": {
       "name": "name_index",
       "fields": ["name"],
       "type": "normal",

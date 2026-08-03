@@ -38,7 +38,7 @@ func TestCreateTableTree_Value(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, nq.Raw().Params)
-	expectedSQL := `CREATE TABLE IF NOT EXISTS users (
+	expectedSQL := `CREATE TABLE IF NOT EXISTS "users" (
     "age" INTEGER,
     "id" TEXT,
     "name" TEXT
@@ -97,7 +97,7 @@ func TestCreateIndexTree_Value(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, nq.Raw().Params)
-	assert.Equal(t, `CREATE INDEX IF NOT EXISTS "idx_users_name" ON users ("name");`, nq.Raw().SQL)
+	assert.Equal(t, `CREATE INDEX IF NOT EXISTS "idx_users_name" ON "users" ("name");`, nq.Raw().SQL)
 }
 
 func TestDropIndexTree_Value(t *testing.T) {
@@ -125,7 +125,7 @@ func TestDropIndexTree_Value(t *testing.T) {
 
 	require.NoError(t, err)
 	assert.Empty(t, nq.Raw().Params)
-	assert.Equal(t, `DROP INDEX IF EXISTS idx_users_name;`, nq.Raw().SQL)
+	assert.Equal(t, `DROP INDEX IF EXISTS "idx_users_name";`, nq.Raw().SQL)
 }
 
 func TestCreateTableTree_EnumValueConsistency(t *testing.T) {

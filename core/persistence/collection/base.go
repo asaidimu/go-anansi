@@ -6,6 +6,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/transaction"
 
@@ -28,6 +29,16 @@ type baseCollection struct {
 	subscriptions map[string]*base.SubscriptionInfo // To store unsubscribe functions
 	subMu         sync.RWMutex                      // Mutex to protect subscriptions map
 	metadata      *base.CollectionMetadata
+
+	// docPool is the container-backed document pool owned by this lowest
+	// collection level. It is built lazily from the active schema and rebuilt
+	// whenever the schema version changes, and is shared with model
+	// collections and decorators via DocumentPoolProvider. Egress documents
+	// (CreateMany, Read, Update) are schema-free record views instead, so
+	// callers always receive document.Documents regardless of row shape.
+	docPoolMu      sync.Mutex
+	docPool        *document.DocumentPool
+	docPoolVersion string
 }
 
 var _ base.Collection = (*baseCollection)(nil)
@@ -81,9 +92,70 @@ func (c *baseCollection) Transact(ctx context.Context, fn func(ctx context.Conte
 	})
 }
 
+// documentPoolFor resolves the container-backed document pool for a collection.
+// The pool is owned by the lowest collection level (baseCollection), which
+// every collection reaches through the embedded DocumentPoolProvider; this
+// helper exists so decorators and model collections can forward to it without
+// compiling a second pool from the schema.
+func documentPoolFor(ctx context.Context, c base.Collection) (*document.DocumentPool, error) {
+	pool, err := c.DocumentPool(ctx)
+	if err != nil {
+		return nil, common.SystemErrorFrom(err).
+			WithOperation("collection.documentPoolFor").
+			WithMessage("failed to resolve collection document pool")
+	}
+	return pool, nil
+}
+
+// DocumentPool returns the container-backed document pool for the active
+// schema, building and caching it on first use and rebuilding it whenever the
+// schema version changes. As the lowest collection level, baseCollection owns
+// the pool; model collections and decorators reuse it through the embedded
+// DocumentPoolProvider instead of compiling their own.
+func (c *baseCollection) DocumentPool(ctx context.Context) (*document.DocumentPool, error) {
+	sc, err := c.currentSchema(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	version := schemaVersionKey(sc)
+
+	c.docPoolMu.Lock()
+	defer c.docPoolMu.Unlock()
+	if c.docPool != nil && c.docPoolVersion == version {
+		return c.docPool, nil
+	}
+
+	pool, err := document.NewDocumentPool(sc)
+	if err != nil {
+		return nil, err
+	}
+	c.docPool = pool
+	c.docPoolVersion = version
+	return pool, nil
+}
+
+// documentFromMap builds the schema-free record view used for every egress
+// document (CreateMany, Read, Update). Record views hold the raw
+// database-returned map, so rows that don't conform to the collection schema
+// (joined projections, mismatched value types) still egress as
+// document.Documents.
+func (c *baseCollection) documentFromMap(ctx context.Context, m map[string]any) *document.Document {
+	return document.NewRecordView(m, ctx)
+}
+
+// schemaVersionKey returns a stable identity for a schema so the cached
+// document pool can be invalidated across migrations.
+func schemaVersionKey(sc *definition.Schema) string {
+	if sc == nil || sc.Version == nil {
+		return ""
+	}
+	return sc.Version.String()
+}
+
 // CreateOne creates a single document.
-func (c *baseCollection) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
-	results, err := c.CreateMany(ctx, []*data.Document{doc})
+func (c *baseCollection) CreateOne(ctx context.Context, doc data.Documenter) (base.CreateResult, error) {
+	results, err := c.CreateMany(ctx, []data.Documenter{doc})
 	result := base.CreateResult{}
 
 	if len(results) > 0 {
@@ -98,7 +170,7 @@ func (c *baseCollection) CreateOne(ctx context.Context, doc *data.Document) (bas
 }
 
 // CreateMany creates multiple documents.
-func (c *baseCollection) CreateMany(ctx context.Context, docs []*data.Document) ([]base.CreateResult, error) {
+func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Documenter) ([]base.CreateResult, error) {
 	results := make([]base.CreateResult, len(docs))
 
 	// Insert the documents
@@ -107,7 +179,8 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []*data.Document) 
 		if err != nil {
 			return nil, err
 		}
-		values := data.DocumentSet(docs).ToMaps()
+		set, _ := data.NewDocumentSet(docs)
+		values := set.ToMaps()
 		return interactor.InsertDocuments(ctx, sc, values)
 	})
 
@@ -118,7 +191,7 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []*data.Document) 
 	insertedDocs := inserted.([]map[string]any)
 
 	for i, doc := range insertedDocs {
-		results[i] = base.CreateResult{Status: base.StatusCreated, Data: data.MustNewDocument(doc, ctx)}
+		results[i] = base.CreateResult{Status: base.StatusCreated, Data: c.documentFromMap(ctx, doc)}
 	}
 
 	return results, nil
@@ -136,13 +209,13 @@ func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadRe
 		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_READ_DOCUMENTS_FAILED")
 	}
 
-	values, ok := data.NewDocumentSet(docs.Data, ctx)
-	if !ok {
-		return nil, common.NewSystemError("ERR_PERSISTENCE_READ_DOCUMENTS_FAILED", "Failed to convert results to documents")
+	set := make(data.DocumentSet, len(docs.Data))
+	for i, m := range docs.Data {
+		set[i] = c.documentFromMap(ctx, m)
 	}
 	result := base.ReadResult{
-		Data:           values,
-		Count:          len(values),
+		Data:           set,
+		Count:          len(set),
 		Total:          docs.Total,
 		PaginationInfo: docs.PaginationInfo,
 	}
@@ -186,9 +259,9 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 		Count int64
 	})
 
-	documentSet, ok := data.NewDocumentSet(updateResult.Docs, ctx)
-	if !ok {
-		return nil, common.NewSystemError("ERR_PERSISTENCE_UPDATE_DOCUMENTS_FAILED", "Failed to convert updated results to documents")
+	documentSet := make(data.DocumentSet, len(updateResult.Docs))
+	for i, m := range updateResult.Docs {
+		documentSet[i] = c.documentFromMap(ctx, m)
 	}
 
 	total := int(updateResult.Count)
@@ -224,7 +297,7 @@ func (c *baseCollection) Delete(ctx context.Context, q *query.QueryFilter, unsaf
 
 // Validate checks if the given data conforms to the collection's schema.
 // The 'loose' flag allows for partial validation.
-func (c *baseCollection) Validate(ctx context.Context, doc *data.Document, partial bool) ([]common.Issue, bool) {
+func (c *baseCollection) Validate(ctx context.Context, doc data.Documenter, partial bool) ([]common.Issue, bool) {
 	v, err := c.currentValidator(ctx)
 	if err != nil {
 		return []common.Issue{{Message: err.Error()}}, false
@@ -233,6 +306,11 @@ func (c *baseCollection) Validate(ctx context.Context, doc *data.Document, parti
 		return v.ValidatePartial(doc.ToMap())
 	}
 	return v.Validate(doc.ToMap())
+}
+
+// Schema returns the active schema definition for this collection.
+func (c *baseCollection) Schema(ctx context.Context) (*definition.Schema, error) {
+	return c.currentSchema(ctx)
 }
 
 // Metadata retrieves metadata specifically for this collection, with an option to

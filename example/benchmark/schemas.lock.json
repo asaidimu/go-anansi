@@ -1,0 +1,215 @@
+{
+  "version": "1",
+  "schemas": {
+    "Order": {
+      "path": "schemas/order.schema.json",
+      "hash": "sha256:70d1d3e5eea2058538f95637b6a2928429ef491fc6dc533d0d14825f84ce4b0e",
+      "version": "1.0.0",
+      "schema": {
+        "version": "1.0.0",
+        "name": "Order",
+        "description": "ERP-scale order used by the bind-cycle benchmark",
+        "fields": {
+          "019fc802-2195-7e19-903e-a71f04dbd3c2": {
+            "name": "customer",
+            "type": "object",
+            "schema": {
+              "id": "019fc802-2195-7e1d-8632-3048cfede163"
+            }
+          },
+          "019fc802-2195-7e14-b3cf-d9eba9ffc979": {
+            "name": "shipping_address",
+            "type": "object",
+            "schema": {
+              "id": "019fc802-2195-7e22-b4d9-2b04f3390f43"
+            }
+          },
+          "019fc802-2195-7e17-995b-d678e78684ed": {
+            "name": "tax",
+            "type": "number"
+          },
+          "019f4065-0a3d-7ea1-bc46-bbaeed4bfd6d": {
+            "name": "_id_",
+            "required": true,
+            "unique": true,
+            "type": "string"
+          },
+          "019fc802-2195-7e16-b081-32b680284c6e": {
+            "name": "subtotal",
+            "type": "number"
+          },
+          "019fc802-2195-7e1a-bfc3-7aa5fb626251": {
+            "name": "lines",
+            "type": "array",
+            "schema": {
+              "id": "019fc802-2195-7e28-a033-d5d834a873ed"
+            }
+          },
+          "019fc802-2195-7e1b-a757-a2d39a5524cb": {
+            "name": "currency",
+            "type": "string",
+            "default": "EUR"
+          },
+          "019fc802-2195-7e11-b8f2-c36ecf888de7": {
+            "name": "notes",
+            "type": "array",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "019fc802-2195-7e15-9fea-c0c22aea68e4": {
+            "name": "status",
+            "type": "string",
+            "default": "processing"
+          },
+          "019fc802-2195-7e18-8a10-4d17b589538f": {
+            "name": "total",
+            "type": "number"
+          },
+          "019f4065-0a3d-7ecf-a2eb-7af6e1fdd6f0": {
+            "name": "_metadata_",
+            "type": "object",
+            "schema": {
+              "id": "019f4065-0a3d-7ed7-8ab1-417acc881135"
+            }
+          },
+          "019fc802-2195-7e13-8c98-00d8749216a0": {
+            "name": "billing_address",
+            "type": "object",
+            "schema": {
+              "id": "019fc802-2195-7e22-b4d9-2b04f3390f43"
+            }
+          }
+        },
+        "schemas": {
+          "019fc802-2195-7e1d-8632-3048cfede163": {
+            "name": "Customer",
+            "fields": {
+              "019fc802-2195-7e1e-a702-48a81687e398": {
+                "name": "id",
+                "type": "string"
+              },
+              "019fc802-2195-7e1f-aed4-26780986f503": {
+                "name": "name",
+                "type": "string"
+              },
+              "019fc802-2195-7e20-991e-cce300a1e91c": {
+                "name": "email",
+                "type": "string"
+              },
+              "019fc802-2195-7e21-bedc-d5356c4e55ad": {
+                "name": "tier",
+                "type": "string"
+              }
+            }
+          },
+          "019fc802-2195-7e22-b4d9-2b04f3390f43": {
+            "name": "Address",
+            "fields": {
+              "019fc802-2195-7e27-9b18-0a5775b8e6fd": {
+                "name": "country",
+                "type": "string"
+              },
+              "019fc802-2195-7e23-bcc6-3912f7b67a27": {
+                "name": "street",
+                "type": "string"
+              },
+              "019fc802-2195-7e24-93b6-d6f2fff26f12": {
+                "name": "city",
+                "type": "string"
+              },
+              "019fc802-2195-7e25-b044-f23eded975ba": {
+                "name": "region",
+                "type": "string"
+              },
+              "019fc802-2195-7e26-9a3e-2af577392738": {
+                "name": "postal",
+                "type": "string"
+              }
+            }
+          },
+          "019fc802-2195-7e28-a033-d5d834a873ed": {
+            "name": "OrderLine",
+            "fields": {
+              "019fc802-2195-7e2e-813b-997c3fa5539e": {
+                "name": "tax_rate",
+                "type": "number"
+              },
+              "019fc802-2195-7e2f-8890-95a5c2f02855": {
+                "name": "line_total",
+                "type": "number"
+              },
+              "019fc802-2195-7e29-89e0-40658d277ac8": {
+                "name": "sku",
+                "type": "string"
+              },
+              "019fc802-2195-7e2a-83cd-c7d855f8f9f8": {
+                "name": "description",
+                "type": "string"
+              },
+              "019fc802-2195-7e2b-a51f-ba4257b23939": {
+                "name": "qty",
+                "type": "integer"
+              },
+              "019fc802-2195-7e2c-9aef-cfa09908b998": {
+                "name": "unit_price",
+                "type": "number"
+              },
+              "019fc802-2195-7e2d-b957-37e46be66704": {
+                "name": "discount",
+                "type": "number"
+              }
+            }
+          },
+          "019f4065-0a3d-7ed7-8ab1-417acc881135": {
+            "name": "_metadata_",
+            "fields": {
+              "019fc7ff-2581-7d7c-84cd-6ad7d091f2e2": {
+                "name": "trace_id",
+                "type": "string"
+              },
+              "019f32a2-1eb3-7c39-885e-c3d545f981ac": {
+                "name": "version",
+                "required": true,
+                "type": "number"
+              },
+              "019f32a2-1eb5-78b8-971d-ac164c938f2f": {
+                "name": "created",
+                "required": true,
+                "type": "string"
+              },
+              "019f32a2-1eb5-72a9-a0d6-086140f78a85": {
+                "name": "updated",
+                "required": true,
+                "type": "string"
+              },
+              "019f32a2-1eb5-7440-b104-8d774438853a": {
+                "name": "checksum",
+                "required": true,
+                "type": "string"
+              },
+              "019f32a2-1eb5-774f-abf3-09d64b4dbdd7": {
+                "name": "signature",
+                "type": "string"
+              },
+              "019fc7ff-2581-7d7b-aea9-1eac8af6595a": {
+                "name": "span_id",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "indexes": {
+          "019fc802-2195-7e1c-b348-891d65d35f00": {
+            "name": "idx_status",
+            "type": "normal",
+            "fields": [
+              "status"
+            ]
+          }
+        }
+      },
+      "migration_file": "019fc804-effb-71d9-97d0-817dde219821_Order_major.go"
+    }
+  }
+}

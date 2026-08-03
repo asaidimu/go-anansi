@@ -110,7 +110,7 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 		if err != nil {
 			return err
 		}
-		res, ok := d.(*data.Document)
+		res, ok := d.(data.Documenter)
 		if !ok {
 			return nil
 		}
@@ -129,7 +129,7 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 			if err != nil {
 				return err
 			}
-			res, ok := d.(*data.Document)
+			res, ok := d.(data.Documenter)
 			if !ok {
 				return nil
 			}

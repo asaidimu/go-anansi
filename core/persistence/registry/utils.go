@@ -87,7 +87,7 @@ func sanitizeForDatabase(input string) string {
 	return sanitized
 }
 
-func unmarshalEntry(doc *data.Document) (*base.RegistryEntry, error) {
+func unmarshalEntry(doc data.Documenter) (*base.RegistryEntry, error) {
 	return utils.MapToStruct[*RegistryEntry](doc.ToMap())
 }
 
@@ -99,18 +99,17 @@ func EnrichSchema(sc *schema.Schema) (*schema.Schema, error) {
 		return nil, nil
 	}
 
-	var err error
-
-	// --- Add ID Field (using static field ID) ---
-	idField := schema.Field{
-		Name:     schema.FieldName(data.DocumentIDField),
-		Required: true,
-		Unique:   true,
-		FieldProperties: schema.FieldProperties{
-			Type: schema.FieldTypeString,
-		},
+	// Inject the system fields (_id_, _metadata_) and the metadata schema via
+	// the shared enrichment utility, so this path and the container-backed
+	// document layer always agree on the injection mechanics. The metadata
+	// schema comes from the data factory, as before. The persistence-only
+	// extras (index handling, validation) stay here.
+	meta, deps := data.GetMetadataSchema()
+	enriched, err := data.EnrichSchema(sc, meta, deps)
+	if err != nil {
+		return nil, err
 	}
-	sc = sc.WithField(schema.FieldId(data.SystemFieldIDDocumentID), idField)
+	sc = enriched
 
 	// --- Remove any user-defined indexes on 'id' field ---
 	sc, _, err = sc.WithoutIndexesReferencingField(schema.FieldName(data.DocumentIDField))
@@ -130,33 +129,6 @@ func EnrichSchema(sc *schema.Schema) (*schema.Schema, error) {
 		return nil, err
 	}
 
-	// --- Add Metadata Field (using static UUIDs) ---
-	msdid := schema.SchemaId(data.SystemSchemaIDMetadata)
-	msd, _ := data.GetMetadataSchema()
-
-	// Clean up any existing metadata sub-schema entries to avoid duplicates.
-	for sid := range sc.Schemas {
-		if ns, ok := sc.Schemas[sid]; ok && ns.Name == data.MetadataField {
-			delete(sc.Schemas, sid)
-		}
-	}
-	if sc.Schemas == nil {
-		sc.Schemas = make(map[schema.SchemaId]schema.NestedSchema)
-	}
-	sc.Schemas[msdid] = *msd
-
-	// Set / replace the metadata field with a static field ID.
-	metadataField := schema.Field{
-		Name: schema.FieldName(data.MetadataField),
-		FieldProperties: schema.FieldProperties{
-			Type: schema.FieldTypeObject,
-			Schema: schema.NewSchemaReference(schema.SchemaReference{
-				ID: msdid,
-			}),
-		},
-	}
-	sc = sc.WithField(schema.FieldId(data.SystemFieldIDMetadata), metadataField)
-
 	if _, err := schema.ValidateSchema(sc); err != nil {
 		return nil, err
 	}
@@ -167,7 +139,7 @@ func EnrichSchema(sc *schema.Schema) (*schema.Schema, error) {
 func MustEnrichSchema(sc *schema.Schema) *schema.Schema {
 	result, err := EnrichSchema(sc)
 	if err != nil {
-		e := common.NewSystemError(fmt.Sprintf("Enrichment failed for schema %s",sc.Name)).WithCause(err)
+		e := common.NewSystemError(fmt.Sprintf("Enrichment failed for schema %s", sc.Name)).WithCause(err)
 		panic(e)
 	}
 	return result

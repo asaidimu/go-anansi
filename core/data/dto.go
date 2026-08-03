@@ -13,17 +13,21 @@ import (
 	"github.com/google/uuid"
 )
 
-// FixedEpochMS is 2026-01-01T00:00:00.000Z in Unix milliseconds. Discovery
+// FixedEpochMS is 2026-08-01T00:00:00.000Z in Unix milliseconds. Discovery
 // and field ordinals are added to this to produce a monotonically
-// increasing UUIDv7 timestamp component.
-const FixedEpochMS int64 = 1767225600000
+// increasing UUIDv7 timestamp component. The epoch is set after the system
+// field IDs (SystemFieldIDDocumentID/SystemFieldIDMetadata) so deterministic
+// DTO schema field IDs always sort after the injected system fields, keeping
+// the enriched schema's system fields first.
+const FixedEpochMS int64 = 1785542400000
 
 // Thread-safe global schema cache keyed by reflect.Type, tag, and omitSystem flag.
 type schemaCacheKey struct {
-	t   reflect.Type
-	tag string
+	t    reflect.Type
+	tag  string
 	omit bool
 }
+
 var schemaCache sync.Map
 
 type cachedSchema struct {
@@ -34,7 +38,7 @@ type cachedSchema struct {
 // SchemaFrom extracts a meta-schema JSON document for any struct type using
 // the default "anansi" tag for field names (and all other metadata).
 // Results are cached globally per (type, tag="", omit) for zero-allocation subsequent calls.
-// If omitSystemField is true, any embedded DocumentModel field is skipped.
+// If omitSystemField is true, any embedded registered system model (e.g. DocumentModel) is skipped.
 func SchemaFrom[T any](omitSystemField ...bool) ([]byte, error) {
 	omit := false
 	if len(omitSystemField) > 0 {
@@ -78,7 +82,7 @@ func SchemaFromWithTag[T any](tag string, omitSystemField ...bool) ([]byte, erro
 
 // ExtractDTOSchemaDirect streams JSON bytes directly into a buffer without
 // intermediate maps or struct serialization. Uses the default "anansi" tag.
-// omitSystemField controls whether embedded DocumentModel is skipped.
+// omitSystemField controls whether embedded registered system models (e.g. DocumentModel) are skipped.
 func ExtractDTOSchemaDirect(target any, omitSystemField ...bool) ([]byte, error) {
 	omit := false
 	if len(omitSystemField) > 0 {
@@ -127,7 +131,7 @@ type directExtractor struct {
 	rootSchemaID     string
 	rootReferenced   bool
 	customTag        string
-	omitSystem       bool // if true, skip embedded DocumentModel
+	omitSystem       bool // if true, skip embedded registered system models (e.g. DocumentModel)
 }
 
 func newDirectExtractor(customTag string, omitSystem bool) *directExtractor {
@@ -162,7 +166,7 @@ func (e *directExtractor) Extract(target any) ([]byte, error) {
 	var fieldsBuf bytes.Buffer
 	fieldOrdinal := int64(0)
 	fieldCount := 0
-	if err := e.extractStructFields(t, rootSchemaID, &fieldsBuf, &fieldOrdinal, &fieldCount); err != nil {
+	if err := e.extractStructFields(t, rootSchemaID, &fieldsBuf, &fieldOrdinal, &fieldCount, nil); err != nil {
 		return nil, err
 	}
 
@@ -255,8 +259,28 @@ func (e *directExtractor) registerType(typeKey string) string {
 	return id
 }
 
-func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID string, buf *bytes.Buffer, fieldOrdinal *int64, fieldCount *int) error {
+func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID string, buf *bytes.Buffer, fieldOrdinal *int64, fieldCount *int, skipNames map[string]bool) error {
 	var localSynOrder []string
+
+	// shadowNames collects the resolved field names declared directly on t
+	// (non-anonymous fields). When a system-model embed (e.g. DocumentModel)
+	// is flattened below, its own _id_/_metadata_ fields are skipped in favor
+	// of an outer field that shadows them, so the extracted schema never
+	// contains duplicate system fields.
+	shadowNames := make(map[string]bool)
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if f.Anonymous {
+			continue
+		}
+		tag := parseSchemaTag(f.Tag.Get(AnansiTag))
+		if tag.Skip {
+			continue
+		}
+		if name := resolveFieldName(f, e.customTag, tag); name == DocumentIDField || name == MetadataField {
+			shadowNames[name] = true
+		}
+	}
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
@@ -267,16 +291,22 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 			continue
 		}
 
-		// If field is anonymous and we are omitting system fields, check if it's DocumentModel.
-		if field.Anonymous && e.omitSystem && field.Type == docModelType {
-			continue // skip the entire DocumentModel embed
+		// If field is anonymous and we are omitting system fields, check if it's
+		// a registered system model (e.g. DocumentModel).
+		if field.Anonymous && e.omitSystem && isSystemModelType(field.Type) {
+			continue // skip the entire system-model embed
 		}
 
 		// If field is embedded (anonymous) and no type override, flatten its fields.
 		if field.Anonymous && field.Type.Kind() == reflect.Struct && anansiTag.TypeOverride == "" {
 			// But if we are omitting system fields, we already skipped DocumentModel above.
-			// For other anonymous structs, flatten them recursively.
-			if err := e.extractStructFields(field.Type, owningSchemaID, buf, fieldOrdinal, fieldCount); err != nil {
+			// For other anonymous structs, flatten them recursively. System-model
+			// embeds defer to any outer shadow fields carrying the same name.
+			var skip map[string]bool
+			if isSystemModelType(field.Type) {
+				skip = shadowNames
+			}
+			if err := e.extractStructFields(field.Type, owningSchemaID, buf, fieldOrdinal, fieldCount, skip); err != nil {
 				return err
 			}
 			continue
@@ -286,23 +316,9 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 		// 1. If a custom tag is provided, use its first part (before comma) as the name.
 		// 2. Else if the anansi tag has an explicit name, use that.
 		// 3. Otherwise fall back to snake-cased Go field name.
-		fieldName := ""
-		if e.customTag != "" {
-			ct := field.Tag.Get(e.customTag)
-			if ct != "" && ct != "-" {
-				// Take the first comma-separated part as the name (ignore options)
-				parts := strings.SplitN(ct, ",", 2)
-				name := strings.TrimSpace(parts[0])
-				if name != "" {
-					fieldName = name
-				}
-			}
-		}
-		if fieldName == "" && anansiTag.HasName {
-			fieldName = anansiTag.Name
-		}
-		if fieldName == "" {
-			fieldName = toSnakeCase(field.Name)
+		fieldName := resolveFieldName(field, e.customTag, anansiTag)
+		if skipNames != nil && skipNames[fieldName] {
+			continue
 		}
 
 		// Dotted paths are handled by synthetic schemas.
@@ -363,6 +379,27 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 	}
 
 	return nil
+}
+
+// resolveFieldName resolves a struct field's schema name through the same
+// chain used by extraction: custom tag first, then the anansi tag name, then
+// the snake-cased Go field name.
+func resolveFieldName(field reflect.StructField, customTag string, anansiTag parsedSchemaTag) string {
+	if customTag != "" {
+		ct := field.Tag.Get(customTag)
+		if ct != "" && ct != "-" {
+			// Take the first comma-separated part as the name (ignore options)
+			parts := strings.SplitN(ct, ",", 2)
+			name := strings.TrimSpace(parts[0])
+			if name != "" {
+				return name
+			}
+		}
+	}
+	if anansiTag.HasName {
+		return anansiTag.Name
+	}
+	return toSnakeCase(field.Name)
 }
 
 func (e *directExtractor) writePathField(
@@ -693,7 +730,7 @@ func (e *directExtractor) ensureStructRegistered(t reflect.Type, fieldName strin
 	var fieldsBuf bytes.Buffer
 	fieldOrdinal := int64(0)
 	fieldCount := 0
-	if err := e.extractStructFields(t, id, &fieldsBuf, &fieldOrdinal, &fieldCount); err != nil {
+	if err := e.extractStructFields(t, id, &fieldsBuf, &fieldOrdinal, &fieldCount, nil); err != nil {
 		return "", err
 	}
 	var sBuf bytes.Buffer

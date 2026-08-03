@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/stretchr/testify/require"
 )
@@ -32,7 +33,7 @@ func TestRunScaffold_DryRun(t *testing.T) {
 
 func TestRunGen_BasicFlow(t *testing.T) {
 	dir := t.TempDir()
-	schemaContent := `{"name":"User","fields":{"019d7775-6563-7c55-a6f3-ac8f087d89d1":{"name":"email","type":"string","required":true}}}`
+	schemaContent := `{"name":"User","fields":{"019f4066-6563-7c55-a6f3-ac8f087d89d1":{"name":"email","type":"string","required":true}}}`
 	schemaPath := filepath.Join(dir, "user.schema.json")
 	require.NoError(t, os.WriteFile(schemaPath, []byte(schemaContent), 0644))
 
@@ -41,8 +42,8 @@ func TestRunGen_BasicFlow(t *testing.T) {
 
 	cfg := &Config{
 		Schema: SchemaConfig{
-			Glob:         filepath.Join(dir, "*.schema.json"),
-			Lockfile:     lockfilePath,
+			Glob:          filepath.Join(dir, "*.schema.json"),
+			Lockfile:      lockfilePath,
 			MigrationsDir: migrationsDir,
 		},
 	}
@@ -64,7 +65,7 @@ func TestRunGen_BasicFlow(t *testing.T) {
 
 func TestRunGen_Check(t *testing.T) {
 	dir := t.TempDir()
-	schemaContent := `{"name":"Product","fields":{"019d7775-6563-7c55-a6f3-ac8f087d89d1":{"name":"title","type":"string"}}}`
+	schemaContent := `{"name":"Product","fields":{"019f4066-6563-7c55-a6f3-ac8f087d89d1":{"name":"title","type":"string"}}}`
 	schemaPath := filepath.Join(dir, "product.schema.json")
 	require.NoError(t, os.WriteFile(schemaPath, []byte(schemaContent), 0644))
 
@@ -86,7 +87,7 @@ func TestRunGen_Check(t *testing.T) {
 	require.NoError(t, err)
 
 	// Modify the schema to trigger a change
-	modifiedContent := `{"name":"Product","fields":{"019d7775-6563-7c55-a6f3-ac8f087d89d1":{"name":"title","type":"string"},"019d7775-6563-7605-8bfb-c27365b73581":{"name":"price","type":"decimal"}}}`
+	modifiedContent := `{"name":"Product","fields":{"019f4066-6563-7c55-a6f3-ac8f087d89d1":{"name":"title","type":"string"},"019f4066-6563-7605-8bfb-c27365b73581":{"name":"price","type":"decimal"}}}`
 	require.NoError(t, os.WriteFile(schemaPath, []byte(modifiedContent), 0644))
 
 	// Check mode after change — should fail (migrations needed)
@@ -97,7 +98,7 @@ func TestRunGen_Check(t *testing.T) {
 
 func TestRunGen_DryRun(t *testing.T) {
 	dir := t.TempDir()
-	schemaContent := `{"name":"Article","fields":{"019d7775-6563-7c55-a6f3-ac8f087d89d1":{"name":"body","type":"string"}}}`
+	schemaContent := `{"name":"Article","fields":{"019f4066-6563-7c55-a6f3-ac8f087d89d1":{"name":"body","type":"string"}}}`
 	schemaPath := filepath.Join(dir, "article.schema.json")
 	require.NoError(t, os.WriteFile(schemaPath, []byte(schemaContent), 0644))
 
@@ -121,7 +122,7 @@ func TestRunGen_SchemaRemovedAutoCleanup(t *testing.T) {
 	dir := t.TempDir()
 
 	// First schema
-	schemaContent := `{"name":"TempSchema","fields":{"019d7775-6563-7c55-a6f3-ac8f087d89d1":{"name":"x","type":"string"}}}`
+	schemaContent := `{"name":"TempSchema","fields":{"019f4066-6563-7c55-a6f3-ac8f087d89d1":{"name":"x","type":"string"}}}`
 	schemaPath := filepath.Join(dir, "temp.schema.json")
 	require.NoError(t, os.WriteFile(schemaPath, []byte(schemaContent), 0644))
 
@@ -157,13 +158,23 @@ func TestRunNormalize(t *testing.T) {
 	require.NoError(t, os.WriteFile(schemaPath, []byte(schemaContent), 0644))
 
 	// Normalize in-place
-	err := RunNormalize(schemaPath, false)
+	cfg := &Config{
+		Schema: SchemaConfig{
+			Glob:          filepath.Join(dir, "*.schema.json"),
+			Lockfile:      filepath.Join(dir, "schemas.lock.json"),
+			MigrationsDir: filepath.Join(dir, "migrations"),
+		},
+		Metadata: MetadataConfig{SchemaPath: filepath.Join(dir, "metadata.schema.json")},
+	}
+	err := RunNormalize(cfg, schemaPath, false)
 	require.NoError(t, err)
 
-	// Verify file was updated with UUID v7 IDs
+	// Verify file was updated with UUID v7 IDs and system fields
 	updated, err := os.ReadFile(schemaPath)
 	require.NoError(t, err)
 	require.Contains(t, string(updated), `"name": "uname"`)
+	require.Contains(t, string(updated), `"_id_"`)
+	require.Contains(t, string(updated), `"_metadata_"`)
 }
 
 func TestRunNormalize_DryRun(t *testing.T) {
@@ -173,7 +184,15 @@ func TestRunNormalize_DryRun(t *testing.T) {
 	require.NoError(t, os.WriteFile(schemaPath, []byte(schemaContent), 0644))
 
 	// Dry run — should not modify file
-	err := RunNormalize(schemaPath, true)
+	cfg := &Config{
+		Schema: SchemaConfig{
+			Glob:          filepath.Join(dir, "*.schema.json"),
+			Lockfile:      filepath.Join(dir, "schemas.lock.json"),
+			MigrationsDir: filepath.Join(dir, "migrations"),
+		},
+		Metadata: MetadataConfig{SchemaPath: filepath.Join(dir, "metadata.schema.json")},
+	}
+	err := RunNormalize(cfg, schemaPath, true)
 	require.NoError(t, err)
 
 	updated, err := os.ReadFile(schemaPath)
@@ -183,15 +202,90 @@ func TestRunNormalize_DryRun(t *testing.T) {
 
 func TestRunNormalize_AlreadyNormalized(t *testing.T) {
 	dir := t.TempDir()
-	schemaContent := `{"name":"Test3","fields":{"019d7775-6563-7c55-a6f3-ac8f087d89d1":{"name":"uname","type":"string"}}}`
+	schemaContent := `{"name":"Test3","fields":{"019f4066-0000-7000-8000-000000000000":{"name":"uname","type":"string"}}}`
 	schemaPath := filepath.Join(dir, "test3.schema.json")
 	require.NoError(t, os.WriteFile(schemaPath, []byte(schemaContent), 0644))
 
-	err := RunNormalize(schemaPath, false)
+	// First run rewrites the schema to inject the system fields.
+	cfg := &Config{
+		Schema: SchemaConfig{
+			Lockfile:      filepath.Join(dir, "schemas.lock.json"),
+			MigrationsDir: filepath.Join(dir, "migrations"),
+		},
+		Metadata: MetadataConfig{SchemaPath: filepath.Join(dir, "metadata.schema.json")},
+	}
+	err := RunNormalize(cfg, schemaPath, false)
 	require.NoError(t, err)
 
-	// File should not have changed (no .bak should exist for unchanged files)
+	enriched, err := os.ReadFile(schemaPath)
+	require.NoError(t, err)
+	require.Contains(t, string(enriched), `"_id_"`)
+	require.Contains(t, string(enriched), `"_metadata_"`)
+
+	// A second run is a no-op (idempotent), so no new .bak is created.
+	require.NoError(t, os.Remove(schemaPath+".bak"))
+	err = RunNormalize(cfg, schemaPath, false)
+	require.NoError(t, err)
+	after, err := os.ReadFile(schemaPath)
+	require.NoError(t, err)
+	require.Equal(t, enriched, after, "second normalize should be a no-op")
 	require.NoFileExists(t, schemaPath+".bak")
+}
+
+func TestRunGen_SystemFieldsOnlyTransition(t *testing.T) {
+	dir := t.TempDir()
+	schemaContent := `{"name":"EnrichTransition","fields":{"019f4066-0000-7000-8000-000000000000":{"name":"email","type":"string","required":true}}}`
+	schemaPath := filepath.Join(dir, "enrich_transition.schema.json")
+	require.NoError(t, os.WriteFile(schemaPath, []byte(schemaContent), 0644))
+
+	lockfilePath := filepath.Join(dir, "schemas.lock.json")
+	migrationsDir := filepath.Join(dir, "migrations")
+	cfg := &Config{
+		Schema: SchemaConfig{
+			Glob:          filepath.Join(dir, "*.schema.json"),
+			Lockfile:      lockfilePath,
+			MigrationsDir: migrationsDir,
+		},
+	}
+
+	// Migrate runs the normalize/enrich step first: the on-disk schema is
+	// rewritten to include the injected system fields, and the lockfile stores
+	// that enriched form.
+	require.NoError(t, RunGen(cfg, false, false))
+
+	enriched, err := os.ReadFile(schemaPath)
+	require.NoError(t, err)
+	require.Contains(t, string(enriched), `"_id_"`, "migrate runs normalize first and enriches the on-disk schema")
+
+	lock, err := ReadLockfile(lockfilePath)
+	require.NoError(t, err)
+	prev := lock.Schemas["EnrichTransition"]
+	require.NotNil(t, prev)
+	oldHash := prev.Hash
+	oldVersion := prev.Version
+	migFiles, err := filepath.Glob(filepath.Join(migrationsDir, "*.go"))
+	require.NoError(t, err)
+	require.Len(t, migFiles, 2, "initial migration + registry.go")
+	require.Contains(t, prev.Schema.Fields, definition.FieldId(data.SystemFieldIDDocumentID), "lockfile stores the enriched schema after migrate")
+
+	// A second migrate run is a no-op: enrichment is idempotent, so no new
+	// migration is emitted and the version does not change.
+	require.NoError(t, RunGen(cfg, false, false))
+
+	migFiles2, err := filepath.Glob(filepath.Join(migrationsDir, "*.go"))
+	require.NoError(t, err)
+	require.Len(t, migFiles2, 2, "idempotent enrichment must not emit a migration")
+
+	lock2, err := ReadLockfile(lockfilePath)
+	require.NoError(t, err)
+	ref := lock2.Schemas["EnrichTransition"]
+	require.NotNil(t, ref)
+	require.Equal(t, oldHash, ref.Hash, "lockfile hash tracked by the enriched on-disk bytes")
+	require.Equal(t, oldVersion, ref.Version, "version must not bump for system fields only")
+	require.Contains(t, ref.Schema.Fields, definition.FieldId(data.SystemFieldIDDocumentID), "lockfile should store the enriched schema")
+
+	// A third run is fully up to date.
+	require.NoError(t, RunGen(cfg, true, false))
 }
 
 func TestRunGen_EmptyDir(t *testing.T) {
@@ -212,7 +306,7 @@ func TestRunGen_EmptyDir(t *testing.T) {
 
 func TestRunSquash_BasicFlow(t *testing.T) {
 	dir := t.TempDir()
-	schemaContent := `{"name":"SquashTest","fields":{"019d7775-6563-7c55-a6f3-ac8f087d89d1":{"name":"a","type":"string"}}}`
+	schemaContent := `{"name":"SquashTest","fields":{"019f4066-6563-7c55-a6f3-ac8f087d89d1":{"name":"a","type":"string"}}}`
 	schemaPath := filepath.Join(dir, "squash_test.schema.json")
 	require.NoError(t, os.WriteFile(schemaPath, []byte(schemaContent), 0644))
 
@@ -230,7 +324,7 @@ func TestRunSquash_BasicFlow(t *testing.T) {
 	require.NoError(t, RunGen(cfg, false, false))
 
 	// Modify schema to create history
-	modifiedContent := `{"name":"SquashTest","fields":{"019d7775-6563-7c55-a6f3-ac8f087d89d1":{"name":"a","type":"string"},"019d7775-6563-7605-8bfb-c27365b73581":{"name":"b","type":"integer"}}}`
+	modifiedContent := `{"name":"SquashTest","fields":{"019f4066-6563-7c55-a6f3-ac8f087d89d1":{"name":"a","type":"string"},"019f4066-6563-7605-8bfb-c27365b73581":{"name":"b","type":"integer"}}}`
 	require.NoError(t, os.WriteFile(schemaPath, []byte(modifiedContent), 0644))
 	require.NoError(t, RunGen(cfg, false, false))
 
@@ -256,7 +350,7 @@ func TestRunSquash_BasicFlow(t *testing.T) {
 func TestRunGen_AutoVersion(t *testing.T) {
 	dir := t.TempDir()
 	// Schema without a version field
-	schemaContent := `{"name":"Versionless","fields":{"019d7775-6563-7c55-a6f3-ac8f087d89d1":{"name":"x","type":"string"}}}`
+	schemaContent := `{"name":"Versionless","fields":{"019f4066-6563-7c55-a6f3-ac8f087d89d1":{"name":"x","type":"string"}}}`
 	schemaPath := filepath.Join(dir, "versionless.schema.json")
 	require.NoError(t, os.WriteFile(schemaPath, []byte(schemaContent), 0644))
 

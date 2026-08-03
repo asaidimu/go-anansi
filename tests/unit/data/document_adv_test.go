@@ -96,7 +96,7 @@ func TestDocument_DiffAndApply(t *testing.T) {
 }
 
 func TestDocument_JSONPathQuery(t *testing.T) {
-	doc := data.MustNewDocument(map[string]any{
+	var doc data.Documenter = data.MustNewDocument(map[string]any{
 		"store": map[string]any{
 			"book": []any{
 				map[string]any{"title": "Book 1", "price": 10},

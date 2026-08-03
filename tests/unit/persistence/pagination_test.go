@@ -59,7 +59,7 @@ func TestPagination_SQLite_Offset_NoFilters_WithPagination(t *testing.T) {
 	collection, cleanup := testutils.SetupCollectionTest(t)
 	defer cleanup()
 
-	docs := make([]*data.Document, 10)
+	docs := make([]data.Documenter, 10)
 	for i := range 10 {
 		docs[i] = data.MustNewDocument(map[string]any{"name": "item", "age": i})
 	}
@@ -93,7 +93,7 @@ func TestPagination_Offset_ReturnsCorrectTotal(t *testing.T) {
 	coll, err := p.CreateCollection(ctx, paginationSchema("items"))
 	require.NoError(t, err)
 
-	docs := make([]*data.Document, 10)
+	docs := make([]data.Documenter, 10)
 	for i := range 10 {
 		docs[i] = data.MustNewDocument(map[string]any{
 			"name":  "item",
@@ -128,12 +128,11 @@ func TestPagination_Offset_FirstPage(t *testing.T) {
 	coll, err := p.CreateCollection(ctx, paginationSchema("items"))
 	require.NoError(t, err)
 
-	docs := make([]*data.Document, 10)
+	docs := make([]data.Documenter, 10)
 	for i := range 10 {
 		docs[i] = data.MustNewDocument(map[string]any{"name": "item", "value": i})
 	}
 	_, err = coll.CreateMany(ctx, docs)
-	require.NoError(t, err)
 
 	q := query.NewQueryBuilder().Limit(4).Offset(0).Build()
 
@@ -158,12 +157,11 @@ func TestPagination_Offset_SecondPage(t *testing.T) {
 	coll, err := p.CreateCollection(ctx, paginationSchema("items"))
 	require.NoError(t, err)
 
-	docs := make([]*data.Document, 10)
+	docs := make([]data.Documenter, 10)
 	for i := range 10 {
 		docs[i] = data.MustNewDocument(map[string]any{"name": "item", "value": i})
 	}
 	_, err = coll.CreateMany(ctx, docs)
-	require.NoError(t, err)
 
 	q := query.NewQueryBuilder().Limit(4).Offset(4).Build()
 

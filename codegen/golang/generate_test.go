@@ -86,6 +86,62 @@ func goldenCase(t *testing.T, name string, mode GenerationMode) {
 	}
 }
 
+func TestGenerate_SystemFieldShadows(t *testing.T) {
+	gen := NewGoGenerator(&GeneratorConfig{Mode: ModeModel, TagConfig: DefaultTagConfig()})
+	out, err := gen.Generate([]byte(testSchema))
+	require.NoError(t, err)
+
+	// The test schema declares no system fields, so the root model embeds
+	// document.DocumentModel and emits shadow ID/Metadata fields. The schema's
+	// own `id` field already claims the Go name ID, so the _id_ shadow is
+	// renamed ModelID to avoid a declaration collision.
+	assert.Contains(t, out, "type Order struct {\n    document.DocumentModel")
+	assert.Contains(t, out, `ModelID string `+"`json:\"id,omitempty\" anansi:\"_id_,required=true,omitempty\"`")
+	assert.Contains(t, out, `Metadata map[string]any `+"`json:\"metadata,omitempty\" anansi:\"_metadata_,required=true,omitempty\"`")
+
+	// GetID is emitted on the root model, returning the _id_ shadow.
+	assert.Contains(t, out, "// GetID returns the document identifier for Order.")
+	assert.Contains(t, out, "func (m *Order) GetID() string {\n    return m.ModelID\n}")
+
+	// When a user field named id exists, it keeps the natural name ID and the
+	// system shadow is renamed.
+	assert.Contains(t, out, "    ID string")
+	assert.NotContains(t, out, "    ModelMetadata")
+}
+
+// TestGenerate_EnrichedSchemaSystemFields verifies codegen on a schema that
+// already declares the reserved system fields (as produced by anansi schema
+// normalize). They are emitted as ordinary fields — no duplicate shadow
+// fields, and GetID returns the _id_ field directly.
+func TestGenerate_EnrichedSchemaSystemFields(t *testing.T) {
+	schema := `{
+  "name": "Order",
+  "fields": {
+    "sys_id": {"name": "_id_", "type": "string", "required": true},
+    "sys_meta": {"name": "_metadata_", "type": "record"},
+    "f1": {"name": "total", "type": "decimal"}
+  }
+}`
+	gen := NewGoGenerator(&GeneratorConfig{Mode: ModeModel, TagConfig: DefaultTagConfig()})
+	out, err := gen.Generate([]byte(schema))
+	require.NoError(t, err)
+
+	// System fields map to canonical Go names, emitted as ordinary fields.
+	assert.Contains(t, out, "type Order struct {\n    document.DocumentModel\n")
+	assert.Contains(t, out, "    ID string `anansi:\"_id_,required=true\" json:\"_id_\"`")
+	assert.Contains(t, out, "    Metadata map[string]any `anansi:\"_metadata_,required=false\" json:\"_metadata_,omitempty\"`")
+	assert.NotContains(t, out, "ModelID", "no extra _id_ shadow when the schema declares _id_")
+	assert.NotContains(t, out, "ModelMetadata", "no extra _metadata_ shadow when the schema declares _metadata_")
+
+	// GetID returns the schema's own _id_ field.
+	assert.Contains(t, out, "func (m *Order) GetID() string {\n    return m.ID\n}")
+
+	src := "package test\n\n" + out
+	if _, err := parser.ParseFile(token.NewFileSet(), "", src, parser.AllErrors); err != nil {
+		t.Errorf("generated output is not valid Go: %v\n%s", err, out)
+	}
+}
+
 func TestGenerate_ModeFull(t *testing.T) {
 	goldenCase(t, "full", ModeFull)
 }
@@ -100,11 +156,17 @@ func TestGenerate_ModeStructs(t *testing.T) {
 
 func TestGenerate_ZeroModeDefaultsToFull(t *testing.T) {
 	out := generate(t, nil)
-	if !strings.Contains(out, "data.DocumentModel") {
+	if !strings.Contains(out, "document.DocumentModel") {
 		t.Error("zero-mode generation should include the DocumentModel embed")
 	}
 	if !strings.Contains(out, "func InitOrdersModel") {
 		t.Error("zero-mode generation should include the collection scaffold")
+	}
+	if !strings.Contains(out, "func DangerouslyResetOrdersModel()") {
+		t.Error("zero-mode generation should include the dangerous singleton reset")
+	}
+	if !strings.Contains(out, "// Deprecated: DangerouslyResetOrdersModel clears the cached singleton") {
+		t.Error("DangerouslyResetOrdersModel should be marked Deprecated")
 	}
 }
 
@@ -113,15 +175,15 @@ func TestGenerate_ModeLayers(t *testing.T) {
 	model := generate(t, &GeneratorConfig{Mode: ModeModel})
 	full := generate(t, &GeneratorConfig{Mode: ModeFull})
 
-	// structs: no model, no collection, no data import.
+	// structs: no model, no collection, no document import.
 	if strings.Contains(structs, "DocumentModel") {
 		t.Error("structs mode must not embed DocumentModel")
 	}
 	if strings.Contains(structs, "ModelCollection") {
 		t.Error("structs mode must not emit a collection wrapper")
 	}
-	if strings.Contains(structs, `"github.com/asaidimu/go-anansi/v8/core/data"`) {
-		t.Error("structs mode must not import core/data")
+	if strings.Contains(structs, `"github.com/asaidimu/go-anansi/v8/core/document"`) {
+		t.Error("structs mode must not import core/document")
 	}
 	// decimal field is still present (it is a plain field type), so the
 	// decimal import must be preserved.
@@ -134,7 +196,7 @@ func TestGenerate_ModeLayers(t *testing.T) {
 	}
 
 	// model: no collection.
-	if !strings.Contains(model, "data.DocumentModel") {
+	if !strings.Contains(model, "document.DocumentModel") {
 		t.Error("model mode must embed DocumentModel")
 	}
 	if strings.Contains(model, "ModelCollection") {
@@ -142,7 +204,7 @@ func TestGenerate_ModeLayers(t *testing.T) {
 	}
 
 	// full: everything.
-	if !strings.Contains(full, "data.DocumentModel") || !strings.Contains(full, "ModelCollection") {
+	if !strings.Contains(full, "document.DocumentModel") || !strings.Contains(full, "ModelCollection") {
 		t.Error("full mode must emit the model and collection layers")
 	}
 }
@@ -203,11 +265,11 @@ func TestProjections_EmitRequiredOverride(t *testing.T) {
 	require.NoError(t, err)
 
 	// OrderCreate forces total required: value type + required=true tag.
-	assert.Contains(t, out, "type OrderCreate struct {\n    data.DocumentModel\n    Total decimal.Decimal `anansi:\"total,required=true\" json:\"total\" input:\"arguments.total\" schema:\"decimal:true\"`\n}")
+	assert.Contains(t, out, "type OrderCreate struct {\n    document.DocumentModel\n    Total decimal.Decimal `anansi:\"total,required=true\" json:\"total\" input:\"arguments.total\" schema:\"decimal:true\"`\n}")
 	assert.Contains(t, out, `anansi:"total,required=true"`)
 
 	// OrderSummary inherits optional: pointer type + required=false tag.
-	assert.Contains(t, out, "type OrderSummary struct {\n    data.DocumentModel")
+	assert.Contains(t, out, "type OrderSummary struct {\n    document.DocumentModel")
 	assert.Contains(t, out, "Total *decimal.Decimal `anansi:\"total,required=false\" json:\"total,omitempty\"`")
 	assert.Contains(t, out, `anansi:"total,required=false"`)
 
@@ -238,7 +300,6 @@ func TestProjections_Tags(t *testing.T) {
 		assert.Contains(t, err.Error(), "unknown field property")
 	})
 }
-
 
 func TestParseGenerationMode(t *testing.T) {
 	cases := []struct {
