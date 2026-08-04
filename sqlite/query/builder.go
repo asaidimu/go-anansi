@@ -11,6 +11,7 @@ import (
 )
 
 type sqliteQuery struct {
+	native.BaseQuery
 	payload  types.SQLitePayload
 	stmtType native.StatementType
 }

@@ -7,6 +7,7 @@ import (
 	"math"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"go.uber.org/zap"
 )
@@ -81,6 +82,14 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *definition.Schema, d
 		}
 	}
 
+	// 2. Attach provenance for direct container scanning: record the
+	// result-row shape and the schema-bound document pool so the executor can
+	// scan rows directly into pooled containers for single-table queries.
+	// Shape is derived from the partitioned (database) query; the pool flows
+	// from the invoking collection through the DSL.
+	dbQuery.Shape = InferShape(dbQuery)
+	dbQuery.DocumentPool = dsl.DocumentPool
+
 	// 2. Execute the database part of the query.
 	result, err := common.ExecuteWithContext(ctx, func() (*QueryResult, error) {
 		data, count, err := interactor.SelectDocuments(ctx, schemaDef, dbQuery)
@@ -107,8 +116,14 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *definition.Schema, d
 	queryHelper.RegisterComputeFunctions(e.computeFunctions)
 	queryHelper.RegisterFilterFunctions(e.filterFunctions)
 
-	// 5. Apply post-processing steps.
-	processedDocs, err := e.runPostProcessing(queryHelper, result.Data)
+	// 5. Apply post-processing steps. The in-memory query engine operates on
+	// maps, so container-backed documents are materialized for the duration of
+	// post-processing only, then rebuilt before returning.
+	rawDocs := make([]map[string]any, 0, len(result.Data))
+	for _, d := range result.Data {
+		rawDocs = append(rawDocs, d.ToMap())
+	}
+	processedDocs, err := e.runPostProcessing(queryHelper, rawDocs)
 	if err != nil {
 		return nil, err // Error is already descriptive
 	}
@@ -120,11 +135,16 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *definition.Schema, d
 		return nil, common.NewSystemError("ERR_QUERY_FINAL_PROJECTION_FAILED", "final projection failed").WithOperation("Query").WithCause(err)
 	}
 
+	final := make([]*document.Document, 0, len(finalDocs))
+	for _, m := range finalDocs {
+		final = append(final, document.NewRecordView(m))
+	}
+
 	return &QueryResult{
-		Data:           finalDocs,
-		Count:          len(finalDocs),
+		Data:           final,
+		Count:          len(final),
 		Total:          result.Total,
-		PaginationInfo: computePaginationInfo(dsl.Pagination, len(finalDocs), result.Total),
+		PaginationInfo: computePaginationInfo(dsl.Pagination, len(final), result.Total),
 	}, nil
 }
 

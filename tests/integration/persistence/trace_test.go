@@ -33,7 +33,7 @@ func TestTraceDocumentInsertion(t *testing.T) {
 		// Directly insert using the interactor
 
 
-		insertedDocs, err := interactor.InsertDocuments(context.Background(), schema, []map[string]any{docToCreate.ToMap()})
+		insertedDocs, err := interactor.InsertDocuments(context.Background(), schema, data.DocumentSet{docToCreate})
 	require.NoError(t, err)
 	require.Len(t, insertedDocs, 1)
 

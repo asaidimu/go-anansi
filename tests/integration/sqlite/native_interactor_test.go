@@ -8,6 +8,8 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
 
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -20,6 +22,20 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
+
+func documenters(rows []map[string]any) []data.Documenter {
+	out := make([]data.Documenter, 0, len(rows))
+	for _, r := range rows {
+		doc, _ := data.NewDocument(r)
+		out = append(out, doc)
+	}
+	return out
+}
+
+func documenter(m map[string]any) data.Documenter {
+	doc, _ := data.NewDocument(m)
+	return doc
+}
 
 // setupTestDB creates a unique, in-memory SQLite database for each test.
 // The database is automatically cleaned up when the returned function is called.
@@ -138,7 +154,7 @@ func TestNativeInteractor_InsertDocuments(t *testing.T) {
 		{"product_id": "p2", "name": "Mouse", "price": 25.00},
 	}
 
-	insertedDocs, err := interactor.InsertDocuments(ctx, testSchema, docsToInsert)
+	insertedDocs, err := interactor.InsertDocuments(ctx, testSchema, documenters(docsToInsert))
 	require.NoError(t, err)
 	assert.Len(t, insertedDocs, 2)
 
@@ -198,7 +214,7 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 		{"order_id": "o2", "customer_id": "c2", "amount": 250.50, "status": "completed"},
 		{"order_id": "o3", "customer_id": "c1", "amount": 50.0, "status": "completed"},
 	}
-	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
+	_, err = interactor.InsertDocuments(ctx, testSchema, documenters(docsToInsert))
 	require.NoError(t, err)
 
 	// Test 1: Select all documents
@@ -223,7 +239,7 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, docsC1, 2)
 	for _, doc := range docsC1 {
-		assert.Equal(t, "c1", doc["customer_id"])
+		assert.Equal(t, "c1", doc.GetOr("customer_id", nil))
 	}
 
 	// Test 3: Select with multiple filters (customer_id = 'c1' AND status = 'completed')
@@ -254,7 +270,7 @@ func TestNativeInteractor_SelectDocuments(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Len(t, docsC1Completed, 1)
-	assert.Equal(t, "o3", docsC1Completed[0]["order_id"])
+	assert.Equal(t, "o3", docsC1Completed[0].GetOr("order_id", nil))
 }
 
 func TestNativeInteractor_UpdateDocuments(t *testing.T) {
@@ -288,7 +304,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 		{"task_id": "t2", "description": "Walk the dog", "completed": false},
 		{"task_id": "t3", "description": "Pay bills", "completed": true},
 	}
-	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
+	_, err = interactor.InsertDocuments(ctx, testSchema, documenters(docsToInsert))
 	require.NoError(t, err)
 
 	// Update t1 to completed
@@ -300,7 +316,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 			Value:    query.FilterValue{StringVal: utils.StringPtr("t1")},
 		},
 	}
-	_, rowsAffected, err := interactor.UpdateDocuments(ctx, testSchema, updates, nil, filterT1, false)
+	_, rowsAffected, err := interactor.UpdateDocuments(ctx, testSchema, documenter(updates), nil, filterT1, false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), rowsAffected)
 
@@ -311,7 +327,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Len(t, updatedDoc, 1)
-	assert.Equal(t, true, updatedDoc[0]["completed"])
+	assert.Equal(t, true, updatedDoc[0].GetOr("completed", nil))
 
 	// Update all incomplete tasks
 	updatesAll := map[string]any{"completed": true, "description": "DONE"}
@@ -322,7 +338,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 			Value:    query.FilterValue{BoolVal: utils.BoolPtr(false)},
 		},
 	}
-	_, rowsAffectedAll, err := interactor.UpdateDocuments(ctx, testSchema, updatesAll, nil, filterIncomplete, false)
+	_, rowsAffectedAll, err := interactor.UpdateDocuments(ctx, testSchema, documenter(updatesAll), nil, filterIncomplete, false)
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), rowsAffectedAll) // Only t2 was incomplete
 
@@ -333,7 +349,7 @@ func TestNativeInteractor_UpdateDocuments(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, allDocs, 3)
 	for _, doc := range allDocs {
-		assert.Equal(t, true, doc["completed"])
+		assert.Equal(t, true, doc.GetOr("completed", nil))
 	}
 }
 
@@ -367,7 +383,7 @@ func TestNativeInteractor_DeleteDocuments(t *testing.T) {
 		{"item_id": "i2", "name": "Banana"},
 		{"item_id": "i3", "name": "Orange"},
 	}
-	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
+	_, err = interactor.InsertDocuments(ctx, testSchema, documenters(docsToInsert))
 	require.NoError(t, err)
 
 	// Delete i2
@@ -389,7 +405,7 @@ func TestNativeInteractor_DeleteDocuments(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, remainingDocs, 2)
 	for _, doc := range remainingDocs {
-		assert.NotEqual(t, "i2", doc["item_id"])
+		assert.NotEqual(t, "i2", doc.GetOr("item_id", nil))
 	}
 
 	// Delete all remaining (unsafe delete)
@@ -481,13 +497,13 @@ func TestNativeInteractor_CreateIndex(t *testing.T) {
 	docsToInsert := []map[string]any{
 		{"id": "d1", "value": "unique_val"},
 	}
-	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
+	_, err = interactor.InsertDocuments(ctx, testSchema, documenters(docsToInsert))
 	require.NoError(t, err)
 
 	duplicateDoc := []map[string]any{
 		{"id": "d2", "value": "unique_val"},
 	}
-	_, err = interactor.InsertDocuments(ctx, testSchema, duplicateDoc)
+	_, err = interactor.InsertDocuments(ctx, testSchema, documenters(duplicateDoc))
 	assert.Error(t, err) // Expect an error due to unique constraint
 }
 
@@ -560,10 +576,10 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	require.NoError(t, err)
 
 	// Initial insert
-	_, err = interactor.InsertDocuments(ctx, testSchema, []map[string]any{
+	_, err = interactor.InsertDocuments(ctx, testSchema, documenters([]map[string]any{
 		{"account_id": "acc1", "balance": 100.0},
 		{"account_id": "acc2", "balance": 50.0},
-	})
+	}))
 	require.NoError(t, err)
 
 	// Start a transaction
@@ -581,13 +597,13 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 			Value:    query.FilterValue{StringVal: utils.StringPtr("acc1")},
 		},
 	}
-	_, _, err = txInteractor.UpdateDocuments(ctx, testSchema, updates, nil, filterAcc1, false)
+	_, _, err = txInteractor.UpdateDocuments(ctx, testSchema, documenter(updates), nil, filterAcc1, false)
 	require.NoError(t, err)
 
 	// Insert within transaction
-	_, err = txInteractor.InsertDocuments(ctx, testSchema, []map[string]any{
+	_, err = txInteractor.InsertDocuments(ctx, testSchema, documenters([]map[string]any{
 		{"account_id": "acc3", "balance": 200.0},
-	})
+	}))
 
 	require.NoError(t, err)
 
@@ -610,10 +626,10 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	assert.Len(t, docsAfterCommit, 3) // Should now be 3 documents
 	acc1Doc := findDoc(docsAfterCommit, "account_id", "acc1")
 	require.NotNil(t, acc1Doc)
-	assert.InDelta(t, 90.0, acc1Doc["balance"], 0.001)
+	assert.InDelta(t, 90.0, acc1Doc.GetOr("balance", nil), 0.001)
 	acc3Doc := findDoc(docsAfterCommit, "account_id", "acc3")
 	require.NotNil(t, acc3Doc)
-	assert.InDelta(t, 200.0, acc3Doc["balance"], 0.001)
+	assert.InDelta(t, 200.0, acc3Doc.GetOr("balance", nil), 0.001)
 
 	// Test Rollback
 	txInteractor2, err := interactor.StartTransaction(ctx)
@@ -626,11 +642,11 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 			Value:    query.FilterValue{StringVal: utils.StringPtr("acc1")},
 		},
 	}
-	_, _, err = txInteractor2.UpdateDocuments(ctx, testSchema, updates2, nil, filterAcc1_2, false)
+	_, _, err = txInteractor2.UpdateDocuments(ctx, testSchema, documenter(updates2), nil, filterAcc1_2, false)
 	require.NoError(t, err)
-	_, err = txInteractor2.InsertDocuments(ctx, testSchema, []map[string]any{
+	_, err = txInteractor2.InsertDocuments(ctx, testSchema, documenters([]map[string]any{
 		{"account_id": "acc4", "balance": 300.0},
-	})
+	}))
 	require.NoError(t, err)
 
 	// Rollback the transaction
@@ -645,18 +661,16 @@ func TestNativeInteractor_Transactions(t *testing.T) {
 	assert.Len(t, docsAfterRollback, 3) // Should still be 3 documents
 	acc1DocAfterRollback := findDoc(docsAfterRollback, "account_id", "acc1")
 	require.NotNil(t, acc1DocAfterRollback)
-	assert.InDelta(t, 90.0, acc1DocAfterRollback["balance"], 0.001) // Should be original committed value
+	assert.InDelta(t, 90.0, acc1DocAfterRollback.GetOr("balance", nil), 0.001) // Should be original committed value
 	acc4Doc := findDoc(docsAfterRollback, "account_id", "acc4")
 	assert.Nil(t, acc4Doc) // Should not exist
 /**/
 }
 
-func findDoc(docs []map[string]any, key string, value any) map[string]any {
+func findDoc(docs []*document.Document, key string, value any) *document.Document {
 	for _, doc := range docs {
-		if val, ok := doc[key]; ok {
-			if val == value {
-				return doc
-			}
+		if val, _ := doc.Get(key); val == value {
+			return doc
 		}
 	}
 	return nil
@@ -728,7 +742,7 @@ func TestNativeInteractor_RawQuery(t *testing.T) {
 		{"id": 2, "name": "Bob", "email": "bob@example.com", "age": 25},
 		{"id": 3, "name": "Charlie", "email": "charlie@example.com", "age": 35},
 	}
-	_, err = interactor.InsertDocuments(ctx, testSchema, docsToInsert)
+	_, err = interactor.InsertDocuments(ctx, testSchema, documenters(docsToInsert))
 	require.NoError(t, err)
 
 	// 3. Execute a raw SELECT query
@@ -743,17 +757,17 @@ func TestNativeInteractor_RawQuery(t *testing.T) {
 	assert.Len(t, selectResult.Data, 2)
 
 	// Verify selected data
-	selectedDocs := selectResult.Data.([]map[string]any)
-	assert.Equal(t, "Alice", selectedDocs[0]["name"])
-	assert.Equal(t, int64(30), selectedDocs[0]["age"])
+	selectedDocs := selectResult.Data.([]*document.Document)
+	assert.Equal(t, "Alice", selectedDocs[0].GetOr("name", nil))
+	assert.Equal(t, int64(30), selectedDocs[0].GetOr("age", nil))
 
-	assert.Equal(t, "Charlie", selectedDocs[1]["name"])
-	assert.Equal(t, int64(35), selectedDocs[1]["age"])
+	assert.Equal(t, "Charlie", selectedDocs[1].GetOr("name", nil))
+	assert.Equal(t, int64(35), selectedDocs[1].GetOr("age", nil))
 
 	// 4. Execute a raw UPDATE query
 	rawUpdateQuery := &query.RawQuery{
 		Template:   "UPDATE raw_users SET age = ? WHERE id = ?",
-		Parameters: []any{31, selectedDocs[0]["id"]},
+		Parameters: []any{31, selectedDocs[0].GetOr("id", nil)},
 	}
 	updateResult, err := interactor.Query(ctx, &query.Query{Raw: rawUpdateQuery})
 	require.NoError(t, err)
@@ -764,12 +778,12 @@ func TestNativeInteractor_RawQuery(t *testing.T) {
 	updatedUser, _, err := interactor.SelectDocuments(ctx, testSchema, &query.Query{
 		Target:  &query.QueryTarget{Name: testSchema.Name, Schema: testSchema},
 		Filters: &query.QueryFilter{Condition: &query.FilterCondition{Field: "id", Operator: query.ComparisonOperatorEq, Value: query.FilterValue{StringVal: utils.StringPtr(
-			selectedDocs[0]["id"].(string),
+			selectedDocs[0].GetOr("id", nil).(string),
 		)}}},
 	})
 	require.NoError(t, err)
 	assert.Len(t, updatedUser, 1)
-	assert.Equal(t, int64(31), updatedUser[0]["age"])
+	assert.Equal(t, int64(31), updatedUser[0].GetOr("age", nil))
 
 	// 5. Execute a raw DDL query (CREATE INDEX)
 	rawCreateIndexQuery := &query.RawQuery{

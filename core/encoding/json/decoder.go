@@ -1,24 +1,32 @@
 package json
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strconv"
-	"sync"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
+// decodeBytes decodes a serialized bytes payload back to its raw form. The
+// serializer emits bytes fields as base64 strings (writeBytes), so the decoder
+// must reverse that encoding; strings that are not valid base64 are tolerated
+// as raw text so hand-written JSON still loads.
+func decodeBytes(s string) []byte {
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return []byte(s)
+	}
+	return b
+}
+
 // DecodeJSON is an experimental, schema-driven JSON document decoder.
 func DecodeJSON(cs *definition.CompiledSchema, data []byte) (*container.DataContainer, error) {
-	cache, err := getAddressCache(cs)
-	if err != nil {
-		return nil, err
-	}
 	p := newJSONParser(data)
 	doc := container.NewDataContainer()
 	path := make(definition.ResolvedPath, 0, 16)
-	if err := decodeObject(cs, doc, 0, path, p, nil, cache); err != nil {
+	if err := decodeObject(cs, doc, 0, path, p, nil); err != nil {
 		return nil, err
 	}
 	p.skipWS()
@@ -31,13 +39,9 @@ func DecodeJSON(cs *definition.CompiledSchema, data []byte) (*container.DataCont
 // DecodeJSONInto decodes into a caller-provided document, sourcing
 // array-of-object child documents from pool when non-nil.
 func DecodeJSONInto(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, pool *container.Pool) error {
-	cache, err := getAddressCache(cs)
-	if err != nil {
-		return err
-	}
 	p := newJSONParser(data)
 	path := make(definition.ResolvedPath, 0, 16)
-	if err := decodeObject(cs, doc, 0, path, p, pool, cache); err != nil {
+	if err := decodeObject(cs, doc, 0, path, p, pool); err != nil {
 		return err
 	}
 	p.skipWS()
@@ -60,14 +64,10 @@ func DecodeJSONInto(cs *definition.CompiledSchema, data []byte, doc *container.D
 // owns data for the full lifetime of the document (e.g. decode → serve →
 // discard, with no buffer pooling of the input bytes).
 func DecodeJSONUnsafe(cs *definition.CompiledSchema, data []byte) (*container.DataContainer, error) {
-	cache, err := getAddressCache(cs)
-	if err != nil {
-		return nil, err
-	}
 	p := newJSONParserUnsafe(data)
 	doc := container.NewDataContainer()
 	path := make(definition.ResolvedPath, 0, 16)
-	if err := decodeObject(cs, doc, 0, path, p, nil, cache); err != nil {
+	if err := decodeObject(cs, doc, 0, path, p, nil); err != nil {
 		return nil, err
 	}
 	p.skipWS()
@@ -81,13 +81,9 @@ func DecodeJSONUnsafe(cs *definition.CompiledSchema, data []byte) (*container.Da
 // DecodeJSONUnsafe. See its docstring for the buffer-lifetime contract this
 // places on the caller — it applies equally here.
 func DecodeJSONIntoUnsafe(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, pool *container.Pool) error {
-	cache, err := getAddressCache(cs)
-	if err != nil {
-		return err
-	}
 	p := newJSONParserUnsafe(data)
 	path := make(definition.ResolvedPath, 0, 16)
-	if err := decodeObject(cs, doc, 0, path, p, pool, cache); err != nil {
+	if err := decodeObject(cs, doc, 0, path, p, pool); err != nil {
 		return err
 	}
 	p.skipWS()
@@ -97,8 +93,62 @@ func DecodeJSONIntoUnsafe(cs *definition.CompiledSchema, data []byte, doc *conta
 	return nil
 }
 
-// decodeObject parses one JSON object against one schema slot.
-func decodeObject(cs *definition.CompiledSchema, doc *container.DataContainer, schemaIdx uint8, path definition.ResolvedPath, p *jsonParser, pool *container.Pool, cache []container.DataContainerKey) error {
+// DecodeJSONField decodes the serialized JSON fragment of a single root-level
+// field into doc, at the field's coordinate. It is the lenient (read-back)
+// counterpart to full-document decode: absent required fields are tolerated
+// and nothing is validated, so stored fragments can be re-materialized even
+// when partial. Nested objects decode flattened into doc (their leaves land at
+// the deep addresses the schema assigns); array-of-object children are sourced
+// from pool when non-nil. data must be exactly what the encoder produced for
+// this field (e.g. SerializeJSONPrefix output).
+func DecodeJSONField(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, fieldName string, pool *container.Pool) error {
+	abs, fieldIdx, ok := findRootField(cs, fieldName)
+	if !ok {
+		return fmt.Errorf("json: field %q not found", fieldName)
+	}
+	fd := cs.Descriptors[abs]
+	p := newJSONParser(data)
+	path := definition.ResolvedPath{definition.NewResolvedStep(0, uint8(fieldIdx))}
+	if err := parseValueInto(p, cs, doc, fd, path, pool, false); err != nil {
+		return fmt.Errorf("json: decode field %q: %w", fieldName, err)
+	}
+	p.skipWS()
+	if !p.eof() {
+		return fmt.Errorf("json: trailing data after JSON document")
+	}
+	return nil
+}
+
+// findRootField resolves a root-level field name to its absolute descriptor
+// index and field index within the root schema slot.
+func findRootField(cs *definition.CompiledSchema, name string) (abs int, fieldIdx uint16, ok bool) {
+	if len(cs.Schemas) == 0 {
+		return 0, 0, false
+	}
+	slot := cs.Schemas[0]
+	for j := uint16(0); j < slot.FieldCount; j++ {
+		if cs.FieldsMeta[slot.FieldStart+j].Name == name {
+			return int(slot.FieldStart) + int(j), j, true
+		}
+	}
+	return 0, 0, false
+}
+
+// decodeObject parses one JSON object against one schema slot. Absent
+// required fields are validated (full-document decode).
+func decodeObject(cs *definition.CompiledSchema, doc *container.DataContainer, schemaIdx uint8, path definition.ResolvedPath, p *jsonParser, pool *container.Pool) error {
+	return decodeObjectInto(cs, doc, schemaIdx, path, p, pool, true)
+}
+
+// decodeObjectLenient is decodeObject without required-field validation. It is
+// used when materializing stored fragments (row read-back) that may be partial
+// or structurally absent.
+func decodeObjectLenient(cs *definition.CompiledSchema, doc *container.DataContainer, schemaIdx uint8, path definition.ResolvedPath, p *jsonParser, pool *container.Pool) error {
+	return decodeObjectInto(cs, doc, schemaIdx, path, p, pool, false)
+}
+
+// decodeObjectInto parses one JSON object against one schema slot.
+func decodeObjectInto(cs *definition.CompiledSchema, doc *container.DataContainer, schemaIdx uint8, path definition.ResolvedPath, p *jsonParser, pool *container.Pool, validate bool) error {
 	if int(schemaIdx) >= len(cs.Schemas) {
 		return fmt.Errorf("json: schema slot %d out of range", schemaIdx)
 	}
@@ -116,14 +166,13 @@ func decodeObject(cs *definition.CompiledSchema, doc *container.DataContainer, s
 
 	if !p.take('}') {
 		for {
-			name, err := p.parseString()
+			j, err := p.parseSchemaKey(cs, slot)
 			if err != nil {
 				return err
 			}
 			if err := p.expect(':'); err != nil {
 				return err
 			}
-			j := findField(cs, slot, name)
 			if j < 0 {
 				if err := p.skipValue(); err != nil {
 					return err
@@ -139,7 +188,7 @@ func decodeObject(cs *definition.CompiledSchema, doc *container.DataContainer, s
 				fd := cs.Descriptors[abs]
 				step := definition.NewResolvedStep(schemaIdx, uint8(j))
 				fieldPath := appendStep(path, step)
-				if err := parseValue(p, cs, doc, fd, abs, fieldPath, pool, cache); err != nil {
+				if err := parseValueInto(p, cs, doc, fd, fieldPath, pool, validate); err != nil {
 					return err
 				}
 			}
@@ -155,7 +204,11 @@ func decodeObject(cs *definition.CompiledSchema, doc *container.DataContainer, s
 	// Validate absent required fields. Defaults are deliberately NOT applied:
 	// decode is a pure materialization, and default injection is owned by the
 	// persistence layer — applying it here would make serialize→decode→serialize
-	// round-trips non-idempotent.
+	// round-trips non-idempotent. The lenient form skips validation entirely so
+	// stored fragments can be read back without requiring every field.
+	if !validate {
+		return nil
+	}
 	for j := uint16(0); j < slot.FieldCount; j++ {
 		isSeen := false
 		if slot.FieldCount <= 64 {
@@ -182,6 +235,7 @@ func appendStep(path definition.ResolvedPath, step definition.ResolvedStep) defi
 	return append(path, step)
 }
 
+// findField reports the index of the slot field whose name equals name, or -1.
 func findField(cs *definition.CompiledSchema, slot definition.SchemaSlot, name string) int {
 	for j := uint16(0); j < slot.FieldCount; j++ {
 		if cs.FieldsMeta[slot.FieldStart+j].Name == name {
@@ -191,12 +245,81 @@ func findField(cs *definition.CompiledSchema, slot definition.SchemaSlot, name s
 	return -1
 }
 
-func parseValue(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, abs int, path definition.ResolvedPath, pool *container.Pool, cache []container.DataContainerKey) error {
+// parseSchemaKey consumes the string literal at the current position and
+// returns the index of the matching field in slot, or -1 when the key does not
+// belong to the schema. A schema's field names are a fixed set, so the raw
+// literal bytes are compared directly against the canonical names the compiled
+// schema already holds — no key string is ever allocated. Escaped keys (the
+// rare slow path) fall back to the scratch buffer.
+func (p *jsonParser) parseSchemaKey(cs *definition.CompiledSchema, slot definition.SchemaSlot) (int, error) {
+	p.skipWS()
+	if p.eof() || p.data[p.pos] != '"' {
+		return -1, p.errf("expected string")
+	}
+	p.pos++
+	start := p.pos
+
+	for p.pos < len(p.data) {
+		c := p.data[p.pos]
+		if c == '"' {
+			j := matchSchemaField(p.data[start:p.pos], cs, slot)
+			p.pos++
+			return j, nil
+		}
+		if c == '\\' || c < 0x20 {
+			break
+		}
+		p.pos++
+	}
+
+	p.pos = start
+	s, err := p.parseStringSlow()
+	if err != nil {
+		return -1, err
+	}
+	return findField(cs, slot, s), nil
+}
+
+// matchSchemaField reports the index of the slot field whose canonical name
+// equals b, or -1. Comparison is byte-wise and allocation-free.
+func matchSchemaField(b []byte, cs *definition.CompiledSchema, slot definition.SchemaSlot) int {
+	for j := uint16(0); j < slot.FieldCount; j++ {
+		name := cs.FieldsMeta[slot.FieldStart+j].Name
+		if len(name) == len(b) && equalBytesString(name, b) {
+			return int(j)
+		}
+	}
+	return -1
+}
+
+func equalBytesString(s string, b []byte) bool {
+	for i := range b {
+		if s[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func parseValue(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, pool *container.Pool) error {
+	return parseValueInto(p, cs, doc, fd, path, pool, true)
+}
+
+func parseValueInto(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, pool *container.Pool, validate bool) error {
+	// A null leaf is absence: consume it and leave the slot untouched. Stored
+	// fragments (row read-back) legitimately carry null for unset fields, and
+	// re-materializing them must not fail or invent a value.
+	if p.peek() == 'n' {
+		if err := p.parseNull(); err != nil {
+			return err
+		}
+		return nil
+	}
 	if !fd.Terminal() && fd.ChildSchemaIdx() != definition.FdNoChild {
 		childIdx := fd.ChildSchemaIdx()
 		switch fd.DataType() {
 		case container.TypeArrayObject:
-			return parseArrayObject(p, cs, doc, fd, path, childIdx, pool, cache)
+			return parseArrayObjectInto(p, cs, doc, fd, path, childIdx, pool, validate)
 
 		case container.TypeRecord:
 			m, err := p.parseObjectAny()
@@ -206,13 +329,17 @@ func parseValue(p *jsonParser, cs *definition.CompiledSchema, doc *container.Dat
 			return doc.SetRecord(internalKey(fd), m)
 
 		default:
-			return decodeObject(cs, doc, childIdx, path, p, pool, cache)
+			return decodeObjectInto(cs, doc, childIdx, path, p, pool, validate)
 		}
 	}
-	return parseLeaf(p, cs, doc, fd, abs, path, cache)
+	return parseLeaf(p, cs, doc, fd, path)
 }
 
-func parseArrayObject(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, childIdx uint8, pool *container.Pool, cache []container.DataContainerKey) error {
+func parseArrayObject(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, childIdx uint8, pool *container.Pool) error {
+	return parseArrayObjectInto(p, cs, doc, fd, path, childIdx, pool, true)
+}
+
+func parseArrayObjectInto(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, childIdx uint8, pool *container.Pool, validate bool) error {
 	// Pre-allocate slice capacity to prevent growslice allocations
 	children := make([]*container.DataContainer, 0, 8)
 	err := p.parseArray(func() error {
@@ -222,7 +349,7 @@ func parseArrayObject(p *jsonParser, cs *definition.CompiledSchema, doc *contain
 		} else {
 			child = container.NewDataContainer()
 		}
-		if err := decodeObject(cs, child, childIdx, path, p, pool, cache); err != nil {
+		if err := decodeObjectInto(cs, child, childIdx, path, p, pool, validate); err != nil {
 			return err
 		}
 		children = append(children, child)
@@ -238,8 +365,8 @@ func fieldName(cs *definition.CompiledSchema, fd definition.FieldDescriptor) str
 	return cs.FieldPath(fd)
 }
 
-func parseLeaf(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, abs int, path definition.ResolvedPath, cache []container.DataContainerKey) error {
-	key, err := leafKey(cs, fd, abs, path, cache)
+func parseLeaf(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath) error {
+	key, err := computeLeafKey(cs, fd, path)
 	if err != nil {
 		return err
 	}
@@ -273,7 +400,7 @@ func parseLeaf(p *jsonParser, cs *definition.CompiledSchema, doc *container.Data
 		if err != nil {
 			return err
 		}
-		return doc.SetBytes(key, []byte(s))
+		return doc.SetBytes(key, decodeBytes(s))
 	case container.TypeGeometry:
 		g, err := parseGeometry(p)
 		if err != nil {
@@ -338,87 +465,11 @@ func parseLeaf(p *jsonParser, cs *definition.CompiledSchema, doc *container.Data
 	return fmt.Errorf("json: unsupported data type %d", fd.DataType())
 }
 
-// addressCacheRegistry memoizes, per *definition.CompiledSchema, the resolved
-// container.DataContainerKey for every leaf field descriptor. Because each
-// schemaIdx in a CompiledSchema corresponds to exactly one position in the
-// schema tree, the path leading to any given leaf field is fixed for the
-// lifetime of the schema — so the address it resolves to via cs.Address never
-// changes across documents or array elements. Precomputing it once here
-// removes a cs.Address (hash + cache-lookup) call from every leaf field of
-// every decoded value, which otherwise dominates decode's CPU profile.
-var addressCacheRegistry sync.Map // map[*definition.CompiledSchema][]container.DataContainerKey
-
-// getAddressCache returns the memoized per-descriptor key cache for cs,
-// building it on first use. If the schema-shaped walk fails (indicating a
-// schema construction bug rather than a per-document data problem), the
-// error is returned and nothing is cached, so callers fall back to
-// per-call computation via computeLeafKey.
-func getAddressCache(cs *definition.CompiledSchema) ([]container.DataContainerKey, error) {
-	if v, ok := addressCacheRegistry.Load(cs); ok {
-		return v.([]container.DataContainerKey), nil
-	}
-	cache := make([]container.DataContainerKey, len(cs.Descriptors))
-	path := make(definition.ResolvedPath, 0, 16)
-	if err := buildAddressCache(cs, 0, path, cache); err != nil {
-		return nil, err
-	}
-	actual, _ := addressCacheRegistry.LoadOrStore(cs, cache)
-	return actual.([]container.DataContainerKey), nil
-}
-
-// buildAddressCache walks the schema tree from schemaIdx, mirroring the
-// exact dispatch decisions parseValue makes at decode time (structural vs.
-// leaf), and fills cache[abs] with the resolved key for every leaf
-// descriptor it visits. Structural fields (nested objects, array-of-object,
-// record) use internalKey at decode time instead of leafKey, so they are
-// walked purely to reach their descendants and are never written to cache.
-func buildAddressCache(cs *definition.CompiledSchema, schemaIdx uint8, path definition.ResolvedPath, cache []container.DataContainerKey) error {
-	if int(schemaIdx) >= len(cs.Schemas) {
-		return fmt.Errorf("json: build address cache: schema slot %d out of range", schemaIdx)
-	}
-	slot := cs.Schemas[schemaIdx]
-	for j := uint16(0); j < slot.FieldCount; j++ {
-		abs := int(slot.FieldStart) + int(j)
-		fd := cs.Descriptors[abs]
-		step := definition.NewResolvedStep(schemaIdx, uint8(j))
-		fieldPath := appendStep(path, step)
-
-		if !fd.Terminal() && fd.ChildSchemaIdx() != definition.FdNoChild {
-			// Matches parseValue's structural branch. TypeRecord terminates
-			// there without descending further and without a leafKey lookup;
-			// TypeArrayObject and plain nested objects both recurse with the
-			// same fieldPath every child/level shares at decode time.
-			if fd.DataType() != container.TypeRecord {
-				if err := buildAddressCache(cs, fd.ChildSchemaIdx(), fieldPath, cache); err != nil {
-					return err
-				}
-			}
-			continue
-		}
-
-		key, err := computeLeafKey(cs, fd, fieldPath)
-		if err != nil {
-			return fmt.Errorf("json: build address cache for schema %d field %d: %w", schemaIdx, j, err)
-		}
-		cache[abs] = key
-	}
-	return nil
-}
-
-// leafKey returns the DataContainerKey for a leaf field. It expects a
-// pre‑computed cache (obtained once per decode call) and uses it directly
-// as a slice index. The fallback to computeLeafKey is kept only for safety.
-func leafKey(cs *definition.CompiledSchema, fd definition.FieldDescriptor, abs int, path definition.ResolvedPath, cache []container.DataContainerKey) (container.DataContainerKey, error) {
-	if abs >= 0 && abs < len(cache) {
-		return cache[abs], nil
-	}
-	// Fallback (should never happen for a valid schema)
-	return computeLeafKey(cs, fd, path)
-}
-
-// computeLeafKey does the actual path-to-address resolution. It is the sole
-// place that calls cs.Address, used both as the cache-miss fallback and by
-// buildAddressCache to populate the cache.
+// computeLeafKey resolves a leaf field's path to its DataContainerKey via the
+// compiled schema's own address space. cs.Address memoizes path→address
+// internally, so repeated resolution of the same path (across documents or
+// array elements) is a single cached lookup — the compiled schema is the sole
+// source of address truth; the codec keeps no parallel cache of its own.
 func computeLeafKey(cs *definition.CompiledSchema, fd definition.FieldDescriptor, path definition.ResolvedPath) (container.DataContainerKey, error) {
 	// FAST-PATH: Root level fields have empty paths; bypass cs.Address computation
 	if len(path) == 0 {
@@ -646,7 +697,7 @@ func asBytesSlice(v any) [][]byte {
 	arr, _ := v.([]any)
 	out := make([][]byte, len(arr))
 	for i, e := range arr {
-		out[i] = []byte(asString(e))
+		out[i] = decodeBytes(asString(e))
 	}
 	return out
 }

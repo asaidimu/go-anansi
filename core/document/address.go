@@ -176,7 +176,14 @@ func setByType(c *container.DataContainer, dt container.DataType, key container.
 		}
 		return c.SetBool(key, b)
 	case container.TypeBytes:
-		return c.SetBytes(key, []byte(asString(value)))
+		switch b := value.(type) {
+		case []byte:
+			return c.SetBytes(key, b)
+		case string:
+			return c.SetBytes(key, []byte(b))
+		default:
+			return fmt.Errorf("document: expected bytes, got %T", value)
+		}
 	case container.TypeGeometry:
 		g, err := asGeometry(value)
 		if err != nil {
@@ -416,7 +423,11 @@ func unsetSubtree(cs *definition.CompiledSchema, c *container.DataContainer, slo
 // contains this field. For the root container and flattened objects, base is
 // the object's own path; for array-of-object children, base is the array
 // field's path.
-func setInto(cs *definition.CompiledSchema, c *container.DataContainer, slotIdx uint8, fieldIdx uint16, base definition.ResolvedPath, value any) error {
+// setInto writes a value into container c at the field identified by
+// (slotIdx, fieldIdx), addressed under base. pool, when non-nil, supplies child
+// containers for array-of-object fields so struct->container binds reuse pooled
+// documents instead of allocating fresh ones.
+func setInto(cs *definition.CompiledSchema, c *container.DataContainer, pool *container.Pool, slotIdx uint8, fieldIdx uint16, base definition.ResolvedPath, value any) error {
 	if cs == nil || int(slotIdx) >= len(cs.Schemas) {
 		return fmt.Errorf("document: schema slot %d out of range", slotIdx)
 	}
@@ -436,13 +447,13 @@ func setInto(cs *definition.CompiledSchema, c *container.DataContainer, slotIdx 
 			}
 			return c.SetRecord(internalKey(fd), m)
 		case container.TypeArrayObject:
-			return setArrayObject(cs, c, fd, child, fp, value)
+			return setArrayObject(cs, c, pool, fd, child, fp, value)
 		default:
 			m, ok := value.(map[string]any)
 			if !ok {
 				return fmt.Errorf("document: field %q expects an object (map), got %T", name, value)
 			}
-			return setMapInto(cs, c, child, fp, m)
+			return setMapInto(cs, c, pool, child, fp, m)
 		}
 	}
 
@@ -455,7 +466,7 @@ func setInto(cs *definition.CompiledSchema, c *container.DataContainer, slotIdx 
 
 // setMapInto populates every field of the object at slotIdx from m. Values
 // live in container c, addressed under base (the object's own resolved path).
-func setMapInto(cs *definition.CompiledSchema, c *container.DataContainer, slotIdx uint8, base definition.ResolvedPath, m map[string]any) error {
+func setMapInto(cs *definition.CompiledSchema, c *container.DataContainer, pool *container.Pool, slotIdx uint8, base definition.ResolvedPath, m map[string]any) error {
 	if cs == nil || int(slotIdx) >= len(cs.Schemas) {
 		return fmt.Errorf("document: schema slot %d out of range", slotIdx)
 	}
@@ -467,7 +478,7 @@ func setMapInto(cs *definition.CompiledSchema, c *container.DataContainer, slotI
 		if !ok {
 			continue
 		}
-		if err := setInto(cs, c, slotIdx, j, base, val); err != nil {
+		if err := setInto(cs, c, pool, slotIdx, j, base, val); err != nil {
 			return err
 		}
 	}
@@ -476,15 +487,20 @@ func setMapInto(cs *definition.CompiledSchema, c *container.DataContainer, slotI
 
 // setArrayObject populates an array-of-object field. Each item becomes a child
 // container whose leaves are addressed under the array field's own path.
-func setArrayObject(cs *definition.CompiledSchema, c *container.DataContainer, fd definition.FieldDescriptor, childIdx uint8, base definition.ResolvedPath, value any) error {
+func setArrayObject(cs *definition.CompiledSchema, c *container.DataContainer, pool *container.Pool, fd definition.FieldDescriptor, childIdx uint8, base definition.ResolvedPath, value any) error {
 	items, err := toMapSlice(value)
 	if err != nil {
 		return err
 	}
 	children := make([]*container.DataContainer, len(items))
 	for i, item := range items {
-		child := container.NewDataContainer()
-		if err := setMapInto(cs, child, childIdx, base, item); err != nil {
+		var child *container.DataContainer
+		if pool != nil {
+			child = pool.Get()
+		} else {
+			child = container.NewDataContainer()
+		}
+		if err := setMapInto(cs, child, pool, childIdx, base, item); err != nil {
 			return err
 		}
 		children[i] = child

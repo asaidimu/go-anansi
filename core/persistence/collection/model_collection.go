@@ -204,8 +204,10 @@ func (mc *ModelCollection[P]) Create(ctx context.Context, doc P) (P, error) {
 	}
 
 	result := newModelPtr[P]()
-	if err := res.Data.BindToWithContext(ctx, result); err != nil {
-		return newModelPtr[P](), common.SystemErrorFrom(err).
+	bindErr := res.Data.BindToWithContext(ctx, result)
+	res.Data.Release() // read-back containers are consumed by binding; return them to the pool
+	if bindErr != nil {
+		return newModelPtr[P](), common.SystemErrorFrom(bindErr).
 			WithOperation("ModelCollection.Create").
 			WithMessage("failed to bind result document to model")
 	}
@@ -247,8 +249,10 @@ func (mc *ModelCollection[P]) CreateMany(ctx context.Context, docs []P) ([]P, er
 	output := make([]P, len(results))
 	for i, res := range results {
 		result := newModelPtr[P]()
-		if err := res.Data.BindToWithContext(ctx, result); err != nil {
-			return nil, common.SystemErrorFrom(err).
+		bindErr := res.Data.BindToWithContext(ctx, result)
+		res.Data.Release() // read-back containers are consumed by binding; return them to the pool
+		if bindErr != nil {
+			return nil, common.SystemErrorFrom(bindErr).
 				WithOperation("ModelCollection.CreateMany").
 				WithPath(fmt.Sprintf("results[%d]", i)).
 				WithMessagef("failed to bind result at index %d to model", i)
@@ -320,8 +324,10 @@ func (mc *ModelCollection[P]) Read(ctx context.Context, q *query.Query) ([]P, er
 	output := make([]P, len(res.Data))
 	for i, doc := range res.Data {
 		result := newModelPtr[P]()
-		if err := doc.BindToWithContext(ctx, result); err != nil {
-			return nil, common.SystemErrorFrom(err).
+		bindErr := doc.BindToWithContext(ctx, result)
+		doc.Release() // read-back containers are consumed by binding; return them to the pool
+		if bindErr != nil {
+			return nil, common.SystemErrorFrom(bindErr).
 				WithOperation("ModelCollection.Read").
 				WithPath(fmt.Sprintf("results[%d]", i)).
 				WithMessagef("failed to bind document at index %d to model", i)
@@ -420,8 +426,10 @@ func (mc *ModelCollection[P]) Update(ctx context.Context, id string, update P, o
 	}
 
 	updated := newModelPtr[P]()
-	if err := result.Data[0].BindToWithContext(ctx, updated); err != nil {
-		return newModelPtr[P](), common.SystemErrorFrom(err).
+	bindErr := result.Data[0].BindToWithContext(ctx, updated)
+	result.Data[0].Release() // read-back containers are consumed by binding; return them to the pool
+	if bindErr != nil {
+		return newModelPtr[P](), common.SystemErrorFrom(bindErr).
 			WithOperation("ModelCollection.Update").
 			WithPath(id).
 			WithMessage("failed to bind updated document to model")
@@ -509,8 +517,10 @@ func (mc *ModelCollection[P]) Replace(ctx context.Context, id string, replacemen
 	}
 
 	replaced := newModelPtr[P]()
-	if err := result.Data[0].BindToWithContext(ctx, replaced); err != nil {
-		return newModelPtr[P](), common.SystemErrorFrom(err).
+	bindErr := result.Data[0].BindToWithContext(ctx, replaced)
+	result.Data[0].Release() // read-back containers are consumed by binding; return them to the pool
+	if bindErr != nil {
+		return newModelPtr[P](), common.SystemErrorFrom(bindErr).
 			WithOperation("ModelCollection.Replace").
 			WithPath(id).
 			WithMessage("failed to bind replaced document to model")
@@ -650,8 +660,10 @@ func (mc *ModelCollection[P]) ReadAs[R ModelIdentity](ctx context.Context, q *qu
 	output := make([]R, len(res.Data))
 	for i, doc := range res.Data {
 		result := newModelPtr[R]()
-		if err := doc.BindToWithContext(ctx, result); err != nil {
-			return nil, common.SystemErrorFrom(err).
+		bindErr := doc.BindToWithContext(ctx, result)
+		doc.Release() // read-back containers are consumed by binding; return them to the pool
+		if bindErr != nil {
+			return nil, common.SystemErrorFrom(bindErr).
 				WithOperation("ModelCollection.ReadAs").
 				WithPath(fmt.Sprintf("results[%d]", i)).
 				WithMessagef("failed to bind document at index %d to shape", i)
@@ -674,14 +686,17 @@ func (mc *ModelCollection[P]) CreateFrom[R ModelIdentity, S ModelIdentity](ctx c
 	}
 
 	res, err := mc.Collection.CreateOne(ctx, d)
+	d.Release() // converted doc is consumed by persistence; return pooled containers
 	if err != nil {
 		return newModelPtr[S](), common.SystemErrorFrom(err).
 			WithOperation("ModelCollection.CreateFrom")
 	}
 
 	result := newModelPtr[S]()
-	if err := res.Data.BindToWithContext(ctx, result); err != nil {
-		return newModelPtr[S](), common.SystemErrorFrom(err).
+	bindErr := res.Data.BindToWithContext(ctx, result)
+	res.Data.Release() // read-back containers are consumed by binding; return them to the pool
+	if bindErr != nil {
+		return newModelPtr[S](), common.SystemErrorFrom(bindErr).
 			WithOperation("ModelCollection.CreateFrom").
 			WithMessage("failed to bind result document to shape")
 	}
@@ -721,6 +736,7 @@ func (mc *ModelCollection[P]) UpdateFrom[R ModelIdentity, S ModelIdentity](
 	}, opts...)
 
 	result, err := mc.Collection.Update(ctx, &cu)
+	d.Release() // converted partial doc is consumed by persistence; return pooled containers
 
 	if err != nil {
 		return newModelPtr[S](), common.SystemErrorFrom(err).
@@ -741,8 +757,10 @@ func (mc *ModelCollection[P]) UpdateFrom[R ModelIdentity, S ModelIdentity](
 	}
 
 	updated := newModelPtr[S]()
-	if err := result.Data[0].BindToWithContext(ctx, updated); err != nil {
-		return newModelPtr[S](), common.SystemErrorFrom(err).
+	bindErr := result.Data[0].BindToWithContext(ctx, updated)
+	result.Data[0].Release() // read-back containers are consumed by binding; return them to the pool
+	if bindErr != nil {
+		return newModelPtr[S](), common.SystemErrorFrom(bindErr).
 			WithOperation("ModelCollection.UpdateFrom").
 			WithPath(id).
 			WithMessage("failed to bind updated document to shape")

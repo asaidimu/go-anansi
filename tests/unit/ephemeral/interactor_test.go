@@ -6,12 +6,27 @@ import (
 	"os"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v8/tests/testutils"
 	"github.com/stretchr/testify/assert"
 )
+
+func documenters(rows []map[string]any) []data.Documenter {
+	out := make([]data.Documenter, 0, len(rows))
+	for _, r := range rows {
+		doc, _ := data.NewDocument(r)
+		out = append(out, doc)
+	}
+	return out
+}
+
+func documenter(m map[string]any) data.Documenter {
+	doc, _ := data.NewDocument(m)
+	return doc
+}
 
 const userSchemaJSON = `{
 	"name": "users",
@@ -86,7 +101,7 @@ func TestEphemeralDatabaseInteractor_InsertAndSelectDocuments(t *testing.T) {
 		{"name": "Bob", "age": 25},
 	}
 
-	inserted, err := interactor.InsertDocuments(context.Background(), &schemaDef, docsToInsert)
+	inserted, err := interactor.InsertDocuments(context.Background(), &schemaDef, documenters(docsToInsert))
 	assert.NoError(t, err)
 	assert.Len(t, inserted, 2)
 	dsl := query.NewQueryBuilder().Build()
@@ -107,7 +122,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithFilter(t *testing.T) {
 		{"name": "Bob", "age": 25},
 		{"name": "Charlie", "age": 30},
 	}
-	_, err = interactor.InsertDocuments(context.Background(), &schemaDef, docsToInsert)
+	_, err = interactor.InsertDocuments(context.Background(), &schemaDef, documenters(docsToInsert))
 	assert.NoError(t, err)
 
 	dsl := query.NewQueryBuilder().Where("age").Eq(30).Build()
@@ -127,13 +142,13 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments(t *testing.T) {
 		{"name": "Alice", "age": 30, "status": "active"},
 		{"name": "Bob", "age": 25, "status": "active"},
 	}
-	_, err = interactor.InsertDocuments(context.Background(), &schemaDef, docsToInsert)
+	_, err = interactor.InsertDocuments(context.Background(), &schemaDef, documenters(docsToInsert))
 	assert.NoError(t, err)
 
 	filters := query.NewQueryBuilder().Where("name").Eq("Bob").Build().Filters
 	updates := map[string]any{"status": "inactive"}
 
-	_, updatedCount, err := interactor.UpdateDocuments(context.Background(), &schemaDef, updates, nil, filters, false)
+	_, updatedCount, err := interactor.UpdateDocuments(context.Background(), &schemaDef, documenter(updates), nil, filters, false)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), updatedCount)
 
@@ -141,7 +156,7 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments(t *testing.T) {
 	selected, _, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
 	assert.NoError(t, err)
 	assert.Len(t, selected, 1)
-	assert.Equal(t, "Bob", selected[0]["name"])
+	assert.Equal(t, "Bob", selected[0].GetOr("name", nil))
 }
 
 func TestEphemeralDatabaseInteractor_DeleteDocuments(t *testing.T) {
@@ -155,7 +170,7 @@ func TestEphemeralDatabaseInteractor_DeleteDocuments(t *testing.T) {
 		{"name": "Alice", "age": 30},
 		{"name": "Bob", "age": 25},
 	}
-	_, err = interactor.InsertDocuments(context.Background(), &schemaDef, docsToInsert)
+	_, err = interactor.InsertDocuments(context.Background(), &schemaDef, documenters(docsToInsert))
 	assert.NoError(t, err)
 
 	filters := query.NewQueryBuilder().Where("age").Gt(28).Build().Filters
@@ -179,16 +194,16 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedProjection(t *tes
 	docsToInsert := []map[string]any{
 		{"name": "Alice", "age": 30, "address": map[string]any{"city": "New York", "zip": 10001}},
 	}
-	_, err = interactor.InsertDocuments(context.Background(), &schemaDef, docsToInsert)
+	_, err = interactor.InsertDocuments(context.Background(), &schemaDef, documenters(docsToInsert))
 	assert.NoError(t, err)
 
 	dsl := query.NewQueryBuilder().Select().Include("name", "address.city").End().Build()
 	selected, _, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
 	assert.NoError(t, err)
 	assert.Len(t, selected, 1)
-	assert.Equal(t, "Alice", selected[0]["name"])
-	assert.Nil(t, selected[0]["age"])
-	address, ok := selected[0]["address"].(map[string]any)
+	assert.Equal(t, "Alice", selected[0].GetOr("name", nil))
+	assert.Nil(t, selected[0].GetOr("age", nil))
+	address, ok := selected[0].GetOr("address", nil).(map[string]any)
 	assert.True(t, ok)
 	assert.Equal(t, "New York", address["city"])
 	assert.Nil(t, address["zip"])
@@ -205,14 +220,14 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithNestedFilter(t *testing
 		{"name": "Alice", "age": 30, "address": map[string]any{"city": "New York"}},
 		{"name": "Bob", "age": 25, "address": map[string]any{"city": "London"}},
 	}
-	_, err = interactor.InsertDocuments(context.Background(), &schemaDef, docsToInsert)
+	_, err = interactor.InsertDocuments(context.Background(), &schemaDef, documenters(docsToInsert))
 	assert.NoError(t, err)
 
 	dsl := query.NewQueryBuilder().Where("address.city").Eq("London").Build()
 	selected, _, err := interactor.SelectDocuments(context.Background(), &schemaDef, &dsl)
 	assert.NoError(t, err)
 	assert.Len(t, selected, 1)
-	assert.Equal(t, "Bob", selected[0]["name"])
+	assert.Equal(t, "Bob", selected[0].GetOr("name", nil))
 }
 
 func TestEphemeralDatabaseInteractor_SelectDocuments_EmptyResult(t *testing.T) {
@@ -238,7 +253,7 @@ func TestEphemeralDatabaseInteractor_UpdateDocuments_NoMatch(t *testing.T) {
 	filters := query.NewQueryBuilder().Where("name").Eq("non-existent").Build().Filters
 	updates := map[string]any{"status": "inactive"}
 
-	_, updatedCount, err := interactor.UpdateDocuments(context.Background(), &schemaDef, updates, nil, filters, false)
+	_, updatedCount, err := interactor.UpdateDocuments(context.Background(), &schemaDef, documenter(updates), nil, filters, false)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(0), updatedCount)
 }
@@ -286,7 +301,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithJoin(t *testing.T) {
 		{"id": 1, "name": "Alice", "age": 30},
 		{"id": 2, "name": "Bob", "age": 25},
 	}
-	_, err = interactor.InsertDocuments(context.Background(), &userSchema, users)
+	_, err = interactor.InsertDocuments(context.Background(), &userSchema, documenters(users))
 	assert.NoError(t, err)
 
 	orders := []map[string]any{
@@ -294,7 +309,7 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithJoin(t *testing.T) {
 		{"order_id": 102, "user_id": 2, "amount": 200.0},
 		{"order_id": 103, "user_id": 1, "amount": 50.0},
 	}
-	_, err = interactor.InsertDocuments(context.Background(), &orderSchema, orders)
+	_, err = interactor.InsertDocuments(context.Background(), &orderSchema, documenters(orders))
 	assert.NoError(t, err)
 
 	// Build join query
@@ -317,9 +332,9 @@ func TestEphemeralDatabaseInteractor_SelectDocuments_WithJoin(t *testing.T) {
 
 	// Verify results
 	for _, r := range results {
-		user, ok := r["users"].(map[string]any)
+		user, ok := r.GetOr("users", nil).(map[string]any)
 		assert.True(t, ok, "Expected 'users' to be a map[string]any")
-		order, ok := r["orders"].(map[string]any)
+		order, ok := r.GetOr("orders", nil).(map[string]any)
 		assert.True(t, ok, "Expected 'orders' to be a map[string]any")
 		assert.Equal(t, user["id"], order["user_id"], "User ID and Order User ID should match")
 	}

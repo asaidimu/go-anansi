@@ -6,6 +6,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -137,13 +138,13 @@ func TestPersistence_RawQuery_LeftJoin(t *testing.T) {
 	assert.True(t, result.Success)
 	assert.Equal(t, 3, result.Count)
 
-	joinedDocs := result.Data.([]map[string]any)
-	assert.Equal(t, "Alice", joinedDocs[0]["name"])
-	assert.Equal(t, "Engineer", joinedDocs[0]["bio"])
-	assert.Equal(t, "Bob", joinedDocs[1]["name"])
-	assert.Nil(t, joinedDocs[1]["bio"])
-	assert.Equal(t, "Charlie", joinedDocs[2]["name"])
-	assert.Equal(t, "Artist", joinedDocs[2]["bio"])
+	joinedDocs := result.Data.([]*document.Document)
+	assert.Equal(t, "Alice", joinedDocs[0].GetOr("name", nil))
+	assert.Equal(t, "Engineer", joinedDocs[0].GetOr("bio", nil))
+	assert.Equal(t, "Bob", joinedDocs[1].GetOr("name", nil))
+	assert.Nil(t, joinedDocs[1].GetOr("bio", nil))
+	assert.Equal(t, "Charlie", joinedDocs[2].GetOr("name", nil))
+	assert.Equal(t, "Artist", joinedDocs[2].GetOr("bio", nil))
 }
 
 func TestPersistence_RawQuery_SyntaxError(t *testing.T) {
@@ -266,12 +267,12 @@ func TestPersistence_RawQuery_GroupConcat(t *testing.T) {
 	assert.True(t, result.Success)
 	assert.Equal(t, 2, result.Count)
 
-	aggDocs := result.Data.([]map[string]any)
-	assert.Equal(t, "user1", aggDocs[0]["user_id"])
-	assert.Contains(t, aggDocs[0]["products"].(string), "Laptop")
-	assert.Contains(t, aggDocs[0]["products"].(string), "Keyboard")
-	assert.Equal(t, "user2", aggDocs[1]["user_id"])
-	assert.Equal(t, "Mouse", aggDocs[1]["products"])
+	aggDocs := result.Data.([]*document.Document)
+	assert.Equal(t, "user1", aggDocs[0].GetOr("user_id", nil))
+	assert.Contains(t, aggDocs[0].GetOr("products", nil).(string), "Laptop")
+	assert.Contains(t, aggDocs[0].GetOr("products", nil).(string), "Keyboard")
+	assert.Equal(t, "user2", aggDocs[1].GetOr("user_id", nil))
+	assert.Equal(t, "Mouse", aggDocs[1].GetOr("products", nil))
 }
 
 func TestPersistence_RawQuery_MissingPlaceholder(t *testing.T) {

@@ -379,6 +379,29 @@ func TestSerializeJSON_RoundTrip(t *testing.T) {
 	}
 }
 
+// TestBytesRoundTrip pins the bytes transport contract: bytes fields serialize
+// to a base64 string and decode back to the exact raw payload, never the
+// base64 string's own bytes (double encoding) and never a Go `%v` stringification.
+func TestBytesRoundTrip(t *testing.T) {
+	const s = `{"version":"1.0.0","name":"s","fields":{"payload":{"name":"payload","type":"bytes"}}}`
+	cs, err := compileSchema(t, []byte(s))
+	require.NoError(t, err)
+
+	raw := []byte{0x00, 0x01, 0xfe, 0xff, 'r', 'a', 'w'}
+	key := internalKey(cs.Descriptors[0])
+	doc := container.NewDataContainer()
+	require.NoError(t, doc.SetBytes(key, raw))
+
+	got, err := SerializeJSON(cs, doc)
+	require.NoError(t, err)
+
+	re, err := DecodeJSON(cs, got)
+	require.NoError(t, err)
+	dump, err := Dump(cs, re)
+	require.NoError(t, err)
+	assert.Equal(t, raw, dump["payload"])
+}
+
 // TestSerializeJSON_EmptyObject checks the serializer on a container with only
 // defaulted fields and on an empty document.
 func TestSerializeJSON_EmptyObject(t *testing.T) {

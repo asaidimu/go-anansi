@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -156,7 +157,8 @@ func TestUpdateIntegration(t *testing.T) {
 		Filters: filters,
 	}
 
-	nqUpdate, err := builder.Build(&updateQuery, native.StmtUpdate, map[string]any{"set": updates})
+	setDoc, _ := data.NewDocument(updates)
+	nqUpdate, err := builder.Build(&updateQuery, native.StmtUpdate, map[string]any{"set": setDoc})
 	require.NoError(t, err)
 
 	rowsAffected, err := executor.Exec(context.Background(), native.NativeQuery[types.SQLitePayload]{
@@ -325,7 +327,7 @@ func TestOffsetPagination(t *testing.T) {
 		assert.Len(t, selectedDocs, len(expectedAges))
 
 		for i, age := range expectedAges {
-			gotAge := selectedDocs[i]["age"].(int64)
+			gotAge := selectedDocs[i].GetOr("age", nil).(int64)
 			assert.Equal(t, int64(age), gotAge)
 		}
 	}
@@ -397,7 +399,7 @@ func TestCursorPagination(t *testing.T) {
 
 	expectedAges := []int{35, 36, 37}
 	for i, age := range expectedAges {
-		gotAge := selectedDocs[i]["age"].(int64)
+		gotAge := selectedDocs[i].GetOr("age", nil).(int64)
 		assert.Equal(t, int64(age), gotAge)
 	}
 }

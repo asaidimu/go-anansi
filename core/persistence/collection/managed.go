@@ -80,17 +80,7 @@ func (c *managedCollection) CreateMany(ctx context.Context, docs []data.Document
 	validCount := 0
 
 	for _, doc := range docs {
-		// TODO: Investigate why we do this
-		d, err := data.NewDocument(doc)
-		if err != nil {
-			issue := common.SystemErrorFrom(err).ToIssue()
-			results = append(results, base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: []common.Issue{
-				{Message: "Could not parse document", Cause: &common.Issues{issue}},
-			}})
-			continue
-		}
-
-		validationResult, ok := c.Validate(ctx, d, false)
+		validationResult, ok := c.Validate(ctx, doc, false)
 
 		if !ok {
 			results = append(results, base.CreateResult{Status: base.StatusFailedValidation, Data: doc, Issues: validationResult})

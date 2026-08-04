@@ -40,9 +40,9 @@ func TestDefaultDataMigrator_Migrate(t *testing.T) {
 	err := sm.CreateCollection(ctx, *srcSchema)
 	require.NoError(t, err)
 
-	_, err = interactor.InsertDocuments(ctx, srcSchema, []map[string]any{
-		{"name": "Alice", "age": 30},
-		{"name": "Bob", "age": 25},
+	_, err = interactor.InsertDocuments(ctx, srcSchema, data.DocumentSet{
+		data.MustNewDocument(map[string]any{"name": "Alice", "age": 30}),
+		data.MustNewDocument(map[string]any{"name": "Bob", "age": 25}),
 	})
 	require.NoError(t, err)
 
@@ -84,9 +84,9 @@ func TestDefaultDataMigrator_Migrate(t *testing.T) {
 	require.Len(t, rows, 2)
 
 	for _, row := range rows {
-		email, ok := row["email"]
-		require.True(t, ok, "email field should exist in migrated data")
-		name := row["name"]
+		email := row.GetOr("email", nil)
+		require.NotNil(t, email, "email field should exist in migrated data")
+		name := row.GetOr("name", nil)
 		assert.Equal(t, name.(string)+"@example.com", email)
 	}
 }

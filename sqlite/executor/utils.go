@@ -1,11 +1,13 @@
 package executor
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -14,15 +16,59 @@ import (
 	"go.uber.org/zap"
 )
 
+// ReadRowsIntoContainer scans result rows directly into pooled, schema-bound
+// documents — no map materialization and no record-view wrapper. The schema is
+// consulted once to build the column plan; scalar values land in typed slots
+// and JSON-fragment columns are decoded leniently. matchCol names the query's
+// internal total-count column; its value is captured from the first row.
+func ReadRowsIntoContainer(ctx context.Context, dp *document.DocumentPool, rows *sql.Rows, matchCol string) ([]*document.Document, int64, error) {
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, 0, native.ErrFailedToReadRows.WithCause(err).WithMessage("failed to get columns")
+	}
+	plan, err := dp.PlanRow(columns, matchCol)
+	if err != nil {
+		return nil, 0, native.ErrFailedToReadRows.WithCause(err).WithMessage("failed to plan row scan")
+	}
+
+	values := make([]any, len(columns))
+	scanArgs := make([]any, len(columns))
+	for i := range values {
+		scanArgs[i] = &values[i]
+	}
+
+	var results []*document.Document
+	var totalMatches int64
+	totalCaptured := false
+
+	for rows.Next() {
+		if err := rows.Scan(scanArgs...); err != nil {
+			return nil, 0, native.ErrFailedToReadRows.WithCause(err).WithMessage("failed to scan row")
+		}
+		if !totalCaptured && plan.TotalIndex() >= 0 {
+			if v, ok := values[plan.TotalIndex()].(int64); ok {
+				totalMatches = v
+			}
+			totalCaptured = true
+		}
+		d, err := dp.ScanRow(ctx, plan, values)
+		if err != nil {
+			return nil, 0, native.ErrFailedToReadRows.WithCause(err).WithMessage("failed to scan row into document")
+		}
+		results = append(results, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, native.ErrFailedToReadRows.WithCause(err)
+	}
+	return results, totalMatches, nil
+}
+
 // ReadRows reads all rows from a *sql.Rows object and converts them into a slice
-// of map[string]any maps. It also handles type conversions for different field types.
-// ReadRows reads all rows from a *sql.Rows object and converts them into a slice
-// of map[string]any maps. If no schema is provided, it returns raw row data without conversions.
-// Add the constant here (or import it from your constants package)
-func ReadRows(logger *zap.Logger, sc *definition.Schema, rows *sql.Rows) ([]map[string]any, int64, error) {
+// of *document.Document. If no schema is provided, it returns raw row data.
+func ReadRows(ctx context.Context, logger *zap.Logger, sc *definition.Schema, rows *sql.Rows) ([]*document.Document, int64, error) {
 	utilDocChan, utilErrChan := readRowsToDocs(rows)
 
-	var results []map[string]any
+	var results []*document.Document
 	var totalMatches int64 = 0
 	countCaptured := false
 
@@ -91,7 +137,7 @@ func ReadRows(logger *zap.Logger, sc *definition.Schema, rows *sql.Rows) ([]map[
 			}
 		}
 
-		results = append(results, processRow(row))
+		results = append(results, document.NewRecordView(processRow(row), ctx))
 	}
 
 	if err := <-utilErrChan; err != nil {

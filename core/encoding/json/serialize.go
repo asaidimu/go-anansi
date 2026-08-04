@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	stdjson "encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"slices"
 	"strconv"
@@ -49,6 +50,132 @@ func SerializeJSON(cs *definition.CompiledSchema, doc *container.DataContainer) 
 // from the container's typed slots.
 func SerializeJSONCanonical(cs *definition.CompiledSchema, doc *container.DataContainer, skip map[string]bool) ([]byte, error) {
 	return serializeJSONFiltered(cs, doc, "", skip)
+}
+
+// SerializeJSONCanonicalTo serializes the container as canonical JSON, writing
+// the bytes directly to w from the pooled buffer. Callers that only consume the
+// bytes (e.g. feeding a hash) avoid the copy SerializeJSONCanonical returns.
+func SerializeJSONCanonicalTo(w io.Writer, cs *definition.CompiledSchema, doc *container.DataContainer, skip map[string]bool) error {
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+
+	if err := writeObject(cs, doc, "", buf, skip); err != nil {
+		bufferPool.Put(buf)
+		return err
+	}
+
+	_, err := w.Write(buf.Bytes())
+
+	if buf.Cap() <= maxPooledBufferSize {
+		bufferPool.Put(buf)
+	}
+	return err
+}
+
+// SerializeJSONPrefix serializes only the subtree under a fully-qualified
+// schema path (e.g. "customer" or "_metadata_") directly from the container's
+// typed slots — no intermediate maps. A single stored value (a record, a
+// slice, an array-of-object field) is emitted as that tagged value; a named
+// object whose leaves share the container emits a JSON object of its
+// descendants. An absent path emits "null".
+func SerializeJSONPrefix(cs *definition.CompiledSchema, doc *container.DataContainer, path string) ([]byte, error) {
+	buf, err := serializePrefixBuf(cs, doc, path)
+	if err != nil {
+		return nil, err
+	}
+	res := bytes.Clone(buf.Bytes())
+	recycleBuffer(buf)
+	return res, nil
+}
+
+// SerializeJSONPrefixString is SerializeJSONPrefix returning a string, saving
+// callers that need text (e.g. SQLite binds) a second copy.
+func SerializeJSONPrefixString(cs *definition.CompiledSchema, doc *container.DataContainer, path string) (string, error) {
+	buf, err := serializePrefixBuf(cs, doc, path)
+	if err != nil {
+		return "", err
+	}
+	res := string(buf.Bytes())
+	recycleBuffer(buf)
+	return res, nil
+}
+
+func serializePrefixBuf(cs *definition.CompiledSchema, doc *container.DataContainer, path string) (*bytes.Buffer, error) {
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+
+	if err := writePrefixed(cs, doc, path, buf); err != nil {
+		recycleBuffer(buf)
+		return nil, err
+	}
+	return buf, nil
+}
+
+// recycleBuffer returns a pooled buffer to the pool when it is small enough to
+// reuse, avoiding retention of oversized buffers.
+func recycleBuffer(buf *bytes.Buffer) {
+	if buf.Cap() <= maxPooledBufferSize {
+		bufferPool.Put(buf)
+	}
+}
+
+func writePrefixed(cs *definition.CompiledSchema, doc *container.DataContainer, path string, buf *bytes.Buffer) error {
+	entriesPtr := fieldEntryPool.Get().(*[]fieldEntry)
+	entries := (*entriesPtr)[:0]
+
+	var slotFunc func(container.DataType, ...int) unsafe.Pointer
+
+	_, err := doc.Walk(func(positions map[int64]int32, slot func(container.DataType, ...int) unsafe.Pointer) (any, error) {
+		slotFunc = slot
+		for k, idx := range positions {
+			key := container.DataContainerKey(k)
+			name := nameFor(cs, key)
+			if name == path || strings.HasPrefix(name, path+".") {
+				entries = append(entries, fieldEntry{name: name, key: key, idx: idx})
+			}
+		}
+		return nil, nil
+	})
+	if err != nil {
+		resetAndRecycleEntries(entriesPtr, entries)
+		return err
+	}
+
+	var direct *fieldEntry
+	var descendants []fieldEntry
+	sortEntries(entries)
+	if len(entries) > 0 && entries[0].name == path {
+		direct = &entries[0]
+		descendants = entries[1:]
+	} else {
+		descendants = entries
+	}
+
+	switch {
+	case direct != nil && len(descendants) > 0:
+		resetAndRecycleEntries(entriesPtr, entries)
+		return fmt.Errorf("json: serialize: field %q has both a value and child fields", path)
+	case direct != nil:
+		// Pass the field's own path as the prefix so descendants — in
+		// particular array-of-object children, whose leaves live in the shared
+		// address space under names like "<field>.<child>" — are emitted
+		// relative to the field, matching full-document serialize. Otherwise
+		// the field-path prefix leaks into each element's key.
+		if err := writeValue(cs, slotFunc, direct.key, direct.idx, path, buf, nil); err != nil {
+			resetAndRecycleEntries(entriesPtr, entries)
+			return err
+		}
+	case len(descendants) > 0:
+		if err := emitObject(cs, slotFunc, descendants, path, buf, nil); err != nil {
+			resetAndRecycleEntries(entriesPtr, entries)
+			return err
+		}
+	default:
+		buf.WriteString("null")
+	}
+
+	resetAndRecycleEntries(entriesPtr, entries)
+	return nil
 }
 
 func serializeJSONFiltered(cs *definition.CompiledSchema, doc *container.DataContainer, prefix string, skip map[string]bool) ([]byte, error) {
@@ -96,6 +223,7 @@ func writeObject(cs *definition.CompiledSchema, doc *container.DataContainer, pr
 		return err
 	}
 
+	sortEntries(entries)
 	if err := emitObject(cs, slotFunc, entries, prefix, buf, skip); err != nil {
 		resetAndRecycleEntries(entriesPtr, entries)
 		return err
@@ -108,41 +236,23 @@ func writeObject(cs *definition.CompiledSchema, doc *container.DataContainer, pr
 // emitObject writes the JSON object for one container (or for a nested object
 // within it). Each entry carries a fully-qualified schema path; prefix marks
 // how many leading path segments describe the container currently being
-// emitted, so the relative field name is what remains. Named-object children
-// flatten into the same container's key space, so descendant leaves are
-// grouped back into nested JSON objects; array-of-object fields are emitted as
-// arrays of per-element objects keyed by the child schema's field names.
+// emitted, so the relative field name is what remains. entries must be sorted
+// by name (in place, once per container, by writeObject/writePrefixed): direct
+// leaves then precede their descendants, so contiguous runs of equal first
+// segment are emitted without building per-object maps, order slices, or
+// descendant slices. Named-object children flatten into the same container's
+// key space, so descendant runs are emitted as nested JSON objects;
+// array-of-object fields are emitted as arrays of per-element objects keyed by
+// the child schema's field names.
 func emitObject(cs *definition.CompiledSchema, slotFunc func(container.DataType, ...int) unsafe.Pointer, entries []fieldEntry, prefix string, buf *bytes.Buffer, skip map[string]bool) error {
-	groups := make(map[string][]fieldEntry, len(entries))
-	var order []string
-	for _, e := range entries {
-		rel := stripPrefix(e.name, prefix)
-		if rel == "" {
-			continue
-		}
-		seg := firstSegment(rel)
-		if _, ok := groups[seg]; !ok {
-			order = append(order, seg)
-		}
-		groups[seg] = append(groups[seg], e)
-	}
-	slices.Sort(order)
-
 	buf.WriteByte('{')
 	first := true
-	for _, seg := range order {
-		group := groups[seg]
-		var direct *fieldEntry
-		var descendants []fieldEntry
-		for i := range group {
-			if stripPrefix(group[i].name, prefix) == seg {
-				if direct != nil {
-					return fmt.Errorf("json: serialize: duplicate field %q", seg)
-				}
-				direct = &group[i]
-			} else {
-				descendants = append(descendants, group[i])
-			}
+	for i := 0; i < len(entries); {
+		rel := relName(entries[i].name, prefix)
+		seg := firstSegment(rel)
+		j := i + 1
+		for j < len(entries) && firstSegment(relName(entries[j].name, prefix)) == seg {
+			j++
 		}
 
 		if !first {
@@ -150,31 +260,45 @@ func emitObject(cs *definition.CompiledSchema, slotFunc func(container.DataType,
 		}
 		writeString(buf, seg)
 		buf.WriteByte(':')
-		switch {
-		case direct != nil && len(descendants) > 0:
-			return fmt.Errorf("json: serialize: field %q has both a value and child fields", seg)
-		case direct != nil:
-			if err := writeValue(cs, slotFunc, direct.key, direct.idx, joinPrefix(prefix, seg), buf, skip); err != nil {
+		if rel == seg {
+			// A direct leaf sorts before its descendants, so it is the run's
+			// first entry; any further entry with the same segment is a child
+			// field, which is invalid alongside a value.
+			if j > i+1 {
+				return fmt.Errorf("json: serialize: field %q has both a value and child fields", seg)
+			}
+			// writeValue needs the full field path only to emit array-of-object
+			// children; defer the join so scalar and nested-object leaves never
+			// allocate a prefixed path.
+			var childPrefix string
+			if entries[i].key.Type() == container.TypeArrayObject {
+				childPrefix = joinPrefix(prefix, seg)
+			}
+			if err := writeValue(cs, slotFunc, entries[i].key, entries[i].idx, childPrefix, buf, skip); err != nil {
 				return err
 			}
-		case len(descendants) > 0:
-			if err := emitObject(cs, slotFunc, descendants, joinPrefix(prefix, seg), buf, skip); err != nil {
+		} else {
+			if err := emitObject(cs, slotFunc, entries[i:j], joinPrefix(prefix, seg), buf, skip); err != nil {
 				return err
 			}
-		default:
-			return fmt.Errorf("json: serialize: field %q has no value", seg)
 		}
 		first = false
+		i = j
 	}
 	buf.WriteByte('}')
 	return nil
 }
 
-func stripPrefix(name, prefix string) string {
+// relName returns name relative to a prefix ("prefix.…" → the remainder), as a
+// zero-allocation substring. Names not under prefix are returned unchanged.
+func relName(name, prefix string) string {
 	if prefix == "" {
 		return name
 	}
-	return strings.TrimPrefix(name, prefix+".")
+	if len(name) > len(prefix) && name[:len(prefix)] == prefix && name[len(prefix)] == '.' {
+		return name[len(prefix)+1:]
+	}
+	return name
 }
 
 func firstSegment(rel string) string {
@@ -189,6 +313,15 @@ func joinPrefix(prefix, seg string) string {
 		return seg
 	}
 	return prefix + "." + seg
+}
+
+// sortEntries orders entries by fully-qualified name so direct leaves precede
+// their descendants and each object's keys come out in canonical (sorted)
+// order. Sorting in place keeps sub-slices passed to emitObject sorted too.
+func sortEntries(entries []fieldEntry) {
+	slices.SortFunc(entries, func(a, b fieldEntry) int {
+		return strings.Compare(a.name, b.name)
+	})
 }
 
 func resetAndRecycleEntries(ptr *[]fieldEntry, entries []fieldEntry) {

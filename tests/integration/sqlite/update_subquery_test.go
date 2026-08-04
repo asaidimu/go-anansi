@@ -3,6 +3,7 @@ package sqlite_test
 import (
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -147,9 +148,9 @@ func TestUpdateWithSubqueryInWHERE(t *testing.T) {
 	}
 
 	updatePayload := map[string]any{
-		"set": map[string]any{
+		"set": data.MustNewDocument(map[string]any{
 			"bonus": bonus,
-		},
+		}),
 	}
 
 	factory := sql.NewSQLiteFactory(nil)
