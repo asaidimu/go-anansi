@@ -5,6 +5,7 @@ package query
 
 import (
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
@@ -306,6 +307,45 @@ type RawQuery struct {
 	Parameters []any `json:"args,omitempty"`
 }
 
+// QueryShape describes the shape of the result rows a query produces. The
+// executor uses it to decide whether it can scan SQL columns directly into a
+// pooled, schema-bound container (when the rows map 1:1 onto a single table's
+// columns) or must fall back to a map-backed record view (shape-changing
+// queries such as joins, aggregations, or computed fields).
+type QueryShape struct {
+	// TableCount is the number of distinct tables involved in the result.
+	TableCount int
+	// ComputedFields is the number of computed (non-column) result fields,
+	// derived from projection computed items, case expressions, and
+	// aggregations.
+	ComputedFields int
+}
+
+// DirectScan reports whether result rows map 1:1 onto a single table's columns
+// so they can be materialized directly into a pooled container without
+// post-processing. Any join, aggregation, or computed field invalidates this.
+func (s QueryShape) DirectScan() bool {
+	return s.TableCount == 1 && s.ComputedFields == 0
+}
+
+// InferShape derives the result-row shape of q.
+func InferShape(q *Query) QueryShape {
+	shape := QueryShape{TableCount: 1}
+	if q == nil {
+		return shape
+	}
+	if len(q.Joins) > 0 {
+		shape.TableCount = 1 + len(q.Joins)
+	}
+	if q.Projection != nil {
+		shape.ComputedFields += len(q.Projection.Computed)
+	}
+	if len(q.Aggregations) > 0 {
+		shape.ComputedFields += len(q.Aggregations)
+	}
+	return shape
+}
+
 // Query represents a query to be executed against a collection.
 // It contains fields for filtering, projecting, sorting, and limiting results.
 type Query struct {
@@ -323,6 +363,19 @@ type Query struct {
 
 	// New raw query field - takes precedence over DSL fields when present
 	Raw *RawQuery `json:"raw,omitempty"`
+
+	// Shape describes the result-row shape of the query. It is populated by
+	// the query engine after partitioning so the executor knows whether rows
+	// can be scanned directly into pooled containers. Excluded from JSON so
+	// query-cache keys stay stable.
+	Shape QueryShape `json:"-"`
+
+	// DocumentPool is the schema-bound container pool used to materialize
+	// result rows directly into pooled, schema-bound containers. It is
+	// populated by the persistence layer; the query builder copies it onto the
+	// native query so the executor can scan into it. Excluded from JSON so
+	// query-cache keys stay stable.
+	DocumentPool *document.DocumentPool `json:"-"`
 }
 
 // IsEmpty checks if the query is empty (has no operations defined).
@@ -341,11 +394,11 @@ func (q *Query) IsEmpty() bool {
 // QueryResult represents the result of a database query.
 // TODO. Why am I not using this struct?
 type QueryResult struct {
-	Data           []map[string]any `json:"data"`
-	Count          int              `json:"count,omitempty"`
-	Total          *int             `json:"total,omitempty"`
-	PaginationInfo *PaginationInfo  `json:"pagination_info,omitempty"`
-	SearchScore    *float64         `json:"search_score,omitempty"`
+	Data           []*document.Document `json:"data"`
+	Count          int                  `json:"count,omitempty"`
+	Total          *int                 `json:"total,omitempty"`
+	PaginationInfo *PaginationInfo      `json:"pagination_info,omitempty"`
+	SearchScore    *float64             `json:"search_score,omitempty"`
 }
 
 // PaginationResult contains the pagination information for a query result.

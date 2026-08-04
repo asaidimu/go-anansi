@@ -207,7 +207,12 @@ func asBytesSlice(v any) [][]byte {
 	arr, _ := toAnySlice(v)
 	out := make([][]byte, len(arr))
 	for i, e := range arr {
-		out[i] = []byte(asString(e))
+		switch b := e.(type) {
+		case []byte:
+			out[i] = b
+		default:
+			out[i] = []byte(asString(e))
+		}
 	}
 	return out
 }

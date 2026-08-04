@@ -22,6 +22,26 @@ type DocumentUnmarshaler interface {
 	UnmarshalDocument(doc *Document) error
 }
 
+// FieldSource is the minimal per-field view the struct binder needs. Binding
+// against this interface (rather than a materialized *Document) lets
+// container-backed documents bind lazily from their typed slots, one field at
+// a time, without materializing the whole document into a map.
+type FieldSource interface {
+	Get(key string) (any, error)
+	ID() string
+	Metadata() map[string]any
+}
+
+// TypedFieldBinder is implemented by container-backed FieldSource
+// implementations (e.g. *document.Document) that can copy a field's value
+// straight into a struct field without boxing it through an interface (any).
+// Returning (false, nil) makes the caller fall back to the generic
+// FieldSource.Get path, preserving coercion and error semantics for field
+// kinds the source cannot bind directly.
+type TypedFieldBinder interface {
+	BindField(name string, rv reflect.Value, tag string) (bool, error)
+}
+
 // DocumentTagUnmarshaler allows tag-aware custom unmarshaling without reflection.
 type DocumentTagUnmarshaler interface {
 	UnmarshalDocumentTag(doc *Document, tag string) error
@@ -184,15 +204,7 @@ func (d *Document) BindTo(target any) error {
 
 // BindToWithContext is BindTo with an explicit context for cancellation.
 func (d *Document) BindToWithContext(ctx context.Context, target any) error {
-	if unmarshaler, ok := target.(DocumentUnmarshaler); ok {
-		return unmarshaler.UnmarshalDocument(d)
-	}
-	binder := &structBinder{
-		doc: d,
-		ctx: ctx,
-		tag: "",
-	}
-	return binder.bind(target)
+	return BindSourced(d, func() (*Document, error) { return d, nil }, target, ctx, "")
 }
 
 // BindToTag binds document fields into target using a custom struct tag name.
@@ -202,11 +214,34 @@ func (d *Document) BindToTag(target any, tag string) error {
 
 // BindToTagWithContext is BindToTagWithContext with an explicit context for cancellation.
 func (d *Document) BindToTagWithContext(ctx context.Context, target any, tag string) error {
-	if unmarshaler, ok := target.(DocumentTagUnmarshaler); ok {
-		return unmarshaler.UnmarshalDocumentTag(d, tag)
+	return BindSourced(d, func() (*Document, error) { return d, nil }, target, ctx, tag)
+}
+
+// BindSourced binds struct fields from an arbitrary FieldSource. Generated
+// fast-path unmarshalers still receive a materialized *Document (via
+// materialize, called only for them); every other target binds lazily through
+// src.Get/ID/Metadata, one field at a time, so container-backed documents
+// materialize at most a single nested subtree instead of the whole document.
+func BindSourced(src FieldSource, materialize func() (*Document, error), target any, ctx context.Context, tag string) error {
+	if tag == "" {
+		if _, ok := target.(DocumentUnmarshaler); ok {
+			md, err := materialize()
+			if err != nil {
+				return err
+			}
+			return md.BindToWithContext(ctx, target)
+		}
+	} else {
+		if _, ok := target.(DocumentTagUnmarshaler); ok {
+			md, err := materialize()
+			if err != nil {
+				return err
+			}
+			return md.BindToTagWithContext(ctx, target, tag)
+		}
 	}
 	binder := &structBinder{
-		doc: d,
+		src: src,
 		ctx: ctx,
 		tag: tag,
 	}
@@ -398,7 +433,7 @@ func walkFields(v reflect.Value, partial bool, fn func(meta fieldMetadata) error
 // ============================================================================
 
 type structBinder struct {
-	doc *Document
+	src FieldSource
 	ctx context.Context
 	tag string
 }
@@ -434,16 +469,35 @@ func (sb *structBinder) bind(target any) error {
 
 		switch fInfo.Name {
 		case DocumentIDField:
-			if sb.doc.id != "" {
-				value = sb.doc.id
+			if id := sb.src.ID(); id != "" {
+				value = id
 				found = true
 			}
 		case MetadataField:
-			value = sb.doc.Metadata()
+			value = sb.src.Metadata()
 			found = true
 		default:
+			// Fields without a compiled setter bind box-free straight from a
+			// container-backed source when it supports it. Setter fields keep
+			// their unsafe-pointer fast path; system fields keep Get/ID/Metadata.
+			if fInfo.Setter == nil {
+				if tf, ok := sb.src.(TypedFieldBinder); ok {
+					if fv := v.FieldByIndex(fInfo.Index); fv.CanSet() {
+						if handled, err := tf.BindField(fInfo.Name, fv, sb.tag); handled {
+							if err != nil {
+								return ErrFailedToSetField.
+									WithOperation("BindTo").
+									WithPath(fInfo.Name).
+									WithCause(err).
+									WithMessagef("failed to set field %s: %v", fInfo.StructField.Name, err)
+							}
+							continue
+						}
+					}
+				}
+			}
 			var er error
-			value, er = sb.doc.Get(fInfo.Name)
+			value, er = sb.src.Get(fInfo.Name)
 			found = (er == nil)
 		}
 
@@ -532,7 +586,7 @@ func (sb *structBinder) setFieldValue(field reflect.Value, value any) error {
 		} else if valMap, ok := value.(map[string]any); ok {
 			nestedDoc := &Document{ctx: sb.ctx, data: valMap}
 			newStruct := reflect.New(fieldType).Interface()
-			nestedBinder := &structBinder{doc: nestedDoc, ctx: sb.ctx, tag: sb.tag}
+			nestedBinder := &structBinder{src: nestedDoc, ctx: sb.ctx, tag: sb.tag}
 			if err := nestedBinder.bind(newStruct); err != nil {
 				return err
 			}

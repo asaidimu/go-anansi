@@ -7,6 +7,8 @@ import (
 	"sync"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -28,7 +30,7 @@ var _ query.DatabaseInteractor = (*EphemeralDatabaseInteractor)(nil)
 var _ query.SchemaManager = (*EphemeralDatabaseInteractor)(nil)
 
 // SelectDocuments retrieves documents from the in-memory store.
-func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schemaDef *definition.Schema, dsl *query.Query) ([]map[string]any, int64, error) {
+func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schemaDef *definition.Schema, dsl *query.Query) ([]*document.Document, int64, error) {
 	if dsl.Target == nil {
 		dsl.Target = &query.QueryTarget{
 			Name: schemaDef.Name,
@@ -117,7 +119,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 		if err != nil {
 			return nil, 0, err
 		}
-		return []map[string]any{aggregationResults}, 0, nil
+		return []*document.Document{document.NewRecordView(aggregationResults)}, 0, nil
 	}
 
 	// Apply Sorting
@@ -143,7 +145,15 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
 		return nil, 0, err
 	}
 
-	return projectedDocs, totalCount, nil
+	return toDocuments(projectedDocs), totalCount, nil
+}
+
+func toDocuments(docs []map[string]any) []*document.Document {
+	out := make([]*document.Document, 0, len(docs))
+	for _, m := range docs {
+		out = append(out, document.NewRecordView(m))
+	}
+	return out
 }
 
 // SelectStream streams documents from the in-memory store.
@@ -188,7 +198,7 @@ func (i *EphemeralDatabaseInteractor) SelectStream(ctx context.Context, sc *defi
 }
 
 // UpdateDocuments updates documents in the in-memory store.
-func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schemaDef *definition.Schema, updates map[string]any, computedUpdates map[string]query.Query, filters *query.QueryFilter, returnDocs bool) ([]map[string]any, int64, error) {
+func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schemaDef *definition.Schema, updates data.Documenter, computedUpdates map[string]query.Query, filters *query.QueryFilter, returnDocs bool) ([]*document.Document, int64, error) {
 	c, err := i.store.getCollection(schemaDef.Name)
 	if err != nil {
 		return nil, 0, err
@@ -205,7 +215,7 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 	}
 
 	var updatedCount int64
-	var updatedDocuments []map[string]any
+	var updatedDocuments []*document.Document
 	var idsToUpdate []string
 
 	stream := c.data.Stream(0)
@@ -239,7 +249,7 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 		}
 		updatedDocData := make(map[string]any)
 		maps.Copy(updatedDocData, doc.Data)
-		maps.Copy(updatedDocData, updates)
+		maps.Copy(updatedDocData, updates.ToMap())
 
 		// TODO: Apply computedUpdates logic here
 
@@ -253,7 +263,7 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 			if err != nil {
 				return nil, updatedCount, err
 			}
-			updatedDocuments = append(updatedDocuments, map[string]any(retrievedDoc.Data))
+			updatedDocuments = append(updatedDocuments, document.NewRecordView(map[string]any(retrievedDoc.Data)))
 		}
 	}
 
@@ -261,14 +271,15 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
 }
 
 // InsertDocuments inserts documents into the in-memory store.
-func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schemaDef *definition.Schema, records []map[string]any) ([]map[string]any, error) {
+func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schemaDef *definition.Schema, records []data.Documenter) ([]*document.Document, error) {
 	c, err := i.store.getCollection(schemaDef.Name)
 	if err != nil {
 		return nil, err
 	}
 
-	var insertedDocs []map[string]any
-	for _, doc := range records {
+	var insertedDocs []*document.Document
+	for _, record := range records {
+		doc := record.ToMap()
 		utils.ConvertMaps(doc)
 
 		// Manually enforce unique constraints based on schema definition
@@ -307,7 +318,7 @@ func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schem
 		}
 
 		insertedDoc := map[string]any(retrieved.Data)
-		insertedDocs = append(insertedDocs, insertedDoc)
+		insertedDocs = append(insertedDocs, document.NewRecordView(insertedDoc))
 	}
 
 	return insertedDocs, nil

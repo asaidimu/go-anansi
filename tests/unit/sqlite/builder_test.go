@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -96,13 +97,15 @@ func TestUpdate(t *testing.T) {
 		Where("id").Eq("user-123")
 
 	q := qb.Build()
-	data := map[string]any{
+	updates := map[string]any{
 		"age":   31,
 		"email": "john.doe@example.com",
 	}
+	setDoc, err := data.NewDocument(updates)
+	assert.NoError(t, err)
 
 	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{
-		"set": data,
+		"set": setDoc,
 	})
 	assert.NoError(t, err)
 	assert.NotNil(t, nq)

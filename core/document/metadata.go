@@ -85,7 +85,7 @@ func (d *Document) setMetadataValue(key string, value any, allowReserved bool) e
 		return d.keyErr(key)
 	}
 	last := rp[len(rp)-1]
-	if err := setInto(d.cs, d.c, last.SchemaIdx(), uint16(last.FieldIdx()), rp[:len(rp)-1], value); err != nil {
+	if err := setInto(d.cs, d.c, d.pool, last.SchemaIdx(), uint16(last.FieldIdx()), rp[:len(rp)-1], value); err != nil {
 		return common.SystemErrorFrom(data.ErrInvalidMetadata).
 			WithOperation("document.metadata").WithPath(key).WithCause(err)
 	}

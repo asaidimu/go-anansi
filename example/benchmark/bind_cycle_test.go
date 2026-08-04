@@ -193,7 +193,11 @@ func (env *bindEnv) cycle(b *testing.B, payload []byte) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	if rows, err := env.orders.Delete(env.ctx, idFilter(res.Data.ID()), false); err != nil || rows != 1 {
+	id := res.Data.ID()
+	if res.Data != nil {
+		res.Data.Release()
+	}
+	if rows, err := env.orders.Delete(env.ctx, idFilter(id), false); err != nil || rows != 1 {
 		b.Fatalf("cleanup delete rows=%d err=%v", rows, err)
 	}
 }
@@ -209,6 +213,63 @@ func BenchmarkBindCycle(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				env.cycle(b, payload)
+			}
+		})
+	}
+}
+
+// cycleTyped runs the normal user-facing path through the typed
+// ModelCollection API — the code real callers write: decode a request into a
+// typed struct, create (struct in, struct out), read back by _id_, update,
+// then delete. Unlike cycle it never touches a raw Document after decode, so
+// it also exercises the read-back containers the typed API binds and returns
+// to the pool.
+func (env *bindEnv) cycleTyped(b *testing.B, payload []byte) {
+	b.Helper()
+	doc, err := env.orders.FromJSON(payload)
+	if err != nil {
+		b.Fatal(err)
+	}
+	var order schemas.Order
+	if err := doc.BindTo(&order); err != nil {
+		b.Fatal(err)
+	}
+	env.orders.Release(doc)
+
+	created, err := env.orders.Create(env.ctx, &order)
+	if err != nil {
+		b.Fatal(err)
+	}
+	id := created.GetID()
+
+	readBack, err := env.orders.FindByID(env.ctx, id)
+	if err != nil {
+		b.Fatal(err)
+	}
+	if readBack.GetID() != id {
+		b.Fatalf("read back id %q != created %q", readBack.GetID(), id)
+	}
+
+	if _, err := env.orders.Update(env.ctx, id, &order); err != nil {
+		b.Fatal(err)
+	}
+
+	if err := env.orders.DeleteByID(env.ctx, id); err != nil {
+		b.Fatal(err)
+	}
+}
+
+// BenchmarkTypedCycle measures the typed generated-code user path end to end.
+func BenchmarkTypedCycle(b *testing.B) {
+	for _, name := range benchSizes {
+		n := erpLineCounts[name]
+		env := newBindEnv(b, n, warmDocs)
+		payload := buildOrderPayload(n)
+		b.Run(name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				env.cycleTyped(b, payload)
 			}
 		})
 	}

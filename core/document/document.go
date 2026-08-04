@@ -211,7 +211,7 @@ func (d *Document) setID(id string) {
 		return
 	}
 	last := rp[len(rp)-1]
-	_ = setInto(d.cs, d.c, last.SchemaIdx(), uint16(last.FieldIdx()), rp[:len(rp)-1], id)
+	_ = setInto(d.cs, d.c, d.pool, last.SchemaIdx(), uint16(last.FieldIdx()), rp[:len(rp)-1], id)
 }
 
 // Context returns the document's context.
@@ -359,7 +359,7 @@ func (d *Document) set(key string, value any) error {
 		return err
 	}
 	last := rp[len(rp)-1]
-	return setInto(d.cs, d.c, last.SchemaIdx(), uint16(last.FieldIdx()), rp[:len(rp)-1], value)
+	return setInto(d.cs, d.c, d.pool, last.SchemaIdx(), uint16(last.FieldIdx()), rp[:len(rp)-1], value)
 }
 
 // SetNested writes a value at a dotted path.
@@ -575,6 +575,69 @@ func (d *Document) MarshalJSON() ([]byte, error) {
 		return json.Marshal(d.ToMap())
 	}
 	return cjson.SerializeJSON(d.cs, d.c)
+}
+
+// SerializeField serializes the value at a dotted path directly from the
+// container's typed slots — no intermediate map materialization — using the
+// schema-driven stream serializer. Record views fall back to marshaling the
+// materialized value. An absent path serializes as "null".
+func (d *Document) SerializeField(path string) (string, error) {
+	if d == nil {
+		return "null", nil
+	}
+	if d.isRecord() || len(d.prefix) > 0 {
+		v, err := d.Get(path)
+		if err != nil {
+			return "null", nil
+		}
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "", err
+		}
+		return string(b), nil
+	}
+	return cjson.SerializeJSONPrefixString(d.cs, d.c, path)
+}
+
+// SerializeFieldString serializes the value at a dotted path directly from the
+// container, reporting present=false when the field is absent so callers can
+// store SQL NULL instead of a serialized "null".
+func (d *Document) SerializeFieldString(path string) (string, bool, error) {
+	if d == nil {
+		return "null", false, nil
+	}
+	if d.isRecord() || len(d.prefix) > 0 {
+		v, err := d.Get(path)
+		if err != nil {
+			return "", false, nil
+		}
+		b, err := json.Marshal(v)
+		if err != nil {
+			return "", false, err
+		}
+		return string(b), true, nil
+	}
+	rp, fd, err := d.resolvePath(path)
+	if err != nil {
+		return "", false, nil
+	}
+	if !fd.Terminal() && fd.ChildSchemaIdx() != definition.FdNoChild {
+		present, err := present(d.cs, d.c, fd, rp)
+		if err != nil {
+			return "", false, err
+		}
+		if !present {
+			return "", false, nil
+		}
+	}
+	s, err := cjson.SerializeJSONPrefixString(d.cs, d.c, path)
+	if err != nil {
+		return "", false, err
+	}
+	if s == "null" {
+		return "", false, nil
+	}
+	return s, true, nil
 }
 
 // UnmarshalJSON implements json.Unmarshaler. The receiver must already be

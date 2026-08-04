@@ -537,7 +537,7 @@ func parseArrayBytes(p *jsonParser) ([][]byte, error) {
 		if err != nil {
 			return err
 		}
-		out = append(out, []byte(s))
+		out = append(out, decodeBytes(s))
 		return nil
 	})
 	return out, err

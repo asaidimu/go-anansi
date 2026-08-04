@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
@@ -28,20 +29,27 @@ func isJSONType(field *definition.Field) bool {
 // sqliteUpdateAssignments handles the SET clause in an UPDATE statement.
 type sqliteUpdateAssignments struct {
 	factory *sqliteFactory
-	set     map[string]any
+	set     data.Documenter
 	compute map[string]query.Query
 	schema  *definition.Schema
 }
 
 func (u *sqliteUpdateAssignments) Value() (string, []any, error) {
-	if len(u.set) == 0 && len(u.compute) == 0 {
+	if u.set == nil && len(u.compute) == 0 {
 		return "", nil, nil
 	}
 
 	// 1. Unify all 'set' and 'compute' operations into a single slice for stable processing.
-	assignments := make([]updateAssignment, 0, len(u.set)+len(u.compute))
-	for path, val := range u.set {
-		assignments = append(assignments, updateAssignment{fieldPath: path, value: val})
+	assignments := make([]updateAssignment, 0, len(u.compute))
+	if u.set != nil {
+		assignments = make([]updateAssignment, 0, u.set.Len()+len(u.compute))
+		for _, path := range u.set.Keys() {
+			val, err := u.set.Get(path)
+			if err != nil {
+				continue
+			}
+			assignments = append(assignments, updateAssignment{fieldPath: path, value: val})
+		}
 	}
 	for path, val := range u.compute {
 		assignments = append(assignments, updateAssignment{fieldPath: path, value: val, isComputed: true})
@@ -94,7 +102,7 @@ func (u *sqliteUpdateAssignments) Value() (string, []any, error) {
 				if u.schema != nil {
 					_, fieldDef = u.schema.FindField(assign.fieldPath)
 				}
-				convertedValue, err := toSQLiteValue(fieldDef, assign.value)
+				convertedValue, err := toSQLiteValue(fieldDef, assign.value, nil)
 				if err != nil {
 					return "", nil, err
 				}
@@ -114,7 +122,7 @@ func (u *sqliteUpdateAssignments) Value() (string, []any, error) {
 			} else {
 				param := u.factory.nextParam()
 				relationalParts[assign.fieldPath] = fmt.Sprintf("%s = %s", quoteIdentifier(assign.fieldPath), param)
-				convertedValue, err := toSQLiteValue(topLevelField, assign.value)
+				convertedValue, err := toSQLiteValue(topLevelField, assign.value, u.set)
 				if err != nil {
 					return "", nil, err
 				}
@@ -296,9 +304,9 @@ func (f *sqliteFactory) buildUpdateTree(q *query.Query, updatePayload map[string
 		return nil, ErrUpdateQueryNoTarget
 	}
 
-	var setData map[string]any
+	var setData data.Documenter
 	if setVal, ok := updatePayload["set"]; ok && setVal != nil {
-		setData, ok = setVal.(map[string]any)
+		setData, ok = setVal.(data.Documenter)
 		if !ok {
 			return nil, ErrUpdateInvalidSetType.WithCause(fmt.Errorf("invalid data type for 'set' in update: %T", setVal))
 		}
@@ -311,7 +319,7 @@ func (f *sqliteFactory) buildUpdateTree(q *query.Query, updatePayload map[string
 			return nil, ErrUpdateInvalidComputeType.WithCause(fmt.Errorf("invalid data type for 'compute' in update: %T", computeVal))
 		}
 	}
-	if len(setData) == 0 && len(computeData) == 0 {
+	if (setData == nil || setData.Len() == 0) && len(computeData) == 0 {
 		return nil, ErrUpdateQueryNoDataPayload
 	}
 

@@ -123,6 +123,7 @@ func (c *baseCollection) DocumentPool(ctx context.Context) (*document.DocumentPo
 	c.docPoolMu.Lock()
 	defer c.docPoolMu.Unlock()
 	if c.docPool != nil && c.docPoolVersion == version {
+		c.registerDocumentPool(sc, c.docPool)
 		return c.docPool, nil
 	}
 
@@ -132,16 +133,17 @@ func (c *baseCollection) DocumentPool(ctx context.Context) (*document.DocumentPo
 	}
 	c.docPool = pool
 	c.docPoolVersion = version
+	c.registerDocumentPool(sc, pool)
 	return pool, nil
 }
 
-// documentFromMap builds the schema-free record view used for every egress
-// document (CreateMany, Read, Update). Record views hold the raw
-// database-returned map, so rows that don't conform to the collection schema
-// (joined projections, mismatched value types) still egress as
-// document.Documents.
-func (c *baseCollection) documentFromMap(ctx context.Context, m map[string]any) *document.Document {
-	return document.NewRecordView(m, ctx)
+// registerDocumentPool shares the collection's schema-bound pool with the
+// interactor when it supports registration, so write-path RETURNING scans
+// reuse this pool instead of the interactor compiling a duplicate one.
+func (c *baseCollection) registerDocumentPool(sc *definition.Schema, pool *document.DocumentPool) {
+	if reg, ok := c.interactor.(query.DocumentPoolRegistrar); ok {
+		reg.RegisterDocumentPool(sc, pool)
+	}
 }
 
 // schemaVersionKey returns a stable identity for a schema so the cached
@@ -179,19 +181,17 @@ func (c *baseCollection) CreateMany(ctx context.Context, docs []data.Documenter)
 		if err != nil {
 			return nil, err
 		}
-		set, _ := data.NewDocumentSet(docs)
-		values := set.ToMaps()
-		return interactor.InsertDocuments(ctx, sc, values)
+		return interactor.InsertDocuments(ctx, sc, docs)
 	})
 
 	if err != nil {
 		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_INSERT_DOCUMENTS_FAILED")
 	}
 
-	insertedDocs := inserted.([]map[string]any)
+	insertedDocs := inserted.([]*document.Document)
 
 	for i, doc := range insertedDocs {
-		results[i] = base.CreateResult{Status: base.StatusCreated, Data: c.documentFromMap(ctx, doc)}
+		results[i] = base.CreateResult{Status: base.StatusCreated, Data: doc}
 	}
 
 	return results, nil
@@ -204,14 +204,19 @@ func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadRe
 	if err != nil {
 		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_RESOLVE_SCHEMA_FAILED")
 	}
+	pool, err := c.DocumentPool(ctx)
+	if err != nil {
+		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_RESOLVE_DOCUMENT_POOL_FAILED")
+	}
+	q.DocumentPool = pool
 	docs, err := c.engine.Query(rctx, sc.DeepCopy(), q)
 	if err != nil {
 		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_READ_DOCUMENTS_FAILED")
 	}
 
 	set := make(data.DocumentSet, len(docs.Data))
-	for i, m := range docs.Data {
-		set[i] = c.documentFromMap(ctx, m)
+	for i, doc := range docs.Data {
+		set[i] = doc
 	}
 	result := base.ReadResult{
 		Data:           set,
@@ -229,23 +234,18 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 		return nil, base.ErrInvalidUpdateParams
 	}
 
-	var updatesMap map[string]any
-	if params.Set != nil {
-		updatesMap = params.Set.ToMap()
-	}
-
 	result, err := c.withTransaction(ctx, func(interactor query.DatabaseInteractor) (any, error) {
 		sc, err := c.currentSchema(ctx)
 		if err != nil {
 			return nil, err
 		}
-		docs, count, err := interactor.UpdateDocuments(ctx, sc, updatesMap, params.Compute, params.Filter, params.ReturnsDocument())
+		docs, count, err := interactor.UpdateDocuments(ctx, sc, params.Set, params.Compute, params.Filter, params.ReturnsDocument())
 		if err != nil {
 			return nil, err
 		}
 
 		return struct {
-			Docs  []map[string]any
+			Docs  []*document.Document
 			Count int64
 		}{Docs: docs, Count: count}, nil
 	})
@@ -255,13 +255,13 @@ func (c *baseCollection) Update(ctx context.Context, params *base.CollectionUpda
 	}
 
 	updateResult := result.(struct {
-		Docs  []map[string]any
+		Docs  []*document.Document
 		Count int64
 	})
 
 	documentSet := make(data.DocumentSet, len(updateResult.Docs))
-	for i, m := range updateResult.Docs {
-		documentSet[i] = c.documentFromMap(ctx, m)
+	for i, doc := range updateResult.Docs {
+		documentSet[i] = doc
 	}
 
 	total := int(updateResult.Count)

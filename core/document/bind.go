@@ -10,44 +10,37 @@ import (
 // STRUCT BINDING
 // ============================================================================
 //
-// Binding delegates to a materialized data.Document so tag/field/struct logic
-// is identical. Requires the data factory to be configured at startup.
+// Binding is lazy: values are read from the container's typed slots one field
+// at a time via data.BindSourced, so a bind never materializes the whole
+// document into a map. Only generated fast-path unmarshalers (which require a
+// map-backed data.Document) trigger the materializing fallback.
 
 // BindTo binds the document data into a target struct.
 func (d *Document) BindTo(target any) error {
-	md, err := d.asDataDocument()
-	if err != nil {
-		return err
-	}
-	return md.BindTo(target)
+	return d.bindTo(context.Background(), target, "")
 }
 
 // BindToWithContext binds the document data into a target struct with a context.
 func (d *Document) BindToWithContext(ctx context.Context, target any) error {
-	md, err := d.asDataDocument()
-	if err != nil {
-		return err
-	}
-	return md.BindToWithContext(ctx, target)
+	return d.bindTo(ctx, target, "")
 }
 
 // BindToTag binds the document data into a target struct using the given tag.
 func (d *Document) BindToTag(target any, tag string) error {
-	md, err := d.asDataDocument()
-	if err != nil {
-		return err
-	}
-	return md.BindToTag(target, tag)
+	return d.bindTo(context.Background(), target, tag)
 }
 
 // BindToTagWithContext binds the document data into a target struct using the
 // given tag and context.
 func (d *Document) BindToTagWithContext(ctx context.Context, target any, tag string) error {
-	md, err := d.asDataDocument()
-	if err != nil {
-		return err
+	return d.bindTo(ctx, target, tag)
+}
+
+func (d *Document) bindTo(ctx context.Context, target any, tag string) error {
+	if d == nil {
+		return ErrNilDocument
 	}
-	return md.BindToTagWithContext(ctx, target, tag)
+	return data.BindSourced(d, d.asDataDocument, target, ctx, tag)
 }
 
 // ToStruct is an alias for BindTo.

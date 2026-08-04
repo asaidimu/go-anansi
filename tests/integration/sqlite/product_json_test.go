@@ -5,6 +5,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -14,6 +15,15 @@ import (
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
 )
+
+func productDocumenters(rows []map[string]any) []data.Documenter {
+	out := make([]data.Documenter, 0, len(rows))
+	for _, r := range rows {
+		doc, _ := data.NewDocument(r)
+		out = append(out, doc)
+	}
+	return out
+}
 
 func TestProductJson_CreateCollectionAndQuery(t *testing.T) {
 	testutils.ConfigureDocumentFactory()
@@ -103,7 +113,7 @@ func TestProductJson_CreateCollectionAndQuery(t *testing.T) {
 		},
 	}
 
-	insertedDocs, err := interactor.InsertDocuments(ctx, schemaDef, []map[string]any{doc})
+	insertedDocs, err := interactor.InsertDocuments(ctx, schemaDef, productDocumenters([]map[string]any{doc}))
 	require.NoError(t, err, "InsertDocuments should succeed")
 	require.Len(t, insertedDocs, 1)
 
@@ -130,7 +140,7 @@ func TestProductJson_CreateCollectionAndQuery(t *testing.T) {
 	filteredDocs, _, err := interactor.SelectDocuments(ctx, schemaDef, filterQuery)
 	require.NoError(t, err, "Filtered SelectDocuments should succeed")
 	require.Len(t, filteredDocs, 1)
-	require.Equal(t, "My Product", filteredDocs[0]["label"])
+	require.Equal(t, "My Product", filteredDocs[0].GetOr("label", nil))
 
 	t.Log("Query with filter succeeded")
 }

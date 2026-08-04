@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -13,8 +15,8 @@ import (
 // SQLiteInsertValues handles the VALUES clause in an INSERT statement.
 type SQLiteInsertValues struct {
 	factory *sqliteFactory
-	data    map[string]any
-	batch   []map[string]any
+	data    data.Documenter
+	batch   []data.Documenter
 	schema  *definition.Schema
 	fields  []string
 }
@@ -50,8 +52,8 @@ func (i *SQLiteInsertValues) Value() (string, []any, error) {
 	return i.buildBatchInsert(i.batch)
 }
 
-func (i *SQLiteInsertValues) buildSingleInsert(doc map[string]any) (string, []any, error) {
-	if len(doc) == 0 {
+func (i *SQLiteInsertValues) buildSingleInsert(doc data.Documenter) (string, []any, error) {
+	if doc == nil || doc.Len() == 0 {
 		return "", nil, ErrInsertEmptyDocument
 	}
 
@@ -71,7 +73,7 @@ func (i *SQLiteInsertValues) buildSingleInsert(doc map[string]any) (string, []an
 	return query, params, nil
 }
 
-func (i *SQLiteInsertValues) buildBatchInsert(batch []map[string]any) (string, []any, error) {
+func (i *SQLiteInsertValues) buildBatchInsert(batch []data.Documenter) (string, []any, error) {
 	if len(batch) == 0 {
 		return "", nil, ErrInsertEmptyBatch
 	}
@@ -102,26 +104,49 @@ func (i *SQLiteInsertValues) buildBatchInsert(batch []map[string]any) (string, [
 
 // processDocumentFields converts document values to SQLite placeholders and params
 func (i *SQLiteInsertValues) processDocumentFields(
-	doc map[string]any,
+	doc data.Documenter,
 ) ([]string, []any, error) {
 	fields := i.fields
 	placeholders := make([]string, 0, len(fields))
 	params := make([]any, 0, len(fields))
 
 	for _, fieldName := range fields {
-		value, exists := doc[fieldName]
-		if !exists {
-			value = nil
-		}
-
-		placeholders = append(placeholders, i.factory.nextParam())
-
 		var fieldDef *definition.Field
 		if i.schema != nil {
 			_, fieldDef = i.schema.FindField(fieldName)
 		}
 
-		convertedValue, err := toSQLiteValue(fieldDef, value)
+		var value any
+		switch fieldName {
+		case data.DocumentIDField:
+			value = doc.ID()
+		case data.MetadataField:
+			value = doc.Metadata()
+		default:
+			// Container fields are serialized directly from the container by
+			// toSQLiteValue; materializing them via Get would be wasted.
+			if fieldDef != nil && fieldDef.Type.IsContainer() {
+				if d, ok := doc.(*document.Document); ok {
+					s, present, err := d.SerializeFieldString(string(fieldDef.Name))
+					if err != nil {
+						return nil, nil, err
+					}
+					if present {
+						value = s
+					}
+					break
+				}
+			}
+			v, err := doc.Get(fieldName)
+			if err != nil {
+				v = nil
+			}
+			value = v
+		}
+
+		placeholders = append(placeholders, i.factory.nextParam())
+
+		convertedValue, err := toSQLiteValue(fieldDef, value, doc)
 		if err != nil {
 			return nil, nil, ErrInsertFieldConversionFailed.WithCause(fmt.Errorf("failed to convert field %s: %w", fieldName, err))
 		}
@@ -217,10 +242,26 @@ func (f *sqliteFactory) buildInsertTree(q *query.Query, extra any) (SQLNode, err
 	}
 
 	switch v := extra.(type) {
-	case map[string]any:
+	case data.Documenter:
 		values.data = v
-	case []map[string]any:
+	case []data.Documenter:
 		values.batch = v
+	case map[string]any:
+		doc, err := data.NewDocument(v)
+		if err != nil {
+			return nil, ErrInsertInvalidDataType.WithCause(fmt.Errorf("invalid data type for insert: %T", extra))
+		}
+		values.data = doc
+	case []map[string]any:
+		batch := make([]data.Documenter, 0, len(v))
+		for _, m := range v {
+			doc, err := data.NewDocument(m)
+			if err != nil {
+				return nil, ErrInsertInvalidDataType.WithCause(fmt.Errorf("invalid data type for insert: %T", extra))
+			}
+			batch = append(batch, doc)
+		}
+		values.batch = batch
 	default:
 		return nil, ErrInsertInvalidDataType.WithCause(fmt.Errorf("invalid data type for insert: %T", extra))
 	}

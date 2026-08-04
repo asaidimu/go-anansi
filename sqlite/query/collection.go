@@ -141,7 +141,7 @@ func (s *createTableTree) formatDefaultValue(value definition.LiteralValue, fiel
 		return "NULL", nil
 	}
 
-	result, err := toSQLiteValue(fieldDef, value.Value())
+	result, err := toSQLiteValue(fieldDef, value.Value(), nil)
 	if err != nil {
 		return "", err
 	}
@@ -239,7 +239,7 @@ func (t *alterTableAddColumnTree) formatDefaultValue(value definition.LiteralVal
 	if value.IsZero() || value.IsNull() {
 		return "NULL", nil
 	}
-	result, err := toSQLiteValue(fieldDef, value.Value())
+	result, err := toSQLiteValue(fieldDef, value.Value(), nil)
 	if err != nil {
 		return "", err
 	}

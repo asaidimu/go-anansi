@@ -6,6 +6,7 @@ package native
 
 import (
 	"context"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
@@ -54,6 +55,47 @@ const (
 	StmtRenameColumn StatementType = "RENAME_COLUMN"
 )
 
+// BaseQuery carries the metadata an executor needs beyond the native payload:
+// the result-row shape (single-table vs shape-changing) and the schema-bound
+// document pool for direct row scanning. Dialect query types embed it so those
+// accessors surface through the generic Query interface.
+type BaseQuery struct {
+	shape query.QueryShape
+	pool  *document.DocumentPool
+}
+
+// Shape returns the result-row shape the query was compiled with.
+func (b *BaseQuery) Shape() query.QueryShape {
+	if b == nil {
+		return query.QueryShape{}
+	}
+	return b.shape
+}
+
+// DocumentPool returns the schema-bound document pool the query rows may be
+// scanned directly into, or nil when no pool is available.
+func (b *BaseQuery) DocumentPool() *document.DocumentPool {
+	if b == nil {
+		return nil
+	}
+	return b.pool
+}
+
+// SetShape records the result-row shape the query was compiled with.
+func (b *BaseQuery) SetShape(shape query.QueryShape) {
+	if b != nil {
+		b.shape = shape
+	}
+}
+
+// SetDocumentPool records the schema-bound document pool for direct row
+// scanning.
+func (b *BaseQuery) SetDocumentPool(pool *document.DocumentPool) {
+	if b != nil {
+		b.pool = pool
+	}
+}
+
 // Query is a generic, type-safe representation of a database-native query.
 // This interface wraps database-specific query objects (like *sql.Stmt for SQL
 // or primitive.M for MongoDB) while providing common metadata.
@@ -72,6 +114,15 @@ type Query[T any] interface {
 	// This allows the framework to handle different operation types appropriately
 	// without needing to inspect the native query format.
 	StatementType() StatementType
+
+	// Shape returns the result-row shape of the query. Executors use it to
+	// decide whether result rows can be scanned directly into pooled
+	// containers or must fall back to a map-backed record view.
+	Shape() query.QueryShape
+
+	// DocumentPool returns the schema-bound document pool result rows may be
+	// scanned directly into, or nil when none is available.
+	DocumentPool() *document.DocumentPool
 }
 
 // NativeQuery represents a complete query package ready for execution.
@@ -121,7 +172,7 @@ type QueryExecutor[T any] interface {
 	// Suitable for queries expected to return a bounded result set.
 	//
 	// Returns a slice of documents or an error if execution fails.
-	Query(ctx context.Context, query NativeQuery[T]) ([]map[string]any, int64, error)
+	Query(ctx context.Context, query NativeQuery[T]) ([]*document.Document, int64, error)
 
 	// ExecuteRawQuery executes a raw, templated query directly against the database.
 	// This allows for operations that are not tied to a specific collection,
@@ -156,6 +207,15 @@ type QueryExecutor[T any] interface {
 	// Close releases any resources held by the executor.
 	// This should be called when the executor is no longer needed.
 	Close() error
+}
+
+// ShapePoolSetter is implemented by dialect query types that embed BaseQuery.
+// The shared NativeQueryBuilder uses it to promote the DSL's result-row shape
+// and document pool onto the compiled native query, so dialect factories never
+// duplicate that plumbing.
+type ShapePoolSetter interface {
+	SetShape(query.QueryShape)
+	SetDocumentPool(*document.DocumentPool)
 }
 
 // NativeQueryBuilder is the public entry point for converting DSL queries to native queries.

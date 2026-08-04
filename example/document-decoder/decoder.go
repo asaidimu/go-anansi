@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"fmt"
 	"strconv"
 	"sync"
@@ -8,6 +9,16 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
+
+// decodeBytes reverses the serializer's base64 encoding of bytes payloads,
+// tolerating non-base64 strings as raw text.
+func decodeBytes(s string) []byte {
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
+		return []byte(s)
+	}
+	return b
+}
 
 // DecodeJSON is an experimental, schema-driven JSON document decoder.
 func DecodeJSON(cs *definition.CompiledSchema, data []byte) (*container.DataContainer, error) {
@@ -278,7 +289,7 @@ func parseLeaf(p *jsonParser, cs *definition.CompiledSchema, doc *container.Data
 		if err != nil {
 			return err
 		}
-		return doc.SetBytes(key, []byte(s))
+		return doc.SetBytes(key, decodeBytes(s))
 	case container.TypeGeometry:
 		g, err := parseGeometry(p)
 		if err != nil {
@@ -475,7 +486,14 @@ func setByType(doc *container.DataContainer, dt container.DataType, key containe
 		}
 		return doc.SetBool(key, b)
 	case container.TypeBytes:
-		return doc.SetBytes(key, []byte(asString(value)))
+		switch b := value.(type) {
+		case []byte:
+			return doc.SetBytes(key, b)
+		case string:
+			return doc.SetBytes(key, []byte(b))
+		default:
+			return fmt.Errorf("document-decoder: expected bytes, got %T", value)
+		}
 	case container.TypeGeometry:
 		g, err := asGeometry(value)
 		if err != nil {
@@ -659,7 +677,12 @@ func asBytesSlice(v any) [][]byte {
 	arr, _ := v.([]any)
 	out := make([][]byte, len(arr))
 	for i, e := range arr {
-		out[i] = []byte(asString(e))
+		switch b := e.(type) {
+		case []byte:
+			out[i] = b
+		default:
+			out[i] = []byte(asString(e))
+		}
 	}
 	return out
 }

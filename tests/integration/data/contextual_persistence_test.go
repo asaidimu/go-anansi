@@ -95,9 +95,11 @@ func TestContextIsPropagatedOnRead(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(readResult.Data))
 
-	// 5. Assert that each document in the result set has the correct context
+	// 5. Assert that values set in the read context are propagated to the
+	// returned documents. The document's context may carry additional internal
+	// values (e.g. the active interactor), so we verify propagation by value
+	// rather than exact context equality.
 	for _, readDoc := range readResult.Data {
-		assert.Equal(t, readCtx, readDoc.Context(), "The context of the read document should be the same as the context used for the read operation.")
 		retrievedValue, ok := readDoc.Context().Value(key).(string)
 		require.True(t, ok, "The value from the context should be retrievable from the document's context.")
 		assert.Equal(t, "my-read-op", retrievedValue, "The value from the context should be correct.")
@@ -133,9 +135,11 @@ func TestContextIsPropagatedOnUpdateWithReturning(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 1, len(updateResult.Data))
 
-	// 5. Assert that each returned document has the correct context
+	// 5. Assert that values set in the update context are propagated to the
+	// returned documents. The document's context may carry additional internal
+	// values (e.g. the active interactor), so we verify propagation by value
+	// rather than exact context equality.
 	for _, updatedDoc := range updateResult.Data {
-		assert.Equal(t, updateCtx, updatedDoc.Context(), "The context of the updated document should be the same as the context used for the update operation.")
 		retrievedValue, ok := updatedDoc.Context().Value(key).(string)
 		require.True(t, ok, "The value from the update context should be retrievable from the document's context.")
 		assert.Equal(t, "my-update-op", retrievedValue, "The value from the update context should be correct.")

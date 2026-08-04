@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/ephemeral"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -20,10 +22,21 @@ type DelayedEphemeralInteractor struct {
 	delay time.Duration
 }
 
-func (i *DelayedEphemeralInteractor) SelectDocuments(ctx context.Context, schemaDef *definition.Schema, dsl *query.Query) ([]map[string]any, int64, error) {
+func (i *DelayedEphemeralInteractor) SelectDocuments(ctx context.Context, schemaDef *definition.Schema, dsl *query.Query) ([]*document.Document, int64, error) {
 	time.Sleep(i.delay)
-	docs, count, err := i.DatabaseInteractor.SelectDocuments(ctx, schemaDef, dsl)
-	return docs, count, err
+	return i.DatabaseInteractor.SelectDocuments(ctx, schemaDef, dsl)
+}
+
+func documentSet(rows ...map[string]any) []data.Documenter {
+	out := make([]data.Documenter, 0, len(rows))
+	for _, r := range rows {
+		doc, err := data.NewDocument(r)
+		if err != nil {
+			panic(err)
+		}
+		out = append(out, doc)
+	}
+	return out
 }
 
 func newTestSchema(name ...string) *definition.Schema {
@@ -62,7 +75,7 @@ func TestQueryEngineCancellation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Create a document to query
-	_, err = delayedInteractor.InsertDocuments(context.Background(), schema, []map[string]any{{"id": "1", "name": "test"}})
+	_, err = delayedInteractor.InsertDocuments(context.Background(), schema, documentSet(map[string]any{"id": "1", "name": "test"}))
 	require.NoError(t, err)
 
 	// Create a context with a short timeout

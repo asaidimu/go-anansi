@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
 	"github.com/asaidimu/go-anansi/v8/sqlite/types"
@@ -46,8 +47,8 @@ func newSQLiteExecutor(db *sql.DB, logger *zap.Logger, tx *sql.Tx) (native.Query
 	}, nil
 }
 
-func (s *sqliteExecutor) Query(ctx context.Context, query native.NativeQuery[types.SQLitePayload]) ([]map[string]any, int64, error) {
-	q := query.Query
+func (s *sqliteExecutor) Query(ctx context.Context, nq native.NativeQuery[types.SQLitePayload]) ([]*document.Document, int64, error) {
+	q := nq.Query
 	payload := q.Raw()
 	rows, err := s.runner().QueryContext(ctx, payload.SQL, payload.Params...)
 	if err != nil {
@@ -55,12 +56,21 @@ func (s *sqliteExecutor) Query(ctx context.Context, query native.NativeQuery[typ
 	}
 	defer rows.Close()
 
-	var results []map[string]any = nil
+	var results []*document.Document = nil
 	if rows == nil {
-		return make([]map[string]any, 0), 0, nil
+		return make([]*document.Document, 0), 0, nil
 	}
 
-	results, count, err := ReadRows(s.logger, query.Schema, rows)
+	// Single-table queries carrying a schema-bound pool are scanned directly
+	// into pooled containers, bypassing the map-backed record view entirely.
+	if q.Shape().DirectScan() {
+		if dp := q.DocumentPool(); dp != nil {
+			results, count, err := ReadRowsIntoContainer(ctx, dp, rows, query.MatchCountName)
+			return results, count, err
+		}
+	}
+
+	results, count, err := ReadRows(ctx, s.logger, nq.Schema, rows)
 	return results, count, err
 }
 
@@ -131,7 +141,7 @@ func (s *sqliteExecutor) ExecuteQuery(ctx context.Context, compiled native.Nativ
 		}
 		defer rows.Close()
 
-		results, _, err := ReadRows(s.logger, compiled.Schema, rows)
+		results, _, err := ReadRows(ctx, s.logger, compiled.Schema, rows)
 		if err != nil {
 			return nil, err
 		}

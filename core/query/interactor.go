@@ -3,6 +3,8 @@ package query
 import (
 	"context"
 
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
@@ -94,6 +96,16 @@ type RawQueryResult struct {
 	Success     bool   `json:"success"`
 }
 
+// DocumentPoolRegistrar is implemented by database interactors that accept
+// schema-bound document pools from collections. Registering the collection's
+// pool lets the interactor reuse it for write-path RETURNING scans instead of
+// compiling a duplicate pool from the schema, keeping a single container pool
+// per schema. It is an optional capability: collections register opportunistically.
+type DocumentPoolRegistrar interface {
+	// RegisterDocumentPool records pool as the schema-bound document pool for sc.
+	RegisterDocumentPool(sc *definition.Schema, pool *document.DocumentPool)
+}
+
 // DatabaseInteractor defines the contract for low-level database operations.
 // It abstracts the specific SQL dialect and database-dependent logic, providing a
 // consistent interface for the persistence layer to interact with the database.
@@ -103,16 +115,16 @@ type DatabaseInteractor interface {
 	SchemaManager
 
 	// SelectDocuments retrieves documents from the database based on a QueryDSL
-	SelectDocuments(ctx context.Context, schema *definition.Schema, dsl *Query) ([]map[string]any, int64, error)
+	SelectDocuments(ctx context.Context, schema *definition.Schema, dsl *Query) ([]*document.Document, int64, error)
 
 	// SelectStream executes a SELECT query and returns a channel of documents.
 	SelectStream(ctx context.Context, sc *definition.Schema, dsl *Query) (<-chan map[string]any, <-chan error, error)
 
 	// UpdateDocuments modifies documents in the database that match the provided filters.
-	UpdateDocuments(ctx context.Context, schema *definition.Schema, updates map[string]any, computedUpdates map[string]Query, filters *QueryFilter, returning bool) ([]map[string]any,int64, error)
+	UpdateDocuments(ctx context.Context, schema *definition.Schema, updates data.Documenter, computedUpdates map[string]Query, filters *QueryFilter, returning bool) ([]*document.Document, int64, error)
 
 	// InsertDocuments adds new documents to the database.
-	InsertDocuments(ctx context.Context, schema *definition.Schema, records []map[string]any) ([]map[string]any, error)
+	InsertDocuments(ctx context.Context, schema *definition.Schema, records []data.Documenter) ([]*document.Document, error)
 
 	// DeleteDocuments removes documents from the database that match the provided filters.
 	DeleteDocuments(ctx context.Context, schema *definition.Schema, filters *QueryFilter, unsafeDelete bool) (int64, error)

@@ -77,12 +77,12 @@ func (m *DefaultDataMigrator) Migrate(
 		return "", fmt.Errorf("read source documents: %w", err)
 	}
 
-	insertBatch := make([]map[string]any, 0, len(rows))
+	insertBatch := make([]data.Documenter, 0, len(rows))
 
 	for _, row := range rows {
-		doc, ok := data.DocumentFrom(row)
-		if !ok {
-			return jobID, fmt.Errorf("failed to convert row to document")
+		doc, err := data.NewDocument(row)
+		if err != nil {
+			return jobID, fmt.Errorf("failed to convert row to document: %w", err)
 		}
 
 		transformed, tErr := func() (transformed_ data.Document, tErr_ error) {
@@ -98,7 +98,7 @@ func (m *DefaultDataMigrator) Migrate(
 			return jobID, fmt.Errorf("transform error: %w", tErr)
 		}
 
-		insertBatch = append(insertBatch, transformed.ToMap())
+		insertBatch = append(insertBatch, &transformed)
 	}
 
 	if len(insertBatch) == 0 {

@@ -123,7 +123,7 @@ func TestInsert_Integration(t *testing.T) {
 		"age":        45,
 	})
 
-	nq, err := builder.Build(&q, native.StmtInsert, data.ToMap())
+	nq, err := builder.Build(&q, native.StmtInsert, &data)
 	require.NoError(t, err)
 
 	_, err = db.Exec(nq.Raw().SQL, nq.Raw().Params...)
@@ -162,7 +162,7 @@ func TestUpdate_Integration(t *testing.T) {
 	qb := query.NewQueryBuilder().From("users_1_0_0").Alias("users").Schema(usersSchema).Where(data.DocumentIDField).Eq("user-1")
 	q := qb.Build()
 
-	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{"set": dt.StripMetadata().ToMap()})
+	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{"set": dt.StripMetadata()})
 	require.NoError(t, err)
 
 	res, err := db.Exec(nq.Raw().SQL, nq.Raw().Params...)
@@ -174,7 +174,7 @@ func TestUpdate_Integration(t *testing.T) {
 
 	// Verify update
 	var age int
-	err = db.QueryRow(fmt.Sprintf("SELECT age FROM users_1_0_0 WHERE _id_ = '%s'", dt.ID())).Scan(&age)
+	err = db.QueryRow("SELECT age FROM users_1_0_0 WHERE _id_ = 'user-1'").Scan(&age)
 	require.NoError(t, err)
 	assert.Equal(t, 31, age)
 }
@@ -252,7 +252,7 @@ func TestComplexTypes_Integration(t *testing.T) {
 	metadata := map[string]any{"author": "Augustine", "version": 2}
 	insertData := *data.MustNewDocument(map[string]any{"tags": tags, "_metadata_": metadata})
 
-	nq, err := builder.Build(&q, native.StmtInsert, insertData.ToMap())
+	nq, err := builder.Build(&q, native.StmtInsert, &insertData)
 	require.NoError(t, err)
 
 	_, err = db.Exec(nq.Raw().SQL, nq.Raw().Params...)
@@ -270,7 +270,8 @@ func TestComplexTypes_Integration(t *testing.T) {
 	updateData := map[string]any{"tags": updatedTags}
 	q = query.NewQueryBuilder().From("complex_docs_01").Alias("complex_docs").Schema(complexDocsSchema).Where(data.DocumentIDField).Eq(insertData.ID()).Build()
 
-	nq, err = builder.Build(&q, native.StmtUpdate, map[string]any{"set": updateData})
+	setDoc, _ := data.NewDocument(updateData)
+	nq, err = builder.Build(&q, native.StmtUpdate, map[string]any{"set": setDoc})
 	require.NoError(t, err)
 
 	_, err = db.Exec(nq.Raw().SQL, nq.Raw().Params...)
@@ -485,7 +486,8 @@ func TestUpdateWithNestedField_Integration(t *testing.T) {
 	q.Target.Schema = docSchema
 	updateData := map[string]any{"status": "approved"}
 
-	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{"set": updateData})
+	setDoc, _ := data.NewDocument(updateData)
+	nq, err := builder.Build(&q, native.StmtUpdate, map[string]any{"set": setDoc})
 	require.NoError(t, err)
 
 	// Execute the query

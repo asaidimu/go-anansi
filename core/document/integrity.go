@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"sort"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
@@ -108,14 +109,28 @@ func (d *Document) canonicalHashInput() map[string]any {
 }
 
 func (d *Document) calculateHash() (string, error) {
-	toHash, err := d.canonicalBytes()
-	if err != nil {
+	h := sha256.New()
+	if err := d.writeCanonical(h); err != nil {
 		return "", common.SystemErrorFrom(data.ErrFailedToMarshalMetadata).
 			WithOperation("document.calculateHash").WithCause(err)
 	}
-	h := sha256.New()
-	h.Write(toHash)
 	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// writeCanonical renders the document's canonical JSON into w. Root
+// container-backed documents stream straight from the container into the
+// writer, avoiding the intermediate byte copy; records and views fall back to
+// map canonicalization.
+func (d *Document) writeCanonical(w io.Writer) error {
+	if d.isRecord() || len(d.prefix) > 0 {
+		b, err := canonicalMarshal(d.canonicalHashInput())
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(b)
+		return err
+	}
+	return cjson.SerializeJSONCanonicalTo(w, d.cs, d.c, canonicalSkip)
 }
 
 // ============================================================================

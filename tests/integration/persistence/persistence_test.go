@@ -12,6 +12,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v8/core/query"
@@ -740,18 +741,18 @@ func TestPersistence_RawQueryWithJoin(t *testing.T) {
 	assert.Len(t, result.Data, 2)
 
 	// 5. Assert Results
-	joinedDocs := result.Data.([]map[string]any)
+	joinedDocs := result.Data.([]*document.Document)
 
 	// Expecting two orders for Alice, sorted by amount DESC
-	assert.Equal(t, "user1", joinedDocs[0]["user_id"])
-	assert.Equal(t, "Alice", joinedDocs[0]["user_name"])
-	assert.Equal(t, "orderC", joinedDocs[0]["order_id"])
-	assert.Equal(t, float64(150), joinedDocs[0]["amount"])
+	assert.Equal(t, "user1", joinedDocs[0].GetOr("user_id", nil))
+	assert.Equal(t, "Alice", joinedDocs[0].GetOr("user_name", nil))
+	assert.Equal(t, "orderC", joinedDocs[0].GetOr("order_id", nil))
+	assert.Equal(t, float64(150), joinedDocs[0].GetOr("amount", nil))
 
-	assert.Equal(t, "user1", joinedDocs[1]["user_id"])
-	assert.Equal(t, "Alice", joinedDocs[1]["user_name"])
-	assert.Equal(t, "orderA", joinedDocs[1]["order_id"])
-	assert.Equal(t, float64(100), joinedDocs[1]["amount"])
+	assert.Equal(t, "user1", joinedDocs[1].GetOr("user_id", nil))
+	assert.Equal(t, "Alice", joinedDocs[1].GetOr("user_name", nil))
+	assert.Equal(t, "orderA", joinedDocs[1].GetOr("order_id", nil))
+	assert.Equal(t, float64(100), joinedDocs[1].GetOr("amount", nil))
 }
 
 func TestPersistence_CollectionReadWithRawQuery(t *testing.T) {

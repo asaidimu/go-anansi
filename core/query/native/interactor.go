@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"go.uber.org/zap"
@@ -36,11 +38,20 @@ type NativeInteractor[T any] struct {
 
 	// tracks whether the transaction has already finished
 	done atomic.Bool
+
+	// pools caches schema-bound document pools per collection schema so the
+	// write path — which synthesizes its own DSL and so cannot carry the
+	// collection's pool — can scan RETURNING rows directly into pooled
+	// containers. Keyed by *definition.Schema pointer; a schema migration
+	// yields a new pointer and thus a new pool. A pointer is shared by
+	// transaction sub-interactors (copied by reference, never by value).
+	pools *sync.Map
 }
 
 // ensure NativeInteractor conforms to the required interfaces
 var _ query.DatabaseInteractor = (*NativeInteractor[any])(nil)
 var _ query.SchemaManager = (*NativeInteractor[any])(nil)
+var _ query.DocumentPoolRegistrar = (*NativeInteractor[any])(nil)
 
 // NewNativeInteractor is the single constructor for creating a new database interactor.
 // It initializes a base-level interactor that is not yet in a transaction.
@@ -58,6 +69,7 @@ func NewNativeInteractor[T any](ix QueryExecutor[T], qf QueryFactory[T], logger 
 		qf:     qf,
 		isTx:   false,
 		logger: logger,
+		pools:  &sync.Map{},
 	}, nil
 }
 
@@ -71,7 +83,7 @@ func (i *NativeInteractor[T]) Close() error {
 }
 
 // SelectDocuments retrieves multiple documents matching the query.
-func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *definition.Schema, dsl *query.Query) ([]map[string]any, int64, error) {
+func (i *NativeInteractor[T]) SelectDocuments(ctx context.Context, schema *definition.Schema, dsl *query.Query) ([]*document.Document, int64, error) {
 	compiled, err := i.b.Build(dsl, StmtSelect, nil)
 	if err != nil {
 		return nil, 0, common.SystemErrorFrom(err, ErrCouldNotBuildQuery.Code, ErrCouldNotBuildQuery.Message).WithOperation("native.NativeInteractor.SelectDocuments")
@@ -100,11 +112,43 @@ func (i *NativeInteractor[T]) SelectStream(ctx context.Context, sc *definition.S
 	return i.ix.QueryStream(ctx, NativeQuery[T]{Query: compiled, Schema: resultSchema})
 }
 
+// documentPoolForSchema returns the schema-bound document pool for sc. When a
+// collection has registered its pool it is reused directly; otherwise a pool
+// is built and cached on first use so direct interactor users (tests,
+// migration) still get pooled write scans.
+func (i *NativeInteractor[T]) documentPoolForSchema(sc *definition.Schema) *document.DocumentPool {
+	if sc == nil {
+		return nil
+	}
+	if v, ok := i.pools.Load(sc); ok {
+		return v.(*document.DocumentPool)
+	}
+	pool, err := document.NewDocumentPool(sc)
+	if err != nil {
+		return nil
+	}
+	actual, _ := i.pools.LoadOrStore(sc, pool)
+	return actual.(*document.DocumentPool)
+}
+
+// RegisterDocumentPool records the schema-bound document pool for sc so the
+// write path reuses the collection's pool instead of compiling a duplicate.
+// A registered pool overwrites any interactor-built fallback for the same
+// schema, keeping a single container pool per schema.
+func (i *NativeInteractor[T]) RegisterDocumentPool(sc *definition.Schema, pool *document.DocumentPool) {
+	if sc == nil || pool == nil {
+		return
+	}
+	i.pools.Store(sc, pool)
+}
+
 // UpdateDocuments updates documents matching the filter.
-func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *definition.Schema, updates map[string]any, computedUpdates map[string]query.Query, filters *query.QueryFilter, returnDocs bool) ([]map[string]any, int64, error) {
+func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *definition.Schema, updates data.Documenter, computedUpdates map[string]query.Query, filters *query.QueryFilter, returnDocs bool) ([]*document.Document, int64, error) {
 	dsl := &query.Query{
-		Target:  &query.QueryTarget{Name: schema.Name, Schema: schema},
-		Filters: filters,
+		Target:       &query.QueryTarget{Name: schema.Name, Schema: schema},
+		Filters:      filters,
+		DocumentPool: i.documentPoolForSchema(schema),
+		Shape:        query.QueryShape{TableCount: 1},
 	}
 
 	supportsReturning := i.qf.Capabilities().ReturnOnUpdate
@@ -141,7 +185,7 @@ func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *defin
 	// Cannot reliably return updated documents without native RETURNING support
 	// because the update may have modified fields used in the filter criteria
 	if returnDocs {
-		return []map[string]any{}, affectedCount, nil
+		return []*document.Document{}, affectedCount, nil
 	}
 
 	// State 3: User doesn't want documents
@@ -149,12 +193,14 @@ func (i *NativeInteractor[T]) UpdateDocuments(ctx context.Context, schema *defin
 }
 
 // InsertDocuments inserts new documents.
-func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *definition.Schema, records []map[string]any) ([]map[string]any, error) {
+func (i *NativeInteractor[T]) InsertDocuments(ctx context.Context, sc *definition.Schema, records []data.Documenter) ([]*document.Document, error) {
 	if len(records) == 0 {
-		return []map[string]any{}, nil
+		return []*document.Document{}, nil
 	}
 	dsl := &query.Query{
-		Target: &query.QueryTarget{Name: sc.Name, Schema: sc},
+		Target:       &query.QueryTarget{Name: sc.Name, Schema: sc},
+		DocumentPool: i.documentPoolForSchema(sc),
+		Shape:        query.QueryShape{TableCount: 1},
 	}
 	compiled, err := i.b.Build(dsl, StmtInsert, records)
 	if err != nil {
@@ -219,6 +265,7 @@ func (i *NativeInteractor[T]) StartTransaction(ctx context.Context) (query.Datab
 		qf:     i.qf,
 		isTx:   true,
 		logger: i.logger,
+		pools:  i.pools,
 	}
 
 	// Watch for ctx cancellation: rollback if still active.
