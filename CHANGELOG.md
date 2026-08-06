@@ -1,3 +1,17 @@
+# [8.5.0](https://github.com/asaidimu/go-anansi/compare/v8.4.7...v8.5.0) (2026-08-06)
+
+
+### Bug Fixes
+
+* **codegen:** implement declarative metadata and provider generation ([c02bbb8](https://github.com/asaidimu/go-anansi/commit/c02bbb8cc8d0e4cc17797bc0efa51e949631ae39))
+* **core:** optimize schema address cache and internal document processing ([66038ac](https://github.com/asaidimu/go-anansi/commit/66038ac4d3d2e7a0c8fff0479c3c509c965cf2a1))
+* **data:** implement zero-reflection binding and optimized document schema ([c0d5f7f](https://github.com/asaidimu/go-anansi/commit/c0d5f7f7d17108dcee1a2d5c3e2d1629ebc41b19)), closes [hi#performance](https://github.com/hi/issues/performance)
+
+
+### Features
+
+* **codegen:** replace data.DocumentModel with document.DocumentModel ([309ae5f](https://github.com/asaidimu/go-anansi/commit/309ae5f423d554bf9ab103ba45d80b75a8aa191a))
+
 ## [8.4.7](https://github.com/asaidimu/go-anansi/compare/v8.4.6...v8.4.7) (2026-08-01)
 
 
