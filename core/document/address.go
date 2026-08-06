@@ -251,11 +251,18 @@ func materializeSlot(cs *definition.CompiledSchema, c *container.DataContainer, 
 	}
 	slot := cs.Schemas[slotIdx]
 	out := make(map[string]any, slot.FieldCount)
+	// Reuse one scratch path across the field loop instead of a fresh
+	// copy-on-write allocation (appendPath) per field. The scratch is only
+	// read within each iteration — leaf keys are computed immediately and any
+	// Address cache miss copies the path — and recursion allocates its own
+	// frame, so reusing the backing array across iterations is safe.
+	scratch := make(definition.ResolvedPath, len(path), len(path)+1)
+	copy(scratch, path)
 	for j := uint16(0); j < slot.FieldCount; j++ {
 		abs := int(slot.FieldStart) + int(j)
 		fd := cs.Descriptors[abs]
 		name := cs.FieldsMeta[abs].Name
-		fp := appendPath(path, definition.NewResolvedStep(slotIdx, uint8(j)))
+		fp := append(scratch, definition.NewResolvedStep(slotIdx, uint8(j)))
 
 		if !fd.Terminal() && fd.ChildSchemaIdx() != definition.FdNoChild {
 			childIdx := fd.ChildSchemaIdx()

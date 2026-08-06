@@ -209,7 +209,11 @@ func (c *baseCollection) Read(ctx context.Context, q *query.Query) (*base.ReadRe
 		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_RESOLVE_DOCUMENT_POOL_FAILED")
 	}
 	q.DocumentPool = pool
-	docs, err := c.engine.Query(rctx, sc.DeepCopy(), q)
+	// The engine derives its own result schema (SchemaFromQuery) and does not
+	// mutate the schema it is handed, so no defensive copy is made here — a
+	// per-read DeepCopy dominated read-path allocations without changing
+	// observable behavior.
+	docs, err := c.engine.Query(rctx, sc, q)
 	if err != nil {
 		return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_READ_DOCUMENTS_FAILED")
 	}
