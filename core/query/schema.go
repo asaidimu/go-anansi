@@ -51,6 +51,15 @@ func SchemaFromQuery(q *Query, options *SchemaFromQueryOptions) (*definition.Sch
 		return generateAggregationResultSchema(q, options)
 	}
 
+	// Fast path: a plain query (no joins, no projection) selects the whole
+	// document, so its result schema is the target schema itself. Returning the
+	// target directly avoids a full deep copy on every read/write. Safe because
+	// nothing downstream mutates the returned schema for this shape; the
+	// projection/join branches below always copy before transforming.
+	if len(q.Joins) == 0 && (q.Projection == nil || (len(q.Projection.Include) == 0 && len(q.Projection.Exclude) == 0)) {
+		return q.Target.Schema, nil
+	}
+
 	// Start with the base schema from the target
 	resultSchema := q.Target.Schema.DeepCopy()
 

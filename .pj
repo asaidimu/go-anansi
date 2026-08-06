@@ -29,4 +29,7 @@ tmux send-keys -t "$session:1" "$EDITOR" Enter
 tmux new-window -d -n workspace -t "$session:2"
 tmux new-window -d -n compiler -t "$session:8"
 
+# Send command to open ai agent in the second window
+tmux send-keys -t "$session:2" "opencode --continue" Enter
+
 # vim:set ft=sh:

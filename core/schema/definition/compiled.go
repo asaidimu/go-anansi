@@ -278,8 +278,13 @@ type CompiledSchema struct {
 	// are skipped by SerializeCompiledSchema). Initialised lazily so any
 	// construction path (Link, Deserialize, or a test fixture building the
 	// struct directly) gets a working cache.
+	//
+	// addrCache is keyed by an allocation-free hash of the resolved steps and
+	// bucketed by that hash. Each bucket holds the owned path alongside its
+	// address, so hash collisions are resolved by exact comparison — never by
+	// stringifying the path, which would allocate a string on every lookup.
 	addrMu     sync.RWMutex
-	addrCache  map[string]uint32
+	addrCache  map[uint64][]addrCacheEntry
 	pathByAddr map[uint32]ResolvedPath
 	// nameByAddr is the dotted-string form of pathByAddr, stored alongside it
 	// so downstream readers can render a value's path with a single map lookup
@@ -302,6 +307,9 @@ func (r ResolvedStep) FieldIdx() uint8  { return uint8(r & 0xFF) }
 
 type ResolvedPath []ResolvedStep
 
+// PathKey returns an allocation-free byte-string rendering of the path, used
+// only where a comparable map key is required. The hot path (Address) uses
+// hashPath + pathsEqual instead so no string is ever materialized per lookup.
 func (p ResolvedPath) PathKey() string {
 	if len(p) == 0 {
 		return ""
@@ -312,6 +320,43 @@ func (p ResolvedPath) PathKey() string {
 		buf[i*2+1] = step.FieldIdx()
 	}
 	return string(buf[:len(p)*2])
+}
+
+// addrCacheEntry pairs an owned ResolvedPath with its memoized address. The
+// path is always a private copy so later mutation of the caller's slice can
+// never corrupt the cache or the exact-comparison collision check.
+type addrCacheEntry struct {
+	path ResolvedPath
+	addr uint32
+}
+
+// hashPath returns an FNV-1a hash of a ResolvedPath's steps. It allocates
+// nothing; buckets are resolved by exact path comparison, so collisions are
+// harmless (they only add a bucket entry).
+func hashPath(p ResolvedPath) uint64 {
+	const (
+		offset64 = uint64(14695981039346656037)
+		prime64  = uint64(1099511628211)
+	)
+	h := offset64
+	for _, s := range p {
+		h ^= uint64(s)
+		h *= prime64
+	}
+	return h
+}
+
+// pathsEqual reports whether two resolved paths are identical step-for-step.
+func pathsEqual(a, b ResolvedPath) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // =============================================================================

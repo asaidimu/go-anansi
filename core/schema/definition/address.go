@@ -51,12 +51,16 @@ func (cs *CompiledSchema) Address(path ResolvedPath) uint32 {
 	if len(path) == 0 {
 		return 0
 	}
-	key := path.PathKey()
+	h := hashPath(path)
 
 	cs.addrMu.RLock()
-	if a, ok := cs.addrCache[key]; ok {
-		cs.addrMu.RUnlock()
-		return a
+	if cs.addrCache != nil {
+		for _, e := range cs.addrCache[h] {
+			if pathsEqual(e.path, path) {
+				cs.addrMu.RUnlock()
+				return e.addr
+			}
+		}
 	}
 	cs.addrMu.RUnlock()
 
@@ -64,20 +68,22 @@ func (cs *CompiledSchema) Address(path ResolvedPath) uint32 {
 
 	cs.addrMu.Lock()
 	if cs.addrCache == nil {
-		cs.addrCache = make(map[string]uint32)
+		cs.addrCache = make(map[uint64][]addrCacheEntry)
 		cs.pathByAddr = make(map[uint32]ResolvedPath)
 		cs.nameByAddr = make(map[uint32]string)
 	}
-	cs.addrCache[key] = a
+	// Record the reverse mapping for addressable (terminal) paths. The
+	// caller already resolved this path to an address, so storing the
+	// path we already hold is free — downstream readers holding a value's
+	// address can recover its path without re-walking the schema. A copy
+	// is kept so later mutation of the caller's slice can't corrupt it.
+	// nameByAddr caches the dotted form so naming a value is a single
+	// lookup, not a per-read re-join. Note pathByAddr/nameByAddr only key
+	// by address, so a hash collision is immaterial — only the owned path
+	// copy that becomes the addrCache entry is used for hit confirmation.
+	cp := append(ResolvedPath(nil), path...)
+	cs.addrCache[h] = append(cs.addrCache[h], addrCacheEntry{path: cp, addr: a})
 	if a != 0 {
-		// Record the reverse mapping for addressable (terminal) paths. The
-		// caller already resolved this path to an address, so storing the
-		// path we already hold is free — downstream readers holding a value's
-		// address can recover its path without re-walking the schema. A copy
-		// is kept so later mutation of the caller's slice can't corrupt it.
-		// nameByAddr caches the dotted form so naming a value is a single
-		// lookup, not a per-read re-join.
-		cp := append(ResolvedPath(nil), path...)
 		cs.pathByAddr[a] = cp
 		cs.nameByAddr[a] = cs.joinPath(cp)
 	}
