@@ -1,3 +1,10 @@
+## [8.5.2](https://github.com/asaidimu/go-anansi/compare/v8.5.1...v8.5.2) (2026-08-07)
+
+
+### Bug Fixes
+
+* **codegen:** omit document model json tags in generated structs ([e447ec2](https://github.com/asaidimu/go-anansi/commit/e447ec2fd7824cd2e387a84cbcafc29d0bc48ddf))
+
 ## [8.5.1](https://github.com/asaidimu/go-anansi/compare/v8.5.0...v8.5.1) (2026-08-07)
 
 
