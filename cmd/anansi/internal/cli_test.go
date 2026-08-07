@@ -1,6 +1,7 @@
 package schemagen
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,23 +13,162 @@ import (
 
 func TestRunScaffold(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "new-project")
-	err := RunScaffold(dir, false, "v0.0.0-test")
+	err := RunScaffold(ScaffoldOptions{Dir: dir, AnansiVersion: "v0.0.0-test"})
 	require.NoError(t, err)
 
 	require.DirExists(t, filepath.Join(dir, "schemas"))
 	require.DirExists(t, filepath.Join(dir, "migrations"))
 	require.FileExists(t, filepath.Join(dir, "anansi.json"))
 	require.FileExists(t, filepath.Join(dir, "schemas", "example.schema.json"))
+	require.FileExists(t, filepath.Join(dir, "go.mod"))
+	require.FileExists(t, filepath.Join(dir, "main.go"))
+
+	// Scaffold ships the bundled skill and a real (non-empty) AGENTS.md.
+	skillMd, err := os.ReadFile(filepath.Join(dir, ".agents", "skills", "anansi", "SKILL.md"))
+	require.NoError(t, err)
+	require.NotEmpty(t, skillMd)
+	agentsMd, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	require.NoError(t, err)
+	require.NotEmpty(t, agentsMd)
 }
 
 func TestRunScaffold_DryRun(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "new-project")
-	err := RunScaffold(dir, true, "v0.0.0-test")
+	err := RunScaffold(ScaffoldOptions{Dir: dir, DryRun: true, AnansiVersion: "v0.0.0-test"})
 	require.NoError(t, err)
 	// Nothing should be created in dry-run mode
 	require.NoDirExists(t, filepath.Join(dir, "schemas"))
 	require.NoDirExists(t, filepath.Join(dir, "migrations"))
 	require.NoFileExists(t, filepath.Join(dir, "anansi.json"))
+}
+
+func TestRunScaffold_Library(t *testing.T) {
+	// Simulate an existing Go module: non-empty dir with its own go.mod/main.go.
+	dir := t.TempDir()
+	gomod := "module github.com/acme/backend\n\ngo 1.23\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte(gomod), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "main.go"), []byte("// existing app\n"), 0644))
+
+	err := RunScaffold(ScaffoldOptions{Dir: dir, Library: true, AnansiVersion: "v0.0.0-test"})
+	require.NoError(t, err)
+
+	// Existing files are untouched.
+	gotMod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	require.NoError(t, err)
+	require.Equal(t, gomod, string(gotMod), "library mode must not overwrite the existing go.mod")
+	gotMain, err := os.ReadFile(filepath.Join(dir, "main.go"))
+	require.NoError(t, err)
+	require.Equal(t, "// existing app\n", string(gotMain), "library mode must not overwrite main.go")
+
+	// Anansi pieces are added without a new go.mod/main.go.
+	require.FileExists(t, filepath.Join(dir, "anansi.json"))
+	require.FileExists(t, filepath.Join(dir, "schemas", "example.schema.json"))
+	require.FileExists(t, filepath.Join(dir, "migrations", "registry.go"))
+	require.FileExists(t, filepath.Join(dir, ".agents", "skills", "anansi", "SKILL.md"))
+}
+
+func TestRunScaffold_Library_RefusesExistingConfig(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "anansi.json"), []byte(`{}`), 0644))
+
+	err := RunScaffold(ScaffoldOptions{Dir: dir, Library: true, AnansiVersion: "v0.0.0-test"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "anansi.json already exists")
+}
+
+func TestRunScaffold_RefusesNonEmptyStandalone(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "existing.txt"), []byte("x"), 0644))
+
+	err := RunScaffold(ScaffoldOptions{Dir: dir, AnansiVersion: "v0.0.0-test"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "non-empty directory")
+}
+
+func TestRunScaffold_Library_RefusesMissingDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "does-not-exist")
+	err := RunScaffold(ScaffoldOptions{Dir: dir, Library: true, AnansiVersion: "v0.0.0-test"})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "existing directory")
+}
+
+func TestRunScaffold_LayoutOverrides(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "app")
+
+	err := RunScaffold(ScaffoldOptions{
+		Dir:           dir,
+		AnansiVersion: "v0.0.0-test",
+		SchemasDir:    "internal/store/schemas",
+		MigrationsDir: "internal/store/migrations",
+		Lockfile:      "config/anansi.lock.json",
+	})
+	require.NoError(t, err)
+
+	require.FileExists(t, filepath.Join(dir, "internal", "store", "schemas", "example.schema.json"))
+	require.FileExists(t, filepath.Join(dir, "internal", "store", "migrations", "registry.go"))
+	require.FileExists(t, filepath.Join(dir, "config", "anansi.lock.json"))
+
+	// The on-disk config reflects the chosen layout (relative paths).
+	var cfg Config
+	cfgData, err := os.ReadFile(filepath.Join(dir, "anansi.json"))
+	require.NoError(t, err)
+	require.NoError(t, json.Unmarshal(cfgData, &cfg))
+	require.Equal(t, "internal/store/schemas/**/*.schema.json", cfg.Schema.Glob)
+	require.Equal(t, "internal/store/migrations/", cfg.Schema.MigrationsDir)
+	require.Equal(t, "config/anansi.lock.json", cfg.Schema.Lockfile)
+}
+
+func TestRunScaffold_DryRunLayout(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "app")
+	err := RunScaffold(ScaffoldOptions{
+		Dir:           dir,
+		DryRun:        true,
+		AnansiVersion: "v0.0.0-test",
+		SchemasDir:    "defs",
+	})
+	require.NoError(t, err)
+	require.NoDirExists(t, filepath.Join(dir, "defs"))
+	require.NoDirExists(t, filepath.Join(dir, "schemas"))
+}
+
+func TestRunScaffold_Library_NonDestructive(t *testing.T) {
+	// An existing project with its own AGENTS.md, metadata, and schema files.
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module acme\n"), 0644))
+
+	userAgents := "# My Project\n\ncustom agent notes\n"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "AGENTS.md"), []byte(userAgents), 0644))
+
+	userMetadata := []byte(`{"name":"_metadata_","providers":{}}`)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "metadata.schema.json"), userMetadata, 0644))
+
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "schemas"), 0755))
+	userSchema := []byte(`{"name":"Widget","fields":{"019f4066-6563-7c55-a6f3-ac8f087d89d1":{"name":"sku","type":"string"}}}`)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "schemas", "example.schema.json"), userSchema, 0644))
+
+	err := RunScaffold(ScaffoldOptions{Dir: dir, Library: true, AnansiVersion: "v0.0.0-test"})
+	require.NoError(t, err)
+
+	// Existing files are never overwritten, even the ones scaffold would write.
+	got, err := os.ReadFile(filepath.Join(dir, "AGENTS.md"))
+	require.NoError(t, err)
+	require.Equal(t, userAgents, string(got), "must not overwrite an existing AGENTS.md")
+
+	gotMD, err := os.ReadFile(filepath.Join(dir, "metadata.schema.json"))
+	require.NoError(t, err)
+	require.Equal(t, userMetadata, gotMD, "must not overwrite an existing metadata.schema.json")
+
+	gotSchema, err := os.ReadFile(filepath.Join(dir, "schemas", "example.schema.json"))
+	require.NoError(t, err)
+	require.Equal(t, userSchema, gotSchema, "must not overwrite an existing example schema")
+
+	// Because the project already owns a schema, scaffold must NOT generate a
+	// migration/lockfile/registry from its own example.
+	require.NoFileExists(t, filepath.Join(dir, "schemas.lock.json"))
+	require.NoDirExists(t, filepath.Join(dir, "migrations"))
+
+	// anansi.json is still added.
+	require.FileExists(t, filepath.Join(dir, "anansi.json"))
 }
 
 func TestRunGen_BasicFlow(t *testing.T) {

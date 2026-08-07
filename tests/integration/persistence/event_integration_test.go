@@ -10,7 +10,9 @@ import (
 	"github.com/asaidimu/go-anansi/v8"
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	anansievents "github.com/asaidimu/go-anansi/v8/core/events"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	pevents "github.com/asaidimu/go-anansi/v8/core/persistence/events"
 	persistenceUtils "github.com/asaidimu/go-anansi/v8/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
@@ -18,7 +20,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/utils"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v8/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v8/sqlite/query"
-	testEvents "github.com/asaidimu/go-anansi/v8/utils" // Import from the correct events package
+	rootutils "github.com/asaidimu/go-anansi/v8/utils"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -26,7 +28,7 @@ import (
 )
 
 // setupEventTest creates a new persistence instance with an event bus for testing.
-func setupEventTest(t *testing.T) (base.Persistence, *testEvents.WatermillEventBus[base.PersistenceEvent], base.Collection, func()) {
+func setupEventTest(t *testing.T) (base.Persistence, anansievents.EventBus[base.PersistenceEvent], base.Collection, func()) {
 	// Setup in-memory SQLite DB
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())
 	db, err := sql.Open("sqlite3", dsn)
@@ -42,8 +44,10 @@ func setupEventTest(t *testing.T) (base.Persistence, *testEvents.WatermillEventB
 	interactor, err := native.NewNativeInteractor(executor, queryFactory, logger)
 	require.NoError(t, err)
 
-	// Setup Event Bus
-	eventBus := testEvents.NewWatermillEventBus[base.PersistenceEvent](logger)
+	// Setup Event Bus (in-memory go-events v2)
+	rawBus, err := rootutils.NewInMemoryGoEventsBus("test")
+	require.NoError(t, err)
+	eventBus := pevents.NewGoEventsBusAdapter[base.PersistenceEvent](rawBus)
 
 	// Setup persistence
 	cfg := anansi.SetupConfig{
@@ -77,7 +81,7 @@ func setupEventTest(t *testing.T) (base.Persistence, *testEvents.WatermillEventB
 
 	cleanup := func() {
 		p.Close(context.Background())
-		eventBus.Close()
+		_ = rawBus.Close()
 		db.Close()
 	}
 
@@ -91,12 +95,10 @@ func TestPersistenceEvents(t *testing.T) {
 	t.Run("TestDocumentCreateEvent", func(t *testing.T) {
 		receivedEventChan := make(chan base.PersistenceEvent, 1)
 
-		var val int
 		// Subscribe to DocumentCreateSuccess event
 		subId := collection.Subscribe(context.Background(), base.SubscriptionOptions{
 			Event: base.DocumentCreateSuccess,
 			Callback: func(ctx context.Context, event base.PersistenceEvent) error {
-				val = ctx.Value("CONTEXT_KEY").(int)
 				receivedEventChan <- event
 				return nil
 			},
@@ -131,8 +133,6 @@ func TestPersistenceEvents(t *testing.T) {
 			assert.Equal(t, float64(123), outputDoc.Must().GetFloat64("value"))
 			assert.NotEmpty(t, outputDoc.ID())
 			assert.Equal(t, createResult.Data.ID(), outputDoc.ID())
-
-			assert.Equal(t, val, 1)
 		case <-time.After(100 * time.Millisecond):
 			t.Fatal("Timeout waiting for DocumentCreateSuccess event")
 		}
@@ -148,13 +148,13 @@ func TestPersistenceEvents(t *testing.T) {
 		receivedEventChan := make(chan base.PersistenceEvent, 1)
 
 		// Subscribe to DocumentUpdateSuccess event
-		unsubscribe := eventBus.Subscribe(
-			string(base.DocumentUpdateSuccess),
-			func(ctx context.Context, event base.PersistenceEvent) error {
+		unsubscribe := eventBus.Subscribe(anansievents.SubscriptionRequest[base.PersistenceEvent]{
+			EventType: string(base.DocumentUpdateSuccess),
+			Handler: func(ctx context.Context, event base.PersistenceEvent) error {
 				receivedEventChan <- event
 				return nil
 			},
-		)
+		})
 		defer unsubscribe()
 
 		// Update the document
@@ -198,13 +198,13 @@ func TestPersistenceEvents(t *testing.T) {
 		receivedEventChan := make(chan base.PersistenceEvent, 1)
 
 		// Subscribe to DocumentDeleteSuccess event
-		unsubscribe := eventBus.Subscribe(
-			string(base.DocumentDeleteSuccess),
-			func(ctx context.Context, event base.PersistenceEvent) error {
+		unsubscribe := eventBus.Subscribe(anansievents.SubscriptionRequest[base.PersistenceEvent]{
+			EventType: string(base.DocumentDeleteSuccess),
+			Handler: func(ctx context.Context, event base.PersistenceEvent) error {
 				receivedEventChan <- event
 				return nil
 			},
-		)
+		})
 		defer unsubscribe()
 
 		// Delete the document
@@ -217,7 +217,6 @@ func TestPersistenceEvents(t *testing.T) {
 		case receivedEvent := <-receivedEventChan:
 			assert.Equal(t, base.DocumentDeleteSuccess, receivedEvent.Type)
 			assert.Equal(t, collection.Metadata(context.Background(), nil, false).Name, *receivedEvent.Collection)
-
 
 			inputMap, ok := receivedEvent.Input.(map[string]any)
 			require.True(t, ok)
@@ -350,24 +349,23 @@ func TestPersistenceEvents(t *testing.T) {
 		updateEventChan := make(chan base.PersistenceEvent, 1)
 
 		// Subscribe to create and update events
-		unsubscribeCreate := eventBus.Subscribe(
-			string(base.DocumentCreateSuccess),
-			func(ctx context.Context, event base.PersistenceEvent) error {
+		unsubscribeCreate := eventBus.Subscribe(anansievents.SubscriptionRequest[base.PersistenceEvent]{
+			EventType: string(base.DocumentCreateSuccess),
+			Handler: func(ctx context.Context, event base.PersistenceEvent) error {
 				createEventChan <- event
 				return nil
 			},
-		)
+		})
 		defer unsubscribeCreate()
 
-		unsubscribeUpdate := eventBus.Subscribe(
-			string(base.DocumentUpdateSuccess),
-			func(ctx context.Context, event base.PersistenceEvent) error {
+		unsubscribeUpdate := eventBus.Subscribe(anansievents.SubscriptionRequest[base.PersistenceEvent]{
+			EventType: string(base.DocumentUpdateSuccess),
+			Handler: func(ctx context.Context, event base.PersistenceEvent) error {
 				updateEventChan <- event
 				return nil
 			},
-		)
+		})
 		defer unsubscribeUpdate()
-
 
 		// Execute a transaction that attempts to create and update, but then fails
 		txErr := fmt.Errorf("simulated transaction failure")

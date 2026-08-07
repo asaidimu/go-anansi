@@ -58,7 +58,7 @@ type Order struct {
     document.DocumentModel
     Tags []string
     ID string
-    ModelID string `json:"id,omitempty" anansi:"_id_,required=true,omitempty"`
+    ModelID string `json:"_id_,omitempty" anansi:"_id_,required=true,omitempty"`
     Combo *OrderComboComposite
     Meta map[string]any
     Payload *OrderPayloadUnion
@@ -66,7 +66,7 @@ type Order struct {
     Shipping *Address
     Status *OrderStatusEnum
     Total *decimal.Decimal
-    Metadata map[string]any `json:"metadata,omitempty" anansi:"_metadata_,required=true,omitempty"`
+    Metadata map[string]any `json:"_metadata_,omitempty" anansi:"_metadata_,required=true,omitempty"`
 }
 
 // GetID returns the document identifier for Order.

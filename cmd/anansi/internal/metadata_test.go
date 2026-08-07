@@ -160,19 +160,70 @@ func TestGenerateMetadataFiles(t *testing.T) {
 	require.Contains(t, string(metaSrc), "func MetadataSchema()")
 	require.Contains(t, string(metaSrc), "func TraceSchema()")
 	require.Contains(t, string(metaSrc), "func ValidateMetadataSchema()")
+	require.Contains(t, string(metaSrc), "func MetadataProviderConfigs()")
+	require.Contains(t, string(metaSrc), "Provider: TraceProvider},")
 	require.Contains(t, string(metaSrc), "package migrations")
 
 	provSrc, err := os.ReadFile(filepath.Join(cfg.Schema.MigrationsDir, "providers.go"))
 	require.NoError(t, err)
 	require.Contains(t, string(provSrc), "func TraceProvider(ctx context.Context, doc data.Documenter)")
 
-	// providers.go is write-once: a second run must not clobber it.
+	// providers.go preserves user-edited content; stubs for providers missing
+	// from the file are appended, never clobbering what is there.
 	writeFile(t, filepath.Join(cfg.Schema.MigrationsDir, "providers.go"), "// user edited\npackage migrations\n")
 	_, err = GenerateMetadataFiles(cfg, md, false)
 	require.NoError(t, err)
 	after, err := os.ReadFile(filepath.Join(cfg.Schema.MigrationsDir, "providers.go"))
 	require.NoError(t, err)
-	require.Equal(t, "// user edited\npackage migrations\n", string(after))
+	require.Contains(t, string(after), "// user edited", "existing providers.go content must be preserved")
+	require.Contains(t, string(after), "func TraceProvider(ctx context.Context, doc data.Documenter)", "missing provider stub is appended")
+}
+
+func TestGenerateMetadataFiles_AppendsNewProviderStubs(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "metadata.schema.json")
+	writeFile(t, path, `{
+  "name": "_metadata_",
+  "providers": { "trace": { "fields": { "trace_id": { "name": "trace_id", "type": "string" } } } }
+}`)
+	md, _, err := LoadMetadata(path)
+	require.NoError(t, err)
+
+	cfg := &Config{
+		Schema:   SchemaConfig{MigrationsDir: filepath.Join(dir, "migrations")},
+		Metadata: MetadataConfig{SchemaPath: path},
+	}
+	_, err = GenerateMetadataFiles(cfg, md, false)
+	require.NoError(t, err)
+
+	providersPath := filepath.Join(cfg.Schema.MigrationsDir, "providers.go")
+	// Simulate a user-implemented TraceProvider body.
+	userBody := `package migrations
+
+// TraceProvider fills the "trace" metadata fields.
+func TraceProvider(ctx context.Context, doc data.Documenter) (map[string]any, error) {
+	return map[string]any{"trace_id": "abc"}, nil
+}
+`
+	writeFile(t, providersPath, userBody)
+
+	// Add a second provider to the metadata file and regenerate.
+	writeFile(t, path, `{
+  "name": "_metadata_",
+  "providers": {
+    "trace":     { "fields": { "trace_id": { "name": "trace_id", "type": "string" } } },
+    "requestor": { "fields": { "user_id": { "name": "user_id", "type": "string" } } }
+  }
+}`)
+	md, _, err = LoadMetadata(path)
+	require.NoError(t, err)
+	_, err = GenerateMetadataFiles(cfg, md, false)
+	require.NoError(t, err)
+
+	src, err := os.ReadFile(providersPath)
+	require.NoError(t, err)
+	require.Contains(t, string(src), `return map[string]any{"trace_id": "abc"}, nil`, "existing provider body preserved")
+	require.Contains(t, string(src), "func RequestorProvider(ctx context.Context, doc data.Documenter)", "new provider stub appended")
 }
 
 func TestRenderMetadataGo_CompilesStructurally(t *testing.T) {
@@ -192,6 +243,10 @@ func TestRenderMetadataGo_CompilesStructurally(t *testing.T) {
 	require.True(t, strings.Contains(src, "func My_providerSchema()"))
 	require.True(t, strings.Contains(src, "func MetadataDependencies()"))
 	require.True(t, strings.Contains(src, "var metadata_dependencies_json"))
+	require.True(t, strings.Contains(src, "func MetadataProviderConfigs()"))
+	require.True(t, strings.Contains(src, `Name: "my_provider"`))
+	require.True(t, strings.Contains(src, "Provider: My_providerProvider},"))
+	require.Contains(t, src, "Dependencies: MetadataDependencies(),")
 
 	// Round-trip the embedded merged schema literal back to a NestedSchema.
 	// Extract the literal after `[]byte(` ... `)` for the merged schema var.

@@ -1,6 +1,8 @@
 package definition
 
 import (
+	"fmt"
+
 	"github.com/google/uuid"
 )
 
@@ -128,4 +130,136 @@ func (s *Schema) WithIndexEnsured(index *Index) (*Schema, bool, error) {
 	// Add new
 	newID := IndexID(uuid.Must(uuid.NewV7()).String())
 	return s.WithIndex(newID, *index), true, nil
+}
+
+// WithSchema composes a full schema into this schema as a fields-mode nested
+// schema. The sub-schema's root fields become the nested schema's fields, and
+// the sub-schema's own nested schemas (sub.Schemas) are merged into this
+// schema's nested-schema registry.
+//
+// It returns the new schema and the SchemaId of the composed nested schema.
+// Use that SchemaId to attach the composed body to a root field:
+//
+//	composed, dtoID, err := envelope.WithSchema(dtoSchema)
+//	envelope = composed.WithField(fid, definition.Field{
+//	    Name: "payload",
+//	    FieldProperties: definition.FieldProperties{
+//	        Type:   definition.FieldTypeObject,
+//	        Schema: definition.NewSchemaReference(definition.SchemaReference{ID: dtoID}),
+//	    },
+//	})
+//
+// What is merged:
+//   - sub.Fields become the nested schema's fields (schema-mode -> object
+//     referenceable by SchemaId).
+//   - sub.Schemas are merged into s.Schemas. A nested schema ID that already
+//     exists in s is remapped to a fresh UUIDv7, and every field reference
+//     pointing at the old ID (within the merged subtree) is rewritten to the
+//     new ID so the composed body stays internally consistent.
+//
+// The receiver is not mutated; a deep copy is returned.
+func (s *Schema) WithSchema(sub *Schema) (*Schema, SchemaId, error) {
+	if sub == nil {
+		return nil, "", fmt.Errorf("WithSchema: nil sub-schema")
+	}
+	clone := s.DeepCopy()
+	if clone.Schemas == nil {
+		clone.Schemas = make(map[SchemaId]NestedSchema)
+	}
+
+	// Root nested schema bearing the sub-schema's root fields.
+	composedID := SchemaId(uuid.Must(uuid.NewV7()).String())
+
+	// Build a remap that rewrites every reference destined for a sub nested
+	// schema: keep the ID when free, else mint a fresh one.
+	remap := make(map[SchemaId]SchemaId)
+
+	// Integration order matters: mapping must be registered before any fields
+	// are rewritten. First pass registers remaps (no rewrites that depend on
+	// future entries), so do discovery in two passes.
+	// Pass 1: decide new IDs for any collision.
+	for id := range sub.Schemas {
+		if _, taken := clone.Schemas[id]; taken {
+			if _, ok := remap[id]; !ok {
+				remap[id] = SchemaId(uuid.Must(uuid.NewV7()).String())
+			}
+		}
+	}
+	// Pass 2: copy schemas under their (possibly remapped) IDs, rewriting refs.
+	for id, ns := range sub.Schemas {
+		target := id
+		if nid, ok := remap[id]; ok {
+			target = nid
+		}
+		ns.Fields = rewriteFieldRefs(ns.Fields, remap)
+		clone.Schemas[target] = ns
+	}
+
+	// The root composed body carries the sub-schema's root fields, with any
+	// references to sub.Schemas remapped too.
+	rootBody := NestedSchema{
+		BaseSchema: BaseSchema{
+			Name:        sub.Name,
+			Fields:      rewriteFieldRefs(sub.Fields, remap),
+			Indexes:     sub.Indexes,
+			Constraints: sub.Constraints,
+			Metadata:    sub.Metadata,
+		},
+	}
+	clone.Schemas[composedID] = rootBody
+
+	return clone, composedID, nil
+}
+
+// rewriteFieldRefs copies fields and rewrites every SchemaReference ID through
+// remap. Unknown IDs are preserved. The input map is not mutated.
+func rewriteFieldRefs(fields map[FieldId]Field, remap map[SchemaId]SchemaId) map[FieldId]Field {
+	if len(remap) == 0 || len(fields) == 0 {
+		return fields
+	}
+	out := make(map[FieldId]Field, len(fields))
+	for id, f := range fields {
+		f.Schema = remapRef(f.Schema, remap)
+		out[id] = f
+	}
+	return out
+}
+
+// remapRef rewrites a single or multiple FieldSchemaReference through remap;
+// the original reference is not mutated.
+func remapRef(fsr FieldSchemaReference, remap map[SchemaId]SchemaId) FieldSchemaReference {
+	if fsr.IsZero() {
+		return fsr
+	}
+	if fsr.IsSingle() {
+		sr, err := FieldSchemaAs[SchemaReference](fsr)
+		if err != nil {
+			return fsr
+		}
+		if nid, ok := remap[sr.ID]; ok {
+			sr.ID = nid
+			return NewSchemaReference(sr)
+		}
+		return fsr
+	}
+	if fsr.IsMultiple() {
+		refs, err := FieldSchemaAs[[]SchemaReference](fsr)
+		if err != nil {
+			return fsr
+		}
+		copied := make([]SchemaReference, len(refs))
+		changed := false
+		for i, r := range refs {
+			copied[i] = r
+			if nid, ok := remap[r.ID]; ok {
+				copied[i].ID = nid
+				changed = true
+			}
+		}
+		if changed {
+			return NewSchemaReference(copied)
+		}
+		return fsr
+	}
+	return fsr
 }

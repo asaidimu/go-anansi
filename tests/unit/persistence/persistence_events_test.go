@@ -12,7 +12,7 @@ import (
 	pevents "github.com/asaidimu/go-anansi/v8/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v8/core/query"
-	"github.com/asaidimu/go-events"
+	rootutils "github.com/asaidimu/go-anansi/v8/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -21,8 +21,8 @@ import (
 func TestPersistence_DocumentEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
-	goBus, _ := events.NewTypedEventBus[base.PersistenceEvent](events.DefaultConfig())
-	bus := pevents.NewGoEventsBusAdapter(goBus)
+	goBus, _ := rootutils.NewInMemoryGoEventsBus("test")
+	bus := pevents.NewGoEventsBusAdapter[base.PersistenceEvent](goBus)
 	p, err := persistence.NewPersistence(interactor, bus, logger, nil)
 	require.NoError(t, err)
 
@@ -108,8 +108,8 @@ func TestPersistence_CollectionEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	goBus, _ := events.NewTypedEventBus[base.PersistenceEvent](events.DefaultConfig())
-	bus := pevents.NewGoEventsBusAdapter(goBus)
+	goBus, _ := rootutils.NewInMemoryGoEventsBus("test")
+	bus := pevents.NewGoEventsBusAdapter[base.PersistenceEvent](goBus)
 	p, err := persistence.NewPersistence(interactor, bus, logger, nil)
 	require.NoError(t, err)
 
@@ -167,8 +167,8 @@ func TestPersistence_TransactionEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	goBus, _ := events.NewTypedEventBus[base.PersistenceEvent](events.DefaultConfig())
-	bus := pevents.NewGoEventsBusAdapter(goBus)
+	goBus, _ := rootutils.NewInMemoryGoEventsBus("test")
+	bus := pevents.NewGoEventsBusAdapter[base.PersistenceEvent](goBus)
 	p, err := persistence.NewPersistence(interactor, bus, logger, nil)
 	require.NoError(t, err)
 
@@ -225,8 +225,8 @@ func TestPersistence_DocumentUpdateEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	goBus, _ := events.NewTypedEventBus[base.PersistenceEvent](events.DefaultConfig())
-	bus := pevents.NewGoEventsBusAdapter(goBus)
+	goBus, _ := rootutils.NewInMemoryGoEventsBus("test")
+	bus := pevents.NewGoEventsBusAdapter[base.PersistenceEvent](goBus)
 	p, err := persistence.NewPersistence(interactor, bus, logger, nil)
 	require.NoError(t, err)
 
@@ -300,8 +300,8 @@ func TestPersistence_PersistenceLifecycleAndReadEvents(t *testing.T) {
 	interactor := ephemeral.NewEphemeral()
 	logger := zap.NewNop()
 
-	goBus, _ := events.NewTypedEventBus[base.PersistenceEvent](events.DefaultConfig())
-	bus := pevents.NewGoEventsBusAdapter(goBus)
+	goBus, _ := rootutils.NewInMemoryGoEventsBus("test")
+	bus := pevents.NewGoEventsBusAdapter[base.PersistenceEvent](goBus)
 	p, err := persistence.NewPersistence(interactor, bus, logger, nil)
 	require.NoError(t, err)
 

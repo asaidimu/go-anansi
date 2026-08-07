@@ -23,15 +23,16 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/events"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	pevents "github.com/asaidimu/go-anansi/v8/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/persistence"
-	"github.com/asaidimu/go-anansi/v8/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
 	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+	putils "github.com/asaidimu/go-anansi/v8/core/persistence/utils"
+	"github.com/asaidimu/go-anansi/v8/utils"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v8/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v8/sqlite/query"
-	u "github.com/asaidimu/go-anansi/v8/utils"
 	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
 )
@@ -66,15 +67,16 @@ type SetupConfig struct {
 	// code should supply a configured logger (JSON, stackdriver, etc.).
 	Logger *zap.Logger
 
-	// EventBus is the pub/sub backbone.  Use utils.NewWatermillEventBus in
-	// production; it integrates with external message brokers if desired.
+	// EventBus is the pub/sub backbone. Build one with utils.NewInMemoryGoEventsBus
+	// wrapped by pevents.NewGoEventsBusAdapter, or a durable go-events v2 bus
+	// wrapped the same way; nil disables events.
 	EventBus events.EventBus[base.PersistenceEvent]
 
 	// DocumentFactoryConfig configures the Document factory (hashing, metadata, etc.).
 	DocumentFactoryConfig data.DocumentFactoryConfig
 
 	// Decorators inject cross-cutting concerns (security, audit, encryption…).
-	Decorators *utils.Decorators
+	Decorators *putils.Decorators
 
 	// Schemas are created automatically on first start if they do not exist.
 	Schemas []*definition.Schema
@@ -157,7 +159,7 @@ type PlaygroundConfig struct {
 	// EnableLogging turns on zap.NewDevelopment() output.
 	EnableLogging bool
 
-	// EnableEvents spins up a WatermillEventBus (pub/sub) with the logger.
+	// EnableEvents spins up an in-memory go-events bus with the logger.
 	EnableEvents bool
 
 	// Schemas are created automatically on first start if they do not exist.
@@ -207,9 +209,12 @@ func Playground(cfg PlaygroundConfig) (base.Persistence, func(), error) {
 	var bus events.EventBus[base.PersistenceEvent]
 	var busCleanup func()
 	if cfg.EnableEvents {
-		b := u.NewWatermillEventBus[base.PersistenceEvent](logger)
+		b, berr := utils.NewInMemoryGoEventsBus("anansi")
+		if berr != nil {
+			return nil, nil, fmt.Errorf("playground: event bus creation failed: %w", berr)
+		}
 		busCleanup = func() { _ = b.Close() }
-		bus = b
+		bus = pevents.NewGoEventsBusAdapter[base.PersistenceEvent](b)
 	}
 
 	// -----------------------------------------------------------------
@@ -265,7 +270,7 @@ func Playground(cfg PlaygroundConfig) (base.Persistence, func(), error) {
 		DocumentFactoryConfig: data.DocumentFactoryConfig{
 			GlobalSanitizer: sanitizerConfig,
 		},
-		Decorators:    &utils.Decorators{},
+		Decorators:    &putils.Decorators{},
 		Schemas:       cfg.Schemas,
 	})
 

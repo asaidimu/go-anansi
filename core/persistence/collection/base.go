@@ -340,8 +340,16 @@ func (c *baseCollection) Subscribe(ctx context.Context, options base.Subscriptio
 	c.subMu.Lock()
 	defer c.subMu.Unlock()
 
-	unsubscribe := c.eventEmitter.Subscribe(string(options.Event), options.Callback, func(_ context.Context, payload base.PersistenceEvent) bool {
-		return *payload.Collection == c.name
+	unsubscribe := c.eventEmitter.Subscribe(events.SubscriptionRequest[base.PersistenceEvent]{
+		EventType: string(options.Event),
+		Handler:   options.Callback,
+		Replay:    options.Replay,
+		Cursor:    options.ReplayCursor,
+		Filters: []func(_ context.Context, payload base.PersistenceEvent) bool{
+			func(_ context.Context, payload base.PersistenceEvent) bool {
+				return *payload.Collection == c.name
+			},
+		},
 	})
 
 	id := uuid.New().String()

@@ -9,7 +9,7 @@ import (
 	pevents "github.com/asaidimu/go-anansi/v8/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v8/core/query"
-	"github.com/asaidimu/go-events"
+	rootutils "github.com/asaidimu/go-anansi/v8/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -20,10 +20,10 @@ func setupCollectionTest(t *testing.T) (base.Collection, func()) {
 
 	logger, _ := zap.NewDevelopment()
 
-	bus, err := events.NewTypedEventBus[base.PersistenceEvent](events.DefaultConfig())
+	bus, err := rootutils.NewInMemoryGoEventsBus("test")
 	require.NoError(t, err)
 
-	p, err := persistence.NewPersistence(interactor, pevents.NewGoEventsBusAdapter(bus), logger, nil)
+	p, err := persistence.NewPersistence(interactor, pevents.NewGoEventsBusAdapter[base.PersistenceEvent](bus), logger, nil)
 	require.NoError(t, err)
 
 	schema := newTestSchema("crud_collection")
@@ -64,7 +64,7 @@ func TestCollection_Read(t *testing.T) {
 }
 
 func TestCollection_Update(t *testing.T) {
-	collection,  cleanup := setupCollectionTest(t)
+	collection, cleanup := setupCollectionTest(t)
 	defer cleanup()
 
 	docToCreate := data.MustNewDocument(map[string]any{"name": "test-doc"})
@@ -88,7 +88,7 @@ func TestCollection_Update(t *testing.T) {
 	updateQuery := query.NewQueryBuilder().Where(data.DocumentIDField).Eq(id).Build()
 
 	_, err = collection.Update(context.Background(), &base.CollectionUpdate{
-		Set:   docToUpdate.Document(),
+		Set:    docToUpdate.Document(),
 		Filter: updateQuery.Filters,
 	})
 

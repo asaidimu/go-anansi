@@ -17,7 +17,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v8/tests/testutils"
-	"github.com/asaidimu/go-events"
+	rootutils "github.com/asaidimu/go-anansi/v8/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -60,14 +60,14 @@ func setupTestEnv(t *testing.T) (base.CollectionRegistry, query.SchemaManager, p
 
 	schemaManager := interactor.SchemaManager()
 
-	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())
+	bus, _ := rootutils.NewInMemoryGoEventsBus("test")
 
 	engine := query.NewQueryEngine(interactor.Capabilities(), logger)
 
 	registrySchemaDef := registry.RegistrySchema()
 
 	factory := pevents.NewPersistenceEventFactory(registry.REGISTRY_COLLECTION_NAME, logger)
-	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
+	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter[persistence.PersistenceEvent](bus), factory.CreateEvent, logger)
 	registryCollection, err := collection.NewCollection(
 		eventEmitter, registry.REGISTRY_COLLECTION_NAME, collection.NewStaticSchemaProvider(registrySchemaDef), interactor, engine, logger, nil, nil,
 	)

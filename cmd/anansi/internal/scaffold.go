@@ -51,60 +51,153 @@ const defaultAnansiVersion = "v8.4.7"
 
 var semverV8Re = regexp.MustCompile(`^v8\.\d+\.\d+(-[0-9A-Za-z.\-]+)?(\+[0-9A-Za-z.\-]+)?$`)
 
-func RunScaffold(dir string, dryRun bool, anansiVersion string) error {
-	abs, err := filepath.Abs(dir)
+// ScaffoldOptions describes what anansi scaffold should create.
+type ScaffoldOptions struct {
+	Dir           string
+	Library       bool
+	DryRun        bool
+	AnansiVersion string
+
+	// Layout overrides. Empty values fall back to the defaults: schemas dir
+	// "schemas", migrations dir "migrations", lockfile "schemas.lock.json".
+	// These are written relative into anansi.json so you can organise the
+	// project however you like — the CLI defaults are just defaults.
+	SchemasDir    string
+	MigrationsDir string
+	Lockfile      string
+}
+
+func (o ScaffoldOptions) schemasDir() string {
+	if o.SchemasDir != "" {
+		return strings.Trim(filepath.ToSlash(o.SchemasDir), "/")
+	}
+	return "schemas"
+}
+
+func (o ScaffoldOptions) migrationsDir() string {
+	if o.MigrationsDir != "" {
+		return strings.Trim(filepath.ToSlash(o.MigrationsDir), "/")
+	}
+	return "migrations"
+}
+
+func (o ScaffoldOptions) lockfile() string {
+	if o.Lockfile != "" {
+		return filepath.ToSlash(o.Lockfile)
+	}
+	return "schemas.lock.json"
+}
+
+// fileExists reports whether path exists.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// writeScaffoldFile writes data to path. In library mode it never overwrites an
+// existing file, so scaffolding into an existing project leaves the user's
+// files untouched. The boolean reports whether the file was written.
+func writeScaffoldFile(path string, data []byte, library bool) (bool, error) {
+	if library && fileExists(path) {
+		return false, nil
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func RunScaffold(opts ScaffoldOptions) error {
+	abs, err := filepath.Abs(opts.Dir)
 	if err != nil {
 		return fmt.Errorf("resolve path: %w", err)
 	}
 
 	modulePath := filepath.Base(abs)
 
-	schemasDir := filepath.Join(abs, "schemas")
-	migrationsDir := filepath.Join(abs, "migrations")
+	schemasRel := opts.schemasDir()
+	migrationsRel := opts.migrationsDir()
+	lockfileRel := opts.lockfile()
 
-	if dryRun {
+	schemasDir := filepath.Join(abs, schemasRel)
+	migrationsDir := filepath.Join(abs, migrationsRel)
+	exampleRel := filepath.Join(schemasRel, "example.schema.json")
+	examplePath := filepath.Join(abs, exampleRel)
+	lockfilePath := filepath.Join(abs, lockfileRel)
+
+	printCreated := func(format string, a ...any) {
+		fmt.Printf("  created: "+format+"\n", a...)
+	}
+	printExists := func(format string, a ...any) {
+		fmt.Printf("  using existing: "+format+"\n", a...)
+	}
+
+	if opts.DryRun {
 		fmt.Printf("would scaffold anansi project in %s\n", abs)
 		fmt.Printf("  would create: %s/\n", schemasDir)
 		fmt.Printf("  would create: %s/\n", migrationsDir)
-		fmt.Printf("  would create: %s/go.mod\n", abs)
-		fmt.Printf("  would create: %s/main.go\n", abs)
 		fmt.Printf("  would create: %s/anansi.json\n", abs)
 		fmt.Printf("  would create: %s/metadata.schema.json\n", abs)
-		fmt.Printf("  would create: %s/example.schema.json\n", schemasDir)
-		fmt.Printf("  would create: %s/schemas.lock.json\n", abs)
+		fmt.Printf("  would create: %s\n", examplePath)
+		fmt.Printf("  would create: %s\n", lockfilePath)
 		fmt.Printf("  would create: %s/AGENTS.md\n", abs)
+		fmt.Printf("  would create: %s/.agents/skills/anansi/ (bundled skill)\n", abs)
+		if !opts.Library {
+			fmt.Printf("  would create: %s/go.mod\n", abs)
+			fmt.Printf("  would create: %s/main.go\n", abs)
+		}
 		fmt.Println()
-		fmt.Println("after scaffolding, run:")
-		fmt.Printf("  cd %s && go mod tidy && go run .\n", dir)
+		if opts.Library {
+			fmt.Println("after scaffolding, run:")
+			fmt.Println("  go get github.com/asaidimu/go-anansi/v8")
+			fmt.Println("  anansi migrate generate && anansi codegen golang")
+		} else {
+			fmt.Println("after scaffolding, run:")
+			fmt.Printf("  cd %s && go mod tidy && go run .\n", opts.Dir)
+		}
 		return nil
 	}
 
-	// Refuse to scaffold into a non-empty directory.
-	if entries, err := os.ReadDir(abs); err == nil && len(entries) > 0 {
+	// Standalone scaffolding refuses a non-empty directory; library mode is the
+	// opposite — it adds anansi to an existing project — so it only refuses a
+	// target that is already initialized.
+	if opts.Library {
+		if fileExists(filepath.Join(abs, "anansi.json")) {
+			return fmt.Errorf("refusing to scaffold into %s: anansi.json already exists (project is initialized)", abs)
+		}
+		if _, err := os.Stat(abs); os.IsNotExist(err) {
+			return fmt.Errorf("library mode requires an existing directory %s", abs)
+		}
+	} else if entries, err := os.ReadDir(abs); err == nil && len(entries) > 0 {
 		return fmt.Errorf("refusing to scaffold into non-empty directory %s", abs)
 	}
 
-	// Create directories
-	for _, p := range []string{abs, schemasDir, migrationsDir} {
-		if err := os.MkdirAll(p, 0755); err != nil {
-			return fmt.Errorf("create %s: %w", p, err)
-		}
+	// Create the project root; schemas/migrations dirs are created lazily only
+	// when something is actually written into them, so non-destructive library
+	// mode never leaves empty directories behind in an existing project.
+	if err := os.MkdirAll(abs, 0755); err != nil {
+		return fmt.Errorf("create %s: %w", abs, err)
 	}
 
-	// go.mod
-	gomod := fmt.Sprintf(`module %s
+	// go.mod + main.go only for standalone apps.
+	if !opts.Library {
+		// go.mod
+		gomod := fmt.Sprintf(`module %s
 
 go 1.21
 
 require github.com/asaidimu/go-anansi/v8 %s
-`, modulePath, scaffoldModuleVersion(anansiVersion))
-	if err := os.WriteFile(filepath.Join(abs, "go.mod"), []byte(gomod), 0644); err != nil {
-		return fmt.Errorf("write go.mod: %w", err)
-	}
+`, modulePath, scaffoldModuleVersion(opts.AnansiVersion))
+		if err := os.WriteFile(filepath.Join(abs, "go.mod"), []byte(gomod), 0644); err != nil {
+			return fmt.Errorf("write go.mod: %w", err)
+		}
 
-	// main.go
-	migrationsPkg := modulePath + "/migrations"
-	tpl := `package main
+		// main.go
+		migrationsPkg := modulePath
+		if rel := strings.Trim(filepath.ToSlash(migrationsRel), "/"); rel != "" {
+			migrationsPkg += "/" + rel
+		}
+		tpl := `package main
 
 import (
 	"context"
@@ -155,13 +248,18 @@ func main() {
 	}
 	fmt.Printf("collection %q has %d document(s)\n", "Example", len(r.Data))
 }`
-	mainSrc := strings.ReplaceAll(tpl, "MPKG", migrationsPkg)
-	if err := os.WriteFile(filepath.Join(abs, "main.go"), []byte(mainSrc), 0644); err != nil {
-		return fmt.Errorf("write main.go: %w", err)
+		mainSrc := strings.ReplaceAll(tpl, "MPKG", migrationsPkg)
+		if err := os.WriteFile(filepath.Join(abs, "main.go"), []byte(mainSrc), 0644); err != nil {
+			return fmt.Errorf("write main.go: %w", err)
+		}
 	}
 
-	// anansi.json
+	// anansi.json — relative paths, so the on-disk config always matches the
+	// layout the user chose, not the CWD scaffold ran from.
 	cfg := DefaultConfig()
+	cfg.Schema.Glob = schemasRel + "/**/*.schema.json"
+	cfg.Schema.Lockfile = lockfileRel
+	cfg.Schema.MigrationsDir = migrationsRel + "/"
 	cfgData, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
@@ -169,26 +267,40 @@ func main() {
 	if err := os.WriteFile(filepath.Join(abs, "anansi.json"), cfgData, 0644); err != nil {
 		return fmt.Errorf("write config: %w", err)
 	}
+	printCreated("%s", filepath.Join(abs, "anansi.json"))
 
-	// metadata.schema.json — declarative user-defined metadata. Written, then
-	// canonicalized so the on-disk file carries stable UUID v7 field IDs.
+	// metadata.schema.json — declarative user-defined metadata. Only written
+	// when absent: in library mode an existing metadata file is reused as-is,
+	// never canonicalized or overwritten.
 	metadataPath := filepath.Join(abs, cfg.Metadata.SchemaPath)
-	if err := os.WriteFile(metadataPath, []byte(starterMetadataJSON), 0644); err != nil {
-		return fmt.Errorf("write metadata schema: %w", err)
+	mdExists := fileExists(metadataPath)
+	if !mdExists {
+		if err := os.WriteFile(metadataPath, []byte(starterMetadataJSON), 0644); err != nil {
+			return fmt.Errorf("write metadata schema: %w", err)
+		}
+		printCreated("%s", metadataPath)
+	} else {
+		printExists("%s", metadataPath)
 	}
 	md, mdChanged, err := LoadMetadata(metadataPath)
 	if err != nil {
 		return err
 	}
-	if mdChanged {
+	if mdChanged && !mdExists {
 		if err := writeMetadataFile(metadataPath, md); err != nil {
 			return err
 		}
 	}
 
-	// Example schema — parse, set version, normalize, then write to disk
-	// so the JSON always includes a version field.
-	exampleRaw := `{
+	// Example schema + migration + lockfile + registry + generated metadata.
+	// This whole unit is generated only when the example schema is absent:
+	// an existing project owns its schemas, so scaffold leaves them alone and
+	// skips generation (run `anansi migrate generate && anansi codegen golang`
+	// to produce those from the project's own schemas).
+	if !fileExists(examplePath) {
+		// Example schema — parse, set version, normalize, then write to disk
+		// so the JSON always includes a version field.
+		exampleRaw := `{
   "name": "Example",
   "description": "Example schema — replace with your own",
   "fields": {
@@ -199,41 +311,44 @@ func main() {
     }
   }
 }`
-	schema, err := definition.FromJSON([]byte(exampleRaw))
-	if err != nil {
-		return fmt.Errorf("parse example schema: %w", err)
-	}
-	if schema.Version == nil {
-		schema.Version = common.MustNewVersion("0.1.0")
-	}
-	meta.NormalizeSchema(schema)
-	enriched, err := data.EnrichSchema(schema, md.MergedSchema(), md.Dependencies())
-	if err != nil {
-		return fmt.Errorf("enrich example schema: %w", err)
-	}
-	out, err := json.MarshalIndent(enriched.AsMap(), "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshal example schema: %w", err)
-	}
-	out = append(out, '\n')
-	exampleJSON := out
+		schema, err := definition.FromJSON([]byte(exampleRaw))
+		if err != nil {
+			return fmt.Errorf("parse example schema: %w", err)
+		}
+		if schema.Version == nil {
+			schema.Version = common.MustNewVersion("0.1.0")
+		}
+		meta.NormalizeSchema(schema)
+		enriched, err := data.EnrichSchema(schema, md.MergedSchema(), md.Dependencies())
+		if err != nil {
+			return fmt.Errorf("enrich example schema: %w", err)
+		}
+		out, err := json.MarshalIndent(enriched.AsMap(), "", "  ")
+		if err != nil {
+			return fmt.Errorf("marshal example schema: %w", err)
+		}
+		out = append(out, '\n')
+		exampleJSON := out
 
-	examplePath := filepath.Join(schemasDir, "example.schema.json")
-	if err := os.WriteFile(examplePath, exampleJSON, 0644); err != nil {
-		return fmt.Errorf("write example schema: %w", err)
-	}
+		if err := os.MkdirAll(schemasDir, 0755); err != nil {
+			return fmt.Errorf("create %s: %w", schemasDir, err)
+		}
+		if _, err := writeScaffoldFile(examplePath, exampleJSON, opts.Library); err != nil {
+			return fmt.Errorf("write example schema: %w", err)
+		}
+		printCreated("%s", examplePath)
 
-	// Generate migration file
-	safeName := SafeIdent("Example")
-	exampleVer := schema.Version.String()
-	verIdent := strings.ReplaceAll(exampleVer, ".", "_")
-	funcName := fmt.Sprintf("%s_0_0_0_to_%s", safeName, verIdent)
-	targetFunc := fmt.Sprintf("target_%s_%s", safeName, verIdent)
-	fileName := fmt.Sprintf("%s_%s_minor.go",
-		strings.ReplaceAll(exampleVer, ".", "_"), safeName)
+		// Generate migration file
+		safeName := SafeIdent("Example")
+		exampleVer := schema.Version.String()
+		verIdent := strings.ReplaceAll(exampleVer, ".", "_")
+		funcName := fmt.Sprintf("%s_0_0_0_to_%s", safeName, verIdent)
+		targetFunc := fmt.Sprintf("target_%s_%s", safeName, verIdent)
+		fileName := fmt.Sprintf("%s_%s_minor.go",
+			strings.ReplaceAll(exampleVer, ".", "_"), safeName)
 
-	migSrc := fmt.Sprintf(`// Code generated by anansi schema migrate. DO NOT EDIT.
-// Source: schemas/example.schema.json
+		migSrc := fmt.Sprintf(`// Code generated by anansi schema migrate. DO NOT EDIT.
+// Source: %s
 package migrations
 
 import (
@@ -241,79 +356,132 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
-// %[1]s returns a migration plan (0.0.0 → %[2]s).
-func %[1]s() *base.MigrationPlan {
+// %[2]s returns a migration plan (0.0.0 → %[3]s).
+func %[2]s() *base.MigrationPlan {
 	m := &base.MigrationPlan{
 		Description: "initial schema",
-		Target:      %[3]s(),
+		Target:      %[4]s(),
 		VersionBump: definition.BumpMinor,
 	}
 	return m
 }
 
-var %[3]s_json = []byte(%[4]q)
+var %[4]s_json = []byte(%[5]q)
 
-func %[3]s() *definition.Schema {
-	s, err := definition.FromJSON(%[3]s_json)
+func %[4]s() *definition.Schema {
+	s, err := definition.FromJSON(%[4]s_json)
 	if err != nil {
 		panic("invalid embedded target schema: " + err.Error())
 	}
 	return s
 }
-`, funcName, exampleVer, targetFunc, string(exampleJSON))
+`, exampleRel, funcName, exampleVer, targetFunc, string(exampleJSON))
 
-	if err := os.WriteFile(filepath.Join(migrationsDir, fileName), []byte(migSrc), 0644); err != nil {
-		return fmt.Errorf("write migration file: %w", err)
-	}
+		if err := os.MkdirAll(migrationsDir, 0755); err != nil {
+			return fmt.Errorf("create %s: %w", migrationsDir, err)
+		}
+		if err := os.WriteFile(filepath.Join(migrationsDir, fileName), []byte(migSrc), 0644); err != nil {
+			return fmt.Errorf("write migration file: %w", err)
+		}
+		printCreated("%s", filepath.Join(migrationsDir, fileName))
 
-	// Build lockfile
-	hash := ContentHash(exampleJSON)
-	lock := &Lockfile{
-		Version: "1",
-		Schemas: map[string]*SchemaRef{
-			"Example": {
-				Path:          "schemas/example.schema.json",
-				Hash:          hash,
-				Version:       exampleVer,
-				Schema:        enriched,
-				MigrationFile: fileName,
+		// Build lockfile
+		hash := ContentHash(exampleJSON)
+		lock := &Lockfile{
+			Version: "1",
+			Schemas: map[string]*SchemaRef{
+				"Example": {
+					Path:          exampleRel,
+					Hash:          hash,
+					Version:       exampleVer,
+					Schema:        enriched,
+					MigrationFile: fileName,
+				},
 			},
-		},
+		}
+
+		if !opts.Library || !fileExists(lockfilePath) {
+			if err := os.MkdirAll(filepath.Dir(lockfilePath), 0755); err != nil {
+				return fmt.Errorf("create %s: %w", filepath.Dir(lockfilePath), err)
+			}
+			if err := WriteLockfile(lockfilePath, lock); err != nil {
+				return fmt.Errorf("write lockfile: %w", err)
+			}
+			printCreated("%s", lockfilePath)
+		} else {
+			printExists("%s", lockfilePath)
+		}
+
+		// Registry + generated metadata (metadata.go). In library mode these
+		// are write-once: if either exists, skip generation so we never clobber
+		// files the project already owns.
+		registryPath := filepath.Join(migrationsDir, "registry.go")
+		metadataGoPath := filepath.Join(migrationsDir, "metadata.go")
+		if !opts.Library || (!fileExists(registryPath) && !fileExists(metadataGoPath)) {
+			if err := GenerateRegistry(lock, migrationsDir); err != nil {
+				return fmt.Errorf("generate registry: %w", err)
+			}
+			genCfg := *cfg
+			genCfg.Metadata.OutDir = migrationsDir
+			if _, err := GenerateMetadataFiles(&genCfg, md, false); err != nil {
+				return fmt.Errorf("generate metadata files: %w", err)
+			}
+		} else {
+			if fileExists(registryPath) {
+				printExists("%s", registryPath)
+			}
+			if fileExists(metadataGoPath) {
+				printExists("%s", metadataGoPath)
+			}
+		}
+	} else {
+		printExists("%s", examplePath)
 	}
 
-	if err := WriteLockfile(filepath.Join(abs, "schemas.lock.json"), lock); err != nil {
-		return fmt.Errorf("write lockfile: %w", err)
-	}
-
-	if err := GenerateRegistry(lock, migrationsDir); err != nil {
-		return fmt.Errorf("generate registry: %w", err)
-	}
-
-	cfg.Schema.MigrationsDir = migrationsDir
-	if _, err := GenerateMetadataFiles(cfg, md, false); err != nil {
-		return fmt.Errorf("generate metadata files: %w", err)
-	}
-
-	// AGENTS.md
-	if err := RunAgents(abs, false); err != nil {
+	// AGENTS.md + bundled agent skill
+	agentsPath := filepath.Join(abs, "AGENTS.md")
+	if agentsWritten, err := writeScaffoldFile(agentsPath, []byte(scaffoldAgentsMD), opts.Library); err != nil {
 		return fmt.Errorf("write AGENTS.md: %w", err)
+	} else if agentsWritten {
+		printCreated("%s", agentsPath)
+	} else {
+		printExists("%s", agentsPath)
+	}
+	if err := InstallSkill(filepath.Join(abs, ".agents", "skills", "anansi"), false); err != nil {
+		return fmt.Errorf("install skill: %w", err)
 	}
 
 	fmt.Printf("scaffolded anansi project in %s\n", abs)
-	fmt.Printf("  created: %s/go.mod\n", abs)
-	fmt.Printf("  created: %s/main.go\n", abs)
-	fmt.Printf("  created: %s\n", filepath.Join(abs, "anansi.json"))
-	fmt.Printf("  created: %s/\n", schemasDir)
-	fmt.Printf("  created: %s/\n", migrationsDir)
-	fmt.Printf("  created: %s\n", examplePath)
-	fmt.Printf("  created: %s\n", filepath.Join(abs, "schemas.lock.json"))
-	fmt.Printf("  created: %s\n", filepath.Join(migrationsDir, fileName))
-	fmt.Printf("  created: %s\n", filepath.Join(migrationsDir, "registry.go"))
-	fmt.Printf("  created: %s\n", filepath.Join(migrationsDir, "metadata.go"))
-	fmt.Printf("  created: %s\n", filepath.Join(migrationsDir, "providers.go"))
-	fmt.Printf("  created: %s\n", filepath.Join(abs, "AGENTS.md"))
+	if opts.Library {
+		fmt.Println("  existing files were left untouched")
+	}
+	if !opts.Library {
+		fmt.Printf("  created: %s/go.mod, %s/main.go\n", abs, abs)
+	}
+	fmt.Printf("  layout: schemas=%s/, migrations=%s/, lockfile=%s\n",
+		schemasRel, migrationsRel, lockfileRel)
+	fmt.Printf("  created: %s/.agents/skills/anansi/ (bundled skill)\n", abs)
 	fmt.Println()
 	fmt.Println("next steps:")
-	fmt.Printf("  cd %s && go mod tidy && go run .\n", dir)
+	if opts.Library {
+		fmt.Println("  go get github.com/asaidimu/go-anansi/v8")
+		fmt.Println("  anansi migrate generate && anansi codegen golang")
+		fmt.Println("  import migrations from your own code and apply on startup")
+	} else {
+		fmt.Printf("  cd %s && go mod tidy && go run .\n", opts.Dir)
+	}
 	return nil
 }
+
+// scaffoldAgentsMD is the project-local agent reference written by scaffold.
+const scaffoldAgentsMD = `# Agents
+
+This project is built on Anansi (schema-driven document persistence).
+
+- **Schemas** live in schemas/; edit the .schema.json files, then run
+  anansi migrate generate and anansi codegen golang to keep migrations and
+  generated models in sync.
+- **Skill**: an Anansi skill is installed at .agents/skills/anansi/ — agent
+  tools that support project-scoped skills load it automatically.
+- **Testing**: run go test ./...
+`
