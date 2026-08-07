@@ -417,6 +417,8 @@ Phase signals → reference:
 
 - **Wire persistence** (`Setup` vs `Playground`, interactor, query-engine
   augmentation) → `references/persistence-setup.md`
+- **Embed a local-first store** (desktop/CLI app, in-process SQLite, CGo-free
+  driver swap) → `references/persistence-setup.md` → "Embedded / desktop / CLI"
 - **Choose docs vs structs for a domain** (schema-first type safety,
   mechanical numeric bulk vs ergonomic string paths) →
   `references/domain-modeling.md`
@@ -481,8 +483,10 @@ When reviewing output, check:
   chat schemas.
 - `references/query-dsl.md` — the full `core/query` builder DSL.
 - `references/persistence-setup.md` — wire phase: `Setup` vs `Playground`,
-  the interactor/query-backend contract, and how to augment the query engine
-  through `DatabaseInteractor`/`Capabilities`.
+  the interactor/query-backend contract, how to augment the query engine
+  through `DatabaseInteractor`/`Capabilities`, the event-bus contract
+  (go-events v2 vs a custom `EventBus[T]`), and embedded desktop/local-first
+  usage incl. the CGo-free driver swap.
 - `references/transactions.md` — atomic units of work: facade `p.Transact`
   (multi-collection) vs `coll.Transact`, nesting/context propagation,
   concurrent ops + hooks, events, error sentinels.
