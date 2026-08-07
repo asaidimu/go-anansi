@@ -265,12 +265,12 @@ func TestProjections_EmitRequiredOverride(t *testing.T) {
 	require.NoError(t, err)
 
 	// OrderCreate forces total required: value type + required=true tag.
-	assert.Contains(t, out, "type OrderCreate struct {\n    document.DocumentModel\n    Total decimal.Decimal `anansi:\"total,required=true\" json:\"total\" input:\"arguments.total\" schema:\"decimal:true\"`\n}")
+	// The embedded DocumentModel now includes `json:"-" anansi:"-"` tags.
+	assert.Contains(t, out, "type OrderCreate struct {\n    document.DocumentModel `json:\"-\" anansi:\"-\"`\n    Total decimal.Decimal `anansi:\"total,required=true\" json:\"total\" input:\"arguments.total\" schema:\"decimal:true\"`\n}")
 	assert.Contains(t, out, `anansi:"total,required=true"`)
 
 	// OrderSummary inherits optional: pointer type + required=false tag.
-	assert.Contains(t, out, "type OrderSummary struct {\n    document.DocumentModel")
-	assert.Contains(t, out, "Total *decimal.Decimal `anansi:\"total,required=false\" json:\"total,omitempty\"`")
+	assert.Contains(t, out, "type OrderSummary struct {\n    document.DocumentModel `json:\"-\" anansi:\"-\"`\n    Status *OrderStatusEnum `anansi:\"status,required=false,type=enum\" json:\"status,omitempty\"`\n    Total *decimal.Decimal `anansi:\"total,required=false\" json:\"total,omitempty\"`\n}")
 	assert.Contains(t, out, `anansi:"total,required=false"`)
 
 	// No projection accessors on the collection wrapper — projections are

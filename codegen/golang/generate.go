@@ -556,7 +556,7 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 		if name == rootTypeName && emitRootModel {
 			continue
 		}
-		emitStruct(&sb, name, structs[name], false)
+		emitStruct(&sb, name, structs[name], false, true)
 	}
 	if emitRootModel {
 		// When the schema does not declare the system fields, the root model
@@ -569,7 +569,7 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 		if !rootHasSystemFields {
 			rootFields, shadowIDName = appendSystemShadows(rootFields)
 		}
-		emitStruct(&sb, rootTypeName, rootFields, true)
+		emitStruct(&sb, rootTypeName, rootFields, true, false)
 
 		// GetID returns the document identifier carried by the _id_ field —
 		// either the shadow (schema without system fields) or the ordinary
@@ -601,7 +601,7 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 
 		// Projections share the model treatment (DocumentModel embed).
 		for _, name := range sortedKeys(projections) {
-			emitStruct(&sb, name, projections[name], true)
+			emitStruct(&sb, name, projections[name], true, true)
 		}
 	}
 
@@ -610,13 +610,17 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 
 // emitStruct writes a single struct declaration. Fields are sorted by size so
 // that padding is minimized. embedModel embeds document.DocumentModel first.
-func emitStruct(sb *strings.Builder, name string, fields []StructField, embedModel bool) {
+func emitStruct(sb *strings.Builder, name string, fields []StructField, embedModel bool, omitModelTags bool) {
 	sort.Slice(fields, func(i, j int) bool {
 		return typeSize(fields[i].Type) > typeSize(fields[j].Type)
 	})
 	fmt.Fprintf(sb, "type %s struct {\n", name)
 	if embedModel {
-		sb.WriteString("    document.DocumentModel\n")
+		if omitModelTags {
+			sb.WriteString("    document.DocumentModel `json:\"-\" anansi:\"-\"`\n")
+		} else {
+			sb.WriteString("    document.DocumentModel\n")
+		}
 	}
 	for _, f := range fields {
 		tagStr := strings.Trim(f.Tags, "`")
@@ -1079,7 +1083,14 @@ func applyProjectionTags(fields []StructField, defs map[string]FieldDef, tags ma
 
 	goToName := make(map[string]string, len(defs))
 	for schemaName := range defs {
-		goToName[toCamelCase(schemaName)] = schemaName
+		switch schemaName {
+		case "_id_":
+			goToName["ID"] = schemaName
+		case "_metadata_":
+			goToName["Metadata"] = schemaName
+		default:
+			goToName[toCamelCase(schemaName)] = schemaName
+		}
 	}
 
 	for i := range fields {
