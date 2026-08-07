@@ -80,18 +80,18 @@ func NewOrder(model Order) *Order {
 }
 
 type OrderCreate struct {
-    document.DocumentModel
+    document.DocumentModel `json:"-" anansi:"-"`
     Total decimal.Decimal `input:"arguments.total" schema:"decimal:true"`
 }
 
 type OrderSummary struct {
-    document.DocumentModel
+    document.DocumentModel `json:"-" anansi:"-"`
     Status *OrderStatusEnum
     Total *decimal.Decimal
 }
 
 type OrderUpdate struct {
-    document.DocumentModel
+    document.DocumentModel `json:"-" anansi:"-"`
     Tags []string
     ID string
     Combo *OrderComboComposite
