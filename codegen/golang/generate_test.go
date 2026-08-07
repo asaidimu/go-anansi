@@ -96,8 +96,8 @@ func TestGenerate_SystemFieldShadows(t *testing.T) {
 	// own `id` field already claims the Go name ID, so the _id_ shadow is
 	// renamed ModelID to avoid a declaration collision.
 	assert.Contains(t, out, "type Order struct {\n    document.DocumentModel")
-	assert.Contains(t, out, `ModelID string `+"`json:\"id,omitempty\" anansi:\"_id_,required=true,omitempty\"`")
-	assert.Contains(t, out, `Metadata map[string]any `+"`json:\"metadata,omitempty\" anansi:\"_metadata_,required=true,omitempty\"`")
+	assert.Contains(t, out, `ModelID string `+"`json:\"_id_,omitempty\" anansi:\"_id_,required=true,omitempty\"`")
+	assert.Contains(t, out, `Metadata map[string]any `+"`json:\"_metadata_,omitempty\" anansi:\"_metadata_,required=true,omitempty\"`")
 
 	// GetID is emitted on the root model, returning the _id_ shadow.
 	assert.Contains(t, out, "// GetID returns the document identifier for Order.")
@@ -351,5 +351,48 @@ func TestGenerationMode_String(t *testing.T) {
 		if got := c.mode.String(); got != c.want {
 			t.Errorf("GenerationMode(%d).String() = %q, want %q", c.mode, got, c.want)
 		}
+	}
+}
+
+// normalizedSchema is a post-normalization schema: the reserved _id_ and
+// _metadata_ fields are declared, and _metadata_ is backed by a nested schema
+// of the same name (the shape `schema normalize`/`migrate generate` writes).
+const normalizedSchema = `{
+  "name": "Order",
+  "fields": {
+    "sys_id": {"name": "_id_", "type": "string", "required": true, "unique": true},
+    "sys_meta": {"name": "_metadata_", "type": "object", "schema": {"id": "meta"}},
+    "f1": {"name": "total", "type": "decimal", "required": true}
+  },
+  "schemas": {
+    "meta": {
+      "name": "_metadata_",
+      "fields": {
+        "v": {"name": "version", "type": "number", "required": true},
+        "u": {"name": "updated", "type": "string", "required": true},
+        "c": {"name": "checksum", "type": "string", "required": true},
+        "s": {"name": "signature", "type": "string"},
+        "cr": {"name": "created", "type": "string", "required": true}
+      }
+    }
+  }
+}`
+
+func TestGenerate_MetadataTypeNamePerSchema(t *testing.T) {
+	gen := NewGoGenerator(&GeneratorConfig{Mode: ModeModel, TagConfig: DefaultTagConfig()})
+	out, err := gen.Generate([]byte(normalizedSchema))
+	require.NoError(t, err)
+
+	// The reserved _metadata_ nested schema yields a per-collection type name
+	// (root name + "Metadata") so schemas sharing a package do not collide and
+	// keep their own tags.
+	assert.Contains(t, out, "type OrderMetadata struct {")
+	assert.NotContains(t, out, "type Metadata struct", "the metadata type must be scoped to its collection")
+	assert.NotContains(t, out, "Metadata_", "reserved metadata schema must not produce a mangled type name")
+	assert.Contains(t, out, "    Metadata *OrderMetadata `anansi:\"_metadata_,required=false\" json:\"_metadata_,omitempty\"`")
+
+	src := "package test\n\n" + out
+	if _, err := parser.ParseFile(token.NewFileSet(), "", src, parser.AllErrors); err != nil {
+		t.Errorf("generated output is not valid Go: %v\n%s", err, out)
 	}
 }

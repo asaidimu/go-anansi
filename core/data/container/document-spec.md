@@ -64,9 +64,18 @@ widened to `float64`.
 ### `enum`
 
 Enums map to `TypeInt` when the enum's values are numeric, and `TypeString`
-otherwise. The selected value is stored directly (an ordinal index for numeric
-enums, the string label for string enums). Value↔label translation is a schema-layer
-concern; DataContainer stores only the typed value.
+otherwise. The selected value is stored directly as the **raw typed value** (the
+`int64` value for numeric enums, the string label for string enums) — not a
+positional ordinal. Value↔label translation is a schema-layer concern;
+DataContainer stores only the typed value.
+
+Additionally, at link time the compiler persists the **allowed-value registry**
+for each enum field into the container: the complete set of permitted values is
+written under a key derived from the field's `DataPoint` ID — `TypeArrayInt`
+for numeric enums, `TypeArrayString` for string enums, or `TypeArrayUnknown`
+when the enum mixes complex values (`setEnumValues` in `link.go`). This
+side-channel lets the validator check membership without re-resolving the enum
+definition.
 
 ### `object`
 
@@ -654,9 +663,15 @@ type Pool struct {
 func NewPool() *Pool
 func (p *Pool) Get() *DataContainer
 func (p *Pool) Put(doc *DataContainer)
+func (p *Pool) Clone(src *DataContainer) (*DataContainer, error)
 func (p *Pool) Acquire(f func(*DataContainer) error) error
 func (p *Pool) Walk(walker func(*DataContainer, map[int64]int32, func(DataType, ...int) unsafe.Pointer) error) (*DataContainer, error)
 ```
+
+Planting `Clone` returns a deep copy of `src` allocated from the same pool: array-object
+children are copied recursively, and `TypeRecord` maps are cloned, so the copy shares no
+nested children/maps with `src`. The caller owns the returned container and must return
+it with `Put`.
 
 `Put` recurses into the `TypeArrayObject` slot before clearing, returning any child
 documents back to the pool first. `TypeRecord` values are `map[string]any` and hold no

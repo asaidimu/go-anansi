@@ -257,7 +257,12 @@ func (p *basePersistence) Subscribe(ctx context.Context, options base.Subscripti
 	p.subMu.Lock()
 	defer p.subMu.Unlock()
 
-	unsubscribe := p.eventEmitter.Subscribe(string(options.Event), options.Callback)
+	unsubscribe := p.eventEmitter.Subscribe(cevents.SubscriptionRequest[base.PersistenceEvent]{
+		EventType: string(options.Event),
+		Handler:   options.Callback,
+		Replay:    options.Replay,
+		Cursor:    options.ReplayCursor,
+	})
 	id := uuid.New().String()
 
 	data := base.SubscriptionInfo{

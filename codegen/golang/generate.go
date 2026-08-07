@@ -82,6 +82,11 @@ type GoGenerator struct {
 	mode        GenerationMode
 }
 
+// reservedMetadataSchemaName is the system nested schema injected by schema
+// normalization and migration generation to carry the per-document integrity
+// envelope (version, updated, checksum, signature, created).
+const reservedMetadataSchemaName = "_metadata_"
+
 // ============================================================================
 // Generation modes
 // ============================================================================
@@ -250,11 +255,19 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 	}
 
 	// Build type name registry: ID -> Go type name
+	rootTypeName := g.goTypeName(rootName)
 	typeNames := make(map[string]string)
 	for id, info := range schemaInfos {
+		if info.Name == reservedMetadataSchemaName {
+			// The reserved _metadata_ nested schema gets a per-collection type
+			// name. Multiple schemas in one package each declare their own
+			// metadata struct (XxxMetadata), so a shared name would collide —
+			// and per-schema structs keep any per-schema custom tags intact.
+			typeNames[id] = rootTypeName + "Metadata"
+			continue
+		}
 		typeNames[id] = g.goTypeName(info.Name)
 	}
-	rootTypeName := g.goTypeName(rootName)
 
 	// Maps to hold generated definitions
 	structs := make(map[string][]StructField) // struct name -> fields
@@ -364,7 +377,7 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 	// when present they are emitted as ordinary schema fields instead.
 	rootHasSystemFields := false
 	for _, fd := range rootFields {
-		if fd.Name == "_id_" || fd.Name == "_metadata_" {
+		if fd.Name == "_id_" || fd.Name == reservedMetadataSchemaName {
 			rootHasSystemFields = true
 			break
 		}
@@ -640,8 +653,8 @@ func appendSystemShadows(fields []StructField) ([]StructField, string) {
 	}
 
 	shadows := append(append([]StructField(nil), fields...),
-		StructField{Name: idName, Type: "string", Tags: `json:"id,omitempty" anansi:"_id_,required=true,omitempty"`},
-		StructField{Name: metaName, Type: "map[string]any", Tags: `json:"metadata,omitempty" anansi:"_metadata_,required=true,omitempty"`},
+		StructField{Name: idName, Type: "string", Tags: `json:"_id_,omitempty" anansi:"_id_,required=true,omitempty"`},
+		StructField{Name: metaName, Type: "map[string]any", Tags: `json:"_metadata_,omitempty" anansi:"_metadata_,required=true,omitempty"`},
 	)
 	return shadows, idName
 }
@@ -1282,6 +1295,7 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 		goFieldName := toCamelCase(fieldName)
 		// Reserved system fields keep their canonical Go names so generated
 		// models can shadow the embedded document model's fields cleanly.
+		// TODO: REMOVE HARD CODED STRINGS
 		switch fieldName {
 		case "_id_":
 			goFieldName = "ID"

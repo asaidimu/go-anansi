@@ -19,7 +19,8 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v8/core/utils"
 	"github.com/asaidimu/go-anansi/v8/tests/testutils"
-	"github.com/asaidimu/go-events"
+	rootutils "github.com/asaidimu/go-anansi/v8/utils"
+	goevents "github.com/asaidimu/go-events/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -68,8 +69,8 @@ func resolveSchema(ctx context.Context, logicalName string) (string, *definition
 }
 
 // setupCollection is a helper function to set up a new collection for testing.
-func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *zap.Logger, *definition.Schema, *events.TypedEventBus[persistence.PersistenceEvent], context.Context) {
-	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())
+func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *zap.Logger, *definition.Schema, *goevents.EventBus, context.Context) {
+	bus, _ := rootutils.NewInMemoryGoEventsBus("test")
 	ephemeralInteractor := ephemeral.NewEphemeral()
 	manager := ephemeralInteractor.SchemaManager()
 	logger := zap.NewNop()
@@ -86,7 +87,7 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 
 	engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
 	factory := pevents.NewPersistenceEventFactory(testSchemaDef.Name, logger)
-	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
+	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter[persistence.PersistenceEvent](bus), factory.CreateEvent, logger)
 	c, err := collection.NewCollection(eventEmitter, testSchemaDef.Name, collection.NewStaticSchemaProvider(testSchemaDef), ephemeralInteractor, engine, logger, resolveSchema, nil)
 	assert.NoError(t, err)
 
@@ -95,8 +96,8 @@ func setupCollection(t *testing.T) (base.Collection, query.DatabaseInteractor, *
 }
 
 // setupNonExistentCollection is a helper function to set up a collection with a non-existent schema for testing error cases.
-func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *zap.Logger, *definition.Schema, *events.TypedEventBus[persistence.PersistenceEvent], context.Context) {
-	bus, _ := events.NewTypedEventBus[persistence.PersistenceEvent](events.DefaultConfig())
+func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *zap.Logger, *definition.Schema, *goevents.EventBus, context.Context) {
+	bus, _ := rootutils.NewInMemoryGoEventsBus("test")
 	nonExistentSchema := &definition.Schema{
 		Version: common.MustNewVersion("1.0.0"),
 		BaseSchema: definition.BaseSchema{
@@ -108,7 +109,7 @@ func setupNonExistentCollection() (base.Collection, query.DatabaseInteractor, *z
 	logger := zap.NewNop()
 	engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
 	factory := pevents.NewPersistenceEventFactory(nonExistentSchema.Name, logger)
-	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
+	eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter[persistence.PersistenceEvent](bus), factory.CreateEvent, logger)
 	c, _ := collection.NewCollection(eventEmitter, nonExistentSchema.Name, collection.NewStaticSchemaProvider(nonExistentSchema), ephemeralInteractor, engine, logger, resolveSchema, nil)
 	ctx := context.Background()
 	return c, ephemeralInteractor, logger, nonExistentSchema, bus, ctx
@@ -221,7 +222,7 @@ func TestCollection_Read(t *testing.T) {
 		}
 		engine := query.NewQueryEngine(ephemeralInteractor.Capabilities(), logger)
 		factory := pevents.NewPersistenceEventFactory(nonExistentSchema.Name, logger)
-		eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter(bus), factory.CreateEvent, logger)
+		eventEmitter := cevents.NewEventEmitter(pevents.NewGoEventsBusAdapter[persistence.PersistenceEvent](bus), factory.CreateEvent, logger)
 		nonExistentCollection, _ := collection.NewCollection(eventEmitter, nonExistentSchema.Name, collection.NewStaticSchemaProvider(nonExistentSchema), ephemeralInteractor, engine, logger, resolveSchema, nil)
 
 		result, err := nonExistentCollection.Read(ctx, &q)
@@ -426,8 +427,8 @@ func TestCollection_Validate(t *testing.T) {
 
 	t.Run("loose validation - missing required field allowed", func(t *testing.T) {
 		doc := data.MustNewDocument(map[string]any{data.DocumentIDField: "1"}) // Missing 'name'
-		issues, ok := collection.Validate(ctx, doc, true)                     // Loose validation
-		assert.True(t, ok)                                                   // Should be valid in loose mode for missing required
+		issues, ok := collection.Validate(ctx, doc, true)                      // Loose validation
+		assert.True(t, ok)                                                     // Should be valid in loose mode for missing required
 		assert.Empty(t, issues)
 	})
 }

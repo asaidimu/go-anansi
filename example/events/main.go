@@ -12,7 +12,9 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	pevents "github.com/asaidimu/go-anansi/v8/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/utils"
+	rootutils "github.com/asaidimu/go-anansi/v8/utils"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -77,8 +79,12 @@ func main() {
 
 	// 5. Setup Decorators (none for basic example)
 	decorators := &utils.Decorators{}
-	bus := NewWatermillEventBus[base.PersistenceEvent](logger)
-	defer bus.Close()
+	rawBus, err := rootutils.NewInMemoryGoEventsBus("example")
+	if err != nil {
+		log.Fatalf("Failed to create event bus: %v", err)
+	}
+	defer rawBus.Close()
+	bus := pevents.NewGoEventsBusAdapter[base.PersistenceEvent](rawBus)
 
 	// 6. Initialize Anansi Persistence Layer
 	cfg := anansi.SetupConfig{
@@ -121,8 +127,8 @@ func main() {
 
 	// Create Products
 	logger.Info("Creating products...")
-	laptop := data.MustNewDocument(map[string]any{"value":100.00, "name": "Laptop", "price": 1200.00, "stock": 50})
-	mouse := data.MustNewDocument(map[string]any{"value":2.00, "name": "Mouse", "price": 25.00, "stock": 200})
+	laptop := data.MustNewDocument(map[string]any{"value": 100.00, "name": "Laptop", "price": 1200.00, "stock": 50})
+	mouse := data.MustNewDocument(map[string]any{"value": 2.00, "name": "Mouse", "price": 25.00, "stock": 200})
 
 	_, err = productsCollection.CreateOne(ctx, laptop)
 	if err != nil {

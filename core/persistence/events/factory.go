@@ -2,6 +2,7 @@ package events
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
@@ -95,7 +96,10 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 		}
 		res, ok := d.(data.DocumentSet)
 		if !ok {
-			return nil
+			// Do not silently strip the data from an audit event. Log and
+			// fall back to the unsanitized result so nothing is lost.
+			f.sanitizeWarn("read result sanitization produced unexpected type %T for collection %q; preserving unsanitized data", d, f.collectionName)
+			return v
 		}
 		sanitized := &base.ReadResult{
 			Count: v.Count,
@@ -112,7 +116,8 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 		}
 		res, ok := d.(data.Documenter)
 		if !ok {
-			return nil
+			f.sanitizeWarn("create result sanitization produced unexpected type %T; preserving unsanitized result", d)
+			return v
 		}
 		sanitized := base.CreateResult{
 			Status: v.Status,
@@ -123,7 +128,7 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 		return sanitized
 
 	case []base.CreateResult:
-		sanitized := make([]base.CreateResult, len(v))
+		sanitized := make([]base.CreateResult, 0, len(v))
 		for _, result := range v {
 			d, err := data.SanitizeValue(ctx, result.Data)
 			if err != nil {
@@ -131,7 +136,9 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 			}
 			res, ok := d.(data.Documenter)
 			if !ok {
-				return nil
+				f.sanitizeWarn("create result element sanitization produced unexpected type %T; preserving unsanitized element", d)
+				sanitized = append(sanitized, result)
+				continue
 			}
 
 			sanitized = append(sanitized,
@@ -152,5 +159,12 @@ func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value a
 			return err
 		}
 		return d
+	}
+}
+
+// sanitizeWarn logs a warning, tolerating a nil logger.
+func (f *PersistenceEventFactory) sanitizeWarn(format string, args ...any) {
+	if f.logger != nil {
+		f.logger.Warn(fmt.Sprintf("PersistenceEventFactory: "+format, args...))
 	}
 }

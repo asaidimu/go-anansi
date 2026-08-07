@@ -200,3 +200,56 @@ func TestRunGoGen_DryRunNoTags(t *testing.T) {
 	require.True(t, os.IsNotExist(err), "dry-run must not write any files")
 }
 
+// metadataSchema builds a post-normalization schema (reserved _id_/_metadata_
+// fields plus the _metadata_ nested schema) for the given collection name and
+// a single user field.
+func metadataSchema(name, fieldName string) string {
+	return `{
+  "name": "` + name + `",
+  "fields": {
+    "sys_id": {"name": "_id_", "type": "string", "required": true, "unique": true},
+    "sys_meta": {"name": "_metadata_", "type": "object", "schema": {"id": "meta"}},
+    "uf": {"name": "` + fieldName + `", "type": "string", "required": true}
+  },
+  "schemas": {
+    "meta": {
+      "name": "_metadata_",
+      "fields": {
+        "v": {"name": "version", "type": "number", "required": true},
+        "u": {"name": "updated", "type": "string", "required": true},
+        "c": {"name": "checksum", "type": "string", "required": true},
+        "s": {"name": "signature", "type": "string"},
+        "cr": {"name": "created", "type": "string", "required": true}
+      }
+    }
+  }
+}`
+}
+
+func TestRunGoGen_MetadataTypePerSchema(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "alpha.schema.json"), []byte(metadataSchema("Alpha", "email")), 0644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "beta.schema.json"), []byte(metadataSchema("Beta", "sku")), 0644))
+
+	cfg := &Config{
+		Schema: SchemaConfig{Glob: filepath.Join(dir, "*.schema.json")},
+	}
+	require.NoError(t, RunGoGen(cfg, false))
+
+	alpha, err := os.ReadFile(filepath.Join(dir, "alpha.schema.model.go"))
+	require.NoError(t, err)
+	beta, err := os.ReadFile(filepath.Join(dir, "beta.schema.model.go"))
+	require.NoError(t, err)
+
+	a, b := string(alpha), string(beta)
+	// Each schema in the package declares its own collection-scoped metadata
+	// type, so there is no duplicate-declaration collision and no mangled name.
+	require.Contains(t, a, "type AlphaMetadata struct {")
+	require.Contains(t, b, "type BetaMetadata struct {")
+	require.Contains(t, a, "Metadata *AlphaMetadata `anansi:\"_metadata_,required=false\" json:\"_metadata_,omitempty\"`")
+	require.Contains(t, b, "Metadata *BetaMetadata `anansi:\"_metadata_,required=false\" json:\"_metadata_,omitempty\"`")
+	require.NotContains(t, a, "type Metadata struct", "metadata type must be scoped to its collection")
+	require.NotContains(t, b, "type Metadata struct", "metadata type must be scoped to its collection")
+	require.NotContains(t, a, "Metadata_", "no mangled metadata type name")
+	require.NotContains(t, b, "Metadata_", "no mangled metadata type name")
+}

@@ -180,55 +180,53 @@ func isRegexPattern(pattern string) bool {
 }
 
 // Subscribe registers an event handler for the specified event type pattern.
-// This method automatically handles pattern matching, allowing subscribers to use:
+// The request's EventType is resolved automatically: exact event types
+// ("document:create:success") subscribe directly to the event bus for
+// optimal performance; patterns ("document:*", "*:success", regex) subscribe
+// to "*" with automatic filtering.
 //
-//   - Exact event types: "document:create:success"
-//   - Wildcard patterns: "document:*", "*:success", "*"
-//   - Regex patterns: "^(document|collection):(create|update):.*"
+// Additional filters can be provided (req.Filters) to further restrict which
+// events are delivered to the handler. All filters must return true for the
+// event to be processed.
 //
-// For exact matches, the subscription is made directly to the event bus for optimal
-// performance. For patterns, the subscription is made to "*" with automatic filtering.
-//
-// Additional filters can be provided to further restrict which events are delivered
-// to the handler. All filters must return true for the event to be processed.
+// Setting req.Replay opts into replaying history instead of the default
+// live-only delivery; req.Cursor optionally bounds that replay.
 //
 // Returns an unsubscribe function that removes the subscription when called.
 //
 // Examples:
 //
 //	// Listen to all document events
-//	unsubscribe := emitter.Subscribe("document:*", handler)
+//	unsubscribe := emitter.Subscribe(events.SubscriptionRequest[T]{EventType: "document:*", Handler: handler})
 //
 //	// Listen to all success events with custom filtering
-//	unsubscribe := emitter.Subscribe("*:success", handler, customFilter)
+//	unsubscribe := emitter.Subscribe(events.SubscriptionRequest[T]{EventType: "*:success", Handler: handler, Filters: []func(ctx context.Context, event T) bool{customFilter}})
 //
-//	// Listen to specific event (no filtering overhead)
-//	unsubscribe := emitter.Subscribe("document:create:success", handler)
-func (e *EventEmitter[T]) Subscribe(eventType string, handler func(ctx context.Context, event T) error, filters ...func(ctx context.Context, event T) bool) func() {
+//	// Listen to a specific event (no filtering overhead)
+//	unsubscribe := emitter.Subscribe(events.SubscriptionRequest[T]{EventType: "document:create:success", Handler: handler})
+func (e *EventEmitter[T]) Subscribe(req SubscriptionRequest[T]) func() {
 	if e.bus == nil {
 		return func() {} // Return no-op unsubscribe for nil bus
 	}
 
 	// Create automatic event type filter for patterns
-	eventTypeFilter := e.createEventTypeFilter(eventType)
+	eventTypeFilter := e.createEventTypeFilter(req.EventType)
 
 	// Combine automatic pattern filter with user-provided filters
 	var allFilters []func(ctx context.Context, event T) bool
 	if eventTypeFilter != nil {
 		allFilters = append(allFilters, eventTypeFilter)
 	}
-	allFilters = append(allFilters, filters...)
+	allFilters = append(allFilters, req.Filters...)
 
 	// Determine subscription strategy based on pattern presence
-	subscriptionEventType := eventType
 	if eventTypeFilter != nil {
 		// Pattern detected: subscribe to wildcard and filter
-		subscriptionEventType = "*"
+		req.EventType = "*"
 	}
 
-	// Exact match: subscribe directly (no filtering overhead)
-
-	return e.bus.Subscribe(subscriptionEventType, handler, allFilters...)
+	req.Filters = allFilters
+	return e.bus.Subscribe(req)
 }
 
 // OperationConfig defines the configuration for instrumenting operations with

@@ -11,7 +11,7 @@ import (
 	pevents "github.com/asaidimu/go-anansi/v8/core/persistence/events"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/persistence"
 	"github.com/asaidimu/go-anansi/v8/core/query"
-	"github.com/asaidimu/go-events"
+	rootutils "github.com/asaidimu/go-anansi/v8/utils"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -24,10 +24,10 @@ func TestTransactionInManualGoroutine(t *testing.T) {
 	logger, err := zap.NewDevelopment()
 	require.NoError(t, err)
 
-	bus, err := events.NewTypedEventBus[base.PersistenceEvent](events.DefaultConfig())
+	bus, err := rootutils.NewInMemoryGoEventsBus("test")
 	require.NoError(t, err)
 
-	p, err := persistence.NewPersistence(interactor, pevents.NewGoEventsBusAdapter(bus), logger, nil)
+	p, err := persistence.NewPersistence(interactor, pevents.NewGoEventsBusAdapter[base.PersistenceEvent](bus), logger, nil)
 	require.NoError(t, err)
 
 	schema := newTestSchema("manual_goroutine_test")

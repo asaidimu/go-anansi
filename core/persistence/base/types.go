@@ -195,7 +195,7 @@ type SubscriptionInfo struct {
 	Event       PersistenceEventType `json:"event"`                 // Event is the type of event that this subscription listens for.
 	Label       *string              `json:"label,omitempty"`       // Label is an optional, human-readable identifier for the subscription.
 	Description *string              `json:"description,omitempty"` // Description provides more detail about what the subscription does.
-	Unsubscribe func()               // Unsubscribe is a function that, when called, will unregister the subscription.
+	Unsubscribe func() `json:"-"` // Unsubscribe is a function that, when called, will unregister the subscription.
 }
 
 // MetadataFilter provides criteria for filtering metadata queries. This allows clients
@@ -341,6 +341,8 @@ type SubscriptionOptions struct {
 	Label       *string               `json:"label,omitempty"`       // Label is an optional, human-readable identifier for the subscription.
 	Description *string               `json:"description,omitempty"` // Description provides more detail about what the subscription does.
 	Callback    EventCallbackFunction // Callback is the function that will be executed when the event is triggered.
+	Replay      bool                  // Replay opts into replaying history instead of live-only delivery.
+	ReplayCursor any                  // ReplayCursor optionally bounds replay (time.Time, uuid.UUID, or string UUID).
 }
 
 // Future represents the result of an asynchronous operation.

@@ -15,7 +15,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v8/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v8/sqlite/query"
-	"github.com/asaidimu/go-events"
+	"github.com/asaidimu/go-anansi/v8/utils"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -82,10 +82,10 @@ func SetupCollectionTest(t *testing.T) (base.Collection, func()) {
 
 	logger, _ := zap.NewDevelopment()
 
-	bus, err := events.NewTypedEventBus[base.PersistenceEvent](events.DefaultConfig())
+	bus, err := utils.NewInMemoryGoEventsBus("test")
 	require.NoError(t, err)
 
-	p, err := persistence.NewPersistence(interactor, pevents.NewGoEventsBusAdapter(bus), logger, nil)
+	p, err := persistence.NewPersistence(interactor, pevents.NewGoEventsBusAdapter[base.PersistenceEvent](bus), logger, nil)
 	require.NoError(t, err)
 
 	schema := NewTestSchema("crud_collection")

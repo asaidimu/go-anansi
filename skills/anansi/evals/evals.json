@@ -1,0 +1,137 @@
+{
+  "skill_name": "anansi",
+  "evals": [
+    {
+      "id": 0,
+      "name": "orders-collection",
+      "prompt": "I'm building a Go API with anansi and need to add an `Orders` collection to my project. An order has: an order number (string, unique, required), a customer email (string, required), a total amount (number, required), and a status that can only be 'pending', 'shipped', or 'cancelled' (required). Write the schema file, tell me the exact codegen command to run, and show me Go code to: create an order, find an order by id, and query for all shipped orders over $100. Assume the standard anansi setup with anansi.Playground like my other collections.",
+      "expected_output": "A valid Orders schema JSON (fields keyed by UUIDv7, status as an enum with the three values, required/unique flags correct), the `anansi codegen golang` command, and Go code using the generated collection (Init/Model accessor, Create, FindByID, and a query with Where('total').Gt(100) and Where('status').Eq('shipped')) wired through anansi.Playground.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "schema-has-orders-name-version-fields",
+          "description": "Schema JSON declares name 'Orders', a version, and a fields map.",
+          "check": "regex"
+        },
+        {
+          "name": "field-keys-match-field-names",
+          "description": "Field map keys match their field 'name' (authoring convention — no hand-invented UUIDs); a real UUIDv7 coming from a normalize/migrate step is also acceptable.",
+          "check": "regex"
+        },
+        {
+          "name": "order-number-unique-required",
+          "description": "order_number field is marked unique and required.",
+          "check": "regex"
+        },
+        {
+          "name": "status-is-enum-with-values",
+          "description": "status field is an enum with values pending, shipped, cancelled.",
+          "check": "regex"
+        },
+        {
+          "name": "total-is-number-required",
+          "description": "total field has type number and required true.",
+          "check": "regex"
+        },
+        {
+          "name": "codegen-command-present",
+          "description": "Output mentions running `anansi codegen golang`.",
+          "check": "regex"
+        },
+        {
+          "name": "uses-playground-and-model-accessor",
+          "description": "Code wires persistence with anansi.Playground and initializes/fetches the Orders model (InitOrdersModel / OrdersModel / equivalent).",
+          "check": "regex"
+        },
+        {
+          "name": "query-filters-shipped-over-100",
+          "description": "Read query filters status='shipped' and total>100 using the query DSL.",
+          "check": "regex"
+        }
+      ]
+    },
+    {
+      "id": 1,
+      "name": "users-projections",
+      "prompt": "Add a `User` model to my anansi project. Users have: username (unique, required), email (required), a role that is one of 'admin', 'member', 'guest' (required), and an optional bio. I want three projections: `UserSummary` (just username and email), `UserCreate` (username, email, role, bio — with role required and bio optional), and `UserUpdate` (only bio, optional). Write the schema including the projections, show me the generated Go structs (especially the role enum and how optional bio maps to Go types), and show Go code using the projections to create a user, read user summaries, and update a bio.",
+      "expected_output": "A User schema JSON with metadata.projections (UserSummary/UserCreate/UserUpdate) using include/required/optional correctly, role as an enum, and generated Go showing role as a typed enum and bio as a pointer type (*string); Go code using ReadAs[*UserSummary], CreateFrom[*UserCreate], and UpdateFrom[*UserUpdate].",
+      "files": [],
+      "assertions": [
+        {
+          "name": "schema-has-three-projections",
+          "description": "metadata.projections declares UserSummary, UserCreate, UserUpdate.",
+          "check": "regex"
+        },
+        {
+          "name": "usersummary-includes-username-email",
+          "description": "UserSummary projection includes exactly username and email.",
+          "check": "regex"
+        },
+        {
+          "name": "usercreate-includes-role-and-bio",
+          "description": "UserCreate projection includes username, email, role, bio.",
+          "check": "regex"
+        },
+        {
+          "name": "userupdate-bio-only",
+          "description": "UserUpdate projection restricts to bio only.",
+          "check": "regex"
+        },
+        {
+          "name": "role-is-enum",
+          "description": "role field is declared as an enum with admin/member/guest values.",
+          "check": "regex"
+        },
+        {
+          "name": "bio-maps-to-pointer-type",
+          "description": "Optional bio maps to a pointer Go type (*string) in generated structs.",
+          "check": "regex"
+        },
+        {
+          "name": "uses-shape-methods",
+          "description": "Code uses ReadAs, CreateFrom, and UpdateFrom with the projection types.",
+          "check": "regex"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "name": "query-migration",
+      "prompt": "I have `Customers` and `Orders` collections in my anansi project. Show me: (1) how to query all orders for a specific customer, joined with their customer record, sorted newest-first, limited to 20; (2) how to query orders where total > 500 OR status == 'pending' using the query DSL; (3) I just added a `shipping_address` field to the Orders schema — what's the workflow to generate and apply a migration, and do I need to rerun codegen?",
+      "expected_output": "Go code with a join query (LeftJoin/InnerJoin + .On(query.QueryFilter{...}).End()), an OR filter group (WhereGroup/OrFilter), Sort descending + Limit(20), and a migration workflow answer using `anansi migrate generate` (and `anansi migrate squash`) plus rerunning codegen.",
+      "files": [],
+      "assertions": [
+        {
+          "name": "join-query-syntax",
+          "description": "Join uses LeftJoin/InnerJoin with .On(query.QueryFilter{...}) and .End().",
+          "check": "regex"
+        },
+        {
+          "name": "or-filter-group",
+          "description": "OR condition uses WhereGroup(common.LogicalOr) or OrFilter.",
+          "check": "regex"
+        },
+        {
+          "name": "filters-total-and-status",
+          "description": "Query filters total>500 and status='pending'.",
+          "check": "regex"
+        },
+        {
+          "name": "sort-descending-limit-20",
+          "description": "Sort newest-first (Descending/OrderByDesc) with Limit(20).",
+          "check": "regex"
+        },
+        {
+          "name": "migrate-dry-run-then-generate",
+          "description": "Mentions the migration workflow: `anansi migrate generate --dry-run` to preview, then `anansi migrate generate` to produce the migration.",
+          "check": "regex"
+        },
+        {
+          "name": "rerun-codegen-after-schema-change",
+          "description": "States codegen (`anansi codegen golang`) must be rerun after the schema change.",
+          "check": "regex"
+        }
+      ]
+    }
+  ]
+}

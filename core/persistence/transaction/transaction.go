@@ -21,15 +21,16 @@ const TxKey string = "github.com/asaidimu/go-anansi/__transaction__"
 // before the transaction is committed.
 type transaction struct {
 	interactor      query.DatabaseInteractor
-	wg              sync.WaitGroup
-	errChan         chan error
-	errOnce         sync.Once
 	mu              sync.RWMutex
+	pending         int              // number of in-flight operations; guarded by mu
+	changed         chan struct{}    // closed (and replaced) when pending hits 0
+	errChan         chan error       // buffered(1), holds the first reported error
+	errOnce         sync.Once
 	committed       bool
 	id              string
 	logger          *zap.Logger
 	onCommitHooks   []func() // Functions to execute after a successful commit
-	onRollbackHooks []func() // Functions to execute after a successful commit
+	onRollbackHooks []func() // Functions to execute after a successful rollback
 }
 
 // Ensures transaction implements the base.Transaction interface.
@@ -41,6 +42,7 @@ func newTransaction(interactor query.DatabaseInteractor, logger *zap.Logger) *tr
 	id := uuid.Must(uuid.NewV7())
 	return &transaction{
 		interactor:    interactor,
+		changed:       make(chan struct{}),
 		errChan:       make(chan error, 1),
 		id:            id.String(),
 		logger:        logger,
@@ -70,9 +72,13 @@ func (tx *transaction) IsActive() bool {
 }
 
 // AddOperation registers a new concurrent operation within the transaction.
-// It increments a WaitGroup counter and returns a cleanup function that must be
+// It increments the in-flight counter and returns a cleanup function that must be
 // called when the operation is complete. The cleanup function captures the first
 // error that occurs among all concurrent operations.
+//
+// The cleanup is safe to call after WaitForOperations has returned or the
+// transaction has been finalized: it never sends on a closed channel and never
+// leaks a goroutine.
 func (tx *transaction) AddOperation() func(error) {
 	tx.mu.Lock()
 	defer tx.mu.Unlock()
@@ -82,11 +88,11 @@ func (tx *transaction) AddOperation() func(error) {
 		return func(error) {}
 	}
 
-	tx.wg.Add(1)
+	tx.pending++
 	return func(err error) {
-		defer tx.wg.Done()
 		if err != nil {
-			// Atomically send the first error to the error channel.
+			// Atomically capture the first error. errChan is buffered and
+			// never closed, so this can never panic on a closed channel.
 			tx.errOnce.Do(func() {
 				select {
 				case tx.errChan <- err:
@@ -94,29 +100,49 @@ func (tx *transaction) AddOperation() func(error) {
 				}
 			})
 		}
+
+		tx.mu.Lock()
+		tx.pending--
+		if tx.pending == 0 {
+			close(tx.changed)
+			tx.changed = make(chan struct{})
+		}
+		tx.mu.Unlock()
 	}
 }
 
 // WaitForOperations blocks until all registered operations complete or the context
 // is cancelled. It returns the first error reported by any of the operations.
+//
+// Unlike a bare WaitGroup wait, this never spawns a goroutine that can outlive
+// the call: when the context is cancelled it returns immediately and nothing is
+// left blocked in the background.
 func (tx *transaction) WaitForOperations(ctx context.Context) error {
-	done := make(chan struct{})
-	var operationErr error
+	for {
+		tx.mu.RLock()
+		if tx.pending == 0 {
+			tx.mu.RUnlock()
+			return tx.takeErr()
+		}
+		ch := tx.changed
+		tx.mu.RUnlock()
 
-	// Start a goroutine to wait for the WaitGroup. This allows us to race
-	// the wait against the context's deadline or cancellation.
-	go func() {
-		defer close(done)
-		tx.wg.Wait()
-		close(tx.errChan)           // Close channel to signal no more errors will be sent.
-		operationErr = <-tx.errChan // Read the one potential error.
-	}()
+		select {
+		case <-ch:
+			// Operations finished while we waited; re-check pending.
+		case <-ctx.Done():
+			return base.ErrTransactionTimeout.WithCause(ctx.Err())
+		}
+	}
+}
 
+// takeErr returns the first reported operation error, if any.
+func (tx *transaction) takeErr() error {
 	select {
-	case <-done:
-		return operationErr
-	case <-ctx.Done():
-		return base.ErrTransactionTimeout.WithCause(ctx.Err())
+	case err := <-tx.errChan:
+		return err
+	default:
+		return nil
 	}
 }
 
@@ -126,11 +152,7 @@ func (tx *transaction) Commit(ctx context.Context) error {
 		return ti.Commit(ctx)
 	})
 	if err == nil {
-		for _, hook := range tx.onCommitHooks {
-			hook()
-		}
-		tx.onCommitHooks = nil // Clear hooks after execution
-		tx.onRollbackHooks = nil
+		tx.runHooks(true)
 	}
 	return err
 }
@@ -140,12 +162,30 @@ func (tx *transaction) Rollback(ctx context.Context) error {
 	err := tx.finalize(ctx, func(ctx context.Context, ti query.DatabaseInteractor) error {
 		return ti.Rollback(ctx)
 	})
-	for _, hook := range tx.onRollbackHooks {
+	tx.runHooks(false)
+	return err
+}
+
+// runHooks snapshots and clears the relevant hook list under the lock, then
+// executes every hook OUTSIDE the lock. Hooks are never invoked while tx.mu is
+// held, so a hook may safely query transaction state (IsActive, ...), register
+// more hooks, or read metadata without deadlocking on the re-entrant mutex.
+func (tx *transaction) runHooks(commit bool) {
+	var hooks []func()
+
+	tx.mu.Lock()
+	if commit {
+		hooks, tx.onCommitHooks = tx.onCommitHooks, nil
+		tx.onRollbackHooks = nil
+	} else {
+		hooks, tx.onRollbackHooks = tx.onRollbackHooks, nil
+		tx.onCommitHooks = nil
+	}
+	tx.mu.Unlock()
+
+	for _, hook := range hooks {
 		hook()
 	}
-	tx.onCommitHooks = nil // Clear hooks after execution
-	tx.onRollbackHooks = nil
-	return err
 }
 
 // GetInteractor returns the underlying transactional database interactor.
