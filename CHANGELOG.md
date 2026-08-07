@@ -1,3 +1,10 @@
+## [8.5.1](https://github.com/asaidimu/go-anansi/compare/v8.5.0...v8.5.1) (2026-08-07)
+
+
+### Bug Fixes
+
+* **cli:** refactor scaffold and event bus infrastructure ([96f22ee](https://github.com/asaidimu/go-anansi/commit/96f22eeb64833b565f5c07d97b80e3d1f6d835d9))
+
 # [8.5.0](https://github.com/asaidimu/go-anansi/compare/v8.4.7...v8.5.0) (2026-08-06)
 
 
