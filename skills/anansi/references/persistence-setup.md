@@ -122,6 +122,69 @@ id := p.Subscribe(ctx, base.SubscriptionOptions{
 subscription, call `p.Unsubscribe(ctx, id)`. See `references/observability.md`
 for full subscribe/unsubscribe detail.
 
+### Writing your own event bus
+
+The go-events adapter is the recommended, not the only, backend. `SetupConfig.EventBus`
+is the `core/events.EventBus[T]` interface — **just two methods** — so a custom bus
+(in-memory fan-out, Redis, NATS, an external service) drops in with no change to the
+persistence layer:
+
+```go
+type EventBus[T any] interface {
+    Emit(ctx context.Context, eventType string, event T)
+    Subscribe(req SubscriptionRequest[T]) func()   // returns an unsubscribe func
+}
+```
+
+`SubscriptionRequest[T]` carries `EventType`, a `Handler func(ctx, T) error`, optional
+`Filters`, and `Replay`/`Cursor` (`core/events/types.go`). For persistence the concrete
+type is `EventBus[base.PersistenceEvent]`; the layer above it talks only through
+`EventEmitter[T]`, so nothing else needs to know your bus's internals.
+
+Two caveats for a custom implementation:
+- **You own `Replay`/`Cursor` semantics.** The go-events adapter maps `Replay`→live-only and
+  translates `Cursor` to a UUID; a custom bus decides what those fields mean (or ignores them).
+- **You own payload handling.** `Emit` delivers the fully-typed `base.PersistenceEvent` (not
+  bytes). The go-events adapter JSON-encodes internally; your bus passes the struct by value
+  or encodes as it likes — anansi mandates no wire format.
+
+Wire it exactly like the adapter: `anansi.Setup(SetupConfig{ EventBus: myBus })`.
+
+---
+
+## Embedded / desktop / CLI / local-first usage
+
+anansi is an **embedded library, not a client-server framework** — there is no
+DB daemon and no network involved, so it is a natural fit for desktop apps,
+CLIs, local-first stores, and single-process tools.
+
+- **No service to run.** Storage is SQLite in-process via `database/sql`
+  (`sqlite/executor`); `SetupConfig.DBPath` is a local file path and the DSN
+  becomes `file:<path>?cache=shared&_fk=1`. `":memory:"` gives a volatile
+  in-process store. There is no external DB to deploy.
+- **Events are in-process.** The go-events v2 bus is embedded — either
+  in-memory (`NewInMemoryGoEventsBus`) or durable on Pebble
+  (`goevents.DefaultConfig(baseDir, key)`). No broker to run.
+- **Concurrency matches a desktop app.** `Pool`, `CompiledSchema`, and read-only
+  `Collection` are goroutine-safe; a `Document` is **not** — use one per
+  goroutine (worker jobs, UI threads). The `ModelCollection` cache makes reads
+  locally fast.
+- **Just bind it to a UI.** It's pure Go backend, so it slots behind Fyne / Gio /
+  Wails / shared-code GUIs or any desktop shell.
+- **Same workflow.** Write `.schema.json` → `anansi codegen` → use generated
+  `ModelCollection`s and migrations exactly as on a server.
+
+### Caveat: the default SQLite driver is CGo
+
+`mattn/go-sqlite3` (bundled) requires a C toolchain. Cross-compiling to another
+OS (e.g. Linux → Windows/macOS) needs that target's C cross-toolchain; easiest is
+building on each platform. For **pure-Go, CGo-free** binaries, swap the backend
+through the interactor seam: `SetupConfig.Interactor` accepts any
+`query.DatabaseInteractor`, and the store is already `database/sql`-based, so
+wire the `modernc.org/sqlite` driver (registers as `sqlite`, no CGo) — keeping
+schema / query / codegen intact while going fully static for one-binary
+distribution.
+
 ---
 
 ## What does the Playground actually do?
