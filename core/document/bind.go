@@ -52,5 +52,8 @@ func (d *Document) asDataDocument() (*data.Document, error) {
 	if d == nil {
 		return nil, ErrNilDocument
 	}
+	// OFFENDING LINE.
+	// TODO: Walk the container directly based on tags rather than
+	// calling ToMap
 	return data.NewDocument(d.ToMap(), d.Context())
 }

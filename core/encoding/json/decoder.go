@@ -39,6 +39,13 @@ func DecodeJSON(cs *definition.CompiledSchema, data []byte) (*container.DataCont
 // DecodeJSONInto decodes into a caller-provided document, sourcing
 // array-of-object child documents from pool when non-nil.
 func DecodeJSONInto(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, pool *container.Pool) error {
+
+	// NOTE: 1/2026-08-07-20:29
+	// There is an inherent problem not addressed here:
+	// Nested schemas for document arrays and records
+	// require their own pools otherwise we loose the benefit of
+	// targeted pools. This may grow costly very quickly.
+	//
 	p := newJSONParser(data)
 	path := make(definition.ResolvedPath, 0, 16)
 	if err := decodeObject(cs, doc, 0, path, p, pool); err != nil {

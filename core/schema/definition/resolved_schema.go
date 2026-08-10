@@ -73,7 +73,7 @@ type ResolvedNestedSchema struct {
 // Recursive is the exception: it is set instead of Object/Container/Set/Union/Composite
 // when the field closes a recursive reference cycle.
 type ResolvedField struct {
-	ID          FieldId    // stable UUIDv7 — never changes across renames
+	ID          FieldId // stable UUIDv7 — never changes across renames
 	Name        FieldName
 	Description string
 	Path        string   // absolute dot-separated path from schema root
@@ -114,12 +114,15 @@ type ResolvedObjectField struct {
 }
 
 // ResolvedContainer covers FieldTypeArray and FieldTypeRecord.
-// ItemSchema and ItemType are mutually exclusive.
+// ItemSchema and ItemType are mutually exclusive. When ItemType is set for a
+// named enum item schema, ItemEnum carries the pre-built value set so that
+// per-item membership validation survives the primitive-array compilation.
 // Record distinguishes a record (sub-object, stored as map[string]any via the
 // TypeUnknown channel) from an array (stored in the typed array slots).
 type ResolvedContainer struct {
-	ItemSchema *ResolvedNestedSchema // set for named item schemas
-	ItemType   FieldType             // set for inline descriptors
+	ItemSchema *ResolvedNestedSchema // set for named object item schemas
+	ItemType   FieldType             // set for inline descriptors and value-alias items
+	ItemEnum   *ResolvedEnum         // set when ItemType models a named enum item schema
 	Record     bool                  // true for FieldTypeRecord, false for FieldTypeArray
 }
 
@@ -456,7 +459,7 @@ func (c *SchemaCompiler) compileEnumField(f Field, path string) (*ResolvedEnum, 
 			}
 			values = ref.Values
 			typ = ref.Type
-		} else if(len(ref.ID) != 0) {
+		} else if len(ref.ID) != 0 {
 			ns, exists := c.source.Schemas[ref.ID]
 			if !exists {
 				return nil, ErrSchemaNotFound.
@@ -554,6 +557,19 @@ func (c *SchemaCompiler) compileContainerField(f Field, path string) (*ResolvedC
 		// a RecursiveRef on the container field itself. The validator will
 		// build the recursive item subgraph per-traversal.
 		return nil, rec, nil
+	}
+
+	// Named item schemas that declare a value shape rather than an object
+	// document — scalar aliases and enum value sets — compile to a
+	// primitive-array container (e.g. TypeArrayString). Treating them as
+	// ItemSchema would make the field an array-of-object, which breaks
+	// serialize/decode round-trips for the value shape.
+	if itemType := containerItemType(rns); itemType != 0 {
+		rc := &ResolvedContainer{ItemType: itemType, Record: record}
+		if rns.Enum != nil {
+			rc.ItemEnum = rns.Enum
+		}
+		return rc, nil, nil
 	}
 
 	return &ResolvedContainer{ItemSchema: rns, Record: record}, nil, nil
@@ -738,9 +754,9 @@ func (c *SchemaCompiler) compileConstraintMap(
 //
 // Precedence (highest wins on name collision):
 //
-//	3. topLevel  — top-level schema constraints referencing this path
-//	2. schemaRef — constraints from the SchemaReference call site
-//	1. nested    — constraints from the NestedSchema definition
+//  3. topLevel  — top-level schema constraints referencing this path
+//  2. schemaRef — constraints from the SchemaReference call site
+//  1. nested    — constraints from the NestedSchema definition
 func (c *SchemaCompiler) CompileConstraints(
 	nested SchemaConstraint,
 	schemaRef SchemaConstraint,
@@ -761,9 +777,9 @@ func (c *SchemaCompiler) TopLevelConstraintsForPath(fieldPath string) SchemaCons
 // returns the resolved effective constraint set for a given scope path.
 //
 // Precedence (highest wins on name collision):
-//   3. topLevel  — top-level schema constraints referencing this path
-//   2. schemaRef — constraints from the SchemaReference call site
-//   1. nested    — constraints from the NestedSchema definition
+//  3. topLevel  — top-level schema constraints referencing this path
+//  2. schemaRef — constraints from the SchemaReference call site
+//  1. nested    — constraints from the NestedSchema definition
 func (c *SchemaCompiler) compileConstraintMerged(
 	nested SchemaConstraint,
 	schemaRef SchemaConstraint,
@@ -990,6 +1006,36 @@ func (c *SchemaCompiler) lookupSchema(
 // =============================================================================
 // HELPERS
 // =============================================================================
+
+// containerItemType returns the primitive FieldType used to store the items of
+// an array/record field whose named item schema declares a value shape rather
+// than an object document.
+//
+// The structural rule is field-count, not a per-type allowlist: a schema with
+// no fields is a value alias (a named scalar/enum type such as
+// `"type": "string"`), and its item type is derived from its effective type —
+// enums collapse onto their underlying representation (string, or integer for
+// numeric enums), and the scalar primitives map straight onto their effective
+// type. Schemas with fields (or other boxed shapes such as record/union/
+// composite) return 0, and the caller must then compile the container as an
+// array of boxed objects (ItemSchema).
+func containerItemType(rns *ResolvedNestedSchema) FieldType {
+	if len(rns.Fields) > 0 {
+		return 0
+	}
+	if rns.Enum != nil {
+		if rns.Enum.ExpectNumeric {
+			return FieldTypeInteger
+		}
+		return FieldTypeString
+	}
+	switch rns.EffectiveType {
+	case FieldTypeString, FieldTypeNumber, FieldTypeInteger, FieldTypeDecimal,
+		FieldTypeBoolean, FieldTypeBytes, FieldTypeGeometry:
+		return rns.EffectiveType
+	}
+	return 0
+}
 
 // resolveEffectiveType determines the canonical FieldType of a NestedSchema.
 // Priority: explicit Type > inferred Object (from Fields) > FieldProperties.Type.

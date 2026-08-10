@@ -1,4 +1,4 @@
-package common
+package bits
 
 type ResultSet struct {
 	// data holds 2 bits per node:
@@ -68,4 +68,3 @@ func (s *ResultSet) Clear() {
 		s.data[i] = 0
 	}
 }
-

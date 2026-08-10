@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/asaidimu/go-anansi/v8/core/bits"
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/types/decimal"
 	"github.com/asaidimu/go-anansi/v8/core/utils"
@@ -79,7 +80,7 @@ type ValidationContext struct {
 	FunctionMap  PredicateMap
 	MaxDepth     int // Maximum allowed nesting depth
 	Mode         ValidationMode
-	Visited      common.ResultSet
+	Visited      bits.ResultSet
 	Issues       []common.Issue
 }
 
@@ -720,7 +721,7 @@ func (graph *ValidationGraph) finalize() error {
 
 	graph.ctxPool.New = func() any {
 		return &ValidationContext{
-			Visited: *common.NewResultState(graph.nextNodeID + 1),
+			Visited: *bits.NewResultState(graph.nextNodeID + 1),
 			Issues:  make([]common.Issue, 0, 3),
 		}
 	}
@@ -2066,7 +2067,22 @@ func (graph *ValidationGraph) buildResolvedContainerNode(
 		subGraph := newValidationGraph()
 		subAdded := make(map[string]bool)
 
-		if ct.ItemType == FieldTypeObject {
+		// A named enum item schema compiles to a value array (ItemType) with
+		// ItemEnum retained; build an enum-checked item field so per-item
+		// membership validation still runs.
+		if ct.ItemEnum != nil {
+			itemRF := &ResolvedField{
+				Name:  "item",
+				Path:  "item",
+				Parts: []string{"item"},
+				Type:  FieldTypeEnum,
+				Enum:  ct.ItemEnum,
+			}
+			subRs := &ResolvedSchema{Fields: []ResolvedField{*itemRF}, Schemas: rs.Schemas}
+			if _, err := subGraph.buildFromResolvedSchema(subRs, "", nil, subAdded, nil, nil, compiler, buildCtx, false, false); err != nil {
+				return nil, err
+			}
+		} else if ct.ItemType == FieldTypeObject {
 			syntheticSchema := &Schema{
 				BaseSchema: BaseSchema{
 					Name:   "__inline_record",
