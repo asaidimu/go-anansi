@@ -143,7 +143,7 @@ type Product struct {
 }
 
 // NewProduct creates and initializes a new Product
-func NewProduct(model Product) *Product { return data.New(&model) }
+func NewProduct(model Product) *Product { return document.New(&model) }
 
 // Products is a type-safe collection for Product
 type Products struct {

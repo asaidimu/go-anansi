@@ -724,6 +724,12 @@ func (d *Document) Release() {
 	if d == nil || d.pool == nil {
 		return
 	}
+
+	// Date: 2026-08-07
+	// Subject: Releasing nested document. This ties to decoders
+	// as well which materialize data into containers.
+	// Should we choose to give subdocuments inside arrays or records
+	// There own pools. We might want to release them here
 	d.pool.Put(d.c)
 	d.c = nil
 	d.pool = nil
