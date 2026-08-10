@@ -16,6 +16,7 @@ import (
 	persistenceUtils "github.com/asaidimu/go-anansi/v8/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
+	"github.com/asaidimu/go-anansi/v8/core/sanitize"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v8/core/utils"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v8/sqlite/executor"
@@ -53,13 +54,15 @@ func setupEventTest(t *testing.T) (base.Persistence, anansievents.EventBus[base.
 	cfg := anansi.SetupConfig{
 		Interactor: interactor,
 		Logger:     logger,
-		DocumentFactoryConfig: data.DocumentFactoryConfig{
-			GlobalSanitizer: &data.FieldMaskConfig{
-				DefaultPolicy: data.MaskPreserve,
-			},
-		},
 		Decorators: &persistenceUtils.Decorators{},
 		EventBus:   eventBus,
+	}
+	if err := sanitize.Configure(sanitize.Config{
+		Global: &sanitize.FieldMaskConfig{
+			DefaultPolicy: sanitize.MaskPreserve,
+		},
+	}, logger); err != nil {
+		require.NoError(t, err)
 	}
 	p, err := anansi.Setup(cfg)
 	require.NoError(t, err)

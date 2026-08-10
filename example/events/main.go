@@ -17,6 +17,7 @@ import (
 	rootutils "github.com/asaidimu/go-anansi/v8/utils"
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
+	"github.com/asaidimu/go-anansi/v8/core/sanitize"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	sqliteExecutor "github.com/asaidimu/go-anansi/v8/sqlite/executor"
 	sqliteQuery "github.com/asaidimu/go-anansi/v8/sqlite/query"
@@ -67,14 +68,18 @@ func main() {
 	}
 
 	// 4. Configuration for the Document layer
-	factoryConfig := data.DocumentFactoryConfig{
-		GlobalSanitizer: &data.FieldMaskConfig{
-			Fields: map[string]data.MaskedFieldPolicy{
-				"value":    data.MaskObscure,
-				"id":       data.MaskObscure,
-				"checksum": data.MaskRedact,
+	factoryConfig := data.DocumentFactoryConfig{}
+
+	if err := sanitize.Configure(sanitize.Config{
+		Global: &sanitize.FieldMaskConfig{
+			Fields: map[string]sanitize.MaskedFieldPolicy{
+				"value":    sanitize.MaskObscure,
+				"id":       sanitize.MaskObscure,
+				"checksum": sanitize.MaskRedact,
 			},
 		},
+	}, logger); err != nil {
+		log.Fatalf("Failed to configure sanitization: %v", err)
 	}
 
 	// 5. Setup Decorators (none for basic example)

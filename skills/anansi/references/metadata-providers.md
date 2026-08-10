@@ -109,8 +109,9 @@ err := data.ConfigureDocumentFactory(cfg, logger)
 generated schemas (`<Ident>Schema()`, `MetadataDependencies()`) and the
 provider funcs in `providers.go`. Then call `migrations.ValidateMetadataSchema()`
 on startup/test to fail fast if a declared provider wasn't wired in.
-(Sanitizers are orthogonal — add `GlobalSanitizer: data.NewSecureDefaultConfig()`
-for production.)
+(Sanitizers are orthogonal — and no longer a factory concern. Prefer
+`sanitize.Configure(sanitize.Config{Global: sanitize.NewSecureDefaultConfig()}, logger)`
+for production; see `references/data-integrity.md` §3.)
 
 ### Contracts
 

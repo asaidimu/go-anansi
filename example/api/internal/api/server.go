@@ -12,6 +12,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/sanitize"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v8/core/utils"
 	"go.uber.org/zap"
@@ -83,7 +84,7 @@ func (s *APIServer) SetupRoutes() {
 
 // Global policy handlers
 func (s *APIServer) getGlobalSanitizationPolicy(w http.ResponseWriter, r *http.Request) {
-	registry := data.GetSanitizationRegistry()
+	registry := sanitize.Registry()
 
 	if !registry.HasGlobal() {
 		s.Response.WriteError(w, http.StatusNotFound,
@@ -111,14 +112,14 @@ func (s *APIServer) getGlobalSanitizationPolicy(w http.ResponseWriter, r *http.R
 }
 
 func (s *APIServer) setGlobalSanitizationPolicy(w http.ResponseWriter, r *http.Request) {
-	var config data.FieldMaskConfig
+	var config sanitize.FieldMaskConfig
 	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
 		s.Response.WriteError(w, http.StatusBadRequest,
 			common.NewSystemError("INVALID_JSON", "Invalid JSON format").WithCause(err), r)
 		return
 	}
 
-	registry := data.GetSanitizationRegistry()
+	registry := sanitize.Registry()
 	if err := registry.SetGlobal(&config); err != nil {
 		s.Response.WriteError(w, http.StatusBadRequest,
 			common.SystemErrorFrom(err).WithCode("VALIDATION_FAILED"), r)
@@ -131,13 +132,13 @@ func (s *APIServer) setGlobalSanitizationPolicy(w http.ResponseWriter, r *http.R
 }
 
 func (s *APIServer) deleteGlobalSanitizationPolicy(w http.ResponseWriter, r *http.Request) {
-	registry := data.GetSanitizationRegistry()
+	registry := sanitize.Registry()
 
 	// SetGlobal with nil would be ideal, but current API doesn't allow it
 	// So we'll need to add a ClearGlobal method or use Clear selectively
 	// For now, return the configs minus global and re-import
 	configs, _ := registry.Export()
-	scopedOnly := make([]*data.FieldMaskConfig, 0)
+	scopedOnly := make([]*sanitize.FieldMaskConfig, 0)
 	for _, cfg := range configs {
 		if cfg.Scope != "" {
 			scopedOnly = append(scopedOnly, cfg)
@@ -155,7 +156,7 @@ func (s *APIServer) deleteGlobalSanitizationPolicy(w http.ResponseWriter, r *htt
 
 // Scoped policy handlers
 func (s *APIServer) listSanitizationScopes(w http.ResponseWriter, r *http.Request) {
-	registry := data.GetSanitizationRegistry()
+	registry := sanitize.Registry()
 	scopes := registry.List()
 
 	s.Response.WriteJSON(w, http.StatusOK, map[string]any{
@@ -173,7 +174,7 @@ func (s *APIServer) getSanitizationPolicy(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	registry := data.GetSanitizationRegistry()
+	registry := sanitize.Registry()
 	if !registry.Has(scopeID) {
 		s.Response.WriteError(w, http.StatusNotFound,
 			common.NewSystemError("NOT_FOUND", "Sanitization policy not found").
@@ -209,14 +210,14 @@ func (s *APIServer) setSanitizationPolicy(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	var config data.FieldMaskConfig
+	var config sanitize.FieldMaskConfig
 	if err := json.NewDecoder(r.Body).Decode(&config); err != nil {
 		s.Response.WriteError(w, http.StatusBadRequest,
 			common.NewSystemError("INVALID_JSON", "Invalid JSON format").WithCause(err), r)
 		return
 	}
 
-	registry := data.GetSanitizationRegistry()
+	registry := sanitize.Registry()
 	if err := registry.Register(scopeID, &config); err != nil {
 		s.Response.WriteError(w, http.StatusBadRequest,
 			common.SystemErrorFrom(err).WithCode("VALIDATION_FAILED"), r)
@@ -242,7 +243,7 @@ func (s *APIServer) deleteSanitizationPolicy(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	registry := data.GetSanitizationRegistry()
+	registry := sanitize.Registry()
 	if err := registry.Unregister(scopeID); err != nil {
 		s.Response.WriteError(w, http.StatusInternalServerError,
 			common.SystemErrorFrom(err).WithCode("DELETE_FAILED"), r)
@@ -254,7 +255,7 @@ func (s *APIServer) deleteSanitizationPolicy(w http.ResponseWriter, r *http.Requ
 
 // Bulk operations
 func (s *APIServer) exportSanitizationPolicies(w http.ResponseWriter, r *http.Request) {
-	registry := data.GetSanitizationRegistry()
+	registry := sanitize.Registry()
 	configs, err := registry.Export()
 	if err != nil {
 		s.Response.WriteError(w, http.StatusInternalServerError,
@@ -270,7 +271,7 @@ func (s *APIServer) exportSanitizationPolicies(w http.ResponseWriter, r *http.Re
 
 func (s *APIServer) importSanitizationPolicies(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Policies []*data.FieldMaskConfig `json:"policies"`
+		Policies []*sanitize.FieldMaskConfig `json:"policies"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -279,7 +280,7 @@ func (s *APIServer) importSanitizationPolicies(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	registry := data.GetSanitizationRegistry()
+	registry := sanitize.Registry()
 	if err := registry.Import(req.Policies); err != nil {
 		s.Response.WriteError(w, http.StatusBadRequest,
 			common.SystemErrorFrom(err).WithCode("IMPORT_FAILED"), r)

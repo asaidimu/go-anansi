@@ -76,7 +76,9 @@ using them:
 - `data.DocumentIDField` (`"_id_"`), `data.MetadataField` (`"_metadata_"`), and
   the `Metadata*` path/field constants
 - `data.DocumentSet`, `data.DocumentDiff`, `data.MapDocumentSet`
-- Sanitization / integrity wiring (below), and `data.NewDocumentFactory*`
+- Integrity wiring (below) and `data.NewDocumentFactory*`. **Sanitization has
+  moved out of `data` into its own `core/sanitize` package** (see §3) — it is no
+  longer configured through `data.DocumentFactoryConfig`.
 
 Rule of thumb: if it returns/accepts a **`*Document`** or **embeds a
 `DocumentModel`**, use the `document` package. If it's a **type/interface/
@@ -113,52 +115,76 @@ tamper-evident:
 
 ---
 
-## 3. Sanitization: safe logging and events
+## 3. Sanitization: safe logging and responses
 
-Sensitive fields (passwords, tokens, PII) must not escape into logs or event
-payloads. Anansi lets you declare **field-masking policies** applied when a
-document is serialized for observability.
+Sensitive fields (passwords, tokens, PII) must not escape into logs, metrics,
+or client responses. Anansi lets you declare **field-masking policies** applied
+when a document is serialized for observability.
+
+> **Events are full-fidelity.** The persistence event bus emits the real
+> input/output so consumers can do real work with them — masking is never
+> applied at emit time. Sanitization happens at the **rendering edge**: event
+> consumers mask copies when they write logs, dashboards, or outbound payloads
+> (see "log the masked copy" below).
+
+Sanitization lives in its own **`core/sanitize`** package — it is **not** a
+`data` factory concern. `data.DocumentFactoryConfig` only holds metadata
+providers now; sanitizers are wired via `sanitize.Configure`.
 
 ### Configuration (policies)
 
-`data.FieldMaskConfig` (core/data/sanitize.go:106) declares per-field rules:
+`sanitize.FieldMaskConfig` (core/sanitize/policy.go) declares per-field rules:
 
 - `DefaultPolicy` — used when no explicit rule matches a field.
 - `Fields map[string]MaskedFieldPolicy` — mask *by exact field name*.
 - `Patterns []PatternRule` — mask by regex on field name/path.
 - Policies: **`MaskRedact`** (replace with `***`), **`MaskHash`** (replace with
   a short hash keyed by `HashSecret`), **`MaskObscure`** (show first/last few
-  chars, `ObscureConfig`).
-- The pipeline also exposes `NewSecureDefaultConfig()` which pre-masks the
-  known-sensitive fields; this is what `Playground{EnableSanitization:true}`
-  wires in (customize via `CustomSanitizerConfig`).
+  chars, `ObscureConfig`), **`MaskPreserve`** (keep as-is).
+- `sanitize.NewSecureDefaultConfig()` pre-masks the known-sensitive fields;
+  this is what `Playground{EnableSanitization:true}` wires in (customize via
+  `CustomSanitizerConfig`).
+
+### Wiring: a process-wide registry
+
+`sanitize.Configure` applies global + scoped policies to the process-wide
+default registry (`sanitize.Registry()`, an `*sanitize.SanitizationRegistry`),
+replacing anything previously configured:
 
 ```go
-// Playground: turn it on for anything touching real-ish data.
-p, cleanup, err := anansi.Playground(anansi.PlaygroundConfig{
-    EnableSanitization: true,
-    CustomSanitizerConfig: &data.FieldMaskConfig{
-        Scope: "app",
-        Fields: map[string]data.MaskedFieldPolicy{
-            "password": data.MaskRedact,
-            "cardNumber": data.MaskObscure,
+if err := sanitize.Configure(sanitize.Config{
+    Global: sanitize.NewSecureDefaultConfig(),
+    Scoped: map[string]*sanitize.FieldMaskConfig{
+        "admin": {
+            Fields: map[string]sanitize.MaskedFieldPolicy{
+                "password":   sanitize.MaskRedact,
+                "cardNumber": sanitize.MaskObscure,
+            },
         },
     },
-})
+}, logger); err != nil {
+    log.Fatalf("configure sanitization: %v", err)
+}
 ```
+
+For a private registry use `sanitize.NewSanitizationRegistry(logger)`.
 
 ### Scoping and runtime use
 
-- `data.DocumentFactoryConfig.GlobalSanitizer` (+ `ScopedSanitizers
-  map[scopeID]*FieldMaskConfig`) configure the factory
-  (`data.ConfigureDocumentFactory(cfg, logger)`), so `Setup` and `Playground`
-  pick them up.
-- `data.RegisterScopedSanitizer` / `UnregisterScopedSanitizer` /
-  `ListScopedSanitizers` allow a sanitization registry shared across the process
-  (the example service uses a `SanitizationPolicyStore` wired to
-  `data.GetSanitizationRegistry()`).
+- `Setup`/`Playground` no longer accept sanitizer configs (the `GlobalSanitizer`
+  field on `data.DocumentFactoryConfig` is gone). Call `sanitize.Configure`
+  yourself at startup, before creating documents; `Playground{
+  EnableSanitization:true, CustomSanitizerConfig:*sanitize.FieldMaskConfig}`
+  remains the convenient dev shortcut.
+- `sanitize.Registry()` is the shared process registry and also `Register`s/
+  `Unregister`s scopes dynamically; it exposes `List`, `Has`, `HasGlobal`,
+  `Export`/`Import`, and `SetPersistence` + `LoadFromPersistence` for a policy
+  store (the example service wires a `SanitizationPolicyStore` into it).
 - At the call site, `document.Sanitize(ctx)` (or `.Sanitize()` on `data.Document`)
-  returns a **masked copy** safe to ship to logs, events, or a client.
+  resolves scope from the context (`common.ContextWithSanitizationScope`) and
+  returns a **masked copy** safe to ship to logs, metrics, or a client.
+  In event handlers that come off the bus (full-fidelity), sanitize the copy
+  you render — the `event.Input.Sanitize(...)` pattern below.
 
 ```go
 // Never log the raw document — log its sanitized form
@@ -178,5 +204,5 @@ document/event, never the raw `ToMap()`; that is the whole point of the
 - New models: **`document.DocumentModel`**; you rarely need `data.*` documents.
 - Need tamper/authenticity evidence → configure the factory signing key, read
   `data.Documenter.Checksum()` / `.Signature()`.
-- Any field that touches PII/secrets → declare a `FieldMaskConfig`, enable
-  sanitization, and log `Sanitize(ctx)` copies.
+- Any field that touches PII/secrets → declare a `sanitize.FieldMaskConfig`,
+  `sanitize.Configure(...)` it, and log `Sanitize(ctx)` copies.

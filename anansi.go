@@ -28,6 +28,7 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/query"
 	"github.com/asaidimu/go-anansi/v8/core/query/native"
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/sanitize"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	putils "github.com/asaidimu/go-anansi/v8/core/persistence/utils"
 	"github.com/asaidimu/go-anansi/v8/utils"
@@ -172,7 +173,7 @@ type PlaygroundConfig struct {
 
 	// CustomSanitizerConfig allows custom sanitization configuration.
 	// If nil and EnableSanitization is true, uses NewSecureDefaultConfig().
-	CustomSanitizerConfig *data.FieldMaskConfig
+	CustomSanitizerConfig *sanitize.FieldMaskConfig
 }
 
 // Playground returns a fully-functional Persistence together with a
@@ -220,13 +221,15 @@ func Playground(cfg PlaygroundConfig) (base.Persistence, func(), error) {
 	// -----------------------------------------------------------------
 	//  Sanitization
 	// -----------------------------------------------------------------
-	var sanitizerConfig *data.FieldMaskConfig
 	if cfg.EnableSanitization {
+		var sanitizerConfig *sanitize.FieldMaskConfig
 		if cfg.CustomSanitizerConfig != nil {
 			sanitizerConfig = cfg.CustomSanitizerConfig
 		} else {
-			defaultConfig := data.NewSecureDefaultConfig()
-			sanitizerConfig = defaultConfig
+			sanitizerConfig = sanitize.NewSecureDefaultConfig()
+		}
+		if err := sanitize.Configure(sanitize.Config{Global: sanitizerConfig}, logger); err != nil {
+			return nil, func() {}, err
 		}
 	}
 
@@ -267,9 +270,7 @@ func Playground(cfg PlaygroundConfig) (base.Persistence, func(), error) {
 		Interactor:    interactor,
 		Logger:        logger,
 		EventBus:      bus,
-		DocumentFactoryConfig: data.DocumentFactoryConfig{
-			GlobalSanitizer: sanitizerConfig,
-		},
+		DocumentFactoryConfig: data.DocumentFactoryConfig{},
 		Decorators:    &putils.Decorators{},
 		Schemas:       cfg.Schemas,
 	})

@@ -3,17 +3,21 @@ package data
 import (
 	"fmt"
 
+	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
+// System field names. The canonical values live in core/common so that
+// lower-level packages (e.g. core/sanitize) can reference them without
+// importing this package; the aliases below preserve the data.* public API.
 const (
-	DocumentIDField   = "_id_"
-	MetadataField     = "_metadata_"
-	MetadataChecksum  = "checksum"
-	MetadataSignature = "signature"
-	MetadataVersion   = "version"
-	MetadataCreated   = "created"
-	MetadataUpdated   = "updated"
+	DocumentIDField   = common.DocumentIDField
+	MetadataField     = common.MetadataField
+	MetadataChecksum  = common.MetadataChecksum
+	MetadataSignature = common.MetadataSignature
+	MetadataVersion   = common.MetadataVersion
+	MetadataCreated   = common.MetadataCreated
+	MetadataUpdated   = common.MetadataUpdated
 )
 
 // Static UUIDv7 IDs for system entities injected by EnrichSchema.
