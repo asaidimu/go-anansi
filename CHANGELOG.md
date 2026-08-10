@@ -1,3 +1,10 @@
+## [8.5.4](https://github.com/asaidimu/go-anansi/compare/v8.5.3...v8.5.4) (2026-08-10)
+
+
+### Bug Fixes
+
+* **sanitize:** move sanitization to independent package and modernize configuration ([6122730](https://github.com/asaidimu/go-anansi/commit/61227306833333b8a6ed67d8db076065f9aed066))
+
 ## [8.5.3](https://github.com/asaidimu/go-anansi/compare/v8.5.2...v8.5.3) (2026-08-10)
 
 
