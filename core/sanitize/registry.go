@@ -1,8 +1,9 @@
-package data
+package sanitize
 
 import (
 	"context"
 	"errors"
+	"maps"
 	"sort"
 	"sync"
 
@@ -81,7 +82,7 @@ func (r *SanitizationRegistry) SetGlobal(config *FieldMaskConfig) error {
 			WithMessage("config cannot be nil")
 	}
 
-	config.Scope =  "__global__"
+	config.Scope = "__global__"
 	// Validate config
 	if err := config.Validate(); err != nil {
 		return common.SystemErrorFrom(err).
@@ -142,13 +143,13 @@ func (r *SanitizationRegistry) Register(scope string, config *FieldMaskConfig) e
 	r.scoped[scope] = config
 	r.mu.Unlock()
 	if persistence != nil {
-		if err := r.persistence.Save(context.Background(), config); err != nil {
+		if err := persistence.Save(context.Background(), config); err != nil {
 			r.logger.Info("Failed to save scope\n", zap.Any("Scope", config))
 			r.logger.Error("Failed to persist sanitization policy",
 				zap.String("scope", scope), zap.Error(err))
-				if c, ok := errors.AsType[*common.SystemError](err); ok {
-					r.logger.Info("Failed to save scope\n", zap.String("Issues", c.Issues.String()), zap.Any("Data", config))
-				}
+			if c, ok := errors.AsType[*common.SystemError](err); ok {
+				r.logger.Info("Failed to save scope\n", zap.String("Issues", c.Issues.String()), zap.Any("Data", config))
+			}
 		}
 	}
 
@@ -244,22 +245,6 @@ func (r *SanitizationRegistry) getGlobalSanitizerLocked() *DocumentSanitizer {
 	return NewDocumentSanitizer(*r.global, r.logger, "__global__")
 }
 
-// GetScopesFromContext extracts all scope identifiers from a context.
-// Returns empty slice if no scopes are present in the context.
-func GetScopesFromContext(ctx context.Context) []string {
-	if ctx == nil {
-		return nil
-	}
-
-	if val := ctx.Value(common.SanitizationScopeContextKey); val != nil {
-		if scopes, ok := val.([]string); ok {
-			return scopes
-		}
-	}
-
-	return nil
-}
-
 // GetForContext retrieves a sanitizer for the given context(s).
 //
 // Behavior:
@@ -289,7 +274,7 @@ func (r *SanitizationRegistry) GetForContext(ctx context.Context, others ...cont
 			continue
 		}
 
-		ctxScopes := GetScopesFromContext(c)
+		ctxScopes := common.SanitizationScopesFromContext(c)
 		for _, scopeID := range ctxScopes {
 			if !seenScopes[scopeID] {
 				seenScopes[scopeID] = true
@@ -346,6 +331,79 @@ func (r *SanitizationRegistry) GetForContext(ctx context.Context, others ...cont
 	r.logger.Debug("No registered scopes or global sanitizer found",
 		zap.Strings("requested_scopes", scopeIDs))
 	return nil, nil
+}
+
+// ============================================================================
+// Configuration Merging
+// ============================================================================
+
+// mergeConfigs merges scoped config with global config.
+// Scoped config takes precedence for conflicts (more restrictive wins).
+func mergeConfigs(globalConfig *FieldMaskConfig, scopedConfig FieldMaskConfig) FieldMaskConfig {
+	merged := FieldMaskConfig{
+		Fields:   make(map[string]MaskedFieldPolicy),
+		Patterns: []PatternRule{},
+	}
+
+	// Start with global field mappings (lower priority)
+	if globalConfig != nil {
+		maps.Copy(merged.Fields, globalConfig.Fields)
+	}
+
+	// Override with scoped field mappings (higher priority)
+	maps.Copy(merged.Fields, scopedConfig.Fields)
+
+	// Patterns: Build map to handle duplicates, scoped overrides global
+	patternMap := make(map[string]PatternRule)
+
+	// Add global patterns first (lower priority)
+	if globalConfig != nil {
+		for _, pattern := range globalConfig.Patterns {
+			patternMap[pattern.regex.String()] = pattern
+		}
+	}
+
+	// Scoped patterns override global if same regex
+	for _, pattern := range scopedConfig.Patterns {
+		patternMap[pattern.regex.String()] = pattern
+	}
+
+	// Convert back to slice, preserving insertion order for deterministic behavior
+	// Scoped patterns checked first, then global
+	for _, pattern := range scopedConfig.Patterns {
+		merged.Patterns = append(merged.Patterns, patternMap[pattern.regex.String()])
+		delete(patternMap, pattern.regex.String()) // Remove to avoid duplicates
+	}
+	if globalConfig != nil {
+		for _, pattern := range globalConfig.Patterns {
+			if p, exists := patternMap[pattern.regex.String()]; exists {
+				merged.Patterns = append(merged.Patterns, p)
+			}
+		}
+	}
+
+	// Scoped default policy overrides global, or use global if not set
+	if scopedConfig.DefaultPolicy != "" {
+		merged.DefaultPolicy = scopedConfig.DefaultPolicy
+	} else if globalConfig != nil {
+		merged.DefaultPolicy = globalConfig.DefaultPolicy
+	}
+
+	// Use scoped obscure config if provided, otherwise use global
+	if scopedConfig.ObscureConfig.Replacement != "" {
+		merged.ObscureConfig = scopedConfig.ObscureConfig
+	} else if globalConfig != nil {
+		merged.ObscureConfig = globalConfig.ObscureConfig
+	}
+
+	// Merge HashSecret: Scoped takes precedence
+	if scopedConfig.HashSecret != "" {
+		merged.HashSecret = scopedConfig.HashSecret
+	} else if globalConfig != nil {
+		merged.HashSecret = globalConfig.HashSecret
+	}
+
+	return merged
 }
 
 // composeConfigsLocked creates a single config by composing multiple configs

@@ -26,7 +26,7 @@ p, cleanup, err := anansi.Playground(anansi.PlaygroundConfig{
     EnableLogging: true,             // zap.NewDevelopment()
     EnableEvents:  true,             // spins up an in-memory go-events bus
     Schemas:    schema.GetSchemas(), // []*definition.Schema
-    EnableSanitization: true,        // mask sensitive fields in logs/events
+    EnableSanitization: true,        // mask sensitive fields in logs/responses
 })
 if err != nil { log.Fatal(err) }
 defer cleanup()
@@ -194,8 +194,8 @@ distribution.
 1. defaults `DBPath` to `":memory:"`;
 2. builds a logger (`zap.NewDevelopment` if `EnableLogging`, else Nop);
 3. optionally builds an in-memory go-events bus (`EnableEvents`);
-4. optionally prepares a secure default `FieldMaskConfig` for sanitization
-   (`EnableSanitization`);
+4. optionally applies a secure-default sanitization policy (`sanitize.Configure`,
+   `EnableSanitization`);
 5. opens a SQLite DB, builds `SQLiteExecutor` + `SQLiteFactory` +
    `native.NewNativeInteractor`, and calls `Setup` with that interactor.
 

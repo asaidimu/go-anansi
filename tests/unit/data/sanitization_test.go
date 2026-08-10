@@ -10,6 +10,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/common" // Added this line
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/sanitize"
 	"go.uber.org/zap"
 )
 
@@ -20,23 +21,28 @@ import (
 func setupTestFactory(t *testing.T) {
 	t.Helper()
 	data.ResetFactoryForTesting()
+	sanitize.ResetForTesting()
 
 	logger := zap.NewNop()
-	config := data.DocumentFactoryConfig{
-		GlobalSanitizer: data.NewSecureDefaultConfig(),
-		ScopedSanitizers: map[string]*data.FieldMaskConfig{
-			"strict": {
-				Fields: map[string]data.MaskedFieldPolicy{
-					"password": data.MaskRedact,
-					"api_key":  data.MaskRedact,
-				},
-				DefaultPolicy: data.MaskHash,
-			},
-		},
-	}
+	config := data.DocumentFactoryConfig{}
 
 	if err := data.ConfigureDocumentFactory(config, logger); err != nil {
 		t.Fatalf("Failed to configure factory: %v", err)
+	}
+
+	if err := sanitize.Configure(sanitize.Config{
+		Global: sanitize.NewSecureDefaultConfig(),
+		Scoped: map[string]*sanitize.FieldMaskConfig{
+			"strict": {
+				Fields: map[string]sanitize.MaskedFieldPolicy{
+					"password": sanitize.MaskRedact,
+					"api_key":  sanitize.MaskRedact,
+				},
+				DefaultPolicy: sanitize.MaskHash,
+			},
+		},
+	}, logger); err != nil {
+		t.Fatalf("Failed to configure sanitization: %v", err)
 	}
 }
 
@@ -174,13 +180,13 @@ func TestMultiScopeComposition(t *testing.T) {
 	setupTestFactory(t)
 
 	// data.Register additional scope for testing
-	lenientConfig := &data.FieldMaskConfig{
-		Fields: map[string]data.MaskedFieldPolicy{
-			"password": data.MaskObscure, // Less restrictive
+	lenientConfig := &sanitize.FieldMaskConfig{
+		Fields: map[string]sanitize.MaskedFieldPolicy{
+			"password": sanitize.MaskObscure, // Less restrictive
 		},
-		DefaultPolicy: data.MaskPreserve,
+		DefaultPolicy: sanitize.MaskPreserve,
 	}
-	if err := data.RegisterScopedSanitizer("lenient", lenientConfig); err != nil {
+	if err := sanitize.Registry().Register("lenient", lenientConfig); err != nil {
 		t.Fatalf("Failed to register lenient scope: %v", err)
 	}
 
@@ -374,20 +380,20 @@ func TestDynamicScopeRegistration(t *testing.T) {
 	setupTestFactory(t)
 
 	t.Run("register new scope", func(t *testing.T) {
-		config := &data.FieldMaskConfig{
-			Fields: map[string]data.MaskedFieldPolicy{
-				"custom_field": data.MaskRedact,
+		config := &sanitize.FieldMaskConfig{
+			Fields: map[string]sanitize.MaskedFieldPolicy{
+				"custom_field": sanitize.MaskRedact,
 			},
-			DefaultPolicy: data.MaskPreserve,
+			DefaultPolicy: sanitize.MaskPreserve,
 		}
 
-		err := data.RegisterScopedSanitizer("dynamic_scope", config)
+		err := sanitize.Registry().Register("dynamic_scope", config)
 		if err != nil {
 			t.Fatalf("Failed to register scope: %v", err)
 		}
 
 		// Verify scope is registered
-		scopes := data.ListScopedSanitizers()
+		scopes := sanitize.Registry().List()
 		found := slices.Contains(scopes, "dynamic_scope")
 		if !found {
 			t.Error("Expected dynamic_scope to be registered")
@@ -419,22 +425,22 @@ func TestDynamicScopeRegistration(t *testing.T) {
 	})
 
 	t.Run("unregister scope", func(t *testing.T) {
-		config := &data.FieldMaskConfig{
-			Fields:        map[string]data.MaskedFieldPolicy{"test": data.MaskRedact},
-			DefaultPolicy: data.MaskPreserve,
+		config := &sanitize.FieldMaskConfig{
+			Fields:        map[string]sanitize.MaskedFieldPolicy{"test": sanitize.MaskRedact},
+			DefaultPolicy: sanitize.MaskPreserve,
 		}
 
-		if err := data.RegisterScopedSanitizer("temp_scope", config); err != nil {
+		if err := sanitize.Registry().Register("temp_scope", config); err != nil {
 			t.Fatalf("Failed to register temp scope: %v", err)
 		}
 
 		// data.Unregister
-		if err := data.UnregisterScopedSanitizer("temp_scope"); err != nil {
+		if err := sanitize.Registry().Unregister("temp_scope"); err != nil {
 			t.Fatalf("Failed to unregister scope: %v", err)
 		}
 
 		// Verify scope is gone
-		scopes := data.ListScopedSanitizers()
+		scopes := sanitize.Registry().List()
 		for _, scope := range scopes {
 			if scope == "temp_scope" {
 				t.Error("Expected temp_scope to be unregistered")
@@ -444,13 +450,13 @@ func TestDynamicScopeRegistration(t *testing.T) {
 
 	t.Run("invalid scope registration fails", func(t *testing.T) {
 		// Empty scope ID
-		err := data.RegisterScopedSanitizer("", &data.FieldMaskConfig{})
+		err := sanitize.Registry().Register("", &sanitize.FieldMaskConfig{})
 		if err == nil {
 			t.Error("Expected error for empty scope ID")
 		}
 
 		// Nil config
-		err = data.RegisterScopedSanitizer("test", nil)
+		err = sanitize.Registry().Register("test", nil)
 		if err == nil {
 			t.Error("Expected error for nil config")
 		}
@@ -509,13 +515,13 @@ func TestHashRainbowTableProtection(t *testing.T) {
 	setupTestFactory(t)
 
 	// data.Register scope that uses hashing
-	hashConfig := &data.FieldMaskConfig{
-		Fields: map[string]data.MaskedFieldPolicy{
-			"sensitive": data.MaskHash,
+	hashConfig := &sanitize.FieldMaskConfig{
+		Fields: map[string]sanitize.MaskedFieldPolicy{
+			"sensitive": sanitize.MaskHash,
 		},
-		DefaultPolicy: data.MaskPreserve,
+		DefaultPolicy: sanitize.MaskPreserve,
 	}
-	if err := data.RegisterScopedSanitizer("hash_test", hashConfig); err != nil {
+	if err := sanitize.Registry().Register("hash_test", hashConfig); err != nil {
 		t.Fatalf("Failed to register hash scope: %v", err)
 	}
 
@@ -600,20 +606,20 @@ func TestHashRainbowTableProtection(t *testing.T) {
 		// When using a stable secret, same value should produce same hash
 		stableSecret := hex.EncodeToString([]byte("test-stable-secret-key-32-bytes-long!"))
 
-		config1 := &data.FieldMaskConfig{
-			Fields:     map[string]data.MaskedFieldPolicy{"sensitive": data.MaskHash},
+		config1 := &sanitize.FieldMaskConfig{
+			Fields:     map[string]sanitize.MaskedFieldPolicy{"sensitive": sanitize.MaskHash},
 			HashSecret: stableSecret,
 		}
 
-		config2 := &data.FieldMaskConfig{
-			Fields:     map[string]data.MaskedFieldPolicy{"sensitive": data.MaskHash},
+		config2 := &sanitize.FieldMaskConfig{
+			Fields:     map[string]sanitize.MaskedFieldPolicy{"sensitive": sanitize.MaskHash},
 			HashSecret: stableSecret,
 		}
 
-		if err := data.RegisterScopedSanitizer("stable1", config1); err != nil {
+		if err := sanitize.Registry().Register("stable1", config1); err != nil {
 			t.Fatalf("Failed to register stable1: %v", err)
 		}
-		if err := data.RegisterScopedSanitizer("stable2", config2); err != nil {
+		if err := sanitize.Registry().Register("stable2", config2); err != nil {
 			t.Fatalf("Failed to register stable2: %v", err)
 		}
 
@@ -644,8 +650,8 @@ func TestHashRainbowTableProtection(t *testing.T) {
 		}
 
 		// Cleanup
-		data.UnregisterScopedSanitizer("stable1")
-		data.UnregisterScopedSanitizer("stable2")
+		sanitize.Registry().Unregister("stable1")
+		sanitize.Registry().Unregister("stable2")
 	})
 }
 
@@ -692,13 +698,13 @@ func TestObscureMaxLength(t *testing.T) {
 	tests := []struct {
 		name      string
 		value     string
-		config    data.ObscureConfig
+		config    sanitize.ObscureConfig
 		expected  string
 	}{
 		{
 			name:  "UUID with max_length",
 			value: "1ea82440-9c3e-460b-8fc2-d19a23ab2651",
-			config: data.ObscureConfig{
+			config: sanitize.ObscureConfig{
 				PrefixLength: 4,
 				SuffixLength: 4,
 				Replacement:  "*",
@@ -709,7 +715,7 @@ func TestObscureMaxLength(t *testing.T) {
 		{
 			name:  "long token truncated",
 			value: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ",
-			config: data.ObscureConfig{
+			config: sanitize.ObscureConfig{
 				PrefixLength: 3,
 				SuffixLength: 3,
 				Replacement:  "*",
@@ -720,7 +726,7 @@ func TestObscureMaxLength(t *testing.T) {
 		{
 			name:  "no truncation needed",
 			value: "short",
-			config: data.ObscureConfig{
+			config: sanitize.ObscureConfig{
 				PrefixLength: 1,
 				SuffixLength: 1,
 				Replacement:  "*",
@@ -731,7 +737,7 @@ func TestObscureMaxLength(t *testing.T) {
 		{
 			name:  "max_length=0 means no limit",
 			value: "1ea82440-9c3e-460b-8fc2-d19a23ab2651",
-			config: data.ObscureConfig{
+			config: sanitize.ObscureConfig{
 				PrefixLength: 4,
 				SuffixLength: 4,
 				Replacement:  "*",
@@ -742,7 +748,7 @@ func TestObscureMaxLength(t *testing.T) {
 		{
 			name:  "max_length too small - ignored",
 			value: "longvalue",
-			config: data.ObscureConfig{
+			config: sanitize.ObscureConfig{
 				PrefixLength: 2,
 				SuffixLength: 2,
 				Replacement:  "*",
@@ -755,16 +761,16 @@ func TestObscureMaxLength(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// data.Register scope with custom obscure config
-			config := &data.FieldMaskConfig{
-				Fields: map[string]data.MaskedFieldPolicy{
-					"test_field": data.MaskObscure,
+			config := &sanitize.FieldMaskConfig{
+				Fields: map[string]sanitize.MaskedFieldPolicy{
+					"test_field": sanitize.MaskObscure,
 				},
 				ObscureConfig: tt.config,
-				DefaultPolicy: data.MaskPreserve,
+				DefaultPolicy: sanitize.MaskPreserve,
 			}
 
 			scopeName := "test_obscure_" + tt.name
-			if err := data.RegisterScopedSanitizer(scopeName, config); err != nil {
+			if err := sanitize.Registry().Register(scopeName, config); err != nil {
 				t.Fatalf("Failed to register scope: %v", err)
 			}
 
@@ -788,7 +794,7 @@ func TestObscureMaxLength(t *testing.T) {
 			}
 
 			// Cleanup
-			data.UnregisterScopedSanitizer(scopeName)
+			sanitize.Registry().Unregister(scopeName)
 		})
 	}
 }

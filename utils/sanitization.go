@@ -2,13 +2,15 @@ package utils
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
-	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/collection"
 	"github.com/asaidimu/go-anansi/v8/core/query"
+	"github.com/asaidimu/go-anansi/v8/core/sanitize"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"go.uber.org/zap"
 )
@@ -22,18 +24,88 @@ const (
 // Anansi Persistence Implementation
 // ============================================================================
 
-// sanitizationStore implements SanitizationPersistence using ModelCollection.
+// sanitizationPolicyModel is the document model persisted by sanitizationStore.
+// It adapts the plain sanitize.FieldMaskConfig (which intentionally carries no
+// document model embed) to the document pipeline so policies can be stored and
+// loaded through the __sanitization__ collection. The schema-declared fields
+// (version, scope, policy, fields, patterns, obscure, salt, description) map to
+// the tagged fields below; structured values (fields, obscure) are kept as
+// schema-free record maps.
+type sanitizationPolicyModel struct {
+	document.DocumentModel
+	Version       string                     `json:"version,omitempty" anansi:"version,omitempty"`
+	Scope         string                     `json:"scope" anansi:"scope"`
+	DefaultPolicy sanitize.MaskedFieldPolicy `json:"default,omitempty" anansi:"policy,omitempty"`
+	Fields        map[string]any             `json:"fields,omitempty" anansi:"fields,omitempty"`
+	Obscure       map[string]any             `json:"obscure,omitempty" anansi:"obscure,omitempty"`
+	HashSecret    string                     `json:"salt,omitempty" anansi:"salt,omitempty"`
+	Description   string                     `json:"description,omitempty" anansi:"description,omitempty"`
+}
+
+// modelFromConfig converts a sanitize policy into the persisted model.
+// Note: regex Patterns are intentionally not persisted — they are runtime
+// configuration supplied at startup via sanitize.Configure.
+func modelFromConfig(config *sanitize.FieldMaskConfig) *sanitizationPolicyModel {
+	m := &sanitizationPolicyModel{
+		Version:       config.Version,
+		Scope:         config.Scope,
+		DefaultPolicy: config.DefaultPolicy,
+		HashSecret:    config.HashSecret,
+		Description:   config.Description,
+	}
+	if len(config.Fields) > 0 {
+		m.Fields = make(map[string]any, len(config.Fields))
+		for field, policy := range config.Fields {
+			m.Fields[field] = string(policy)
+		}
+	}
+	if config.ObscureConfig != (sanitize.ObscureConfig{}) {
+		b, err := json.Marshal(config.ObscureConfig)
+		if err == nil {
+			_ = json.Unmarshal(b, &m.Obscure)
+		}
+	}
+	return m
+}
+
+// configFromModel converts a persisted model back into a sanitize policy.
+func configFromModel(m *sanitizationPolicyModel) *sanitize.FieldMaskConfig {
+	config := &sanitize.FieldMaskConfig{
+		Version:       m.Version,
+		Scope:         m.Scope,
+		DefaultPolicy: m.DefaultPolicy,
+		HashSecret:    m.HashSecret,
+		Description:   m.Description,
+	}
+	if len(m.Fields) > 0 {
+		config.Fields = make(map[string]sanitize.MaskedFieldPolicy, len(m.Fields))
+		for field, v := range m.Fields {
+			if s, ok := v.(string); ok {
+				config.Fields[field] = sanitize.MaskedFieldPolicy(s)
+			}
+		}
+	}
+	if len(m.Obscure) > 0 {
+		b, err := json.Marshal(m.Obscure)
+		if err == nil {
+			_ = json.Unmarshal(b, &config.ObscureConfig)
+		}
+	}
+	return config
+}
+
+// sanitizationStore implements sanitize.SanitizationPersistence using ModelCollection.
 type sanitizationStore struct {
 	persistence    base.Persistence
-	collection     *collection.ModelCollection[*data.FieldMaskConfig]
+	collection     *collection.ModelCollection[*sanitizationPolicyModel]
 	collectionName string
 	logger         *zap.Logger
 }
 
-var _ data.SanitizationPersistence = (*sanitizationStore)(nil)
+var _ sanitize.SanitizationPersistence = (*sanitizationStore)(nil)
 
 // NewSanitizationPolicyStore creates a new Anansi-backed persistence layer.
-func NewSanitizationPolicyStore(persistence base.Persistence, logger *zap.Logger) (data.SanitizationPersistence, error) {
+func NewSanitizationPolicyStore(persistence base.Persistence, logger *zap.Logger) (sanitize.SanitizationPersistence, error) {
 	if logger == nil {
 		logger = zap.NewNop()
 	}
@@ -53,7 +125,7 @@ func NewSanitizationPolicyStore(persistence base.Persistence, logger *zap.Logger
 }
 
 // ensureCollection ensures the sanitization policies collection exists and returns model collection
-func (p *sanitizationStore) ensureCollection(ctx context.Context) (*collection.ModelCollection[*data.FieldMaskConfig], error) {
+func (p *sanitizationStore) ensureCollection(ctx context.Context) (*collection.ModelCollection[*sanitizationPolicyModel], error) {
 	if p.collection != nil {
 		return p.collection, nil
 	}
@@ -79,7 +151,7 @@ func (p *sanitizationStore) ensureCollection(ctx context.Context) (*collection.M
 			WithMessage("failed to instantiate sanitization policies collection")
 	}
 	// Wrap in model collection
-	mc, err := collection.NewModelCollection[*data.FieldMaskConfig](col, p.logger)
+	mc, err := collection.NewModelCollection[*sanitizationPolicyModel](col, p.logger)
 	if err != nil {
 		return nil, err
 	}
@@ -180,7 +252,7 @@ func (p *sanitizationStore) createPolicyCollectionSchema() *definition.Schema {
 }
 
 // Save persists a sanitization policy (upsert based on scope)
-func (p *sanitizationStore) Save(ctx context.Context, config *data.FieldMaskConfig) error {
+func (p *sanitizationStore) Save(ctx context.Context, config *sanitize.FieldMaskConfig) error {
 	if config.Scope == "" {
 		return common.NewSystemError("INVALID_SCOPE").
 			WithOperation("sanitizationStore.Save").
@@ -195,9 +267,10 @@ func (p *sanitizationStore) Save(ctx context.Context, config *data.FieldMaskConf
 	// Check if policy with this scope already exists
 	existing, err := p.findByScope(ctx, config.Scope)
 	isUpdate := err == nil && existing != nil
+	model := modelFromConfig(config)
 
 	if isUpdate {
-		_, err = col.Update(ctx, existing.ID, config)
+		_, err = col.Update(ctx, existing.ID, model)
 		if err != nil {
 			return common.SystemErrorFrom(err).
 				WithOperation("sanitizationStore.Save").
@@ -205,7 +278,7 @@ func (p *sanitizationStore) Save(ctx context.Context, config *data.FieldMaskConf
 		}
 	} else {
 		// Create new document
-		_, err := col.Create(ctx, config)
+		_, err := col.Create(ctx, model)
 		if err != nil {
 			return common.SystemErrorFrom(err).
 				WithOperation("sanitizationStore.Save").
@@ -217,7 +290,7 @@ func (p *sanitizationStore) Save(ctx context.Context, config *data.FieldMaskConf
 }
 
 // Load retrieves a sanitization policy for a given scope
-func (p *sanitizationStore) Load(ctx context.Context, scope string) (*data.FieldMaskConfig, error) {
+func (p *sanitizationStore) Load(ctx context.Context, scope string) (*sanitize.FieldMaskConfig, error) {
 	if scope == "" {
 		return nil, common.NewSystemError("INVALID_SCOPE").
 			WithOperation("sanitizationStore.Load").
@@ -229,11 +302,11 @@ func (p *sanitizationStore) Load(ctx context.Context, scope string) (*data.Field
 		return nil, err
 	}
 
-	return docModel, nil
+	return configFromModel(docModel), nil
 }
 
 // findByScope is an internal helper to find a document by scope
-func (p *sanitizationStore) findByScope(ctx context.Context, scope string) (*data.FieldMaskConfig, error) {
+func (p *sanitizationStore) findByScope(ctx context.Context, scope string) (*sanitizationPolicyModel, error) {
 	col, err := p.ensureCollection(ctx)
 	if err != nil {
 		return nil, err
@@ -252,7 +325,7 @@ func (p *sanitizationStore) findByScope(ctx context.Context, scope string) (*dat
 	}
 
 	if len(results) == 0 {
-		return nil, common.SystemErrorFrom(data.ErrSanitizationScopeNotFound).
+		return nil, common.SystemErrorFrom(sanitize.ErrSanitizationScopeNotFound).
 			WithOperation("sanitizationStore.findByScope").
 			WithMessagef("policy not found for scope %q", scope)
 	}
@@ -261,7 +334,7 @@ func (p *sanitizationStore) findByScope(ctx context.Context, scope string) (*dat
 }
 
 // LoadAll retrieves all persisted sanitization policies
-func (p *sanitizationStore) LoadAll(ctx context.Context) ([]*data.FieldMaskConfig, error) {
+func (p *sanitizationStore) LoadAll(ctx context.Context) ([]*sanitize.FieldMaskConfig, error) {
 	col, err := p.ensureCollection(ctx)
 	if err != nil {
 		return nil, err
@@ -276,13 +349,13 @@ func (p *sanitizationStore) LoadAll(ctx context.Context) ([]*data.FieldMaskConfi
 	}
 
 	if len(results) == 0 {
-		return []*data.FieldMaskConfig{}, nil
+		return []*sanitize.FieldMaskConfig{}, nil
 	}
 
-	// Convert all document models to domain models
-	configs := make([]*data.FieldMaskConfig, 0, len(results))
+	// Convert all document models to configs
+	configs := make([]*sanitize.FieldMaskConfig, 0, len(results))
 	for i := range results {
-		configs = append(configs, results[i])
+		configs = append(configs, configFromModel(results[i]))
 	}
 
 	return configs, nil

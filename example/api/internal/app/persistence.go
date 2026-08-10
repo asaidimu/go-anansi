@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/asaidimu/go-anansi/v8"
-	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
+	"github.com/asaidimu/go-anansi/v8/core/sanitize"
 	"github.com/asaidimu/go-anansi/v8/example/api/schema"
 	"github.com/asaidimu/go-anansi/v8/utils"
 	"go.uber.org/zap"
@@ -40,7 +40,7 @@ func NewPersistenceManager(schemaLoader *schema.SchemaLoader, cfg *Config, logge
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to setup Anansi: %w", err)
 	}
-	reg := data.GetSanitizationRegistry()
+	reg := sanitize.Registry()
 	reg.SetPersistence(sanitizationPolicyStore)
 	err = reg.LoadFromPersistence(context.Background())
 	if err != nil {

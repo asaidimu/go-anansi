@@ -2,11 +2,9 @@ package events
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
-	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/transaction"
 	"go.uber.org/zap"
@@ -26,7 +24,13 @@ func NewPersistenceEventFactory(collectionName string, logger *zap.Logger) *Pers
 	}
 }
 
-// CreateEvent constructs a complete PersistenceEvent with all fields properly populated
+// CreateEvent constructs a complete PersistenceEvent with all fields properly populated.
+//
+// Input and output are placed on the bus unchanged (full fidelity). The event bus is
+// internal data movement between trusted components, not a rendering surface, so
+// masking policies must not be applied here — consumers that render events (logs,
+// audit output, client responses) sanitize at their own egress edge via
+// document.Sanitize(ctx)/document.SafeString(ctx).
 func (f *PersistenceEventFactory) CreateEvent(
 	ctx context.Context,
 	eventType string,
@@ -45,15 +49,14 @@ func (f *PersistenceEventFactory) CreateEvent(
 		collectionName = &name
 	}
 
-
 	// Create the complete event
 	event := base.PersistenceEvent{
 		Type:          base.PersistenceEventType(eventType),
 		Timestamp:     startTime.UnixMilli(),
 		Operation:     operation,
 		Collection:    collectionName,
-		Input:         f.sanitizeEventData(ctx, input),
-		Output:        f.sanitizeEventData(ctx, output),
+		Input:         input,
+		Output:        output,
 		Error:         errorMsg,
 		TransactionID: transactionID,
 		Duration:      duration,
@@ -70,101 +73,4 @@ func (f *PersistenceEventFactory) extractTransactionID(ctx context.Context) *str
 	}
 
 	return nil
-}
-
-// sanitizeEventData automatically sanitizes input and output data that contains documents.
-// This is called by WithEventEmission to ensure all event data is sanitized before emission.
-//
-// The sanitization is context-aware:
-// - If context contains collection name, applies collection-specific rules
-// - Otherwise applies global rules
-// - Handles Document, []Document, map[string]any, ReadResult, and other types
-func (f *PersistenceEventFactory) sanitizeEventData(ctx context.Context, value any) any {
-	if value == nil {
-		return nil
-	}
-
-	switch v := value.(type) {
-	// Special case: ReadResult contains documents
-	case *base.ReadResult:
-		if v == nil {
-			return nil
-		}
-		d, err := data.SanitizeValue(ctx, v.Data)
-		if err != nil {
-			return err
-		}
-		res, ok := d.(data.DocumentSet)
-		if !ok {
-			// Do not silently strip the data from an audit event. Log and
-			// fall back to the unsanitized result so nothing is lost.
-			f.sanitizeWarn("read result sanitization produced unexpected type %T for collection %q; preserving unsanitized data", d, f.collectionName)
-			return v
-		}
-		sanitized := &base.ReadResult{
-			Count: v.Count,
-			Total: v.Total,
-			Data:  res,
-		}
-		return sanitized
-
-	// Special case: CreateResult contains a document
-	case base.CreateResult:
-		d, err := data.SanitizeValue(ctx, v.Data)
-		if err != nil {
-			return err
-		}
-		res, ok := d.(data.Documenter)
-		if !ok {
-			f.sanitizeWarn("create result sanitization produced unexpected type %T; preserving unsanitized result", d)
-			return v
-		}
-		sanitized := base.CreateResult{
-			Status: v.Status,
-			Data:   res,
-			Issues: v.Issues,
-			Error:  v.Error,
-		}
-		return sanitized
-
-	case []base.CreateResult:
-		sanitized := make([]base.CreateResult, 0, len(v))
-		for _, result := range v {
-			d, err := data.SanitizeValue(ctx, result.Data)
-			if err != nil {
-				return err
-			}
-			res, ok := d.(data.Documenter)
-			if !ok {
-				f.sanitizeWarn("create result element sanitization produced unexpected type %T; preserving unsanitized element", d)
-				sanitized = append(sanitized, result)
-				continue
-			}
-
-			sanitized = append(sanitized,
-				base.CreateResult{
-					Status: result.Status,
-					Issues: result.Issues,
-					Data:   res,
-					Error:  result.Error,
-				})
-		}
-		return sanitized
-
-	default:
-		// Scalar or unknown type - preserve as-is
-		// This includes query filters, schema definitions, etc.
-		d, err := data.SanitizeValue(ctx, v)
-		if err != nil {
-			return err
-		}
-		return d
-	}
-}
-
-// sanitizeWarn logs a warning, tolerating a nil logger.
-func (f *PersistenceEventFactory) sanitizeWarn(format string, args ...any) {
-	if f.logger != nil {
-		f.logger.Warn(fmt.Sprintf("PersistenceEventFactory: "+format, args...))
-	}
 }

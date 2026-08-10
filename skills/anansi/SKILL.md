@@ -27,8 +27,8 @@ maps everywhere. Declare the shape once, generate, and reuse.
 > (`data.Document`, `data.DocumentModel`) is **deprecated** for building new
 > models: it incurs map allocations and pools nothing. Keep using the `data`
 > package only where it is a cross-cutting contract (`data.Documenter` interface,
-> `data.DocumentIDField`, `data.DocumentSet`, sanitization config/convenience
-> constructors). See `references/data-integrity.md`.
+> `data.DocumentIDField`, `data.DocumentSet`). Sanitization no longer lives in
+> `data` — use the `core/sanitize` package (see `references/sanitization.md`).
 
 ---
 
@@ -427,13 +427,16 @@ Phase signals → reference:
 - **Cache it** (`ModelCollection` options, `LiveCollection`, `Release()`
   pooling, the fast path) → `references/caching.md`
 - **RLS/audit/validate/encrypt** (decorators) → `references/decorators.md`
+- **Scrub PII/secrets before logging, events, or responses** (setup + usage,
+  scoping, registry) → `references/sanitization.md`
 - **Custom doc metadata** (declare → regenerate → stub → wire) →
   `references/metadata-providers.md`
 - **realtime/notify/metrics/observability** (events, `Stats()`, cleanup
   checklist) → `references/observability.md`
 
 A few signals: "cache it" → `ModelCollection` options or `LiveCollection`;
-"RLS/audit/validate/encrypt" → decorators; "react/notify/metrics/dedupe" →
+"RLS/audit/validate/encrypt" → decorators; "mask/redact/hide fields before
+logging or responses" → sanitization (`references/sanitization.md`); "react/notify/metrics/dedupe" →
 events; "read-through compiled artifacts keyed by a domain field" →
 `LiveCollection`; "trace id / caller on every doc" → metadata providers.
 Realtime = events + your own transport (no built-in sockets).
@@ -496,6 +499,10 @@ When reviewing output, check:
   (`ReadAs`/`CreateFrom`/`UpdateFrom` projections).
 - `references/decorators.md` — harden: cross-cutting decorators
   (`utils.Decorators`, RLS/audit/validate/encrypt).
+- `references/sanitization.md` — scrub PII/secrets at the boundary: setup
+  (`sanitize.Configure`, `Playground`), scoping (collection names as default
+  scopes), usage (`Sanitize(ctx)`/`SafeString`), the registry, and runtime
+  policy management.
 - `references/metadata-providers.md` — harden: the full custom-metadata-provider
   walkthrough (declare → regenerate → implement stub → wire into
   `data.ConfigureDocumentFactory`).

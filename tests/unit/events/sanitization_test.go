@@ -3,21 +3,21 @@ package events_test
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/sanitize"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
 )
 
 func TestMaskRedact(t *testing.T) {
 
-	config :=&data.FieldMaskConfig{
-		Fields: map[string]data.MaskedFieldPolicy{
-			"password": data.MaskRedact,
+	config :=&sanitize.FieldMaskConfig{
+		Fields: map[string]sanitize.MaskedFieldPolicy{
+			"password": sanitize.MaskRedact,
 		},
-		DefaultPolicy: data.MaskPreserve,
+		DefaultPolicy: sanitize.MaskPreserve,
 	}
 
-	sanitizer :=data.NewSanitizer(*config, zap.NewNop())
+	sanitizer :=sanitize.NewSanitizer(*config, zap.NewNop())
 	doc := map[string]any{
 		"username": "admin",
 		"password": "SuperSecret123!",
@@ -33,21 +33,21 @@ func TestMaskRedact(t *testing.T) {
 
 func TestMaskHash(t *testing.T) {
 
-	config :=&data.FieldMaskConfig{
+	config :=&sanitize.FieldMaskConfig{
 
-		Fields: map[string]data.MaskedFieldPolicy{
+		Fields: map[string]sanitize.MaskedFieldPolicy{
 
-			"api_key": data.MaskHash,
+			"api_key": sanitize.MaskHash,
 
 		},
 
-		DefaultPolicy: data.MaskPreserve,
+		DefaultPolicy: sanitize.MaskPreserve,
 
 	}
 
 
 
-	sanitizer :=data.NewSanitizer(*config, zap.NewNop())
+	sanitizer :=sanitize.NewSanitizer(*config, zap.NewNop())
 
 	doc := map[string]any{
 		"api_key": "sk-prod-abc123xyz789",
@@ -74,19 +74,19 @@ func TestMaskHash(t *testing.T) {
 }
 
 func TestMaskObscure(t *testing.T) {
-	config :=&data.FieldMaskConfig{
-		Fields: map[string]data.MaskedFieldPolicy{
-			"email":data.MaskObscure,
+	config :=&sanitize.FieldMaskConfig{
+		Fields: map[string]sanitize.MaskedFieldPolicy{
+			"email":sanitize.MaskObscure,
 		},
-		DefaultPolicy:data.MaskPreserve,
-		ObscureConfig: data.ObscureConfig{
+		DefaultPolicy:sanitize.MaskPreserve,
+		ObscureConfig: sanitize.ObscureConfig{
 			PrefixLength: 2,
 			SuffixLength: 2,
 			Replacement:  "*",
 		},
 	}
 
-	sanitizer :=data.NewSanitizer(*config, zap.NewNop())
+	sanitizer :=sanitize.NewSanitizer(*config, zap.NewNop())
 
 	tests := []struct {
 		name     string
@@ -125,14 +125,14 @@ func TestMaskObscure(t *testing.T) {
 }
 
 func TestPatternMatching(t *testing.T) {
-	config :=&data.FieldMaskConfig{
-		Fields:   make(map[string]data.MaskedFieldPolicy),
-		Patterns:data.CommonSecurityPatterns(),
-		DefaultPolicy:data.MaskPreserve,
-		ObscureConfig: data.DefaultObscureConfig(),
+	config :=&sanitize.FieldMaskConfig{
+		Fields:   make(map[string]sanitize.MaskedFieldPolicy),
+		Patterns:sanitize.CommonSecurityPatterns(),
+		DefaultPolicy:sanitize.MaskPreserve,
+		ObscureConfig: sanitize.DefaultObscureConfig(),
 	}
 
-	sanitizer :=data.NewSanitizer(*config, zap.NewNop())
+	sanitizer :=sanitize.NewSanitizer(*config, zap.NewNop())
 
 	doc := map[string]any{
 		// Should be redacted
@@ -183,18 +183,18 @@ func TestPatternMatching(t *testing.T) {
 
 func TestCustomPatternPriority(t *testing.T) {
 	// Test that explicit field config takes priority over patterns
-	config :=&data.FieldMaskConfig{
-		Fields: map[string]data.MaskedFieldPolicy{
-			"password":data.MaskObscure, // Explicit: obscure
+	config :=&sanitize.FieldMaskConfig{
+		Fields: map[string]sanitize.MaskedFieldPolicy{
+			"password":sanitize.MaskObscure, // Explicit: obscure
 		},
-		Patterns: []data.PatternRule{
-			data.MustCompilePattern(`(?i)password`,data.MaskRedact), // Pattern: redact
+		Patterns: []sanitize.PatternRule{
+			sanitize.MustCompilePattern(`(?i)password`,sanitize.MaskRedact), // Pattern: redact
 		},
-		DefaultPolicy:data.MaskPreserve,
-		ObscureConfig: data.DefaultObscureConfig(),
+		DefaultPolicy:sanitize.MaskPreserve,
+		ObscureConfig: sanitize.DefaultObscureConfig(),
 	}
 
-	sanitizer :=data.NewSanitizer(*config, zap.NewNop())
+	sanitizer :=sanitize.NewSanitizer(*config, zap.NewNop())
 
 	doc := map[string]any{
 		"password":      "secret123",      // Should use explicit policy (obscure)
@@ -212,14 +212,14 @@ func TestCustomPatternPriority(t *testing.T) {
 }
 
 func TestNilAndEmptyValues(t *testing.T) {
-	config :=&data.FieldMaskConfig{
-		Fields: map[string]data.MaskedFieldPolicy{
-			"password":data.MaskRedact,
+	config :=&sanitize.FieldMaskConfig{
+		Fields: map[string]sanitize.MaskedFieldPolicy{
+			"password":sanitize.MaskRedact,
 		},
-		DefaultPolicy:data.MaskPreserve,
+		DefaultPolicy:sanitize.MaskPreserve,
 	}
 
-	sanitizer :=data.NewSanitizer(*config, zap.NewNop())
+	sanitizer :=sanitize.NewSanitizer(*config, zap.NewNop())
 
 	// Test nil document
 	assert.Nil(t, sanitizer.SanitizeDocument(nil))
@@ -241,15 +241,15 @@ func TestNilAndEmptyValues(t *testing.T) {
 }
 
 func TestComplexDataStructures(t *testing.T) {
-	config :=&data.FieldMaskConfig{
-		Fields: map[string]data.MaskedFieldPolicy{
-			"password":data.MaskRedact,
-			"token":   data.MaskHash,
+	config :=&sanitize.FieldMaskConfig{
+		Fields: map[string]sanitize.MaskedFieldPolicy{
+			"password":sanitize.MaskRedact,
+			"token":   sanitize.MaskHash,
 		},
-		DefaultPolicy:data.MaskPreserve,
+		DefaultPolicy:sanitize.MaskPreserve,
 	}
 
-	sanitizer :=data.NewSanitizer(*config, zap.NewNop())
+	sanitizer :=sanitize.NewSanitizer(*config, zap.NewNop())
 
 	// Test nested maps
 	doc := map[string]any{
@@ -275,17 +275,17 @@ func TestComplexDataStructures(t *testing.T) {
 }
 
 func TestDifferentValueTypes(t *testing.T) {
-	config :=&data.FieldMaskConfig{
-		Fields: map[string]data.MaskedFieldPolicy{
-			"count":  data.MaskHash,
-			"active": data.MaskRedact,
-			"balance":data.MaskObscure,
+	config :=&sanitize.FieldMaskConfig{
+		Fields: map[string]sanitize.MaskedFieldPolicy{
+			"count":  sanitize.MaskHash,
+			"active": sanitize.MaskRedact,
+			"balance":sanitize.MaskObscure,
 		},
-		DefaultPolicy:data.MaskPreserve,
-		ObscureConfig: data.DefaultObscureConfig(),
+		DefaultPolicy:sanitize.MaskPreserve,
+		ObscureConfig: sanitize.DefaultObscureConfig(),
 	}
 
-	sanitizer :=data.NewSanitizer(*config, zap.NewNop())
+	sanitizer :=sanitize.NewSanitizer(*config, zap.NewNop())
 
 	doc := map[string]any{
 		"count":   42,
@@ -306,19 +306,19 @@ func TestDifferentValueTypes(t *testing.T) {
 func TestDefaultPolicy(t *testing.T) {
 	tests := []struct {
 		name          string
-		defaultPolicy data.MaskedFieldPolicy
+		defaultPolicy sanitize.MaskedFieldPolicy
 		fieldValue    string
 		expectRedact  bool
 	}{
 		{
 			name:          "default preserve",
-			defaultPolicy:data.MaskPreserve,
+			defaultPolicy:sanitize.MaskPreserve,
 			fieldValue:    "sensitive_data",
 			expectRedact:  false,
 		},
 		{
 			name:          "default redact",
-			defaultPolicy:data.MaskRedact,
+			defaultPolicy:sanitize.MaskRedact,
 			fieldValue:    "sensitive_data",
 			expectRedact:  true,
 		},
@@ -326,13 +326,13 @@ func TestDefaultPolicy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config :=&data.FieldMaskConfig{
-				Fields:        make(map[string]data.MaskedFieldPolicy),
-				Patterns:      []data.PatternRule{},
+			config :=&sanitize.FieldMaskConfig{
+				Fields:        make(map[string]sanitize.MaskedFieldPolicy),
+				Patterns:      []sanitize.PatternRule{},
 				DefaultPolicy: tt.defaultPolicy,
 			}
 
-			sanitizer :=data.NewSanitizer(*config, zap.NewNop())
+			sanitizer :=sanitize.NewSanitizer(*config, zap.NewNop())
 
 			doc := map[string]any{
 				"unknown_field": tt.fieldValue,
@@ -351,12 +351,12 @@ func TestDefaultPolicy(t *testing.T) {
 
 func TestMustCompilePatternPanic(t *testing.T) {
 	assert.Panics(t, func() {
-		data.MustCompilePattern("[invalid(regex",data.MaskRedact)
+		sanitize.MustCompilePattern("[invalid(regex",sanitize.MaskRedact)
 	})
 }
 
 func TestCommonSecurityPatterns(t *testing.T) {
-	patterns :=data.CommonSecurityPatterns()
+	patterns :=sanitize.CommonSecurityPatterns()
 	assert.Greater(t, len(patterns), 0)
 
 	// Verify all patterns compile
@@ -367,23 +367,23 @@ func TestCommonSecurityPatterns(t *testing.T) {
 }
 
 func TestNewSecureDefaultConfig(t *testing.T) {
-	config :=data.NewSecureDefaultConfig()
+	config :=sanitize.NewSecureDefaultConfig()
 
 	assert.NotNil(t, config.Fields)
 	assert.NotEmpty(t, config.Patterns)
-	assert.Equal(t,data.MaskPreserve, config.DefaultPolicy)
+	assert.Equal(t,sanitize.MaskPreserve, config.DefaultPolicy)
 	assert.NotEmpty(t, config.ObscureConfig.Replacement)
 }
 
 func TestSanitizeValue(t *testing.T) {
-	config := &data.FieldMaskConfig{
-		Fields: map[string]data.MaskedFieldPolicy{
-			"password":data.MaskRedact,
+	config := &sanitize.FieldMaskConfig{
+		Fields: map[string]sanitize.MaskedFieldPolicy{
+			"password":sanitize.MaskRedact,
 		},
-		DefaultPolicy:data.MaskPreserve,
+		DefaultPolicy:sanitize.MaskPreserve,
 	}
 
-	sanitizer :=data.NewSanitizer(*config, zap.NewNop())
+	sanitizer :=sanitize.NewSanitizer(*config, zap.NewNop())
 
 	// Test single value sanitization
 	result := sanitizer.SanitizeValue("password", "secret123")
@@ -394,8 +394,8 @@ func TestSanitizeValue(t *testing.T) {
 }
 
 func BenchmarkSanitizeDocument(b *testing.B) {
-	config :=data.NewSecureDefaultConfig()
-	sanitizer :=data.NewSanitizer(*config, zap.NewNop())
+	config :=sanitize.NewSecureDefaultConfig()
+	sanitizer :=sanitize.NewSanitizer(*config, zap.NewNop())
 
 	doc := map[string]any{
 		"id":               "USER001",
