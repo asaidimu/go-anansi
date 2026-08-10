@@ -1,3 +1,10 @@
+## [8.5.3](https://github.com/asaidimu/go-anansi/compare/v8.5.2...v8.5.3) (2026-08-10)
+
+
+### Bug Fixes
+
+* **core:** implement zero-copy binary blob store ([3a3a2a5](https://github.com/asaidimu/go-anansi/commit/3a3a2a516a9aa95ae308c1f8182d7c59d5bb2d1d))
+
 ## [8.5.2](https://github.com/asaidimu/go-anansi/compare/v8.5.1...v8.5.2) (2026-08-07)
 
 
