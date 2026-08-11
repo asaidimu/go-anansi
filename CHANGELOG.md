@@ -1,3 +1,10 @@
+## [8.5.5](https://github.com/asaidimu/go-anansi/compare/v8.5.4...v8.5.5) (2026-08-11)
+
+
+### Bug Fixes
+
+* **codegen,bits:** modernize record storage and field generation ([f8a9b7c](https://github.com/asaidimu/go-anansi/commit/f8a9b7cd91a0a16fe11897351e758d2563a628b2))
+
 ## [8.5.4](https://github.com/asaidimu/go-anansi/compare/v8.5.3...v8.5.4) (2026-08-10)
 
 
