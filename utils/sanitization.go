@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
 	"github.com/asaidimu/go-anansi/v8/core/persistence/collection"
@@ -27,15 +28,20 @@ const (
 // sanitizationPolicyModel is the document model persisted by sanitizationStore.
 // It adapts the plain sanitize.FieldMaskConfig (which intentionally carries no
 // document model embed) to the document pipeline so policies can be stored and
-// loaded through the __sanitization__ collection. The schema-declared fields
-// (version, scope, policy, fields, patterns, obscure, salt, description) map to
-// the tagged fields below; structured values (fields, obscure) are kept as
-// schema-free record maps.
+// loaded through the __sanitization__ collection. The anansi tags are the
+// single source of truth for the persisted collection schema (see
+// createPolicyCollectionSchema): field IDs are derived deterministically by the
+// DTO schema extractor, which always emits IDs that sort after the injected
+// system fields (_id_, _metadata_) — hand-authoring field UUIDs here would
+// re-introduce the "field sorts before system field" compile failure. Structured
+// values (fields, obscure) are kept as schema-free record maps. Regex Patterns
+// are intentionally not persisted — they are runtime configuration supplied at
+// startup via sanitize.Configure.
 type sanitizationPolicyModel struct {
 	document.DocumentModel
 	Version       string                     `json:"version,omitempty" anansi:"version,omitempty"`
-	Scope         string                     `json:"scope" anansi:"scope"`
-	DefaultPolicy sanitize.MaskedFieldPolicy `json:"default,omitempty" anansi:"policy,omitempty"`
+	Scope         string                     `json:"scope" anansi:"scope,required=true"`
+	DefaultPolicy sanitize.MaskedFieldPolicy `json:"default,omitempty" anansi:"policy,omitempty,type=enum,values=obscure|preserve|redact|hash,default=preserve"`
 	Fields        map[string]any             `json:"fields,omitempty" anansi:"fields,omitempty"`
 	Obscure       map[string]any             `json:"obscure,omitempty" anansi:"obscure,omitempty"`
 	HashSecret    string                     `json:"salt,omitempty" anansi:"salt,omitempty"`
@@ -159,94 +165,35 @@ func (p *sanitizationStore) ensureCollection(ctx context.Context) (*collection.M
 	return p.collection, nil
 }
 
-// createPolicyCollectionSchema defines the schema for the sanitization policies collection
+// createPolicyCollectionSchema derives the schema for the sanitization policies
+// collection from the sanitizationPolicyModel struct. Field and enum-schema IDs
+// are produced by the DTO schema extractor (core/data), whose deterministic
+// UUIDv7 generation starts from an epoch that sorts strictly after the injected
+// system fields (_id_, _metadata_). This guarantees the enriched schema's system
+// fields always lead, so the schema compiles regardless of future field
+// additions. Hand-authored UUIDs would silently regress this invariant.
 func (p *sanitizationStore) createPolicyCollectionSchema() *definition.Schema {
-	jsonSchema := fmt.Sprintf(`
-{
-  "name": "%s",
-  "version": "1.0.0",
-  "description": "System collection for storing sanitization policies",
-  "fields": {
-    "019f32a8-e475-7e82-9f45-4aee484e8359": {
-      "name": "version",
-      "type": "string",
-      "required": false,
-      "description": "Version of the policy"
-    },
-    "019f32a8-e475-7e91-85dd-16594685bc76": {
-      "name": "scope",
-      "type": "string",
-      "required": true,
-      "description": "Scope identifier (must be non-empty)"
-    },
-    "019f32a8-e475-7be9-9cbd-c5af42aab072": {
-      "name": "policy",
-      "type": "enum",
-      "schema": {
-        "id": "019f32a8-e475-728a-9346-241344178f91"
-      },
-      "required": false,
-      "default": "preserve",
-      "description": "Default policy for this config"
-    },
-    "019f32a8-e475-7b3a-b5a0-717f48bfb5ff": {
-      "name": "fields",
-      "type": "record",
-      "required": false,
-      "description": "Field-specific masking policies"
-    },
-    "019f32a8-e475-702b-8bae-84b24213ac4d": {
-      "name": "patterns",
-      "type": "record",
-      "required": false,
-      "description": "Regex-based field matching patterns"
-    },
-    "019f32a8-e475-7472-8a91-62ce450fa515": {
-      "name": "obscure",
-      "type": "record",
-      "required": false,
-      "description": "Obscure policy configuration"
-    },
-    "019f32a8-e475-7e3d-a83e-a94641e3b5a0": {
-      "name": "salt",
-      "type": "string",
-      "required": false,
-      "description": "Secret key for HMAC hashing"
-    },
-    "019f32a8-e475-787f-85fb-9ffa4a0bb370": {
-      "name": "description",
-      "type": "string",
-      "required": false,
-      "description": "Human-readable description of the policy"
-    }
-  },
-  "schemas": {
-    "019f32a8-e475-728a-9346-241344178f91": {
-      "name": "SanitizationPolicy",
-      "type": "string",
-      "values": [
-        "obscure",
-        "preserve",
-        "redact",
-        "hash"
-      ]
-    }
-  },
-  "indexes": {
-    "019f32a8-e475-756d-8621-687745af9a4b": {
-      "name": "idx_scope_unique",
-      "fields": [
-        "scope"
-      ],
-      "unique": true
-    }
-  }
-}
-`, p.collectionName)
+	jsonSchema, err := data.SchemaFrom[*sanitizationPolicyModel](true)
+	if err != nil {
+		panic(fmt.Sprintf("failed to generate sanitization schema: %v", err))
+	}
 
-	sc, err := definition.FromJSON([]byte(jsonSchema))
+	sc, err := definition.FromJSON(jsonSchema)
 	if err != nil {
 		panic(fmt.Sprintf("failed to parse sanitization schema: %v", err))
+	}
+	sc.Name = p.collectionName
+	sc.Description = "System collection for storing sanitization policies"
+
+	// The DTO extractor does not emit indexes; add the unique scope index here.
+	// Its ID is a valid UUIDv7 that also sorts after the system fields.
+	sc.Indexes = map[definition.IndexID]definition.Index{
+		"019fba9e-d800-727f-ac81-b8d2562ecae8": {
+			Name:   "idx_scope_unique",
+			Fields: []definition.FieldName{"scope"},
+			Type:   definition.IndexTypeUnique,
+			Unique: true,
+		},
 	}
 	return sc
 }
