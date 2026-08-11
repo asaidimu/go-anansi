@@ -246,8 +246,8 @@ func TestRunGoGen_MetadataTypePerSchema(t *testing.T) {
 	// type, so there is no duplicate-declaration collision and no mangled name.
 	require.Contains(t, a, "type AlphaMetadata struct {")
 	require.Contains(t, b, "type BetaMetadata struct {")
-	require.Contains(t, a, "Metadata *AlphaMetadata `anansi:\"_metadata_,required=false\" json:\"_metadata_,omitempty\"`")
-	require.Contains(t, b, "Metadata *BetaMetadata `anansi:\"_metadata_,required=false\" json:\"_metadata_,omitempty\"`")
+	require.Contains(t, a, "Metadata *AlphaMetadata `anansi:\"_metadata_,required=false,omitempty\" json:\"_metadata_,omitempty\"`")
+	require.Contains(t, b, "Metadata *BetaMetadata `anansi:\"_metadata_,required=false,omitempty\" json:\"_metadata_,omitempty\"`")
 	require.NotContains(t, a, "type Metadata struct", "metadata type must be scoped to its collection")
 	require.NotContains(t, b, "type Metadata struct", "metadata type must be scoped to its collection")
 	require.NotContains(t, a, "Metadata_", "no mangled metadata type name")

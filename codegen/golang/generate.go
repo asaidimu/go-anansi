@@ -290,7 +290,7 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 	// Process all nested schemas
 	for id, info := range schemaInfos {
 		if info.IsSchema {
-			fields, err := generateFields(info.Fields, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, info.Name, tagConfig)
+			fields, _, err := generateFields(info.Fields, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, info.Name, tagConfig)
 			if err != nil {
 				return "", fmt.Errorf("failed to generate fields for schema %s: %w", id, err)
 			}
@@ -365,7 +365,7 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 	}
 
 	// Process root schema
-	rootFieldsGo, err := generateFields(rootFields, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, rootName, tagConfig)
+	rootFieldsGo, rootIDFieldName, err := generateFields(rootFields, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, rootName, tagConfig)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate root fields: %w", err)
 	}
@@ -406,7 +406,7 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 		// Reuse the root as parentName so inline containers (enum/union/
 		// composite/record) are shared with the root struct instead of being
 		// regenerated per projection.
-		projFieldsGo, err := generateFields(projFields, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, rootName, tagConfig)
+		projFieldsGo, _, err := generateFields(projFields, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, rootName, tagConfig)
 		if err != nil {
 			return "", fmt.Errorf("failed to generate fields for projection %s: %w", projName, err)
 		}
@@ -417,7 +417,7 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 	}
 
 	// Build output
-	return g.render(rootName, rootTypeName, structs, typeAliases, enumDefs, projections, rootHasSystemFields)
+	return g.render(rootName, rootTypeName, structs, typeAliases, enumDefs, projections, rootHasSystemFields, rootIDFieldName)
 }
 
 // ============================================================================
@@ -428,7 +428,7 @@ func (g *GoGenerator) Generate(schemaBytes []byte) (string, error) {
 // generation mode controls which layers are emitted; all type-generation work
 // happens before this point and is shared across modes. Output is deterministic:
 // every map is emitted in sorted key order.
-func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, projections map[string][]StructField, rootHasSystemFields bool) (string, error) {
+func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, projections map[string][]StructField, rootHasSystemFields bool, rootIDFieldName string) (string, error) {
 	mode := g.mode
 	emitRootModel := mode.emitsRootModel()
 	emitCollection := mode.emitsCollection()
@@ -575,9 +575,12 @@ func (g *GoGenerator) render(rootSchemaName, rootTypeName string, structs map[st
 		// either the shadow (schema without system fields) or the ordinary
 		// schema field named _id_ (enriched schema). It shadows the promoted
 		// DocumentModel.GetID so the struct's own field is authoritative.
-		idName := shadowIDName
+		idName := rootIDFieldName
 		if idName == "" {
-			idName = "ID"
+			idName = shadowIDName
+			if idName == "" {
+				idName = "ID"
+			}
 		}
 		fmt.Fprintf(&sb, "// GetID returns the document identifier for %s.\n", rootTypeName)
 		fmt.Fprintf(&sb, "func (m *%s) GetID() string {\n    return m.%s\n}\n\n", rootTypeName, idName)
@@ -1086,8 +1089,10 @@ func applyProjectionTags(fields []StructField, defs map[string]FieldDef, tags ma
 		switch schemaName {
 		case "_id_":
 			goToName["ID"] = schemaName
+			goToName["ModelID"] = schemaName
 		case "_metadata_":
 			goToName["Metadata"] = schemaName
+			goToName["ModelMetadata"] = schemaName
 		default:
 			goToName[toCamelCase(schemaName)] = schemaName
 		}
@@ -1277,7 +1282,7 @@ func resolveReferenceOrInline(ref any, parent, field string, typeNames map[strin
 // Field generation with configurable tags
 // ----------------------------------------------------------------------------
 
-func generateFields(fields map[string]FieldDef, typeNames map[string]string, schemaInfos map[string]*SchemaInfo, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, inlineNames map[string]string, genInlineName func(string, string, string) string, parentName string, tagConfig TagConfig) ([]StructField, error) {
+func generateFields(fields map[string]FieldDef, typeNames map[string]string, schemaInfos map[string]*SchemaInfo, structs map[string][]StructField, typeAliases map[string]string, enumDefs map[string]EnumDef, inlineNames map[string]string, genInlineName func(string, string, string) string, parentName string, tagConfig TagConfig) ([]StructField, string, error) {
 	var result []StructField
 
 	// Iterate deterministically: field names ascending, falling back to the
@@ -1297,22 +1302,67 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 		return entries[i].id < entries[j].id
 	})
 
-	for _, e := range entries {
+	// Resolve candidate Go names and detect collisions before emitting.
+	// System fields (_id_, _metadata_) claim canonical names (ID, Metadata);
+	// when a regular field already holds a canonical name (e.g. a schema field
+	// named "id" or "metadata"), the system field yields and is renamed
+	// ModelID/ModelMetadata, mirroring the pre-normalize shadow fallback.
+	// Any remaining duplicate regular-field names are an error.
+	names := make([]string, len(entries))
+	used := make(map[string]int, len(entries))
+	for i, e := range entries {
+		goName := toCamelCase(e.fd.Name)
+		switch e.fd.Name {
+		case "_id_":
+			goName = "ID"
+		case "_metadata_":
+			goName = "Metadata"
+		}
+		names[i] = goName
+		used[goName]++
+	}
+
+	resolveSystemName := func(canonical, modelName string) string {
+		if used[canonical] <= 1 {
+			return canonical
+		}
+		name := modelName
+		for i := 2; used[name] > 0; i++ {
+			name = fmt.Sprintf("%s%d", modelName, i)
+		}
+		return name
+	}
+	idName := resolveSystemName("ID", "ModelID")
+	metaName := resolveSystemName("Metadata", "ModelMetadata")
+
+	resolved := make([]string, len(entries))
+	seen := make(map[string]bool, len(entries))
+	idFieldName := ""
+	for i, e := range entries {
+		fd := e.fd
+		goName := names[i]
+		switch fd.Name {
+		case "_id_":
+			goName = idName
+			idFieldName = goName
+		case "_metadata_":
+			goName = metaName
+		default:
+			if seen[goName] {
+				return nil, "", fmt.Errorf("field %s.%s produces duplicate Go field name %q", parentName, fd.Name, goName)
+			}
+		}
+		seen[goName] = true
+		resolved[i] = goName
+	}
+
+	for i, e := range entries {
 		fd := e.fd
 		fieldName := fd.Name
 		if fieldName == "" {
 			continue
 		}
-		goFieldName := toCamelCase(fieldName)
-		// Reserved system fields keep their canonical Go names so generated
-		// models can shadow the embedded document model's fields cleanly.
-		// TODO: REMOVE HARD CODED STRINGS
-		switch fieldName {
-		case "_id_":
-			goFieldName = "ID"
-		case "_metadata_":
-			goFieldName = "Metadata"
-		}
+		goFieldName := resolved[i]
 
 		var goType string
 
@@ -1320,18 +1370,18 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 		case "union":
 			refs, ok := fd.SchemaRef.([]any)
 			if !ok || len(refs) == 0 {
-				return nil, fmt.Errorf("union field %s.%s: missing or invalid schema refs", parentName, fieldName)
+				return nil, "", fmt.Errorf("union field %s.%s: missing or invalid schema refs", parentName, fieldName)
 			}
 			containerName := genInlineName(parentName, fieldName, "union")
 			containerFields := []StructField{}
 			for _, r := range refs {
 				rmap, ok := r.(map[string]any)
 				if !ok {
-					return nil, fmt.Errorf("union ref is not a map")
+					return nil, "", fmt.Errorf("union ref is not a map")
 				}
 				refType, err := resolveSchemaReference(rmap, typeNames, schemaInfos)
 				if err != nil {
-					return nil, err
+					return nil, "", err
 				}
 				containerFields = append(containerFields, StructField{
 					Name: refType,
@@ -1345,18 +1395,18 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 		case "composite":
 			refs, ok := fd.SchemaRef.([]any)
 			if !ok || len(refs) == 0 {
-				return nil, fmt.Errorf("composite field %s.%s: missing or invalid schema refs", parentName, fieldName)
+				return nil, "", fmt.Errorf("composite field %s.%s: missing or invalid schema refs", parentName, fieldName)
 			}
 			containerName := genInlineName(parentName, fieldName, "composite")
 			containerFields := []StructField{}
 			for _, r := range refs {
 				rmap, ok := r.(map[string]any)
 				if !ok {
-					return nil, fmt.Errorf("composite ref is not a map")
+					return nil, "", fmt.Errorf("composite ref is not a map")
 				}
 				refType, err := resolveSchemaReference(rmap, typeNames, schemaInfos)
 				if err != nil {
-					return nil, err
+					return nil, "", err
 				}
 				containerFields = append(containerFields, StructField{
 					Name: "",
@@ -1369,14 +1419,14 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 
 		case "array":
 			if fd.SchemaRef == nil {
-				return nil, fmt.Errorf("array field %s.%s missing schema reference", parentName, fieldName)
+				return nil, "", fmt.Errorf("array field %s.%s missing schema reference", parentName, fieldName)
 			}
 			elemType, err := resolveReferenceOrInline(fd.SchemaRef, parentName, fieldName, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, parentName)
 			if err != nil {
-				return nil, err
+				return nil, "", err
 			}
 			if elemType == "" {
-				return nil, fmt.Errorf("array field %s.%s resolved to empty type", parentName, fieldName)
+				return nil, "", fmt.Errorf("array field %s.%s resolved to empty type", parentName, fieldName)
 			}
 			goType = "[]" + elemType
 
@@ -1386,10 +1436,10 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 			} else {
 				valType, err := resolveReferenceOrInline(fd.SchemaRef, parentName, fieldName, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, parentName)
 				if err != nil {
-					return nil, err
+					return nil, "", err
 				}
 				if valType == "" {
-					return nil, fmt.Errorf("record field %s.%s resolved to empty value type", parentName, fieldName)
+					return nil, "", fmt.Errorf("record field %s.%s resolved to empty value type", parentName, fieldName)
 				}
 				goType = "map[string]" + valType
 			}
@@ -1397,28 +1447,28 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 		case "object":
 			refMap, ok := fd.SchemaRef.(map[string]any)
 			if !ok {
-				return nil, fmt.Errorf("object field %s.%s missing schema reference", parentName, fieldName)
+				return nil, "", fmt.Errorf("object field %s.%s missing schema reference", parentName, fieldName)
 			}
 			refType, err := resolveSchemaReference(refMap, typeNames, schemaInfos)
 			if err != nil {
-				return nil, err
+				return nil, "", err
 			}
 			goType = refType
 
 		case "enum":
 			if fd.SchemaRef == nil {
-				return nil, fmt.Errorf("enum field %s.%s missing schema reference", parentName, fieldName)
+				return nil, "", fmt.Errorf("enum field %s.%s missing schema reference", parentName, fieldName)
 			}
 			enumType, err := resolveReferenceOrInline(fd.SchemaRef, parentName, fieldName, typeNames, schemaInfos, structs, typeAliases, enumDefs, inlineNames, genInlineName, parentName)
 			if err != nil {
-				return nil, err
+				return nil, "", err
 			}
 			goType = enumType
 
 		default:
 			goType = mapPrimitiveTypeToGo(fd.Type)
 			if goType == "" {
-				return nil, fmt.Errorf("unsupported field type %q for %s.%s", fd.Type, parentName, fieldName)
+				return nil, "", fmt.Errorf("unsupported field type %q for %s.%s", fd.Type, parentName, fieldName)
 			}
 		}
 
@@ -1439,7 +1489,7 @@ func generateFields(fields map[string]FieldDef, typeNames map[string]string, sch
 		})
 	}
 
-	return result, nil
+	return result, idFieldName, nil
 }
 
 // isReferenceType returns true if the type is already a reference type (slice, map, interface).
@@ -1519,6 +1569,13 @@ func buildSchemaTagValue(fd FieldDef, fieldName string) string {
 	if fd.Default != nil {
 		defaultStr := formatLiteral(fd.Default)
 		tagVal += fmt.Sprintf(",default=%s", strings.Trim(defaultStr, `"`))
+	}
+	// Optional fields are omitempty so nil/zero values are skipped when a
+	// struct is converted to a document for create (the binding layer's
+	// structFieldValues honors omitempty in the anansi tag). Without it,
+	// create of a nil optional object field fails conversion.
+	if !fd.Required {
+		tagVal += ",omitempty"
 	}
 	return tagVal
 }
