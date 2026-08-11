@@ -1,3 +1,10 @@
+## [8.5.6](https://github.com/asaidimu/go-anansi/compare/v8.5.5...v8.5.6) (2026-08-11)
+
+
+### Bug Fixes
+
+* **utils:** migrate sanitization schema definition to DTO extractor ([597075d](https://github.com/asaidimu/go-anansi/commit/597075d4da02f163de723ba6c01deffb0e20257e))
+
 ## [8.5.5](https://github.com/asaidimu/go-anansi/compare/v8.5.4...v8.5.5) (2026-08-11)
 
 
