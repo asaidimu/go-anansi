@@ -129,7 +129,7 @@ func TestGenerate_EnrichedSchemaSystemFields(t *testing.T) {
 	// System fields map to canonical Go names, emitted as ordinary fields.
 	assert.Contains(t, out, "type Order struct {\n    document.DocumentModel\n")
 	assert.Contains(t, out, "    ID string `anansi:\"_id_,required=true\" json:\"_id_\"`")
-	assert.Contains(t, out, "    Metadata map[string]any `anansi:\"_metadata_,required=false\" json:\"_metadata_,omitempty\"`")
+	assert.Contains(t, out, "    Metadata map[string]any `anansi:\"_metadata_,required=false,omitempty\" json:\"_metadata_,omitempty\"`")
 	assert.NotContains(t, out, "ModelID", "no extra _id_ shadow when the schema declares _id_")
 	assert.NotContains(t, out, "ModelMetadata", "no extra _metadata_ shadow when the schema declares _metadata_")
 
@@ -269,9 +269,9 @@ func TestProjections_EmitRequiredOverride(t *testing.T) {
 	assert.Contains(t, out, "type OrderCreate struct {\n    document.DocumentModel `json:\"-\" anansi:\"-\"`\n    Total decimal.Decimal `anansi:\"total,required=true\" json:\"total\" input:\"arguments.total\" schema:\"decimal:true\"`\n}")
 	assert.Contains(t, out, `anansi:"total,required=true"`)
 
-	// OrderSummary inherits optional: pointer type + required=false tag.
-	assert.Contains(t, out, "type OrderSummary struct {\n    document.DocumentModel `json:\"-\" anansi:\"-\"`\n    Status *OrderStatusEnum `anansi:\"status,required=false,type=enum\" json:\"status,omitempty\"`\n    Total *decimal.Decimal `anansi:\"total,required=false\" json:\"total,omitempty\"`\n}")
-	assert.Contains(t, out, `anansi:"total,required=false"`)
+	// OrderSummary inherits optional: pointer type + required=false,omitempty tag.
+	assert.Contains(t, out, "type OrderSummary struct {\n    document.DocumentModel `json:\"-\" anansi:\"-\"`\n    Status *OrderStatusEnum `anansi:\"status,required=false,type=enum,omitempty\" json:\"status,omitempty\"`\n    Total *decimal.Decimal `anansi:\"total,required=false,omitempty\" json:\"total,omitempty\"`\n}")
+	assert.Contains(t, out, `anansi:"total,required=false,omitempty"`)
 
 	// No projection accessors on the collection wrapper — projections are
 	// consumed via the generic shape methods (ReadAs/CreateFrom/UpdateFrom).
@@ -389,7 +389,7 @@ func TestGenerate_MetadataTypeNamePerSchema(t *testing.T) {
 	assert.Contains(t, out, "type OrderMetadata struct {")
 	assert.NotContains(t, out, "type Metadata struct", "the metadata type must be scoped to its collection")
 	assert.NotContains(t, out, "Metadata_", "reserved metadata schema must not produce a mangled type name")
-	assert.Contains(t, out, "    Metadata *OrderMetadata `anansi:\"_metadata_,required=false\" json:\"_metadata_,omitempty\"`")
+	assert.Contains(t, out, "    Metadata *OrderMetadata `anansi:\"_metadata_,required=false,omitempty\" json:\"_metadata_,omitempty\"`")
 
 	src := "package test\n\n" + out
 	if _, err := parser.ParseFile(token.NewFileSet(), "", src, parser.AllErrors); err != nil {

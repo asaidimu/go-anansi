@@ -37,16 +37,6 @@ type Customer struct {
 	Tier  *string `anansi:"tier,required=false" json:"tier,omitempty"`
 }
 
-type Metadata_ struct {
-	Checksum  string  `anansi:"checksum,required=true" json:"checksum"`
-	Created   string  `anansi:"created,required=true" json:"created"`
-	Updated   string  `anansi:"updated,required=true" json:"updated"`
-	Signature *string `anansi:"signature,required=false" json:"signature,omitempty"`
-	SpanID    *string `anansi:"span_id,required=false" json:"span_id,omitempty"`
-	TraceID   *string `anansi:"trace_id,required=false" json:"trace_id,omitempty"`
-	Version   float64 `anansi:"version,required=true" json:"version"`
-}
-
 type OrderLine struct {
 	Description *string  `anansi:"description,required=false" json:"description,omitempty"`
 	Discount    *float64 `anansi:"discount,required=false" json:"discount,omitempty"`
@@ -57,20 +47,30 @@ type OrderLine struct {
 	UnitPrice   *float64 `anansi:"unit_price,required=false" json:"unit_price,omitempty"`
 }
 
+type OrderMetadata struct {
+	Checksum  string  `anansi:"checksum,required=true" json:"checksum"`
+	Created   string  `anansi:"created,required=true" json:"created"`
+	Updated   string  `anansi:"updated,required=true" json:"updated"`
+	Signature *string `anansi:"signature,required=false" json:"signature,omitempty"`
+	SpanID    *string `anansi:"span_id,required=false" json:"span_id,omitempty"`
+	TraceID   *string `anansi:"trace_id,required=false" json:"trace_id,omitempty"`
+	Version   float64 `anansi:"version,required=true" json:"version"`
+}
+
 type Order struct {
 	document.DocumentModel
-	Lines           []OrderLine `anansi:"lines,required=false" json:"lines,omitempty"`
-	Notes           []string    `anansi:"notes,required=false" json:"notes,omitempty"`
-	ID              string      `anansi:"_id_,required=true" json:"_id_"`
-	Metadata        *Metadata_  `anansi:"_metadata_,required=false" json:"_metadata_,omitempty"`
-	BillingAddress  *Address    `anansi:"billing_address,required=false" json:"billing_address,omitempty"`
-	Currency        *string     `anansi:"currency,required=false,default=EUR" json:"currency,omitempty"`
-	Customer        *Customer   `anansi:"customer,required=false" json:"customer,omitempty"`
-	ShippingAddress *Address    `anansi:"shipping_address,required=false" json:"shipping_address,omitempty"`
-	Status          *string     `anansi:"status,required=false,default=processing" json:"status,omitempty"`
-	Subtotal        *float64    `anansi:"subtotal,required=false" json:"subtotal,omitempty"`
-	Tax             *float64    `anansi:"tax,required=false" json:"tax,omitempty"`
-	Total           *float64    `anansi:"total,required=false" json:"total,omitempty"`
+	Lines           []OrderLine    `anansi:"lines,required=false" json:"lines,omitempty"`
+	Notes           []string       `anansi:"notes,required=false" json:"notes,omitempty"`
+	ID              string         `anansi:"_id_,required=true" json:"_id_"`
+	Metadata        *OrderMetadata `anansi:"_metadata_,required=false" json:"_metadata_,omitempty"`
+	BillingAddress  *Address       `anansi:"billing_address,required=false" json:"billing_address,omitempty"`
+	Currency        *string        `anansi:"currency,required=false,default=EUR" json:"currency,omitempty"`
+	Customer        *Customer      `anansi:"customer,required=false" json:"customer,omitempty"`
+	ShippingAddress *Address       `anansi:"shipping_address,required=false" json:"shipping_address,omitempty"`
+	Status          *string        `anansi:"status,required=false,default=processing" json:"status,omitempty"`
+	Subtotal        *float64       `anansi:"subtotal,required=false" json:"subtotal,omitempty"`
+	Tax             *float64       `anansi:"tax,required=false" json:"tax,omitempty"`
+	Total           *float64       `anansi:"total,required=false" json:"total,omitempty"`
 }
 
 // GetID returns the document identifier for Order.
