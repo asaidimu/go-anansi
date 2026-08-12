@@ -36,6 +36,17 @@ func (d *Document) BindField(name string, rv reflect.Value, tag string) (bool, e
 func (d *Document) bindSlot(rp definition.ResolvedPath, fd definition.FieldDescriptor, rv reflect.Value, tag string) (bool, error) {
 	if rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
+			// Allocate the pointer only when the slot actually holds a value.
+			// Otherwise an absent field binds as a non-nil pointer to zero,
+			// which partial-update paths (FromPartialStruct) treat as present
+			// and clobber stored data with.
+			ok, err := present(d.cs, d.c, fd, rp)
+			if err != nil {
+				return false, err
+			}
+			if !ok {
+				return true, nil // absence → leave the field nil
+			}
 			rv.Set(reflect.New(rv.Type().Elem()))
 		}
 		return d.bindSlot(rp, fd, rv.Elem(), tag)
