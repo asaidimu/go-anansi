@@ -1,3 +1,10 @@
+## [8.5.7](https://github.com/asaidimu/go-anansi/compare/v8.5.6...v8.5.7) (2026-08-12)
+
+
+### Bug Fixes
+
+* **document:** prevent incorrect allocation of absent pointer fields ([97fb12b](https://github.com/asaidimu/go-anansi/commit/97fb12b15769476cdf3c0bc47f131118a6ad4881))
+
 ## [8.5.6](https://github.com/asaidimu/go-anansi/compare/v8.5.5...v8.5.6) (2026-08-11)
 
 
