@@ -44,7 +44,9 @@ func Link(rs *ResolvedSchema) (*CompiledSchema, error) {
 		rs:                  rs,
 	}
 
-	// Root schema slot 0.
+	// Root schema slot 0. No SchemaId: the root is identified by the
+	// top-level Schema.Name/Version, not a nested-schema UUID, so its
+	// SchemaMeta.ID stays at the zero value.
 	lc.schemas = append(lc.schemas, SchemaSlot{})
 	lc.schemasMeta = append(lc.schemasMeta, SchemaMeta{Name: "root"})
 	lc.schemaConstraints = append(lc.schemaConstraints, nil) // root has no raw constraints
@@ -163,6 +165,7 @@ func (lc *linkContext) assignSlot(rns *ResolvedNestedSchema) (uint8, error) {
 	idx := uint8(len(lc.schemas))
 	lc.schemas = append(lc.schemas, SchemaSlot{})
 	lc.schemasMeta = append(lc.schemasMeta, SchemaMeta{
+		ID:          rns.ID,
 		Name:        rns.Name,
 		Description: "",
 	})
