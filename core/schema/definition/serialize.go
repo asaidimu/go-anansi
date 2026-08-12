@@ -59,7 +59,7 @@ import (
 
 const (
 	compiledSchemaMagic               = "ANSC"
-	compiledSchemaFormatVersion uint8 = 2
+	compiledSchemaFormatVersion uint8 = 3
 )
 
 // =============================================================================
@@ -1869,6 +1869,7 @@ func SerializeCompiledSchema(cs *CompiledSchema) ([]byte, error) {
 	// SchemasMeta
 	w.u32(uint32(len(cs.SchemasMeta)))
 	for _, sm := range cs.SchemasMeta {
+		w.str(string(sm.ID))
 		w.str(sm.Name)
 		w.str(sm.Description)
 	}
@@ -2087,6 +2088,10 @@ func DeserializeCompiledSchema(data []byte) (*CompiledSchema, error) {
 	}
 	cs.SchemasMeta = make([]SchemaMeta, smCount)
 	for i := range cs.SchemasMeta {
+		id, err := r.str()
+		if err != nil {
+			return nil, err
+		}
 		name, err := r.str()
 		if err != nil {
 			return nil, err
@@ -2095,7 +2100,7 @@ func DeserializeCompiledSchema(data []byte) (*CompiledSchema, error) {
 		if err != nil {
 			return nil, err
 		}
-		cs.SchemasMeta[i] = SchemaMeta{Name: name, Description: desc}
+		cs.SchemasMeta[i] = SchemaMeta{ID: SchemaId(id), Name: name, Description: desc}
 	}
 
 	// Defaults / Enums documents

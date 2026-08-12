@@ -216,6 +216,16 @@ type FieldMeta struct {
 }
 
 type SchemaMeta struct {
+	// ID is the originating ResolvedNestedSchema's SchemaId — the UUID used
+	// as the key under schema.json's top-level "schemas" map. It is the
+	// zero value for the root slot (identified instead by the top-level
+	// Schema.Name/Version, not a nested-schema UUID) and for synthetic
+	// wrapper slots created for inline composite fields (childSlotForField
+	// in link.go), which have no corresponding schema.json entity of their
+	// own — those must be expanded back into their constituent parts'
+	// schema references during JSON reconstruction rather than emitted as
+	// their own "schemas" entry.
+	ID          SchemaId
 	Name        string
 	Description string
 }

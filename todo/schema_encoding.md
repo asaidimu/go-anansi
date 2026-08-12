@@ -1,8 +1,16 @@
 # Anansi Schema Binary Encoding — Specification
 
-**Version:** 1.1  
+**Version:** 1.2  
 **Status:** Final  
 **Scope:** Compiled Schema Serialization, Registry Storage, and Runtime Dispatch
+
+**Changes since 1.1:** Section 8 (Metadata Records) now has a concrete,
+byte-exact layout (previously described only conceptually). The Global
+String Table (Section 3) is no longer optional — inline string storage has
+been removed in favour of always-interned strings, which both compacts
+repeated names/descriptions across a schema and keeps the fixed-width
+metadata records self-contained. `FieldMeta` and `SchemaMeta` no longer
+persist `Path`, `Parts`, or `Default` — see §6.6 for why.
 
 ---
 
@@ -98,7 +106,7 @@ Bits 0–5 contain the critical decoding directives. Bits 6–7 are reserved for
 | Bit | Flag | Semantics |
 | :---: | :--- | :--- |
 | 0 | **Endianness** | `0` = All multi‑byte integers in the **payload sections** (except the Navigation Directory) are little‑endian. <br>`1` = Big‑endian. |
-| 1 | **String Storage** | `0` = Strings are stored **inline** as length‑prefixed blobs inside the Metadata Records (Section 7). <br>`1` = Strings are **interned** in a Global String Table (Section 3) and referenced by fixed‑width offsets. |
+| 1 | **Reserved (String Storage)** | As of v1.2, strings are always interned in the Global String Table (Section 3) and referenced by fixed‑width offsets from Metadata Records (Section 8) — inline string storage has been removed. This bit **must** be set to `1`. A decoder encountering `0` here is reading a pre‑1.2 payload written with inline strings and must not assume Section 8's v1.2 record layout applies. |
 | 2 | **Offset Width** | `0` = Variable‑length internal pointers (e.g., within the String Table or Metadata Records) are **32‑bit**. <br>`1` = They are **64‑bit**. |
 | 3 | **Has Cold Trailer** | `0` = The Cold Trailer section (Section 9) is entirely absent. <br>`1` = It is present (contains Defaults, Enums, Variants, Constraints, and Indexes). |
 | 4 | **Reserved** | Must be `0`. |
@@ -131,9 +139,10 @@ This directory contains absolute byte offsets (from the start of the payload) to
 
 The sections may be placed in any order, provided they do not overlap and are correctly aligned. The decoder accesses them solely via the offsets stored in the Fixed Navigation Directory.
 
-### 6.1. Section 3 – Global String Table (Optional)
-- **Presence:** Always present when `String Storage` flag = 1. May be omitted when inline strings are used.
-- **Format:** A contiguous byte array of length‑prefixed UTF‑8 strings. Each entry: `[ Length: uint16/uint32 (determined by Offset Width flag) ] [ Bytes ... ]`. The first string at offset 0 must have length 0 (reserved sentinel).
+### 6.1. Section 3 – Global String Table (Always Present, as of v1.2)
+- **Presence:** Always present. Every `Name`/`Description` reference in Section 8 points here; there is no inline-string fallback.
+- **Format:** A contiguous byte array of length‑prefixed UTF‑8 strings. Each entry: `[ Length: uint16/uint32 (determined by Offset Width flag) ] [ Bytes ... ]`. The first string at offset 0 must have length 0 (reserved sentinel) — this is the value every `DescriptionOffset` of `0` points to, representing "no description".
+- **Deduplication:** Encoders should intern identical strings once and reuse the offset — schemas commonly repeat short names/descriptions (e.g. `"id"`, `"name"`) across many fields, and deduplication is where the mandatory string table earns its keep over inline storage.
 
 ### 6.2. Section 4 – `[]SchemaSlot` (Fixed Size)
 - **Record Size:** 8 bytes per slot (`uint16 FieldStart` + `uint16 FieldCount` + `uint32 Footprint`).
@@ -151,9 +160,44 @@ The sections may be placed in any order, provided they do not overlap and are co
 - **Record Size:** 1 byte per entry.
 - **Access:** Parallel to Section 5. Used for validation and default handling.
 
-### 6.6. Section 8 – Metadata Records (Fixed Size with String Refs)
-- **Record Size:** Fixed‑width records where all variable strings are replaced by offsets into the String Table (or by inline lengths if Flag=0).
-- **Content:** Contains `FieldMeta` (ID, Name, Path, Parts, Description) and `SchemaMeta` (Name, Description). Used exclusively by `ResolvePath()` and `PathString()`.
+### 6.6. Section 8 – Metadata Records (Fixed Size, 24 Bytes per Record)
+
+**Presence and layout:** Two fixed-width arrays, back to back, with no
+separator or stored count — each array's element count is derived the same
+way Sections 4/5's own counts are (the byte span between consecutive
+Navigation Directory offsets, divided by record size):
+
+1. `FieldMeta[]` — one record per entry in Section 5 (`[]FieldDescriptor`), same count, same absolute index. Starts at `MetadataOffset`.
+2. `SchemaMeta[]` — one record per entry in Section 4 (`[]SchemaSlot`), same count, same slot index. Starts immediately after the last `FieldMeta` record.
+
+Both record kinds share an identical 24-byte shape:
+
+| Bytes | Field | Notes |
+| :--- | :--- | :--- |
+| 0 – 15 | `ID` | Raw 16-byte UUID (UUIDv7 for fields; `SchemaId` for schema slots). Stored as canonical UUID byte order, **not** affected by the `Endianness` flag — same treatment as string bytes in Section 3. All-zero for a `SchemaMeta` record with no source UUID: the root slot (identified by the top-level schema's own name/version, not a nested-schema id) and synthetic slots created for a field's inline composite (which has no `schema.json` entity of its own — see the field's `Variants`/child-schema linkage in the Cold Trailer to recover its constituent parts instead). |
+| 16 – 23 | `Offsets` | Packed `uint64`, byte order per the `Endianness` flag (§4.3, bit 0). Layout below. |
+
+**`Offsets` word (64 bits):**
+
+```
+ 63          48 47          24 23           0
++--------------+--------------+--------------+
+|   Reserved   | DescOffset   | NameOffset   |
+|    (16b)     |    (24b)     |    (24b)     |
++--------------+--------------+--------------+
+```
+
+| Sub‑field | Bits | Width | Semantics |
+| :--- | :--- | :--- | :--- |
+| **NameOffset** | 0 – 23 | 24 | Offset into the Section 3 string table for this field/schema's name. 24 bits is sufficient because the string table can never exceed the schema's own 24-bit `Length` field (Word 0, §3.2) — the whole payload tops out at 16 MiB. |
+| **DescOffset** | 24 – 47 | 24 | Offset into the string table for the description. `0` points at the reserved empty-string sentinel (§6.1) and means "no description" — this is the common case, since most fields don't carry one. |
+| **Reserved** | 48 – 63 | 16 | Must be zero. Reserved for future per-record flags (e.g. a dedup/interning hint) without growing the record past 24 bytes. |
+
+**Deliberately not stored:**
+- **`Path` / `Parts`** — fully recoverable at read time by walking a `ResolvedPath` and looking up each step's `Name` (exactly what `joinPath()` does today). Persisting a precomputed dotted path for every field would just be storing a derivable string redundantly.
+- **`Default`** — the runtime-consumed default value lives in the Cold Trailer's `Defaults` container (§6.7), keyed by `DataPoint`. The in-memory `FieldMeta.Default` is a construction-time-only convenience consumed once by `Link()`; there is no second reader, so there is no reason to persist it twice.
+
+**Access:** Used by `ResolvePath()`, `PathString()`/`joinPath()`, and JSON reconstruction. Not touched by `Address()` or validation — this section is cold-path by design, per the operational priority in §8 (Design Rationale): validation and query planning run far more often than schema serialization, so names/descriptions stay out of the hot Sections 4–7 entirely.
 
 ### 6.7. Section 9 – Cold Trailer (Optional)
 - **Presence:** Determined by the `HasColdTrailer` flag.
@@ -195,7 +239,8 @@ The decoder **never** parses, iterates, or allocates data structures for unused 
 | **Cache Locality** | The hot‑path arrays (Schemas, Descriptors, LocalOffsets) have their offsets stored contiguously in the directory (bytes 24–47). <br> `Address()` fetches these three pointers in a single cache line. |
 | **Zero‑Copy Parsing** | Fixed‑size arrays (Sections 4–7) are directly memory‑mapped to Go slices using `unsafe.Pointer` or a safe byte‑slice cast, eliminating deserialization overhead. |
 | **Stable Global Identity** | Word 0 encodes registry location, size, and version. The 24‑bit ID block provides ample room for identity sub‑fields (with 3 reserved bits) while the 16‑bit offset gives direct access to the payload. |
-| **Extensibility** | The `Header Extension` and 72 bytes of reserved navigation space allow future additions (e.g., secondary string tables, index bloom filters) without breaking backward compatibility. |
+| **Extensibility** | The `Header Extension` and 72 bytes of reserved navigation space allow future additions (e.g., secondary string tables, index bloom filters) without breaking backward compatibility. The 16 reserved bits in every Section 8 `Offsets` word offer the same headroom for per-field/per-schema metadata flags without growing the record. |
+| **Operational/Metadata Separation** | Sections 4–7 (`Schemas`, `Descriptors`, `LocalOffsets`, `FieldTypes`) hold everything validation and query planning touch on a per-document, per-field basis, and stay free of variable-length text. Names, descriptions, and schema/field UUIDs — needed only for path resolution, tooling, and JSON reconstruction, not for validating a document — live entirely in the cold Section 8/9 region. A decoder that only ever validates documents never touches the string table or the Cold Trailer. |
 
 ---
 
@@ -219,12 +264,12 @@ word0   = 8OCTET                 ; big‑endian, stable handle (offset, length, 
 word1   = 8OCTET                 ; big‑endian, dispatch flags
 navigation = 128OCTET            ; little‑endian, 64‑bit offsets
 
-sections = [ string‑table ]      ; Section 3 (optional)
+sections = string‑table         ; Section 3 (always present, v1.2+)
            schemas               ; Section 4
            descriptors           ; Section 5
            local‑offsets         ; Section 6
            field‑types           ; Section 7
-           metadata‑records      ; Section 8
+           metadata‑records      ; Section 8 (fieldmeta[] ++ schemameta[])
            [ cold‑trailer ]      ; Section 9 (optional)
 ```
 
