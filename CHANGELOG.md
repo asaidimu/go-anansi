@@ -1,3 +1,10 @@
+## [8.5.8](https://github.com/asaidimu/go-anansi/compare/v8.5.7...v8.5.8) (2026-08-12)
+
+
+### Bug Fixes
+
+* **schema:** update binary schema encoding to v1.2 ([5c5bc49](https://github.com/asaidimu/go-anansi/commit/5c5bc49f1ff5ea537a2b28878e8defd6eab12195))
+
 ## [8.5.7](https://github.com/asaidimu/go-anansi/compare/v8.5.6...v8.5.7) (2026-08-12)
 
 
