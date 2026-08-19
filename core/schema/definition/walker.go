@@ -223,6 +223,14 @@ func (s *Schema) walkField(
 		}
 	}
 
+	// Walk field's metadata map
+	if len(field.Metadata) > 0 {
+		acc, err = s.walkMetadataMap(acc, walker, ctx, field.Metadata)
+		if err != nil {
+			return acc, err
+		}
+	}
+
 	return acc, nil
 }
 

@@ -59,7 +59,7 @@ import (
 
 const (
 	compiledSchemaMagic               = "ANSC"
-	compiledSchemaFormatVersion uint8 = 3
+	compiledSchemaFormatVersion uint8 = 4
 )
 
 // =============================================================================
@@ -620,9 +620,14 @@ func decodeAnySlice(r *reader) ([]any, error) {
 
 func encodeAnyMap(w *writer, v map[string]any) error {
 	w.u32(uint32(len(v)))
-	for k, val := range v {
+	keys := make([]string, 0, len(v))
+	for k := range v {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
 		w.str(k)
-		if err := encodeAnyValue(w, val); err != nil {
+		if err := encodeAnyValue(w, v[k]); err != nil {
 			return err
 		}
 	}
@@ -633,6 +638,9 @@ func decodeAnyMap(r *reader) (map[string]any, error) {
 	n, err := r.u32()
 	if err != nil {
 		return nil, err
+	}
+	if n == 0 {
+		return nil, nil
 	}
 	out := make(map[string]any, n)
 	for i := uint32(0); i < n; i++ {
@@ -1853,6 +1861,9 @@ func SerializeCompiledSchema(cs *CompiledSchema) ([]byte, error) {
 		w.str(fm.Path)
 		w.strSlice(fm.Parts)
 		w.str(fm.Description)
+		if err := encodeAnyMap(w, fm.Metadata); err != nil {
+			return nil, fmt.Errorf("compiled schema serialize: field meta metadata: %w", err)
+		}
 		if err := encodeLiteralValue(w, fm.Default); err != nil {
 			return nil, fmt.Errorf("compiled schema serialize: field meta default: %w", err)
 		}
@@ -1872,6 +1883,9 @@ func SerializeCompiledSchema(cs *CompiledSchema) ([]byte, error) {
 		w.str(string(sm.ID))
 		w.str(sm.Name)
 		w.str(sm.Description)
+		if err := encodeAnyMap(w, sm.Metadata); err != nil {
+			return nil, fmt.Errorf("compiled schema serialize: schema meta metadata: %w", err)
+		}
 	}
 
 	// Defaults / Enums documents
@@ -2045,6 +2059,10 @@ func DeserializeCompiledSchema(data []byte) (*CompiledSchema, error) {
 		if err != nil {
 			return nil, err
 		}
+		metadata, err := decodeAnyMap(r)
+		if err != nil {
+			return nil, err
+		}
 		def, err := decodeLiteralValue(r)
 		if err != nil {
 			return nil, err
@@ -2055,6 +2073,7 @@ func DeserializeCompiledSchema(data []byte) (*CompiledSchema, error) {
 			Path:        path,
 			Parts:       parts,
 			Description: desc,
+			Metadata:    metadata,
 			Default:     def,
 		}
 	}
@@ -2100,7 +2119,11 @@ func DeserializeCompiledSchema(data []byte) (*CompiledSchema, error) {
 		if err != nil {
 			return nil, err
 		}
-		cs.SchemasMeta[i] = SchemaMeta{ID: SchemaId(id), Name: name, Description: desc}
+		metadata, err := decodeAnyMap(r)
+		if err != nil {
+			return nil, err
+		}
+		cs.SchemasMeta[i] = SchemaMeta{ID: SchemaId(id), Name: name, Description: desc, Metadata: metadata}
 	}
 
 	// Defaults / Enums documents

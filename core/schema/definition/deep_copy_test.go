@@ -99,6 +99,40 @@ func TestSchema_DeepCopy(t *testing.T) {
 	assert.Equal(t, FieldName("field1"), originalRule.Fields[0])
 }
 
+func TestField_DeepCopy_Metadata(t *testing.T) {
+	original := &Schema{
+		BaseSchema: BaseSchema{
+			Name: "MetaSchema",
+			Fields: map[FieldId]Field{
+				"f1": {
+					Name:     "tagged",
+					Metadata: map[string]any{"ui": "input", "nested": map[string]any{"k": "v"}},
+					FieldProperties: FieldProperties{
+						Type: FieldTypeString,
+					},
+				},
+			},
+		},
+	}
+
+	copied := original.DeepCopy()
+
+	origJSON, err := json.Marshal(original)
+	assert.NoError(t, err)
+	copiedJSON, err := json.Marshal(copied)
+	assert.NoError(t, err)
+	assert.JSONEq(t, string(origJSON), string(copiedJSON))
+
+	// Mutating the copy's metadata must not affect the original.
+	copiedField := copied.Fields["f1"]
+	copiedField.Metadata["ui"] = "changed"
+	copiedField.Metadata["nested"].(map[string]any)["k"] = "changed"
+	copied.Fields["f1"] = copiedField
+
+	assert.Equal(t, "input", original.Fields["f1"].Metadata["ui"])
+	assert.Equal(t, "v", original.Fields["f1"].Metadata["nested"].(map[string]any)["k"])
+}
+
 func TestSchema_DeepCopy_Complex(t *testing.T) {
 	original := &Schema{
 		Version: common.MustNewVersion("2.1.3"),

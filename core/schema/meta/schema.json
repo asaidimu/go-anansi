@@ -453,6 +453,10 @@
         "019fae27-27cc-7195-80dc-93e888667bc1": {
           "name": "nullable",
           "type": "boolean"
+        },
+        "01a018d0-359d-7ec4-8ea7-b6f2bde58817": {
+          "name": "metadata",
+          "type": "record"
         }
       },
       "constraints": {

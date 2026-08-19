@@ -241,6 +241,9 @@ func collectModifiedFieldOps(id FieldId, old, new *Field, propPath func(fieldID 
 	if !fieldSchemaRefEqual(old.Schema, new.Schema) {
 		emit(PathFieldSchema, new.Schema, old.Schema)
 	}
+	if !reflect.DeepEqual(old.Metadata, new.Metadata) {
+		emit(PathFieldMetadata, new.Metadata, old.Metadata)
+	}
 	return forward, backward
 }
 

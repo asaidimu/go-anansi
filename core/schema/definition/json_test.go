@@ -10,6 +10,97 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestFieldMetadata_RendersInToJSONAndAsMap verifies field metadata flows
+// through ToJSON, AsMap, and Compile+Link into FieldsMeta.
+func TestFieldMetadata_RendersInToJSONAndAsMap(t *testing.T) {
+	schema := definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "Tagged",
+			Fields: map[definition.FieldId]definition.Field{
+				"019d7775-6566-7fc8-82c6-735838cdfe20": {
+					Name:     "tagged",
+					Metadata: map[string]any{"ui": "input", "tags": []any{"a"}},
+					FieldProperties: definition.FieldProperties{
+						Type: definition.FieldTypeString,
+					},
+				},
+			},
+		},
+	}
+
+	jsonOut := schema.ToJSON()
+	var rendered map[string]any
+	require.NoError(t, json.Unmarshal(jsonOut, &rendered))
+	fields := rendered["fields"].(map[string]any)
+	field := fields["019d7775-6566-7fc8-82c6-735838cdfe20"].(map[string]any)
+	assert.Equal(t, map[string]any{"ui": "input", "tags": []any{"a"}}, field["metadata"])
+
+	asMap := schema.AsMap()
+	amField := asMap["fields"].(map[string]any)["019d7775-6566-7fc8-82c6-735838cdfe20"].(map[string]any)
+	assert.Equal(t, "input", amField["metadata"].(map[string]any)["ui"])
+
+	rs, err := definition.Compile(&schema)
+	require.NoError(t, err)
+	cs, err := definition.Link(rs)
+	require.NoError(t, err)
+	var found bool
+	for _, fm := range cs.FieldsMeta {
+		if fm.Name == "tagged" {
+			found = true
+			assert.Equal(t, map[string]any{"ui": "input", "tags": []any{"a"}}, fm.Metadata)
+		}
+	}
+	assert.True(t, found, "tagged field must be present in FieldsMeta")
+}
+
+// TestToJSON_EmptyStringDefault is a regression test for a nil pointer
+// dereference in writeString when rendering a string field whose default is
+// the empty string: unsafe.StringData("") is nil in recent Go versions, and
+// slicing it panicked before the empty-string guard was added.
+func TestToJSON_EmptyStringDefault(t *testing.T) {
+	src := `{"name":"labels","version":"1.0.0","fields":{"project_id":{"name":"project_id","type":"string","required":true,"default":""},"name":{"name":"name","type":"string","required":true},"color":{"name":"color","type":"string","required":true}},"indexes":{"project_idx":{"name":"project_idx","type":"normal","fields":["project_id"]}}}`
+	s, err := definition.FromJSON([]byte(src))
+	require.NoError(t, err)
+
+	out := s.ToJSON()
+	require.NotEmpty(t, out)
+	var round map[string]any
+	require.NoError(t, json.Unmarshal(out, &round))
+	fields := round["fields"].(map[string]any)
+	assert.Equal(t, "", fields["project_id"].(map[string]any)["default"])
+
+	// Schema.MarshalJSON delegates to ToJSON; both must agree.
+	std, err := json.Marshal(s)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(out), string(std))
+}
+
+// TestToJSON_EmptyStringsInMetadata guards the same empty-string writeString
+// path reached through metadata maps/arrays, not just field defaults.
+func TestToJSON_EmptyStringsInMetadata(t *testing.T) {
+	s := definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "Tagged",
+			Fields: map[definition.FieldId]definition.Field{
+				"019d7775-6566-7fc8-82c6-735838cdfe20": {
+					Name:     "tagged",
+					Metadata: map[string]any{"empty": "", "list": []any{"", "x"}},
+					FieldProperties: definition.FieldProperties{
+						Type: definition.FieldTypeString,
+					},
+				},
+			},
+		},
+	}
+	out := s.ToJSON()
+	require.NotEmpty(t, out)
+	var round map[string]any
+	require.NoError(t, json.Unmarshal(out, &round))
+	meta := round["fields"].(map[string]any)["019d7775-6566-7fc8-82c6-735838cdfe20"].(map[string]any)["metadata"].(map[string]any)
+	assert.Equal(t, "", meta["empty"])
+	assert.Equal(t, []any{"", "x"}, meta["list"])
+}
+
 func TestSchema_ToJSONVsEncodingJSON(t *testing.T) {
 	// Reusing a complex test schema from definition_test.go
 	testSchema := definition.Schema{

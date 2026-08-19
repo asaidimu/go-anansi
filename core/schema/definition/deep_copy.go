@@ -52,6 +52,8 @@ func (f *Field) deepCopy() Field {
 		Required:    f.Required,
 		Deprecated:  f.Deprecated,
 		Unique:      f.Unique,
+		Nullable:    f.Nullable,
+		Metadata:    deepCopyMap(f.Metadata),
 		FieldProperties: FieldProperties{
 			Type:    f.Type,
 			Default: f.Default.deepCopy(),

@@ -733,6 +733,25 @@ func TestDiff_ForwardBackwardSymmetry(t *testing.T) {
 	assert.Equal(t, FieldRemoved, diffBack.Changes[0].Kind)
 }
 
+func TestDiff_FieldModified_Metadata(t *testing.T) {
+	old := &Schema{BaseSchema: BaseSchema{
+		Fields: map[FieldId]Field{
+			"f1": {Name: "tagged", Metadata: map[string]any{"ui": "input"}},
+		},
+	}}
+	new := &Schema{BaseSchema: BaseSchema{
+		Fields: map[FieldId]Field{
+			"f1": {Name: "tagged", Metadata: map[string]any{"ui": "select"}},
+		},
+	}}
+
+	diff, err := Diff(old, new)
+	require.NoError(t, err)
+	require.Len(t, diff.Changes, 1)
+	assert.Equal(t, FieldModified, diff.Changes[0].Kind)
+	assert.Equal(t, PathFieldMetadata, diff.Changes[0].Forward[0].Path.Segments[1].Type)
+}
+
 func TestDiff_FieldModified_Nullable(t *testing.T) {
 	old := &Schema{BaseSchema: BaseSchema{
 		Fields: map[FieldId]Field{

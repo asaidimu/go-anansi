@@ -93,6 +93,11 @@ func (jb *JSONBuilder) writeKey(key string) {
 var hexTable = [16]byte{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'}
 
 func (jb *JSONBuilder) writeString(s string) {
+	if len(s) == 0 {
+		jb.buf = append(jb.buf, '"', '"')
+		return
+	}
+
 	jb.buf = append(jb.buf, '"')
 
 	// Use unsafe to get []byte view without copy

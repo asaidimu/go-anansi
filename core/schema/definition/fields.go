@@ -19,12 +19,13 @@ type FieldProperties struct {
 
 // Field defines a field within a schema.
 type Field struct {
-	Name        FieldName `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Required    bool      `json:"required,omitempty"`
-	Deprecated  bool      `json:"deprecated,omitempty"`
-	Unique      bool      `json:"unique,omitempty"`
-	Nullable    bool      `json:"nullable,omitempty"`
+	Name        FieldName      `json:"name"`
+	Description string         `json:"description,omitempty"`
+	Required    bool           `json:"required,omitempty"`
+	Deprecated  bool           `json:"deprecated,omitempty"`
+	Unique      bool           `json:"unique,omitempty"`
+	Nullable    bool           `json:"nullable,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
 
 	FieldProperties
 }
