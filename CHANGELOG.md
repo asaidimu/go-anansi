@@ -1,3 +1,10 @@
+## [8.5.9](https://github.com/asaidimu/go-anansi/compare/v8.5.8...v8.5.9) (2026-08-19)
+
+
+### Bug Fixes
+
+* **core:** implement registry caching and schema metadata support ([38f6d87](https://github.com/asaidimu/go-anansi/commit/38f6d873a846e778cbcbb1e22ef36d0a56f50ebe))
+
 ## [8.5.8](https://github.com/asaidimu/go-anansi/compare/v8.5.7...v8.5.8) (2026-08-12)
 
 
