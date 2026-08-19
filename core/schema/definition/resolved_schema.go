@@ -31,6 +31,7 @@ type ResolvedSchema struct {
 	Fields      []ResolvedField
 	Constraints []ResolvedConstraint
 	Indexes     map[IndexID]Index
+	Metadata    map[string]any
 	// All named sub-schemas, each resolved to exactly one level.
 	// This is the sole authoritative registry after compilation.
 	Schemas map[SchemaId]*ResolvedNestedSchema
@@ -42,6 +43,7 @@ type ResolvedSchema struct {
 type ResolvedNestedSchema struct {
 	ID            SchemaId
 	Name          string
+	Metadata      map[string]any
 	EffectiveType FieldType
 	Fields        []ResolvedField
 	IsRecursive   bool
@@ -76,6 +78,7 @@ type ResolvedField struct {
 	ID          FieldId // stable UUIDv7 — never changes across renames
 	Name        FieldName
 	Description string
+	Metadata    map[string]any
 	Path        string   // absolute dot-separated path from schema root
 	Parts       []string // pre-split path parts for zero-alloc traversal
 	Type        FieldType
@@ -253,6 +256,7 @@ func (c *SchemaCompiler) compile() (*ResolvedSchema, error) {
 		Fields:      rootFields,
 		Constraints: rootConstraints,
 		Indexes:     c.source.Indexes,
+		Metadata:    c.source.Metadata,
 		Schemas:     c.resolved,
 	}, nil
 }
@@ -285,6 +289,7 @@ func (c *SchemaCompiler) compileNestedSchema(id SchemaId) (*ResolvedNestedSchema
 	rns := &ResolvedNestedSchema{
 		ID:            id,
 		Name:          ns.Name,
+		Metadata:      ns.Metadata,
 		EffectiveType: resolveEffectiveType(&ns),
 	}
 	// Optimistically store so self-references within this schema's fields
@@ -367,6 +372,7 @@ func (c *SchemaCompiler) compileField(f Field, id FieldId, basePath string) (Res
 		ID:          id,
 		Name:        f.Name,
 		Description: f.Description,
+		Metadata:    f.Metadata,
 		Path:        path,
 		Parts:       parts,
 		Type:        typ,

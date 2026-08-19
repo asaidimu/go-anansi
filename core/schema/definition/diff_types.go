@@ -100,6 +100,7 @@ const (
 	PathType
 	PathDefault
 	PathFieldSchema
+	PathFieldMetadata
 
 	// Index properties
 	PathIndexType
@@ -300,6 +301,8 @@ func (pst PathSegmentType) String() string {
 		return "default"
 	case PathFieldSchema:
 		return "schema"
+	case PathFieldMetadata:
+		return "field_metadata"
 	case PathIndexType:
 		return "index_type"
 	case PathOrder:
@@ -387,6 +390,8 @@ func (pst *PathSegmentType) UnmarshalJSON(data []byte) error {
 		*pst = PathDefault
 	case "schema":
 		*pst = PathFieldSchema
+	case "field_metadata":
+		*pst = PathFieldMetadata
 	case "index_type":
 		*pst = PathIndexType
 	case "order":

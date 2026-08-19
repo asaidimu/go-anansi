@@ -158,6 +158,13 @@ var MetaSchema = definition.Schema{
 							Type: definition.FieldTypeBoolean,
 						},
 					},
+					FieldFieldIDMetadata: {
+						Name:     "metadata",
+						Required: false,
+						FieldProperties: definition.FieldProperties{
+							Type: definition.FieldTypeRecord,
+						},
+					},
 				},
 				Constraints: map[definition.ConstraintId]definition.Constraint{
 					ConstraintPrimitivesNoSchema:                      MetaSchemaConstraints[ConstraintPrimitivesNoSchema],

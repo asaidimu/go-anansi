@@ -2,6 +2,7 @@ package definition
 
 import (
 	"fmt"
+	"reflect"
 
 	"github.com/google/uuid"
 )
@@ -23,7 +24,11 @@ func (f *Field) Equals(other *Field) bool {
 		f.Required != other.Required ||
 		f.Deprecated != other.Deprecated ||
 		f.Unique != other.Unique ||
+		f.Nullable != other.Nullable ||
 		f.Type != other.Type {
+		return false
+	}
+	if !reflect.DeepEqual(f.Metadata, other.Metadata) {
 		return false
 	}
 	// For simplicity in this migration, we'll skip deep comparison of Default and Schema for now,

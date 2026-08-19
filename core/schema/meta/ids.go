@@ -97,6 +97,7 @@ const (
 	FieldFieldIDDeprecated  definition.FieldId = "019d7775-6566-7367-9664-adb25994bf41"
 	FieldFieldIDUnique      definition.FieldId = "019d7775-6566-7fc8-82c6-735838cdfe21"
 	FieldFieldIDNullable    definition.FieldId = "019f2c34-76a2-7823-b6d9-76e5ed0194de"
+	FieldFieldIDMetadata    definition.FieldId = "01a018d0-359d-7ec4-8ea7-b6f2bde58817"
 )
 
 // -----------------------------------------------------------------------------

@@ -14,9 +14,10 @@ import (
 const allTypesSchema = `{
   "version": "1.0.0",
   "name": "all_types",
+  "metadata": { "owner": "schema-tests", "team": ["core"] },
   "fields": {
     "f_unknown":       { "name": "f_unknown",       "type": "unknown" },
-    "f_string":        { "name": "f_string",        "type": "string",  "default": "hello" },
+    "f_string":        { "name": "f_string",        "type": "string",  "default": "hello", "metadata": { "ui": "input", "tags": ["a", "b"] } },
     "f_number":        { "name": "f_number",        "type": "number",  "default": 1.5 },
     "f_integer":       { "name": "f_integer",       "type": "integer", "default": 42 },
     "f_decimal":       { "name": "f_decimal",       "type": "decimal", "default": "123.45" },
@@ -42,6 +43,7 @@ const allTypesSchema = `{
   "schemas": {
     "obj_schema": {
       "name": "obj_schema",
+      "metadata": { "purpose": "embedded" },
       "fields": {
         "nested_str": { "name": "nested_str", "type": "string" },
         "nested_int": { "name": "nested_int", "type": "integer" }

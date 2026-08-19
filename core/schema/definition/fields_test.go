@@ -93,6 +93,44 @@ func TestField_MarshalJSON_OptionalFieldsOmitted(t *testing.T) {
 	assert.JSONEq(t, expected, string(data))
 }
 
+func TestField_MarshalJSON_Metadata(t *testing.T) {
+	f := definition.Field{
+		Name:     "taggedField",
+		Nullable: true,
+		Metadata: map[string]any{
+			"ui":       "input",
+			"priority": float64(3),
+			"tags":     []any{"a", "b"},
+		},
+		FieldProperties: definition.FieldProperties{
+			Type: definition.FieldTypeString,
+		},
+	}
+
+	data, err := json.Marshal(f)
+	require.NoError(t, err)
+
+	expected := `{
+		"name": "taggedField",
+		"nullable": true,
+		"metadata": {
+			"ui": "input",
+			"priority": 3,
+			"tags": ["a", "b"]
+		},
+		"type": "string"
+	}`
+	assert.JSONEq(t, expected, string(data))
+
+	var unmarshaled definition.Field
+	err = json.Unmarshal(data, &unmarshaled)
+	require.NoError(t, err)
+	assert.Equal(t, f.Name, unmarshaled.Name)
+	assert.True(t, unmarshaled.Nullable)
+	assert.Equal(t, "input", unmarshaled.Metadata["ui"])
+	assert.Equal(t, []any{"a", "b"}, unmarshaled.Metadata["tags"])
+}
+
 func TestField_MarshalUnmarshalJSON_DifferentFieldTypes(t *testing.T) {
 	testCases := []struct {
 		name      string

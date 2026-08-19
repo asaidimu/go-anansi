@@ -212,6 +212,7 @@ type FieldMeta struct {
 	Path        string
 	Parts       []string
 	Description string
+	Metadata    map[string]any
 	Default     LiteralValue
 }
 
@@ -228,6 +229,7 @@ type SchemaMeta struct {
 	ID          SchemaId
 	Name        string
 	Description string
+	Metadata    map[string]any
 }
 
 // =============================================================================

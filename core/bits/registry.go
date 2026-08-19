@@ -13,15 +13,27 @@ const defaultCompactionThreshold = 256
 
 type OnWrite func(h Handle, newStart uint, data []byte) (Handle, []byte)
 
-type Config struct {
-	OnSetID               func(h Handle, width uint8) Handle
-	OnWrite               OnWrite
+var (
+	ErrNotFound            = errors.New("registry: key not found")
+	ErrTooManyEntries      = errors.New("record: too many live entries; header slot capacity exhausted")
+	ErrDataExceedsCapacity = errors.New("record: data would exceed maximum addressable size")
+)
+
+type Config[K comparable, T any] struct {
+	// Core structural settings
 	HandleSpec            HandleSpec
 	CompactionThreshold   int
 	DefragmentationPeriod time.Duration
+
+	// Application logic
+	HashKey func(K) uint64
+	NewView func(Handle, []byte) T
+
+	// Optional hooks
+	OnWrite OnWrite
 }
 
-type RecordStats struct {
+type RegistryStats struct {
 	Entries        int
 	Holes          int
 	DataBytes      int64
@@ -34,22 +46,17 @@ type RecordStats struct {
 	Defragments    uint64
 }
 
-var (
-	ErrTooManyEntries       = errors.New("record: too many live entries; header slot capacity exhausted")
-	ErrDataExceedsCapacity = errors.New("record: data would exceed maximum addressable size")
-)
-
 // ---------- Structural Sharing Core Constants & Paged Arrays ----------
 
 const (
-	pageSize = 256
-	pageMask = pageSize - 1
+	pageSize  = 256
+	pageMask  = pageSize - 1
 	pageShift = 8
 )
 
 // persistentEntries provides structural sharing for dense entries.
 type persistentEntries struct {
-	pages [][]Handle
+	pages  [][]Handle
 	length int
 }
 
@@ -131,7 +138,7 @@ func (pe *persistentEntries) toSlice() []Handle {
 
 // persistentSlotToEntry provides structural sharing for slot lookup.
 type persistentSlotToEntry struct {
-	pages [][]int32
+	pages  [][]int32
 	length int
 }
 
@@ -505,10 +512,9 @@ type snapshot struct {
 	defragments uint64
 }
 
-type Record struct {
+type Registry[K comparable, T any] struct {
 	snap atomic.Pointer[snapshot]
 
-	OnSetID func(h Handle, width uint8) Handle
 	onWrite OnWrite
 
 	writeMu sync.Mutex
@@ -525,18 +531,19 @@ type Record struct {
 	defragStarted atomic.Bool
 
 	spec HandleSpec
+	cfg  Config[K, T]
 }
 
-func NewRecord(cfg Config) *Record {
+func NewRegistry[K comparable, T any](cfg Config[K, T]) *Registry[K, T] {
 	ct := cfg.CompactionThreshold
 	if ct <= 0 {
 		ct = defaultCompactionThreshold
 	}
-	r := &Record{
-		OnSetID:             cfg.OnSetID,
+	r := &Registry[K, T]{
 		onWrite:             cfg.OnWrite,
 		spec:                cfg.HandleSpec,
 		compactionThreshold: ct,
+		cfg:                 cfg,
 	}
 	r.defragDelay.Store(int64(cfg.DefragmentationPeriod))
 	r.snap.Store(&snapshot{
@@ -547,12 +554,250 @@ func NewRecord(cfg Config) *Record {
 	return r
 }
 
-func (r *Record) Read(cb func(entries []Handle, data []byte)) {
+func (r *Registry[K, T]) Get(key K) (T, error) {
+	var zero T
+	if r.cfg.HashKey == nil || r.cfg.NewView == nil {
+		return zero, ErrNotFound
+	}
+	id := r.cfg.HashKey(key) & r.spec.MaxID()
+
+	snap := r.snap.Load()
+	pos, ok := snap.idIndex.lookup(id)
+	if !ok {
+		return zero, ErrNotFound
+	}
+
+	h := snap.entries.get(int(pos))
+	index := int(h.Offset())
+	length := uint32(r.spec.Length(h))
+
+	byteOffset, ok := slotOffset(snap.header, index)
+	if !ok {
+		return zero, ErrNotFound
+	}
+	if uint64(byteOffset)+uint64(length) > uint64(len(snap.data)) {
+		return zero, ErrNotFound
+	}
+
+	slice := snap.data[byteOffset : byteOffset+length]
+	return r.cfg.NewView(h, slice), nil
+}
+
+func (r *Registry[K, T]) Set(key K, value []byte) (T, error) {
+	var zero T
+	need := len(value)
+	maxLen := r.spec.MaxLength()
+	if uint64(need) > maxLen {
+		return zero, fmt.Errorf("%w: requested %d, max allowed for %d bits is %d",
+			ErrLengthExceedsBitSpace, need, r.spec.ConfiguredLengthBits(), maxLen)
+	}
+
+	if r.cfg.HashKey == nil || r.cfg.NewView == nil {
+		return zero, errors.New("registry: missing HashKey or NewView function in Config")
+	}
+	id := r.cfg.HashKey(key) & r.spec.MaxID()
+
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
+
+	old := r.snap.Load()
+
+	// If an entry for this key/ID already exists, delete it first to free slot & hole
+	if pos, ok := old.idIndex.lookup(id); ok {
+		old = r.deletePosLocked(old, int(pos))
+	}
+
+	header := append([]byte(nil), old.header...)
+	slotToEntry := old.slotToEntry
+
+	index, header, slotToEntry, err := allocSlot(header, slotToEntry)
+	if err != nil {
+		return zero, err
+	}
+
+	entries := old.entries
+	idIndex := old.idIndex
+	holes := append([]hole(nil), old.holes...)
+
+	for i := 0; i < len(holes); i++ {
+		hl := holes[i]
+		if uint64(hl.length) < uint64(need) {
+			continue
+		}
+
+		lastIdx := len(holes) - 1
+		holes[i] = holes[lastIdx]
+		holes = holes[:lastIdx]
+
+		h, err := r.spec.Handle(index, need)
+		if err != nil {
+			freeSlot(header, index)
+			return zero, err
+		}
+		h, err = r.spec.SetID(h, id)
+		if err != nil {
+			freeSlot(header, index)
+			return zero, err
+		}
+
+		data := append([]byte(nil), old.data...)
+
+		dataToWrite := value
+		if r.onWrite != nil {
+			h, dataToWrite = r.onWrite(h, uint(hl.offset), value)
+			if len(dataToWrite) != need {
+				freeSlot(header, index)
+				return zero, errors.New("onWrite returned different length")
+			}
+		}
+		copy(data[hl.offset:hl.offset+uint32(need)], dataToWrite)
+		setSlotOffset(header, index, hl.offset)
+
+		if hl.length > uint32(need) {
+			holes = append(holes, hole{
+				offset: hl.offset + uint32(need),
+				length: hl.length - uint32(need),
+			})
+		}
+
+		entries, slotToEntry, idIndex = appendEntry(entries, slotToEntry, idIndex, index, h, r.spec, r.compactionThreshold)
+
+		newSnap := &snapshot{
+			data:        data,
+			header:      header,
+			entries:     entries,
+			slotToEntry: slotToEntry,
+			holes:       holes,
+			idIndex:     idIndex,
+			tombstones:  old.tombstones,
+			compactions: old.compactions,
+			defragments: old.defragments,
+		}
+		r.snap.Store(newSnap)
+
+		viewSlice := data[hl.offset : hl.offset+uint32(need)]
+		return r.cfg.NewView(h, viewSlice), nil
+	}
+
+	newStart := uint32(len(old.data))
+	if uint64(newStart)+uint64(need) > maxDataOffset {
+		freeSlot(header, index)
+		return zero, ErrDataExceedsCapacity
+	}
+
+	h, err := r.spec.Handle(index, need)
+	if err != nil {
+		freeSlot(header, index)
+		return zero, err
+	}
+	h, err = r.spec.SetID(h, id)
+	if err != nil {
+		freeSlot(header, index)
+		return zero, err
+	}
+
+	dataToWrite := value
+	if r.onWrite != nil {
+		h, dataToWrite = r.onWrite(h, uint(newStart), value)
+		if len(dataToWrite) != need {
+			freeSlot(header, index)
+			return zero, errors.New("onWrite returned different length")
+		}
+	}
+
+	data := append(old.data, dataToWrite...)
+	setSlotOffset(header, index, newStart)
+	entries, slotToEntry, idIndex = appendEntry(entries, slotToEntry, idIndex, index, h, r.spec, r.compactionThreshold)
+
+	newSnap := &snapshot{
+		data:        data,
+		header:      header,
+		entries:     entries,
+		slotToEntry: slotToEntry,
+		holes:       holes,
+		idIndex:     idIndex,
+		tombstones:  old.tombstones,
+		compactions: old.compactions,
+		defragments: old.defragments,
+	}
+	r.snap.Store(newSnap)
+
+	viewSlice := data[newStart : newStart+uint32(need)]
+	return r.cfg.NewView(h, viewSlice), nil
+}
+
+func (r *Registry[K, T]) deletePosLocked(old *snapshot, pos int) *snapshot {
+	entries := old.entries
+	slotToEntry := old.slotToEntry
+	header := append([]byte(nil), old.header...)
+	holes := append([]hole(nil), old.holes...)
+	idIndex := old.idIndex
+
+	e := entries.get(pos)
+	index := int(e.Offset())
+	lastPos := entries.length - 1
+	if pos != lastPos {
+		moved := entries.get(lastPos)
+		entries = entries.set(pos, moved)
+		slotToEntry = slotToEntry.set(int(moved.Offset()), int32(pos))
+		idIndex = idIndex.insertOrUpdate(r.spec.ID(moved), int32(pos), r.compactionThreshold)
+	}
+	entries = entries.pop()
+	slotToEntry = slotToEntry.set(index, -1)
+
+	var compacted bool
+	idIndex, compacted = idIndex.delete(r.spec.ID(e), r.compactionThreshold)
+
+	byteOffset, _ := slotOffset(header, index)
+	length := uint32(r.spec.Length(e))
+	freeSlot(header, index)
+
+	holes = append(holes, hole{offset: byteOffset, length: length})
+
+	newSnap := &snapshot{
+		data:        old.data,
+		header:      header,
+		entries:     entries,
+		slotToEntry: slotToEntry,
+		holes:       holes,
+		idIndex:     idIndex,
+		tombstones:  old.tombstones,
+		compactions: old.compactions,
+		defragments: old.defragments,
+	}
+	if compacted {
+		newSnap.compactions++
+	}
+	return newSnap
+}
+
+func (r *Registry[K, T]) Delete(key K) bool {
+	if r.cfg.HashKey == nil {
+		return false
+	}
+	id := r.cfg.HashKey(key) & r.spec.MaxID()
+
+	r.writeMu.Lock()
+	defer r.writeMu.Unlock()
+
+	old := r.snap.Load()
+	pos, ok := old.idIndex.lookup(id)
+	if !ok {
+		return false
+	}
+
+	newSnap := r.deletePosLocked(old, int(pos))
+	r.snap.Store(newSnap)
+	r.triggerDefrag()
+	return true
+}
+
+func (r *Registry[K, T]) Read(cb func(entries []Handle, data []byte)) {
 	snap := r.snap.Load()
 	cb(snap.entries.toSlice(), snap.data)
 }
 
-func (r *Record) Write(cb func() ([]Handle, []byte)) error {
+func (r *Registry[K, T]) Write(cb func() ([]Handle, []byte)) error {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 
@@ -614,12 +859,71 @@ func (r *Record) Write(cb func() ([]Handle, []byte)) error {
 	return nil
 }
 
-func (r *Record) Keys() []Handle {
+func (r *Registry[K, T]) Export() []byte {
+	snap := r.snap.Load()
+	entries := snap.entries.toSlice()
+	dataBuf := snap.data
+
+	numEntries := uint32(len(entries))
+	dataLen := uint32(len(dataBuf))
+
+	bufLen := 12 + int(numEntries)*8 + int(dataLen)
+	buf := make([]byte, bufLen)
+
+	buf[0] = 'A'
+	buf[1] = 'N'
+	buf[2] = 'R'
+	buf[3] = '1'
+
+	binary.LittleEndian.PutUint32(buf[4:8], numEntries)
+	binary.LittleEndian.PutUint32(buf[8:12], dataLen)
+
+	off := 12
+	for _, h := range entries {
+		binary.LittleEndian.PutUint64(buf[off:off+8], uint64(h))
+		off += 8
+	}
+
+	copy(buf[off:], dataBuf)
+	return buf
+}
+
+func (r *Registry[K, T]) Import(data []byte) error {
+	if len(data) < 12 {
+		return fmt.Errorf("import error: data too short (got %d bytes, minimum 12)", len(data))
+	}
+	if data[0] != 'A' || data[1] != 'N' || data[2] != 'R' || data[3] != '1' {
+		return errors.New("import error: invalid magic header")
+	}
+
+	numEntries := binary.LittleEndian.Uint32(data[4:8])
+	dataLen := binary.LittleEndian.Uint32(data[8:12])
+
+	expectedLen := 12 + int(numEntries)*8 + int(dataLen)
+	if len(data) < expectedLen {
+		return fmt.Errorf("import error: data truncated (got %d bytes, want %d)", len(data), expectedLen)
+	}
+
+	entries := make([]Handle, numEntries)
+	off := 12
+	for i := 0; i < int(numEntries); i++ {
+		entries[i] = Handle(binary.LittleEndian.Uint64(data[off : off+8]))
+		off += 8
+	}
+
+	dataBuf := append([]byte(nil), data[off:off+int(dataLen)]...)
+
+	return r.Write(func() ([]Handle, []byte) {
+		return entries, dataBuf
+	})
+}
+
+func (r *Registry[K, T]) Keys() []Handle {
 	snap := r.snap.Load()
 	return snap.entries.toSlice()
 }
 
-func (r *Record) Length() int {
+func (r *Registry[K, T]) Length() int {
 	snap := r.snap.Load()
 	if snap.entries == nil {
 		return 0
@@ -627,11 +931,11 @@ func (r *Record) Length() int {
 	return snap.entries.length
 }
 
-func (r *Record) Size() int64 {
+func (r *Registry[K, T]) Size() int64 {
 	return int64(len(r.snap.Load().data))
 }
 
-func (r *Record) Stats() RecordStats {
+func (r *Registry[K, T]) Stats() RegistryStats {
 	snap := r.snap.Load()
 
 	var wasted int64
@@ -650,7 +954,7 @@ func (r *Record) Stats() RecordStats {
 		eLen = snap.entries.length
 	}
 
-	return RecordStats{
+	return RegistryStats{
 		Entries:        eLen,
 		Holes:          len(snap.holes),
 		DataBytes:      int64(len(snap.data)),
@@ -664,14 +968,14 @@ func (r *Record) Stats() RecordStats {
 	}
 }
 
-func (r *Record) Clone() *Record {
+func (r *Registry[K, T]) Clone() *Registry[K, T] {
 	snap := r.snap.Load()
 
-	clone := &Record{
-		OnSetID:             r.OnSetID,
+	clone := &Registry[K, T]{
 		onWrite:             r.onWrite,
 		spec:                r.spec,
 		compactionThreshold: r.compactionThreshold,
+		cfg:                 r.cfg,
 	}
 	clone.defragDelay.Store(r.defragDelay.Load())
 	clone.snap.Store(snap)
@@ -679,215 +983,20 @@ func (r *Record) Clone() *Record {
 	return clone
 }
 
-func (r *Record) SetDefragDelay(d time.Duration) {
+func (r *Registry[K, T]) SetDefragDelay(d time.Duration) {
 	r.defragDelay.Store(int64(d))
 }
 
-func (r *Record) Close() {
+func (r *Registry[K, T]) Close() error {
 	if !r.defragStarted.Load() {
-		return
+		return nil
 	}
 	close(r.stopDefrag)
 	<-r.defragDone
+	return nil
 }
 
-func (r *Record) Set(b []byte) (Handle, error) {
-	need := len(b)
-	maxLen := r.spec.MaxLength()
-	if uint64(need) > maxLen {
-		return 0, fmt.Errorf("%w: requested %d, max allowed for %d bits is %d",
-			ErrLengthExceedsBitSpace, need, r.spec.ConfiguredLengthBits(), maxLen)
-	}
-
-	r.writeMu.Lock()
-	defer r.writeMu.Unlock()
-
-	old := r.snap.Load()
-
-	header := append([]byte(nil), old.header...)
-	slotToEntry := old.slotToEntry
-
-	index, header, slotToEntry, err := allocSlot(header, slotToEntry)
-	if err != nil {
-		return 0, err
-	}
-
-	entries := old.entries
-	idIndex := old.idIndex
-	holes := append([]hole(nil), old.holes...)
-
-	for i := 0; i < len(holes); i++ {
-		hl := holes[i]
-		if uint64(hl.length) < uint64(need) {
-			continue
-		}
-
-		lastIdx := len(holes) - 1
-		holes[i] = holes[lastIdx]
-		holes = holes[:lastIdx]
-
-		h, err := r.spec.Handle(index, need)
-		if err != nil {
-			freeSlot(header, index)
-			return 0, err
-		}
-		if r.OnSetID != nil {
-			h = r.OnSetID(h, r.spec.BitSpace())
-		}
-
-		data := append([]byte(nil), old.data...)
-
-		dataToWrite := b
-		if r.onWrite != nil {
-			h, dataToWrite = r.onWrite(h, uint(hl.offset), b)
-			if len(dataToWrite) != need {
-				freeSlot(header, index)
-				return 0, errors.New("onWrite returned different length")
-			}
-		}
-		copy(data[hl.offset:hl.offset+uint32(need)], dataToWrite)
-		setSlotOffset(header, index, hl.offset)
-
-		if hl.length > uint32(need) {
-			holes = append(holes, hole{
-				offset: hl.offset + uint32(need),
-				length: hl.length - uint32(need),
-			})
-		}
-
-		entries, slotToEntry, idIndex = appendEntry(entries, slotToEntry, idIndex, index, h, r.spec, r.compactionThreshold)
-
-		r.snap.Store(&snapshot{
-			data:        data,
-			header:      header,
-			entries:     entries,
-			slotToEntry: slotToEntry,
-			holes:       holes,
-			idIndex:     idIndex,
-			tombstones:  old.tombstones,
-			compactions: old.compactions,
-			defragments: old.defragments,
-		})
-		return h, nil
-	}
-
-	newStart := uint32(len(old.data))
-	if uint64(newStart)+uint64(need) > maxDataOffset {
-		freeSlot(header, index)
-		return 0, ErrDataExceedsCapacity
-	}
-
-	h, err := r.spec.Handle(index, need)
-	if err != nil {
-		freeSlot(header, index)
-		return 0, err
-	}
-	if r.OnSetID != nil {
-		h = r.OnSetID(h, r.spec.BitSpace())
-	}
-
-	dataToWrite := b
-	if r.onWrite != nil {
-		h, dataToWrite = r.onWrite(h, uint(newStart), b)
-		if len(dataToWrite) != need {
-			freeSlot(header, index)
-			return 0, errors.New("onWrite returned different length")
-		}
-	}
-
-	data := append(old.data, dataToWrite...)
-	setSlotOffset(header, index, newStart)
-	entries, slotToEntry, idIndex = appendEntry(entries, slotToEntry, idIndex, index, h, r.spec, r.compactionThreshold)
-
-	r.snap.Store(&snapshot{
-		data:        data,
-		header:      header,
-		entries:     entries,
-		slotToEntry: slotToEntry,
-		holes:       holes,
-		idIndex:     idIndex,
-		tombstones:  old.tombstones,
-		compactions: old.compactions,
-		defragments: old.defragments,
-	})
-	return h, nil
-}
-
-func (r *Record) Get(h Handle) []byte {
-	snap := r.snap.Load()
-
-	index := int(h.Offset())
-	length := uint32(r.spec.Length(h))
-
-	byteOffset, ok := slotOffset(snap.header, index)
-	if !ok {
-		return nil
-	}
-	if uint64(byteOffset)+uint64(length) > uint64(len(snap.data)) {
-		return nil
-	}
-	return snap.data[byteOffset : byteOffset+length]
-}
-
-func (r *Record) Delete(h Handle) bool {
-	r.writeMu.Lock()
-	defer r.writeMu.Unlock()
-
-	old := r.snap.Load()
-
-	index := int(h.Offset())
-	pos := int(old.slotToEntry.get(index))
-	if pos < 0 {
-		return false
-	}
-
-	entries := old.entries
-	slotToEntry := old.slotToEntry
-	header := append([]byte(nil), old.header...)
-	holes := append([]hole(nil), old.holes...)
-	idIndex := old.idIndex
-
-	e := entries.get(pos)
-	lastPos := entries.length - 1
-	if pos != lastPos {
-		moved := entries.get(lastPos)
-		entries = entries.set(pos, moved)
-		slotToEntry = slotToEntry.set(int(moved.Offset()), int32(pos))
-		idIndex = idIndex.insertOrUpdate(r.spec.ID(moved), int32(pos), r.compactionThreshold)
-	}
-	entries = entries.pop()
-	slotToEntry = slotToEntry.set(index, -1)
-
-	var compacted bool
-	idIndex, compacted = idIndex.delete(r.spec.ID(e), r.compactionThreshold)
-
-	byteOffset, _ := slotOffset(header, index)
-	length := uint32(r.spec.Length(e))
-	freeSlot(header, index)
-
-	holes = append(holes, hole{offset: byteOffset, length: length})
-
-	newSnap := &snapshot{
-		data:        old.data,
-		header:      header,
-		entries:     entries,
-		slotToEntry: slotToEntry,
-		holes:       holes,
-		idIndex:     idIndex,
-		tombstones:  old.tombstones,
-		compactions: old.compactions,
-		defragments: old.defragments,
-	}
-	if compacted {
-		newSnap.compactions++
-	}
-	r.snap.Store(newSnap)
-
-	r.triggerDefrag()
-	return true
-}
-
-func (r *Record) Handle(id uint64) (Handle, bool) {
+func (r *Registry[K, T]) Handle(id uint64) (Handle, bool) {
 	snap := r.snap.Load()
 	pos, ok := snap.idIndex.lookup(id)
 	if !ok {
@@ -896,7 +1005,7 @@ func (r *Record) Handle(id uint64) (Handle, bool) {
 	return snap.entries.get(int(pos)), true
 }
 
-func (r *Record) UpdateHandle(handle Handle) (Handle, bool) {
+func (r *Registry[K, T]) UpdateHandle(handle Handle) (Handle, bool) {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 
@@ -929,7 +1038,7 @@ func (r *Record) UpdateHandle(handle Handle) (Handle, bool) {
 	return oldHandle, true
 }
 
-func (r *Record) Clear() {
+func (r *Registry[K, T]) Clear() {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 
@@ -941,13 +1050,13 @@ func (r *Record) Clear() {
 	r.cancelPendingDefrag()
 }
 
-func (r *Record) Defragment() {
+func (r *Registry[K, T]) Defragment() {
 	r.writeMu.Lock()
 	defer r.writeMu.Unlock()
 	r.defragmentLocked()
 }
 
-func (r *Record) defragLoop() {
+func (r *Registry[K, T]) defragLoop() {
 	var timer *time.Timer
 	defer close(r.defragDone)
 
@@ -991,7 +1100,7 @@ func (r *Record) defragLoop() {
 	}
 }
 
-func (r *Record) triggerDefrag() {
+func (r *Registry[K, T]) triggerDefrag() {
 	if time.Duration(r.defragDelay.Load()) <= 0 {
 		return
 	}
@@ -1008,7 +1117,7 @@ func (r *Record) triggerDefrag() {
 	}
 }
 
-func (r *Record) cancelPendingDefrag() {
+func (r *Registry[K, T]) cancelPendingDefrag() {
 	if !r.defragStarted.Load() {
 		return
 	}
@@ -1018,7 +1127,7 @@ func (r *Record) cancelPendingDefrag() {
 	}
 }
 
-func (r *Record) defragmentLocked() {
+func (r *Registry[K, T]) defragmentLocked() {
 	old := r.snap.Load()
 	if len(old.holes) == 0 {
 		return
