@@ -246,6 +246,22 @@ func (i *NativeInteractor[T]) Query(ctx context.Context, raw *query.Query) (*que
 
 
 // StartTransaction begins a new transaction and returns a new interactor for it.
+//
+// @note #tx-watcher-goroutine-leak issue status=resolved priority=P0 tags=#transactions,#goroutines : cancellation watcher leaked one goroutine per transaction on uncancelable contexts
+// @assignee opencode
+//
+// RESOLVED 2026-08-23: the watcher is now only spawned when ctx.Done() != nil;
+// regression tests in interactor_test.go pin both directions (no watcher for
+// context.Background(), rollback-on-cancel still works).
+//
+// The watcher goroutine used to be spawned unconditionally and blocked on
+// <-ctx.Done(). For contexts without a Done channel — context.Background(),
+// scheduler/boot jobs, fasthttp-derived request contexts — Done() returns nil,
+// so the receive parked forever: every StartTransaction call (i.e. every
+// top-level write through persistence/transaction.Execute) permanently leaked
+// one goroutine. Observed from hestia: +1 goroutine per notification create /
+// settings write; ~200 writes → 200 parked goroutines holding stacks (RSS
+// growth) until process exit.
 func (i *NativeInteractor[T]) StartTransaction(ctx context.Context) (query.DatabaseInteractor, error) {
 	i.txMu.Lock()
 	defer i.txMu.Unlock()
@@ -268,13 +284,18 @@ func (i *NativeInteractor[T]) StartTransaction(ctx context.Context) (query.Datab
 		pools:  i.pools,
 	}
 
-	// Watch for ctx cancellation: rollback if still active.
-	go func() {
-		<-ctx.Done()
-		if !tx.done.Load() {
-			_ = tx.Rollback(context.Background())
-		}
-	}()
+	// Watch for ctx cancellation: rollback if still active. Contexts without
+	// a Done channel (e.g. context.Background()) can never be canceled, so
+	// spawning a watcher for them would park a goroutine on a nil-channel
+	// receive forever — one leaked goroutine per transaction.
+	if done := ctx.Done(); done != nil {
+		go func() {
+			<-done
+			if !tx.done.Load() {
+				_ = tx.Rollback(context.Background())
+			}
+		}()
+	}
 
 	// Return a new interactor instance specifically for this transaction.
 	return tx, nil

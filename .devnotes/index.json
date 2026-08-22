@@ -1,0 +1,1224 @@
+{
+  "version": 1,
+  "generatedAt": "2026-08-22T21:46:46.899538077Z",
+  "root": ".",
+  "notes": {
+    "sanitize-type-blindness": {
+      "id": "sanitize-type-blindness",
+      "category": "issue",
+      "status": "open",
+      "title": "applyPolicy is type-blind and cannot mask non-string fields",
+      "body": "applyPolicy/hashValue stringify every value (fmt.Sprintf %v), so a policy\nmatch on a non-string slot (array/object/number) produces a string. The\ncontainer pipeline (core/document/sanitize.go sanitizeContainerLeaves)\ncorrectly refuses to write a masked string into a non-string slot and\nreturns \"cannot store sanitized value ... in \u003ctype\u003e slot\", which fails\nSanitize() for the WHOLE document. Real-world fallout: hestia's global\n(?i)auth pattern matched the array field `authors` of its dynamic `notes`\ncollection, so every document failed sanitization and the query API\nsilently returned data:[] with correct pagination counts (the HTTP layer\ndrops documents whose Sanitize errors).\n\nDecision (2026-08-22): fix belongs at the app config level for now (keep\nmasking rules targeted/collection-scoped so patterns only ever hit string\nfields); no library change shipped. If this is ever fixed here, likely\nshapes are: element-wise masking for arrays of strings, skipping\nnon-maskable slots with a warning, or schema-type-aware policies threaded\nthrough FieldMaskConfig.\n",
+      "location": {
+        "file": "core/sanitize/sanitizer.go",
+        "startLine": 116,
+        "startCol": 3,
+        "endLine": 134,
+        "endCol": 3
+      },
+      "hash": "d4520fa8abf5db8f"
+    }
+  },
+  "files": {
+    "anansi.go": {
+      "hash": "86b2089f27ecd091"
+    },
+    "cmd/anansi/internal/agents.go": {
+      "hash": "86a8b60a75148878"
+    },
+    "cmd/anansi/internal/agents_test.go": {
+      "hash": "323a4b8086f8f11f"
+    },
+    "cmd/anansi/internal/cli_test.go": {
+      "hash": "208b1dedea8c8af4"
+    },
+    "cmd/anansi/internal/config.go": {
+      "hash": "9ae6d1e4bd03c75c"
+    },
+    "cmd/anansi/internal/faker.go": {
+      "hash": "e62cef507f5d44d0"
+    },
+    "cmd/anansi/internal/gogen.go": {
+      "hash": "9d131e332ec101f0"
+    },
+    "cmd/anansi/internal/gogen_test.go": {
+      "hash": "4e880c65448f061e"
+    },
+    "cmd/anansi/internal/lockfile.go": {
+      "hash": "fde3ca0a1a913b33"
+    },
+    "cmd/anansi/internal/metadata.go": {
+      "hash": "80fc6c5dade8dc97"
+    },
+    "cmd/anansi/internal/metadata_test.go": {
+      "hash": "0aa39a9cd8ce7d3e"
+    },
+    "cmd/anansi/internal/normalize.go": {
+      "hash": "8a30eb60a6598030"
+    },
+    "cmd/anansi/internal/normalize_test.go": {
+      "hash": "07efab743033566d"
+    },
+    "cmd/anansi/internal/registry.go": {
+      "hash": "515c598aeefd8aec"
+    },
+    "cmd/anansi/internal/scaffold.go": {
+      "hash": "ea1b8fd510bc07b9"
+    },
+    "cmd/anansi/internal/schema.go": {
+      "hash": "51d698238c02fb31"
+    },
+    "cmd/anansi/internal/schema_test.go": {
+      "hash": "1f20c4d8bd6ff032"
+    },
+    "cmd/anansi/internal/squash.go": {
+      "hash": "727c8ad071c3e025"
+    },
+    "cmd/anansi/internal/tsgen.go": {
+      "hash": "d889d3a8073d482a"
+    },
+    "cmd/anansi/internal/tsgen_test.go": {
+      "hash": "c4183909f351cd7f"
+    },
+    "cmd/anansi/main.go": {
+      "hash": "07a13b9a1f9ad870"
+    },
+    "cmd/anansi/prompt.go": {
+      "hash": "383e44a303155f15"
+    },
+    "codegen/faker/generate.go": {
+      "hash": "4637cf76f661a1da"
+    },
+    "codegen/golang/encoder_json.speculative.go": {
+      "hash": "eef76118518bffb3"
+    },
+    "codegen/golang/generate.go": {
+      "hash": "797f3c60d97f49fb"
+    },
+    "codegen/golang/generate_test.go": {
+      "hash": "d9a2fabe20e46ede"
+    },
+    "codegen/typescript/generate.go": {
+      "hash": "49a208cffb766415"
+    },
+    "core/bits/cached_registry.go": {
+      "hash": "de781195caa8508b"
+    },
+    "core/bits/cached_registry_test.go": {
+      "hash": "edf86f7f2a26d726"
+    },
+    "core/bits/handle.go": {
+      "hash": "0118898b07da28da"
+    },
+    "core/bits/registry.go": {
+      "hash": "b59d58d9263e022a"
+    },
+    "core/bits/registry_test.go": {
+      "hash": "3d4052a38dd5974a"
+    },
+    "core/bits/result_set.go": {
+      "hash": "1eb025f0e74f4889"
+    },
+    "core/cache/cache.go": {
+      "hash": "959b24908428d836"
+    },
+    "core/cache/cache_bench_test.go": {
+      "hash": "e57fedf611dbf7e7"
+    },
+    "core/cache/cache_test.go": {
+      "hash": "36a3ba4824a1b553"
+    },
+    "core/cache/config.go": {
+      "hash": "647eef9054aa6adb"
+    },
+    "core/cache/simple_cache.go": {
+      "hash": "a5d3b4156db5ebc1"
+    },
+    "core/common/comparison_operators.go": {
+      "hash": "3164080e1079d36c"
+    },
+    "core/common/context.go": {
+      "hash": "d9a2b5e7ed61917c"
+    },
+    "core/common/error.go": {
+      "hash": "a7c8347157105b31"
+    },
+    "core/common/errors.go": {
+      "hash": "c208a55dc1a804a3"
+    },
+    "core/common/logical_operators.go": {
+      "hash": "32c527a0ac5b7b8d"
+    },
+    "core/common/metadata.go": {
+      "hash": "f6a140d2f7c48742"
+    },
+    "core/common/pointers.go": {
+      "hash": "8d444d6d4bf63df3"
+    },
+    "core/common/types.go": {
+      "hash": "7b6a3b5f7fdb3cd5"
+    },
+    "core/common/version.go": {
+      "hash": "e456c53dd77b6079"
+    },
+    "core/data/batch.go": {
+      "hash": "fadc46ef2421ad64"
+    },
+    "core/data/bind.go": {
+      "hash": "7ff8b65fb2e88f35"
+    },
+    "core/data/builder.go": {
+      "hash": "1e309a305dda7c9d"
+    },
+    "core/data/cache.go": {
+      "hash": "4d26d50571e24911"
+    },
+    "core/data/coerce.go": {
+      "hash": "007720e4c3544a91"
+    },
+    "core/data/container/collection.go": {
+      "hash": "44893224755dd5dd"
+    },
+    "core/data/container/data_container.go": {
+      "hash": "e3d5a73f399b4337"
+    },
+    "core/data/container/data_point.go": {
+      "hash": "4f1aba7741896fdd"
+    },
+    "core/data/container/pool.go": {
+      "hash": "b003eedb66f775b6"
+    },
+    "core/data/convert.go": {
+      "hash": "bba7aca16ad5b17d"
+    },
+    "core/data/diff.go": {
+      "hash": "42ae4a93955cac59"
+    },
+    "core/data/document.go": {
+      "hash": "c6387562a584f632"
+    },
+    "core/data/dto.go": {
+      "hash": "7af3f1f6859504d4"
+    },
+    "core/data/enrich.go": {
+      "hash": "8d2693f48b3a82f6"
+    },
+    "core/data/enrich_public_test.go": {
+      "hash": "046b1ab297bb2b88"
+    },
+    "core/data/enrich_test.go": {
+      "hash": "2121eddb52d24754"
+    },
+    "core/data/errors.go": {
+      "hash": "36609865a66da02e"
+    },
+    "core/data/factory.go": {
+      "hash": "8940fa4c72c80a2a"
+    },
+    "core/data/generic.go": {
+      "hash": "19b3417346589cfb"
+    },
+    "core/data/index.go": {
+      "hash": "68c878d60bf9caec"
+    },
+    "core/data/interface.go": {
+      "hash": "90c719a8d855c3cd"
+    },
+    "core/data/json.go": {
+      "hash": "39c4cb8bf9538389"
+    },
+    "core/data/jsonpath.go": {
+      "hash": "c459520dd078511b"
+    },
+    "core/data/metadata.go": {
+      "hash": "5891d360f4cfd018"
+    },
+    "core/data/model.go": {
+      "hash": "e18924876262c53f"
+    },
+    "core/data/must.go": {
+      "hash": "cb81eb8ca948c85e"
+    },
+    "core/data/nested.go": {
+      "hash": "09c033062a77bc89"
+    },
+    "core/data/normalize.go": {
+      "hash": "c01f3a24a29d6332"
+    },
+    "core/data/query.go": {
+      "hash": "c4e6d4da407df5a9"
+    },
+    "core/data/sanitize.go": {
+      "hash": "43af35fd281e88e5"
+    },
+    "core/data/serialization.go": {
+      "hash": "f5e4f2b95844324f"
+    },
+    "core/data/zz_paths_test.go": {
+      "hash": "86366144219cc411"
+    },
+    "core/document/address.go": {
+      "hash": "5267178cd452a8d2"
+    },
+    "core/document/bind.go": {
+      "hash": "139d0fc6acd9f92a"
+    },
+    "core/document/bind_field.go": {
+      "hash": "23ab3d07b3fbfa91"
+    },
+    "core/document/bind_field_test.go": {
+      "hash": "0493d188f1b627d4"
+    },
+    "core/document/clone.go": {
+      "hash": "363936f0618212b0"
+    },
+    "core/document/coerce.go": {
+      "hash": "258dfefbe95d1b2d"
+    },
+    "core/document/compare.go": {
+      "hash": "c6d455a9465e3d82"
+    },
+    "core/document/document.go": {
+      "hash": "807697ef644e988e"
+    },
+    "core/document/document_test.go": {
+      "hash": "a0a1a84f83d47046"
+    },
+    "core/document/enrich.go": {
+      "hash": "a5ef1b5496dfccd0"
+    },
+    "core/document/enrich_test.go": {
+      "hash": "7f797fdb11c677f0"
+    },
+    "core/document/errors.go": {
+      "hash": "4ec79f27c3047bb9"
+    },
+    "core/document/factory_test.go": {
+      "hash": "40f5a2268df94c2f"
+    },
+    "core/document/getters.go": {
+      "hash": "7ad7d6fca9e36210"
+    },
+    "core/document/integrity.go": {
+      "hash": "64e51378b5bbb8a7"
+    },
+    "core/document/integrity_test.go": {
+      "hash": "fe9c2b89d7462cd6"
+    },
+    "core/document/jsonpath.go": {
+      "hash": "9a8e9909cb8c973d"
+    },
+    "core/document/merge.go": {
+      "hash": "4cb0ffdbba888d3e"
+    },
+    "core/document/metadata.go": {
+      "hash": "459b0fac7e34b4f4"
+    },
+    "core/document/model.go": {
+      "hash": "ee4100746e7ed4ad"
+    },
+    "core/document/model_test.go": {
+      "hash": "1bd386a6d2fb799a"
+    },
+    "core/document/must.go": {
+      "hash": "5403af7329c363c9"
+    },
+    "core/document/normalize.go": {
+      "hash": "688330cc12c37613"
+    },
+    "core/document/patch_test.go": {
+      "hash": "3d8cc0b80adf57df"
+    },
+    "core/document/pool.go": {
+      "hash": "85e4f089bf5d6302"
+    },
+    "core/document/pool_test.go": {
+      "hash": "663838c4a3a26d3a"
+    },
+    "core/document/sanitize.go": {
+      "hash": "3f6f949daa335a73"
+    },
+    "core/document/sanitize_test.go": {
+      "hash": "155c0563b4f37d47"
+    },
+    "core/document/scanner.go": {
+      "hash": "90ea2e4e34651a26"
+    },
+    "core/document/scanner_test.go": {
+      "hash": "59eb3fab08ee98c3"
+    },
+    "core/document/set.go": {
+      "hash": "e41a73929ab7aff3"
+    },
+    "core/document/shadow_test.go": {
+      "hash": "8bf9e647a81ad8d4"
+    },
+    "core/document/zz_id_debug_test.go": {
+      "hash": "1a60b8b8864c8483"
+    },
+    "core/document/zz_scratch_test.go": {
+      "hash": "2176eb689655cf74"
+    },
+    "core/encoding/json/decode_test.go": {
+      "hash": "2a59d64bd88b29c8"
+    },
+    "core/encoding/json/decoder.go": {
+      "hash": "03a85d49248418c4"
+    },
+    "core/encoding/json/dump.go": {
+      "hash": "62b3c2d95ac48f5d"
+    },
+    "core/encoding/json/encoder.go": {
+      "hash": "c8c9002afc53fa01"
+    },
+    "core/encoding/json/encoder_bench_test.go": {
+      "hash": "7b51b9f8814bf967"
+    },
+    "core/encoding/json/erp_bench_test.go": {
+      "hash": "bf1249a1c02b1f08"
+    },
+    "core/encoding/json/helpers_test.go": {
+      "hash": "6d364ca7b2375793"
+    },
+    "core/encoding/json/jsonparse.go": {
+      "hash": "f36ca65b270157c0"
+    },
+    "core/ephemeral/aggregates.go": {
+      "hash": "b13a3201ee426175"
+    },
+    "core/ephemeral/errors.go": {
+      "hash": "b7a70fa7097dd38e"
+    },
+    "core/ephemeral/interactor.go": {
+      "hash": "834420064cc7710a"
+    },
+    "core/ephemeral/store.go": {
+      "hash": "1a816b5531b1053a"
+    },
+    "core/events/emitter.go": {
+      "hash": "93d8d6538f967d2f"
+    },
+    "core/events/types.go": {
+      "hash": "d5eae40ff7a10695"
+    },
+    "core/json/patch.go": {
+      "hash": "858d909a2828a1e8"
+    },
+    "core/json/schema.go": {
+      "hash": "a5b255cee9f5b2ae"
+    },
+    "core/json/utils.go": {
+      "hash": "18426423a871693a"
+    },
+    "core/persistence/base/errors.go": {
+      "hash": "bef3cf9723fb9880"
+    },
+    "core/persistence/base/migration.go": {
+      "hash": "d63e3f2f91caaac2"
+    },
+    "core/persistence/base/migration_test.go": {
+      "hash": "ff1c127a26d22091"
+    },
+    "core/persistence/base/registry_types.go": {
+      "hash": "67f457f7624df364"
+    },
+    "core/persistence/base/types.go": {
+      "hash": "8dbefd2f7c0e68c1"
+    },
+    "core/persistence/base/utils.go": {
+      "hash": "d0985e1a50f40719"
+    },
+    "core/persistence/collection/base.go": {
+      "hash": "d7c2c15496f6562f"
+    },
+    "core/persistence/collection/collection.go": {
+      "hash": "af04c8ee515344d7"
+    },
+    "core/persistence/collection/errors.go": {
+      "hash": "7f0f89ce0c96da79"
+    },
+    "core/persistence/collection/events.go": {
+      "hash": "2303634ceb864a89"
+    },
+    "core/persistence/collection/live_collections.go": {
+      "hash": "1d291cef43a6593e"
+    },
+    "core/persistence/collection/live_collections_test.go": {
+      "hash": "280d6059da2c8edc"
+    },
+    "core/persistence/collection/managed.go": {
+      "hash": "f3b5bd8162b0462c"
+    },
+    "core/persistence/collection/model_collection.go": {
+      "hash": "e7628df9ffb98d21"
+    },
+    "core/persistence/collection/polyfill.go": {
+      "hash": "c3434752816edd3e"
+    },
+    "core/persistence/collection/schema_provider.go": {
+      "hash": "58befbf37347ead7"
+    },
+    "core/persistence/events/bus.go": {
+      "hash": "65fa1049d92e1dfd"
+    },
+    "core/persistence/events/factory.go": {
+      "hash": "6fa29161d5808c28"
+    },
+    "core/persistence/migration/migration.go": {
+      "hash": "f3e265c23d41c8ef"
+    },
+    "core/persistence/migration/migration_test.go": {
+      "hash": "fc6a34726c6cba9a"
+    },
+    "core/persistence/orchestrator/orchestrator.go": {
+      "hash": "df1ed0c72f4791f5"
+    },
+    "core/persistence/persistence/base.go": {
+      "hash": "08a36c945a63f4ce"
+    },
+    "core/persistence/persistence/errors.go": {
+      "hash": "ff98ad2b3a6b13f4"
+    },
+    "core/persistence/persistence/events.go": {
+      "hash": "80c0e72a7d61fe51"
+    },
+    "core/persistence/persistence/managed.go": {
+      "hash": "18ea988bb45740fa"
+    },
+    "core/persistence/persistence/persistence.go": {
+      "hash": "0b64f26ae6f31224"
+    },
+    "core/persistence/persistence/raw_query_processor.go": {
+      "hash": "bd5c63f8d6e98cae"
+    },
+    "core/persistence/registry/errors.go": {
+      "hash": "478464123e0b3530"
+    },
+    "core/persistence/registry/registry.go": {
+      "hash": "8dcf986b834f444b"
+    },
+    "core/persistence/registry/schema.go": {
+      "hash": "96545a0fd12be0fb"
+    },
+    "core/persistence/registry/utils.go": {
+      "hash": "422f0c04d08ea98e"
+    },
+    "core/persistence/transaction/transaction.go": {
+      "hash": "91c76c3a88aea327"
+    },
+    "core/persistence/utils/utils.go": {
+      "hash": "19a8a4b6933a66f9"
+    },
+    "core/query/builder.go": {
+      "hash": "d84cd3cd9ad5aa5f"
+    },
+    "core/query/cache.go": {
+      "hash": "ea2556ab66e00a1d"
+    },
+    "core/query/context.go": {
+      "hash": "c648bf882ab2efb5"
+    },
+    "core/query/dsl.go": {
+      "hash": "d4f5937fc98a33ca"
+    },
+    "core/query/engine.go": {
+      "hash": "3c0f066abf659d4a"
+    },
+    "core/query/errors.go": {
+      "hash": "f5a1361a9d4a04b5"
+    },
+    "core/query/helper.go": {
+      "hash": "e3b82c32a7acb1c1"
+    },
+    "core/query/interactor.go": {
+      "hash": "880be7dbc7cf79a8"
+    },
+    "core/query/interface.go": {
+      "hash": "f115a64dcbf18cc1"
+    },
+    "core/query/json.go": {
+      "hash": "1183e0cf47e46367"
+    },
+    "core/query/meta/schema.go": {
+      "hash": "821bcb261fc1fa78"
+    },
+    "core/query/meta/schema_test.go": {
+      "hash": "bc71c982d7911fa8"
+    },
+    "core/query/native/builder.go": {
+      "hash": "c64009f260a5130e"
+    },
+    "core/query/native/errors.go": {
+      "hash": "b2549bd49c6c212a"
+    },
+    "core/query/native/interactor.go": {
+      "hash": "0c36c8b0a588e5ce"
+    },
+    "core/query/native/interactor_test.go": {
+      "hash": "4f9efe26310711f9"
+    },
+    "core/query/native/types.go": {
+      "hash": "589c2faabcc36735"
+    },
+    "core/query/parser/errors.go": {
+      "hash": "06c1a95618eec3eb"
+    },
+    "core/query/parser/interfaces.go": {
+      "hash": "8d2aaf4b820c50d8"
+    },
+    "core/query/parser/lexer.go": {
+      "hash": "be35dc3f1edc95f2"
+    },
+    "core/query/parser/lexer_test.go": {
+      "hash": "4b598ba1cd0c5090"
+    },
+    "core/query/parser/token.go": {
+      "hash": "8297f22eaa32aa62"
+    },
+    "core/query/partitioner.go": {
+      "hash": "e52f846b907ebf42"
+    },
+    "core/query/schema.go": {
+      "hash": "b5c4ba228a1a0739"
+    },
+    "core/query/utils.go": {
+      "hash": "a4ed5cd4b10360bc"
+    },
+    "core/sanitize/document.go": {
+      "hash": "30a830449fa540d2"
+    },
+    "core/sanitize/patterns.go": {
+      "hash": "f79587483585d570"
+    },
+    "core/sanitize/policy.go": {
+      "hash": "4c4c9c144c73e514"
+    },
+    "core/sanitize/registry.go": {
+      "hash": "d0fead709175d703"
+    },
+    "core/sanitize/sanitize.go": {
+      "hash": "842333cb5a03966e"
+    },
+    "core/sanitize/sanitizer.go": {
+      "hash": "79fac3a1cd6fbd44",
+      "noteIds": [
+        "sanitize-type-blindness"
+      ]
+    },
+    "core/schema/definition/address.go": {
+      "hash": "1b499024114717c3"
+    },
+    "core/schema/definition/address_fuzz_test.go": {
+      "hash": "42227bd864de8029"
+    },
+    "core/schema/definition/array_item_type_test.go": {
+      "hash": "735bb2d8e1f1e0ba"
+    },
+    "core/schema/definition/compiled.go": {
+      "hash": "ca4822fa2a9cb8cd"
+    },
+    "core/schema/definition/compiled_fuzz_test.go": {
+      "hash": "20bb997a242ca300"
+    },
+    "core/schema/definition/constraints.go": {
+      "hash": "cf850b63ffb9baa3"
+    },
+    "core/schema/definition/constraints_test.go": {
+      "hash": "6aa13eb3f029e995"
+    },
+    "core/schema/definition/deep_copy.go": {
+      "hash": "303d7b24bb5625ca"
+    },
+    "core/schema/definition/deep_copy_test.go": {
+      "hash": "c99495cbb5e76945"
+    },
+    "core/schema/definition/definition.go": {
+      "hash": "2085d5d4a665dde1"
+    },
+    "core/schema/definition/definition_test.go": {
+      "hash": "14d898f059746547"
+    },
+    "core/schema/definition/definition_unmarshal_test.go": {
+      "hash": "fdb63a730c07d32d"
+    },
+    "core/schema/definition/diff.go": {
+      "hash": "3cd83576c54d3fa0"
+    },
+    "core/schema/definition/diff_test.go": {
+      "hash": "895a18348882ffd4"
+    },
+    "core/schema/definition/diff_types.go": {
+      "hash": "617fa660a7c02bb2"
+    },
+    "core/schema/definition/errors.go": {
+      "hash": "93bdf91cbd254007"
+    },
+    "core/schema/definition/factory.go": {
+      "hash": "8e160be4a0de7ed3"
+    },
+    "core/schema/definition/field_types.go": {
+      "hash": "02a732daa31e6ec4"
+    },
+    "core/schema/definition/field_types_test.go": {
+      "hash": "8c7155abf83ec014"
+    },
+    "core/schema/definition/fields.go": {
+      "hash": "b71e1b2d6ff8b629"
+    },
+    "core/schema/definition/fields_test.go": {
+      "hash": "38de143b6c4d3e0e"
+    },
+    "core/schema/definition/index_types.go": {
+      "hash": "0c346fc0b8ac9c2f"
+    },
+    "core/schema/definition/index_types_test.go": {
+      "hash": "f7b041c9f025274b"
+    },
+    "core/schema/definition/indexes.go": {
+      "hash": "face2945daadd348"
+    },
+    "core/schema/definition/indexes_test.go": {
+      "hash": "9fbc3e1fcf038851"
+    },
+    "core/schema/definition/json.go": {
+      "hash": "e67d204b1e9ac61b"
+    },
+    "core/schema/definition/json_benchmark_test.go": {
+      "hash": "aa624a2adbf63b44"
+    },
+    "core/schema/definition/json_test.go": {
+      "hash": "cfab4a56e1bbd5ab"
+    },
+    "core/schema/definition/link.go": {
+      "hash": "e91603a99677b475"
+    },
+    "core/schema/definition/literals.go": {
+      "hash": "8fe34f69ac2f5b23"
+    },
+    "core/schema/definition/literals_test.go": {
+      "hash": "cd8a6e21e3d8b803"
+    },
+    "core/schema/definition/map.go": {
+      "hash": "3ed5ce5780daf86a"
+    },
+    "core/schema/definition/modification.go": {
+      "hash": "08b9c49e3e60055e"
+    },
+    "core/schema/definition/modification_test.go": {
+      "hash": "7b2a4ef14caf9c35"
+    },
+    "core/schema/definition/references.go": {
+      "hash": "fe386bffd9fdb963"
+    },
+    "core/schema/definition/references_test.go": {
+      "hash": "6bc1385a975e3655"
+    },
+    "core/schema/definition/resolved_schema.go": {
+      "hash": "54fc22206660074e"
+    },
+    "core/schema/definition/schema_fuzz_test.go": {
+      "hash": "7960c594e7b6c18a"
+    },
+    "core/schema/definition/schema_index.go": {
+      "hash": "36b97fdd8dec13fa"
+    },
+    "core/schema/definition/schema_recursive_test.go": {
+      "hash": "e31011f90c976e9b"
+    },
+    "core/schema/definition/schema_walk_test.go": {
+      "hash": "b0ee5389b5eb6c79"
+    },
+    "core/schema/definition/serialize.go": {
+      "hash": "726ae1fdcb70cab7"
+    },
+    "core/schema/definition/utils.go": {
+      "hash": "7e3a6d8c81be2576"
+    },
+    "core/schema/definition/validator.go": {
+      "hash": "3f712e6718487bf0"
+    },
+    "core/schema/definition/validator_benchmark_test.go": {
+      "hash": "5bcb593ce747e3b4"
+    },
+    "core/schema/definition/validator_test.go": {
+      "hash": "70dced7ad6e87da0"
+    },
+    "core/schema/definition/walker.go": {
+      "hash": "f2c62386dc487476"
+    },
+    "core/schema/exports.go": {
+      "hash": "65d977612fdbac33"
+    },
+    "core/schema/meta/ids.go": {
+      "hash": "ddfaa21c69fc5463"
+    },
+    "core/schema/meta/normalize.go": {
+      "hash": "5295d04856b7506b"
+    },
+    "core/schema/meta/predicates.go": {
+      "hash": "606cbe7b3a8ef196"
+    },
+    "core/schema/meta/repro_test.go": {
+      "hash": "f60334a00f4ae4b5"
+    },
+    "core/schema/meta/schema.go": {
+      "hash": "35508dfdcab90691"
+    },
+    "core/schema/meta/schema_constraints.go": {
+      "hash": "62952e358c24f57d"
+    },
+    "core/schema/meta/schema_test.go": {
+      "hash": "02219292609567cf"
+    },
+    "core/schema/meta/stress_test.go": {
+      "hash": "92ae48dc8590f592"
+    },
+    "core/schema/meta/test_helpers.go": {
+      "hash": "ff9c3d892a2373b2"
+    },
+    "core/storage/storage_spec.go": {
+      "hash": "d903cace40c001c7"
+    },
+    "core/types/decimal/decimal.go": {
+      "hash": "53966184706e0eac"
+    },
+    "core/utils/coerce.go": {
+      "hash": "74f5debc7f06d1c4"
+    },
+    "core/utils/errors.go": {
+      "hash": "3c0465a7f3ad7162"
+    },
+    "core/utils/json.go": {
+      "hash": "47d7ad5f68ee0072"
+    },
+    "core/utils/lexer.go": {
+      "hash": "9e4431145e51c405"
+    },
+    "core/utils/maps.go": {
+      "hash": "e1584b7f60b966fa"
+    },
+    "core/utils/queue.go": {
+      "hash": "ba8076609d754860"
+    },
+    "core/utils/utils.go": {
+      "hash": "1685292b6c1ad05e"
+    },
+    "example/advanced/main.go": {
+      "hash": "f379ffdccc61076c"
+    },
+    "example/api/internal/api/logging_middleware.go": {
+      "hash": "42aa9552385f27a8"
+    },
+    "example/api/internal/api/middleware.go": {
+      "hash": "0a5c727285002468"
+    },
+    "example/api/internal/api/server.go": {
+      "hash": "6b0ed86c9ca013cc"
+    },
+    "example/api/internal/app/config.go": {
+      "hash": "29569cbd338752bf"
+    },
+    "example/api/internal/app/database.go": {
+      "hash": "6bd78cee70123e58"
+    },
+    "example/api/internal/app/logger.go": {
+      "hash": "e789bac570c5b998"
+    },
+    "example/api/internal/app/persistence.go": {
+      "hash": "c81a12680211c5df"
+    },
+    "example/api/internal/response/response.go": {
+      "hash": "7885e023e5023224"
+    },
+    "example/api/main.go": {
+      "hash": "d379657172d1427f"
+    },
+    "example/api/schema/schemas.go": {
+      "hash": "408a625b5714f1f8"
+    },
+    "example/api/schema/schemas/types.ts": {
+      "hash": "e3b0c44298fc1c14"
+    },
+    "example/basic/carts.go": {
+      "hash": "afc1586155990fe0"
+    },
+    "example/basic/main.go": {
+      "hash": "68a12c19afb8d3a7"
+    },
+    "example/basic/persistence.go": {
+      "hash": "d910933459603467"
+    },
+    "example/basic/products.go": {
+      "hash": "867c6c30dcb7127b"
+    },
+    "example/basic/schema/registry.go": {
+      "hash": "e7fdcbb6b4b0f2cd"
+    },
+    "example/basic/users.go": {
+      "hash": "f0f66abb53b613ae"
+    },
+    "example/benchmark/bind_cycle_test.go": {
+      "hash": "a87c45e9c9d2416a"
+    },
+    "example/benchmark/main.go": {
+      "hash": "513bb9b6c858afb4"
+    },
+    "example/benchmark/migrations/019fc804-effb-71d9-97d0-817dde219821_Order_major.go": {
+      "hash": "6b3f93cd8dd21352"
+    },
+    "example/benchmark/migrations/metadata.go": {
+      "hash": "98713bd8675aae5f"
+    },
+    "example/benchmark/migrations/providers.go": {
+      "hash": "0a20953abbc61523"
+    },
+    "example/benchmark/migrations/registry.go": {
+      "hash": "83f772e786b09d4c"
+    },
+    "example/benchmark/schemas/order.schema.model.go": {
+      "hash": "1e23abafcea077b7"
+    },
+    "example/complex/main.go": {
+      "hash": "90856a634d09a3e8"
+    },
+    "example/data/main.go": {
+      "hash": "29969a98c7b90d29"
+    },
+    "example/events/main.go": {
+      "hash": "d648b8d5e995de59"
+    },
+    "example/migration/main.go": {
+      "hash": "04adf63e894a221e"
+    },
+    "example/migration/migrations/019f4078-a5c3-795c-ae90-ac15750f5ffb_Products_major.go": {
+      "hash": "d7b05e9c3e315d93"
+    },
+    "example/migration/migrations/019f4079-e76e-704d-86eb-c90dbb3ffc69_Products_minor.go": {
+      "hash": "99ad565aac5482bb"
+    },
+    "example/migration/migrations/registry.go": {
+      "hash": "132c877dedd64e60"
+    },
+    "skills/anansi/embed.go": {
+      "hash": "c7b00f79a703c073"
+    },
+    "sqlite/executor/errors.go": {
+      "hash": "3806ef87ef88990a"
+    },
+    "sqlite/executor/executor.go": {
+      "hash": "c81a56dcd69fa9bf"
+    },
+    "sqlite/executor/utils.go": {
+      "hash": "b244c516b285cdf7"
+    },
+    "sqlite/query/builder.go": {
+      "hash": "d7c3e98f3c6cb3bc"
+    },
+    "sqlite/query/capabilities.go": {
+      "hash": "d5f2afa03e360c2b"
+    },
+    "sqlite/query/capabilities_test.go": {
+      "hash": "2397a9a097d0d594"
+    },
+    "sqlite/query/collection.go": {
+      "hash": "48ded7bbab0a8350"
+    },
+    "sqlite/query/convert.go": {
+      "hash": "7b040da82bc470e9"
+    },
+    "sqlite/query/delete.go": {
+      "hash": "b1d4b9b4d2cf4ed6"
+    },
+    "sqlite/query/errors.go": {
+      "hash": "1f7a474f3b1c3335"
+    },
+    "sqlite/query/factory.go": {
+      "hash": "1259e81901217600"
+    },
+    "sqlite/query/index.go": {
+      "hash": "6c8ee5ea6b277d62"
+    },
+    "sqlite/query/insert.go": {
+      "hash": "2375f167a2916180"
+    },
+    "sqlite/query/select.go": {
+      "hash": "c2e03dabf4d66cba"
+    },
+    "sqlite/query/types.go": {
+      "hash": "9c4255cd58cfcf67"
+    },
+    "sqlite/query/update.go": {
+      "hash": "94a8afbf4c46d891"
+    },
+    "sqlite/query/utils.go": {
+      "hash": "fe2bf72a929021ff"
+    },
+    "sqlite/types/types.go": {
+      "hash": "f3e77339b5f62d3c"
+    },
+    "tests/benchmark/pipeline_bench_test.go": {
+      "hash": "fbbb168856f72f72"
+    },
+    "tests/e2e/anansi_test.go": {
+      "hash": "2ef75a7c8c5192e5"
+    },
+    "tests/integration/data/contextual_metadata_test.go": {
+      "hash": "74a58fa6ffff2823"
+    },
+    "tests/integration/data/contextual_persistence_test.go": {
+      "hash": "5d173ba71752609b"
+    },
+    "tests/integration/data/document_hashing_test.go": {
+      "hash": "be9745b7441710a6"
+    },
+    "tests/integration/data/selective_metadata_test.go": {
+      "hash": "000b19b5b0925cda"
+    },
+    "tests/integration/persistence/collection_crud_test.go": {
+      "hash": "78d85a684a2bb7ee"
+    },
+    "tests/integration/persistence/concurrent_transactions_test.go": {
+      "hash": "5c6846ee03d4a61e"
+    },
+    "tests/integration/persistence/event_integration_test.go": {
+      "hash": "d77bc4584957c494"
+    },
+    "tests/integration/persistence/manual_goroutine_transaction_test.go": {
+      "hash": "081a7a448f2d94fc"
+    },
+    "tests/integration/persistence/migration_test.go": {
+      "hash": "8a6417db73e8ce75"
+    },
+    "tests/integration/persistence/model_collection_compute_test.go": {
+      "hash": "8aebf08447b7e578"
+    },
+    "tests/integration/persistence/persistence_test.go": {
+      "hash": "83a318d3ab5e511e"
+    },
+    "tests/integration/persistence/raw_query_test.go": {
+      "hash": "6bf07709b405fd5b"
+    },
+    "tests/integration/persistence/trace_test.go": {
+      "hash": "e83b2809e5e5b811"
+    },
+    "tests/integration/persistence/transaction_test.go": {
+      "hash": "8a6de2b71d1df60d"
+    },
+    "tests/integration/query/sqlite_capabilities_test.go": {
+      "hash": "deef2bf5d2cdaa80"
+    },
+    "tests/integration/query/sqlite_partitioner_test.go": {
+      "hash": "a6183a07587e86c6"
+    },
+    "tests/integration/schema/address_invariants_test.go": {
+      "hash": "be9b7e011a2744fc"
+    },
+    "tests/integration/schema/compiled_roundtrip_test.go": {
+      "hash": "1a3baa0e8575a1a9"
+    },
+    "tests/integration/schema/decimal_mapping_test.go": {
+      "hash": "20a30e76fc2c70e7"
+    },
+    "tests/integration/schema/helpers_test.go": {
+      "hash": "6e52decb46b00e5b"
+    },
+    "tests/integration/schema/resolve_path_test.go": {
+      "hash": "6d0c257eb8f75478"
+    },
+    "tests/integration/schema/reverse_address_test.go": {
+      "hash": "964ea72bb4e491d0"
+    },
+    "tests/integration/schema/type_mapping_test.go": {
+      "hash": "19571bab3a8cc6d1"
+    },
+    "tests/integration/sqlite/dal_test.go": {
+      "hash": "e07312fa173f359e"
+    },
+    "tests/integration/sqlite/ddl_test.go": {
+      "hash": "70f3ae062d548c6f"
+    },
+    "tests/integration/sqlite/native_interactor_test.go": {
+      "hash": "af991f611d6c761e"
+    },
+    "tests/integration/sqlite/product_json_test.go": {
+      "hash": "3917cf283cf94334"
+    },
+    "tests/integration/sqlite/query_executor_test.go": {
+      "hash": "2ea8d248dad40854"
+    },
+    "tests/integration/sqlite/subqueries_test.go": {
+      "hash": "3ffc6956fc06ff24"
+    },
+    "tests/integration/sqlite/update_subquery_test.go": {
+      "hash": "9be41c87c1269c6e"
+    },
+    "tests/testutils/context_keys.go": {
+      "hash": "d2ade0d8d6bb4bc8"
+    },
+    "tests/testutils/helpers.go": {
+      "hash": "14a9bf97f39bafe9"
+    },
+    "tests/testutils/persistence.go": {
+      "hash": "831a0802e82712cc"
+    },
+    "tests/unit/common/common_test.go": {
+      "hash": "53c1e05eef384832"
+    },
+    "tests/unit/common/version_test.go": {
+      "hash": "f84d0edab1d6c9ea"
+    },
+    "tests/unit/container/append_test.go": {
+      "hash": "c6f1d1b88d304f68"
+    },
+    "tests/unit/container/clear_test.go": {
+      "hash": "5a0f0a3d25e71744"
+    },
+    "tests/unit/container/collection_test.go": {
+      "hash": "fc40b4a29ef954ad"
+    },
+    "tests/unit/container/data_point_test.go": {
+      "hash": "c756c6ddcbeb8c3a"
+    },
+    "tests/unit/container/document_operations_test.go": {
+      "hash": "a63de1009915cd26"
+    },
+    "tests/unit/container/holes_test.go": {
+      "hash": "3fe4a4a1d334b745"
+    },
+    "tests/unit/container/pool_test.go": {
+      "hash": "299754e7d548707a"
+    },
+    "tests/unit/container/walk_test.go": {
+      "hash": "e862de014e66fd54"
+    },
+    "tests/unit/data/batch_operations_test.go": {
+      "hash": "5f02d91e5699da1e"
+    },
+    "tests/unit/data/binding_test.go": {
+      "hash": "d4a0275a5a409af4"
+    },
+    "tests/unit/data/data_test.go": {
+      "hash": "59a36570698056e0"
+    },
+    "tests/unit/data/document_adv_test.go": {
+      "hash": "6927b4c15528ae46"
+    },
+    "tests/unit/data/document_operations_test.go": {
+      "hash": "bbe4cd03223b2203"
+    },
+    "tests/unit/data/factory_test.go": {
+      "hash": "722ba233b7b02956"
+    },
+    "tests/unit/data/helpers_test.go": {
+      "hash": "2ac54c3859596e45"
+    },
+    "tests/unit/data/inline_schema_test.go": {
+      "hash": "1c55a498733fe502"
+    },
+    "tests/unit/data/integrity_test.go": {
+      "hash": "845fbd83da205901"
+    },
+    "tests/unit/data/metadata_test.go": {
+      "hash": "add2cbdd4761c4c7"
+    },
+    "tests/unit/data/sanitization_test.go": {
+      "hash": "737656e8a137f490"
+    },
+    "tests/unit/data/serialization_test.go": {
+      "hash": "3a5be602c276a12d"
+    },
+    "tests/unit/data/type_coercion_test.go": {
+      "hash": "93d59fc5b92fceab"
+    },
+    "tests/unit/ephemeral/interactor_test.go": {
+      "hash": "3e2b09286723b9e2"
+    },
+    "tests/unit/ephemeral/schema_manager_test.go": {
+      "hash": "393b816d9eafd109"
+    },
+    "tests/unit/events/emitter_test.go": {
+      "hash": "6bb6ccc6390e0ed3"
+    },
+    "tests/unit/events/sanitization_test.go": {
+      "hash": "604ede88039329e2"
+    },
+    "tests/unit/json/patch_test.go": {
+      "hash": "b9c3f7b629c50b02"
+    },
+    "tests/unit/json/schema_test.go": {
+      "hash": "93df8bb2e5b819aa"
+    },
+    "tests/unit/persistence/cart_simulation_test.go": {
+      "hash": "ebf713d318e3900d"
+    },
+    "tests/unit/persistence/collection_create_test.go": {
+      "hash": "781bfd0e9cb4e7f4"
+    },
+    "tests/unit/persistence/collection_test.go": {
+      "hash": "823c19498f7842d7"
+    },
+    "tests/unit/persistence/model_collection_document_model_test.go": {
+      "hash": "3e4176b7149ddc03"
+    },
+    "tests/unit/persistence/model_collection_document_test.go": {
+      "hash": "fa33cbd9f6b1248a"
+    },
+    "tests/unit/persistence/model_collection_shadow_test.go": {
+      "hash": "b541787604629c7a"
+    },
+    "tests/unit/persistence/model_collection_shape_test.go": {
+      "hash": "87188e76bb0bbd5c"
+    },
+    "tests/unit/persistence/pagination_test.go": {
+      "hash": "97737d9671f74929"
+    },
+    "tests/unit/persistence/persistence_events_test.go": {
+      "hash": "08bf69043bcd769f"
+    },
+    "tests/unit/persistence/persistence_test.go": {
+      "hash": "8467c41d466e5616"
+    },
+    "tests/unit/persistence/registry_test.go": {
+      "hash": "d44ee90a0b015a2c"
+    },
+    "tests/unit/query/builder_test.go": {
+      "hash": "4b9bc05e7aa2fa15"
+    },
+    "tests/unit/query/cancellation_test.go": {
+      "hash": "20b896f2fe818356"
+    },
+    "tests/unit/query/helper_test.go": {
+      "hash": "3eee93a98b092915"
+    },
+    "tests/unit/query/json_test.go": {
+      "hash": "b7917fac695180ce"
+    },
+    "tests/unit/query/schema_test.go": {
+      "hash": "4945e9a3ca4564a1"
+    },
+    "tests/unit/sqlite/builder_test.go": {
+      "hash": "a7bf7e850287a95a"
+    },
+    "tests/unit/sqlite/mapper_test.go": {
+      "hash": "6e91908852ac2d49"
+    },
+    "tests/unit/sqlite/sql_injection_test.go": {
+      "hash": "e32e89f012fa1666"
+    },
+    "tests/unit/sqlite/update_test.go": {
+      "hash": "838339de46790c30"
+    },
+    "tests/unit/utils/coerce.go": {
+      "hash": "cdd30017fcdc106b"
+    },
+    "utils/events.go": {
+      "hash": "42d1326a23741ca6"
+    },
+    "utils/sanitization.go": {
+      "hash": "2fc8c08807c4f4ce"
+    },
+    "utils/sanitization_test.go": {
+      "hash": "d8c7ef6ea6f88b0f"
+    }
+  }
+}

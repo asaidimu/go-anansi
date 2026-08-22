@@ -114,7 +114,25 @@ func (s *Sanitizer) getPolicyForField(fieldName string) MaskedFieldPolicy {
 	return s.config.DefaultPolicy
 }
 
-// applyPolicy applies the specified masking policy to a value
+// @note #sanitize-type-blindness issue status=open priority=P1 tags=#sanitizer,#types : applyPolicy is type-blind and cannot mask non-string fields
+//
+// applyPolicy/hashValue stringify every value (fmt.Sprintf %v), so a policy
+// match on a non-string slot (array/object/number) produces a string. The
+// container pipeline (core/document/sanitize.go sanitizeContainerLeaves)
+// correctly refuses to write a masked string into a non-string slot and
+// returns "cannot store sanitized value ... in <type> slot", which fails
+// Sanitize() for the WHOLE document. Real-world fallout: hestia's global
+// (?i)auth pattern matched the array field `authors` of its dynamic `notes`
+// collection, so every document failed sanitization and the query API
+// silently returned data:[] with correct pagination counts (the HTTP layer
+// drops documents whose Sanitize errors).
+//
+// Decision (2026-08-22): fix belongs at the app config level for now (keep
+// masking rules targeted/collection-scoped so patterns only ever hit string
+// fields); no library change shipped. If this is ever fixed here, likely
+// shapes are: element-wise masking for arrays of strings, skipping
+// non-maskable slots with a warning, or schema-type-aware policies threaded
+// through FieldMaskConfig.
 func (s *Sanitizer) applyPolicy(fieldName string, value any, policy MaskedFieldPolicy) any {
 	// Don't mask nil values
 	if value == nil {
