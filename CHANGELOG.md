@@ -1,3 +1,10 @@
+## [8.5.10](https://github.com/asaidimu/go-anansi/compare/v8.5.9...v8.5.10) (2026-08-22)
+
+
+### Bug Fixes
+
+* **persistence:** resolve goroutine leak in StartTransaction ([223932f](https://github.com/asaidimu/go-anansi/commit/223932f7321650d346e1b62b01c79d449b3ce450))
+
 ## [8.5.9](https://github.com/asaidimu/go-anansi/compare/v8.5.8...v8.5.9) (2026-08-19)
 
 
