@@ -1,3 +1,10 @@
+## [8.5.11](https://github.com/asaidimu/go-anansi/compare/v8.5.10...v8.5.11) (2026-08-22)
+
+
+### Bug Fixes
+
+* **encoding:** prevent infinite recursion in JSON array object encoding ([0f8b3d4](https://github.com/asaidimu/go-anansi/commit/0f8b3d4142aa92b3aa25e7987b094f9e713bf530))
+
 ## [8.5.10](https://github.com/asaidimu/go-anansi/compare/v8.5.9...v8.5.10) (2026-08-22)
 
 
