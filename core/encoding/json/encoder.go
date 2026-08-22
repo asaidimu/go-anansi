@@ -375,25 +375,118 @@ func writeValue(cs *definition.CompiledSchema, slot func(container.DataType, ...
 	case container.TypeArrayUnknown:
 		return writeAnyArray(buf, (*(*[][]any)(ptr))[idx])
 	case container.TypeArrayObject:
-		return writeChildren(cs, (*(*[][]*container.DataContainer)(ptr))[idx], prefix, buf, skip)
+		fd := definition.FieldDescriptor(key.Descriptor())
+		return writeChildren(cs, (*(*[][]*container.DataContainer)(ptr))[idx], fd.ChildSchemaIdx(), prefix, buf, skip)
 	case container.TypeUnknown:
 		return writeAny(buf, (*(*[]any)(ptr))[idx])
 	}
 	return nil
 }
 
-func writeChildren(cs *definition.CompiledSchema, children []*container.DataContainer, prefix string, buf *bytes.Buffer, skip map[string]bool) error {
+// writeChildren emits an array-of-object field as a JSON array of
+// per-element objects.
+//
+// @note #encoder-array-object-recursion issue status=resolved priority=P0 tags=#encoder,#arrays : emitObject recursed forever encoding array<object> children resolved through the root address map
+// @assignee opencode
+//
+// RESOLVED 2026-08-23: writeChildren now emits elements via writeObjectAt,
+// which resolves entry names against the CHILD schema slot (bare local field
+// names) instead of the root address reverse-map. Regression tests in
+// notif_matrix_test.go (TestDecode_GeneratedNotifSchema/d-actions,
+// TestEncode_ArrayObjectElements) pin the shape.
+//
+// The bug: array-element containers are keyed by descriptors of the child
+// schema slot, but nameFor resolved their DataPoint IDs through
+// PathNameForAddress, which returned full ROOT paths (e.g.
+// "payload.actions.label"). Under writeChildren's element prefix ("actions")
+// those names never strip, so emitObject kept recursing on
+// joinPrefix(prefix,"payload") — unbounded prefix growth, one '{' and a sort
+// per level, RSS to OOM within seconds. Triggered by any document containing
+// a populated array<object> field reaching this encoder (e.g. metadata
+// checksum finalization inside DocumentPool.FromJSON). Known limitation of
+// the slot-local naming: object-typed MEMBERS inside array children emit
+// flattened rather than nested; no crash, fix upstream when needed. Elements are containers keyed by the CHILD schema slot's
+// fields, so each element is emitted via writeObjectAt against that slot —
+// resolving names slot-locally. Resolving them through the root address map
+// would return full root paths (e.g. "payload.actions.label") that never match
+// the element prefix, sending emitObject into unbounded prefix-growing
+// recursion.
+func writeChildren(cs *definition.CompiledSchema, children []*container.DataContainer, childSlotIdx uint8, prefix string, buf *bytes.Buffer, skip map[string]bool) error {
 	buf.WriteByte('[')
 	for i, child := range children {
 		if i > 0 {
 			buf.WriteByte(',')
 		}
-		if err := writeObject(cs, child, prefix, buf, skip); err != nil {
+		if err := writeObjectAt(cs, child, childSlotIdx, prefix, buf, skip); err != nil {
 			return err
 		}
 	}
 	buf.WriteByte(']')
 	return nil
+}
+
+// writeObjectAt is writeObject for a container whose fields belong to schema
+// slot schemaIdx (an array-of-object element). Entry names are resolved
+// against that slot: a key whose descriptor lives in the slot maps to the
+// bare local field name; anything else falls back to the global nameFor.
+func writeObjectAt(cs *definition.CompiledSchema, doc *container.DataContainer, schemaIdx uint8, prefix string, buf *bytes.Buffer, skip map[string]bool) error {
+	if schemaIdx >= uint8(len(cs.Schemas)) {
+		return writeObject(cs, doc, prefix, buf, skip)
+	}
+
+	entriesPtr := fieldEntryPool.Get().(*[]fieldEntry)
+	entries := (*entriesPtr)[:0]
+
+	var slotFunc func(container.DataType, ...int) unsafe.Pointer
+
+	slot := cs.Schemas[schemaIdx]
+
+	_, err := doc.Walk(func(positions map[int64]int32, walkSlot func(container.DataType, ...int) unsafe.Pointer) (any, error) {
+		slotFunc = walkSlot
+		for k, idx := range positions {
+			key := container.DataContainerKey(k)
+			name := localSlotFieldName(cs, slot, key)
+			if name == "" {
+				name = nameFor(cs, key)
+			}
+			if skip[name] {
+				continue
+			}
+			entries = append(entries, fieldEntry{
+				name: name,
+				key:  key,
+				idx:  idx,
+			})
+		}
+		return nil, nil
+	})
+	if err != nil {
+		resetAndRecycleEntries(entriesPtr, entries)
+		return err
+	}
+
+	sortEntries(entries)
+	if err := emitObject(cs, slotFunc, entries, prefix, buf, skip); err != nil {
+		resetAndRecycleEntries(entriesPtr, entries)
+		return err
+	}
+
+	resetAndRecycleEntries(entriesPtr, entries)
+	return nil
+}
+
+// localSlotFieldName returns the bare field name of the slot field whose
+// descriptor matches key's, or "" when the key belongs to no field of the
+// slot. Allocation-free: descriptor words compare directly.
+func localSlotFieldName(cs *definition.CompiledSchema, slot definition.SchemaSlot, key container.DataContainerKey) string {
+	desc := key.Descriptor()
+	for j := uint16(0); j < slot.FieldCount; j++ {
+		abs := int(slot.FieldStart) + int(j)
+		if uint32(cs.Descriptors[abs]) == desc {
+			return cs.FieldsMeta[abs].Name
+		}
+	}
+	return ""
 }
 
 func writeAny(buf *bytes.Buffer, v any) error {

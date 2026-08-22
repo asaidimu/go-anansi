@@ -1,0 +1,81 @@
+{
+ "fields": {
+  "019fba9e-d801-7b5a-8308-a1a5b32f3691": {
+   "name": "payload",
+   "required": true,
+   "schema": {
+    "id": "019fba9e-d801-7a38-b139-6e85f990d114"
+   },
+   "type": "object"
+  }
+ },
+ "name": "NotificationCreateInput",
+ "schemas": {
+  "019fba9e-d801-7a38-b139-6e85f990d114": {
+   "fields": {
+    "019fba9e-d801-73c5-a5b3-c7bf455bd120": {
+     "name": "actions",
+     "schema": {
+      "id": "019fba9e-d802-7e27-8a3a-42699c23b7a1"
+     },
+     "type": "array"
+    },
+    "019fba9e-d802-74f8-935d-946b4fd467e1": {
+     "name": "subject",
+     "required": true,
+     "type": "string"
+    },
+    "019fba9e-d803-75ed-b873-ca7d1910791a": {
+     "name": "user_id",
+     "required": true,
+     "type": "string"
+    },
+    "019fba9e-d804-700f-a089-be3e6c0baa97": {
+     "name": "body",
+     "nullable": true,
+     "type": "string"
+    },
+    "019fba9e-d805-74e9-a41a-cbccb56b5885": {
+     "name": "data",
+     "type": "record"
+    },
+    "019fba9e-d806-779d-b284-e9eba0cc5f6d": {
+     "name": "expires_at",
+     "nullable": true,
+     "type": "integer"
+    },
+    "019fba9e-d807-70c8-8362-89f14faecd35": {
+     "name": "type",
+     "nullable": true,
+     "type": "string"
+    }
+   },
+   "name": "payload"
+  },
+  "019fba9e-d802-7e27-8a3a-42699c23b7a1": {
+   "fields": {
+    "019fba9e-d801-7282-9aa0-156cf5be70fd": {
+     "name": "label",
+     "required": true,
+     "type": "string"
+    },
+    "019fba9e-d802-7415-8865-1f4bf8f44f2a": {
+     "name": "arguments",
+     "type": "record"
+    },
+    "019fba9e-d803-7418-8099-7f57a1d555b6": {
+     "name": "message",
+     "nullable": true,
+     "type": "string"
+    },
+    "019fba9e-d804-7a83-99ad-2aeef703d074": {
+     "name": "url",
+     "nullable": true,
+     "type": "string"
+    }
+   },
+   "name": "NotificationAction"
+  }
+ },
+ "version": "1.0.0"
+}
