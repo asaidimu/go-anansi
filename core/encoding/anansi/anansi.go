@@ -7,13 +7,18 @@
 // — via Document.Get, JSON serialization, etc. — from one that was only
 // ever built through the ordinary Document API.
 //
-// This implementation covers Level 1 (Basic) conformance from the spec:
-// Dense packets (section 3.1), Sparse packets (section 3.2), and Batch
-// row-oriented packets (section 3.3.1/3.3.2) for all 16 DataTypes, varint
-// integers, and native null-state semantics — uncompressed and
-// unencrypted. Columnar batch, Stream packets, compression, and encryption
-// (spec sections 3.3.3, 3.4, and 8) are not implemented; see the CHANGELOG
-// note at the bottom of this file for the reasoning.
+// This implementation covers Level 1 (Basic) conformance from the spec
+// plus Level 2 minus Stream packets: Dense packets (section 3.1), Sparse
+// packets (section 3.2), and Batch packets — row-oriented (sections
+// 3.3.1/3.3.2) and columnar (section 3.3.3) — for all 16 DataTypes; varint
+// integers; native null-state semantics; ZSTD body compression (section
+// 4.1, WithCompression); BLAKE3-truncated-to-128-bit integrity hashing
+// (section 4.3, WithIntegrity / WithIntegrityHash); and AES-256-GCM
+// encryption (section 4.2, WithEncryption / WithDecryptionKey). Transforms
+// compose per the spec: compress, then encrypt; the digest always covers
+// plaintext and is verified after decrypt+decompress. Stream packets
+// (section 3.4) remain unimplemented; see the CHANGELOG note at the bottom
+// of this file for the reasoning.
 package anansi
 
 import (
@@ -33,22 +38,27 @@ const rootSlot uint8 = 0
 // Anansi packet, automatically selecting Dense or Sparse framing per the
 // spec's encoder selection logic (6.1). fullVersion is the schema version
 // to embed in the header (spec 2.2); callers that don't maintain a schema
-// version registry can pass 0.
-func SerializeAnansi(cs *definition.CompiledSchema, doc *container.DataContainer, fullVersion uint16) ([]byte, error) {
+// version registry can pass 0. Optional transforms (compression, integrity
+// digest) are requested via EncodeOption.
+func SerializeAnansi(cs *definition.CompiledSchema, doc *container.DataContainer, fullVersion uint16, opts ...EncodeOption) ([]byte, error) {
 	epoch, version, err := schemaVersionByte(fullVersion)
 	if err != nil {
 		return nil, err
 	}
 	h := header{Version: version}
 	h.Flags = Flags(epoch) << flagEpochShift
-	return encodePacket(cs, rootSlot, doc, h, nil)
+	body, _, err := encodePacketBody(cs, rootSlot, doc, h, nil)
+	if err != nil {
+		return nil, err
+	}
+	return finishFrame(h, body, newEncodeConfig(opts))
 }
 
 // DecodeAnansi decodes a complete Anansi packet into a freshly allocated,
 // unpooled *container.DataContainer bound to schema slot 0 of cs.
-func DecodeAnansi(cs *definition.CompiledSchema, data []byte) (*container.DataContainer, uint16, error) {
+func DecodeAnansi(cs *definition.CompiledSchema, data []byte, opts ...DecodeOption) (*container.DataContainer, uint16, error) {
 	doc := container.NewDataContainer()
-	v, err := DecodeAnansiInto(cs, data, doc, nil)
+	v, err := DecodeAnansiInto(cs, data, doc, nil, opts...)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -58,25 +68,19 @@ func DecodeAnansi(cs *definition.CompiledSchema, data []byte) (*container.DataCo
 // DecodeAnansiInto decodes a complete Anansi packet into doc (schema slot 0
 // of cs), using pool for any nested TypeArrayObject child containers if
 // non-nil. It returns the schema's full version as read from the header.
-func DecodeAnansiInto(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, pool *container.Pool) (uint16, error) {
+// Encrypted packets require WithDecryptionKey; compression and integrity
+// digests are handled automatically.
+func DecodeAnansiInto(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, pool *container.Pool, opts ...DecodeOption) (uint16, error) {
 	r := newByteReader(data)
 	h, err := readHeader(r)
 	if err != nil {
 		return 0, err
 	}
-	if h.Flags.Compressed() {
-		return 0, fmt.Errorf("anansi: compressed packets are not supported by this codec")
-	}
-	if h.Flags.Encrypted() {
-		return 0, fmt.Errorf("anansi: encrypted packets are not supported by this codec")
-	}
-	if h.Flags.HashPresent() {
-		// Spec 2.1.1: 16 bytes immediately after byte 1. We don't verify
-		// it (no hash algorithm is specified in the spec beyond "present"),
-		// but we must still skip it to reach the payload.
-		if _, err := r.readN(16); err != nil {
-			return 0, fmt.Errorf("anansi: read packet hash: %w", err)
-		}
+	// Spec 4.1.4/6.4.1: decrypt if needed, decompress if needed, verify the
+	// digest over plaintext, then parse the body.
+	r, err = openFrame(r, h.Flags, newDecodeConfig(opts))
+	if err != nil {
+		return 0, err
 	}
 
 	fields, err := collectWireFields(cs, rootSlot, nil)
@@ -99,37 +103,48 @@ func DecodeAnansiInto(cs *definition.CompiledSchema, data []byte, doc *container
 	return h.FullVersion(), nil
 }
 
-// encodePacket auto-selects Dense vs Sparse for one schema slot (root or a
-// TypeArrayObject child) and produces a complete packet: header + body.
-// version.Version/Epoch are reused verbatim for nested packets (spec 2.5
-// TypeArrayObject: "the nested packet uses the same schema version as the
-// parent unless the schema defines an override" — this codec never
-// overrides).
-func encodePacket(cs *definition.CompiledSchema, schemaIdx uint8, doc *container.DataContainer, version header, prefix definition.ResolvedPath) ([]byte, error) {
+// encodePacketBody auto-selects Dense vs Sparse for one schema slot (root
+// or a TypeArrayObject child) and returns the raw body bytes plus the
+// packet-local header describing them. The returned header preserves the
+// caller's epoch/version but re-selects the type bits for doc and strips
+// all transform bits: nested sub-packets are part of their parent's
+// payload — already covered by the parent's integrity digest, with any
+// compression/encryption applying to the outer message only — so they must
+// not claim transforms of their own (spec 2.5 TypeContainer: "the nested
+// packet uses the same schema version as the parent").
+func encodePacketBody(cs *definition.CompiledSchema, schemaIdx uint8, doc *container.DataContainer, version header, prefix definition.ResolvedPath) ([]byte, header, error) {
 	fields, err := collectWireFields(cs, schemaIdx, prefix)
 	if err != nil {
-		return nil, err
+		return nil, header{}, err
 	}
 
 	pt := selectPacketType(doc, fields)
-	h := version
-	h.Flags = (h.Flags &^ flagPacketTypeMask) | Flags(pt)
+	h := header{Version: version.Version}
+	h.Flags = (version.Flags &^ (flagPacketTypeMask | flagCompressed | flagEncrypted | flagHashPresent)) | Flags(pt)
 
 	buf := bytes.NewBuffer(make([]byte, 0, 64+len(fields)*4))
-	buf.WriteByte(byte(h.Flags))
-	buf.WriteByte(h.Version)
-
 	switch pt {
 	case PacketDense:
 		if err := encodeDenseBody(buf, cs, h, doc, fields); err != nil {
-			return nil, err
+			return nil, header{}, err
 		}
 	case PacketSparse:
 		if err := encodeSparseBody(buf, cs, h, doc, fields); err != nil {
-			return nil, err
+			return nil, header{}, err
 		}
 	}
-	return buf.Bytes(), nil
+	return buf.Bytes(), h, nil
+}
+
+// encodePacket builds a complete raw nested sub-packet (header + body).
+func encodePacket(cs *definition.CompiledSchema, schemaIdx uint8, doc *container.DataContainer, version header, prefix definition.ResolvedPath) ([]byte, error) {
+	body, h, err := encodePacketBody(cs, schemaIdx, doc, version, prefix)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]byte, 2, len(body)+2)
+	out[0], out[1] = byte(h.Flags), h.Version
+	return append(out, body...), nil
 }
 
 // decodePacketInto is encodePacket's decode counterpart, used both by the
@@ -141,10 +156,11 @@ func decodePacketInto(cs *definition.CompiledSchema, schemaIdx uint8, data []byt
 	if err != nil {
 		return err
 	}
-	if h.Flags.HashPresent() {
-		if _, err := r.readN(16); err != nil {
-			return fmt.Errorf("anansi: read nested packet hash: %w", err)
-		}
+	if h.Flags.Compressed() || h.Flags.Encrypted() {
+		return fmt.Errorf("anansi: compressed/encrypted nested packets are not supported by this codec")
+	}
+	if err := readAndVerifyNestedHash(r, h.Flags); err != nil {
+		return err
 	}
 	fields, err := collectWireFields(cs, schemaIdx, prefix)
 	if err != nil {
@@ -192,20 +208,18 @@ func selectPacketType(doc *container.DataContainer, fields []wireField) PacketTy
 }
 
 // EncodeDense forces Dense-packet encoding of doc, bypassing the density
-// heuristic. Returns an error if any field's current state cannot be
-// represented (it never can't be — Dense supports every state — this
-// exists purely so callers can force the format explicitly).
-func EncodeDense(cs *definition.CompiledSchema, doc *container.DataContainer, fullVersion uint16) ([]byte, error) {
-	return encodeForced(cs, doc, fullVersion, PacketDense)
+// heuristic. Optional transforms via EncodeOption.
+func EncodeDense(cs *definition.CompiledSchema, doc *container.DataContainer, fullVersion uint16, opts ...EncodeOption) ([]byte, error) {
+	return encodeForced(cs, doc, fullVersion, PacketDense, opts...)
 }
 
 // EncodeSparse forces Sparse-packet encoding of doc, bypassing the density
-// heuristic.
-func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, fullVersion uint16) ([]byte, error) {
-	return encodeForced(cs, doc, fullVersion, PacketSparse)
+// heuristic. Optional transforms via EncodeOption.
+func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, fullVersion uint16, opts ...EncodeOption) ([]byte, error) {
+	return encodeForced(cs, doc, fullVersion, PacketSparse, opts...)
 }
 
-func encodeForced(cs *definition.CompiledSchema, doc *container.DataContainer, fullVersion uint16, pt PacketType) ([]byte, error) {
+func encodeForced(cs *definition.CompiledSchema, doc *container.DataContainer, fullVersion uint16, pt PacketType, opts ...EncodeOption) ([]byte, error) {
 	epoch, version, err := schemaVersionByte(fullVersion)
 	if err != nil {
 		return nil, err
@@ -218,8 +232,6 @@ func encodeForced(cs *definition.CompiledSchema, doc *container.DataContainer, f
 		return nil, err
 	}
 	buf := bytes.NewBuffer(make([]byte, 0, 64+len(fields)*4))
-	buf.WriteByte(byte(h.Flags))
-	buf.WriteByte(h.Version)
 	switch pt {
 	case PacketDense:
 		if err := encodeDenseBody(buf, cs, h, doc, fields); err != nil {
@@ -232,5 +244,5 @@ func encodeForced(cs *definition.CompiledSchema, doc *container.DataContainer, f
 	default:
 		return nil, fmt.Errorf("anansi: encodeForced: unsupported packet type %s", pt)
 	}
-	return buf.Bytes(), nil
+	return finishFrame(h, buf.Bytes(), newEncodeConfig(opts))
 }

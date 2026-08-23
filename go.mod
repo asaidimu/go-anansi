@@ -14,6 +14,7 @@ require (
 	github.com/mattn/go-sqlite3 v1.14.30
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
+	github.com/zeebo/blake3 v0.2.4
 	go.uber.org/zap v1.27.0
 	golang.org/x/term v0.45.0
 )
@@ -35,7 +36,8 @@ require (
 	github.com/google/btree v1.1.3 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
-	github.com/klauspost/compress v1.18.0 // indirect
+	github.com/klauspost/compress v1.19.2 // indirect
+	github.com/klauspost/cpuid/v2 v2.0.12 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect

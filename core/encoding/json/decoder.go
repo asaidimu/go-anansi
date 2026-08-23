@@ -316,6 +316,7 @@ func parseValueInto(p *jsonParser, cs *definition.CompiledSchema, doc *container
 	// A null leaf is absence: consume it and leave the slot untouched. Stored
 	// fragments (row read-back) legitimately carry null for unset fields, and
 	// re-materializing them must not fail or invent a value.
+	p.skipWS()
 	if p.peek() == 'n' {
 		if err := p.parseNull(); err != nil {
 			return err

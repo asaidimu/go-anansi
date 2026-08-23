@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-08-22T21:46:46.899538077Z",
+  "generatedAt": "2026-08-22T23:12:28.105436166Z",
   "root": ".",
   "notes": {
     "sanitize-type-blindness": {
@@ -369,7 +369,7 @@
       "hash": "62b3c2d95ac48f5d"
     },
     "core/encoding/json/encoder.go": {
-      "hash": "c8c9002afc53fa01"
+      "hash": "3d059dd6148745b4"
     },
     "core/encoding/json/encoder_bench_test.go": {
       "hash": "7b51b9f8814bf967"
@@ -382,6 +382,9 @@
     },
     "core/encoding/json/jsonparse.go": {
       "hash": "f36ca65b270157c0"
+    },
+    "core/encoding/json/notif_matrix_test.go": {
+      "hash": "a57b2d38e7617cb2"
     },
     "core/ephemeral/aggregates.go": {
       "hash": "b13a3201ee426175"

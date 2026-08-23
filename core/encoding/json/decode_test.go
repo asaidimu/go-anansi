@@ -143,6 +143,66 @@ func TestDecodeJSON_TypeMismatch(t *testing.T) {
 	require.Error(t, err)
 }
 
+// TestDecodeJSON_NullLeaves pins the "null is absence" contract for every
+// field category. Regression: the null guard peeked the raw byte without
+// skipping whitespace, so `": null"` (as every serializer writes it) fell
+// through to the typed leaf parsers and failed with "expected string/number".
+func TestDecodeJSON_NullLeaves(t *testing.T) {
+	cs, err := compileSchema(t, []byte(schemaJSON))
+	require.NoError(t, err)
+
+	cases := []struct {
+		name    string
+		payload string
+	}{
+		{"string", `{ "id": null }`},
+		{"bool", `{ "active": null }`},
+		{"integer", `{ "age": null }`},
+		{"number", `{ "score": null }`},
+		{"array_of_string", `{ "tags": null }`},
+		{"record", `{ "profile": null }`},
+		{"unknown", `{ "meta": null }`},
+		{"object", `{ "address": null }`},
+		{"array_of_object", `{ "items": null }`},
+		{"composite", `{ "location": null }`},
+		{"nested_object_leaf", `{ "address": { "street": null } }`},
+		{"array_object_element_leaf", `{ "items": [ { "street": null }, { "zip": 1 } ] }`},
+		{"compact_no_space", `{"id":null,"age":null}`},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			doc := container.NewDataContainer()
+			require.NoError(t, DecodeJSONInto(cs, []byte(c.payload), doc, nil))
+
+			dump, err := Dump(cs, doc)
+			require.NoError(t, err)
+
+			// A consumed null must store nothing: the only key that may appear
+			// is from a non-null sibling in the same payload.
+			for k := range dump {
+				assert.NotContains(t, k, "null")
+			}
+			switch c.name {
+			case "nested_object_leaf":
+				assert.Len(t, dump, 0)
+			case "array_object_element_leaf":
+				items, ok := dump["items"].([]any)
+				require.True(t, ok)
+				require.Len(t, items, 2)
+				first, ok := items[0].(map[string]any)
+				require.True(t, ok)
+				assert.Len(t, first, 0, "null leaf must store nothing")
+				second, ok := items[1].(map[string]any)
+				require.True(t, ok)
+				assert.Equal(t, int64(1), second["items.zip"])
+			case "compact_no_space":
+				assert.Len(t, dump, 0)
+			}
+		})
+	}
+}
+
 func TestDecodeJSON_RootNotObject(t *testing.T) {
 	cs, err := compileSchema(t, []byte(schemaJSON))
 	require.NoError(t, err)

@@ -10,8 +10,7 @@ import (
 
 // batchFlagColumnar and batchFlagSparse are the two bits of the Batch
 // packet's own batch_flags byte (spec 3.3): bit 0 orientation, bit 1
-// density. This codec only implements row-oriented batches (orientation
-// bit always 0); see the package doc comment for scope.
+// density.
 const (
 	batchFlagColumnar = 0x01
 	batchFlagSparse   = 0x02
@@ -25,7 +24,7 @@ const (
 // per-record formats — record boundaries are self-delineating either way
 // (a fixed-size state map for Dense, an explicit field_count for Sparse),
 // so the choice only affects size/speed, not correctness.
-func EncodeBatchRows(cs *definition.CompiledSchema, docs []*container.DataContainer, fullVersion uint16) ([]byte, error) {
+func EncodeBatchRows(cs *definition.CompiledSchema, docs []*container.DataContainer, fullVersion uint16, opts ...EncodeOption) ([]byte, error) {
 	epoch, version, err := schemaVersionByte(fullVersion)
 	if err != nil {
 		return nil, err
@@ -54,8 +53,6 @@ func EncodeBatchRows(cs *definition.CompiledSchema, docs []*container.DataContai
 	}
 
 	buf := bytes.NewBuffer(nil)
-	buf.WriteByte(byte(h.Flags))
-	buf.WriteByte(h.Version)
 	writeUvarintTo(buf, uint64(len(docs)))
 
 	batchFlags := byte(0)
@@ -75,13 +72,17 @@ func EncodeBatchRows(cs *definition.CompiledSchema, docs []*container.DataContai
 			}
 		}
 	}
-	return buf.Bytes(), nil
+	return finishFrame(h, buf.Bytes(), newEncodeConfig(opts))
 }
 
-// DecodeBatchRows decodes a row-oriented Batch packet produced by
-// EncodeBatchRows into freshly allocated (or pool-sourced, if pool is
+// DecodeBatchRows decodes a Batch packet produced by EncodeBatchRows or
+// EncodeBatchColumnar into freshly allocated (or pool-sourced, if pool is
 // non-nil) *container.DataContainer values bound to schema slot 0 of cs.
-func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container.Pool) ([]*container.DataContainer, uint16, error) {
+// Both orientations are accepted; the packet's own batch_flags byte (with
+// the header flags bit 3 as a cross-check) selects the layout. Encrypted
+// packets require WithDecryptionKey; compression and integrity digests are
+// handled automatically.
+func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container.Pool, opts ...DecodeOption) ([]*container.DataContainer, uint16, error) {
 	r := newByteReader(data)
 	h, err := readHeader(r)
 	if err != nil {
@@ -90,13 +91,11 @@ func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container
 	if h.Flags.PacketType() != PacketBatch {
 		return nil, 0, fmt.Errorf("anansi: DecodeBatchRows: packet type is %s, not Batch", h.Flags.PacketType())
 	}
-	if h.Flags.Compressed() || h.Flags.Encrypted() {
-		return nil, 0, fmt.Errorf("anansi: compressed/encrypted batch packets are not supported by this codec")
-	}
-	if h.Flags.HashPresent() {
-		if _, err := r.readN(16); err != nil {
-			return nil, 0, fmt.Errorf("anansi: read batch packet hash: %w", err)
-		}
+	// Spec 4.1.4/6.4.1: the transform envelope sits between the header and
+	// the payload (record_count included); open it before parsing.
+	r, err = openFrame(r, h.Flags, newDecodeConfig(opts))
+	if err != nil {
+		return nil, 0, err
 	}
 
 	recordCount, err := r.readUvarint()
@@ -107,34 +106,38 @@ func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container
 	if err != nil {
 		return nil, 0, fmt.Errorf("anansi: read batch flags: %w", err)
 	}
-	if batchFlags&batchFlagColumnar != 0 {
-		return nil, 0, fmt.Errorf("anansi: columnar batch packets are not supported by this codec")
-	}
-	useSparse := batchFlags&batchFlagSparse != 0
 
 	fields, err := collectWireFields(cs, rootSlot, nil)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	docs := make([]*container.DataContainer, 0, recordCount)
-	for i := uint64(0); i < recordCount; i++ {
-		var doc *container.DataContainer
+	docs := make([]*container.DataContainer, recordCount)
+	for i := range docs {
 		if pool != nil {
-			doc = pool.Get()
+			docs[i] = pool.Get()
 		} else {
-			doc = container.NewDataContainer()
+			docs[i] = container.NewDataContainer()
 		}
-		if useSparse {
-			if err := decodeSparseBody(r, cs, h, doc, fields, pool); err != nil {
+	}
+
+	switch {
+	case batchFlags&batchFlagColumnar != 0 || h.Flags.BatchColumnar():
+		if err := decodeColumnarBatch(r, cs, h, docs, fields, pool); err != nil {
+			return nil, 0, err
+		}
+	case batchFlags&batchFlagSparse != 0:
+		for i := uint64(0); i < recordCount; i++ {
+			if err := decodeSparseBody(r, cs, h, docs[i], fields, pool); err != nil {
 				return nil, 0, fmt.Errorf("anansi: decode batch record %d: %w", i, err)
 			}
-		} else {
-			if err := decodeDenseBody(r, cs, h, doc, fields, pool); err != nil {
+		}
+	default:
+		for i := uint64(0); i < recordCount; i++ {
+			if err := decodeDenseBody(r, cs, h, docs[i], fields, pool); err != nil {
 				return nil, 0, fmt.Errorf("anansi: decode batch record %d: %w", i, err)
 			}
 		}
-		docs = append(docs, doc)
 	}
 	return docs, h.FullVersion(), nil
 }
