@@ -58,6 +58,21 @@ func zigzagDecode(u uint64) int64 {
 type byteReader struct {
 	data []byte
 	pos  int
+
+	// alias enables zero-copy string decoding: readString returns strings
+	// viewing data in place (via unsafe.String) instead of copying. Set
+	// unless WithCopyStrings opted out at the top-level decode call;
+	// nested element readers inherit it via child().
+	alias bool
+}
+
+// child returns a reader over data — typically a length-prefixed nested
+// packet subslice of this reader's buffer — inheriting zero-copy decode
+// state.
+func (r *byteReader) child(data []byte) *byteReader {
+	c := newByteReader(data)
+	c.alias = r.alias
+	return c
 }
 
 func newByteReader(data []byte) *byteReader {

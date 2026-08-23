@@ -2,6 +2,9 @@ package anansi
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
+	"sync"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -73,6 +76,51 @@ func collectWireFields(cs *definition.CompiledSchema, schemaIdx uint8, prefix de
 		return nil, err
 	}
 	return out, nil
+}
+
+// wireFieldCache memoises wire-field walks per (compiled schema, slot,
+// path). A *definition.CompiledSchema is immutable after Link — descriptors
+// and addresses never change — so cache entries never invalidate and the
+// returned slices must be treated as read-only. This matters on hot paths:
+// nested TypeArrayObject elements each encode/decode through the same
+// (slot, path), and an uncached walk showed up as ~40% of both encode and
+// decode CPU in profiles of array-heavy documents.
+var wireFieldCache sync.Map // cacheKey -> []wireField
+
+type cacheKey struct {
+	cs      *definition.CompiledSchema
+	slot    uint8
+	pathKey string
+}
+
+func pathCacheKey(prefix definition.ResolvedPath) string {
+	if len(prefix) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, s := range prefix {
+		b.WriteString(strconv.Itoa(int(s.SchemaIdx())))
+		b.WriteByte('/')
+		b.WriteString(strconv.Itoa(int(s.FieldIdx())))
+		b.WriteByte(';')
+	}
+	return b.String()
+}
+
+// collectWireFieldsCached returns the canonical field list for slot under
+// prefix, reusing a cached walk when available. The result is shared and
+// MUST NOT be mutated by callers.
+func collectWireFieldsCached(cs *definition.CompiledSchema, schemaIdx uint8, prefix definition.ResolvedPath) ([]wireField, error) {
+	key := cacheKey{cs: cs, slot: schemaIdx, pathKey: pathCacheKey(prefix)}
+	if v, ok := wireFieldCache.Load(key); ok {
+		return v.([]wireField), nil
+	}
+	fields, err := collectWireFields(cs, schemaIdx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	v, _ := wireFieldCache.LoadOrStore(key, fields)
+	return v.([]wireField), nil
 }
 
 func collectWireFieldsInto(cs *definition.CompiledSchema, schemaIdx uint8, prefix definition.ResolvedPath, out *[]wireField) error {

@@ -63,6 +63,45 @@ type DataContainer struct {
 	data      [16]unsafe.Pointer
 	positions map[int64]int32
 	holes     []DataContainerKey
+
+	// backing is a private, immutable-after-fill byte buffer that decoded
+	// string values alias (zero-copy decode). Buffers are pooled implicitly:
+	// Clear intentionally RETAINS backing capacity so a pooled container's
+	// next aliased decode reuses it — one bulk copy per fill instead of one
+	// allocation per string. Oversized buffers are released to bound memory.
+	// Strings are immutable in Go, so aliasing is safe for reads and field
+	// writes alike; only buffer lifetime matters, and the container holds it.
+	backing []byte
+}
+
+// maxRetainedBacking caps the backing capacity a pooled container retains
+// across Clear. Larger buffers are dropped rather than pinned.
+const maxRetainedBacking = 1 << 20 // 1 MiB
+
+// AcquireBacking returns a len-n buffer for this fill cycle, reusing
+// retained capacity when it fits (amortized steady state: no allocation).
+// Codec-internal API: top-level decode calls this once and attaches the
+// result to nested child containers verbatim via OwnBacking.
+func (d *DataContainer) AcquireBacking(n int) []byte {
+	if cap(d.backing) >= n {
+		return d.backing[:n]
+	}
+	d.backing = make([]byte, n)
+	return d.backing
+}
+
+// OwnBacking attaches an immutable buffer that this container's string
+// values alias into. Used to propagate a parent's backing to nested child
+// containers so extracted children remain valid independently. The buffer
+// must never be mutated after attachment.
+func (d *DataContainer) OwnBacking(b []byte) {
+	d.backing = b
+}
+
+// Backing returns the buffer previously attached via acquireBacking or
+// OwnBacking, if any.
+func (d *DataContainer) Backing() []byte {
+	return d.backing
 }
 
 func NewDataContainer() *DataContainer {
@@ -973,6 +1012,12 @@ func (d *DataContainer) Length() int {
 func (d *DataContainer) Clear() {
 	clear(d.positions)
 	d.holes = d.holes[:0]
+
+	// Retain backing capacity for the next aliased fill (amortization),
+	// unless it is large enough to be worth releasing.
+	if cap(d.backing) > maxRetainedBacking {
+		d.backing = nil
+	}
 
 	for i, ptr := range d.data {
 		if ptr == nil {

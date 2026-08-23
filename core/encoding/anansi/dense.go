@@ -69,6 +69,9 @@ func decodeDenseStateMap(r *byteReader, nFields int) ([]fieldState, error) {
 // encodeDenseBody writes the state map followed by per-DataType value
 // blocks (spec 3.1.3) for fields against doc. It does not write the 2-byte
 // packet header; callers combine this with writeHeader.
+//
+// The TypeBool block is bit-packed (spec 2.5 TypeBool Dense Mode): all
+// present bools, in wire order, packed LSB-first into ceil(n/8) bytes.
 func encodeDenseBody(buf *bytes.Buffer, cs *definition.CompiledSchema, version header, doc *container.DataContainer, fields []wireField) error {
 	encodeDenseStateMap(buf, doc, fields)
 
@@ -76,6 +79,21 @@ func encodeDenseBody(buf *bytes.Buffer, cs *definition.CompiledSchema, version h
 	// (0) through TypeArrayGeometry (15). Within a block, fields appear in
 	// their canonical wire order (a stable subsequence of `fields`).
 	for dt := container.DataType(0); dt <= container.TypeArrayGeometry; dt++ {
+		if dt == container.TypeBool {
+			var values []bool
+			for _, wf := range fields {
+				if wf.fd.DataType() != dt || fieldStateOf(doc, wf.key) != stateHasValue {
+					continue
+				}
+				v, _, err := doc.GetBool(wf.key)
+				if err != nil {
+					return fmt.Errorf("anansi: encode dense field %q: %w", wf.name, err)
+				}
+				values = append(values, v)
+			}
+			writeBoolBits(buf, values)
+			continue
+		}
 		for _, wf := range fields {
 			if wf.fd.DataType() != dt {
 				continue
@@ -101,6 +119,29 @@ func decodeDenseBody(r *byteReader, cs *definition.CompiledSchema, version heade
 	}
 
 	for dt := container.DataType(0); dt <= container.TypeArrayGeometry; dt++ {
+		if dt == container.TypeBool {
+			var count int
+			for i, wf := range fields {
+				if wf.fd.DataType() == dt && states[i] == stateHasValue {
+					count++
+				}
+			}
+			values, err := readBoolBits(r, count)
+			if err != nil {
+				return fmt.Errorf("anansi: read dense bool block: %w", err)
+			}
+			next := 0
+			for i, wf := range fields {
+				if wf.fd.DataType() != dt || states[i] != stateHasValue {
+					continue
+				}
+				if err := doc.SetBool(wf.key, values[next]); err != nil {
+					return err
+				}
+				next++
+			}
+			continue
+		}
 		for i, wf := range fields {
 			if wf.fd.DataType() != dt {
 				continue

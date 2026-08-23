@@ -101,13 +101,26 @@ func newEncodeConfig(opts []EncodeOption) encodeConfig {
 type DecodeOption func(*decodeConfig)
 
 type decodeConfig struct {
-	key []byte // AES-256 key for encrypted packets
+	key         []byte // AES-256 key for encrypted packets
+	copyStrings bool   // opt-out of the default zero-copy string decoding
 }
 
 // WithDecryptionKey supplies the AES-256 key needed to open an encrypted
 // packet. Decoding a packet with flags bit 6 set without this option fails.
 func WithDecryptionKey(key []byte) DecodeOption {
 	return func(c *decodeConfig) { c.key = key }
+}
+
+// WithCopyStrings opts out of the default zero-copy string decoding,
+// materializing each string as its own allocation instead of a view into
+// the container's backing buffer. Choose this when decoded documents are
+// retained far longer than their wire size justifies (e.g. long-lived
+// caches keeping one hot field alive would otherwise pin the whole
+// packet's backing). Steady-state decode cost: one memmove and zero string
+// allocations by default; nested child containers share the root's backing
+// so extracted children remain valid; equal values are not deduplicated.
+func WithCopyStrings() DecodeOption {
+	return func(c *decodeConfig) { c.copyStrings = true }
 }
 
 func newDecodeConfig(opts []DecodeOption) decodeConfig {
@@ -183,62 +196,66 @@ func finishFrame(h header, body []byte, cfg encodeConfig) ([]byte, error) {
 // openFrame consumes everything between the header and the body — optional
 // digest, optional nonce+ciphertext, optional compression envelope —
 // verifies integrity when flagged, and returns a reader positioned at the
-// start of the decodable body (decrypt → decompress per 6.4.1). The
-// returned reader aliases r's buffer or a freshly transformed buffer owned
-// by this call until decoding completes.
-func openFrame(r *byteReader, flags Flags, cfg decodeConfig) (*byteReader, error) {
+// start of the decodable body (decrypt → decompress per 6.4.1). owned
+// reports whether the returned reader's buffer is freshly allocated by this
+// call (compressed/encrypted paths) and therefore already private to the
+// decoded containers; callers can attach it as backing without copying.
+func openFrame(r *byteReader, flags Flags, cfg decodeConfig) (_ *byteReader, owned bool, _ error) {
+	fresh := false
 	var stored []byte
 	if flags.HashPresent() {
 		b, err := r.readN(hashSize)
 		if err != nil {
-			return nil, fmt.Errorf("anansi: read packet hash: %w", err)
+			return nil, false, fmt.Errorf("anansi: read packet hash: %w", err)
 		}
 		stored = b
 	}
 
 	if flags.Encrypted() {
 		if cfg.key == nil {
-			return nil, fmt.Errorf("anansi: encrypted packet but no decryption key provided (use anansi.WithDecryptionKey)")
+			return nil, false, fmt.Errorf("anansi: encrypted packet but no decryption key provided (use anansi.WithDecryptionKey)")
 		}
 		aead, err := newAEAD(cfg.key)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		nonce, err := r.readN(gcmNonceSize)
 		if err != nil {
-			return nil, fmt.Errorf("anansi: read nonce: %w", err)
+			return nil, false, fmt.Errorf("anansi: read nonce: %w", err)
 		}
 		inner, err := aead.Open(nil, nonce, r.data[r.pos:], nil)
 		if err != nil {
-			return nil, fmt.Errorf("anansi: decrypt payload: %w", err)
+			return nil, false, fmt.Errorf("anansi: decrypt payload: %w", err)
 		}
 		r = newByteReader(inner)
+		fresh = true
 	}
 
 	var plainLen uint64 = uint64(r.remaining())
 	if flags.Compressed() {
 		n, err := r.readUvarint()
 		if err != nil {
-			return nil, fmt.Errorf("anansi: read uncompressed size: %w", err)
+			return nil, false, fmt.Errorf("anansi: read uncompressed size: %w", err)
 		}
 		if n > maxDecompressedSize {
-			return nil, fmt.Errorf("anansi: declared uncompressed size %d exceeds limit %d", n, uint64(maxDecompressedSize))
+			return nil, false, fmt.Errorf("anansi: declared uncompressed size %d exceeds limit %d", n, uint64(maxDecompressedSize))
 		}
 		plainLen = n
 		plain, err := zstd.DecodeTo(make([]byte, 0, plainLen), r.data[r.pos:])
 		if err != nil {
-			return nil, fmt.Errorf("anansi: decompress body: %w", err)
+			return nil, false, fmt.Errorf("anansi: decompress body: %w", err)
 		}
 		if uint64(len(plain)) != plainLen {
-			return nil, fmt.Errorf("anansi: decompressed %d bytes, header declared %d", uint64(len(plain)), plainLen)
+			return nil, false, fmt.Errorf("anansi: decompressed %d bytes, header declared %d", uint64(len(plain)), plainLen)
 		}
 		r = newByteReader(plain)
+		fresh = true
 	}
 
 	if stored != nil {
 		if err := verifyIntegrity(stored, r.data[r.pos:]); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
-	return r, nil
+	return r, fresh, nil
 }

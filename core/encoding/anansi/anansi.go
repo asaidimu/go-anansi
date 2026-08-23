@@ -14,11 +14,14 @@
 // integers; native null-state semantics; ZSTD body compression (section
 // 4.1, WithCompression); BLAKE3-truncated-to-128-bit integrity hashing
 // (section 4.3, WithIntegrity / WithIntegrityHash); and AES-256-GCM
-// encryption (section 4.2, WithEncryption / WithDecryptionKey). Transforms
+// encryption (section 4.2, WithEncryption / WithDecryptionKey). Scalar
+// bools are bit-packed in Dense blocks and columnar value arrays (section
+// 2.5). Transforms
 // compose per the spec: compress, then encrypt; the digest always covers
-// plaintext and is verified after decrypt+decompress. Stream packets
-// (section 3.4) remain unimplemented; see the CHANGELOG note at the bottom
-// of this file for the reasoning.
+// plaintext and is verified after decrypt+decompress. String decoding is
+// zero-copy by default — values view one bulk-copied, container-owned
+// backing (WithCopyStrings opts out). Stream packets
+// (section 3.4) remain unimplemented.
 package anansi
 
 import (
@@ -69,32 +72,48 @@ func DecodeAnansi(cs *definition.CompiledSchema, data []byte, opts ...DecodeOpti
 // of cs), using pool for any nested TypeArrayObject child containers if
 // non-nil. It returns the schema's full version as read from the header.
 // Encrypted packets require WithDecryptionKey; compression and integrity
-// digests are handled automatically.
+// digests are handled automatically. Strings decode zero-copy by default
+// into a container-owned backing buffer (one bulk copy, no per-string
+// allocations; the caller's input is never retained) — pass
+// WithCopyStrings to opt out.
 func DecodeAnansiInto(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, pool *container.Pool, opts ...DecodeOption) (uint16, error) {
 	r := newByteReader(data)
 	h, err := readHeader(r)
 	if err != nil {
 		return 0, err
 	}
+	cfg := newDecodeConfig(opts)
 	// Spec 4.1.4/6.4.1: decrypt if needed, decompress if needed, verify the
 	// digest over plaintext, then parse the body.
-	r, err = openFrame(r, h.Flags, newDecodeConfig(opts))
+	body, fresh, err := openFrame(r, h.Flags, cfg)
 	if err != nil {
 		return 0, err
 	}
 
-	fields, err := collectWireFields(cs, rootSlot, nil)
+	if !cfg.copyStrings {
+		if !fresh {
+			// The caller's wire is not ours to retain: snapshot it into the
+			// container's pooled backing so aliased strings stay valid.
+			buf := doc.AcquireBacking(body.remaining())
+			copy(buf, body.data[body.pos:])
+			body = newByteReader(buf)
+		}
+		body.alias = true
+		doc.OwnBacking(body.data)
+	}
+
+	fields, err := collectWireFieldsCached(cs, rootSlot, nil)
 	if err != nil {
 		return 0, err
 	}
 
 	switch h.Flags.PacketType() {
 	case PacketDense:
-		if err := decodeDenseBody(r, cs, h, doc, fields, pool); err != nil {
+		if err := decodeDenseBody(body, cs, h, doc, fields, pool); err != nil {
 			return 0, err
 		}
 	case PacketSparse:
-		if err := decodeSparseBody(r, cs, h, doc, fields, pool); err != nil {
+		if err := decodeSparseBody(body, cs, h, doc, fields, pool); err != nil {
 			return 0, err
 		}
 	default:
@@ -113,7 +132,7 @@ func DecodeAnansiInto(cs *definition.CompiledSchema, data []byte, doc *container
 // not claim transforms of their own (spec 2.5 TypeContainer: "the nested
 // packet uses the same schema version as the parent").
 func encodePacketBody(cs *definition.CompiledSchema, schemaIdx uint8, doc *container.DataContainer, version header, prefix definition.ResolvedPath) ([]byte, header, error) {
-	fields, err := collectWireFields(cs, schemaIdx, prefix)
+	fields, err := collectWireFieldsCached(cs, schemaIdx, prefix)
 	if err != nil {
 		return nil, header{}, err
 	}
@@ -147,11 +166,11 @@ func encodePacket(cs *definition.CompiledSchema, schemaIdx uint8, doc *container
 	return append(out, body...), nil
 }
 
-// decodePacketInto is encodePacket's decode counterpart, used both by the
-// top-level DecodeAnansiInto (schemaIdx == rootSlot) and recursively for
-// TypeArrayObject children (schemaIdx == that field's child slot).
-func decodePacketInto(cs *definition.CompiledSchema, schemaIdx uint8, data []byte, doc *container.DataContainer, pool *container.Pool, prefix definition.ResolvedPath) error {
-	r := newByteReader(data)
+// decodePacketInto is encodePacket's decode counterpart for nested
+// TypeArrayObject element sub-packets. The caller supplies a reader built
+// from the element payload (typically parent.child(payload), inheriting
+// zero-copy state).
+func decodePacketInto(cs *definition.CompiledSchema, schemaIdx uint8, r *byteReader, doc *container.DataContainer, pool *container.Pool, prefix definition.ResolvedPath) error {
 	h, err := readHeader(r)
 	if err != nil {
 		return err
@@ -162,7 +181,7 @@ func decodePacketInto(cs *definition.CompiledSchema, schemaIdx uint8, data []byt
 	if err := readAndVerifyNestedHash(r, h.Flags); err != nil {
 		return err
 	}
-	fields, err := collectWireFields(cs, schemaIdx, prefix)
+	fields, err := collectWireFieldsCached(cs, schemaIdx, prefix)
 	if err != nil {
 		return err
 	}
@@ -227,7 +246,7 @@ func encodeForced(cs *definition.CompiledSchema, doc *container.DataContainer, f
 	h := header{Version: version}
 	h.Flags = Flags(epoch)<<flagEpochShift | Flags(pt)
 
-	fields, err := collectWireFields(cs, rootSlot, nil)
+	fields, err := collectWireFieldsCached(cs, rootSlot, nil)
 	if err != nil {
 		return nil, err
 	}

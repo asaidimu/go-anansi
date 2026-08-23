@@ -156,7 +156,9 @@ Examples:
 
 ### 2.3 DataPoints and Field Ordering
 
-Fields are encoded in **stable sorted order by their `DataPoint` value (ascending int32)**. The `DataPoint` encodes the `DataType` in bits 1–4, so ascending sort naturally groups fields by type first, then by ID within each type. This mirrors Document v2.0's `data [16]unsafe.Pointer` layout where each slot index corresponds to a `DataType` iota value.
+Fields are encoded in **stable schema declaration order**: the root schema's fields in the sequence they are declared, with flattened object children inlined at their declaration point (depth-first through child schema slots). This order is a pure function of the parsed schema document, so encoder and decoder independently reproduce the identical sequence from the same schema — the property the positional Dense state map requires.
+
+**Why declaration order and not "sorted by DataPoint":** earlier revisions of this specification mandated ascending `DataPoint` sort, on the assumption that IDs are small sequential per-type counters. Concrete engines instead derive field identity from path-resolved addresses in a compiled address space, so a numeric sort yields an order that depends on compiler internals (address computation, footprint rules) that the specification does not define — two implementations could sort the same schema differently. Declaration order is defined by the shared schema document alone, remains byte-stable if address-space internals evolve, and keeps hex dumps aligned with the schema text. The `DataType` grouping the old rule aimed at is provided structurally instead: Dense value blocks and columnar Batch blocks are grouped by `DataType` iota order independently of field order (§3.1.3, §3.3.3).
 
 **DataPoint Bit Layout:**
 ```
@@ -166,7 +168,7 @@ Fields are encoded in **stable sorted order by their `DataPoint` value (ascendin
      0          1–4                   5–31
 ```
 
-**Note on the null bit in field ordering:** The null bit (bit 0) participates in the int32 sort. A DataPoint representing a null field (`null bit = 1`) sorts one position higher than the same DataPoint with a value (`null bit = 0`). Encoders MUST use the canonical (non-null) DataPoint for ordering purposes, then apply null state as determined by the Document's `positions` map, not by the DataPoint's own null bit. The DataPoint null bit is informational and used during sparse encoding; it does not affect field identity or sort position in schema definition.
+**Note on the null bit:** the DataPoint null bit (bit 0) never influences field ordering. It is informational, used only by Sparse encoding to flag null fields on the wire (§3.2.1). Encoders always emit fields in declaration order using their canonical form.
 
 ### 2.4 Varint Encoding
 
@@ -229,6 +231,8 @@ Length is byte count, not character count. No null terminator.
 ```
 Dense Mode:  Packed into bitfields (8 bools per byte).
 Sparse Mode: Single byte (0x00 = false, 0x01 = true).
+Batch-columnar value arrays use the Dense packed form, per field
+(ceil(count/8) bytes per field's present values, LSB-first).
 ```
 
 #### TypeBytes ([]byte)
@@ -355,7 +359,7 @@ Ineligible example: a `Node` schema with a `TypeContainer` field that also uses 
 
 #### 3.1.2 State Map
 
-Since field count *N* is finite and known from the schema, the state map is a fixed-length bitstream of `2 × N` bits, one 2-bit entry per schema field in DataPoint-ascending order.
+Since field count *N* is finite and known from the schema, the state map is a fixed-length bitstream of `2 × N` bits, one 2-bit entry per schema field in schema declaration order (§2.3).
 
 ```
 State map bit pairs:
@@ -427,7 +431,7 @@ No additional shift or mutation is applied to the DataPoint — the null bit is 
 ├──────────────────────────────────────────────┤
 │ [field_count: varint]                        │  Number of set fields (null + value)
 ├──────────────────────────────────────────────┤
-│ FOR EACH SET FIELD (in DataPoint order):     │
+│ FOR EACH SET FIELD (in declaration order):   │
 │   [data_point: varint]                       │  Full int32(DataPoint), null bit set if null
 │   [field_data]                               │  Encoded per type; absent if null bit = 1
 └──────────────────────────────────────────────┘
@@ -742,13 +746,15 @@ When a schema changes:
 3. Recompile codec.
 4. Old and new versions coexist in the registry.
 
-DataPoints are stable within a schema version. Adding a field in a new version assigns it a new DataPoint ID that did not exist in older versions. Removing a field retires its DataPoint ID — it must never be reused within the same schema lineage.
+DataPoints are stable **within** a schema version. When a schema version changes, recompile the codec and register the new version; packets remain bound to the version they were written with (§5.1.3). Implementations whose DataPoint IDs are independent counters SHOULD also guarantee IDs are never reused across versions of the same lineage; implementations that derive IDs from compiled addresses cannot make that guarantee and instead rely on version pinning — which is sufficient, since every packet names its own version.
 
-#### 5.1.3 Backward / Forward Compatibility
+#### 5.1.3 Compatibility Model
 
-**Backward compatible** (new decoder reads old data): Add optional fields only. Do not remove fields. Do not change a DataPoint's type.
+Compatibility is achieved by **explicit version pinning**, not structural tolerance: every packet carries its `fullVersion` in the header (§2.2), collections bind to a single version, and decoders load the matching compiled schema for that version before parsing. Old data remains readable for as long as its schema version stays registered.
 
-**Forward compatible** (old decoder reads new data): Requires Sparse encoding. Old decoder ignores DataPoints it does not recognise.
+- **Reading old data with a newer schema release:** register the old version alongside the new one and decode against it. Adding optional fields, removing fields, or changing a field's type are all safe *across versions* because each version's layout is self-consistent; they are never applied to packets of another version.
+- **Tolerant reading of unknown fields:** decoders MAY ignore Sparse entries whose canonical DataPoint is absent from their schema (forward compatibility), but this is optional and off by default in the reference implementation — an unknown DataPoint more often indicates a version mismatch or corruption than a benign addition, so the reference decoder rejects it. Dense packets cannot be read tolerantly under any circumstance: the fixed-size state map misaligns if field counts differ.
+- **DataPoint identity across versions:** IDs are stable *within* a version but implementations must not assume cross-version stability when IDs derive from compiled addresses; adding or removing earlier fields can shift later addresses. Version pinning makes this safe.
 
 ### 5.2 Schema Distribution
 
@@ -1084,7 +1090,7 @@ count:  DataPoint{TypeInt,    id=1} = 0x00000022  (TypeInt=1, id=1)
 name:   DataPoint{TypeString, id=2} = 0x00000046  (TypeString=3, id=2)
 active: DataPoint{TypeBool,   id=3} = 0x00000068  (TypeBool=4, id=3... see note)
 ```
-*(Exact bit values depend on schema-assigned IDs; shown illustratively. Ordering is ascending int32.)*
+*(Exact bit values depend on schema-assigned IDs; shown illustratively. Fields are ordered by schema declaration, §2.3.)*
 
 **Input:** `{count: 42, name: "test", active: true}`
 
@@ -1138,7 +1144,7 @@ A8          // state map: all 3 fields present
 
 **State map:** 3 fields; email=null (01), age=Has Value (10), id=Has Value (10)
 ```
-Ordered by DataPoint ascending — assume age sorts before email, email before id:
+Ordered by schema declaration (§2.3) — assume age is declared before email, email before id:
 age:   10
 email: 01
 id:    10

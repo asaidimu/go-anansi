@@ -32,7 +32,7 @@ func EncodeBatchRows(cs *definition.CompiledSchema, docs []*container.DataContai
 	h := header{Version: version}
 	h.Flags = Flags(epoch)<<flagEpochShift | Flags(PacketBatch)
 
-	fields, err := collectWireFields(cs, rootSlot, nil)
+	fields, err := collectWireFieldsCached(cs, rootSlot, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -91,23 +91,24 @@ func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container
 	if h.Flags.PacketType() != PacketBatch {
 		return nil, 0, fmt.Errorf("anansi: DecodeBatchRows: packet type is %s, not Batch", h.Flags.PacketType())
 	}
+	cfg := newDecodeConfig(opts)
 	// Spec 4.1.4/6.4.1: the transform envelope sits between the header and
 	// the payload (record_count included); open it before parsing.
-	r, err = openFrame(r, h.Flags, newDecodeConfig(opts))
+	body, fresh, err := openFrame(r, h.Flags, cfg)
 	if err != nil {
 		return nil, 0, err
 	}
 
-	recordCount, err := r.readUvarint()
+	recordCount, err := body.readUvarint()
 	if err != nil {
 		return nil, 0, fmt.Errorf("anansi: read batch record count: %w", err)
 	}
-	batchFlags, err := r.readByte()
+	batchFlags, err := body.readByte()
 	if err != nil {
 		return nil, 0, fmt.Errorf("anansi: read batch flags: %w", err)
 	}
 
-	fields, err := collectWireFields(cs, rootSlot, nil)
+	fields, err := collectWireFieldsCached(cs, rootSlot, nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -121,20 +122,35 @@ func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container
 		}
 	}
 
+	if !cfg.copyStrings && len(docs) > 0 {
+		if !fresh {
+			// Snapshot the caller's wire into pooled backing retained by
+			// the first record; every record's strings alias this one
+			// shared buffer.
+			buf := docs[0].AcquireBacking(body.remaining())
+			copy(buf, body.data[body.pos:])
+			body = newByteReader(buf)
+		}
+		for _, d := range docs {
+			d.OwnBacking(body.data)
+		}
+		body.alias = true
+	}
+
 	switch {
 	case batchFlags&batchFlagColumnar != 0 || h.Flags.BatchColumnar():
-		if err := decodeColumnarBatch(r, cs, h, docs, fields, pool); err != nil {
+		if err := decodeColumnarBatch(body, cs, h, docs, fields, pool); err != nil {
 			return nil, 0, err
 		}
 	case batchFlags&batchFlagSparse != 0:
 		for i := uint64(0); i < recordCount; i++ {
-			if err := decodeSparseBody(r, cs, h, docs[i], fields, pool); err != nil {
+			if err := decodeSparseBody(body, cs, h, docs[i], fields, pool); err != nil {
 				return nil, 0, fmt.Errorf("anansi: decode batch record %d: %w", i, err)
 			}
 		}
 	default:
 		for i := uint64(0); i < recordCount; i++ {
-			if err := decodeDenseBody(r, cs, h, docs[i], fields, pool); err != nil {
+			if err := decodeDenseBody(body, cs, h, docs[i], fields, pool); err != nil {
 				return nil, 0, fmt.Errorf("anansi: decode batch record %d: %w", i, err)
 			}
 		}

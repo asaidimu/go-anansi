@@ -22,10 +22,12 @@ import (
 //	  identical to the row-oriented packets (spec 2.5 via writeFieldPayload).
 //
 // Deviation from the spec's illustrative "fixed-width raw bytes" note
-// (3.3.3): TypeInt stays zigzag-varint and TypeBool one byte per present
-// value, exactly as everywhere else in this codec (spec 2.5 governs value
-// encodings; 3.3.3's note is advisory). The columnar win here is locality —
-// a single field's values are contiguous — not fixed-width packing.
+// (3.3.3): TypeInt stays zigzag-varint, exactly as everywhere else in this
+// codec (spec 2.5 governs value encodings; 3.3.3's note is advisory).
+// TypeBool value arrays ARE bit-packed (spec 2.5 TypeBool Dense Mode): each
+// field's present values pack LSB-first into ceil(n/8) bytes, mirroring the
+// Dense packet block. The columnar win here is locality — a single field's
+// values are contiguous — not fixed-width int packing.
 //
 // Datatypes with no schema fields contribute no bytes at all, so block
 // boundaries are implied by the compiled schema alone (self-delineating,
@@ -41,7 +43,7 @@ func EncodeBatchColumnar(cs *definition.CompiledSchema, docs []*container.DataCo
 	h := header{Version: version}
 	h.Flags = Flags(epoch)<<flagEpochShift | newFlags(PacketBatch, true)
 
-	fields, err := collectWireFields(cs, rootSlot, nil)
+	fields, err := collectWireFieldsCached(cs, rootSlot, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -90,6 +92,25 @@ func encodeColumnarBlock(buf *bytes.Buffer, cs *definition.CompiledSchema, h hea
 		}
 	}
 	buf.Write(packed)
+
+	// TypeBool value arrays are bit-packed per field (spec 2.5 Dense Mode).
+	if typeFields[0].fd.DataType() == container.TypeBool {
+		for _, wf := range typeFields {
+			var values []bool
+			for _, doc := range docs {
+				if fieldStateOf(doc, wf.key) != stateHasValue {
+					continue
+				}
+				v, _, err := doc.GetBool(wf.key)
+				if err != nil {
+					return fmt.Errorf("anansi: encode columnar field %q: %w", wf.name, err)
+				}
+				values = append(values, v)
+			}
+			writeBoolBits(buf, values)
+		}
+		return nil
+	}
 
 	for _, wf := range typeFields {
 		for _, doc := range docs {
@@ -145,6 +166,33 @@ func decodeColumnarBlock(r *byteReader, cs *definition.CompiledSchema, h header,
 			}
 			bit += 2
 		}
+	}
+
+	// TypeBool value arrays are bit-packed per field; see encodeColumnarBlock.
+	if typeFields[0].fd.DataType() == container.TypeBool {
+		for fi, wf := range typeFields {
+			var count int
+			for ri := range docs {
+				if states[fi][ri] == stateHasValue {
+					count++
+				}
+			}
+			values, err := readBoolBits(r, count)
+			if err != nil {
+				return fmt.Errorf("anansi: read columnar bool array for field %q: %w", wf.name, err)
+			}
+			next := 0
+			for ri := range docs {
+				if states[fi][ri] != stateHasValue {
+					continue
+				}
+				if err := docs[ri].SetBool(wf.key, values[next]); err != nil {
+					return err
+				}
+				next++
+			}
+		}
+		return nil
 	}
 
 	for fi, wf := range typeFields {

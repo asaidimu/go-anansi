@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"unsafe"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -71,16 +72,29 @@ func writeString(buf *bytes.Buffer, v string) {
 	buf.WriteString(v)
 }
 
+// readString reads a length-prefixed string. With aliasing enabled on the
+// reader (zero-copy decode), it returns an immutable view into the reader's
+// buffer — which the decoder has attached as the container's backing.
 func readString(r *byteReader) (string, error) {
 	n, err := r.readUvarint()
 	if err != nil {
 		return "", err
 	}
+	if n == 0 {
+		return "", nil
+	}
 	b, err := r.readN(int(n))
 	if err != nil {
 		return "", err
 	}
-	return string(b), nil
+	if !r.alias {
+		return string(b), nil
+	}
+	// Zero-copy: an immutable view into the container's backing buffer.
+	// Equal values are intentionally NOT deduplicated — per-string map
+	// hashing costs more than the duplicates save on realistic payloads.
+	s := unsafe.String(&b[0], len(b))
+	return s, nil
 }
 
 // writeBoolSparse encodes a single TypeBool value the Sparse way (spec 2.5
@@ -99,6 +113,34 @@ func readBoolSparse(r *byteReader) (bool, error) {
 		return false, err
 	}
 	return b != 0, nil
+}
+
+// writeBoolBits packs values LSB-first into ceil(len(values)/8) bytes
+// (spec 2.5 TypeBool Dense Mode: "Packed into bitfields, 8 bools per
+// byte"). Used by Dense value blocks and columnar value arrays, where all
+// present bools are contiguous.
+func writeBoolBits(buf *bytes.Buffer, values []bool) {
+	packed := make([]byte, (len(values)+7)/8)
+	for i, v := range values {
+		if v {
+			packed[i/8] |= 1 << uint(i%8)
+		}
+	}
+	buf.Write(packed)
+}
+
+// readBoolBits reads back n LSB-first packed bools written by
+// writeBoolBits.
+func readBoolBits(r *byteReader, n int) ([]bool, error) {
+	packed, err := r.readN((n + 7) / 8)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]bool, n)
+	for i := range out {
+		out[i] = packed[i/8]&(1<<uint(i%8)) != 0
+	}
+	return out, nil
 }
 
 // writeBytes encodes TypeBytes (spec 2.5 TypeBytes): varint length + raw
@@ -542,7 +584,12 @@ func readArrayObjectField(r *byteReader, cs *definition.CompiledSchema, childIdx
 		} else {
 			child = container.NewDataContainer()
 		}
-		if err := decodePacketInto(cs, childIdx, payload, child, pool, childPath); err != nil {
+		if r.alias {
+			// Element strings alias the root backing; attach it so an
+			// extracted child remains valid independently of its parent.
+			child.OwnBacking(r.data)
+		}
+		if err := decodePacketInto(cs, childIdx, r.child(payload), child, pool, childPath); err != nil {
 			return nil, fmt.Errorf("anansi: decode array-object element %d: %w", i, err)
 		}
 		out = append(out, child)

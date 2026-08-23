@@ -168,6 +168,11 @@ func (c *Collection) Release() {
 // nested maps/slices with src. This keeps the pool safe when both the source
 // and the copy are later released. pool must be non-nil.
 func copyDataContainer(src, dst *DataContainer, pool *Pool) error {
+	// Copied string values keep their headers (they still alias whatever
+	// buffer src's strings alias), so the copy must hold the same backing.
+	if b := src.Backing(); b != nil {
+		dst.OwnBacking(b)
+	}
 	for k, idx := range src.positions {
 		dk := DataContainerKey(k)
 		if idx < 0 {

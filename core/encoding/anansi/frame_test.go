@@ -19,8 +19,8 @@ func TestCompression_RoundTrip(t *testing.T) {
 	batchDocs := columnarDocs(t, cs, columnarPayloads)
 
 	cases := []struct {
-		name   string
-		encode func(...anansi.EncodeOption) ([]byte, error)
+		name    string
+		encode  func(...anansi.EncodeOption) ([]byte, error)
 		isBatch bool
 	}{
 		{"auto", func(o ...anansi.EncodeOption) ([]byte, error) {

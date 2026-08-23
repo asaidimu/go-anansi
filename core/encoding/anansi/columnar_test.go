@@ -237,3 +237,58 @@ func TestBatchColumnar_TruncatedReturnsError(t *testing.T) {
 		}
 	}
 }
+
+// TestBoolPacking_DenseWireSize pins the spec 2.5 bool packing end to end:
+// 10 all-set bool fields must yield header(2) + state map ceil(20/8)=3 +
+// bool block ceil(10/8)=2 = exactly 7 bytes. Before packing, the block
+// alone cost 10 bytes.
+func TestBoolPacking_DenseWireSize(t *testing.T) {
+	const schema = `{
+		"version": "1.0.0",
+		"name": "flags",
+		"fields": {
+			"b0": {"name": "b0", "type": "boolean"}, "b1": {"name": "b1", "type": "boolean"},
+			"b2": {"name": "b2", "type": "boolean"}, "b3": {"name": "b3", "type": "boolean"},
+			"b4": {"name": "b4", "type": "boolean"}, "b5": {"name": "b5", "type": "boolean"},
+			"b6": {"name": "b6", "type": "boolean"}, "b7": {"name": "b7", "type": "boolean"},
+			"b8": {"name": "b8", "type": "boolean"}, "b9": {"name": "b9", "type": "boolean"}
+		}
+	}`
+	cs, err := compileSchemaBytes(t, schema)
+	if err != nil {
+		t.Fatalf("compile+link: %v", err)
+	}
+
+	payload := `{"b0": true, "b1": false, "b2": true, "b3": true, "b4": false, "b5": true, "b6": false, "b7": false, "b8": true, "b9": true}`
+	d := containerFromJSON(t, cs, payload)
+
+	wire, err := anansi.EncodeDense(cs, d, 0)
+	if err != nil {
+		t.Fatalf("EncodeDense: %v", err)
+	}
+	if len(wire) != 7 {
+		t.Fatalf("dense packet = %d bytes, want exactly 7 (2 hdr + 3 state map + 2 packed bools)", len(wire))
+	}
+
+	out := container.NewDataContainer()
+	if _, err := anansi.DecodeAnansiInto(cs, wire, out, nil); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if got := containerJSON(t, cs, out); got != containerJSON(t, cs, d) {
+		t.Fatal("bool round-trip mismatch")
+	}
+}
+
+// compileSchemaBytes parses, compiles and links a schema JSON string.
+func compileSchemaBytes(t *testing.T, schema string) (*definition.CompiledSchema, error) {
+	t.Helper()
+	s, err := definition.FromJSON([]byte(schema))
+	if err != nil {
+		return nil, err
+	}
+	rs, err := definition.Compile(s)
+	if err != nil {
+		return nil, err
+	}
+	return definition.Link(rs)
+}
