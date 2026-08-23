@@ -10,6 +10,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
+	canansi "github.com/asaidimu/go-anansi/v8/core/encoding/anansi"
 	cjson "github.com/asaidimu/go-anansi/v8/core/encoding/json"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v8/core/utils"
@@ -653,6 +654,42 @@ func (d *Document) UnmarshalJSON(data []byte) error {
 		return fmt.Errorf("document: document is not bound to a schema")
 	}
 	if err := cjson.DecodeJSONInto(d.cs, data, d.c, d.pool); err != nil {
+		return err
+	}
+	d.ensureMetadataDefaults()
+	return d.finalizeMetadata()
+}
+
+// ToAnansi serializes the document via the Anansi binary wire format codec
+// (core/encoding/anansi), mirroring MarshalJSON. Root documents encode
+// directly from the container; views and record views are not backed by a
+// single addressable container, so ToAnansi is unsupported for them (use
+// MarshalJSON/ToMap instead). fullVersion is the schema version to embed in
+// the packet header (see core/encoding/anansi's package doc); callers
+// without a schema version registry can pass 0.
+func (d *Document) ToAnansi(fullVersion uint16) ([]byte, error) {
+	if d == nil {
+		return nil, fmt.Errorf("document: cannot serialize a nil document")
+	}
+	if d.isRecord() || len(d.prefix) > 0 {
+		return nil, fmt.Errorf("document: ToAnansi is only supported on root documents, not record or nested views")
+	}
+	return canansi.SerializeAnansi(d.cs, d.c, fullVersion)
+}
+
+// UnmarshalAnansi decodes an Anansi binary wire format packet (as produced
+// by ToAnansi) into the receiver, mirroring UnmarshalJSON: the receiver must
+// already be bound to a Collection (constructed via a DocumentPool), after
+// which identity metadata defaults are completed and the checksum
+// recomputed.
+func (d *Document) UnmarshalAnansi(data []byte) error {
+	if d == nil {
+		return fmt.Errorf("document: cannot unmarshal into a nil document")
+	}
+	if d.cs == nil || d.c == nil {
+		return fmt.Errorf("document: document is not bound to a schema")
+	}
+	if _, err := canansi.DecodeAnansiInto(d.cs, data, d.c, d.pool); err != nil {
 		return err
 	}
 	d.ensureMetadataDefaults()

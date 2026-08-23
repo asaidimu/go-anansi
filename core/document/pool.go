@@ -5,6 +5,7 @@ import (
 
 	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
+	canansi "github.com/asaidimu/go-anansi/v8/core/encoding/anansi"
 	cjson "github.com/asaidimu/go-anansi/v8/core/encoding/json"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
@@ -153,6 +154,42 @@ func (c *DocumentPool) FromJSON(data []byte, opts ...Option) (*Document, error) 
 // MustFromJSON is FromJSON but panics on error.
 func (c *DocumentPool) MustFromJSON(data []byte, opts ...Option) *Document {
 	d, err := c.FromJSON(data, opts...)
+	if err != nil {
+		panic(err)
+	}
+	return d
+}
+
+// FromAnansi decodes an Anansi binary wire format packet (core/encoding/anansi)
+// into a pooled, schema-bound document, mirroring FromJSON. A valid _id_
+// decoded from the payload is honored; otherwise one is generated, and
+// identity metadata defaults/checksum are completed exactly as FromJSON does.
+func (c *DocumentPool) FromAnansi(data []byte, opts ...Option) (*Document, error) {
+	d, err := c.newDocument()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := canansi.DecodeAnansiInto(c.cs, data, d.c, c.pool); err != nil {
+		c.Release(d)
+		return nil, err
+	}
+	for _, o := range opts {
+		o(d)
+	}
+	if d.ID() == "" || !isValidID(d.ID()) {
+		d.setID(newUUID())
+	}
+	d.ensureMetadataDefaults()
+	if err := d.finalizeMetadata(); err != nil {
+		c.Release(d)
+		return nil, err
+	}
+	return d, nil
+}
+
+// MustFromAnansi is FromAnansi but panics on error.
+func (c *DocumentPool) MustFromAnansi(data []byte, opts ...Option) *Document {
+	d, err := c.FromAnansi(data, opts...)
 	if err != nil {
 		panic(err)
 	}
