@@ -1,3 +1,10 @@
+## [8.6.1](https://github.com/asaidimu/go-anansi/compare/v8.6.0...v8.6.1) (2026-08-23)
+
+
+### Bug Fixes
+
+* **encoding:** implement zero-copy string decoding and columnar bit-packing ([cc644dc](https://github.com/asaidimu/go-anansi/commit/cc644dc35c7e27290578b4b0bbd3628a249841d8))
+
 # [8.6.0](https://github.com/asaidimu/go-anansi/compare/v8.5.11...v8.6.0) (2026-08-23)
 
 
