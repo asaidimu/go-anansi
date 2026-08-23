@@ -1,3 +1,15 @@
+# [8.6.0](https://github.com/asaidimu/go-anansi/compare/v8.5.11...v8.6.0) (2026-08-23)
+
+
+### Bug Fixes
+
+* **encoding:** implement Anansi Level 2 conformance ([2313141](https://github.com/asaidimu/go-anansi/commit/2313141d23da47bf8542752e1d7c256b30385257))
+
+
+### Features
+
+* **encoding:** implement Anansi binary wire format codec for Document ([825ef9d](https://github.com/asaidimu/go-anansi/commit/825ef9db94bc84766f7421c9502d1c1bda0dbcbb))
+
 ## [8.5.11](https://github.com/asaidimu/go-anansi/compare/v8.5.10...v8.5.11) (2026-08-22)
 
 
