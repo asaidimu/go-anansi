@@ -226,20 +226,45 @@ func TestEffectiveField_Validate_TypeSpecific(t *testing.T) {
 			},
 		},
 	}
-	validator, err := definition.NewDocumentValidator(&schema, nil)
-	require.NoError(t, err)
+	buildValidator := func(nullable bool) *definition.DocumentValidator {
+		s := schema // copy: map values are not addressable
+		str := s.Fields["string_id"]
+		str.Nullable = definition.BoolPtr(nullable)
+		s.Fields["string_id"] = str
+		integer := s.Fields["integer_id"]
+		integer.Nullable = definition.BoolPtr(nullable)
+		s.Fields["integer_id"] = integer
+		number := s.Fields["number_id"]
+		number.Nullable = definition.BoolPtr(nullable)
+		s.Fields["number_id"] = number
+		boolean := s.Fields["boolean_id"]
+		boolean.Nullable = definition.BoolPtr(nullable)
+		s.Fields["boolean_id"] = boolean
+		v, bErr := definition.NewDocumentValidator(&s, nil)
+		require.NoError(t, bErr)
+		return v
+	}
+	buildDefaultValidator := func() *definition.DocumentValidator {
+		v, bErr := definition.NewDocumentValidator(&schema, nil)
+		require.NoError(t, bErr)
+		return v
+	}
 	tests := []struct {
 		name           string
 		fieldName      string // Use field name to construct object for validation
 		value          any
 		mode           definition.ValidationMode
+		nullable       bool
+		useDefault     bool
 		expectedIssues int
 		expectedCodes  []string
 	}{
 		// String Field
 		{name: "String - Valid", fieldName: "strField", value: "hello", mode: definition.ValidationModeStrict, expectedIssues: 0, expectedCodes: nil},
 		{name: "String - Invalid (int)", fieldName: "strField", value: 123, mode: definition.ValidationModeStrict, expectedIssues: 1, expectedCodes: []string{"TYPE_MISMATCH"}},
-		{name: "String - Nil", fieldName: "strField", value: nil, mode: definition.ValidationModeStrict, expectedIssues: 0, expectedCodes: nil},
+		{name: "String - Nil (non-nullable)", fieldName: "strField", value: nil, mode: definition.ValidationModeStrict, expectedIssues: 1, expectedCodes: []string{"TYPE_MISMATCH"}},
+		{name: "String - Nil (nullable)", fieldName: "strField", value: nil, mode: definition.ValidationModeStrict, nullable: true, expectedIssues: 0, expectedCodes: nil},
+		{name: "String - Nil (default)", fieldName: "strField", value: nil, mode: definition.ValidationModeStrict, useDefault: true, expectedIssues: 0, expectedCodes: nil},
 
 		// Integer Field
 		{name: "Integer - Valid (int)", fieldName: "intField", value: 123, mode: definition.ValidationModeStrict, expectedIssues: 0, expectedCodes: nil},
@@ -259,6 +284,12 @@ func TestEffectiveField_Validate_TypeSpecific(t *testing.T) {
 	}
 
 	for _, tt := range tests {
+		var validator *definition.DocumentValidator
+		if tt.useDefault {
+			validator = buildDefaultValidator()
+		} else {
+			validator = buildValidator(tt.nullable)
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			// Wrap ef.Validate call within validator's validate method to get a proper ValidationContext
 			object := map[string]any{tt.fieldName: tt.value}
@@ -306,22 +337,44 @@ func TestEffectiveField_Validate_Enum(t *testing.T) {
 			},
 		},
 	}
-	validator, err := definition.NewDocumentValidator(&schema, nil)
-	require.NoError(t, err)
+	buildValidator := func(nullable bool) *definition.DocumentValidator {
+		s := schema
+		colorField := s.Fields["color_id"]
+		colorField.Nullable = definition.BoolPtr(nullable)
+		s.Fields["color_id"] = colorField
+		v, bErr := definition.NewDocumentValidator(&s, nil)
+		require.NoError(t, bErr)
+		return v
+	}
 
+	buildDefaultValidator := func() *definition.DocumentValidator {
+		v, bErr := definition.NewDocumentValidator(&schema, nil)
+		require.NoError(t, bErr)
+		return v
+	}
 	tests := []struct {
 		name           string
 		value          any
+		nullable       bool
+		useDefault     bool
 		expectedIssues int
 		expectedCodes  []string
 	}{
 		{name: "Enum - Valid (red)", value: "red", expectedIssues: 0, expectedCodes: nil},
 		{name: "Enum - Valid (blue)", value: "blue", expectedIssues: 0, expectedCodes: nil},
 		{name: "Enum - Invalid (yellow)", value: "yellow", expectedIssues: 1, expectedCodes: []string{"ENUM_VIOLATION"}},
-		{name: "Enum - Nil", value: nil, expectedIssues: 0, expectedCodes: nil},
+		{name: "Enum - Nil (non-nullable)", value: nil, expectedIssues: 1, expectedCodes: []string{"TYPE_MISMATCH"}},
+		{name: "Enum - Nil (nullable)", value: nil, nullable: true, expectedIssues: 0, expectedCodes: nil},
+		{name: "Enum - Nil (default)", value: nil, useDefault: true, expectedIssues: 0, expectedCodes: nil},
 	}
 
 	for _, tt := range tests {
+		var validator *definition.DocumentValidator
+		if tt.useDefault {
+			validator = buildDefaultValidator()
+		} else {
+			validator = buildValidator(tt.nullable)
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			object := map[string]any{"color": tt.value}
 			issues, _ := validator.Validate(object)
@@ -353,12 +406,26 @@ func TestEffectiveField_Validate_Array(t *testing.T) {
 			},
 		},
 	}
-	validator, err := definition.NewDocumentValidator(&schema, nil)
-	require.NoError(t, err)
+	buildValidator := func(nullable bool) *definition.DocumentValidator {
+		s := schema
+		arrField := s.Fields["array_id"]
+		arrField.Nullable = definition.BoolPtr(nullable)
+		s.Fields["array_id"] = arrField
+		v, bErr := definition.NewDocumentValidator(&s, nil)
+		require.NoError(t, bErr)
+		return v
+	}
+	buildDefaultValidator := func() *definition.DocumentValidator {
+		v, bErr := definition.NewDocumentValidator(&schema, nil)
+		require.NoError(t, bErr)
+		return v
+	}
 
 	tests := []struct {
 		name           string
 		value          any
+		nullable       bool
+		useDefault     bool
 		expectedIssues int
 		expectedCodes  []string
 	}{
@@ -366,10 +433,18 @@ func TestEffectiveField_Validate_Array(t *testing.T) {
 		{name: "Array - Invalid (mixed types - element type mismatch)", value: []any{"a", 123}, expectedIssues: 1, expectedCodes: []string{"TYPE_MISMATCH"}},
 		{name: "Array - Invalid (not array)", value: "not an array", expectedIssues: 1, expectedCodes: []string{"ARRAY_TYPE_MISMATCH"}},
 		{name: "Array - Empty array", value: []any{}, expectedIssues: 0, expectedCodes: nil},
-		{name: "Array - Nil", value: nil, expectedIssues: 0, expectedCodes: nil},
+		{name: "Array - Nil (non-nullable)", value: nil, expectedIssues: 1, expectedCodes: []string{"TYPE_MISMATCH"}},
+		{name: "Array - Nil (nullable)", value: nil, nullable: true, expectedIssues: 0, expectedCodes: nil},
+		{name: "Array - Nil (default)", value: nil, useDefault: true, expectedIssues: 0, expectedCodes: nil},
 	}
 
 	for _, tt := range tests {
+		var validator *definition.DocumentValidator
+		if tt.useDefault {
+			validator = buildDefaultValidator()
+		} else {
+			validator = buildValidator(tt.nullable)
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			object := map[string]any{"stringArray": tt.value}
 			issues, _ := validator.Validate(object)
@@ -404,12 +479,27 @@ func TestEffectiveField_Validate_Object(t *testing.T) {
 			},
 		},
 	}
-	validator, _ := definition.NewDocumentValidator(&schema, nil)
+	buildValidator := func(nullable bool) *definition.DocumentValidator {
+		s := schema
+		objField := s.Fields["object_id"]
+		objField.Nullable = definition.BoolPtr(nullable)
+		s.Fields["object_id"] = objField
+		v, bErr := definition.NewDocumentValidator(&s, nil)
+		require.NoError(t, bErr)
+		return v
+	}
+	buildDefaultValidator := func() *definition.DocumentValidator {
+		v, bErr := definition.NewDocumentValidator(&schema, nil)
+		require.NoError(t, bErr)
+		return v
+	}
 
 	tests := []struct {
 		name           string
 		value          any
 		mode           definition.ValidationMode
+		nullable       bool
+		useDefault     bool
 		expectedIssues int
 		expectedCodes  []string
 	}{
@@ -418,10 +508,18 @@ func TestEffectiveField_Validate_Object(t *testing.T) {
 		{name: "Object - Type mismatch (age)", value: map[string]any{"name": "Alice", "age": "thirty"}, mode: definition.ValidationModeStrict, expectedIssues: 1, expectedCodes: []string{"TYPE_MISMATCH"}},
 		{name: "Object - Unexpected field (warning)", value: map[string]any{"name": "Alice", "extra": true}, mode: definition.ValidationModeStrict, expectedIssues: 1, expectedCodes: []string{"UNEXPECTED_FIELD"}},
 		{name: "Object - Invalid (not object)", value: "not object", mode: definition.ValidationModeStrict, expectedIssues: 1, expectedCodes: []string{"TYPE_MISMATCH"}},
-		{name: "Object - Nil", value: nil, mode: definition.ValidationModeStrict, expectedIssues: 0, expectedCodes: nil},
+		{name: "Object - Nil (non-nullable)", value: nil, mode: definition.ValidationModeStrict, expectedIssues: 1, expectedCodes: []string{"TYPE_MISMATCH"}},
+		{name: "Object - Nil (nullable)", value: nil, mode: definition.ValidationModeStrict, nullable: true, expectedIssues: 0, expectedCodes: nil},
+		{name: "Object - Nil (default)", value: nil, mode: definition.ValidationModeStrict, useDefault: true, expectedIssues: 0, expectedCodes: nil},
 	}
 
 	for _, tt := range tests {
+		var validator *definition.DocumentValidator
+		if tt.useDefault {
+			validator = buildDefaultValidator()
+		} else {
+			validator = buildValidator(tt.nullable)
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			// Validator.Validate handles the creation of ValidationContext with appropriate mode
 			var issues []common.Issue

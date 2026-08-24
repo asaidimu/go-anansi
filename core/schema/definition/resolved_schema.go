@@ -379,7 +379,7 @@ func (c *SchemaCompiler) compileField(f Field, id FieldId, basePath string) (Res
 		Required:    f.Required,
 		Deprecated:  f.Deprecated,
 		Unique:      f.Unique,
-		Nullable:    f.Nullable,
+		Nullable:    f.ResolvedNullable(),
 		Default:     f.Default,
 	}
 

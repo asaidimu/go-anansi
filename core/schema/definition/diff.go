@@ -229,8 +229,8 @@ func collectModifiedFieldOps(id FieldId, old, new *Field, propPath func(fieldID 
 	if old.Unique != new.Unique {
 		emit(PathUnique, new.Unique, old.Unique)
 	}
-	if old.Nullable != new.Nullable {
-		emit(PathNullable, new.Nullable, old.Nullable)
+	if old.ResolvedNullable() != new.ResolvedNullable() {
+		emit(PathNullable, new.ResolvedNullable(), old.ResolvedNullable())
 	}
 	if old.Type != new.Type {
 		emit(PathType, new.Type, old.Type)

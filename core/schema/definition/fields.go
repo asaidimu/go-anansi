@@ -24,7 +24,7 @@ type Field struct {
 	Required    bool           `json:"required,omitempty"`
 	Deprecated  bool           `json:"deprecated,omitempty"`
 	Unique      bool           `json:"unique,omitempty"`
-	Nullable    bool           `json:"nullable,omitempty"`
+	Nullable    *bool          `json:"nullable,omitempty"`
 	Metadata    map[string]any `json:"metadata,omitempty"`
 
 	FieldProperties
@@ -50,4 +50,22 @@ func (f Field) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(proxy)
+}
+
+// ResolvedNullable returns the effective nullable value.
+// Absent (nil) defaults to true for backward compatibility.
+func (f *Field) ResolvedNullable() bool {
+	return f.Nullable == nil || *f.Nullable
+}
+
+// BoolPtr returns a pointer to the given bool value.
+func BoolPtr(b bool) *bool { return &b }
+
+// cloneBoolPtr returns a deep copy of a *bool.
+func cloneBoolPtr(p *bool) *bool {
+	if p == nil {
+		return nil
+	}
+	b := *p
+	return &b
 }

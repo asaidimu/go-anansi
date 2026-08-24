@@ -331,9 +331,9 @@ func (s *Schema) ToJSON() []byte {
 				jb.writeKey("unique")
 				jb.writeBool(true)
 			}
-			if field.Nullable {
+			if field.Nullable != nil {
 				jb.writeKey("nullable")
-				jb.writeBool(true)
+				jb.writeBool(*field.Nullable)
 			}
 			if field.Type != 0 {
 				jb.writeKey("type")

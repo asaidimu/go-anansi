@@ -755,12 +755,12 @@ func TestDiff_FieldModified_Metadata(t *testing.T) {
 func TestDiff_FieldModified_Nullable(t *testing.T) {
 	old := &Schema{BaseSchema: BaseSchema{
 		Fields: map[FieldId]Field{
-			"f1": {Name: "nickname", Nullable: false},
+			"f1": {Name: "nickname", Nullable: BoolPtr(false)},
 		},
 	}}
 	new := &Schema{BaseSchema: BaseSchema{
 		Fields: map[FieldId]Field{
-			"f1": {Name: "nickname", Nullable: true},
+			"f1": {Name: "nickname", Nullable: BoolPtr(true)},
 		},
 	}}
 

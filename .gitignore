@@ -33,3 +33,4 @@ tmp/*
 *.prof
 *.test
 /anansi
+node_modules

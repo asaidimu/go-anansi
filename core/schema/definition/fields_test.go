@@ -96,7 +96,7 @@ func TestField_MarshalJSON_OptionalFieldsOmitted(t *testing.T) {
 func TestField_MarshalJSON_Metadata(t *testing.T) {
 	f := definition.Field{
 		Name:     "taggedField",
-		Nullable: true,
+		Nullable: definition.BoolPtr(true),
 		Metadata: map[string]any{
 			"ui":       "input",
 			"priority": float64(3),
@@ -126,7 +126,7 @@ func TestField_MarshalJSON_Metadata(t *testing.T) {
 	err = json.Unmarshal(data, &unmarshaled)
 	require.NoError(t, err)
 	assert.Equal(t, f.Name, unmarshaled.Name)
-	assert.True(t, unmarshaled.Nullable)
+	assert.True(t, unmarshaled.ResolvedNullable())
 	assert.Equal(t, "input", unmarshaled.Metadata["ui"])
 	assert.Equal(t, []any{"a", "b"}, unmarshaled.Metadata["tags"])
 }

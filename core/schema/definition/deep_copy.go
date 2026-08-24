@@ -52,7 +52,7 @@ func (f *Field) deepCopy() Field {
 		Required:    f.Required,
 		Deprecated:  f.Deprecated,
 		Unique:      f.Unique,
-		Nullable:    f.Nullable,
+		Nullable:    cloneBoolPtr(f.Nullable),
 		Metadata:    deepCopyMap(f.Metadata),
 		FieldProperties: FieldProperties{
 			Type:    f.Type,

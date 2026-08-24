@@ -110,8 +110,8 @@ func (s *Schema) AsMap() map[string]any {
 			if field.Unique {
 				m["unique"] = true
 			}
-			if field.Nullable {
-				m["nullable"] = true
+			if field.Nullable != nil {
+				m["nullable"] = *field.Nullable
 			}
 			if field.Type != 0 {
 				m["type"] = field.Type.String()

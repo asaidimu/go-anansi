@@ -91,7 +91,16 @@ type ValidationGraph struct {
 	visitedState   map[int]int // For cycle detection during graph building
 	executionOrder []int       // Pre-computed topological order
 	ctxPool        sync.Pool
-	nextNodeID     int // Local counter for node IDs
+	nextNodeID     int                 // Local counter for node IDs
+	nullablePaths  map[string]struct{} // Paths declared nullable:true (spec §2.7)
+}
+
+// markNullablePath records that an explicit null is a legal value at path.
+func (graph *ValidationGraph) markNullablePath(path string) {
+	if graph.nullablePaths == nil {
+		graph.nullablePaths = make(map[string]struct{})
+	}
+	graph.nullablePaths[path] = struct{}{}
 }
 
 // ConstraintScope defines where a constraint applies
@@ -362,11 +371,13 @@ type RequiredFieldNode struct {
 type TypeCheckNode struct {
 	baseNode
 	expected FieldType
+	nullable bool
 }
 
 type EnumValidationNode struct {
 	baseNode
 	fieldDef      *Field
+	nullable      bool
 	lookup        map[any]struct{}
 	complex       []any
 	expectNumeric bool
@@ -375,11 +386,13 @@ type EnumValidationNode struct {
 type ArrayValidationNode struct {
 	baseNode
 	fieldDef *Field
+	nullable bool
 	schema   *Schema
 	graph    *ValidationGraph
 }
 
 type RecordValidationNode struct {
+	nullable bool
 	baseNode
 	fieldDef *Field
 	schema   *Schema
@@ -393,6 +406,7 @@ type NestedSchemaNode struct {
 type UnionValidationNode struct {
 	baseNode
 	fieldDef *Field
+	nullable bool
 	schema   *Schema
 	graphs   []*ValidationGraph
 }
@@ -423,6 +437,7 @@ type ConstraintGroupNode struct {
 // RecursionMarkerNode marks a recursive schema reference
 type RecursionMarkerNode struct {
 	baseNode
+	nullable        bool
 	validationGraph *ValidationGraph // Graph with instance constraints baked in
 	schemaName      string
 	rootKey         string // Wrapper key for non-object values ("root", "item", etc.)
@@ -568,6 +583,7 @@ func (graph *ValidationGraph) createTypeCheckNode(fieldPath string, fieldPathPar
 	return &TypeCheckNode{
 		baseNode: baseNode{id: graph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts, deps: deps},
 		expected: fieldDef.Type,
+		nullable: fieldDef.ResolvedNullable(),
 	}
 }
 
@@ -819,10 +835,14 @@ func (graph *ValidationGraph) buildFieldNodes(
 	skipUnexpectedForObjects bool,
 ) ([]*baseNode, error) {
 	fieldPath, fieldPathParts := buildPathAndParts(basePath, baseParts, string(fieldDef.Name))
+	if fieldDef.ResolvedNullable() {
+		graph.markNullablePath(fieldPath)
+	}
 	currentDeps := baseDeps
 	var nodes []*baseNode
 
-	// TODO: Handle nullable — when true, skip required check and allow null
+	// Nullable fields: explicit null satisfies `required` and skips type /
+	// constraint nodes (enforced inside each validation node via Nullable).
 	if fieldDef.Required {
 		parentPath := basePath
 		parentPathParts := baseParts
@@ -1008,6 +1028,7 @@ func (graph *ValidationGraph) buildEnumNode(
 	expectNumeric := enumType == FieldTypeNumber || enumType == FieldTypeInteger
 
 	return &EnumValidationNode{
+		nullable:      fieldDef.ResolvedNullable(),
 		baseNode:      baseNode{id: graph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts, deps: currentDeps},
 		fieldDef:      fieldDef,
 		lookup:        allLookup,
@@ -1078,6 +1099,7 @@ func (graph *ValidationGraph) buildObjectFieldNodes(
 				path:      fieldPath,
 				pathParts: fieldPathParts,
 			},
+			nullable:        fieldDef.ResolvedNullable(),
 			validationGraph: recursiveGraph,
 			schemaName:      string(schemaRef.ID),
 		}
@@ -1168,9 +1190,9 @@ func (graph *ValidationGraph) buildContainerNode(
 	makeNode := func(subGraph *ValidationGraph) ValidationNode {
 		bn := baseNode{id: graph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts, deps: deps}
 		if itemKind == FieldTypeArray {
-			return &ArrayValidationNode{baseNode: bn, fieldDef: fieldDef, schema: sc, graph: subGraph}
+			return &ArrayValidationNode{baseNode: bn, fieldDef: fieldDef, nullable: fieldDef.ResolvedNullable(), schema: sc, graph: subGraph}
 		}
-		return &RecordValidationNode{baseNode: bn, fieldDef: fieldDef, schema: sc, graph: subGraph}
+		return &RecordValidationNode{baseNode: bn, fieldDef: fieldDef, nullable: fieldDef.ResolvedNullable(), schema: sc, graph: subGraph}
 	}
 
 	// No schema reference → no item validation (treat as []any or map[string]any)
@@ -1221,8 +1243,10 @@ func (graph *ValidationGraph) buildContainerNode(
 			// Build a minimal sub-graph whose only node is a RecursionMarkerNode
 			// that points back to the cached item graph.
 			markerGraph := newValidationGraph()
+			nullable := fieldDef.ResolvedNullable()
 			markerNode := &RecursionMarkerNode{
 				baseNode:        baseNode{id: markerGraph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts},
+				nullable:        nullable,
 				validationGraph: recursiveItemGraph,
 				schemaName:      string(schemaRef.ID),
 				rootKey:         "item",
@@ -1826,8 +1850,9 @@ func (graph *ValidationGraph) buildResolvedEnumNode(
 	deps []int,
 ) (ValidationNode, error) {
 	return &EnumValidationNode{
+		nullable:      rf.Nullable,
 		baseNode:      baseNode{id: graph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts, deps: deps},
-		fieldDef:      &Field{FieldProperties: FieldProperties{Type: rf.Type}},
+		fieldDef:      &Field{FieldProperties: FieldProperties{Type: rf.Type}, Nullable: BoolPtr(rf.Nullable)},
 		lookup:        rf.Enum.Lookup,
 		complex:       rf.Enum.Complex,
 		expectNumeric: rf.Enum.ExpectNumeric,
@@ -1893,6 +1918,7 @@ func (graph *ValidationGraph) buildResolvedObjectFieldNodes(
 				path:      fieldPath,
 				pathParts: fieldPathParts,
 			},
+			nullable:        rf != nil && rf.Nullable,
 			validationGraph: recursiveGraph,
 			schemaName:      schemaName,
 		}
@@ -1942,9 +1968,9 @@ func (graph *ValidationGraph) buildResolvedContainerNode(
 	makeNode := func(subGraph *ValidationGraph) ValidationNode {
 		bn := baseNode{id: graph.buildNodeID(), path: fieldPath, pathParts: fieldPathParts, deps: deps}
 		if itemKind == FieldTypeArray {
-			return &ArrayValidationNode{baseNode: bn, fieldDef: &Field{FieldProperties: FieldProperties{Type: rf.Type}}, graph: subGraph}
+			return &ArrayValidationNode{baseNode: bn, fieldDef: &Field{FieldProperties: FieldProperties{Type: rf.Type}, Nullable: BoolPtr(rf.Nullable)}, nullable: rf.Nullable, graph: subGraph}
 		}
-		return &RecordValidationNode{baseNode: bn, fieldDef: &Field{FieldProperties: FieldProperties{Type: rf.Type}}, graph: subGraph}
+		return &RecordValidationNode{baseNode: bn, fieldDef: &Field{FieldProperties: FieldProperties{Type: rf.Type}, Nullable: BoolPtr(rf.Nullable)}, nullable: rf.Nullable, graph: subGraph}
 	}
 
 	// Handle recursive container: rf.Recursive is set instead of
@@ -2207,7 +2233,7 @@ func (graph *ValidationGraph) buildResolvedUnionNode(
 			pathParts: fieldPathParts,
 			deps:      deps,
 		},
-		fieldDef: &Field{FieldProperties: FieldProperties{Type: rf.Type}},
+		fieldDef: &Field{FieldProperties: FieldProperties{Type: rf.Type}, Nullable: BoolPtr(rf.Nullable)},
 		graphs:   graphs,
 	}, nil
 }
@@ -2410,6 +2436,9 @@ func (graph *ValidationGraph) buildResolvedFieldNodes(
 	// is inlined at a mount path (basePath != ""), the effective document
 	// path is basePath "." fieldName.
 	fieldPath, fieldPathParts := buildPathAndParts(basePath, baseParts, string(rf.Name))
+	if rf.Nullable {
+		graph.markNullablePath(fieldPath)
+	}
 	currentDeps := baseDeps
 	var nodes []*baseNode
 
@@ -2424,7 +2453,7 @@ func (graph *ValidationGraph) buildResolvedFieldNodes(
 
 	isContainer := rf.Type.IsComplex()
 	if !isContainer {
-		typeNode := graph.createTypeCheckNode(fieldPath, fieldPathParts, &Field{FieldProperties: FieldProperties{Type: rf.Type}}, currentDeps)
+		typeNode := graph.createTypeCheckNode(fieldPath, fieldPathParts, &Field{FieldProperties: FieldProperties{Type: rf.Type}, Nullable: BoolPtr(rf.Nullable)}, currentDeps)
 		graph.addNode(typeNode)
 		currentDeps = []int{typeNode.id}
 		nodes = append(nodes, &typeNode.baseNode)
@@ -2608,9 +2637,23 @@ func (graph *ValidationGraph) traverse(fmap PredicateMap, document map[string]an
 		val, keyExists := getNodeValue(ctx, nodePathParts)
 
 		_, isRequiredNode := node.(*RequiredFieldNode)
-		if (!keyExists || val == nil) && !isRequiredNode && nodePath != "" {
-			ctx.Visited.Set(nodeID, skipped.Success)
-			continue
+
+		// Not Set: nothing to validate; required-ness is owned by
+		// RequiredFieldNode, which still executes.
+		if !keyExists {
+			if !isRequiredNode {
+				ctx.Visited.Set(nodeID, skipped.Success)
+				continue
+			}
+		} else if val == nil {
+			// Explicit null (spec §2.7): legal only on paths marked
+			// nullable:true — those skip type/constraint nodes entirely and
+			// satisfy required. Non-nullable fields fall through so the node
+			// reports TYPE_MISMATCH (parity with the TypeScript validator).
+			if _, nullable := graph.nullablePaths[nodePath]; nullable {
+				ctx.Visited.Set(nodeID, skipped.Success)
+				continue
+			}
 		}
 
 		result := node.Execute(ctx)
@@ -2757,10 +2800,26 @@ func failTypeMismatch(path, expected string, actual any) *NodeResult {
 	}
 }
 
+// failNullNotAllowed reports an explicit null on a field that does not set
+// `nullable: true`. Code is TYPE_MISMATCH to match the TypeScript validator.
+func failNullNotAllowed(path string) *NodeResult {
+	return &NodeResult{Success: false, Issues: []common.Issue{{
+		Code:    "TYPE_MISMATCH",
+		Message: "Field is not nullable",
+		Path:    path,
+	}}}
+}
+
 func (n *TypeCheckNode) Execute(ctx *ValidationContext) *NodeResult {
 	value, exists := getNodeValue(ctx, n.pathParts)
-	if !exists || value == nil {
+	if !exists {
 		return success
+	}
+	if value == nil {
+		if n.nullable {
+			return success
+		}
+		return failNullNotAllowed(n.path)
 	}
 
 	switch n.expected {
@@ -2808,8 +2867,14 @@ func (n *TypeCheckNode) Execute(ctx *ValidationContext) *NodeResult {
 
 func (n *EnumValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 	value, exists := getNodeValue(ctx, n.pathParts)
-	if !exists || value == nil {
+	if !exists {
 		return success
+	}
+	if value == nil {
+		if n.nullable || (n.fieldDef != nil && n.fieldDef.ResolvedNullable()) {
+			return success
+		}
+		return failNullNotAllowed(n.path)
 	}
 
 	switch value.(type) {
@@ -2851,8 +2916,14 @@ func (n *EnumValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 
 func (n *ArrayValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 	value, exists := getNodeValue(ctx, n.pathParts)
-	if !exists || value == nil {
+	if !exists {
 		return success
+	}
+	if value == nil {
+		if n.nullable || (n.fieldDef != nil && n.fieldDef.ResolvedNullable()) {
+			return success
+		}
+		return failNullNotAllowed(n.path)
 	}
 
 	val := reflect.ValueOf(value)
@@ -2895,8 +2966,14 @@ func (n *ArrayValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 
 func (n *RecordValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 	value, exists := getNodeValue(ctx, n.pathParts)
-	if !exists || value == nil {
+	if !exists {
 		return success
+	}
+	if value == nil {
+		if n.nullable || (n.fieldDef != nil && n.fieldDef.ResolvedNullable()) {
+			return success
+		}
+		return failNullNotAllowed(n.path)
 	}
 
 	recordMap, ok := value.(map[string]any)
@@ -3030,8 +3107,14 @@ func (n *NestedSchemaNode) Execute(ctx *ValidationContext) *NodeResult {
 // RecursionMarkerNode executes by delegating to the cached recursive graph
 func (n *RecursionMarkerNode) Execute(ctx *ValidationContext) *NodeResult {
 	value, exists := getNodeValue(ctx, n.pathParts)
-	if !exists || value == nil {
+	if !exists {
 		return success
+	}
+	if value == nil {
+		if n.nullable {
+			return success
+		}
+		return failNullNotAllowed(n.path)
 	}
 
 	// Check depth limit
@@ -3097,8 +3180,14 @@ func (n *RecursionMarkerNode) Execute(ctx *ValidationContext) *NodeResult {
 
 func (n *UnionValidationNode) Execute(ctx *ValidationContext) *NodeResult {
 	value, exists := getNodeValue(ctx, n.pathParts)
-	if !exists || value == nil {
+	if !exists {
 		return success
+	}
+	if value == nil {
+		if n.nullable || (n.fieldDef != nil && n.fieldDef.ResolvedNullable()) {
+			return success
+		}
+		return failNullNotAllowed(n.path)
 	}
 
 	currentDepth := getPathDepth(n.pathParts)

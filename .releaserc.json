@@ -1,21 +1,31 @@
 {
-  "branches": ["main"],
+  "branches": [ "main" ],
+  "tagFormat": "v${version}",
   "plugins": [
     "@semantic-release/commit-analyzer",
     "@semantic-release/release-notes-generator",
     [
-      "@semantic-release/changelog",
+      "@semantic-release/exec",
       {
-        "changelogFile": "CHANGELOG.md"
+        "prepareCmd": "bash scripts/prepare-release.sh ${nextRelease.version}"
       }
     ],
     [
-      "@semantic-release/git",
+      "@semantic-release/npm",
       {
-        "assets": ["CHANGELOG.md"],
-        "message": "chore(release): Release v${nextRelease.version}\n\n${nextRelease.notes}"
+        "pkgRoot": "packages/anansi/dist"
       }
     ],
-    "@semantic-release/github"
+    "@semantic-release/github",
+    [
+      "@semantic-release/git",
+      {
+        "assets": [
+          "packages/anansi/package.json",
+          "packages/anansi/dist.package.json"
+        ],
+        "message": "release(release): v${nextRelease.version} [skip ci]"
+      }
+    ]
   ]
 }

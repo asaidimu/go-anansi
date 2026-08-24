@@ -59,7 +59,9 @@ import (
 
 const (
 	compiledSchemaMagic               = "ANSC"
-	compiledSchemaFormatVersion uint8 = 4
+	// CompiledSchemaFormatVersion is the packet format revision written by
+	// SerializeCompiledSchema; exported for cross-language parity tooling.
+	CompiledSchemaFormatVersion uint8 = 4
 )
 
 // =============================================================================
@@ -1833,7 +1835,7 @@ func SerializeCompiledSchema(cs *CompiledSchema) ([]byte, error) {
 
 	w := newWriter()
 	w.buf.WriteString(compiledSchemaMagic)
-	w.u8(compiledSchemaFormatVersion)
+	w.u8(CompiledSchemaFormatVersion)
 
 	// Descriptors
 	w.u32(uint32(len(cs.Descriptors)))
@@ -1981,10 +1983,10 @@ func DeserializeCompiledSchema(data []byte) (*CompiledSchema, error) {
 	if err != nil {
 		return nil, err
 	}
-	if version != compiledSchemaFormatVersion {
+	if version != CompiledSchemaFormatVersion {
 		return nil, fmt.Errorf(
 			"compiled schema deserialize: unsupported format version %d (expected %d); recompile from source",
-			version, compiledSchemaFormatVersion,
+			version, CompiledSchemaFormatVersion,
 		)
 	}
 

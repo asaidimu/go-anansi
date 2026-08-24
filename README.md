@@ -8,7 +8,7 @@
 # Go-Anansi: A Schema-Driven, Hybrid Persistence Layer for Go
 
 ![Go Version](https://img.shields.io/badge/Go-1.27%2B-00ADD8?style=for-the-badge&logo=go)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 ![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen?style=for-the-badge)
 ![Status: Alpha](https://img.shields.io/badge/Status-Alpha-orange)
 
@@ -35,6 +35,7 @@ observability) is injected by you.
 - [Quick Start](#quick-start)
 - [Projections](#projections)
 - [Command-Line Interface](#command-line-interface)
+- [TypeScript Package (@asaidimu/anansi)](#typescript-package-asaidimu-anansi)
 - [Query DSL](#query-dsl)
 - [Events & Decorators](#events--decorators)
 - [Documentation](#documentation)
@@ -407,6 +408,42 @@ p, err := anansi.Setup(anansi.SetupConfig{
 
 ---
 
+## TypeScript Package (@asaidimu/anansi)
+
+A self-contained TypeScript implementation of the Anansi wire format ships in
+this repository at [`packages/anansi`](packages/anansi) and is published to npm
+in lockstep with the Go module (same version numbers).
+
+It implements the full stack natively in TS — no codegen step, no Go runtime:
+
+- **Schema compile/link/addressing** — bit-exact with the Go linker (verified
+  by cross-language conformance tests).
+- **Packet codecs** — Dense / Sparse / Batch (row + columnar), all 16 data
+  types, full duplex.
+- **Transforms** — ZSTD compression, BLAKE3-128 integrity hashing, and
+  AES-256-GCM encryption; browser-compatible backends (WebCrypto,
+  hash-wasm, fzstd).
+- **Validation** — documents against schemas, schemas against the meta-schema.
+
+```bash
+bun add @asaidimu/anansi
+```
+
+```ts
+import { parseSchema, link, buildManifest, encodeDocument, decodeDocument } from "@asaidimu/anansi";
+
+const fields = buildManifest(link(parseSchema(schemaJSON)));
+const wire   = encodeDocument(fields, order);          // auto dense/sparse
+const back   = decodeDocument(wire, fields);
+```
+
+Cross-language guarantee: CI replays Go-generated golden packets through the
+TS codec byte-for-byte — a drift between the two implementations fails the
+build before a release can cut. See
+[`examples/encoding/`](examples/encoding/) for a working TS ⇄ Go round trip.
+
+---
+
 ## Development & Contributing
 
 ```bash
@@ -423,6 +460,11 @@ Notes for contributors:
   matching `rc` toolchain.
 - Golden codegen outputs live in `codegen/golang/testdata/`; regenerate with
   `go test ./codegen/golang/ -update`.
+- Wire-format changes require regenerating the cross-language golden vectors:
+  `GOLDEN_UPDATE=1 go test ./core/encoding/anansi/ -run TestGenerateGoldenVectors`,
+  then confirm `cd packages/anansi && bun test` still passes.
+- **All contributions fall under the [CLA](CLA.md)** — acceptance is recorded
+  via the PR checklist. This is what enables the project's dual licensing.
 - `bin/bump.sh` upgrades the module's major version across the codebase — run
   with `--dry-run` first.
 - See [`test-gap.md`](test-gap.md) for areas that need more test coverage.
@@ -436,9 +478,18 @@ pull request with a description of the change.
 
 ## License
 
-This project is licensed under the MIT License — see the [LICENSE.md](LICENSE.md)
-file for details.
+This project is licensed under the **GNU Affero General Public License v3**
+(AGPLv3-or-later) — see [LICENSE.md](LICENSE.md) for the full text.
+
+The published npm package `@asaidimu/anansi` shares this license.
+
+If the AGPLv3's network-copyleft terms do not fit your use case (embedded
+products, SaaS without source disclosure, etc.), a **commercial license** is
+available from the copyright holder — see the commercial licensing section of
+[LICENSE.md](LICENSE.md).
+
+Contributions are made under the [CLA](CLA.md), which grants the maintainer
+the right to distribute contributions under both licensing tracks.
 
 ## Acknowledgments
 
-Go-Anansi is a product of CyberSync Printers & Stationers — BN-P7SABM5J.

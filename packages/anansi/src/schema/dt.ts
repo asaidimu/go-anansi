@@ -1,0 +1,38 @@
+// container.DataType iota — must match core/data/container/data_point.go.
+export const container = {
+  TypeUnknown: 0,
+  TypeInt: 1,
+  TypeFloat: 2,
+  TypeString: 3,
+  TypeBool: 4,
+  TypeBytes: 5,
+  TypeGeometry: 6,
+  TypeRecord: 7,
+  TypeArrayUnknown: 8,
+  TypeArrayInt: 9,
+  TypeArrayFloat: 10,
+  TypeArrayString: 11,
+  TypeArrayBool: 12,
+  TypeArrayBytes: 13,
+  TypeArrayObject: 14,
+  TypeArrayGeometry: 15,
+} as const;
+
+export const TYPE_NAMES: Record<number, string> = {
+  [container.TypeUnknown]: "unknown",
+  [container.TypeInt]: "int",
+  [container.TypeFloat]: "float",
+  [container.TypeString]: "string",
+  [container.TypeBool]: "bool",
+  [container.TypeBytes]: "bytes",
+  [container.TypeGeometry]: "geometry",
+  [container.TypeRecord]: "record",
+  [container.TypeArrayUnknown]: "array_unknown",
+  [container.TypeArrayInt]: "array_int",
+  [container.TypeArrayFloat]: "array_float",
+  [container.TypeArrayString]: "array_string",
+  [container.TypeArrayBool]: "array_bool",
+  [container.TypeArrayBytes]: "array_bytes",
+  [container.TypeArrayObject]: "array_object",
+  [container.TypeArrayGeometry]: "array_geometry",
+};

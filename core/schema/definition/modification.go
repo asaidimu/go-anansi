@@ -24,7 +24,7 @@ func (f *Field) Equals(other *Field) bool {
 		f.Required != other.Required ||
 		f.Deprecated != other.Deprecated ||
 		f.Unique != other.Unique ||
-		f.Nullable != other.Nullable ||
+		!reflect.DeepEqual(f.Nullable, other.Nullable) ||
 		f.Type != other.Type {
 		return false
 	}

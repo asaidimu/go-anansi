@@ -1,0 +1,49 @@
+{
+  "name": "@asaidimu/anansi",
+  "version": "8.6.1",
+  "description": "Self-contained TypeScript implementation of the Anansi binary wire format — schema compile/link/addressing, dense/sparse/batch packet codecs, transforms (zstd/BLAKE3/AES-GCM), and document validation. Byte-compatible with the Go implementation.",
+  "type": "module",
+  "main": "./index.cjs",
+  "module": "./index.mjs",
+  "types": "./index.d.mts",
+  "exports": {
+    ".": {
+      "types": {
+        "import": "./index.d.mts",
+        "require": "./index.d.cts"
+      },
+      "import": "./index.mjs",
+      "require": "./index.cjs"
+    }
+  },
+  "files": [
+    "./*"
+  ],
+  "keywords": [
+    "anansi",
+    "binary",
+    "wire-format",
+    "serialization",
+    "schema",
+    "codec",
+    "validation",
+    "typescript"
+  ],
+  "author": "Saidimu <47994458+asaidimu@users.noreply.github.com>",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/asaidimu/go-anansi.git",
+    "directory": "packages/anansi"
+  },
+  "bugs": {
+    "url": "https://github.com/asaidimu/go-anansi/issues"
+  },
+  "homepage": "https://github.com/asaidimu/go-anansi/tree/main/packages/anansi#readme",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "tag": "latest",
+    "access": "public"
+  },
+  "dependencies": {}
+}

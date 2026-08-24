@@ -2,7 +2,7 @@ name: Versioning Workflow
 
 on:
   workflow_run:
-    workflows: ["Test Workflow"]
+    workflows: [ "Test Workflow" ]
     types:
       - completed
 
@@ -10,6 +10,9 @@ jobs:
   version:
     if: ${{ github.event.workflow_run.conclusion == 'success' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
 
     steps:
       - name: Checkout repository
@@ -17,7 +20,24 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: version
+      - uses: oven-sh/setup-bun@v2
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build @asaidimu/anansi
+        working-directory: packages/anansi
+        run: |
+          bun ci
+          bun run build
+
+      - name: Release (Go tag + npm publish, tandem versions)
         uses: cycjimmy/semantic-release-action@v6
+        with:
+          extra_plugins: |
+            @semantic-release/exec
+            @semantic-release/git
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,5 @@
+{
+  "name": "anansi-monorepo",
+  "private": true,
+  "workspaces": ["packages/*"]
+}

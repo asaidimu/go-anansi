@@ -21,8 +21,24 @@ jobs:
       - name: Get dependencies
         run: go mod download
 
-      - name: Test
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install workspace deps
+        run: bun install --frozen-lockfile
+
+      - name: Go test (development env — fixtures use plain field IDs)
         run: make test
 
-      - name: Build
+      - name: Go build
         run: go build -v ./...
+
+      - name: TypeScript package tests (@asaidimu/anansi)
+        working-directory: packages/anansi
+        run: bun test
+
+      - name: TypeScript typecheck + build
+        working-directory: packages/anansi
+        run: |
+          bunx tsc --noEmit
+          bun run build
