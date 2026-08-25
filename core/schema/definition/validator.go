@@ -2849,6 +2849,10 @@ func (n *TypeCheckNode) Execute(ctx *ValidationContext) *NodeResult {
 		if _, ok := value.([]byte); ok {
 			return success
 		}
+	case FieldTypeRecord:
+		if _, ok := value.(map[string]any); ok {
+			return success
+		}
 	case FieldTypeUnknown:
 		return success
 	default:
