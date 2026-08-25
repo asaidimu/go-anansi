@@ -240,6 +240,9 @@ export class TypeCheckNode extends BaseNode implements ValidationNode {
           return SUCCESS;
         }
         break;
+      case "record":
+        if (getMapStringAny(value) !== null) return SUCCESS;
+        break;
       case "unknown":
         return SUCCESS;
       default:

@@ -1119,8 +1119,9 @@ export class ValidationGraph {
       const addedConstraints = new Map<string, boolean>();
       const itemType = inline.type as FieldType;
 
-      if (itemType === "record") {
-        // Inline "record" → any map[string]any, no further fields.
+      if (itemType === "object") {
+        // Mirrors Go: inline "object" → synthetic schema with no fields.
+        // Records are type-checked per item instead (see TypeCheckNode).
         const syntheticSchema: SchemaDefinition = {
           name: "__inline_record",
           version: "0",
