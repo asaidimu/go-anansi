@@ -37,8 +37,8 @@ var ErrModelNotInitialized = fmt.Errorf("data: model not initialized — call da
 
 // DocumentModel provides system fields that can be embedded in domain structs.
 type DocumentModel struct {
-	ID       string         `json:"id,omitempty" anansi:"_id_,required=true,omitempty"`
-	Metadata map[string]any `json:"metadata,omitempty" anansi:"_metadata_,required=true,omitempty"`
+	ID       string         `json:"_id_,omitempty" anansi:"_id_,required=true,omitempty"`
+	Metadata map[string]any `json:"_metadata_,omitempty" anansi:"_metadata_,required=true,omitempty"`
 	parent   any            `anansi:"-"` // *T set by Model(), skipped by schema/binding
 }
 

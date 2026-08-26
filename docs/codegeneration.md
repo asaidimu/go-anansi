@@ -4,7 +4,7 @@
 definition (the JSON format described in `schema.json` / `schema_rules.md`) into
 type-safe Go model code. The generated code builds on two runtime pieces:
 
-- **`data.DocumentModel`** — the embedded struct providing `id`, `metadata`, and
+- **`data.DocumentModel`** — the embedded struct providing `_id_`, `_metadata_`, and
   the promoted `Document()`/`Patch()` methods.
 - **`collection.ModelCollection[P]`** — a type-safe wrapper over
   `base.Collection`, fixed to one model but able to read/write documents
@@ -103,12 +103,12 @@ ordinary schema fields instead — never duplicated:
 ```go
 type User struct {
     document.DocumentModel
-    ID string            `json:"id,omitempty" anansi:"_id_,required=true,omitempty"`
+    ID string            `json:"_id_,omitempty" anansi:"_id_,required=true,omitempty"`
     Email string         `anansi:"email,required=true" json:"email"`
     Name  string         `anansi:"name,required=true" json:"name"`
     Age   *int64         `anansi:"age,required=false,nullable=true" json:"age,omitempty"`
     Role  *UserRoleEnum  `anansi:"role,required=false,type=enum" json:"role,omitempty"`
-    Metadata map[string]any `json:"metadata,omitempty" anansi:"_metadata_,required=true,omitempty"`
+    Metadata map[string]any `json:"_metadata_,omitempty" anansi:"_metadata_,required=true,omitempty"`
 }
 
 // GetID returns the document identifier for User.

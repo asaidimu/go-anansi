@@ -34,8 +34,8 @@ var ErrModelNotInitialized = fmt.Errorf("document: model not initialized — cal
 // methods materialize container-backed documents from the DTO schema of the
 // enclosing struct's type.
 type DocumentModel struct {
-	ID       string         `json:"id,omitempty" anansi:"_id_,required=true,omitempty"`
-	Metadata map[string]any `json:"metadata,omitempty" anansi:"_metadata_,required=true,omitempty"`
+	ID       string         `json:"_id_,omitempty" anansi:"_id_,required=true,omitempty"`
+	Metadata map[string]any `json:"_metadata_,omitempty" anansi:"_metadata_,required=true,omitempty"`
 	parent   any            `anansi:"-"` // *T set by New, restored by the data binder
 }
 

@@ -382,7 +382,7 @@ p, err := anansi.Setup(anansi.SetupConfig{
 - **`anansi` (root package)** — `Setup` (production) and `Playground` (dev)
   entry points plus `SetupConfig`/`PlaygroundConfig`.
 - **`core/data`** — `Document` (a `map[string]any` with fluent APIs),
-  `DocumentModel` (the struct embed providing `id`/`metadata`),
+  `DocumentModel` (the struct embed providing `_id_`/`_metadata_`),
   auto-initialization via `data.New[T]`, binding and sanitization.
 - **`core/schema`** (`definition`) — the schema type, graph validator,
   normalization, and migration generation.
