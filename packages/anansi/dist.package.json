@@ -1,6 +1,6 @@
 {
   "name": "@asaidimu/anansi",
-  "version": "8.6.7",
+  "version": "8.6.8",
   "description": "Self-contained TypeScript implementation of the Anansi binary wire format — schema compile/link/addressing, dense/sparse/batch packet codecs, transforms (zstd/BLAKE3/AES-GCM), and document validation. Byte-compatible with the Go implementation.",
   "type": "module",
   "main": "./index.cjs",
