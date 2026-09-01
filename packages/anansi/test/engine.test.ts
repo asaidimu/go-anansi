@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { MigrationEngine } from "../src/engine.ts";
+import { MigrationEngine, MigrationError, MigrationErrorCode } from "../src/engine.ts";
 import type { SchemaDefinition } from "../src/schema/generated.ts";
 
 const baseSchema: SchemaDefinition = {
@@ -12,6 +12,29 @@ const baseSchema: SchemaDefinition = {
 };
 
 const fieldKeys = (s: SchemaDefinition) => Object.keys(s.fields ?? {});
+
+/** Create a ReadableStream from an array of chunks. */
+function streamFrom<T>(chunks: T[]): ReadableStream<T> {
+  return new ReadableStream({
+    start(ctrl) {
+      for (const chunk of chunks) ctrl.enqueue(chunk);
+      ctrl.close();
+    },
+  });
+}
+
+/** Collect all chunks from a ReadableStream. */
+async function collect<T>(stream: ReadableStream<T>): Promise<T[]> {
+  const reader = stream.getReader();
+  const out: T[] = [];
+  let done = false;
+  while (!done) {
+    const result = await reader.read();
+    if (result.done) { done = true; break; }
+    out.push(result.value);
+  }
+  return out;
+}
 
 // ── Constructor & data() ────────────────────────────────────────────────────
 
@@ -36,14 +59,14 @@ describe("MigrationEngine", () => {
 
   it("add() creates a pending migration with checksum", async () => {
     const engine = new MigrationEngine(baseSchema);
-    const m = await engine.add({
+    await engine.add({
       changes: [{ type: "addField", id: "email", definition: { name: "email", type: "string" } }],
       description: "add email",
     });
+    const m = engine.data().migrations[0];
     expect(m.status).toBe("pending");
     expect(m.checksum).toMatch(/^[a-f0-9]{64}$/);
     expect(m.changes).toHaveLength(1);
-    expect(engine.data().migrations).toHaveLength(1);
   });
 
   it("add() rejects empty changes", async () => {
@@ -53,7 +76,7 @@ describe("MigrationEngine", () => {
 
   // ── dryRun() ─────────────────────────────────────────────────────────
 
-  it("dryRun forward simulates schema changes", async () => {
+  it("dryRun forward simulates schema and returns data preview", async () => {
     const engine = new MigrationEngine(baseSchema);
     await engine.add({
       changes: [
@@ -63,9 +86,14 @@ describe("MigrationEngine", () => {
       description: "replace name with email",
     });
 
-    const dry = await engine.dryRun("forward");
-    expect(dry.schema.version).toBe("2.0.0");
-    expect(fieldKeys(dry.schema)).toEqual(["id", "email"]);
+    const input = streamFrom([{ id: "1", name: "Alice" }]);
+    const dry = await engine.dryRun(input, "forward");
+    expect(dry.newSchema.version).toBe("2.0.0");
+    expect(fieldKeys(dry.newSchema)).toEqual(["id", "email"]);
+
+    // data preview stream should be readable
+    const preview = await collect(dry.dataPreview);
+    expect(preview).toHaveLength(1);
 
     // Original schema unchanged
     expect(engine.data().schema.version).toBe("1.0.0");
@@ -79,21 +107,23 @@ describe("MigrationEngine", () => {
       [{ ...baseSchema }],
     );
 
-    const dry = await engine.dryRun("backward");
-    expect(dry.schema.version).toBe("1.0.0");
-    expect(fieldKeys(dry.schema)).toEqual(["id", "name"]);
+    const input = streamFrom([{ id: "1", email: "alice@test.com" }]);
+    const dry = await engine.dryRun(input, "backward");
+    expect(dry.newSchema.version).toBe("1.0.0");
+    expect(fieldKeys(dry.newSchema)).toEqual(["id", "name"]);
   });
 
   // ── migrate() ────────────────────────────────────────────────────────
 
-  it("migrate() applies pending migrations", async () => {
+  it("migrate() applies pending migrations and returns transformed stream", async () => {
     const engine = new MigrationEngine(baseSchema);
     await engine.add({
       changes: [{ type: "addField", id: "email", definition: { name: "email", type: "string" } }],
       description: "add email",
     });
 
-    const stream = await engine.migrate();
+    const input = streamFrom([{ id: "1", name: "Alice" }]);
+    const stream = await engine.migrate(input);
     expect(stream).toBeInstanceOf(ReadableStream);
 
     const state = engine.data();
@@ -104,52 +134,82 @@ describe("MigrationEngine", () => {
     expect(state.history[0].version).toBe("1.0.0");
   });
 
-  it("migrate() with transform callback", async () => {
+  it("migrate() is no-op when no pending migrations", async () => {
+    const engine = new MigrationEngine(baseSchema);
+    const input = streamFrom([{ id: "1" }]);
+    const stream = await engine.migrate(input);
+    const chunks = await collect(stream);
+    expect(chunks).toHaveLength(1);
+    expect(engine.data().schema.version).toBe("1.0.0");
+  });
+
+  it("migrate() with transform applies data transforms via pipeThrough", async () => {
     const engine = new MigrationEngine(baseSchema);
     await engine.add({
       changes: [{ type: "addField", id: "email", definition: { name: "email", type: "string" } }],
       description: "add email",
+      transform: {
+        forward: (data: any) => ({ ...data, email: `${data.name.toLowerCase()}@test.com` }),
+        backward: (data: any) => { const { email, ...rest } = data; return rest; },
+      },
     });
 
-    const chunks: unknown[] = [];
-    const stream = await engine.migrate(async (m) => {
-      return new ReadableStream({
-        start(ctrl) {
-          ctrl.enqueue({ migrated: m.id, version: m.schemaVersion });
-          ctrl.close();
-        },
-      });
-    });
+    const input = streamFrom([{ id: "1", name: "Alice" }, { id: "2", name: "Bob" }]);
+    const stream = await engine.migrate(input);
+    const chunks = await collect(stream);
 
-    const reader = stream.getReader();
-    let done = false;
-    while (!done) {
-      const result = await reader.read();
-      if (result.done) { done = true; break; }
-      chunks.push(result.value);
-    }
-
-    expect(chunks).toHaveLength(1);
-    expect((chunks[0] as any).migrated).toBeTruthy();
+    expect(chunks).toHaveLength(2);
+    expect(chunks[0]).toEqual({ id: "1", name: "Alice", email: "alice@test.com" });
+    expect(chunks[1]).toEqual({ id: "2", name: "Bob", email: "bob@test.com" });
   });
 
-  it("migrate() is no-op when no pending migrations", async () => {
+  it("migrate() chains multiple transforms", async () => {
     const engine = new MigrationEngine(baseSchema);
-    await engine.migrate();
-    expect(engine.data().schema.version).toBe("1.0.0");
+    await engine.add({
+      changes: [{ type: "addField", id: "email", definition: { name: "email", type: "string" } }],
+      description: "add email",
+      transform: {
+        forward: (data: any) => ({ ...data, email: `${data.name.toLowerCase()}@test.com` }),
+        backward: (data: any) => { const { email, ...rest } = data; return rest; },
+      },
+    });
+    await engine.add({
+      changes: [{ type: "addField", id: "age", definition: { name: "age", type: "number" } }],
+      description: "add age",
+      transform: {
+        forward: (data: any) => ({ ...data, age: 0 }),
+        backward: (data: any) => { const { age, ...rest } = data; return rest; },
+      },
+    });
+
+    const input = streamFrom([{ id: "1", name: "Alice" }]);
+    const stream = await engine.migrate(input);
+    const chunks = await collect(stream);
+
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toEqual({ id: "1", name: "Alice", email: "alice@test.com", age: 0 });
   });
 
   // ── rollback() ───────────────────────────────────────────────────────
 
-  it("rollback() reverts last applied migration", async () => {
+  it("rollback() reverts last applied migration with stream", async () => {
     const engine = new MigrationEngine(baseSchema);
     await engine.add({
       changes: [{ type: "addField", id: "email", definition: { name: "email", type: "string" } }],
       description: "add email",
+      transform: {
+        forward: (data: any) => ({ ...data, email: `${data.name.toLowerCase()}@test.com` }),
+        backward: (data: any) => { const { email, ...rest } = data; return rest; },
+      },
     });
-    await engine.migrate();
 
-    await engine.rollback();
+    const input = streamFrom([{ id: "1", name: "Alice" }]);
+    await engine.migrate(input);
+
+    const rollbackInput = streamFrom([{ id: "1", name: "Alice", email: "" }]);
+    const rolledBack = await engine.rollback(rollbackInput);
+    const chunks = await collect(rolledBack);
+
     const state = engine.data();
     expect(state.schema.version).toBe("1.0.0");
     expect(fieldKeys(state.schema)).toEqual(["id", "name"]);
@@ -166,9 +226,18 @@ describe("MigrationEngine", () => {
       { id: "m2", schemaVersion: "2.0.0", changes: [{ type: "addField", id: "y", definition: { name: "y", type: "string" } }], status: "applied", description: "", checksum: "", createdAt: "" },
     ], [v1, v2]);
 
-    await engine.rollback("1.0.0");
+    const input = streamFrom([{ id: "1" }]);
+    await engine.rollbackToVersion("1.0.0", input);
     expect(engine.data().schema.version).toBe("1.0.0");
     expect(engine.data().migrations.filter((m) => m.status === "rolled_back")).toHaveLength(2);
+  });
+
+  it("rollback() returns input unchanged when no applied migrations", async () => {
+    const engine = new MigrationEngine(baseSchema);
+    const input = streamFrom([{ id: "1" }]);
+    const result = await engine.rollback(input);
+    const chunks = await collect(result);
+    expect(chunks).toHaveLength(1);
   });
 
   // ── checksum validation ──────────────────────────────────────────────
@@ -176,7 +245,8 @@ describe("MigrationEngine", () => {
   it("checksum is deterministic", async () => {
     const engine = new MigrationEngine(baseSchema);
     const changes = [{ type: "addField" as const, id: "x", definition: { name: "x", type: "string" as const } }];
-    const m = await engine.add({ changes, description: "test" });
+    await engine.add({ changes, description: "test" });
+    const m = engine.data().migrations[0];
     const { sha256 } = await import("../src/utils.ts");
     const payload = JSON.stringify({
       id: m.id,
@@ -198,9 +268,10 @@ describe("MigrationEngine", () => {
       description: "add email",
     });
 
-    (engine as any).processing = true;
-    expect(() => engine.dryRun("forward")).toThrow("operation in progress");
-    (engine as any).processing = false;
+    (engine as any).isProcessing = true;
+    const input = streamFrom([{ id: "1" }]);
+    expect(() => engine.dryRun(input, "forward")).toThrow("Concurrent operation");
+    (engine as any).isProcessing = false;
   });
 
   // ── version bumping through migrate ──────────────────────────────────
@@ -211,7 +282,8 @@ describe("MigrationEngine", () => {
       changes: [{ type: "removeField", id: "name" }],
       description: "remove name",
     });
-    await engine.migrate();
+    const input = streamFrom([{ id: "1" }]);
+    await engine.migrate(input);
     expect(engine.data().schema.version).toBe("2.0.0");
   });
 
@@ -221,7 +293,8 @@ describe("MigrationEngine", () => {
       changes: [{ type: "addField", id: "email", definition: { name: "email", type: "string" } }],
       description: "add email",
     });
-    await engine.migrate();
+    const input = streamFrom([{ id: "1" }]);
+    await engine.migrate(input);
     expect(engine.data().schema.version).toBe("1.1.0");
   });
 
@@ -231,7 +304,33 @@ describe("MigrationEngine", () => {
       changes: [{ type: "modifyField", id: "name", changes: { description: "full name" } }],
       description: "add description",
     });
-    await engine.migrate();
+    const input = streamFrom([{ id: "1" }]);
+    await engine.migrate(input);
     expect(engine.data().schema.version).toBe("1.0.1");
+  });
+
+  // ── MigrationError ───────────────────────────────────────────────────
+
+  it("MigrationError has correct properties", () => {
+    const err = new MigrationError("test", MigrationErrorCode.CHECKSUM_MISMATCH, "m1");
+    expect(err.message).toBe("test");
+    expect(err.code).toBe(MigrationErrorCode.CHECKSUM_MISMATCH);
+    expect(err.migrationId).toBe("m1");
+    expect(err.name).toBe("MigrationError");
+  });
+
+  it("MigrationErrorCode has all expected codes", () => {
+    expect(MigrationErrorCode.INVALID_SCHEMA).toBe("INVALID_SCHEMA");
+    expect(MigrationErrorCode.INVALID_MIGRATION).toBe("INVALID_MIGRATION");
+    expect(MigrationErrorCode.CHECKSUM_MISMATCH).toBe("CHECKSUM_MISMATCH");
+    expect(MigrationErrorCode.TIMEOUT).toBe("TIMEOUT");
+    expect(MigrationErrorCode.MEMORY_LIMIT).toBe("MEMORY_LIMIT");
+    expect(MigrationErrorCode.CONCURRENT_OPERATION).toBe("CONCURRENT_OPERATION");
+    expect(MigrationErrorCode.TRANSFORM_ERROR).toBe("TRANSFORM_ERROR");
+    expect(MigrationErrorCode.VERSION_NOT_FOUND).toBe("VERSION_NOT_FOUND");
+    expect(MigrationErrorCode.CIRCULAR_DEPENDENCY).toBe("CIRCULAR_DEPENDENCY");
+    expect(MigrationErrorCode.STREAM_ERROR).toBe("STREAM_ERROR");
+    expect(MigrationErrorCode.ROLLBACK_ERROR).toBe("ROLLBACK_ERROR");
+    expect(MigrationErrorCode.MISSING_TRANSFORM).toBe("MISSING_TRANSFORM");
   });
 });

@@ -7,5 +7,6 @@ export {
   defaultValidationConfig,
 } from "./validator.ts";
 export { SchemaValidator } from "./schema-validator.ts";
+export { StandardDocumentValidator } from "./standard-schema.ts"
 export { metaSchemaPredicateMap } from "./predicates.ts";
 export type { SchemaDefinition as ValidatedSchemaDefinition } from "./types/schema-definition.ts";

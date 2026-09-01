@@ -49,7 +49,7 @@ export {
 } from "./schema/migration.ts";
 
 // Migration engine — schema versioning, dry-run, rollback, checksums.
-export { MigrationEngine } from "./engine.ts";
+export { MigrationEngine, MigrationError, MigrationErrorCode } from "./engine.ts";
 export type { EngineState, DryRunResult } from "./engine.ts";
 
 // Utilities.
