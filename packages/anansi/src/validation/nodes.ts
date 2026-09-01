@@ -180,7 +180,7 @@ export class RequiredFieldNode extends BaseNode implements ValidationNode {
       ]);
     }
 
-    if (!(this.fieldName in dataMap)) {
+    if (!(this.fieldName in dataMap) || dataMap[this.fieldName] === undefined) {
       return failNode([
         createIssue(
           "REQUIRED_FIELD_MISSING",

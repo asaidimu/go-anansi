@@ -565,9 +565,9 @@ export class ValidationGraph {
       // Explicit null:
       //   - satisfies a required field only when the field is nullable;
       //   - skips type/constraint nodes when nullable;
-      //   - otherwise falls through so the type check reports the mismatch.
+      //   - otherwise falls through so the type node rejects null (TYPE_MISMATCH)
       if (val === null) {
-        if (isRequiredNode) continue; // presence satisfies "required"
+        if (isRequiredNode && isNullable) continue; // null satisfies required only for nullable fields
         if (isNullable) {
           ctx.visited.set(nodeID, true);
           continue;
