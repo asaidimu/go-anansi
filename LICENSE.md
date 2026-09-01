@@ -24,8 +24,7 @@ for example, if you want to embed this software in a product or service
 without satisfying the network-copyleft obligations of section 13 — a
 commercial (private) license can be acquired from the copyright holder.
 
-Contact: Saidimu Lolokile — https://github.com/asaidimu
-         <47994458+asaidimu@users.noreply.github.com>
+Contact: Saidimu Lolokile — https://github.com/asaidimu <lolokilesaidimu@gmail.com>
 
 --------------------------------------------------------------------------------
 

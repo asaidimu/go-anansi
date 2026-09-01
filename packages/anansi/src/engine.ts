@@ -170,12 +170,10 @@ export interface DryRunResult {
 
 // ── Transform resolution ─────────────────────────────────────────────────────
 
-type TransformFunction<any, any> = (data: any) => any | Promise<any>;
-
 async function resolveTransform(
   migration: Migration,
   direction: "forward" | "backward",
-): Promise<TransformFunction<any, any> | null> {
+): Promise<any | null> {
   if (!migration.transform) {
     return null;
   }
@@ -190,13 +188,14 @@ async function resolveTransform(
     return resolveLocalTransform(migration.transform, direction);
   }
 
-  return migration.transform[direction];
+  const fn = migration.transform[direction];
+  return fn;
 }
 
 async function resolveRemoteTransform(
   url: string,
   direction: "forward" | "backward",
-): Promise<TransformFunction<any, any>> {
+): Promise<any> {
   try {
     const response = await fetch(url);
     if (!response.ok) {
@@ -234,7 +233,7 @@ async function resolveRemoteTransform(
 async function resolveLocalTransform(
   path: string,
   direction: "forward" | "backward",
-): Promise<TransformFunction<any, any>> {
+): Promise<any> {
   try {
     const mod = await import(path);
     const dataTransform: DataTransform<any, any> = mod.default;
@@ -288,9 +287,9 @@ export class MigrationEngine {
   }
 
   async add(opts: {
-    changes: SchemaChange<any>[];
+    changes: SchemaChange[];
     description: string;
-    rollback?: SchemaChange<any>[];
+    rollback?: SchemaChange[];
     transform?: string | DataTransform<any, any>;
   }): Promise<void> {
     if (this.isProcessing) {
@@ -530,7 +529,7 @@ export class MigrationEngine {
         entry,
       ): entry is {
         migration: Migration<any>;
-        transform: TransformFunction<any, any>;
+        transform: any;
       } => Boolean(entry.transform),
     );
 
@@ -580,7 +579,7 @@ export class MigrationEngine {
 
   private applySchemaChanges(
     schema: SchemaDefinition,
-    changes: SchemaChange<any>[],
+    changes: SchemaChange[],
     migrationId?: string,
   ): SchemaDefinition {
     const bump = calculateNextBump(changes, schema);

@@ -320,17 +320,18 @@ describe("MigrationEngine", () => {
   });
 
   it("MigrationErrorCode has all expected codes", () => {
-    expect(MigrationErrorCode.INVALID_SCHEMA).toBe("INVALID_SCHEMA");
-    expect(MigrationErrorCode.INVALID_MIGRATION).toBe("INVALID_MIGRATION");
-    expect(MigrationErrorCode.CHECKSUM_MISMATCH).toBe("CHECKSUM_MISMATCH");
-    expect(MigrationErrorCode.TIMEOUT).toBe("TIMEOUT");
-    expect(MigrationErrorCode.MEMORY_LIMIT).toBe("MEMORY_LIMIT");
-    expect(MigrationErrorCode.CONCURRENT_OPERATION).toBe("CONCURRENT_OPERATION");
-    expect(MigrationErrorCode.TRANSFORM_ERROR).toBe("TRANSFORM_ERROR");
-    expect(MigrationErrorCode.VERSION_NOT_FOUND).toBe("VERSION_NOT_FOUND");
-    expect(MigrationErrorCode.CIRCULAR_DEPENDENCY).toBe("CIRCULAR_DEPENDENCY");
-    expect(MigrationErrorCode.STREAM_ERROR).toBe("STREAM_ERROR");
-    expect(MigrationErrorCode.ROLLBACK_ERROR).toBe("ROLLBACK_ERROR");
-    expect(MigrationErrorCode.MISSING_TRANSFORM).toBe("MISSING_TRANSFORM");
+    const codes: Record<string, string> = MigrationErrorCode;
+    expect(codes.INVALID_SCHEMA).toBe("INVALID_SCHEMA");
+    expect(codes.INVALID_MIGRATION).toBe("INVALID_MIGRATION");
+    expect(codes.CHECKSUM_MISMATCH).toBe("CHECKSUM_MISMATCH");
+    expect(codes.TIMEOUT).toBe("TIMEOUT");
+    expect(codes.MEMORY_LIMIT).toBe("MEMORY_LIMIT");
+    expect(codes.CONCURRENT_OPERATION).toBe("CONCURRENT_OPERATION");
+    expect(codes.TRANSFORM_ERROR).toBe("TRANSFORM_ERROR");
+    expect(codes.VERSION_NOT_FOUND).toBe("VERSION_NOT_FOUND");
+    expect(codes.CIRCULAR_DEPENDENCY).toBe("CIRCULAR_DEPENDENCY");
+    expect(codes.STREAM_ERROR).toBe("STREAM_ERROR");
+    expect(codes.ROLLBACK_ERROR).toBe("ROLLBACK_ERROR");
+    expect(codes.MISSING_TRANSFORM).toBe("MISSING_TRANSFORM");
   });
 });
