@@ -34,3 +34,4 @@ tmp/*
 *.test
 /anansi
 node_modules
+*.bundle
