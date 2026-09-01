@@ -28,6 +28,33 @@ export type { EncodeKind } from "./wire/packet.ts";
 export { AnansiCodec } from "./codec.ts";
 export type { AnansiCodecOptions } from "./codec.ts";
 
+// Migration types: schema changes, data transforms, migrations, version bumping.
+export type {
+  SchemaChange,
+  Migration,
+  DataTransform,
+  TransformFunction,
+  ChangeImpact,
+  FieldPatch,
+  ConstraintPatch,
+  IndexPatch,
+  Patch,
+  PatchOp,
+} from "./schema/migration.ts";
+export {
+  classifyChangeImpact,
+  calculateNextBump,
+  bumpVersion,
+  schemaChangeToPatch,
+} from "./schema/migration.ts";
+
+// Migration engine — schema versioning, dry-run, rollback, checksums.
+export { MigrationEngine } from "./engine.ts";
+export type { EngineState, DryRunResult } from "./engine.ts";
+
+// Utilities.
+export { deepMerge, sha256 } from "./utils.ts";
+
 // Validation (adopted validator): documents against schemas, and schemas
 // against the meta-schema.
 export {
