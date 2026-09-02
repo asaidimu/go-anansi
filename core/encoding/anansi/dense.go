@@ -1,7 +1,6 @@
 package anansi
 
 import (
-	"bytes"
 	"fmt"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
@@ -41,81 +40,6 @@ func decodeDenseStateMap(r *byteReader, nFields int) ([]fieldState, error) {
 		}
 	}
 	return out, nil
-}
-
-// encodeDenseBody writes the state map followed by per-DataType value
-// blocks (spec 3.1.3) for fields against doc. It does not write the 2-byte
-// packet header; callers combine this with writeHeader.
-//
-// positions is the document's captured positions map (positionsOf) — read
-// once per document and shared with the caller, so state-map building and
-// value writing issue no per-field container calls. Value blocks iterate the
-// schema resources' per-DataType groupings, touching only fields that can
-// appear in each block.
-//
-// The TypeBool block is bit-packed (spec 2.5 TypeBool Dense Mode): all
-// present bools, in wire order, packed LSB-first into ceil(n/8) bytes.
-func encodeDenseBody(buf *bytes.Buffer, cs *definition.CompiledSchema, version header, doc *container.DataContainer, positions map[int64]int32, res *slotCodec) error {
-	scratch := getScratch()
-	defer putScratch(scratch)
-
-	// State map: all zeros (stateNotSet) by default.
-	nBits := 2 * len(res.fields)
-	nBytes := (nBits + 7) / 8
-	var stackBuf [32]byte
-	var stateMap []byte
-	if nBytes <= len(stackBuf) {
-		stateMap = stackBuf[:nBytes]
-	} else {
-		if cap(scratch.state) < nBytes {
-			scratch.state = make([]byte, nBytes)
-		}
-		stateMap = scratch.state[:nBytes]
-		clear(stateMap)
-	}
-
-	for i, wf := range res.fields {
-		if idx, exists := positions[int64(wf.key)]; exists {
-			var code byte
-			if idx < 0 {
-				code = stateBitsNull
-			} else {
-				code = stateBitsHasValue
-			}
-			bitPos := i * 2
-			stateMap[bitPos/8] |= code << uint(bitPos%8)
-		}
-	}
-	buf.Write(stateMap)
-
-	// Values in DataType order, iterating only each block's own fields.
-	for dt := container.DataType(0); dt <= container.TypeArrayGeometry; dt++ {
-		if dt == container.TypeBool {
-			values := scratch.bools[:0]
-			for _, wf := range res.byType[dt] {
-				if stateAt(positions, wf.key) != stateHasValue {
-					continue
-				}
-				v, _, err := doc.GetBool(wf.key)
-				if err != nil {
-					return fmt.Errorf("anansi: encode dense field %q: %w", wf.name, err)
-				}
-				values = append(values, v)
-			}
-			writeBoolBits(buf, values)
-			scratch.bools = values
-			continue
-		}
-		for _, wf := range res.byType[dt] {
-			if stateAt(positions, wf.key) != stateHasValue {
-				continue
-			}
-			if err := writeFieldPayload(buf, cs, version, doc, wf); err != nil {
-				return fmt.Errorf("anansi: encode dense field %q: %w", wf.name, err)
-			}
-		}
-	}
-	return nil
 }
 
 // decodeDenseBody reads a Dense packet body (state map + value blocks,

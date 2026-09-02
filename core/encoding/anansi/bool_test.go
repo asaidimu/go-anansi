@@ -25,7 +25,9 @@ func TestBoolBitsRoundTrip(t *testing.T) {
 	}
 	for _, vals := range cases {
 		var buf bytes.Buffer
-		writeBoolBits(&buf, vals)
+		w := binPut{buf: make([]byte, (len(vals)+7)/8)}
+		putBoolBits(&w, vals)
+		buf.Write(w.buf[:w.pos])
 		if got := buf.Len(); got != (len(vals)+7)/8 {
 			t.Fatalf("packed %d bools into %d bytes, want %d", len(vals), got, (len(vals)+7)/8)
 		}

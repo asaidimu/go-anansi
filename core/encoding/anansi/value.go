@@ -1,44 +1,31 @@
 package anansi
 
 import (
-	"bytes"
 	"fmt"
 	"math"
-	"sort"
 	"unsafe"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
 )
 
-// This file implements spec section 2.5 (Field Type Encoding) for each of the
-// 16 container.DataType values, plus two deliberate, documented adaptations
-// to this concrete engine (see writeRecord/readRecord and
-// writeArrayObjectField/readArrayObjectField below):
+// This file implements the decode half of spec section 2.5 (Field Type
+// Encoding) for each of the 16 container.DataType values, plus two
+// deliberate, documented adaptations to this concrete engine (see the
+// readRecord and readArrayObjectField comments):
 //
 //   - TypeRecord in this engine is a schema-free map[string]any (see
 //     core/data/container's DataType doc comment), not a *DataContainer
 //     bound to a known schema as the abstract spec's "TypeRecord
-//     (*DataContainer)" describes. There is no schema to recursively encode
-//     it against, so it is encoded the same self-describing way as
-//     TypeUnknown: a recursive, tagged encoding of whatever Go value the map
-//     holds (nil/int64/float64/string/bool/[]byte/map[string]any/[]any/etc).
+//     (*DataContainer)" describes. It is encoded/decoded the same
+//     self-describing way as TypeUnknown.
 //   - TypeArrayObject elements genuinely are schema-bound *DataContainer
-//     values, so each element is encoded exactly as the spec describes:
-//     [payload_length varint][nested anansi packet bytes], recursing into
-//     this same codec against the field's child schema slot.
-
-// writeInt encodes TypeInt (spec 2.5 TypeInt): zigzag varint.
-func writeInt(buf *bytes.Buffer, v int64) { writeVarintTo(buf, v) }
+//     values, each encoded as [payload_length varint][nested anansi packet
+//     bytes] against the field's child schema slot.
+//
+// The encode half lives in inverted.go as size twins + binPut writers
+// mirroring every layout below byte-for-byte.
 
 func readInt(r *byteReader) (int64, error) { return r.readVarint() }
-
-// writeFloat encodes TypeFloat (spec 2.5 TypeFloat): 8 bytes little-endian
-// IEEE 754.
-func writeFloat(buf *bytes.Buffer, v float64) {
-	var tmp [8]byte
-	putUint64LE(tmp[:], math.Float64bits(v))
-	buf.Write(tmp[:])
-}
 
 func readFloat(r *byteReader) (float64, error) {
 	b, err := r.readN(8)
@@ -48,27 +35,9 @@ func readFloat(r *byteReader) (float64, error) {
 	return math.Float64frombits(getUint64LE(b)), nil
 }
 
-func putUint64LE(b []byte, v uint64) {
-	b[0] = byte(v)
-	b[1] = byte(v >> 8)
-	b[2] = byte(v >> 16)
-	b[3] = byte(v >> 24)
-	b[4] = byte(v >> 32)
-	b[5] = byte(v >> 40)
-	b[6] = byte(v >> 48)
-	b[7] = byte(v >> 56)
-}
-
 func getUint64LE(b []byte) uint64 {
 	return uint64(b[0]) | uint64(b[1])<<8 | uint64(b[2])<<16 | uint64(b[3])<<24 |
 		uint64(b[4])<<32 | uint64(b[5])<<40 | uint64(b[6])<<48 | uint64(b[7])<<56
-}
-
-// writeString encodes TypeString (spec 2.5 TypeString): varint length
-// followed by raw UTF-8 bytes.
-func writeString(buf *bytes.Buffer, v string) {
-	writeUvarintTo(buf, uint64(len(v)))
-	buf.WriteString(v)
 }
 
 // readString reads a length-prefixed string. With aliasing enabled on the
@@ -96,16 +65,6 @@ func readString(r *byteReader) (string, error) {
 	return s, nil
 }
 
-// writeBoolSparse encodes a single TypeBool value the Sparse way (spec 2.5
-// TypeBool): one byte, 0x00/0x01.
-func writeBoolSparse(buf *bytes.Buffer, v bool) {
-	if v {
-		buf.WriteByte(1)
-	} else {
-		buf.WriteByte(0)
-	}
-}
-
 func readBoolSparse(r *byteReader) (bool, error) {
 	b, err := r.readByte()
 	if err != nil {
@@ -114,22 +73,7 @@ func readBoolSparse(r *byteReader) (bool, error) {
 	return b != 0, nil
 }
 
-// writeBoolBits packs values LSB-first into ceil(len(values)/8) bytes
-// (spec 2.5 TypeBool Dense Mode: "Packed into bitfields, 8 bools per
-// byte"). Used by Dense value blocks and columnar value arrays, where all
-// present bools are contiguous.
-func writeBoolBits(buf *bytes.Buffer, values []bool) {
-	packed := make([]byte, (len(values)+7)/8)
-	for i, v := range values {
-		if v {
-			packed[i/8] |= 1 << uint(i%8)
-		}
-	}
-	buf.Write(packed)
-}
-
-// readBoolBits reads back n LSB-first packed bools written by
-// writeBoolBits.
+// readBoolBits reads back n LSB-first packed bools written by putBoolBits.
 func readBoolBits(r *byteReader, n int) ([]bool, error) {
 	packed, err := r.readN((n + 7) / 8)
 	if err != nil {
@@ -140,13 +84,6 @@ func readBoolBits(r *byteReader, n int) ([]bool, error) {
 		out[i] = packed[i/8]&(1<<uint(i%8)) != 0
 	}
 	return out, nil
-}
-
-// writeBytes encodes TypeBytes (spec 2.5 TypeBytes): varint length + raw
-// bytes.
-func writeBytes(buf *bytes.Buffer, v []byte) {
-	writeUvarintTo(buf, uint64(len(v)))
-	buf.Write(v)
 }
 
 func readBytes(r *byteReader) ([]byte, error) {
@@ -163,20 +100,6 @@ func readBytes(r *byteReader) ([]byte, error) {
 	out := make([]byte, len(b))
 	copy(out, b)
 	return out, nil
-}
-
-// writeGeometry encodes TypeGeometry (spec 2.5 TypeGeometry): ring count,
-// then per ring a point count and float64-LE (x, y) pairs.
-func writeGeometry(buf *bytes.Buffer, rings [][]float64) {
-	writeUvarintTo(buf, uint64(len(rings)))
-	for _, ring := range rings {
-		npoints := len(ring) / 2
-		writeUvarintTo(buf, uint64(npoints))
-		for i := 0; i+1 < len(ring); i += 2 {
-			writeFloat(buf, ring[i])
-			writeFloat(buf, ring[i+1])
-		}
-	}
 }
 
 func readGeometry(r *byteReader) ([][]float64, error) {
@@ -211,13 +134,6 @@ func readGeometry(r *byteReader) ([][]float64, error) {
 // Array types (spec 2.5 TypeArray*)
 // ---------------------------------------------------------------------------
 
-func writeArrayInt(buf *bytes.Buffer, v []int64) {
-	writeUvarintTo(buf, uint64(len(v)))
-	for _, x := range v {
-		writeInt(buf, x)
-	}
-}
-
 func readArrayInt(r *byteReader) ([]int64, error) {
 	n, err := r.readUvarint()
 	if err != nil {
@@ -232,13 +148,6 @@ func readArrayInt(r *byteReader) ([]int64, error) {
 		out = append(out, x)
 	}
 	return out, nil
-}
-
-func writeArrayFloat(buf *bytes.Buffer, v []float64) {
-	writeUvarintTo(buf, uint64(len(v)))
-	for _, x := range v {
-		writeFloat(buf, x)
-	}
 }
 
 func readArrayFloat(r *byteReader) ([]float64, error) {
@@ -257,13 +166,6 @@ func readArrayFloat(r *byteReader) ([]float64, error) {
 	return out, nil
 }
 
-func writeArrayString(buf *bytes.Buffer, v []string) {
-	writeUvarintTo(buf, uint64(len(v)))
-	for _, s := range v {
-		writeString(buf, s)
-	}
-}
-
 func readArrayString(r *byteReader) ([]string, error) {
 	n, err := r.readUvarint()
 	if err != nil {
@@ -278,20 +180,6 @@ func readArrayString(r *byteReader) ([]string, error) {
 		out = append(out, s)
 	}
 	return out, nil
-}
-
-// writeArrayBool encodes []bool (spec 2.5 TypeArrayBool): count, then
-// ceil(count/8) bytes of LSB-first packed bits.
-func writeArrayBool(buf *bytes.Buffer, v []bool) {
-	writeUvarintTo(buf, uint64(len(v)))
-	nBytes := (len(v) + 7) / 8
-	packed := make([]byte, nBytes)
-	for i, b := range v {
-		if b {
-			packed[i/8] |= 1 << uint(i%8)
-		}
-	}
-	buf.Write(packed)
 }
 
 func readArrayBool(r *byteReader) ([]bool, error) {
@@ -311,13 +199,6 @@ func readArrayBool(r *byteReader) ([]bool, error) {
 	return out, nil
 }
 
-func writeArrayBytes(buf *bytes.Buffer, v [][]byte) {
-	writeUvarintTo(buf, uint64(len(v)))
-	for _, b := range v {
-		writeBytes(buf, b)
-	}
-}
-
 func readArrayBytes(r *byteReader) ([][]byte, error) {
 	n, err := r.readUvarint()
 	if err != nil {
@@ -332,13 +213,6 @@ func readArrayBytes(r *byteReader) ([][]byte, error) {
 		out = append(out, b)
 	}
 	return out, nil
-}
-
-func writeArrayGeometry(buf *bytes.Buffer, v [][][]float64) {
-	writeUvarintTo(buf, uint64(len(v)))
-	for _, g := range v {
-		writeGeometry(buf, g)
-	}
 }
 
 func readArrayGeometry(r *byteReader) ([][][]float64, error) {
@@ -358,7 +232,7 @@ func readArrayGeometry(r *byteReader) ([][][]float64, error) {
 }
 
 // ---------------------------------------------------------------------------
-// Generic tagged "any" encoding, used for TypeUnknown, TypeArrayUnknown, and
+// Generic tagged "any" decoding, used for TypeUnknown, TypeArrayUnknown, and
 // (as a documented adaptation) this engine's schema-free TypeRecord.
 // ---------------------------------------------------------------------------
 
@@ -383,61 +257,6 @@ const (
 	tagArrStr  anyTag = uint8(container.TypeArrayString)
 	tagArrBool anyTag = uint8(container.TypeArrayBool)
 )
-
-// writeAny writes a self-describing tagged value (spec 2.5 TypeUnknown).
-func writeAny(buf *bytes.Buffer, v any) error {
-	switch t := v.(type) {
-	case nil:
-		buf.WriteByte(tagNull)
-	case bool:
-		buf.WriteByte(tagBool)
-		writeBoolSparse(buf, t)
-	case string:
-		buf.WriteByte(tagString)
-		writeString(buf, t)
-	case int:
-		buf.WriteByte(tagInt)
-		writeInt(buf, int64(t))
-	case int64:
-		buf.WriteByte(tagInt)
-		writeInt(buf, t)
-	case float64:
-		buf.WriteByte(tagFloat)
-		writeFloat(buf, t)
-	case []byte:
-		buf.WriteByte(tagBytes)
-		writeBytes(buf, t)
-	case [][]float64:
-		buf.WriteByte(tagGeom)
-		writeGeometry(buf, t)
-	case map[string]any:
-		buf.WriteByte(tagRecord)
-		return writeRecordBody(buf, t)
-	case []any:
-		buf.WriteByte(tagArrAny)
-		writeUvarintTo(buf, uint64(len(t)))
-		for _, e := range t {
-			if err := writeAny(buf, e); err != nil {
-				return err
-			}
-		}
-	case []int64:
-		buf.WriteByte(tagArrInt)
-		writeArrayInt(buf, t)
-	case []float64:
-		buf.WriteByte(tagArrFlt)
-		writeArrayFloat(buf, t)
-	case []string:
-		buf.WriteByte(tagArrStr)
-		writeArrayString(buf, t)
-	case []bool:
-		buf.WriteByte(tagArrBool)
-		writeArrayBool(buf, t)
-	default:
-		return fmt.Errorf("anansi: unsupported value type %T for TypeUnknown/TypeRecord slot", v)
-	}
-	return nil
-}
 
 func readAny(r *byteReader) (any, error) {
 	tag, err := r.readByte()
@@ -488,25 +307,9 @@ func readAny(r *byteReader) (any, error) {
 	}
 }
 
-// writeRecordBody encodes a schema-free map[string]any: a varint entry
-// count followed by (key, tagged value) pairs sorted by key for a
-// deterministic byte-for-byte encoding of the same logical map.
-func writeRecordBody(buf *bytes.Buffer, m map[string]any) error {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	writeUvarintTo(buf, uint64(len(keys)))
-	for _, k := range keys {
-		writeString(buf, k)
-		if err := writeAny(buf, m[k]); err != nil {
-			return fmt.Errorf("anansi: record key %q: %w", k, err)
-		}
-	}
-	return nil
-}
-
+// readRecordBody decodes a schema-free map[string]any written by putRecord:
+// a varint entry count followed by (key, tagged value) pairs sorted by key
+// for a deterministic byte-for-byte encoding of the same logical map.
 func readRecordBody(r *byteReader) (map[string]any, error) {
 	n, err := r.readUvarint()
 	if err != nil {
@@ -527,42 +330,44 @@ func readRecordBody(r *byteReader) (map[string]any, error) {
 	return out, nil
 }
 
-// writeRecord encodes TypeRecord. See the file-level doc comment: this
-// engine's TypeRecord is a schema-free map[string]any, so it is encoded as a
-// self-describing tagged body directly (no outer type tag needed, since the
-// container/schema already know this slot is a record).
-func writeRecord(buf *bytes.Buffer, m map[string]any) error {
-	return writeRecordBody(buf, m)
-}
-
 func readRecord(r *byteReader) (map[string]any, error) {
 	return readRecordBody(r)
 }
 
 // ---------------------------------------------------------------------------
-// TypeArrayObject: [count varint] then per element [payload_length varint]
-// [nested anansi packet bytes] (spec 2.5 TypeArrayObject), recursing into
-// this codec against the field's child schema slot.
+// Nested packets
 // ---------------------------------------------------------------------------
 
-// writeArrayObjectField encodes an array of schema-bound child documents.
-// Each element is independently encoded as its own complete Anansi packet
-// (auto-selecting Dense/Sparse per element), matching the spec's per-element
-// [payload_length][anansi_packet_bytes] framing. res is the element slot's
-// prebuilt resource tree (wf.child), so no per-element schema walks occur.
-func writeArrayObjectField(buf *bytes.Buffer, res *slotCodec, version header, children []*container.DataContainer) error {
-	writeUvarintTo(buf, uint64(len(children)))
-	for i, child := range children {
-		payload, err := encodePacket(res, child, version)
-		if err != nil {
-			return fmt.Errorf("anansi: encode array-object element %d: %w", i, err)
-		}
-		writeUvarintTo(buf, uint64(len(payload)))
-		buf.Write(payload)
+// decodeNestedPacket decodes one nested TypeArrayObject element sub-packet
+// (header + optional nested hash + body) into doc (spec 2.5 TypeArrayObject:
+// per element [payload_length][nested anansi packet bytes]). res is the
+// element slot's prebuilt resource tree. Nested packets never carry
+// transforms (the encoder strips those bits), so there is nothing to open
+// beyond the optional integrity digest.
+func decodeNestedPacket(res *slotCodec, r *byteReader, doc *container.DataContainer, pool *container.Pool) error {
+	h, err := readHeader(r)
+	if err != nil {
+		return err
 	}
-	return nil
+	if h.Flags.Compressed() || h.Flags.Encrypted() {
+		return fmt.Errorf("anansi: compressed/encrypted nested packets are not supported by this codec")
+	}
+	if err := readAndVerifyNestedHash(r, h.Flags); err != nil {
+		return err
+	}
+	switch h.Flags.PacketType() {
+	case PacketDense:
+		return decodeDenseBody(r, res.cs, h, doc, res, pool)
+	case PacketSparse:
+		return decodeSparseBody(r, res.cs, h, doc, res, pool)
+	default:
+		return fmt.Errorf("anansi: unsupported nested packet type %s", h.Flags.PacketType())
+	}
 }
 
+// readArrayObjectField decodes an array of schema-bound child documents.
+// Each element is an independently-framed complete Anansi packet. The
+// element slot's prebuilt resource tree means no per-element schema walks.
 func readArrayObjectField(r *byteReader, res *slotCodec, pool *container.Pool) ([]*container.DataContainer, error) {
 	n, err := r.readUvarint()
 	if err != nil {
@@ -589,7 +394,7 @@ func readArrayObjectField(r *byteReader, res *slotCodec, pool *container.Pool) (
 			// extracted child remains valid independently of its parent.
 			child.OwnBacking(r.data)
 		}
-		if err := decodePacketInto(res, r.child(payload), child, pool); err != nil {
+		if err := decodeNestedPacket(res, r.child(payload), child, pool); err != nil {
 			return nil, fmt.Errorf("anansi: decode array-object element %d: %w", i, err)
 		}
 		out = append(out, child)

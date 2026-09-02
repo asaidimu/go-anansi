@@ -1,7 +1,6 @@
 package anansi
 
 import (
-	"bytes"
 	"fmt"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
@@ -31,119 +30,6 @@ func fieldStateOf(doc *container.DataContainer, key container.DataContainerKey) 
 		return stateNull
 	}
 	return stateHasValue
-}
-
-// writeFieldPayload writes wf's value bytes (spec 2.5, per DataType) from
-// doc into buf. The caller is responsible for having already established
-// (via stateAt/fieldStateOf) that the field carries a value; this function
-// does not re-check state.
-func writeFieldPayload(buf *bytes.Buffer, cs *definition.CompiledSchema, version header, doc *container.DataContainer, wf wireField) error {
-	switch wf.fd.DataType() {
-	case container.TypeInt:
-		v, _, err := doc.GetInt(wf.key)
-		if err != nil {
-			return err
-		}
-		writeInt(buf, v)
-	case container.TypeFloat:
-		v, _, err := doc.GetFloat(wf.key)
-		if err != nil {
-			return err
-		}
-		writeFloat(buf, v)
-	case container.TypeString:
-		v, _, err := doc.GetString(wf.key)
-		if err != nil {
-			return err
-		}
-		writeString(buf, v)
-	case container.TypeBool:
-		v, _, err := doc.GetBool(wf.key)
-		if err != nil {
-			return err
-		}
-		writeBoolSparse(buf, v)
-	case container.TypeBytes:
-		v, _, err := doc.GetBytes(wf.key)
-		if err != nil {
-			return err
-		}
-		writeBytes(buf, v)
-	case container.TypeGeometry:
-		v, _, err := doc.GetGeometry(wf.key)
-		if err != nil {
-			return err
-		}
-		writeGeometry(buf, v)
-	case container.TypeRecord:
-		v, _, err := doc.GetRecord(wf.key)
-		if err != nil {
-			return err
-		}
-		return writeRecord(buf, v)
-	case container.TypeUnknown:
-		v, _, err := doc.GetUnknown(wf.key)
-		if err != nil {
-			return err
-		}
-		return writeAny(buf, v)
-	case container.TypeArrayInt:
-		v, _, err := doc.GetArrayInt(wf.key)
-		if err != nil {
-			return err
-		}
-		writeArrayInt(buf, v)
-	case container.TypeArrayFloat:
-		v, _, err := doc.GetArrayFloat(wf.key)
-		if err != nil {
-			return err
-		}
-		writeArrayFloat(buf, v)
-	case container.TypeArrayString:
-		v, _, err := doc.GetArrayString(wf.key)
-		if err != nil {
-			return err
-		}
-		writeArrayString(buf, v)
-	case container.TypeArrayBool:
-		v, _, err := doc.GetArrayBool(wf.key)
-		if err != nil {
-			return err
-		}
-		writeArrayBool(buf, v)
-	case container.TypeArrayBytes:
-		v, _, err := doc.GetArrayBytes(wf.key)
-		if err != nil {
-			return err
-		}
-		writeArrayBytes(buf, v)
-	case container.TypeArrayGeometry:
-		v, _, err := doc.GetArrayGeometry(wf.key)
-		if err != nil {
-			return err
-		}
-		writeArrayGeometry(buf, v)
-	case container.TypeArrayUnknown:
-		v, _, err := doc.GetArrayUnknown(wf.key)
-		if err != nil {
-			return err
-		}
-		writeUvarintTo(buf, uint64(len(v)))
-		for _, e := range v {
-			if err := writeAny(buf, e); err != nil {
-				return err
-			}
-		}
-	case container.TypeArrayObject:
-		v, _, err := doc.GetArrayObject(wf.key)
-		if err != nil {
-			return err
-		}
-		return writeArrayObjectField(buf, wf.child, version, v)
-	default:
-		return fmt.Errorf("anansi: unsupported data type %d for field %q", wf.fd.DataType(), wf.name)
-	}
-	return nil
 }
 
 // readFieldPayload reads wf's value bytes from r (spec 2.5) and writes them

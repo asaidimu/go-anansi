@@ -1,52 +1,11 @@
 package anansi
 
 import (
-	"bytes"
 	"fmt"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
-
-// encodeSparseBody writes the Sparse packet body (spec 3.2.2): a varint
-// field count, then for every set field (value-bearing or null, in
-// canonical wire order) its DataPoint (null bit set for null fields)
-// followed by the value bytes (omitted for null fields).
-//
-// positions is the document's captured positions map (positionsOf): both
-// the counting pass and the writing pass read the same map directly — no
-// per-field container calls anywhere on this path.
-func encodeSparseBody(buf *bytes.Buffer, cs *definition.CompiledSchema, version header, doc *container.DataContainer, positions map[int64]int32, res *slotCodec) error {
-	// First pass: count set fields so field_count can be written before the
-	// entries (spec 3.2.2 puts field_count up front).
-	setCount := 0
-	for _, wf := range res.fields {
-		if stateAt(positions, wf.key) != stateNotSet {
-			setCount++
-		}
-	}
-	writeUvarintTo(buf, uint64(setCount))
-
-	for _, wf := range res.fields {
-		state := stateAt(positions, wf.key)
-		if state == stateNotSet {
-			continue
-		}
-		dp := wf.key.DataPoint()
-		if state == stateNull {
-			dp |= 1 // set the null bit (spec 3.2.1)
-		} else {
-			dp &^= 1 // canonical (non-null) DataPoint for value-bearing fields
-		}
-		writeUvarintTo(buf, uint64(uint32(dp)))
-		if state == stateHasValue {
-			if err := writeFieldPayload(buf, cs, version, doc, wf); err != nil {
-				return fmt.Errorf("anansi: encode sparse field %q: %w", wf.name, err)
-			}
-		}
-	}
-	return nil
-}
 
 // decodeSparseBody reads a Sparse packet body (spec 3.2.2) from r into doc.
 // Each wire DataPoint is matched back to its wireField via the schema

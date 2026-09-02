@@ -1,7 +1,6 @@
 package anansi
 
 import (
-	"bytes"
 	"fmt"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
@@ -17,17 +16,19 @@ const (
 )
 
 // EncodeBatchRows encodes docs (each bound to schema slot 0 of cs) as a
-// single row-oriented Batch packet (spec 3.3.1/3.3.2). All records use the
-// same per-record packing (Dense or Sparse), chosen once via the same
-// density heuristic as SerializeAnansi, evaluated over the batch's average
-// density so a batch of mixed-density documents doesn't thrash between
-// per-record formats — record boundaries are self-delineating either way
-// (a fixed-size state map for Dense, an explicit field_count for Sparse),
-// so the choice only affects size/speed, not correctness.
+// single row-oriented Batch packet (spec 3.3.1/3.3.2), via the inverted
+// two-pass encoder (inverted.go): one scan pass over all records sizes the
+// packet exactly; one populate pass writes every record's body straight
+// into the packet. All records use the same per-record packing (Dense or
+// Sparse), chosen once via the same density heuristic as SerializeAnansi,
+// evaluated over the batch's average density so a batch of mixed-density
+// documents doesn't thrash between per-record formats — record boundaries
+// are self-delineating either way, so the choice only affects size/speed,
+// not correctness.
 //
-// Every document's positions map is captured exactly once: the density
-// evaluation and the per-record body encode share the same capture, so the
-// whole batch encode issues one Walk per record.
+// The plansBuf arena is shared across the whole batch: row states and
+// nested element plans accumulate in scan order (record 0's plans, then
+// record 1's, ...) which is exactly the populate write order.
 func EncodeBatchRows(cs *definition.CompiledSchema, docs []*container.DataContainer, fullVersion uint16, opts ...EncodeOption) ([]byte, error) {
 	epoch, version, err := schemaVersionByte(fullVersion)
 	if err != nil {
@@ -37,16 +38,26 @@ func EncodeBatchRows(cs *definition.CompiledSchema, docs []*container.DataContai
 	if err != nil {
 		return nil, err
 	}
+	cfg := newEncodeConfig(opts)
+
 	h := header{Version: version}
 	h.Flags = Flags(epoch)<<flagEpochShift | Flags(PacketBatch)
+
+	arena := plansPool.Get().(*plansBuf)
+	defer putPlans(arena)
+
+	// One capture per record; density comes straight from the rows.
+	views := make([]*docView, len(docs))
+	for i := range docs {
+		views[i] = viewDoc(docs[i], res, arena)
+	}
 
 	useSparse := false
 	if len(res.fields) > 0 && len(docs) > 0 {
 		var totalPresent, totalPossible int
-		for _, doc := range docs {
-			positions := positionsOf(doc)
-			for _, wf := range res.fields {
-				if stateAt(positions, wf.key) != stateNotSet {
+		for i := range views {
+			for j := range views[i].rows {
+				if views[i].rows[j].st != stateNotSet {
 					totalPresent++
 				}
 			}
@@ -55,29 +66,35 @@ func EncodeBatchRows(cs *definition.CompiledSchema, docs []*container.DataContai
 		density := float64(totalPresent) / float64(totalPossible)
 		useSparse = len(res.fields) > 64 && density <= 0.25
 	}
-
-	buf := bytes.NewBuffer(make([]byte, 0, 16+len(docs)*(8+len(res.fields))))
-	writeUvarintTo(buf, uint64(len(docs)))
-
+	pt := PacketDense
 	batchFlags := byte(0)
 	if useSparse {
+		pt = PacketSparse
 		batchFlags |= batchFlagSparse
 	}
-	buf.WriteByte(batchFlags)
 
-	for i, doc := range docs {
-		positions := positionsOf(doc)
-		if useSparse {
-			if err := encodeSparseBody(buf, cs, h, doc, positions, res); err != nil {
-				return nil, fmt.Errorf("anansi: encode batch record %d: %w", i, err)
-			}
-		} else {
-			if err := encodeDenseBody(buf, cs, h, doc, positions, res); err != nil {
-				return nil, fmt.Errorf("anansi: encode batch record %d: %w", i, err)
-			}
+	// Pass 1: exact body size (record_count varint + flags byte + records).
+	bodySize := uvarintLen(uint64(len(docs))) + 1
+	for i := range views {
+		bodySize += scanPacketBodyAs(views[i], res, arena, pt)
+	}
+	if arena.err != nil {
+		return nil, arena.err
+	}
+
+	populate := func(buf []byte, start int) {
+		w := binPut{buf: buf, pos: start}
+		w.uvarint(uint64(len(docs)))
+		w.buf[w.pos] = batchFlags
+		w.pos++
+		for i := range views {
+			putPacketBody(&w, views[i], res, pt, h, arena)
+		}
+		if w.pos != start+bodySize {
+			panic(fmt.Sprintf("anansi: inverted batch encoder size mismatch: scanned %d body bytes, wrote %d", bodySize, w.pos-start))
 		}
 	}
-	return finishFrame(h, buf.Bytes(), newEncodeConfig(opts))
+	return finishInverted(h, bodySize, cfg, arena, populate)
 }
 
 // DecodeBatchRows decodes a Batch packet produced by EncodeBatchRows or
@@ -144,18 +161,18 @@ func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container
 
 	switch {
 	case batchFlags&batchFlagColumnar != 0 || h.Flags.BatchColumnar():
-		if err := decodeColumnarBatch(body, cs, h, docs, res, pool); err != nil {
+		if err := decodeColumnarBatch(body, docs, res, pool); err != nil {
 			return nil, 0, err
 		}
 	case batchFlags&batchFlagSparse != 0:
 		for i := uint64(0); i < recordCount; i++ {
-			if err := decodeSparseBody(body, cs, h, docs[i], res, pool); err != nil {
+			if err := decodeSparseBody(body, res.cs, h, docs[i], res, pool); err != nil {
 				return nil, 0, fmt.Errorf("anansi: decode batch record %d: %w", i, err)
 			}
 		}
 	default:
 		for i := uint64(0); i < recordCount; i++ {
-			if err := decodeDenseBody(body, cs, h, docs[i], res, pool); err != nil {
+			if err := decodeDenseBody(body, res.cs, h, docs[i], res, pool); err != nil {
 				return nil, 0, fmt.Errorf("anansi: decode batch record %d: %w", i, err)
 			}
 		}
