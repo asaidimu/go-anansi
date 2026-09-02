@@ -116,8 +116,8 @@ func RegisterSystemModelType(t reflect.Type, linkParent func(embed any, parent a
 	systemModelRegistrations = append(systemModelRegistrations, systemModelRegistration{typ: t, linkParent: linkParent})
 }
 
-// isSystemModelType reports whether t is a registered system-model embed.
-func isSystemModelType(t reflect.Type) bool {
+// IsSystemModelType reports whether t is a registered system-model embed.
+func IsSystemModelType(t reflect.Type) bool {
 	systemModelRegistrationsMu.RLock()
 	defer systemModelRegistrationsMu.RUnlock()
 	for _, reg := range systemModelRegistrations {
@@ -349,7 +349,7 @@ func buildTypeFields(t reflect.Type, indexPrefix []int, baseOffset uintptr, isSy
 
 		sysEmbed := isSystemEmbed
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
-			if isSystemModelType(f.Type) || ReservedSystemField(f.Name) {
+			if IsSystemModelType(f.Type) || ReservedSystemField(f.Name) {
 				sysEmbed = true
 			}
 			subFields, err := buildTypeFields(f.Type, indexPath, fieldOffset, sysEmbed, tagChain)

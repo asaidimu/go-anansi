@@ -11,7 +11,17 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
+	creflect "github.com/asaidimu/go-anansi/v8/core/reflect"
 )
+
+// @note #cwzt7j todo : Relocate Schema Extraction Logic
+//
+// The schema extraction logic in this file (e.g., SchemaFrom, ExtractDTOSchemaDirect, etc.)
+// is a generic facility for deriving schemas from struct types using struct tags.
+// It does not belong in the `data` package, as it is not specific to data-layer concerns.
+// It should be moved to a dedicated package
+// once the ongoing schema pipeline optimizations are complete.
+// Until then, it remains here to avoid breaking dependent code during active development.
 
 // FixedEpochMS is 2026-08-01T00:00:00.000Z in Unix milliseconds. Discovery
 // and field ordinals are added to this to produce a monotonically
@@ -259,11 +269,22 @@ func (e *directExtractor) registerType(typeKey string) string {
 	return id
 }
 
-func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID string, buf *bytes.Buffer, fieldOrdinal *int64, fieldCount *int, skipNames map[string]bool) error {
+// extractStructFields extracts all fields from a struct type, recursively flattening
+// anonymous structs and handling dotted‑path synthetic schemas. It uses creflect
+// to obtain tag metadata in O(1) time per field, with zero allocations for the
+// tag value splitting.
+func (e *directExtractor) extractStructFields(
+	t reflect.Type,
+	owningSchemaID string,
+	buf *bytes.Buffer,
+	fieldOrdinal *int64,
+	fieldCount *int,
+	skipNames map[string]bool,
+) error {
 	var localSynOrder []string
 
 	// shadowNames collects the resolved field names declared directly on t
-	// (non-anonymous fields). When a system-model embed (e.g. DocumentModel)
+	// (non‑anonymous fields). When a system‑model embed (e.g. DocumentModel)
 	// is flattened below, its own _id_/_metadata_ fields are skipped in favor
 	// of an outer field that shadows them, so the extracted schema never
 	// contains duplicate system fields.
@@ -273,11 +294,19 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 		if f.Anonymous {
 			continue
 		}
-		tag := parseSchemaTag(f.Tag.Get(AnansiTag))
-		if tag.Skip {
+		// Get Anansi tag for this field to check skip and name.
+		anansiTag, _ := creflect.FieldTagOf(t, f.Name, AnansiTag)
+		parsed := parseSchemaTag(anansiTag)
+		if parsed.Skip {
 			continue
 		}
-		if name := resolveFieldName(f, e.customTag, tag); name == DocumentIDField || name == MetadataField {
+		// Resolve name (respecting custom tag).
+		var customTag creflect.Tag
+		if e.customTag != "" {
+			customTag, _ = creflect.FieldTagOf(t, f.Name, e.customTag)
+		}
+		name := resolveFieldName(f, customTag, parsed)
+		if name == DocumentIDField || name == MetadataField {
 			shadowNames[name] = true
 		}
 	}
@@ -285,25 +314,24 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 
-		// First parse the anansi tag to get all metadata (skip, required, etc.)
-		anansiTag := parseSchemaTag(field.Tag.Get(AnansiTag))
-		if anansiTag.Skip {
+		// ---- 1. Get Anansi tag via creflect (O(1) lookup) ----
+		anansiCRefTag, _ := creflect.FieldTagOf(t, field.Name, AnansiTag)
+		anansiParsed := parseSchemaTag(anansiCRefTag)
+		if anansiParsed.Skip {
 			continue
 		}
 
-		// If field is anonymous and we are omitting system fields, check if it's
-		// a registered system model (e.g. DocumentModel).
-		if field.Anonymous && e.omitSystem && isSystemModelType(field.Type) {
-			continue // skip the entire system-model embed
+		// ---- 2. Omit system models if requested ----
+		if field.Anonymous && e.omitSystem && IsSystemModelType(field.Type) {
+			continue // skip the entire system‑model embed
 		}
 
-		// If field is embedded (anonymous) and no type override, flatten its fields.
-		if field.Anonymous && field.Type.Kind() == reflect.Struct && anansiTag.TypeOverride == "" {
-			// But if we are omitting system fields, we already skipped DocumentModel above.
-			// For other anonymous structs, flatten them recursively. System-model
-			// embeds defer to any outer shadow fields carrying the same name.
+		// ---- 3. Flatten anonymous structs (unless type‑override says otherwise) ----
+		if field.Anonymous && field.Type.Kind() == reflect.Struct && anansiParsed.TypeOverride == "" {
+			// For system‑model embeds, pass the shadowNames so that _id_/_metadata_ are
+			// omitted if they are shadowed by outer fields.
 			var skip map[string]bool
-			if isSystemModelType(field.Type) {
+			if IsSystemModelType(field.Type) {
 				skip = shadowNames
 			}
 			if err := e.extractStructFields(field.Type, owningSchemaID, buf, fieldOrdinal, fieldCount, skip); err != nil {
@@ -312,26 +340,27 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 			continue
 		}
 
-		// Resolve the field name:
-		// 1. If a custom tag is provided, use its first part (before comma) as the name.
-		// 2. Else if the anansi tag has an explicit name, use that.
-		// 3. Otherwise fall back to snake-cased Go field name.
-		fieldName := resolveFieldName(field, e.customTag, anansiTag)
+		// ---- 4. Resolve field name (custom tag first, then Anansi, then snake_case) ----
+		var customCRefTag creflect.Tag
+		if e.customTag != "" {
+			customCRefTag, _ = creflect.FieldTagOf(t, field.Name, e.customTag)
+		}
+		fieldName := resolveFieldName(field, customCRefTag, anansiParsed)
 		if skipNames != nil && skipNames[fieldName] {
 			continue
 		}
 
-		// Dotted paths are handled by synthetic schemas.
+		// ---- 5. Handle dotted‑path fields (synthetic schemas) ----
 		if strings.Contains(fieldName, ".") {
-			if _, err := e.writePathField(owningSchemaID, fieldOrdinal, &localSynOrder, field, fieldName, anansiTag); err != nil {
+			if _, err := e.writePathField(owningSchemaID, fieldOrdinal, &localSynOrder, field, fieldName, anansiParsed); err != nil {
 				return err
 			}
 			continue
 		}
 
-		// For non-path fields, we write a standard field entry.
-		if anansiTag.Default != nil && (anansiTag.TypeOverride == "composite" || anansiTag.TypeOverride == "union") {
-			return fmt.Errorf("field %q: default values are not supported for %s fields", fieldName, anansiTag.TypeOverride)
+		// ---- 6. Standard field (or composite/union) ----
+		if anansiParsed.Default != nil && (anansiParsed.TypeOverride == "composite" || anansiParsed.TypeOverride == "union") {
+			return fmt.Errorf("field %q: default values are not supported for %s fields", fieldName, anansiParsed.TypeOverride)
 		}
 
 		(*fieldOrdinal)++
@@ -343,21 +372,22 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 		buf.WriteString("    ")
 		writeJSONString(buf, fieldID)
 		buf.WriteString(": ")
+
 		var err error
-		switch anansiTag.TypeOverride {
+		switch anansiParsed.TypeOverride {
 		case "composite":
-			err = e.writeCompositeField(buf, field, fieldName, anansiTag)
+			err = e.writeCompositeField(buf, field, fieldName, anansiParsed)
 		case "union":
-			err = e.writeUnionField(buf, field, fieldName, anansiTag)
+			err = e.writeUnionField(buf, field, fieldName, anansiParsed)
 		default:
-			err = e.writeStandardField(buf, field, fieldName, anansiTag)
+			err = e.writeStandardField(buf, field, fieldName, anansiParsed)
 		}
 		if err != nil {
 			return err
 		}
 	}
 
-	// Append synthetic schemas (dotted paths) to the current owning schema's fields.
+	// ---- 7. Append synthetic schemas (dotted paths) to the current owning schema ----
 	if synMap, ok := e.syntheticSchemas[owningSchemaID]; ok {
 		for _, head := range localSynOrder {
 			syn := synMap[head]
@@ -384,21 +414,29 @@ func (e *directExtractor) extractStructFields(t reflect.Type, owningSchemaID str
 // resolveFieldName resolves a struct field's schema name through the same
 // chain used by extraction: custom tag first, then the anansi tag name, then
 // the snake-cased Go field name.
-func resolveFieldName(field reflect.StructField, customTag string, anansiTag parsedSchemaTag) string {
-	if customTag != "" {
-		ct := field.Tag.Get(customTag)
-		if ct != "" && ct != "-" {
-			// Take the first comma-separated part as the name (ignore options)
-			parts := strings.SplitN(ct, ",", 2)
-			name := strings.TrimSpace(parts[0])
-			if name != "" {
-				return name
+func resolveFieldName(
+	field reflect.StructField,
+	customTag creflect.Tag,
+	anansiParsed parsedSchemaTag,
+) string {
+	// 1. Custom tag takes precedence.
+	if !customTag.IsZero() {
+		for part := range customTag.ValuesIter() {
+			part = strings.TrimSpace(part)
+			if part != "" && part != "-" {
+				// first token is the name (e.g. "fieldName" from `json:"fieldName,omitempty"`)
+				return part
 			}
+			break // only care about the first token
 		}
 	}
-	if anansiTag.HasName {
-		return anansiTag.Name
+
+	// 2. Fall back to the explicit anansi name.
+	if anansiParsed.HasName {
+		return anansiParsed.Name
 	}
+
+	// 3. Default to snake-cased Go field name.
 	return toSnakeCase(field.Name)
 }
 
@@ -938,44 +976,34 @@ type parsedSchemaTag struct {
 	Values       []string
 }
 
-func parseSchemaTag(tag string) parsedSchemaTag {
+func parseSchemaTag(tag creflect.Tag) parsedSchemaTag {
 	var parsed parsedSchemaTag
-	if tag == "" {
-		return parsed
-	}
-	if tag == "-" {
-		parsed.Skip = true
+	if tag.IsZero() {
 		return parsed
 	}
 
-	for i := 0; len(tag) > 0; i++ {
-		var part string
-		if idx := strings.IndexByte(tag, ','); idx >= 0 {
-			part = strings.TrimSpace(tag[:idx])
-			tag = tag[idx+1:]
-		} else {
-			part = strings.TrimSpace(tag)
-			tag = ""
+	for part := range tag.ValuesIter() {
+		part = strings.TrimSpace(part) // safe, slab-backed string header – no new allocation
+
+		if part == "-" {
+			parsed.Skip = true
+			return parsed
 		}
 
-		if part == "" {
-			continue
-		}
-		if i == 0 && !strings.Contains(part, "=") {
-			if part == "-" {
-				parsed.Skip = true
-				return parsed
-			}
+		// First non-empty, non-KV part is the name.
+		if !parsed.HasName && !strings.Contains(part, "=") {
 			parsed.Name = part
 			parsed.HasName = true
 			continue
 		}
-		kv := strings.SplitN(part, "=", 2)
-		key := strings.TrimSpace(kv[0])
-		val := ""
-		if len(kv) > 1 {
-			val = strings.TrimSpace(kv[1])
+
+		idx := strings.IndexByte(part, '=')
+		if idx == -1 {
+			continue // malformed bare flag, ignore
 		}
+		key := strings.TrimSpace(part[:idx])
+		val := strings.TrimSpace(part[idx+1:])
+
 		switch key {
 		case "required":
 			b := val == "true"
@@ -990,12 +1018,13 @@ func parseSchemaTag(tag string) parsedSchemaTag {
 			parsed.TypeOverride = val
 		case "values":
 			if val != "" {
-				parsed.Values = strings.Split(val, "|")
+				parsed.Values = strings.Split(val, "|") // still allocates, but unavoidable if used
 			}
 		}
 	}
 	return parsed
 }
+
 
 // Zero-allocation byte scanner for snake_case field name conversion.
 func toSnakeCase(s string) string {

@@ -1,8 +1,172 @@
 {
   "version": 1,
-  "generatedAt": "2026-08-22T23:12:28.105436166Z",
+  "generatedAt": "2026-09-02T20:52:19.3894481Z",
   "root": ".",
   "notes": {
+    "0ar5g0": {
+      "id": "0ar5g0",
+      "category": "status",
+      "status": "resolved",
+      "title": "Inefficient access",
+      "body": "Resolved: same fieldIndex lookup as #5nhvz2 -- a single O(1) access to\nthe field's handles instead of scanning meta.fields for a name match.\n",
+      "location": {
+        "file": "core/reflect/tags_registry.go",
+        "startLine": 408,
+        "startCol": 3,
+        "endLine": 411,
+        "endCol": 3
+      },
+      "hash": "aa5b6d2c2a620d97"
+    },
+    "1k51l3": {
+      "id": "1k51l3",
+      "category": "issue",
+      "status": "open",
+      "title": "Library Anti pattern. Use common.SystemError",
+      "body": "common.SystemError satisfies error as well as\nproviding means to add richer error context,\nwhich is invaluable in tracing issues from low level\nutilities such as this one, if and when such errors\nimpact higher level implementations.\n",
+      "location": {
+        "file": "core/reflect/tags_registry.go",
+        "startLine": 123,
+        "startCol": 3,
+        "endLine": 129,
+        "endCol": 3
+      },
+      "hash": "99b0eba25fcaba85"
+    },
+    "397ju0": {
+      "id": "397ju0",
+      "category": "todo",
+      "status": "open",
+      "title": "Refactor out helpers #cruft",
+      "body": "Resolved in place, not extracted: typeHash32/fieldHash32 are not\ngeneral-purpose hash utilities. They exist solely to pick a bucket for\nfieldTagMap's bucket+verify scheme, and every current caller of\nfieldTagMap depends on that scheme's correctness guarantee (identity\nverification against the real (type, field) pair), not on hash quality\nin isolation. Moving these into a shared utility package would let a\nfuture caller reuse the hash function alone, without the verification\nstep that makes using it safe, silently reintroducing the collision risk\nthis rework was meant to close.\n",
+      "location": {
+        "file": "core/reflect/field_tag_map.go",
+        "startLine": 175,
+        "startCol": 3,
+        "endLine": 185,
+        "endCol": 3
+      },
+      "hash": "318d67c93699b110"
+    },
+    "4dl3nn": {
+      "id": "4dl3nn",
+      "category": "issue",
+      "status": "open",
+      "title": "Inefficient binding.",
+      "body": "We should ideally walk the data container\nand populate the struct\n",
+      "location": {
+        "file": "core/document/bind.go",
+        "startLine": 55,
+        "startCol": 3,
+        "endLine": 58,
+        "endCol": 3
+      },
+      "hash": "cd8fbcbab793cd98"
+    },
+    "5nhvz2": {
+      "id": "5nhvz2",
+      "category": "status",
+      "status": "resolved",
+      "title": "Inefficient field access",
+      "body": "Resolved: FieldTag now does a single fieldIndex.Get(type, fieldName)\nlookup (composite-keyed, bucket+verify -- see map.go) followed by a\nmap lookup on that field's tagIndex for the tag key. Both are O(1)\naverage instead of the original linear scan over every field followed\nby a linear scan over that field's tags.\n",
+      "location": {
+        "file": "core/reflect/tags_registry.go",
+        "startLine": 375,
+        "startCol": 3,
+        "endLine": 381,
+        "endCol": 3
+      },
+      "hash": "3b53f5ee54715c82"
+    },
+    "9c5yn5": {
+      "id": "9c5yn5",
+      "category": "todo",
+      "status": "open",
+      "title": "Deprecate NewManagedCache",
+      "location": {
+        "file": "core/cache/cache.go",
+        "startLine": 714,
+        "startCol": 3,
+        "endLine": 714,
+        "endCol": 3
+      },
+      "hash": "f3fe0a9485e534fd"
+    },
+    "a23h8y": {
+      "id": "a23h8y",
+      "category": "status",
+      "status": "resolved",
+      "title": "Inefficient access",
+      "body": "Resolved: structMetadata now carries byKey, a map[string][]tagRef built\nonce in buildMetadata alongside the rest of a type's metadata. KeyTags\nreads meta.byKey[tagKey] directly, so its cost is proportional to the\nnumber of matching tags, not to the total number of tags on the type.\n",
+      "location": {
+        "file": "core/reflect/tags_registry.go",
+        "startLine": 462,
+        "startCol": 3,
+        "endLine": 467,
+        "endCol": 3
+      },
+      "hash": "60fc957138207fd2"
+    },
+    "cd05t4": {
+      "id": "cd05t4",
+      "category": "status",
+      "status": "resolved",
+      "title": "Unneccessary computations",
+      "body": "Resolved: ValueKind is now computed once per tag in buildMetadata and\npacked into 2 previously-unused bits of the handle (bits 60-61). Tag.\nValueKind() is now a bit-mask extraction with no string scan. See\ncomputeValueKind and the handle layout documented on the Tag struct.\n",
+      "location": {
+        "file": "core/reflect/tags_registry.go",
+        "startLine": 72,
+        "startCol": 3,
+        "endLine": 77,
+        "endCol": 3
+      },
+      "hash": "e52924354066b37e"
+    },
+    "cwzt7j": {
+      "id": "cwzt7j",
+      "category": "todo",
+      "status": "open",
+      "title": "Relocate Schema Extraction Logic",
+      "body": "The schema extraction logic in this file (e.g., SchemaFrom, ExtractDTOSchemaDirect, etc.)\nis a generic facility for deriving schemas from struct types using struct tags.\nIt does not belong in the `data` package, as it is not specific to data-layer concerns.\nIt should be moved to a dedicated package\nonce the ongoing schema pipeline optimizations are complete.\nUntil then, it remains here to avoid breaking dependent code during active development.\n",
+      "location": {
+        "file": "core/data/schema_extractor.go",
+        "startLine": 16,
+        "startCol": 3,
+        "endLine": 23,
+        "endCol": 3
+      },
+      "hash": "9e1042292aaf79cb"
+    },
+    "dxwlvi": {
+      "id": "dxwlvi",
+      "category": "todo",
+      "status": "open",
+      "title": "Observe Unbounded cache",
+      "body": "In a very complex, dynamic application where module use flactuates at\nruntime, a dynamic cache may be more performant memory wise.\n",
+      "location": {
+        "file": "core/reflect/tags_registry.go",
+        "startLine": 189,
+        "startCol": 3,
+        "endLine": 192,
+        "endCol": 3
+      },
+      "hash": "110fad3967e6a4d9"
+    },
+    "g23h8y": {
+      "id": "g23h8y",
+      "category": "status",
+      "status": "resolved",
+      "title": "Inefficient access",
+      "body": "Resolved as \"already optimal\": Tags yields every field/tag pair by\ndefinition, so visiting each one once is O(n) in the size of the output,\nwhich is the best any implementation can do here -- there is no name or\nkey to look up that could turn this into a sub-linear operation. The\nactual per-call overhead #g23h8y was pointing at (repeatedly re-deriving\nfield/tag structure) is what #5nhvz2 and #0ar5g0 address for the\nsingle-field lookup paths; this function was never doing that redundant\nwork in the first place, since it already reads directly from the\ntype's cached structMetadata built once by buildMetadata.\n",
+      "location": {
+        "file": "core/reflect/tags_registry.go",
+        "startLine": 433,
+        "startCol": 3,
+        "endLine": 443,
+        "endCol": 3
+      },
+      "hash": "b240949f136fd871"
+    },
     "sanitize-type-blindness": {
       "id": "sanitize-type-blindness",
       "category": "issue",
@@ -17,11 +181,26 @@
         "endCol": 3
       },
       "hash": "d4520fa8abf5db8f"
+    },
+    "xsixg9": {
+      "id": "xsixg9",
+      "category": "issue",
+      "status": "open",
+      "title": "Error Anti Pattern",
+      "body": "There are numerous violation of this principle in this file\n\n@see #1k51l3\n",
+      "location": {
+        "file": "core/document/address.go",
+        "startLine": 547,
+        "startCol": 3,
+        "endLine": 551,
+        "endCol": 3
+      },
+      "hash": "687c208abc795a16"
     }
   },
   "files": {
     "anansi.go": {
-      "hash": "86b2089f27ecd091"
+      "hash": "7bcb947fd9833698"
     },
     "cmd/anansi/internal/agents.go": {
       "hash": "86a8b60a75148878"
@@ -120,13 +299,16 @@
       "hash": "1eb025f0e74f4889"
     },
     "core/cache/cache.go": {
-      "hash": "959b24908428d836"
+      "hash": "518f3b937d0d789c",
+      "noteIds": [
+        "9c5yn5"
+      ]
     },
     "core/cache/cache_bench_test.go": {
-      "hash": "e57fedf611dbf7e7"
+      "hash": "01c36eaae5fe0438"
     },
     "core/cache/cache_test.go": {
-      "hash": "36a3ba4824a1b553"
+      "hash": "d529aeb7f652f190"
     },
     "core/cache/config.go": {
       "hash": "647eef9054aa6adb"
@@ -138,10 +320,10 @@
       "hash": "3164080e1079d36c"
     },
     "core/common/context.go": {
-      "hash": "d9a2b5e7ed61917c"
+      "hash": "ed252939717554b4"
     },
     "core/common/error.go": {
-      "hash": "a7c8347157105b31"
+      "hash": "cf8cbeca7f27ee77"
     },
     "core/common/errors.go": {
       "hash": "c208a55dc1a804a3"
@@ -155,6 +337,9 @@
     "core/common/pointers.go": {
       "hash": "8d444d6d4bf63df3"
     },
+    "core/common/retry.go": {
+      "hash": "908f71f7a4063dbb"
+    },
     "core/common/types.go": {
       "hash": "7b6a3b5f7fdb3cd5"
     },
@@ -165,7 +350,7 @@
       "hash": "fadc46ef2421ad64"
     },
     "core/data/bind.go": {
-      "hash": "7ff8b65fb2e88f35"
+      "hash": "c991c39a634405a3"
     },
     "core/data/builder.go": {
       "hash": "1e309a305dda7c9d"
@@ -177,10 +362,10 @@
       "hash": "007720e4c3544a91"
     },
     "core/data/container/collection.go": {
-      "hash": "44893224755dd5dd"
+      "hash": "3acba19eb3c6dda1"
     },
     "core/data/container/data_container.go": {
-      "hash": "e3d5a73f399b4337"
+      "hash": "8c03c16ddb5fedb6"
     },
     "core/data/container/data_point.go": {
       "hash": "4f1aba7741896fdd"
@@ -196,9 +381,6 @@
     },
     "core/data/document.go": {
       "hash": "c6387562a584f632"
-    },
-    "core/data/dto.go": {
-      "hash": "7af3f1f6859504d4"
     },
     "core/data/enrich.go": {
       "hash": "8d2693f48b3a82f6"
@@ -234,7 +416,7 @@
       "hash": "5891d360f4cfd018"
     },
     "core/data/model.go": {
-      "hash": "e18924876262c53f"
+      "hash": "c1ddbab13c6e11a8"
     },
     "core/data/must.go": {
       "hash": "cb81eb8ca948c85e"
@@ -251,6 +433,12 @@
     "core/data/sanitize.go": {
       "hash": "43af35fd281e88e5"
     },
+    "core/data/schema_extractor.go": {
+      "hash": "2e0a3004a9e0301e",
+      "noteIds": [
+        "cwzt7j"
+      ]
+    },
     "core/data/serialization.go": {
       "hash": "f5e4f2b95844324f"
     },
@@ -258,10 +446,16 @@
       "hash": "86366144219cc411"
     },
     "core/document/address.go": {
-      "hash": "5267178cd452a8d2"
+      "hash": "90a06b9b5a3a9a85",
+      "noteIds": [
+        "xsixg9"
+      ]
     },
     "core/document/bind.go": {
-      "hash": "139d0fc6acd9f92a"
+      "hash": "1d6e70fcd5fd9b40",
+      "noteIds": [
+        "4dl3nn"
+      ]
     },
     "core/document/bind_field.go": {
       "hash": "23ab3d07b3fbfa91"
@@ -279,7 +473,7 @@
       "hash": "c6d455a9465e3d82"
     },
     "core/document/document.go": {
-      "hash": "807697ef644e988e"
+      "hash": "709853316463d25b"
     },
     "core/document/document_test.go": {
       "hash": "a0a1a84f83d47046"
@@ -315,7 +509,7 @@
       "hash": "459b0fac7e34b4f4"
     },
     "core/document/model.go": {
-      "hash": "ee4100746e7ed4ad"
+      "hash": "44acf232195c331b"
     },
     "core/document/model_test.go": {
       "hash": "1bd386a6d2fb799a"
@@ -330,7 +524,7 @@
       "hash": "3d8cc0b80adf57df"
     },
     "core/document/pool.go": {
-      "hash": "85e4f089bf5d6302"
+      "hash": "a756f0bd61faf8ac"
     },
     "core/document/pool_test.go": {
       "hash": "663838c4a3a26d3a"
@@ -347,6 +541,9 @@
     "core/document/scanner_test.go": {
       "hash": "59eb3fab08ee98c3"
     },
+    "core/document/schema_extractor.go": {
+      "hash": "d6e63218e6f995db"
+    },
     "core/document/set.go": {
       "hash": "e41a73929ab7aff3"
     },
@@ -359,11 +556,92 @@
     "core/document/zz_scratch_test.go": {
       "hash": "2176eb689655cf74"
     },
+    "core/encoding/anansi/alias_internal_test.go": {
+      "hash": "9587f3fa949a078b"
+    },
+    "core/encoding/anansi/alias_test.go": {
+      "hash": "b03ec9bd0342bcf8"
+    },
+    "core/encoding/anansi/anansi.go": {
+      "hash": "8597325df7d41649"
+    },
+    "core/encoding/anansi/anansi_test.go": {
+      "hash": "7e5b491622d1c8a2"
+    },
+    "core/encoding/anansi/batch.go": {
+      "hash": "93a5beeeae2c21a7"
+    },
+    "core/encoding/anansi/bool_test.go": {
+      "hash": "1c5bb731453b031f"
+    },
+    "core/encoding/anansi/codec_bench_test.go": {
+      "hash": "fa4f61ef315943f4"
+    },
+    "core/encoding/anansi/columnar.go": {
+      "hash": "37769d693c8b2af3"
+    },
+    "core/encoding/anansi/columnar_test.go": {
+      "hash": "86c08aa32c12c4bd"
+    },
+    "core/encoding/anansi/crypto_test.go": {
+      "hash": "e7e5000ab06ceda8"
+    },
+    "core/encoding/anansi/dense.go": {
+      "hash": "bf157a32e951eae7"
+    },
+    "core/encoding/anansi/dispatch.go": {
+      "hash": "d2c5bdfc51c777e6"
+    },
+    "core/encoding/anansi/erp_bench_test.go": {
+      "hash": "137b4263eab80492"
+    },
+    "core/encoding/anansi/frame.go": {
+      "hash": "5de89f7b7f1bdda8"
+    },
+    "core/encoding/anansi/frame_test.go": {
+      "hash": "1c034368e3890a05"
+    },
+    "core/encoding/anansi/golden_test.go": {
+      "hash": "abd2782742464ac5"
+    },
+    "core/encoding/anansi/hash_test.go": {
+      "hash": "881a86b56ff740f8"
+    },
+    "core/encoding/anansi/header.go": {
+      "hash": "844bf2688eb9932a"
+    },
+    "core/encoding/anansi/inverted.go": {
+      "hash": "dc2c4aaa302fe828"
+    },
+    "core/encoding/anansi/manifest.go": {
+      "hash": "ce5640c41724d234"
+    },
+    "core/encoding/anansi/null_state_test.go": {
+      "hash": "400f515401474447"
+    },
+    "core/encoding/anansi/resources.go": {
+      "hash": "8c1bbd327090185d"
+    },
+    "core/encoding/anansi/sparse.go": {
+      "hash": "f9964782aaee563d"
+    },
+    "core/encoding/anansi/value.go": {
+      "hash": "21d9fa501a37c322"
+    },
+    "core/encoding/anansi/varint.go": {
+      "hash": "398313825a73b5b3"
+    },
+    "core/encoding/anansi/varint_test.go": {
+      "hash": "e40862f798e2420e"
+    },
+    "core/encoding/anansi/wirefields.go": {
+      "hash": "5f3c550c1216ea3a"
+    },
     "core/encoding/json/decode_test.go": {
-      "hash": "2a59d64bd88b29c8"
+      "hash": "7bdaf44c1b8b6252"
     },
     "core/encoding/json/decoder.go": {
-      "hash": "03a85d49248418c4"
+      "hash": "362dfc526ef370cc"
     },
     "core/encoding/json/dump.go": {
       "hash": "62b3c2d95ac48f5d"
@@ -426,7 +704,7 @@
       "hash": "67f457f7624df364"
     },
     "core/persistence/base/types.go": {
-      "hash": "8dbefd2f7c0e68c1"
+      "hash": "c415039f873dab69"
     },
     "core/persistence/base/utils.go": {
       "hash": "d0985e1a50f40719"
@@ -467,6 +745,12 @@
     "core/persistence/events/factory.go": {
       "hash": "6fa29161d5808c28"
     },
+    "core/persistence/migration/engine.go": {
+      "hash": "839d234d76140662"
+    },
+    "core/persistence/migration/engine_test.go": {
+      "hash": "aac38ed261f18344"
+    },
     "core/persistence/migration/migration.go": {
       "hash": "f3e265c23d41c8ef"
     },
@@ -474,19 +758,19 @@
       "hash": "fc6a34726c6cba9a"
     },
     "core/persistence/orchestrator/orchestrator.go": {
-      "hash": "df1ed0c72f4791f5"
+      "hash": "1b24a26f2a42882e"
     },
     "core/persistence/persistence/base.go": {
-      "hash": "08a36c945a63f4ce"
+      "hash": "c43b2fe4e973b92e"
     },
     "core/persistence/persistence/errors.go": {
       "hash": "ff98ad2b3a6b13f4"
     },
     "core/persistence/persistence/events.go": {
-      "hash": "80c0e72a7d61fe51"
+      "hash": "dcb96b3803f302bf"
     },
     "core/persistence/persistence/managed.go": {
-      "hash": "18ea988bb45740fa"
+      "hash": "90f7ceb593c7f3ff"
     },
     "core/persistence/persistence/persistence.go": {
       "hash": "0b64f26ae6f31224"
@@ -507,7 +791,7 @@
       "hash": "422f0c04d08ea98e"
     },
     "core/persistence/transaction/transaction.go": {
-      "hash": "91c76c3a88aea327"
+      "hash": "7611fbe2830a203f"
     },
     "core/persistence/utils/utils.go": {
       "hash": "19a8a4b6933a66f9"
@@ -525,7 +809,7 @@
       "hash": "d4f5937fc98a33ca"
     },
     "core/query/engine.go": {
-      "hash": "3c0f066abf659d4a"
+      "hash": "0051c2d24ef6cf43"
     },
     "core/query/errors.go": {
       "hash": "f5a1361a9d4a04b5"
@@ -537,7 +821,7 @@
       "hash": "880be7dbc7cf79a8"
     },
     "core/query/interface.go": {
-      "hash": "f115a64dcbf18cc1"
+      "hash": "69be423716912f82"
     },
     "core/query/json.go": {
       "hash": "1183e0cf47e46367"
@@ -587,6 +871,30 @@
     "core/query/utils.go": {
       "hash": "a4ed5cd4b10360bc"
     },
+    "core/reflect/field_tag_map.go": {
+      "hash": "3341510ff96c5642",
+      "noteIds": [
+        "397ju0"
+      ]
+    },
+    "core/reflect/field_tag_map_test.go": {
+      "hash": "01e13f2543d4d5ef"
+    },
+    "core/reflect/tags_registry.go": {
+      "hash": "e43fd733432365d4",
+      "noteIds": [
+        "0ar5g0",
+        "1k51l3",
+        "5nhvz2",
+        "a23h8y",
+        "cd05t4",
+        "dxwlvi",
+        "g23h8y"
+      ]
+    },
+    "core/reflect/tags_registry_test.go": {
+      "hash": "1e38f409289be1c2"
+    },
     "core/sanitize/document.go": {
       "hash": "30a830449fa540d2"
     },
@@ -630,7 +938,7 @@
       "hash": "6aa13eb3f029e995"
     },
     "core/schema/definition/deep_copy.go": {
-      "hash": "303d7b24bb5625ca"
+      "hash": "02d96fc72e82fb76"
     },
     "core/schema/definition/deep_copy_test.go": {
       "hash": "c99495cbb5e76945"
@@ -645,10 +953,10 @@
       "hash": "fdb63a730c07d32d"
     },
     "core/schema/definition/diff.go": {
-      "hash": "3cd83576c54d3fa0"
+      "hash": "dadffec8c100e7f0"
     },
     "core/schema/definition/diff_test.go": {
-      "hash": "895a18348882ffd4"
+      "hash": "49ee64f6a1aae6ed"
     },
     "core/schema/definition/diff_types.go": {
       "hash": "617fa660a7c02bb2"
@@ -666,10 +974,10 @@
       "hash": "8c7155abf83ec014"
     },
     "core/schema/definition/fields.go": {
-      "hash": "b71e1b2d6ff8b629"
+      "hash": "11faea11f2c78938"
     },
     "core/schema/definition/fields_test.go": {
-      "hash": "38de143b6c4d3e0e"
+      "hash": "2270321223397456"
     },
     "core/schema/definition/index_types.go": {
       "hash": "0c346fc0b8ac9c2f"
@@ -684,7 +992,7 @@
       "hash": "9fbc3e1fcf038851"
     },
     "core/schema/definition/json.go": {
-      "hash": "e67d204b1e9ac61b"
+      "hash": "b69ba80f323cb968"
     },
     "core/schema/definition/json_benchmark_test.go": {
       "hash": "aa624a2adbf63b44"
@@ -702,13 +1010,16 @@
       "hash": "cd8a6e21e3d8b803"
     },
     "core/schema/definition/map.go": {
-      "hash": "3ed5ce5780daf86a"
+      "hash": "f7394b4753876e0b"
     },
     "core/schema/definition/modification.go": {
-      "hash": "08b9c49e3e60055e"
+      "hash": "5d097751f623fd19"
     },
     "core/schema/definition/modification_test.go": {
       "hash": "7b2a4ef14caf9c35"
+    },
+    "core/schema/definition/null_probe_test.go": {
+      "hash": "69a0183a552171df"
     },
     "core/schema/definition/references.go": {
       "hash": "fe386bffd9fdb963"
@@ -717,7 +1028,7 @@
       "hash": "6bc1385a975e3655"
     },
     "core/schema/definition/resolved_schema.go": {
-      "hash": "54fc22206660074e"
+      "hash": "bd346f12b9768c38"
     },
     "core/schema/definition/schema_fuzz_test.go": {
       "hash": "7960c594e7b6c18a"
@@ -732,22 +1043,28 @@
       "hash": "b0ee5389b5eb6c79"
     },
     "core/schema/definition/serialize.go": {
-      "hash": "726ae1fdcb70cab7"
+      "hash": "1fcb7ca51b9e2dae"
     },
     "core/schema/definition/utils.go": {
       "hash": "7e3a6d8c81be2576"
     },
     "core/schema/definition/validator.go": {
-      "hash": "3f712e6718487bf0"
+      "hash": "968d3c751662d50f"
     },
     "core/schema/definition/validator_benchmark_test.go": {
       "hash": "5bcb593ce747e3b4"
     },
+    "core/schema/definition/validator_nullable_test.go": {
+      "hash": "b9f3fc09f6e2a751"
+    },
+    "core/schema/definition/validator_record_test.go": {
+      "hash": "afd43891eecd8423"
+    },
     "core/schema/definition/validator_test.go": {
-      "hash": "70dced7ad6e87da0"
+      "hash": "93804bd2d463506d"
     },
     "core/schema/definition/walker.go": {
-      "hash": "f2c62386dc487476"
+      "hash": "99c079499bf23c0c"
     },
     "core/schema/exports.go": {
       "hash": "65d977612fdbac33"
@@ -778,6 +1095,9 @@
     },
     "core/schema/meta/test_helpers.go": {
       "hash": "ff9c3d892a2373b2"
+    },
+    "core/schema/meta/types.ts": {
+      "hash": "f61859d505b17b9a"
     },
     "core/storage/storage_spec.go": {
       "hash": "d903cace40c001c7"
@@ -887,6 +1207,18 @@
     "example/data/main.go": {
       "hash": "29969a98c7b90d29"
     },
+    "example/encoding/go-server/main.go": {
+      "hash": "1e35368ae4827133"
+    },
+    "example/encoding/shared.ts": {
+      "hash": "70dd4e88b1590d9b"
+    },
+    "example/encoding/ts-client/decode-response.ts": {
+      "hash": "b5c4084e1ba952d6"
+    },
+    "example/encoding/ts-client/main.ts": {
+      "hash": "83f878eb58107584"
+    },
     "example/events/main.go": {
       "hash": "d648b8d5e995de59"
     },
@@ -902,6 +1234,135 @@
     "example/migration/migrations/registry.go": {
       "hash": "132c877dedd64e60"
     },
+    "example/rpc/main.go": {
+      "hash": "da33592930efe86a"
+    },
+    "example/rpc/rpc_test.go": {
+      "hash": "67c04f7a550e2871"
+    },
+    "packages/anansi/.sync-package.ts": {
+      "hash": "d945396255d7b176"
+    },
+    "packages/anansi/dist/index.cjs": {
+      "hash": "7b6b8bf432339d82"
+    },
+    "packages/anansi/dist/index.mjs": {
+      "hash": "3f8b46ea273e3613"
+    },
+    "packages/anansi/src/codec.ts": {
+      "hash": "edd54804187732cd"
+    },
+    "packages/anansi/src/engine.ts": {
+      "hash": "bf6222873f49eb6a"
+    },
+    "packages/anansi/src/index.ts": {
+      "hash": "8d8383d996b65ee3"
+    },
+    "packages/anansi/src/schema/compile.ts": {
+      "hash": "110140987b4dc193"
+    },
+    "packages/anansi/src/schema/dt.ts": {
+      "hash": "f23e475a9f1195ff"
+    },
+    "packages/anansi/src/schema/generated.ts": {
+      "hash": "026171cfeb9e28ae"
+    },
+    "packages/anansi/src/schema/link.ts": {
+      "hash": "f095ff1bb994eba7"
+    },
+    "packages/anansi/src/schema/migration.ts": {
+      "hash": "103d47239176fc77"
+    },
+    "packages/anansi/src/schema/types.ts": {
+      "hash": "9324fdf1f08944f1"
+    },
+    "packages/anansi/src/utils.ts": {
+      "hash": "7d4bf6f4d1fe2424"
+    },
+    "packages/anansi/src/validation/graph.ts": {
+      "hash": "62f471f9c67ec6b1"
+    },
+    "packages/anansi/src/validation/index.ts": {
+      "hash": "504b953c2b5ee468"
+    },
+    "packages/anansi/src/validation/nodes.ts": {
+      "hash": "37f8ee60132500d6"
+    },
+    "packages/anansi/src/validation/predicates.ts": {
+      "hash": "a9fb0f5c309ce9d9"
+    },
+    "packages/anansi/src/validation/schema-validator.ts": {
+      "hash": "4eb341201f023a11"
+    },
+    "packages/anansi/src/validation/standard-schema.ts": {
+      "hash": "97b719989995f5ea"
+    },
+    "packages/anansi/src/validation/types/hints.ts": {
+      "hash": "a9b51366575a1041"
+    },
+    "packages/anansi/src/validation/types/index.ts": {
+      "hash": "7a0b0c3ed9fa401f"
+    },
+    "packages/anansi/src/validation/types/schema-definition.ts": {
+      "hash": "458ec8b0b08611a4"
+    },
+    "packages/anansi/src/validation/types/validator.ts": {
+      "hash": "5ea0fe9c3fe7b1e2"
+    },
+    "packages/anansi/src/validation/utils.ts": {
+      "hash": "570657967d583045"
+    },
+    "packages/anansi/src/validation/validator.ts": {
+      "hash": "04ddd72455f01102"
+    },
+    "packages/anansi/src/wire/packet.ts": {
+      "hash": "4acd20d720f860c7"
+    },
+    "packages/anansi/src/wire/transforms.ts": {
+      "hash": "9b67a9968035afe1"
+    },
+    "packages/anansi/src/wire/values.ts": {
+      "hash": "faddc07e44f5229b"
+    },
+    "packages/anansi/src/wire/varint.ts": {
+      "hash": "63cefc4b85f3f1b9"
+    },
+    "packages/anansi/test/codec.test.ts": {
+      "hash": "df7f5e84014b78de"
+    },
+    "packages/anansi/test/engine.test.ts": {
+      "hash": "68a08de8da1bc67a"
+    },
+    "packages/anansi/test/golden.test.ts": {
+      "hash": "4e3b62c1ec6e133a"
+    },
+    "packages/anansi/test/helpers.ts": {
+      "hash": "4c30b6c66ed09ac6"
+    },
+    "packages/anansi/test/migration.test.ts": {
+      "hash": "2ba5a7d8a6f11367"
+    },
+    "packages/anansi/test/null-states.test.ts": {
+      "hash": "90d33ce01939cbaf"
+    },
+    "packages/anansi/test/parity.test.ts": {
+      "hash": "58a95537fdcc3743"
+    },
+    "packages/anansi/test/record.regression.test.ts": {
+      "hash": "6234473e3e21f2f8"
+    },
+    "packages/anansi/test/transforms.test.ts": {
+      "hash": "487dda6bec76ca04"
+    },
+    "packages/anansi/test/utils.test.ts": {
+      "hash": "56900c0281843999"
+    },
+    "packages/anansi/test/validation.test.ts": {
+      "hash": "895f89a985262fe0"
+    },
+    "packages/anansi/tsdown.config.ts": {
+      "hash": "7744d086d9246200"
+    },
     "skills/anansi/embed.go": {
       "hash": "c7b00f79a703c073"
     },
@@ -909,10 +1370,10 @@
       "hash": "3806ef87ef88990a"
     },
     "sqlite/executor/executor.go": {
-      "hash": "c81a56dcd69fa9bf"
+      "hash": "6a98da81cb8e1004"
     },
     "sqlite/executor/utils.go": {
-      "hash": "b244c516b285cdf7"
+      "hash": "fb32ced7bd3925ad"
     },
     "sqlite/query/builder.go": {
       "hash": "d7c3e98f3c6cb3bc"
@@ -1024,6 +1485,9 @@
     },
     "tests/integration/schema/helpers_test.go": {
       "hash": "6e52decb46b00e5b"
+    },
+    "tests/integration/schema/nullval_test.go": {
+      "hash": "247a74753c71b13a"
     },
     "tests/integration/schema/resolve_path_test.go": {
       "hash": "6d0c257eb8f75478"

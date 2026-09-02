@@ -31,7 +31,7 @@ type benchArtifact struct {
 func benchCloneFn(v *benchArtifact) (*benchArtifact, error) { return v, nil }
 
 func newBenchCache(cfg CacheConfig) *managedCache[*benchArtifact] {
-	return newManagedCache[*benchArtifact](cfg, benchCloneFn, nil, nil)
+	return newCache[*benchArtifact](cfg, benchCloneFn, nil, nil)
 }
 
 // ---------------------------------------------------------------------------

@@ -545,4 +545,9 @@ func appendPath(path definition.ResolvedPath, step definition.ResolvedStep) defi
 	return append(out, step)
 }
 
+// @note #xsixg9 issue : Error Anti Pattern
+//
+// There are numerous violation of this principle in this file
+//
+// @see #1k51l3
 var errRecordMode = errors.New("document: operation not supported on a record view")

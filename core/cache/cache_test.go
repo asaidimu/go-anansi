@@ -130,7 +130,7 @@ func identityClone(v int) (int, error) { return v, nil }
 func TestManagedCache_SetGetRoundTrip(t *testing.T) {
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0 // no background goroutines needed for this test
-	c := newManagedCache[int](cfg, identityClone, nil, nil)
+	c := newCache[int](cfg, identityClone, nil, nil)
 	defer c.Close()
 
 	c.Set("a", 42)
@@ -147,7 +147,7 @@ func TestManagedCache_SetGetRoundTrip(t *testing.T) {
 func TestManagedCache_NegativeCacheStatusDistinguishesFromMiss(t *testing.T) {
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0
-	c := newManagedCache[int](cfg, identityClone, nil, nil)
+	c := newCache[int](cfg, identityClone, nil, nil)
 	defer c.Close()
 
 	// A genuine miss must report CacheMiss.
@@ -179,7 +179,7 @@ func TestManagedCache_NegativeCacheStatusDistinguishesFromMiss(t *testing.T) {
 func TestManagedCache_SetClearsNegativeMarker(t *testing.T) {
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0
-	c := newManagedCache[int](cfg, identityClone, nil, nil)
+	c := newCache[int](cfg, identityClone, nil, nil)
 	defer c.Close()
 
 	c.Nullify("k")
@@ -198,7 +198,7 @@ func TestManagedCache_MaxKeyLengthBypassed(t *testing.T) {
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0
 	cfg.MaxKeyLength = 4
-	c := newManagedCache[int](cfg, identityClone, nil, nil)
+	c := newCache[int](cfg, identityClone, nil, nil)
 	defer c.Close()
 
 	longKey := "this-key-is-too-long"
@@ -226,7 +226,7 @@ func TestManagedCache_LazyExpiry(t *testing.T) {
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0 // rely purely on lazy (access-time) expiry
 	cfg.PositiveTTL = 10 * time.Second
-	c := newManagedCache[int](cfg, identityClone, clock.Now, nil)
+	c := newCache[int](cfg, identityClone, clock.Now, nil)
 	defer c.Close()
 
 	c.Set("k", 1)
@@ -248,7 +248,7 @@ func TestManagedCache_PerKeyTTLOverride(t *testing.T) {
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0
 	cfg.PositiveTTL = 1 * time.Minute
-	c := newManagedCache[int](cfg, identityClone, clock.Now, nil)
+	c := newCache[int](cfg, identityClone, clock.Now, nil)
 	defer c.Close()
 
 	// authenticated: long custom TTL, far outliving the configured default.
@@ -282,7 +282,7 @@ func TestManagedCache_NoExpirationNeverExpiresByTTL(t *testing.T) {
 	clock := newFakeClock(time.Unix(0, 0))
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0
-	c := newManagedCache[int](cfg, identityClone, clock.Now, nil)
+	c := newCache[int](cfg, identityClone, clock.Now, nil)
 	defer c.Close()
 
 	c.SetWithTTL("pinned", 1, NoExpiration)
@@ -300,7 +300,7 @@ func TestManagedCache_TTLIntrospection(t *testing.T) {
 	clock := newFakeClock(time.Unix(0, 0))
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0
-	c := newManagedCache[int](cfg, identityClone, clock.Now, nil)
+	c := newCache[int](cfg, identityClone, clock.Now, nil)
 	defer c.Close()
 
 	if _, ok := c.TTL("absent"); ok {
@@ -330,7 +330,7 @@ func TestManagedCache_Persist(t *testing.T) {
 	clock := newFakeClock(time.Unix(0, 0))
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0
-	c := newManagedCache[int](cfg, identityClone, clock.Now, nil)
+	c := newCache[int](cfg, identityClone, clock.Now, nil)
 	defer c.Close()
 
 	if c.Persist("absent") {
@@ -357,7 +357,7 @@ func TestManagedCache_NullifyWithTTLOverride(t *testing.T) {
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0
 	cfg.NegativeTTL = 1 * time.Minute
-	c := newManagedCache[int](cfg, identityClone, clock.Now, nil)
+	c := newCache[int](cfg, identityClone, clock.Now, nil)
 	defer c.Close()
 
 	c.NullifyWithTTL("short-lived-miss", 2*time.Second)
@@ -390,7 +390,7 @@ func TestManagedCache_HardCapEvictionFavorsRecentlyAccessedEntries(t *testing.T)
 	cfg.JanitorInterval = 0
 	cfg.ShardCount = 1 // force everything into one shard for a deterministic scan
 	cfg.MaxEntries = 3
-	c := newManagedCache[int](cfg, identityClone, nil, nil)
+	c := newCache[int](cfg, identityClone, nil, nil)
 	defer c.Close()
 
 	c.Set("a", 1)
@@ -430,7 +430,7 @@ func TestManagedCache_CLOCKGivesAccessedEntriesASecondChance(t *testing.T) {
 	cfg.JanitorInterval = 0
 	cfg.ShardCount = 1
 	cfg.MaxEntries = 2
-	c := newManagedCache[int](cfg, identityClone, nil, nil)
+	c := newCache[int](cfg, identityClone, nil, nil)
 	defer c.Close()
 
 	c.Set("cold", 1)
@@ -471,7 +471,7 @@ func TestManagedCache_JanitorActiveExpiryViaRealGoroutine(t *testing.T) {
 	cfg.JanitorBatchSize = 1000
 	cfg.PositiveTTL = 5 * time.Second
 
-	c := newManagedCache[int](cfg, identityClone, clock.Now, newFakeTickerFactory(registry))
+	c := newCache[int](cfg, identityClone, clock.Now, newFakeTickerFactory(registry))
 	defer c.Close()
 
 	c.Set("a", 1)
@@ -501,7 +501,7 @@ func TestManagedCache_JanitorSweepIsBoundedPerTick(t *testing.T) {
 	cfg.JanitorInterval = 0 // drive sweep() directly, no goroutine needed
 	cfg.PositiveTTL = 1 * time.Second
 
-	c := newManagedCache[int](cfg, identityClone, clock.Now, nil)
+	c := newCache[int](cfg, identityClone, clock.Now, nil)
 	defer c.Close()
 
 	for i := 0; i < 10; i++ {
@@ -571,7 +571,7 @@ func TestManagedCache_WatermarkEvictorStartsAndStopsWithHysteresis(t *testing.T)
 	cfg.EvictionLowWatermark = 0.50  // stops at 50 entries
 	cfg.EvictionBatchSize = 1000     // allow a full drain in one tick
 
-	c := newManagedCache[int](cfg, identityClone, nil, newFakeTickerFactory(registry))
+	c := newCache[int](cfg, identityClone, nil, newFakeTickerFactory(registry))
 	defer c.Close()
 
 	// Below the high watermark: evictor must not be running.
@@ -611,7 +611,7 @@ func TestManagedCache_WatermarkEvictorDisabledWhenMaxEntriesUnbounded(t *testing
 	cfg.JanitorInterval = 0
 	cfg.MaxEntries = 0 // unbounded
 
-	c := newManagedCache[int](cfg, identityClone, nil, nil)
+	c := newCache[int](cfg, identityClone, nil, nil)
 	defer c.Close()
 
 	for i := 0; i < 10_000; i++ {
@@ -630,7 +630,7 @@ func TestManagedCache_WatermarkEvictorDisabledWhenMaxEntriesUnbounded(t *testing
 func TestManagedCache_StatsCounters(t *testing.T) {
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0
-	c := newManagedCache[int](cfg, identityClone, nil, nil)
+	c := newCache[int](cfg, identityClone, nil, nil)
 	defer c.Close()
 
 	c.Set("a", 1)
@@ -663,7 +663,7 @@ func TestManagedCache_StatsCounters(t *testing.T) {
 func TestManagedCache_CloneIsIndependent(t *testing.T) {
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0
-	c := newManagedCache[int](cfg, identityClone, nil, nil)
+	c := newCache[int](cfg, identityClone, nil, nil)
 	defer c.Close()
 
 	c.Set("a", 1)
@@ -702,7 +702,7 @@ func TestManagedCache_CloneInvokesCloneFunction(t *testing.T) {
 
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0
-	c := newManagedCache[int](cfg, cloneFn, nil, nil)
+	c := newCache[int](cfg, cloneFn, nil, nil)
 	defer c.Close()
 
 	c.Set("a", 1)
@@ -727,7 +727,7 @@ func TestManagedCache_CloseIsIdempotentAndBounded(t *testing.T) {
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = time.Millisecond // real ticker, short interval
 
-	c := newManagedCache[int](cfg, identityClone, nil, nil)
+	c := newCache[int](cfg, identityClone, nil, nil)
 
 	done := make(chan struct{})
 	go func() {
@@ -751,7 +751,7 @@ func TestManagedCache_CloseStopsJanitorFromFurtherWork(t *testing.T) {
 	cfg.JanitorInterval = time.Millisecond
 	cfg.PositiveTTL = 1 * time.Second
 
-	c := newManagedCache[int](cfg, identityClone, clock.Now, newFakeTickerFactory(registry))
+	c := newCache[int](cfg, identityClone, clock.Now, newFakeTickerFactory(registry))
 
 	c.Set("a", 1)
 	clock.Advance(2 * time.Second)
@@ -792,7 +792,7 @@ func TestManagedCache_CloseStopsJanitorFromFurtherWork(t *testing.T) {
 func TestManagedCache_ConcurrentReadsOfSingleHotKey(t *testing.T) {
 	cfg := DefaultCacheConfig()
 	cfg.JanitorInterval = 0
-	c := newManagedCache[int](cfg, identityClone, nil, nil)
+	c := newCache[int](cfg, identityClone, nil, nil)
 	defer c.Close()
 
 	c.Set("authenticated", 1)
@@ -837,7 +837,7 @@ func TestManagedCache_ConcurrentAccess(t *testing.T) {
 	cfg.MaxEntries = 500
 	cfg.ShardCount = 8
 
-	c := newManagedCache[int](cfg, identityClone, nil, nil)
+	c := newCache[int](cfg, identityClone, nil, nil)
 	defer c.Close()
 
 	const goroutines = 32

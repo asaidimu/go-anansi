@@ -52,8 +52,11 @@ func (d *Document) asDataDocument() (*data.Document, error) {
 	if d == nil {
 		return nil, ErrNilDocument
 	}
-	// OFFENDING LINE.
-	// TODO: Walk the container directly based on tags rather than
-	// calling ToMap
+
+	// @note #4dl3nn issue : Inefficient binding.
+	//
+	// We should ideally walk the data container
+	// and populate the struct
+
 	return data.NewDocument(d.ToMap(), d.Context())
 }

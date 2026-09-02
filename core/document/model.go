@@ -44,6 +44,7 @@ func (dm *DocumentModel) GetID() string {
 	return dm.ID
 }
 
+
 // Document builds a fully initialized container-backed document from the
 // enclosing struct via the DTO schema of its type. Requires the model to have
 // been initialized via document.New[T]; returns ErrModelNotInitialized

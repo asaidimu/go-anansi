@@ -670,7 +670,7 @@ type managedCache[T any] struct {
 	closeOnce sync.Once
 }
 
-// NewManagedCache constructs a production-grade RepositoryCache.
+// NewRepositoryCache constructs a production-grade RepositoryCache.
 //
 // Key properties:
 //   - Sharded: cfg.ShardCount independent read-write locks reduce contention.
@@ -704,19 +704,29 @@ type managedCache[T any] struct {
 //
 // The caller MUST call Close on the returned value to stop background
 // goroutines.
+func NewRepositoryCache[T any](cfg CacheConfig, cloneFn func(T) (T, error), onEvict ...func(key string, value T)) RepositoryCache[T] {
+	var evictFn func(key string, value T)
+	if len(onEvict) > 0 {
+		evictFn = onEvict[0]
+	}
+	return newCache[T](cfg, cloneFn, nil, nil, evictFn)
+}
+
+// @note #9c5yn5 todo : Deprecate NewManagedCache
+
 func NewManagedCache[T any](cfg CacheConfig, cloneFn func(T) (T, error), onEvict ...func(key string, value T)) RepositoryCache[T] {
 	var evictFn func(key string, value T)
 	if len(onEvict) > 0 {
 		evictFn = onEvict[0]
 	}
-	return newManagedCache[T](cfg, cloneFn, nil, nil, evictFn)
+	return newCache[T](cfg, cloneFn, nil, nil, evictFn)
 }
 
-// newManagedCache is the unexported constructor used internally and by
+// newCache is the unexported constructor used internally and by
 // tests to inject a deterministic clock and/or ticker factory. Passing nil
 // for either uses the real wall clock / real time.Ticker, identical to
 // NewManagedCache.
-func newManagedCache[T any](cfg CacheConfig, cloneFn func(T) (T, error), clock func() time.Time, tf tickerFactory, onEvict ...func(key string, value T)) *managedCache[T] {
+func newCache[T any](cfg CacheConfig, cloneFn func(T) (T, error), clock func() time.Time, tf tickerFactory, onEvict ...func(key string, value T)) *managedCache[T] {
 	cfg = cfg.normalize()
 	if cloneFn == nil {
 		cloneFn = func(v T) (T, error) { return v, nil }
