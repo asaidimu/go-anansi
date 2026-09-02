@@ -16,26 +16,26 @@
 package anansi
 
 import (
-	"context"
-	"database/sql"
-	"fmt"
-	"sync"
+        "context"
+        "database/sql"
+        "fmt"
+        "sync"
 
-	"github.com/asaidimu/go-anansi/v8/core/events"
-	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
-	pevents "github.com/asaidimu/go-anansi/v8/core/persistence/events"
-	"github.com/asaidimu/go-anansi/v8/core/persistence/persistence"
-	"github.com/asaidimu/go-anansi/v8/core/query"
-	"github.com/asaidimu/go-anansi/v8/core/query/native"
-	"github.com/asaidimu/go-anansi/v8/core/data"
-	"github.com/asaidimu/go-anansi/v8/core/sanitize"
-	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
-	putils "github.com/asaidimu/go-anansi/v8/core/persistence/utils"
-	"github.com/asaidimu/go-anansi/v8/utils"
-	sqliteExecutor "github.com/asaidimu/go-anansi/v8/sqlite/executor"
-	sqliteQuery "github.com/asaidimu/go-anansi/v8/sqlite/query"
-	_ "github.com/mattn/go-sqlite3"
-	"go.uber.org/zap"
+        "github.com/asaidimu/go-anansi/v8/core/events"
+        "github.com/asaidimu/go-anansi/v8/core/persistence/base"
+        pevents "github.com/asaidimu/go-anansi/v8/core/persistence/events"
+        "github.com/asaidimu/go-anansi/v8/core/persistence/persistence"
+        "github.com/asaidimu/go-anansi/v8/core/query"
+        "github.com/asaidimu/go-anansi/v8/core/query/native"
+        "github.com/asaidimu/go-anansi/v8/core/data"
+        "github.com/asaidimu/go-anansi/v8/core/sanitize"
+        "github.com/asaidimu/go-anansi/v8/core/schema/definition"
+        putils "github.com/asaidimu/go-anansi/v8/core/persistence/utils"
+        "github.com/asaidimu/go-anansi/v8/utils"
+        sqliteExecutor "github.com/asaidimu/go-anansi/v8/sqlite/executor"
+        sqliteQuery "github.com/asaidimu/go-anansi/v8/sqlite/query"
+        _ "github.com/mattn/go-sqlite3"
+        "go.uber.org/zap"
 )
 
 // ---------------------------------------------------------------------
@@ -43,14 +43,14 @@ import (
 // ---------------------------------------------------------------------
 
 var (
-	// setupOnce guarantees that the persistence layer is configured exactly once.
-	setupOnce sync.Once
+        // setupOnce guarantees that the persistence layer is configured exactly once.
+        setupOnce sync.Once
 
-	// persistenceInstance holds the singleton Persistence after a successful Setup/Playground.
-	persistenceInstance base.Persistence
+        // persistenceInstance holds the singleton Persistence after a successful Setup/Playground.
+        persistenceInstance base.Persistence
 
-	// setupError caches the first error encountered during initialisation.
-	setupError error
+        // setupError caches the first error encountered during initialisation.
+        setupError error
 )
 
 // ---------------------------------------------------------------------
@@ -60,86 +60,86 @@ var (
 // SetupConfig contains every knob required for a production-grade
 // Anansi deployment.
 type SetupConfig struct {
-	// Interactor is the concrete database implementation (SQLite, PostgreSQL,
-	// MySQL, …).  It must satisfy query.DatabaseInteractor.
-	Interactor query.DatabaseInteractor
+        // Interactor is the concrete database implementation (SQLite, PostgreSQL,
+        // MySQL, …).  It must satisfy query.DatabaseInteractor.
+        Interactor query.DatabaseInteractor
 
-	// Logger is a *zap.Logger used throughout the framework.  Production
-	// code should supply a configured logger (JSON, stackdriver, etc.).
-	Logger *zap.Logger
+        // Logger is a *zap.Logger used throughout the framework.  Production
+        // code should supply a configured logger (JSON, stackdriver, etc.).
+        Logger *zap.Logger
 
-	// EventBus is the pub/sub backbone. Build one with utils.NewInMemoryGoEventsBus
-	// wrapped by pevents.NewGoEventsBusAdapter, or a durable go-events v2 bus
-	// wrapped the same way; nil disables events.
-	EventBus events.EventBus[base.PersistenceEvent]
+        // EventBus is the pub/sub backbone. Build one with utils.NewInMemoryGoEventsBus
+        // wrapped by pevents.NewGoEventsBusAdapter, or a durable go-events v2 bus
+        // wrapped the same way; nil disables events.
+        EventBus events.EventBus[base.PersistenceEvent]
 
-	// DocumentFactoryConfig configures the Document factory (hashing, metadata, etc.).
-	DocumentFactoryConfig data.DocumentFactoryConfig
+        // DocumentFactoryConfig configures the Document factory (hashing, metadata, etc.).
+        DocumentFactoryConfig data.DocumentFactoryConfig
 
-	// Decorators inject cross-cutting concerns (security, audit, encryption…).
-	Decorators *putils.Decorators
+        // Decorators inject cross-cutting concerns (security, audit, encryption…).
+        Decorators *putils.Decorators
 
-	// Schemas are created automatically on first start if they do not exist.
-	Schemas []*definition.Schema
+        // Schemas are created automatically on first start if they do not exist.
+        Schemas []*definition.Schema
 }
 
 // Setup builds the persistence layer.  It is safe to call multiple times –
 // only the first invocation performs work.  Returns the singleton
 // Persistence and any error from the initial call.
 func Setup(config SetupConfig) (base.Persistence, error) {
-	setupOnce.Do(func() {
-		if config.Logger == nil {
-			config.Logger = zap.NewNop()
-		}
+        setupOnce.Do(func() {
+                if config.Logger == nil {
+                        config.Logger = zap.NewNop()
+                }
 
-		ctx := context.Background()
+                ctx := context.Background()
 
-			// config.SanitizerConfig,
-			// config.CollectionSanitizerConfigs,
-		// 1. Initialise the global Document factory.
-		if err := data.ConfigureDocumentFactory(config.DocumentFactoryConfig, config.Logger); err != nil {
-			setupError = err
-			return
-		}
+                        // config.SanitizerConfig,
+                        // config.CollectionSanitizerConfigs,
+                // 1. Initialise the global Document factory.
+                if err := data.ConfigureDocumentFactory(config.DocumentFactoryConfig, config.Logger); err != nil {
+                        setupError = err
+                        return
+                }
 
 
-		// 2. Core persistence object.
-		p, err := persistence.NewPersistence(
-			config.Interactor,
-			config.EventBus,
-			config.Logger,
-			config.Decorators,
-		)
-		if err != nil {
-			setupError = err
-			return
-		}
-		persistenceInstance = p
+                // 2. Core persistence object.
+                p, err := persistence.NewPersistence(
+                        config.Interactor,
+                        config.EventBus,
+                        config.Logger,
+                        config.Decorators,
+                )
+                if err != nil {
+                        setupError = err
+                        return
+                }
+                persistenceInstance = p
 
-		// 3. Auto-create any supplied schemas that are missing.
-		if len(config.Schemas) == 0 {
-			return
-		}
+                // 3. Auto-create any supplied schemas that are missing.
+                if len(config.Schemas) == 0 {
+                        return
+                }
 
-		newSchemas := make([]*definition.Schema, 0, len(config.Schemas))
-		for _, s := range config.Schemas {
-			exists, err := p.HasCollection(ctx, s.Name) // We check for the existence of the collection so as not to re-create it
-			if err != nil {
-				setupError = err
-				return
-			}
-			if !exists {
-				newSchemas = append(newSchemas, s)
-			}
-		}
+                newSchemas := make([]*definition.Schema, 0, len(config.Schemas))
+                for _, s := range config.Schemas {
+                        exists, err := p.HasCollection(ctx, s.Name) // We check for the existence of the collection so as not to re-create it
+                        if err != nil {
+                                setupError = err
+                                return
+                        }
+                        if !exists {
+                                newSchemas = append(newSchemas, s)
+                        }
+                }
 
-		if err := p.CreateCollections(ctx, newSchemas); err != nil {
-			setupError = err
-			return
-		}
-	})
+                if err := p.CreateCollections(ctx, newSchemas); err != nil {
+                        setupError = err
+                        return
+                }
+        })
 
-	return persistenceInstance, setupError
+        return persistenceInstance, setupError
 }
 
 // ---------------------------------------------------------------------
@@ -148,137 +148,143 @@ func Setup(config SetupConfig) (base.Persistence, error) {
 
 // PlaygroundConfig controls the dev-only environment.
 type PlaygroundConfig struct {
-	// Logger is a *zap.Logger used throughout the framework.  Production
-	// code should supply a configured logger (JSON, stackdriver, etc.).
-	Logger *zap.Logger
+        // Logger is a *zap.Logger used throughout the framework.  Production
+        // code should supply a configured logger (JSON, stackdriver, etc.).
+        Logger *zap.Logger
 
-	// DBPath is the SQLite DSN.
-	//   * ":memory:"  -> in-memory (default)
-	//   * "file.db"   -> persistent file on disk
-	DBPath string
+        // DBPath is the SQLite DSN.
+        //   * ":memory:"  -> in-memory (default)
+        //   * "file.db"   -> persistent file on disk
+        DBPath string
 
-	// EnableLogging turns on zap.NewDevelopment() output.
-	EnableLogging bool
+        // EnableLogging turns on zap.NewDevelopment() output.
+        EnableLogging bool
 
-	// EnableEvents spins up an in-memory go-events bus with the logger.
-	EnableEvents bool
+        // EnableEvents spins up an in-memory go-events bus with the logger.
+        EnableEvents bool
 
-	// Schemas are created automatically on first start if they do not exist.
-	Schemas []*definition.Schema
+        // Schemas are created automatically on first start if they do not exist.
+        Schemas []*definition.Schema
 
-	// EnableSanitization adds default sanitization patterns to protect
-	// sensitive data in logs and events. Recommended for any playground
-	// that handles real or realistic test data.
-	EnableSanitization bool
+        // EnableSanitization adds default sanitization patterns to protect
+        // sensitive data in logs and events. Recommended for any playground
+        // that handles real or realistic test data.
+        EnableSanitization bool
 
-	// CustomSanitizerConfig allows custom sanitization configuration.
-	// If nil and EnableSanitization is true, uses NewSecureDefaultConfig().
-	CustomSanitizerConfig *sanitize.FieldMaskConfig
+        // CustomSanitizerConfig allows custom sanitization configuration.
+        // If nil and EnableSanitization is true, uses NewSecureDefaultConfig().
+        CustomSanitizerConfig *sanitize.FieldMaskConfig
 }
 
 // Playground returns a fully-functional Persistence together with a
 // cleanup function that **must** be deferred in dev code.
 //
-//	p, cleanup, err := anansi.Playground(...)
-//	defer cleanup()
+//      p, cleanup, err := anansi.Playground(...)
+//      defer cleanup()
 //
 // It is deliberately **not** part of the production path – the function
 // panics if used after a real Setup has already run.
 func Playground(cfg PlaygroundConfig) (base.Persistence, func(), error) {
-	// Default to in-memory if the caller omitted a path.
-	if cfg.DBPath == "" {
-		cfg.DBPath = ":memory:"
-	}
+        // Default to in-memory if the caller omitted a path.
+        if cfg.DBPath == "" {
+                cfg.DBPath = ":memory:"
+        }
 
-	// -----------------------------------------------------------------
-	//  Logger
-	// -----------------------------------------------------------------
-	var logger *zap.Logger = cfg.Logger
-	if cfg.EnableLogging && logger == nil {
-		l, err := zap.NewDevelopment()
-		if err != nil {
-			return nil, nil, fmt.Errorf("playground: logger creation failed: %w", err)
-		}
-		logger = l
-	} else {
-		logger = zap.NewNop()
-	}
+        // -----------------------------------------------------------------
+        //  Logger
+        // -----------------------------------------------------------------
+        var logger *zap.Logger = cfg.Logger
+        if cfg.EnableLogging && logger == nil {
+                l, err := zap.NewDevelopment()
+                if err != nil {
+                        return nil, nil, fmt.Errorf("playground: logger creation failed: %w", err)
+                }
+                logger = l
+        } else {
+                logger = zap.NewNop()
+        }
 
-	// -----------------------------------------------------------------
-	//  Event Bus
-	// -----------------------------------------------------------------
-	var bus events.EventBus[base.PersistenceEvent]
-	var busCleanup func()
-	if cfg.EnableEvents {
-		b, berr := utils.NewInMemoryGoEventsBus("anansi")
-		if berr != nil {
-			return nil, nil, fmt.Errorf("playground: event bus creation failed: %w", berr)
-		}
-		busCleanup = func() { _ = b.Close() }
-		bus = pevents.NewGoEventsBusAdapter[base.PersistenceEvent](b)
-	}
+        // -----------------------------------------------------------------
+        //  Event Bus
+        // -----------------------------------------------------------------
+        var bus events.EventBus[base.PersistenceEvent]
+        var busCleanup func()
+        if cfg.EnableEvents {
+                b, berr := utils.NewInMemoryGoEventsBus("anansi")
+                if berr != nil {
+                        return nil, nil, fmt.Errorf("playground: event bus creation failed: %w", berr)
+                }
+                busCleanup = func() { _ = b.Close() }
+                bus = pevents.NewGoEventsBusAdapter[base.PersistenceEvent](b)
+        }
 
-	// -----------------------------------------------------------------
-	//  Sanitization
-	// -----------------------------------------------------------------
-	if cfg.EnableSanitization {
-		var sanitizerConfig *sanitize.FieldMaskConfig
-		if cfg.CustomSanitizerConfig != nil {
-			sanitizerConfig = cfg.CustomSanitizerConfig
-		} else {
-			sanitizerConfig = sanitize.NewSecureDefaultConfig()
-		}
-		if err := sanitize.Configure(sanitize.Config{Global: sanitizerConfig}, logger); err != nil {
-			return nil, func() {}, err
-		}
-	}
+        // -----------------------------------------------------------------
+        //  Sanitization
+        // -----------------------------------------------------------------
+        if cfg.EnableSanitization {
+                var sanitizerConfig *sanitize.FieldMaskConfig
+                if cfg.CustomSanitizerConfig != nil {
+                        sanitizerConfig = cfg.CustomSanitizerConfig
+                } else {
+                        sanitizerConfig = sanitize.NewSecureDefaultConfig()
+                }
+                if err := sanitize.Configure(sanitize.Config{Global: sanitizerConfig}, logger); err != nil {
+                        return nil, func() {}, err
+                }
+        }
 
-	// -----------------------------------------------------------------
-	//  Database
-	// -----------------------------------------------------------------
-	dsn := cfg.DBPath
-	if cfg.DBPath != ":memory:" {
-		dsn = fmt.Sprintf("file:%s?cache=shared&_fk=1", cfg.DBPath)
-	}
+        // -----------------------------------------------------------------
+        //  Database
+        // -----------------------------------------------------------------
+        dsn := cfg.DBPath
+        if cfg.DBPath != ":memory:" {
+                dsn = fmt.Sprintf("file:%s?cache=shared&_fk=1&_journal_mode=WAL&_busy_timeout=5000", cfg.DBPath)
+        }
 
-	db, err := sql.Open("sqlite3", dsn)
-	if err != nil {
-		return nil, func() {}, err
-	}
+        db, err := sql.Open("sqlite3", dsn)
+        if err != nil {
+                return nil, func() {}, err
+        }
 
-	executor, err := sqliteExecutor.NewSQLiteExecutor(db, logger)
-	if err != nil {
-		db.Close()
-		return nil, func() {}, err
-	}
+        // SQLite is single-writer. With WAL mode, one connection can write
+        // while up to 3 others read concurrently. Limiting the pool prevents
+        // unbounded connection creation that amplifies lock contention.
+        db.SetMaxOpenConns(4)
+        db.SetMaxIdleConns(4)
 
-	queryFactory := sqliteQuery.NewSQLiteFactory(logger)
-	interactor, err := native.NewNativeInteractor(executor, queryFactory, logger)
-	if err != nil {
-		db.Close()
-		return nil, func() {}, err
-	}
+        executor, err := sqliteExecutor.NewSQLiteExecutor(db, logger)
+        if err != nil {
+                db.Close()
+                return nil, func() {}, err
+        }
 
-	cleanup := func() {
-		_ = db.Close()
-		if busCleanup != nil {
-			busCleanup()
-		}
-	}
+        queryFactory := sqliteQuery.NewSQLiteFactory(logger)
+        interactor, err := native.NewNativeInteractor(executor, queryFactory, logger)
+        if err != nil {
+                db.Close()
+                return nil, func() {}, err
+        }
 
-	p, err := Setup(SetupConfig{
-		Interactor:    interactor,
-		Logger:        logger,
-		EventBus:      bus,
-		DocumentFactoryConfig: data.DocumentFactoryConfig{},
-		Decorators:    &putils.Decorators{},
-		Schemas:       cfg.Schemas,
-	})
+        cleanup := func() {
+                _ = db.Close()
+                if busCleanup != nil {
+                        busCleanup()
+                }
+        }
 
-	if err != nil {
-		cleanup()
-		return nil, nil, err
-	}
+        p, err := Setup(SetupConfig{
+                Interactor:    interactor,
+                Logger:        logger,
+                EventBus:      bus,
+                DocumentFactoryConfig: data.DocumentFactoryConfig{},
+                Decorators:    &putils.Decorators{},
+                Schemas:       cfg.Schemas,
+        })
 
-	return p, cleanup, nil
+        if err != nil {
+                cleanup()
+                return nil, nil, err
+        }
+
+        return p, cleanup, nil
 }
