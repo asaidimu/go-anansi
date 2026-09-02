@@ -1,11 +1,56 @@
 package common
 
 import (
-        "context"
-        "errors"
-        "math/rand/v2"
-        "time"
+	"context"
+	"errors"
+	"math/rand/v2"
+	"time"
 )
+
+// RetryPolicy configures automatic retry behavior for transient errors.
+// Each backend sets its own defaults via Capabilities. The pipeline
+// consumes this to decide when and how to retry operations.
+//
+// Zero-value means: MaxAttempts=1 (no retry). This is the safe default —
+// retry is opt-in per-backend, and explicit per-transaction via TransactWithOptions.
+type RetryPolicy struct {
+	// MaxAttempts is the maximum number of attempts (1 = no retry).
+	// The initial attempt counts, so MaxAttempts=3 means: try, retry, retry.
+	MaxAttempts int
+
+	// BaseDelay is the initial backoff duration before the first retry.
+	BaseDelay time.Duration
+
+	// MaxDelay caps the exponential backoff duration.
+	MaxDelay time.Duration
+
+	// Jitter randomizes delays to [0, delay) to prevent thundering herd.
+	Jitter bool
+
+	// MaxTotalDuration is an absolute ceiling on the total time spent retrying.
+	// When exceeded, the operation fails immediately with the last error.
+	// This prevents a single operation from amplifying load under sustained
+	// overload (the "retry storm" problem).
+	// Zero means unlimited (bounded only by MaxAttempts).
+	MaxTotalDuration time.Duration
+}
+
+// DefaultRetryPolicy returns a conservative retry policy suitable for
+// embedded/single-writer backends like SQLite.
+func DefaultRetryPolicy() RetryPolicy {
+	return RetryPolicy{
+		MaxAttempts:      3,
+		BaseDelay:        5 * time.Millisecond,
+		MaxDelay:         100 * time.Millisecond,
+		Jitter:           true,
+		MaxTotalDuration: 500 * time.Millisecond,
+	}
+}
+
+// NoRetry returns a policy that disables retry entirely.
+func NoRetry() RetryPolicy {
+	return RetryPolicy{MaxAttempts: 1}
+}
 
 // RetryableFunc is any function that returns a result and an error.
 // The retry executor inspects the error for retryability via

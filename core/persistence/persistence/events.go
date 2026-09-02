@@ -198,6 +198,19 @@ func (e *eventsPersistence) Transact(ctx context.Context, callback func(ctx cont
 	})
 }
 
+func (e *eventsPersistence) TransactWithOptions(ctx context.Context, options base.TransactOptions, callback func(ctx context.Context, tx base.BasePersistence) (any, error)) (any, error) {
+	config := events.OperationConfig{
+		Operation:         "transact",
+		StartEventTypes:   []string{string(base.TransactionStart)},
+		SuccessEventTypes: []string{string(base.TransactionSuccess)},
+		FailedEventTypes:  []string{string(base.TransactionFailed)},
+	}
+
+	return e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {
+		return e.persistence.TransactWithOptions(ctx, options, callback)
+	})
+}
+
 func (e *eventsPersistence) Rollback(
 	ctx context.Context,
 	name string,

@@ -386,9 +386,9 @@ type BasePersistence interface {
         Query(ctx context.Context, rawQuery *query.RawQuery) (*query.RawQueryResult, error)
 }
 
-// TransactOpts controls transaction behavior including retry.
-// It is used by Persistence.TransactOpts.
-type TransactOpts struct {
+// TransactOptions controls transaction behavior including retry.
+// It is used by Persistence.TransactWithOptions.
+type TransactOptions struct {
         // Retryable enables automatic retry of the entire transaction on transient
         // errors. When true, the callback MUST be idempotent (no side effects
         // outside the database).
@@ -399,7 +399,7 @@ type TransactOpts struct {
         // RetryPolicy overrides the backend's default retry policy.
         // When nil, the backend's Capabilities.Retry is used.
         // Only meaningful when Retryable is true.
-        RetryPolicy *query.RetryPolicy
+        RetryPolicy *common.RetryPolicy
 }
 
 // Persistence defines the core contract for the persistence layer. It provides a
@@ -423,11 +423,11 @@ type Persistence interface {
         // returns an error, the transaction is rolled back.
         Transact(ctx context.Context, callback func(ctx context.Context, p BasePersistence) (any, error)) (any, error)
 
-        // TransactOpts is like Transact but accepts options for retry configuration.
-        // Retry is only attempted when opts.Retryable is true AND the error is
+        // TransactWithOptions is like Transact but accepts options for retry configuration.
+        // Retry is only attempted when options.Retryable is true AND the error is
         // marked retryable by the backend. When Retryable is true, the callback
         // MUST be idempotent — it may be executed multiple times.
-        TransactOpts(ctx context.Context, opts TransactOpts, callback func(ctx context.Context, p BasePersistence) (any, error)) (any, error)
+        TransactWithOptions(ctx context.Context, options TransactOptions, callback func(ctx context.Context, p BasePersistence) (any, error)) (any, error)
 
         // Subscribe registers a callback function to be executed when a specific
         // persistence event occurs. It returns a unique ID for the subscription.

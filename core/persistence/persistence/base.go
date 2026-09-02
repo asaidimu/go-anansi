@@ -299,23 +299,23 @@ func (p *basePersistence) Subscriptions(ctx context.Context) ([]base.Subscriptio
 }
 
 func (p *basePersistence) Transact(ctx context.Context, callback func(ctx context.Context, tx base.BasePersistence) (any, error)) (any, error) {
-        return p.TransactOpts(ctx, base.TransactOpts{}, callback)
+        return p.TransactWithOptions(ctx, base.TransactOptions{}, callback)
 }
 
-// TransactOpts is like Transact but accepts options for retry configuration.
+// TransactWithOptions is like Transact but accepts options for retry configuration.
 //
 // Write serialization: when the backend requires it, the mutex gates
 // admission to the transaction area but does NOT hold during retry backoff.
 // This prevents the serialization mutex from blocking other goroutines
 // while a transaction sleeps between retry attempts.
-func (p *basePersistence) TransactOpts(ctx context.Context, opts base.TransactOpts, callback func(ctx context.Context, tx base.BasePersistence) (any, error)) (any, error) {
+func (p *basePersistence) TransactWithOptions(ctx context.Context, options base.TransactOptions, callback func(ctx context.Context, tx base.BasePersistence) (any, error)) (any, error) {
         needsSerialization := p.interactor.Capabilities().Concurrency.WriteSerialization ||
                 p.interactor.Capabilities().RequiresTransactionSerialization
 
         execute := func() (any, error) {
-                return transaction.ExecuteOpts(ctx, p.interactor, p.logger, transaction.TransactOpts{
-                        Retryable:   opts.Retryable,
-                        RetryPolicy: opts.RetryPolicy,
+                return transaction.ExecuteOpts(ctx, p.interactor, p.logger, transaction.TransactOptions{
+                        Retryable:   options.Retryable,
+                        RetryPolicy: options.RetryPolicy,
                 }, func(tctx context.Context, txInteractor query.DatabaseInteractor) (any, error) {
                         txBasePersistence, err := newBasePersistence(txInteractor, p.eventEmitter, p.logger, p.decorators)
                         if err != nil {

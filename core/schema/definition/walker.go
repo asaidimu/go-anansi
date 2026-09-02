@@ -1,6 +1,7 @@
 package definition
 
 import (
+	"sort"
 	"sync"
 )
 
@@ -171,9 +172,15 @@ func (s *Schema) walkFieldsMap(
 		return acc, err
 	}
 
-	// Visit each field
-	for id, field := range fields {
-		acc, err = s.walkField(acc, walker, ctx, string(id), &field)
+	// Visit each field in sorted key order for deterministic output
+	fieldIds := make([]string, 0, len(fields))
+	for id := range fields {
+		fieldIds = append(fieldIds, string(id))
+	}
+	sort.Strings(fieldIds)
+	for _, id := range fieldIds {
+		field := fields[FieldId(id)]
+		acc, err = s.walkField(acc, walker, ctx, id, &field)
 		if err != nil {
 			return acc, err
 		}
@@ -257,9 +264,15 @@ func (s *Schema) walkSchemasMap(
 		return acc, err
 	}
 
-	// Visit each nested schema
-	for id, schema := range schemas {
-		acc, err = s.walkNestedSchema(acc, walker, ctx, string(id), &schema)
+	// Visit each nested schema in sorted key order for deterministic output
+	schemaIds := make([]string, 0, len(schemas))
+	for id := range schemas {
+		schemaIds = append(schemaIds, string(id))
+	}
+	sort.Strings(schemaIds)
+	for _, id := range schemaIds {
+		schema := schemas[SchemaId(id)]
+		acc, err = s.walkNestedSchema(acc, walker, ctx, id, &schema)
 		if err != nil {
 			return acc, err
 		}
@@ -367,9 +380,15 @@ func (s *Schema) walkConstraintsMap(
 		return acc, err
 	}
 
-	// Visit each constraint
-	for id, constraint := range constraints {
-		acc, err = s.walkConstraint(acc, walker, ctx, string(id), &constraint)
+	// Visit each constraint in sorted key order for deterministic output
+	constraintIds := make([]string, 0, len(constraints))
+	for id := range constraints {
+		constraintIds = append(constraintIds, string(id))
+	}
+	sort.Strings(constraintIds)
+	for _, id := range constraintIds {
+		constraint := constraints[ConstraintId(id)]
+		acc, err = s.walkConstraint(acc, walker, ctx, id, &constraint)
 		if err != nil {
 			return acc, err
 		}
@@ -532,9 +551,15 @@ func (s *Schema) walkIndexesMap(
 		return acc, err
 	}
 
-	// Visit each index
-	for id, index := range indexes {
-		acc, err = s.walkIndex(acc, walker, ctx, string(id), &index)
+	// Visit each index in sorted key order for deterministic output
+	indexIds := make([]string, 0, len(indexes))
+	for id := range indexes {
+		indexIds = append(indexIds, string(id))
+	}
+	sort.Strings(indexIds)
+	for _, id := range indexIds {
+		index := indexes[IndexID(id)]
+		acc, err = s.walkIndex(acc, walker, ctx, id, &index)
 		if err != nil {
 			return acc, err
 		}

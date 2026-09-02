@@ -21,7 +21,7 @@ type QueryEngine struct {
         filterFunctions  map[ComparisonOperator]PredicateFunction
         logger           *zap.Logger
         cache            QueryCache
-        retryPolicy      RetryPolicy // from backend capabilities, used for read retry
+        retryPolicy      common.RetryPolicy // from backend capabilities, used for read retry
 }
 
 // NewQueryEngine creates a new query executor.
@@ -234,17 +234,19 @@ func (e *QueryEngine) selectDocuments(
         dsl *Query,
         dbQuery *Query,
 ) (*QueryResult, error) {
-        data, count, err := interactor.SelectDocuments(ctx, schemaDef, dbQuery)
-        if err != nil {
-                return nil, err
-        }
-        total := int(count)
-        return &QueryResult{
-                Data:           data,
-                Count:          len(data),
-                Total:          &total,
-                PaginationInfo: computePaginationInfo(dsl.Pagination, len(data), &total),
-        }, nil
+        return common.ExecuteWithContext(ctx, func() (*QueryResult, error) {
+                data, count, err := interactor.SelectDocuments(ctx, schemaDef, dbQuery)
+                if err != nil {
+                        return nil, err
+                }
+                total := int(count)
+                return &QueryResult{
+                        Data:           data,
+                        Count:          len(data),
+                        Total:          &total,
+                        PaginationInfo: computePaginationInfo(dsl.Pagination, len(data), &total),
+                }, nil
+        })
 }
 
 func (e *QueryEngine) generateCacheKey(dsl *Query) (uint64, error) {

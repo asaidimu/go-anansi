@@ -5,7 +5,7 @@
 // ## Retry
 //
 // Top-level transactions can optionally be retried on transient (retryable) errors.
-// Retry is NEVER automatic — the caller must explicitly opt in via TransactOpts.
+// Retry is NEVER automatic — the caller must explicitly opt in via TransactWithOptions.
 // This prevents silent re-execution of non-idempotent callbacks.
 //
 // When Retryable is true, the entire transaction (begin → callback → commit/rollback)
@@ -31,8 +31,8 @@ import (
 
 const TxKey string = "github.com/asaidimu/go-anansi/__transaction__"
 
-// TransactOpts controls transaction behavior including retry.
-type TransactOpts struct {
+// TransactOptions controls transaction behavior including retry.
+type TransactOptions struct {
         // Retryable enables automatic retry of the entire transaction on transient
         // errors. When true, the callback may be executed multiple times and MUST
         // be idempotent (no side effects outside the database, no HTTP calls,
@@ -45,7 +45,7 @@ type TransactOpts struct {
         // RetryPolicy overrides the backend's default retry policy.
         // When nil, the backend's Capabilities.Retry is used.
         // Only meaningful when Retryable is true.
-        RetryPolicy *query.RetryPolicy
+        RetryPolicy *common.RetryPolicy
 }
 
 
@@ -247,10 +247,10 @@ func Execute(
         logger *zap.Logger,
         callback func(ctx context.Context, interactor query.DatabaseInteractor) (any, error),
 ) (any, error) {
-        return ExecuteOpts(ctx, interactor, logger, TransactOpts{}, callback)
+        return ExecuteOpts(ctx, interactor, logger, TransactOptions{}, callback)
 }
 
-// ExecuteOpts is like Execute but accepts TransactOpts for retry configuration.
+// ExecuteOpts is like Execute but accepts TransactOptions for retry configuration.
 // This is the preferred entry point when the caller wants retry behavior.
 //
 // Retry semantics:
@@ -260,13 +260,13 @@ func Execute(
 //     retryable by the backend's error translator (SystemError.IsRetryable()).
 //   - The entire transaction (begin → callback → commit/rollback) is retried.
 //     The callback MUST be idempotent.
-//   - The retry policy is sourced from opts.RetryPolicy (if set) or from the
+//   - The retry policy is sourced from options.RetryPolicy (if set) or from the
 //     backend's Capabilities.Retry (the default).
 func ExecuteOpts(
         ctx context.Context,
         interactor query.DatabaseInteractor,
         logger *zap.Logger,
-        opts TransactOpts,
+        options TransactOptions,
         callback func(ctx context.Context, interactor query.DatabaseInteractor) (any, error),
 ) (any, error) {
         // If we're already inside a transaction, reuse it — no retry at nested level.
@@ -279,10 +279,10 @@ func ExecuteOpts(
 
         // Resolve the retry policy: explicit override > backend capabilities.
         policy := interactor.Capabilities().Retry
-        if opts.RetryPolicy != nil {
-                policy = *opts.RetryPolicy
+        if options.RetryPolicy != nil {
+                policy = *options.RetryPolicy
         }
-        if !opts.Retryable || policy.MaxAttempts <= 1 {
+        if !options.Retryable || policy.MaxAttempts <= 1 {
                 // No retry requested or policy disables it — single attempt.
                 return executeOnce(ctx, interactor, logger, callback)
         }

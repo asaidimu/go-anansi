@@ -132,6 +132,14 @@ func (m *managedPersistence) Transact(ctx context.Context, callback func(ctx con
 	return m.wrapped.Transact(ctx, callback)
 }
 
+// TransactWithOptions delegates the call to the wrapped persistence after checking the closed state.
+func (m *managedPersistence) TransactWithOptions(ctx context.Context, options base.TransactOptions, callback func(ctx context.Context, tx base.BasePersistence) (any, error)) (any, error) {
+	if err := m.checkClosed(); err != nil {
+		return nil, err
+	}
+	return m.wrapped.TransactWithOptions(ctx, options, callback)
+}
+
 // Unsubscribe delegates the call to the wrapped persistence after checking the closed state.
 func (m *managedPersistence) Unsubscribe(ctx context.Context, id string) {
 	if err := m.checkClosed(); err != nil {

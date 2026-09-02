@@ -658,6 +658,12 @@ func (o *Orchestrator) Transact(ctx context.Context, callback func(ctx context.C
 	return nil, ErrCrossBackendTransaction
 }
 
+// TransactWithOptions is like Transact but accepts options for retry configuration.
+// Cross-backend transactions are not supported; this always returns ErrCrossBackendTransaction.
+func (o *Orchestrator) TransactWithOptions(ctx context.Context, options base.TransactOptions, callback func(ctx context.Context, p base.BasePersistence) (any, error)) (any, error) {
+	return nil, ErrCrossBackendTransaction
+}
+
 // Subscribe registers the given subscription against every currently
 // registered backend, since a persistence-level event (e.g. a document
 // create/update) could originate from any of them. It returns a single
