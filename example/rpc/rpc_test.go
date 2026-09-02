@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
@@ -50,6 +51,78 @@ func TestRPCBothChannels(t *testing.T) {
 				t.Errorf("method = %q, want %q", resp.Method, "echo")
 			}
 		})
+	}
+}
+
+// TestChannelEquivalence verifies the JSON and Anansi channels agree on every
+// field of a fully-populated message — guarding against silent field drops
+// (timestamp and nested.* were both silently lost by the pre-Walk read path).
+func TestChannelEquivalence(t *testing.T) {
+	sent := &RPCMessage{
+		Method:    "echo",
+		ID:        "eq-1",
+		Payload:   "equivalence payload",
+		Timestamp: 1700000123,
+		Nested:    map[string]any{"code": float64(404), "reason": "not found"},
+		Tags:      []string{"a", "b", "c"},
+	}
+
+	var jbuf, abuf bytes.Buffer
+	jch := &JSONChannel{}
+	ach := NewAnansiChannel()
+
+	if _, err := jch.Write(&jbuf, sent); err != nil {
+		t.Fatalf("json write: %v", err)
+	}
+	if _, err := ach.Write(&abuf, sent); err != nil {
+		t.Fatalf("anansi write: %v", err)
+	}
+
+	gotJSON, err := jch.Read(&jbuf)
+	if err != nil {
+		t.Fatalf("json read: %v", err)
+	}
+	gotAnansi, err := ach.Read(&abuf)
+	if err != nil {
+		t.Fatalf("anansi read: %v", err)
+	}
+
+	if !reflect.DeepEqual(gotJSON, gotAnansi) {
+		t.Errorf("channels disagree:\n  json:   %+v\n  anansi: %+v", gotJSON, gotAnansi)
+	}
+	if !reflect.DeepEqual(gotAnansi, sent) {
+		t.Errorf("anansi round trip changed message:\n  sent: %+v\n  got:  %+v", sent, gotAnansi)
+	}
+}
+
+// TestPooledChannelEquivalence verifies the pooled read/write paths survive
+// pool reuse across Clear: each message is fully compared before the pool
+// cycles again.
+func TestPooledChannelEquivalence(t *testing.T) {
+	ch := NewAnansiChannel()
+	pool := container.NewPool()
+
+	msgs := []*RPCMessage{
+		{Method: "m1", ID: "id-1", Payload: "one", Timestamp: 1,
+			Nested: map[string]any{"code": float64(1), "reason": "r1"},
+			Tags:   []string{"x"}},
+		{Method: "m2", ID: "id-2", Payload: "two", Timestamp: 22},
+		{Method: "m3", ID: "id-3", Payload: "three", Timestamp: 333,
+			Tags: []string{"p", "q", "r"}},
+	}
+
+	for i, sent := range msgs {
+		var buf bytes.Buffer
+		if _, err := ch.WritePooled(&buf, sent, pool); err != nil {
+			t.Fatalf("msg %d write: %v", i, err)
+		}
+		got, err := ch.ReadPooled(&buf, pool)
+		if err != nil {
+			t.Fatalf("msg %d read: %v", i, err)
+		}
+		if !reflect.DeepEqual(got, sent) {
+			t.Errorf("msg %d mismatch:\n  sent: %+v\n  got:  %+v", i, sent, got)
+		}
 	}
 }
 

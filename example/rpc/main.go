@@ -3,23 +3,23 @@
 //
 // Architecture:
 //
-//      Parent (this binary, no flags)
-//        ├── spawns Child (this binary --child) with stdin/stdout pipes
-//        ├── sends RPC requests using the chosen channel
-//        ├── reads RPC responses from the child
-//        └── prints results and performance metrics
+//	Parent (this binary, no flags)
+//	  ├── spawns Child (this binary --child) with stdin/stdout pipes
+//	  ├── sends RPC requests using the chosen channel
+//	  ├── reads RPC responses from the child
+//	  └── prints results and performance metrics
 //
-//      Child (this binary --child)
-//        ├── reads RPC requests from stdin
-//        ├── invokes the "echo" procedure
-//        ├── sends RPC responses back to stdout
-//        └── exits when done
+//	Child (this binary --child)
+//	  ├── reads RPC requests from stdin
+//	  ├── invokes the "echo" procedure
+//	  ├── sends RPC responses back to stdout
+//	  └── exits when done
 //
 // Run from repo root:
 //
-//      go run ./example/rpc                  # runs both channels
-//      go run ./example/rpc -channel=json    # JSON only
-//      go run ./example/rpc -channel=anansi  # Anansi only
+//	go run ./example/rpc                  # runs both channels
+//	go run ./example/rpc -channel=json    # JSON only
+//	go run ./example/rpc -channel=anansi  # Anansi only
 package main
 
 import (
@@ -32,10 +32,10 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+	"unsafe"
 
-	anansi "github.com/asaidimu/go-anansi/v8/core/encoding/anansi"
-	cjson "github.com/asaidimu/go-anansi/v8/core/encoding/json"
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
+	anansi "github.com/asaidimu/go-anansi/v8/core/encoding/anansi"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
@@ -88,12 +88,12 @@ func compileSchema() *definition.CompiledSchema {
 // ---------------------------------------------------------------------------
 
 type RPCMessage struct {
-	Method    string            `json:"method"`
-	ID        string            `json:"id"`
-	Payload   string            `json:"payload"`
-	Timestamp int64             `json:"timestamp"`
-	Nested    map[string]any    `json:"nested,omitempty"`
-	Tags      []string          `json:"tags,omitempty"`
+	Method    string         `json:"method"`
+	ID        string         `json:"id"`
+	Payload   string         `json:"payload"`
+	Timestamp int64          `json:"timestamp"`
+	Nested    map[string]any `json:"nested,omitempty"`
+	Tags      []string       `json:"tags,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -148,37 +148,201 @@ func (c *JSONChannel) Read(r io.Reader) (*RPCMessage, error) {
 
 // ---------------------------------------------------------------------------
 // Anansi Channel
+//
+// The channel is JSON-free end to end. All seven wire keys (method, id,
+// payload, timestamp, nested.code, nested.reason, tags — including the
+// flattened-object child paths) are precomputed once per channel from the
+// compiled schema, exactly as the codec's own computeLeafKey would compute
+// them. Documents are then filled and drained in a single DataContainer.Walk
+// pass each: typed backing slices are captured once via slot() and raw values
+// are appended/read directly, with no per-field boxing, no map materialization
+// and no intermediate JSON.
 // ---------------------------------------------------------------------------
 
+// rpcFieldKeys holds the DataContainerKey for every addressable field of the
+// RPC schema, precomputed once at channel construction.
+type rpcFieldKeys struct {
+	method, id, payload, timestamp container.DataContainerKey
+	nestedCode, nestedReason       container.DataContainerKey
+	tags                           container.DataContainerKey
+}
+
+// AnansiChannel is a zero-JSON transport channel over the Anansi wire format.
 type AnansiChannel struct {
-	cs *definition.CompiledSchema
+	cs   *definition.CompiledSchema
+	keys rpcFieldKeys
 }
 
 func NewAnansiChannel() *AnansiChannel {
-	return &AnansiChannel{cs: compileSchema()}
+	cs := compileSchema()
+	return &AnansiChannel{cs: cs, keys: precomputeKeys(cs)}
 }
 
 func (c *AnansiChannel) Name() string { return "Anansi" }
 
-func (c *AnansiChannel) Write(w io.Writer, msg *RPCMessage) (int, error) {
-	doc := container.NewDataContainer()
-	setString(c.cs, doc, "method", msg.Method)
-	setString(c.cs, doc, "id", msg.ID)
-	setString(c.cs, doc, "payload", msg.Payload)
-	setInt(c.cs, doc, "timestamp", msg.Timestamp)
-	if msg.Nested != nil {
-		setNested(c.cs, doc, "nested", msg.Nested)
-	}
-	if msg.Tags != nil {
-		setTags(c.cs, doc, "tags", msg.Tags)
-	}
+// precomputeKeys mirrors the codec's computeLeafKey for every RPC field,
+// using only the public schema API (cs.Address + NewDataPoint +
+// NewDataContainerKey). Flattened object children (nested.*) are addressed at
+// their full resolved path: [root.field, child.field].
+func precomputeKeys(cs *definition.CompiledSchema) rpcFieldKeys {
+	var keys rpcFieldKeys
+	root := cs.Schemas[0]
+	for j := uint16(0); j < root.FieldCount; j++ {
+		abs := int(root.FieldStart) + int(j)
+		fd := cs.Descriptors[abs]
+		path := definition.ResolvedPath{definition.NewResolvedStep(0, uint8(j))}
 
-	wire, err := anansi.EncodeDense(c.cs, doc, schemaVersion)
-	if err != nil {
-		return 0, fmt.Errorf("anansi encode: %w", err)
+		switch cs.FieldsMeta[abs].Name {
+		case "method":
+			keys.method = leafKey(cs, fd, path)
+		case "id":
+			keys.id = leafKey(cs, fd, path)
+		case "payload":
+			keys.payload = leafKey(cs, fd, path)
+		case "timestamp":
+			keys.timestamp = leafKey(cs, fd, path)
+		case "tags":
+			keys.tags = leafKey(cs, fd, path)
+		case "nested":
+			childIdx := fd.ChildSchemaIdx()
+			child := cs.Schemas[childIdx]
+			for c := uint16(0); c < child.FieldCount; c++ {
+				cabs := int(child.FieldStart) + int(c)
+				cfd := cs.Descriptors[cabs]
+				cpath := definition.ResolvedPath{
+					definition.NewResolvedStep(0, uint8(j)),
+					definition.NewResolvedStep(childIdx, uint8(c)),
+				}
+				switch cs.FieldsMeta[cabs].Name {
+				case "code":
+					keys.nestedCode = leafKey(cs, cfd, cpath)
+				case "reason":
+					keys.nestedReason = leafKey(cs, cfd, cpath)
+				}
+			}
+		}
 	}
-	hdr := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutUvarint(hdr, uint64(len(wire)))
+	return keys
+}
+
+// leafKey resolves a field's path to its DataContainerKey — a direct mirror of
+// the codec's unexported computeLeafKey, so keys computed here always agree
+// with keys the codec computes internally for the same field.
+func leafKey(cs *definition.CompiledSchema, fd definition.FieldDescriptor, path definition.ResolvedPath) container.DataContainerKey {
+	addr := cs.Address(path)
+	if addr == 0 {
+		return container.NewDataContainerKey(container.DataPoint(fd.DataPoint()), uint32(fd))
+	}
+	dp, err := container.NewDataPoint(fd.DataType(), int32(addr))
+	if err != nil {
+		panic(fmt.Sprintf("rpc: build data point: %v", err))
+	}
+	return container.NewDataContainerKey(dp, uint32(fd))
+}
+
+// fillDocument populates doc from msg in a single Walk pass: the container's
+// typed backing slices are captured once via slot(), raw values are appended
+// directly, and positions are recorded per precomputed key. The container
+// invariant (positive indices index into the matching typed slice) is
+// identical to what Append* maintains; mutation is safe here because the
+// container is being materialized for encode.
+func (c *AnansiChannel) fillDocument(doc *container.DataContainer, msg *RPCMessage) {
+	_, _ = doc.Walk(func(positions map[int64]int32, slot func(container.DataType, ...int) unsafe.Pointer) (any, error) {
+		strs := (*[]string)(slot(container.TypeString, 4))
+		ints := (*[]int64)(slot(container.TypeInt, 2))
+		arrs := (*[][]string)(slot(container.TypeArrayString, 1))
+
+		// Strings: method, id, payload (+ nested.reason when present).
+		*strs = append(*strs, msg.Method, msg.ID, msg.Payload)
+		positions[int64(c.keys.method)] = 0
+		positions[int64(c.keys.id)] = 1
+		positions[int64(c.keys.payload)] = 2
+		next := int32(3)
+		if msg.Nested != nil {
+			if raw, ok := msg.Nested["reason"]; ok && raw != nil {
+				*strs = append(*strs, coerceString(raw))
+				positions[int64(c.keys.nestedReason)] = next
+				next++
+			}
+		}
+
+		// Ints: timestamp (+ nested.code when present).
+		*ints = append(*ints, msg.Timestamp)
+		positions[int64(c.keys.timestamp)] = 0
+		inext := int32(1)
+		if msg.Nested != nil {
+			if raw, ok := msg.Nested["code"]; ok && raw != nil {
+				*ints = append(*ints, coerceInt(raw))
+				positions[int64(c.keys.nestedCode)] = inext
+				inext++
+			}
+		}
+
+		// Tags: a single array-of-string value.
+		if msg.Tags != nil {
+			*arrs = append(*arrs, msg.Tags)
+			positions[int64(c.keys.tags)] = 0
+		}
+		return nil, nil
+	})
+}
+
+// drainDocument extracts the RPCMessage from a decoded document in a single
+// Walk pass: values are read straight out of the decoder-filled typed slices
+// via positions lookups. No Dump, no boxing, no JSON.
+func (c *AnansiChannel) drainDocument(doc *container.DataContainer) *RPCMessage {
+	msg := &RPCMessage{}
+	_, _ = doc.Walk(func(positions map[int64]int32, slot func(container.DataType, ...int) unsafe.Pointer) (any, error) {
+		strs := *(*[]string)(slot(container.TypeString))
+		ints := *(*[]int64)(slot(container.TypeInt))
+		arrs := *(*[][]string)(slot(container.TypeArrayString))
+
+		if idx, ok := positions[int64(c.keys.method)]; ok && idx >= 0 && int(idx) < len(strs) {
+			msg.Method = strs[idx]
+		}
+		if idx, ok := positions[int64(c.keys.id)]; ok && idx >= 0 && int(idx) < len(strs) {
+			msg.ID = strs[idx]
+		}
+		if idx, ok := positions[int64(c.keys.payload)]; ok && idx >= 0 && int(idx) < len(strs) {
+			msg.Payload = strs[idx]
+		}
+		if idx, ok := positions[int64(c.keys.timestamp)]; ok && idx >= 0 && int(idx) < len(ints) {
+			msg.Timestamp = ints[idx]
+		}
+
+		codeSet, reasonSet := false, false
+		var code int64
+		var reason string
+		if idx, ok := positions[int64(c.keys.nestedCode)]; ok && idx >= 0 && int(idx) < len(ints) {
+			code, codeSet = ints[idx], true
+		}
+		if idx, ok := positions[int64(c.keys.nestedReason)]; ok && idx >= 0 && int(idx) < len(strs) {
+			reason, reasonSet = strs[idx], true
+		}
+		if codeSet || reasonSet {
+			msg.Nested = make(map[string]any, 2)
+			if codeSet {
+				// float64 mirrors encoding/json's numeric semantics for
+				// map[string]any so both channels agree on the wire.
+				msg.Nested["code"] = float64(code)
+			}
+			if reasonSet {
+				msg.Nested["reason"] = reason
+			}
+		}
+
+		if idx, ok := positions[int64(c.keys.tags)]; ok && idx >= 0 && int(idx) < len(arrs) {
+			msg.Tags = arrs[idx]
+		}
+		return nil, nil
+	})
+	return msg
+}
+
+// writeFrame prefixes wire with a uvarint length header and writes it out.
+func writeFrame(w io.Writer, wire []byte) (int, error) {
+	var hdr [binary.MaxVarintLen64]byte
+	n := binary.PutUvarint(hdr[:], uint64(len(wire)))
 	if _, err := w.Write(hdr[:n]); err != nil {
 		return 0, fmt.Errorf("write length: %w", err)
 	}
@@ -188,79 +352,54 @@ func (c *AnansiChannel) Write(w io.Writer, msg *RPCMessage) (int, error) {
 	return len(wire), nil
 }
 
+func (c *AnansiChannel) Write(w io.Writer, msg *RPCMessage) (int, error) {
+	doc := container.NewDataContainer()
+	c.fillDocument(doc, msg)
+
+	wire, err := anansi.EncodeDense(c.cs, doc, schemaVersion)
+	if err != nil {
+		return 0, fmt.Errorf("anansi encode: %w", err)
+	}
+	return writeFrame(w, wire)
+}
+
 func (c *AnansiChannel) Read(r io.Reader) (*RPCMessage, error) {
-	msgLen, err := readUvarint(r)
+	buf, err := readFrame(r)
 	if err != nil {
 		return nil, err
-	}
-	buf := make([]byte, msgLen)
-	if _, err := io.ReadFull(r, buf); err != nil {
-		return nil, fmt.Errorf("read data (%d bytes): %w", msgLen, err)
 	}
 
 	doc, _, err := anansi.DecodeAnansi(c.cs, buf)
 	if err != nil {
 		return nil, fmt.Errorf("anansi decode: %w", err)
 	}
-
-	m, err := cjson.Dump(c.cs, doc)
-	if err != nil {
-		return nil, fmt.Errorf("anansi dump: %w", err)
-	}
-
-	msg := &RPCMessage{
-		Method:    getString(m, "method"),
-		ID:        getString(m, "id"),
-		Payload:   getString(m, "payload"),
-		Timestamp: getInt64(m, "timestamp"),
-		Tags:      getStringSlice(m, "tags"),
-	}
-	if nested, ok := m["nested"].(map[string]any); ok {
-		msg.Nested = nested
-	}
-	return msg, nil
+	return c.drainDocument(doc), nil
 }
 
 // WritePooled writes using a pooled DataContainer for reduced allocations.
+// The returned frame does not alias the container.
 func (c *AnansiChannel) WritePooled(w io.Writer, msg *RPCMessage, pool *container.Pool) (int, error) {
 	doc := pool.Get()
 	defer pool.Put(doc)
 
-	setString(c.cs, doc, "method", msg.Method)
-	setString(c.cs, doc, "id", msg.ID)
-	setString(c.cs, doc, "payload", msg.Payload)
-	setInt(c.cs, doc, "timestamp", msg.Timestamp)
-	if msg.Nested != nil {
-		setNested(c.cs, doc, "nested", msg.Nested)
-	}
-	if msg.Tags != nil {
-		setTags(c.cs, doc, "tags", msg.Tags)
-	}
+	c.fillDocument(doc, msg)
 
 	wire, err := anansi.EncodeDense(c.cs, doc, schemaVersion)
 	if err != nil {
 		return 0, fmt.Errorf("anansi encode: %w", err)
 	}
-	hdr := make([]byte, binary.MaxVarintLen64)
-	n := binary.PutUvarint(hdr, uint64(len(wire)))
-	if _, err := w.Write(hdr[:n]); err != nil {
-		return 0, fmt.Errorf("write length: %w", err)
-	}
-	if _, err := w.Write(wire); err != nil {
-		return 0, fmt.Errorf("write data: %w", err)
-	}
-	return len(wire), nil
+	return writeFrame(w, wire)
 }
 
 // ReadPooled reads using a pooled DataContainer for reduced allocations.
+//
+// The returned message's strings and tags alias the pooled container's
+// backing buffers; use the message before the pool cycles (i.e. before the
+// next Get/decode into the same container), or copy out the fields you need.
 func (c *AnansiChannel) ReadPooled(r io.Reader, pool *container.Pool) (*RPCMessage, error) {
-	msgLen, err := readUvarint(r)
+	buf, err := readFrame(r)
 	if err != nil {
 		return nil, err
-	}
-	buf := make([]byte, msgLen)
-	if _, err := io.ReadFull(r, buf); err != nil {
-		return nil, fmt.Errorf("read data (%d bytes): %w", msgLen, err)
 	}
 
 	doc := pool.Get()
@@ -270,23 +409,7 @@ func (c *AnansiChannel) ReadPooled(r io.Reader, pool *container.Pool) (*RPCMessa
 	if err != nil {
 		return nil, fmt.Errorf("anansi decode: %w", err)
 	}
-
-	m, err := cjson.Dump(c.cs, doc)
-	if err != nil {
-		return nil, fmt.Errorf("anansi dump: %w", err)
-	}
-
-	msg := &RPCMessage{
-		Method:    getString(m, "method"),
-		ID:        getString(m, "id"),
-		Payload:   getString(m, "payload"),
-		Timestamp: getInt64(m, "timestamp"),
-		Tags:      getStringSlice(m, "tags"),
-	}
-	if nested, ok := m["nested"].(map[string]any); ok {
-		msg.Nested = nested
-	}
-	return msg, nil
+	return c.drainDocument(doc), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -309,49 +432,47 @@ func readUvarint(r io.Reader) (uint64, error) {
 	return val, nil
 }
 
-func setString(cs *definition.CompiledSchema, doc *container.DataContainer, field, value string) {
-	_ = cjson.DecodeJSONInto(cs, []byte(fmt.Sprintf(`{"%s":"%s"}`, field, value)), doc, nil)
-}
-
-func setInt(cs *definition.CompiledSchema, doc *container.DataContainer, field string, value int64) {
-	_ = cjson.DecodeJSONInto(cs, []byte(fmt.Sprintf(`{"%s":%d}`, field, value)), doc, nil)
-}
-
-func setNested(cs *definition.CompiledSchema, doc *container.DataContainer, field string, value map[string]any) {
-	data, _ := json.Marshal(value)
-	_ = cjson.DecodeJSONInto(cs, []byte(fmt.Sprintf(`{"%s":%s}`, field, data)), doc, nil)
-}
-
-func setTags(cs *definition.CompiledSchema, doc *container.DataContainer, field string, value []string) {
-	data, _ := json.Marshal(value)
-	_ = cjson.DecodeJSONInto(cs, []byte(fmt.Sprintf(`{"%s":%s}`, field, data)), doc, nil)
-}
-
-func getString(m map[string]any, key string) string {
-	if v, ok := m[key].(string); ok {
-		return v
+// readFrame reads one uvarint-length-prefixed frame.
+func readFrame(r io.Reader) ([]byte, error) {
+	msgLen, err := readUvarint(r)
+	if err != nil {
+		return nil, err
 	}
-	return ""
+	buf := make([]byte, msgLen)
+	if _, err := io.ReadFull(r, buf); err != nil {
+		return nil, fmt.Errorf("read data (%d bytes): %w", msgLen, err)
+	}
+	return buf, nil
 }
 
-func getInt64(m map[string]any, key string) int64 {
-	if v, ok := m[key].(float64); ok {
-		return int64(v)
+// coerceInt normalizes the numeric representations that can appear in
+// RPCMessage.Nested (JSON unmarshal produces float64; direct Go construction
+// may use any integer type) into the schema's integer type.
+func coerceInt(v any) int64 {
+	switch n := v.(type) {
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	case int32:
+		return int64(n)
+	case float64:
+		return int64(n)
+	case float32:
+		return int64(n)
+	case json.Number:
+		i, _ := n.Int64()
+		return i
+	default:
+		return 0
 	}
-	return 0
 }
 
-func getStringSlice(m map[string]any, key string) []string {
-	if arr, ok := m[key].([]any); ok {
-		result := make([]string, 0, len(arr))
-		for _, v := range arr {
-			if s, ok := v.(string); ok {
-				result = append(result, s)
-			}
-		}
-		return result
+func coerceString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
 	}
-	return nil
+	return fmt.Sprint(v)
 }
 
 // ---------------------------------------------------------------------------
