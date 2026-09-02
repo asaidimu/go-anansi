@@ -198,10 +198,9 @@ func ExportCompileDump(cs *definition.CompiledSchema) ([]byte, error) {
 // CompileDumpProbe is an explicit address probe: full dotted mount path →
 // user-data address, exercising multi-step addressing across mounts.
 type CompileDumpProbe struct {
-	Path  string `json:"path"`
-	Addr  uint32 `json:"addr"`
+	Path string `json:"path"`
+	Addr uint32 `json:"addr"`
 }
-
 
 // buildWireIndex walks every mount site exactly like collectWireFields,
 // producing (a) the canonical Sparse DataPoint per absolute field index and

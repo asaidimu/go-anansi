@@ -59,7 +59,7 @@ func TestAliasing_ChildCarriesBacking(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fields, err := collectWireFieldsCached(cs, rootSlot, nil)
+	fields, err := collectWireFields(cs, rootSlot, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

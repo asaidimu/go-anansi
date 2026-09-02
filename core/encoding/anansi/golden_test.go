@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"math"
-	"reflect"
-	"strings"
-	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
@@ -73,10 +73,10 @@ type goldenTransforms struct {
 }
 
 type goldenCase struct {
-	Name    string           `json:"name"`
-	Kind    string           `json:"kind"`
-	Packet  string           `json:"packet"`
-	Payload json.RawMessage  `json:"payload"`
+	Name       string            `json:"name"`
+	Kind       string            `json:"kind"`
+	Packet     string            `json:"packet"`
+	Payload    json.RawMessage   `json:"payload"`
 	Transforms *goldenTransforms `json:"transforms,omitempty"`
 }
 
@@ -140,7 +140,6 @@ func TestGenerateGoldenVectors(t *testing.T) {
 		docs[name] = goldenDoc(t, cs, p)
 	}
 
-
 	for _, name := range []string{"full", "sparse_mix", "empty"} {
 		p := payloads[name]
 		w, err := anansi.EncodeDense(cs, docs[name], 0)
@@ -173,8 +172,8 @@ func TestGenerateGoldenVectors(t *testing.T) {
 		anansi.WithEncryption(key), anansi.WithCompression(), anansi.WithIntegrity())
 	require.NoError(t, err2)
 	cases = append(cases, goldenCase{Name: "sparse_enc_comp_hash", Kind: "sparse",
-		Packet:     hex.EncodeToString(w),
-		Payload:    json.RawMessage(payloads["sparse_mix"]),
+		Packet:  hex.EncodeToString(w),
+		Payload: json.RawMessage(payloads["sparse_mix"]),
 		Transforms: &goldenTransforms{
 			Compression: true, Integrity: true,
 			EncryptionKey: hex.EncodeToString(key),
@@ -186,8 +185,8 @@ func TestGenerateGoldenVectors(t *testing.T) {
 		anansi.WithCompression(), anansi.WithIntegrity(), anansi.WithEncryption(key))
 	require.NoError(t, err2)
 	cases = append(cases, goldenCase{Name: "batch_columnar_enc_comp_hash", Kind: "batch_columnar",
-		Packet:     hex.EncodeToString(w),
-		Payload:    json.RawMessage(batchColPayload),
+		Packet:  hex.EncodeToString(w),
+		Payload: json.RawMessage(batchColPayload),
 		Transforms: &goldenTransforms{
 			Compression: true, Integrity: true,
 			EncryptionKey: hex.EncodeToString(key),
@@ -288,7 +287,6 @@ func TestGenerateGoldenVectors(t *testing.T) {
 	t.Logf("wrote %s (%d bytes, %d cases)", dest, len(out), len(cases))
 }
 
-
 func dumpMap(cs *definition.CompiledSchema, d *container.DataContainer) map[string]any {
 	m, err := cjson.Dump(cs, d)
 	if err != nil {
@@ -304,7 +302,6 @@ func wantPayloadFirst(raw json.RawMessage) map[string]any {
 	}
 	return arr[0]
 }
-
 
 // compareDumpedField tolerates the Dump representation quirks (dotted keys
 // for composites, []byte / []any-of-numbers for bytes, int64 vs float64)

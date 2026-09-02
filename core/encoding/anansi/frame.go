@@ -5,29 +5,31 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"crypto/subtle"
 	"fmt"
 	"sync"
 
 	"github.com/klauspost/compress/zstd"
+	"github.com/zeebo/blake3"
 )
 
 // Wire framing for the implemented transforms (spec sections 4.1–4.3).
 // The full top-level packet layout is:
 //
-//	[flags: u8]                    bit2 = compressed, bit6 = encrypted,
-//	                               bit7 = hash present
-//	[schema_version: u8]
-//	[digest: 16 bytes]             if bit7: BLAKE3(plaintext body)[0..16)
-//	[nonce: 12 bytes]              if bit6
-//	[payload...]                   see below
+//      [flags: u8]                    bit2 = compressed, bit6 = encrypted,
+//                                     bit7 = hash present
+//      [schema_version: u8]
+//      [digest: 16 bytes]             if bit7: BLAKE3(plaintext body)[0..16)
+//      [nonce: 12 bytes]              if bit6
+//      [payload...]                   see below
 //
 // The payload depends on the transform flags:
 //
-//	plain:                          body
-//	compressed (bit2):              [plain_len: uvarint][zstd frame]
-//	encrypted  (bit6):              AEAD ciphertext+tag over the payload
-//	                                the unencrypted framing would carry
-//	encrypted + compressed:         AEAD([plain_len][zstd frame])
+//      plain:                          body
+//      compressed (bit2):              [plain_len: uvarint][zstd frame]
+//      encrypted  (bit6):              AEAD ciphertext+tag over the payload
+//                                      the unencrypted framing would carry
+//      encrypted + compressed:         AEAD([plain_len][zstd frame])
 //
 // Ordering follows the spec: encode is plaintext → compress → encrypt
 // (4.2.2); decode is decrypt → decompress → verify digest (6.4.1 steps
@@ -48,6 +50,9 @@ import (
 //     Key management is out of scope (spec 4.2.1) — callers own key
 //     storage and rotation.
 
+// hashSize is the truncated digest length in bytes (spec 4.3.1).
+const hashSize = 16
+
 // maxDecompressedSize bounds the plain_len any decoder will honor (spec
 // 9.2.2): packets declaring more than this are rejected before allocation.
 // zstd.DecodeTo additionally enforces its own 1 GiB ceiling regardless of
@@ -60,15 +65,6 @@ const aesKeySize = 32
 // gcmNonceSize is the standard GCM nonce length in bytes (spec 4.2.2:
 // "12 bytes for ChaCha20/AES-GCM").
 const gcmNonceSize = 12
-
-// outputBufferPool reuses byte slices for finishFrame output to reduce
-// allocations in hot encoding paths.
-var outputBufferPool = sync.Pool{
-	New: func() any {
-		b := make([]byte, 0, 256)
-		return &b
-	},
-}
 
 // EncodeOption customizes top-level packet encoding.
 type EncodeOption func(*encodeConfig)
@@ -141,7 +137,64 @@ func newDecodeConfig(opts []DecodeOption) decodeConfig {
 	return c
 }
 
-// newAEAD builds the AES-256-GCM AEAD for key.
+// ---------------------------------------------------------------------------
+// AEAD cache
+// ---------------------------------------------------------------------------
+
+// aeadCacheCap bounds the number of distinct keys whose AES-256-GCM
+// instances are retained. A full key schedule per encrypt/decrypt call
+// dominated encrypt-path profiles; callers overwhelmingly reuse one (or a
+// few) keys, and a rotated-out key merely costs one rebuilt instance.
+const aeadCacheCap = 64
+
+// aeadCache reuses AES-256-GCM instances per key. Keys are fixed-width
+// arrays, so the hot lookup copies the caller's key onto the stack and
+// hashes it with zero allocations.
+type aeadCacheT struct {
+	mu sync.RWMutex
+	m  map[[aesKeySize]byte]cipher.AEAD
+}
+
+var aeadCache = &aeadCacheT{m: make(map[[aesKeySize]byte]cipher.AEAD, 4)}
+
+// cachedAEAD returns the AEAD for key, building and caching it on first
+// use. Keys longer/shorter than 32 bytes are rejected here so every caller
+// shares one validation path.
+func cachedAEAD(key []byte) (cipher.AEAD, error) {
+	if len(key) != aesKeySize {
+		return nil, fmt.Errorf("anansi: AES-256-GCM requires a %d-byte key, got %d bytes", aesKeySize, len(key))
+	}
+	var ak [aesKeySize]byte
+	copy(ak[:], key)
+
+	aeadCache.mu.RLock()
+	aead, ok := aeadCache.m[ak]
+	aeadCache.mu.RUnlock()
+	if ok {
+		return aead, nil
+	}
+
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("anansi: init cipher: %w", err)
+	}
+	aead, err = cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("anansi: init GCM: %w", err)
+	}
+
+	aeadCache.mu.Lock()
+	if len(aeadCache.m) >= aeadCacheCap {
+		// Pathological key rotation: reset rather than grow without bound.
+		aeadCache.m = make(map[[aesKeySize]byte]cipher.AEAD, 4)
+	}
+	aeadCache.m[ak] = aead
+	aeadCache.mu.Unlock()
+	return aead, nil
+}
+
+// newAEAD builds a fresh AES-256-GCM AEAD for key. Retained for callers
+// that deliberately want an uncached instance; hot paths use cachedAEAD.
 func newAEAD(key []byte) (cipher.AEAD, error) {
 	if len(key) != aesKeySize {
 		return nil, fmt.Errorf("anansi: AES-256-GCM requires a %d-byte key, got %d bytes", aesKeySize, len(key))
@@ -157,9 +210,95 @@ func newAEAD(key []byte) (cipher.AEAD, error) {
 	return aead, nil
 }
 
+// ---------------------------------------------------------------------------
+// Integrity hashing (spec 4.3)
+// ---------------------------------------------------------------------------
+
+// blake3Pool reuses BLAKE3 hashers across packets. Sum writes into a
+// caller-provided 32-byte stack buffer (the digest's full width) so the
+// hot path allocates nothing.
+var blake3Pool = sync.Pool{
+	New: func() any { return blake3.New() },
+}
+
+// packetDigest computes BLAKE3(payload)[0..hashSize) (spec 4.3.2).
+func packetDigest(payload []byte) [hashSize]byte {
+	var out [hashSize]byte
+	h := blake3Pool.Get().(*blake3.Hasher)
+	h.Reset()
+	// hash.Hash's Write never returns an error for the in-memory hasher.
+	_, _ = h.Write(payload)
+	var sum [32]byte // full BLAKE3 digest width — a 16-byte buffer cannot hold it
+	copy(out[:], h.Sum(sum[:0])[:hashSize])
+	blake3Pool.Put(h)
+	return out
+}
+
+// WithIntegrityHash takes a complete packet produced by this package
+// (SerializeAnansi, EncodeDense, EncodeSparse, EncodeBatchRows,
+// EncodeBatchColumnar — including any nested sub-packets in its payload)
+// and returns a copy with flags bit 7 set and the packet's integrity
+// digest inserted after byte 1 (spec 4.3.2). The input is not modified.
+//
+// Every decode entry point verifies the digest when present and rejects
+// tampered payloads (spec 9.1: "Hash mismatch | Reject").
+func WithIntegrityHash(packet []byte) ([]byte, error) {
+	if len(packet) < 2 {
+		return nil, ErrBufferUnderflow
+	}
+	if Flags(packet[0]).Compressed() || Flags(packet[0]).Encrypted() {
+		return nil, fmt.Errorf("anansi: cannot hash a compressed/encrypted packet (spec 4.3 hashes plaintext)")
+	}
+	if len(packet) < 2+hashSize {
+		return nil, fmt.Errorf("anansi: packet too short to carry an integrity hash")
+	}
+
+	out := make([]byte, 0, len(packet)+hashSize)
+	out = append(out, packet[0]|byte(flagHashPresent), packet[1])
+	digest := packetDigest(packet[2:])
+	out = append(out, digest[:]...)
+	out = append(out, packet[2:]...)
+	return out, nil
+}
+
+// verifyIntegrity compares stored against the digest of payload,
+// constant-time (spec 6.4.1 step 12, 9.1).
+func verifyIntegrity(stored, payload []byte) error {
+	want := packetDigest(payload)
+	if subtle.ConstantTimeCompare(stored, want[:]) != 1 {
+		return fmt.Errorf("anansi: integrity check failed (packet digest mismatch)")
+	}
+	return nil
+}
+
+// readAndVerifyNestedHash verifies the optional digest of a raw nested
+// sub-packet. Unlike top-level packets, nested packets never carry
+// transforms (encodePacketBody strips those bits), so there is no
+// compression envelope to open — only hash-or-not.
+func readAndVerifyNestedHash(r *byteReader, flags Flags) error {
+	if !flags.HashPresent() {
+		return nil
+	}
+	stored, err := r.readN(hashSize)
+	if err != nil {
+		return fmt.Errorf("anansi: read nested packet hash: %w", err)
+	}
+	return verifyIntegrity(stored, r.data[r.pos:])
+}
+
+// ---------------------------------------------------------------------------
+// Frame assembly / opening
+// ---------------------------------------------------------------------------
+
 // finishFrame assembles the final top-level packet from h (whose Flags
 // carry only epoch/type bits) and the plaintext body, applying the
 // configured transforms in spec order: compress, then encrypt.
+//
+// The output is one exactly-sized allocation owned by the caller — nothing
+// that is returned ever comes from a pool. (A previous revision returned
+// pooled buffers while re-queuing them, aliasing two consecutive packets'
+// bytes; the second encode silently overwrote the first packet — the bug
+// TestEncryption_TamperAndNonceUniqueness now guards.)
 func finishFrame(h header, body []byte, cfg encodeConfig) ([]byte, error) {
 	flags := h.Flags
 	if cfg.integrity {
@@ -172,15 +311,24 @@ func finishFrame(h header, body []byte, cfg encodeConfig) ([]byte, error) {
 		flags |= flagEncrypted
 	}
 
-	// Estimate capacity: 2 header + 16 hash + 12 nonce + body + overhead
-	est := 2 + 16 + 12 + len(body) + len(body)/8
-	bufPtr := outputBufferPool.Get().(*[]byte)
-	out := (*bufPtr)[:0]
-
-	// Ensure sufficient capacity
-	if cap(out) < est {
-		out = make([]byte, 0, est)
+	inner := body
+	if cfg.compressed {
+		// zstd.EncodeTo allocates its exact output; the plain_len varint
+		// (spec 4.1) fronts it inside the payload area.
+		z := zstd.EncodeTo(nil, body)
+		inner = make([]byte, uvarintLen(uint64(len(body))), uvarintLen(uint64(len(body)))+len(z))
+		writeUvarintTo(bytes.NewBuffer(inner[:0]), uint64(len(body)))
+		inner = append(inner, z...)
 	}
+
+	total := 2 + len(inner)
+	if cfg.integrity {
+		total += hashSize
+	}
+	if cfg.key != nil {
+		total += gcmNonceSize + 16 // nonce + GCM tag
+	}
+	out := make([]byte, 0, total)
 
 	out = append(out, byte(flags), h.Version)
 	if cfg.integrity {
@@ -188,39 +336,21 @@ func finishFrame(h header, body []byte, cfg encodeConfig) ([]byte, error) {
 		out = append(out, d[:]...)
 	}
 
-	inner := body
-	if cfg.compressed {
-		var lb bytes.Buffer
-		lb.Grow(len(body) + len(body)/10) // pre-allocate
-		writeUvarintTo(&lb, uint64(len(body)))
-		lb.Write(zstd.EncodeTo(nil, body))
-		inner = lb.Bytes()
-	}
-
 	if cfg.key == nil {
-		out = append(out, inner...)
-		*bufPtr = out
-		outputBufferPool.Put(bufPtr)
-		return out, nil
+		return append(out, inner...), nil
 	}
 
-	aead, err := newAEAD(cfg.key)
+	aead, err := cachedAEAD(cfg.key)
 	if err != nil {
-		*bufPtr = out[:0]
-		outputBufferPool.Put(bufPtr)
 		return nil, err
 	}
 	nonce := make([]byte, gcmNonceSize)
 	if _, err := rand.Read(nonce); err != nil {
-		*bufPtr = out[:0]
-		outputBufferPool.Put(bufPtr)
 		return nil, fmt.Errorf("anansi: generate nonce: %w", err)
 	}
 	out = append(out, nonce...)
-	result := aead.Seal(out, nonce, inner, nil)
-	*bufPtr = result[:0]
-	outputBufferPool.Put(bufPtr)
-	return result, nil
+	// Seal appends ciphertext+tag; total reserved room for it exactly.
+	return aead.Seal(out, nonce, inner, nil), nil
 }
 
 // openFrame consumes everything between the header and the body — optional
@@ -245,7 +375,7 @@ func openFrame(r *byteReader, flags Flags, cfg decodeConfig) (_ *byteReader, own
 		if cfg.key == nil {
 			return nil, false, fmt.Errorf("anansi: encrypted packet but no decryption key provided (use anansi.WithDecryptionKey)")
 		}
-		aead, err := newAEAD(cfg.key)
+		aead, err := cachedAEAD(cfg.key)
 		if err != nil {
 			return nil, false, err
 		}

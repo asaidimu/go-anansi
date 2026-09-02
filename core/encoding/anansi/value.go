@@ -8,7 +8,6 @@ import (
 	"unsafe"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
-	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 // This file implements spec section 2.5 (Field Type Encoding) for each of the
@@ -549,11 +548,12 @@ func readRecord(r *byteReader) (map[string]any, error) {
 // writeArrayObjectField encodes an array of schema-bound child documents.
 // Each element is independently encoded as its own complete Anansi packet
 // (auto-selecting Dense/Sparse per element), matching the spec's per-element
-// [payload_length][anansi_packet_bytes] framing.
-func writeArrayObjectField(buf *bytes.Buffer, cs *definition.CompiledSchema, version header, children []*container.DataContainer, childIdx uint8, childPath definition.ResolvedPath) error {
+// [payload_length][anansi_packet_bytes] framing. res is the element slot's
+// prebuilt resource tree (wf.child), so no per-element schema walks occur.
+func writeArrayObjectField(buf *bytes.Buffer, res *slotCodec, version header, children []*container.DataContainer) error {
 	writeUvarintTo(buf, uint64(len(children)))
 	for i, child := range children {
-		payload, err := encodePacket(cs, childIdx, child, version, childPath)
+		payload, err := encodePacket(res, child, version)
 		if err != nil {
 			return fmt.Errorf("anansi: encode array-object element %d: %w", i, err)
 		}
@@ -563,7 +563,7 @@ func writeArrayObjectField(buf *bytes.Buffer, cs *definition.CompiledSchema, ver
 	return nil
 }
 
-func readArrayObjectField(r *byteReader, cs *definition.CompiledSchema, childIdx uint8, childPath definition.ResolvedPath, pool *container.Pool) ([]*container.DataContainer, error) {
+func readArrayObjectField(r *byteReader, res *slotCodec, pool *container.Pool) ([]*container.DataContainer, error) {
 	n, err := r.readUvarint()
 	if err != nil {
 		return nil, err
@@ -589,7 +589,7 @@ func readArrayObjectField(r *byteReader, cs *definition.CompiledSchema, childIdx
 			// extracted child remains valid independently of its parent.
 			child.OwnBacking(r.data)
 		}
-		if err := decodePacketInto(cs, childIdx, r.child(payload), child, pool, childPath); err != nil {
+		if err := decodePacketInto(res, r.child(payload), child, pool); err != nil {
 			return nil, fmt.Errorf("anansi: decode array-object element %d: %w", i, err)
 		}
 		out = append(out, child)

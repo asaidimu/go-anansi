@@ -24,35 +24,39 @@ const (
 // per-record formats — record boundaries are self-delineating either way
 // (a fixed-size state map for Dense, an explicit field_count for Sparse),
 // so the choice only affects size/speed, not correctness.
+//
+// Every document's positions map is captured exactly once: the density
+// evaluation and the per-record body encode share the same capture, so the
+// whole batch encode issues one Walk per record.
 func EncodeBatchRows(cs *definition.CompiledSchema, docs []*container.DataContainer, fullVersion uint16, opts ...EncodeOption) ([]byte, error) {
 	epoch, version, err := schemaVersionByte(fullVersion)
+	if err != nil {
+		return nil, err
+	}
+	res, err := resourcesFor(cs)
 	if err != nil {
 		return nil, err
 	}
 	h := header{Version: version}
 	h.Flags = Flags(epoch)<<flagEpochShift | Flags(PacketBatch)
 
-	fields, err := collectWireFieldsCached(cs, rootSlot, nil)
-	if err != nil {
-		return nil, err
-	}
-
 	useSparse := false
-	if len(fields) > 0 && len(docs) > 0 {
+	if len(res.fields) > 0 && len(docs) > 0 {
 		var totalPresent, totalPossible int
 		for _, doc := range docs {
-			for _, wf := range fields {
-				if fieldStateOf(doc, wf.key) != stateNotSet {
+			positions := positionsOf(doc)
+			for _, wf := range res.fields {
+				if stateAt(positions, wf.key) != stateNotSet {
 					totalPresent++
 				}
 			}
-			totalPossible += len(fields)
+			totalPossible += len(res.fields)
 		}
 		density := float64(totalPresent) / float64(totalPossible)
-		useSparse = len(fields) > 64 && density <= 0.25
+		useSparse = len(res.fields) > 64 && density <= 0.25
 	}
 
-	buf := bytes.NewBuffer(nil)
+	buf := bytes.NewBuffer(make([]byte, 0, 16+len(docs)*(8+len(res.fields))))
 	writeUvarintTo(buf, uint64(len(docs)))
 
 	batchFlags := byte(0)
@@ -62,12 +66,13 @@ func EncodeBatchRows(cs *definition.CompiledSchema, docs []*container.DataContai
 	buf.WriteByte(batchFlags)
 
 	for i, doc := range docs {
+		positions := positionsOf(doc)
 		if useSparse {
-			if err := encodeSparseBody(buf, cs, h, doc, fields); err != nil {
+			if err := encodeSparseBody(buf, cs, h, doc, positions, res); err != nil {
 				return nil, fmt.Errorf("anansi: encode batch record %d: %w", i, err)
 			}
 		} else {
-			if err := encodeDenseBody(buf, cs, h, doc, fields); err != nil {
+			if err := encodeDenseBody(buf, cs, h, doc, positions, res); err != nil {
 				return nil, fmt.Errorf("anansi: encode batch record %d: %w", i, err)
 			}
 		}
@@ -108,7 +113,7 @@ func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container
 		return nil, 0, fmt.Errorf("anansi: read batch flags: %w", err)
 	}
 
-	fields, err := collectWireFieldsCached(cs, rootSlot, nil)
+	res, err := resourcesFor(cs)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -139,18 +144,18 @@ func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container
 
 	switch {
 	case batchFlags&batchFlagColumnar != 0 || h.Flags.BatchColumnar():
-		if err := decodeColumnarBatch(body, cs, h, docs, fields, pool); err != nil {
+		if err := decodeColumnarBatch(body, cs, h, docs, res, pool); err != nil {
 			return nil, 0, err
 		}
 	case batchFlags&batchFlagSparse != 0:
 		for i := uint64(0); i < recordCount; i++ {
-			if err := decodeSparseBody(body, cs, h, docs[i], fields, pool); err != nil {
+			if err := decodeSparseBody(body, cs, h, docs[i], res, pool); err != nil {
 				return nil, 0, fmt.Errorf("anansi: decode batch record %d: %w", i, err)
 			}
 		}
 	default:
 		for i := uint64(0); i < recordCount; i++ {
-			if err := decodeDenseBody(body, cs, h, docs[i], fields, pool); err != nil {
+			if err := decodeDenseBody(body, cs, h, docs[i], res, pool); err != nil {
 				return nil, 0, fmt.Errorf("anansi: decode batch record %d: %w", i, err)
 			}
 		}

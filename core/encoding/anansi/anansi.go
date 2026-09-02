@@ -48,9 +48,13 @@ func SerializeAnansi(cs *definition.CompiledSchema, doc *container.DataContainer
 	if err != nil {
 		return nil, err
 	}
+	res, err := resourcesFor(cs)
+	if err != nil {
+		return nil, err
+	}
 	h := header{Version: version}
 	h.Flags = Flags(epoch) << flagEpochShift
-	body, _, err := encodePacketBody(cs, rootSlot, doc, h, nil)
+	body, _, err := encodePacketBody(res, doc, h)
 	if err != nil {
 		return nil, err
 	}
@@ -102,18 +106,18 @@ func DecodeAnansiInto(cs *definition.CompiledSchema, data []byte, doc *container
 		doc.OwnBacking(body.data)
 	}
 
-	fields, err := collectWireFieldsCached(cs, rootSlot, nil)
+	res, err := resourcesFor(cs)
 	if err != nil {
 		return 0, err
 	}
 
 	switch h.Flags.PacketType() {
 	case PacketDense:
-		if err := decodeDenseBody(body, cs, h, doc, fields, pool); err != nil {
+		if err := decodeDenseBody(body, res.cs, h, doc, res, pool); err != nil {
 			return 0, err
 		}
 	case PacketSparse:
-		if err := decodeSparseBody(body, cs, h, doc, fields, pool); err != nil {
+		if err := decodeSparseBody(body, res.cs, h, doc, res, pool); err != nil {
 			return 0, err
 		}
 	default:
@@ -131,24 +135,20 @@ func DecodeAnansiInto(cs *definition.CompiledSchema, data []byte, doc *container
 // compression/encryption applying to the outer message only — so they must
 // not claim transforms of their own (spec 2.5 TypeContainer: "the nested
 // packet uses the same schema version as the parent").
-func encodePacketBody(cs *definition.CompiledSchema, schemaIdx uint8, doc *container.DataContainer, version header, prefix definition.ResolvedPath) ([]byte, header, error) {
-	fields, err := collectWireFieldsCached(cs, schemaIdx, prefix)
-	if err != nil {
-		return nil, header{}, err
-	}
-
-	pt := selectPacketType(doc, fields)
+func encodePacketBody(res *slotCodec, doc *container.DataContainer, version header) ([]byte, header, error) {
+	positions := positionsOf(doc)
+	pt := selectPacketType(positions, res.fields)
 	h := header{Version: version.Version}
 	h.Flags = (version.Flags &^ (flagPacketTypeMask | flagCompressed | flagEncrypted | flagHashPresent)) | Flags(pt)
 
-	buf := bytes.NewBuffer(make([]byte, 0, 64+len(fields)*4))
+	buf := bytes.NewBuffer(make([]byte, 0, 64+len(res.fields)*4))
 	switch pt {
 	case PacketDense:
-		if err := encodeDenseBody(buf, cs, h, doc, fields); err != nil {
+		if err := encodeDenseBody(buf, res.cs, version, doc, positions, res); err != nil {
 			return nil, header{}, err
 		}
 	case PacketSparse:
-		if err := encodeSparseBody(buf, cs, h, doc, fields); err != nil {
+		if err := encodeSparseBody(buf, res.cs, version, doc, positions, res); err != nil {
 			return nil, header{}, err
 		}
 	}
@@ -156,8 +156,9 @@ func encodePacketBody(cs *definition.CompiledSchema, schemaIdx uint8, doc *conta
 }
 
 // encodePacket builds a complete raw nested sub-packet (header + body).
-func encodePacket(cs *definition.CompiledSchema, schemaIdx uint8, doc *container.DataContainer, version header, prefix definition.ResolvedPath) ([]byte, error) {
-	body, h, err := encodePacketBody(cs, schemaIdx, doc, version, prefix)
+// res is the element schema slot's resource tree (wf.child).
+func encodePacket(res *slotCodec, doc *container.DataContainer, version header) ([]byte, error) {
+	body, h, err := encodePacketBody(res, doc, version)
 	if err != nil {
 		return nil, err
 	}
@@ -169,8 +170,8 @@ func encodePacket(cs *definition.CompiledSchema, schemaIdx uint8, doc *container
 // decodePacketInto is encodePacket's decode counterpart for nested
 // TypeArrayObject element sub-packets. The caller supplies a reader built
 // from the element payload (typically parent.child(payload), inheriting
-// zero-copy state).
-func decodePacketInto(cs *definition.CompiledSchema, schemaIdx uint8, r *byteReader, doc *container.DataContainer, pool *container.Pool, prefix definition.ResolvedPath) error {
+// zero-copy state) and the element slot's prebuilt resource tree.
+func decodePacketInto(res *slotCodec, r *byteReader, doc *container.DataContainer, pool *container.Pool) error {
 	h, err := readHeader(r)
 	if err != nil {
 		return err
@@ -181,15 +182,11 @@ func decodePacketInto(cs *definition.CompiledSchema, schemaIdx uint8, r *byteRea
 	if err := readAndVerifyNestedHash(r, h.Flags); err != nil {
 		return err
 	}
-	fields, err := collectWireFieldsCached(cs, schemaIdx, prefix)
-	if err != nil {
-		return err
-	}
 	switch h.Flags.PacketType() {
 	case PacketDense:
-		return decodeDenseBody(r, cs, h, doc, fields, pool)
+		return decodeDenseBody(r, res.cs, h, doc, res, pool)
 	case PacketSparse:
-		return decodeSparseBody(r, cs, h, doc, fields, pool)
+		return decodeSparseBody(r, res.cs, h, doc, res, pool)
 	default:
 		return fmt.Errorf("anansi: unsupported nested packet type %s", h.Flags.PacketType())
 	}
@@ -203,19 +200,19 @@ func decodePacketInto(cs *definition.CompiledSchema, schemaIdx uint8, r *byteRea
 // This codec omits that check deliberately: in this engine, a recursive
 // schema reference is represented as a single terminal TypeUnknown field
 // (see classifyField in core/schema/definition/link.go) rather than an
-// unbounded structural cycle, so the field list collectWireFields produces
+// unbounded structural cycle, so the field list the resources produce
 // is always finite and fixed-size regardless of recursion — Dense encoding
 // remains well-defined. schemaContainsRecursiveField (wirefields.go) is
 // available for callers that want to inspect this, but it does not gate
 // packet selection here.
-func selectPacketType(doc *container.DataContainer, fields []wireField) PacketType {
+func selectPacketType(positions map[int64]int32, fields []wireField) PacketType {
 	fieldCount := len(fields)
 	if fieldCount == 0 {
 		return PacketDense
 	}
 	presentCount := 0
 	for _, wf := range fields {
-		if fieldStateOf(doc, wf.key) != stateNotSet {
+		if stateAt(positions, wf.key) != stateNotSet {
 			presentCount++
 		}
 	}
@@ -243,23 +240,24 @@ func encodeForced(cs *definition.CompiledSchema, doc *container.DataContainer, f
 	if err != nil {
 		return nil, err
 	}
-	h := header{Version: version}
-	h.Flags = Flags(epoch)<<flagEpochShift | Flags(pt)
-
-	fields, err := collectWireFieldsCached(cs, rootSlot, nil)
+	res, err := resourcesFor(cs)
 	if err != nil {
 		return nil, err
 	}
+	h := header{Version: version}
+	h.Flags = Flags(epoch)<<flagEpochShift | Flags(pt)
+
+	positions := positionsOf(doc)
 	// Pre-size buffer: state map (2 bits/field) + estimated values
-	est := 64 + len(fields)*8
+	est := 64 + len(res.fields)*8
 	buf := bytes.NewBuffer(make([]byte, 0, est))
 	switch pt {
 	case PacketDense:
-		if err := encodeDenseBody(buf, cs, h, doc, fields); err != nil {
+		if err := encodeDenseBody(buf, cs, h, doc, positions, res); err != nil {
 			return nil, err
 		}
 	case PacketSparse:
-		if err := encodeSparseBody(buf, cs, h, doc, fields); err != nil {
+		if err := encodeSparseBody(buf, cs, h, doc, positions, res); err != nil {
 			return nil, err
 		}
 	default:

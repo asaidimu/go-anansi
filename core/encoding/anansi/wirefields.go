@@ -2,9 +2,6 @@ package anansi
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
-	"sync"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -45,6 +42,17 @@ type wireField struct {
 	// separate DataContainers and the path is only used to derive a
 	// stable, collision-free address via the compiled schema).
 	childPath definition.ResolvedPath
+
+	// child is the element schema slot's prebuilt resource tree, shared
+	// with every other field of the same mount via the per-schema cache
+	// (resources.go). nil unless fd.DataType() == TypeArrayObject.
+	child *slotCodec
+
+	// idx is this field's canonical wire index within its slot's field
+	// list — its position in the Dense state map. Zero value is only
+	// meaningful for the root slot's first field; byType/byDP entries
+	// always carry the real index.
+	idx int
 }
 
 // collectWireFields walks schemaIdx (and, recursively, any flattened object
@@ -59,139 +67,14 @@ type wireField struct {
 // independent encode/decode calls — the property the wire format actually
 // needs.
 //
-// Note on deviation from the abstract spec's "ascending DataPoint" field
-// order (spec 2.3): in this concrete engine, a terminal field's DataPoint id
-// is a path-derived address (definition.CompiledSchema.Address), not a
-// small sequential per-schema counter, so sorting by raw DataPoint value
-// does not group fields by DataType the way the spec's illustrative example
-// assumes. This codec instead defines field order as schema declaration
-// order (a fixed, version-stable order given a compiled schema) and groups
-// Dense value blocks by DataType per section 3.1.3 independently of that
-// order, which satisfies the same structural requirements (fixed-size state
-// map, self-delineating per-type value blocks) without depending on the
-// specific bit layout of one engine's internal identifiers.
+// Production paths consume the cached resource tree instead (resourcesFor);
+// this uncached walk is retained for tests and diagnostics.
 func collectWireFields(cs *definition.CompiledSchema, schemaIdx uint8, prefix definition.ResolvedPath) ([]wireField, error) {
-	var out []wireField
-	if err := collectWireFieldsInto(cs, schemaIdx, prefix, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// wireFieldCache memoises wire-field walks per (compiled schema, slot,
-// path). A *definition.CompiledSchema is immutable after Link — descriptors
-// and addresses never change — so cache entries never invalidate and the
-// returned slices must be treated as read-only. This matters on hot paths:
-// nested TypeArrayObject elements each encode/decode through the same
-// (slot, path), and an uncached walk showed up as ~40% of both encode and
-// decode CPU in profiles of array-heavy documents.
-var wireFieldCache sync.Map // cacheKey -> []wireField
-
-// wireFieldByKeyCache provides O(1) lookup from DataContainerKey to wireField
-// for encoding. This avoids scanning the field list for each position entry.
-var wireFieldByKeyCache sync.Map // cacheKey -> map[container.DataContainerKey]*wireField
-
-type cacheKey struct {
-	cs      *definition.CompiledSchema
-	slot    uint8
-	pathKey string
-}
-
-func pathCacheKey(prefix definition.ResolvedPath) string {
-	if len(prefix) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	for _, s := range prefix {
-		b.WriteString(strconv.Itoa(int(s.SchemaIdx())))
-		b.WriteByte('/')
-		b.WriteString(strconv.Itoa(int(s.FieldIdx())))
-		b.WriteByte(';')
-	}
-	return b.String()
-}
-
-// collectWireFieldsCached returns the canonical field list for slot under
-// prefix, reusing a cached walk when available. The result is shared and
-// MUST NOT be mutated by callers.
-func collectWireFieldsCached(cs *definition.CompiledSchema, schemaIdx uint8, prefix definition.ResolvedPath) ([]wireField, error) {
-	key := cacheKey{cs: cs, slot: schemaIdx, pathKey: pathCacheKey(prefix)}
-	if v, ok := wireFieldCache.Load(key); ok {
-		return v.([]wireField), nil
-	}
-	fields, err := collectWireFields(cs, schemaIdx, prefix)
+	res, err := buildSlotCodec(cs, schemaIdx, prefix)
 	if err != nil {
 		return nil, err
 	}
-	v, _ := wireFieldCache.LoadOrStore(key, fields)
-	return v.([]wireField), nil
-}
-
-// collectWireFieldsByKeyCached returns a map from DataContainerKey to wireField
-// for O(1) lookup during encoding. The result is shared and MUST NOT be mutated.
-func collectWireFieldsByKeyCached(cs *definition.CompiledSchema, schemaIdx uint8, prefix definition.ResolvedPath) (map[container.DataContainerKey]*wireField, error) {
-	key := cacheKey{cs: cs, slot: schemaIdx, pathKey: pathCacheKey(prefix)}
-	if v, ok := wireFieldByKeyCache.Load(key); ok {
-		return v.(map[container.DataContainerKey]*wireField), nil
-	}
-	fields, err := collectWireFieldsCached(cs, schemaIdx, prefix)
-	if err != nil {
-		return nil, err
-	}
-	byKey := make(map[container.DataContainerKey]*wireField, len(fields))
-	for i := range fields {
-		byKey[fields[i].key] = &fields[i]
-	}
-	v, _ := wireFieldByKeyCache.LoadOrStore(key, byKey)
-	return v.(map[container.DataContainerKey]*wireField), nil
-}
-
-func collectWireFieldsInto(cs *definition.CompiledSchema, schemaIdx uint8, prefix definition.ResolvedPath, out *[]wireField) error {
-	if int(schemaIdx) >= len(cs.Schemas) {
-		return fmt.Errorf("anansi: schema slot %d out of range", schemaIdx)
-	}
-	slot := cs.Schemas[schemaIdx]
-	for j := uint16(0); j < slot.FieldCount; j++ {
-		abs := int(slot.FieldStart) + int(j)
-		fd := cs.Descriptors[abs]
-		name := cs.FieldsMeta[abs].Name
-		step := definition.NewResolvedStep(schemaIdx, uint8(j))
-		fieldPath := append(append(definition.ResolvedPath{}, prefix...), step)
-
-		if fd.Terminal() {
-			key, err := computeLeafKey(cs, fd, fieldPath)
-			if err != nil {
-				return err
-			}
-			*out = append(*out, wireField{fd: fd, key: key, name: name})
-			continue
-		}
-
-		if fd.ChildSchemaIdx() == definition.FdNoChild {
-			// Non-terminal with no child schema: nothing to encode (should
-			// not normally occur in a well-formed compiled schema).
-			continue
-		}
-
-		if fd.DataType() == container.TypeArrayObject {
-			*out = append(*out, wireField{
-				fd:        fd,
-				key:       internalKey(fd),
-				name:      name,
-				childIdx:  fd.ChildSchemaIdx(),
-				childPath: fieldPath,
-			})
-			continue
-		}
-
-		// Flattened object/union/composite/recursive-container field: it
-		// owns no storage itself; its descendants live at this same path
-		// prefix, one schema slot deeper.
-		if err := collectWireFieldsInto(cs, fd.ChildSchemaIdx(), fieldPath, out); err != nil {
-			return err
-		}
-	}
-	return nil
+	return res.fields, nil
 }
 
 // computeLeafKey resolves a terminal field's path to its DataContainerKey,

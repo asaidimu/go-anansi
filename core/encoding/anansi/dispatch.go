@@ -19,12 +19,15 @@ const (
 	stateHasValue
 )
 
-// fieldStateOf reports key's state in doc (spec 2.7).
+// fieldStateOf reports key's state in doc (spec 2.7) in a single positions
+// lookup (DataContainer.Position) instead of the two the IsSet/IsNull pair
+// costs. Capture-based paths use stateAt on a positionsOf snapshot instead.
 func fieldStateOf(doc *container.DataContainer, key container.DataContainerKey) fieldState {
-	if !doc.IsSet(key) {
+	idx, ok := doc.Position(key)
+	if !ok {
 		return stateNotSet
 	}
-	if doc.IsNull(key) {
+	if idx < 0 {
 		return stateNull
 	}
 	return stateHasValue
@@ -32,8 +35,8 @@ func fieldStateOf(doc *container.DataContainer, key container.DataContainerKey) 
 
 // writeFieldPayload writes wf's value bytes (spec 2.5, per DataType) from
 // doc into buf. The caller is responsible for having already established
-// (via fieldStateOf) that the field carries a value; this function does not
-// re-check state.
+// (via stateAt/fieldStateOf) that the field carries a value; this function
+// does not re-check state.
 func writeFieldPayload(buf *bytes.Buffer, cs *definition.CompiledSchema, version header, doc *container.DataContainer, wf wireField) error {
 	switch wf.fd.DataType() {
 	case container.TypeInt:
@@ -136,7 +139,7 @@ func writeFieldPayload(buf *bytes.Buffer, cs *definition.CompiledSchema, version
 		if err != nil {
 			return err
 		}
-		return writeArrayObjectField(buf, cs, version, v, wf.childIdx, wf.childPath)
+		return writeArrayObjectField(buf, wf.child, version, v)
 	default:
 		return fmt.Errorf("anansi: unsupported data type %d for field %q", wf.fd.DataType(), wf.name)
 	}
@@ -146,7 +149,7 @@ func writeFieldPayload(buf *bytes.Buffer, cs *definition.CompiledSchema, version
 // readFieldPayload reads wf's value bytes from r (spec 2.5) and writes them
 // into doc via the matching typed setter. The caller is responsible for
 // having already established that a value follows (state == HasValue).
-func readFieldPayload(r *byteReader, cs *definition.CompiledSchema, version header, doc *container.DataContainer, wf wireField, pool *container.Pool) error {
+func readFieldPayload(r *byteReader, cs *definition.CompiledSchema, doc *container.DataContainer, wf wireField, pool *container.Pool) error {
 	switch wf.fd.DataType() {
 	case container.TypeInt:
 		v, err := readInt(r)
@@ -247,7 +250,7 @@ func readFieldPayload(r *byteReader, cs *definition.CompiledSchema, version head
 		}
 		return doc.SetArrayUnknown(wf.key, v)
 	case container.TypeArrayObject:
-		v, err := readArrayObjectField(r, cs, wf.childIdx, wf.childPath, pool)
+		v, err := readArrayObjectField(r, wf.child, pool)
 		if err != nil {
 			return err
 		}

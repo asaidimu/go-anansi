@@ -997,6 +997,21 @@ func (d *DataContainer) HasValue(key DataContainerKey) bool {
 	return exists && idx >= 0
 }
 
+// Position reports key's raw positions-map entry in a single lookup — the
+// NotSet/Null/HasValue tri-state in one map access instead of the two
+// (IsSet + IsNull) the individual predicates need.
+//
+//	ok == false            → NotSet (field never set)
+//	ok == true, idx < 0    → Null   (explicitly null)
+//	ok == true, idx >= 0   → HasValue (value stored at typed-slice index idx)
+//
+// This is the codec-facing form of the state tri-state; IsSet/IsNull/
+// HasValue remain the friendlier per-question wrappers.
+func (d *DataContainer) Position(key DataContainerKey) (idx int32, ok bool) {
+	idx, ok = d.positions[int64(key)]
+	return idx, ok
+}
+
 // Length returns the number of set positions (values + nulls).
 func (d *DataContainer) Length() int {
 	return len(d.positions)
