@@ -2,18 +2,23 @@ package document
 
 import (
 	"context"
-
-	"github.com/asaidimu/go-anansi/v8/core/data"
 )
 
 // ============================================================================
 // STRUCT BINDING
 // ============================================================================
 //
-// Binding is lazy: values are read from the container's typed slots one field
-// at a time via data.BindSourced, so a bind never materializes the whole
-// document into a map. Only generated fast-path unmarshalers (which require a
-// map-backed data.Document) trigger the materializing fallback.
+// Binding walks the target struct's cached field metadata (built from the
+// core/reflect tag registry; see bind_registry.go) and fills each field
+// straight from this document's typed container slots via BindField, falling
+// back to Get + coercion for field kinds the container cannot bind directly.
+// A bind therefore never materializes the document into a map.
+//
+// The binder is implemented in this package: it no longer delegates to
+// data.BindSourced, severing the binding path's dependence on the data
+// package. The old materializing fallback (asDataDocument, which carried the
+// #4dl3nn "Inefficient binding" issue) is gone entirely — nested binds
+// recurse over container-backed child views instead of maps.
 
 // BindTo binds the document data into a target struct.
 func (d *Document) BindTo(target any) error {
@@ -40,23 +45,10 @@ func (d *Document) bindTo(ctx context.Context, target any, tag string) error {
 	if d == nil {
 		return ErrNilDocument
 	}
-	return data.BindSourced(d, d.asDataDocument, target, ctx, tag)
+	return bindStruct(d, target, ctx, tag)
 }
 
 // ToStruct is an alias for BindTo.
 func (d *Document) ToStruct(target any) error {
 	return d.BindTo(target)
-}
-
-func (d *Document) asDataDocument() (*data.Document, error) {
-	if d == nil {
-		return nil, ErrNilDocument
-	}
-
-	// @note #4dl3nn issue : Inefficient binding.
-	//
-	// We should ideally walk the data container
-	// and populate the struct
-
-	return data.NewDocument(d.ToMap(), d.Context())
 }

@@ -5,22 +5,22 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 var bindFieldTimeType = reflect.TypeFor[time.Time]()
 
-// BindField implements data.TypedFieldBinder. It copies a schema field's value
-// straight from the container into rv without boxing the value through an
-// interface (any). It handles terminal scalars (int/float/string/bool/bytes),
-// primitive arrays, nested objects, and array-of-object. Field kinds it cannot
-// bind directly (records, geometry, time.Time, unknown, non-struct/slice
-// targets) return (false, nil) so the binder falls back to the generic
-// FieldSource.Get path with its existing coercion and error semantics.
+// BindField implements the document binder's typedFieldBinder interface. It
+// copies a schema field's value straight from the container into rv without
+// boxing the value through an interface (any). It handles terminal scalars
+// (int/float/string/bool/bytes), primitive arrays, nested objects, and
+// array-of-object. Field kinds it cannot bind directly (records, geometry,
+// time.Time, unknown, non-struct/slice targets) return (false, nil) so the
+// binder falls back to the generic FieldSource.Get path with its existing
+// coercion and error semantics.
 func (d *Document) BindField(name string, rv reflect.Value, tag string) (bool, error) {
-	if d == nil || d.cs == nil || d.c == nil || d.isRecord() || data.ReservedSystemField(name) {
+	if d == nil || d.cs == nil || d.c == nil || d.isRecord() || reservedBindField(name) {
 		return false, nil
 	}
 	if !rv.IsValid() || !rv.CanSet() {
@@ -85,7 +85,7 @@ func (d *Document) bindNestedObject(rp definition.ResolvedPath, fd definition.Fi
 	}
 	child := fd.ChildSchemaIdx()
 	childView := d.newNestedView(child, rp)
-	if err := data.BindSourced(childView, childView.asDataDocument, rv.Addr().Interface(), d.ctx, tag); err != nil {
+	if err := bindStruct(childView, rv.Addr().Interface(), d.ctx, tag); err != nil {
 		return true, err
 	}
 	return true, nil
@@ -118,7 +118,7 @@ func (d *Document) bindArrayObject(rp definition.ResolvedPath, fd definition.Fie
 			}
 			target = ev.Addr().Interface()
 		}
-		if err := data.BindSourced(childView, childView.asDataDocument, target, d.ctx, tag); err != nil {
+		if err := bindStruct(childView, target, d.ctx, tag); err != nil {
 			return true, err
 		}
 	}
