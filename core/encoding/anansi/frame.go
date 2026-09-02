@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"fmt"
+	"sync"
 
 	"github.com/klauspost/compress/zstd"
 )
@@ -59,6 +60,15 @@ const aesKeySize = 32
 // gcmNonceSize is the standard GCM nonce length in bytes (spec 4.2.2:
 // "12 bytes for ChaCha20/AES-GCM").
 const gcmNonceSize = 12
+
+// outputBufferPool reuses byte slices for finishFrame output to reduce
+// allocations in hot encoding paths.
+var outputBufferPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 0, 256)
+		return &b
+	},
+}
 
 // EncodeOption customizes top-level packet encoding.
 type EncodeOption func(*encodeConfig)
@@ -162,8 +172,17 @@ func finishFrame(h header, body []byte, cfg encodeConfig) ([]byte, error) {
 		flags |= flagEncrypted
 	}
 
-	out := make([]byte, 2, len(body)+len(body)/2+64)
-	out[0], out[1] = byte(flags), h.Version
+	// Estimate capacity: 2 header + 16 hash + 12 nonce + body + overhead
+	est := 2 + 16 + 12 + len(body) + len(body)/8
+	bufPtr := outputBufferPool.Get().(*[]byte)
+	out := (*bufPtr)[:0]
+
+	// Ensure sufficient capacity
+	if cap(out) < est {
+		out = make([]byte, 0, est)
+	}
+
+	out = append(out, byte(flags), h.Version)
 	if cfg.integrity {
 		d := packetDigest(body)
 		out = append(out, d[:]...)
@@ -172,25 +191,36 @@ func finishFrame(h header, body []byte, cfg encodeConfig) ([]byte, error) {
 	inner := body
 	if cfg.compressed {
 		var lb bytes.Buffer
+		lb.Grow(len(body) + len(body)/10) // pre-allocate
 		writeUvarintTo(&lb, uint64(len(body)))
 		lb.Write(zstd.EncodeTo(nil, body))
 		inner = lb.Bytes()
 	}
 
 	if cfg.key == nil {
-		return append(out, inner...), nil
+		out = append(out, inner...)
+		*bufPtr = out
+		outputBufferPool.Put(bufPtr)
+		return out, nil
 	}
 
 	aead, err := newAEAD(cfg.key)
 	if err != nil {
+		*bufPtr = out[:0]
+		outputBufferPool.Put(bufPtr)
 		return nil, err
 	}
 	nonce := make([]byte, gcmNonceSize)
 	if _, err := rand.Read(nonce); err != nil {
+		*bufPtr = out[:0]
+		outputBufferPool.Put(bufPtr)
 		return nil, fmt.Errorf("anansi: generate nonce: %w", err)
 	}
 	out = append(out, nonce...)
-	return aead.Seal(out, nonce, inner, nil), nil
+	result := aead.Seal(out, nonce, inner, nil)
+	*bufPtr = result[:0]
+	outputBufferPool.Put(bufPtr)
+	return result, nil
 }
 
 // openFrame consumes everything between the header and the body — optional

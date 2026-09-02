@@ -250,7 +250,9 @@ func encodeForced(cs *definition.CompiledSchema, doc *container.DataContainer, f
 	if err != nil {
 		return nil, err
 	}
-	buf := bytes.NewBuffer(make([]byte, 0, 64+len(fields)*4))
+	// Pre-size buffer: state map (2 bits/field) + estimated values
+	est := 64 + len(fields)*8
+	buf := bytes.NewBuffer(make([]byte, 0, est))
 	switch pt {
 	case PacketDense:
 		if err := encodeDenseBody(buf, cs, h, doc, fields); err != nil {

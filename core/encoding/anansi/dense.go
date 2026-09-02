@@ -3,6 +3,7 @@ package anansi
 import (
 	"bytes"
 	"fmt"
+	"unsafe"
 
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -16,31 +17,8 @@ const (
 	stateBitsHasValue = 0b10
 )
 
-// encodeDenseStateMap writes the fixed-size, byte-aligned 2-bit-per-field
-// state map (spec 3.1.2) for fields (in their canonical wire order) against
-// doc.
-func encodeDenseStateMap(buf *bytes.Buffer, doc *container.DataContainer, fields []wireField) {
-	nBits := 2 * len(fields)
-	nBytes := (nBits + 7) / 8
-	packed := make([]byte, nBytes)
-	for i, wf := range fields {
-		var code byte
-		switch fieldStateOf(doc, wf.key) {
-		case stateNotSet:
-			code = stateBitsNotSet
-		case stateNull:
-			code = stateBitsNull
-		case stateHasValue:
-			code = stateBitsHasValue
-		}
-		bitPos := i * 2
-		packed[bitPos/8] |= code << uint(bitPos%8)
-	}
-	buf.Write(packed)
-}
-
 // decodeDenseStateMap reads back the per-field state codes written by
-// encodeDenseStateMap.
+// the encoder.
 func decodeDenseStateMap(r *byteReader, nFields int) ([]fieldState, error) {
 	nBits := 2 * nFields
 	nBytes := (nBits + 7) / 8
@@ -52,12 +30,12 @@ func decodeDenseStateMap(r *byteReader, nFields int) ([]fieldState, error) {
 	for i := 0; i < nFields; i++ {
 		bitPos := i * 2
 		code := (packed[bitPos/8] >> uint(bitPos%8)) & 0x03
-		switch code {
-		case stateBitsNotSet:
+		switch fieldState(code) {
+		case stateNotSet:
 			out[i] = stateNotSet
-		case stateBitsNull:
+		case stateNull:
 			out[i] = stateNull
-		case stateBitsHasValue:
+		case stateHasValue:
 			out[i] = stateHasValue
 		default:
 			return nil, fmt.Errorf("anansi: reserved state map code 0b11 at field index %d", i)
@@ -73,11 +51,40 @@ func decodeDenseStateMap(r *byteReader, nFields int) ([]fieldState, error) {
 // The TypeBool block is bit-packed (spec 2.5 TypeBool Dense Mode): all
 // present bools, in wire order, packed LSB-first into ceil(n/8) bytes.
 func encodeDenseBody(buf *bytes.Buffer, cs *definition.CompiledSchema, version header, doc *container.DataContainer, fields []wireField) error {
-	encodeDenseStateMap(buf, doc, fields)
+	// Use Walk to get positions directly
+	var positions map[int64]int32
+	doc.Walk(func(p map[int64]int32, _ func(container.DataType, ...int) unsafe.Pointer) (any, error) {
+		positions = p
+		return nil, nil
+	})
 
-	// Value blocks appear in DataType iota order (spec 3.1.3): TypeUnknown
-	// (0) through TypeArrayGeometry (15). Within a block, fields appear in
-	// their canonical wire order (a stable subsequence of `fields`).
+	// Pre-allocate state map - all zeros (stateNotSet) by default
+	nBits := 2 * len(fields)
+	nBytes := (nBits + 7) / 8
+	var stackBuf [32]byte
+	var stateMap []byte
+	if nBytes <= len(stackBuf) {
+		stateMap = stackBuf[:nBytes]
+	} else {
+		stateMap = make([]byte, nBytes)
+	}
+
+	// Set bits for present fields in one pass through positions
+	for i, wf := range fields {
+		if idx, exists := positions[int64(wf.key)]; exists {
+			var code byte
+			if idx < 0 {
+				code = stateBitsNull
+			} else {
+				code = stateBitsHasValue
+			}
+			bitPos := i * 2
+			stateMap[bitPos/8] |= code << uint(bitPos%8)
+		}
+	}
+	buf.Write(stateMap)
+
+	// Write values in DataType order (original approach)
 	for dt := container.DataType(0); dt <= container.TypeArrayGeometry; dt++ {
 		if dt == container.TypeBool {
 			var values []bool

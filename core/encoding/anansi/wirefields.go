@@ -87,6 +87,10 @@ func collectWireFields(cs *definition.CompiledSchema, schemaIdx uint8, prefix de
 // decode CPU in profiles of array-heavy documents.
 var wireFieldCache sync.Map // cacheKey -> []wireField
 
+// wireFieldByKeyCache provides O(1) lookup from DataContainerKey to wireField
+// for encoding. This avoids scanning the field list for each position entry.
+var wireFieldByKeyCache sync.Map // cacheKey -> map[container.DataContainerKey]*wireField
+
 type cacheKey struct {
 	cs      *definition.CompiledSchema
 	slot    uint8
@@ -121,6 +125,25 @@ func collectWireFieldsCached(cs *definition.CompiledSchema, schemaIdx uint8, pre
 	}
 	v, _ := wireFieldCache.LoadOrStore(key, fields)
 	return v.([]wireField), nil
+}
+
+// collectWireFieldsByKeyCached returns a map from DataContainerKey to wireField
+// for O(1) lookup during encoding. The result is shared and MUST NOT be mutated.
+func collectWireFieldsByKeyCached(cs *definition.CompiledSchema, schemaIdx uint8, prefix definition.ResolvedPath) (map[container.DataContainerKey]*wireField, error) {
+	key := cacheKey{cs: cs, slot: schemaIdx, pathKey: pathCacheKey(prefix)}
+	if v, ok := wireFieldByKeyCache.Load(key); ok {
+		return v.(map[container.DataContainerKey]*wireField), nil
+	}
+	fields, err := collectWireFieldsCached(cs, schemaIdx, prefix)
+	if err != nil {
+		return nil, err
+	}
+	byKey := make(map[container.DataContainerKey]*wireField, len(fields))
+	for i := range fields {
+		byKey[fields[i].key] = &fields[i]
+	}
+	v, _ := wireFieldByKeyCache.LoadOrStore(key, byKey)
+	return v.(map[container.DataContainerKey]*wireField), nil
 }
 
 func collectWireFieldsInto(cs *definition.CompiledSchema, schemaIdx uint8, prefix definition.ResolvedPath, out *[]wireField) error {

@@ -22,7 +22,8 @@
       {
         "assets": [
           "packages/anansi/package.json",
-          "packages/anansi/dist.package.json"
+          "packages/anansi/dist.package.json",
+          "CHANGELOG.md"
         ],
         "message": "release(release): v${nextRelease.version} [skip ci]"
       }
