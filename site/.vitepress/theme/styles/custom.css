@@ -1,0 +1,115 @@
+/* Go-Anansi docs site — custom theme tokens.
+   Accent color is spider-silk amber over a dark navy base.
+   VitePress exposes --vp-c-brand-* variables that propagate everywhere. */
+
+:root {
+  --vp-c-brand-1: #b8860b;
+  --vp-c-brand-2: #d4a017;
+  --vp-c-brand-3: #ffc04c;
+  --vp-c-brand-soft: rgba(184, 134, 11, 0.14);
+
+  --vp-c-bg: #ffffff;
+  --vp-c-bg-alt: #faf8f3;
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: -webkit-linear-gradient(120deg, #b8860b 30%, #d4a017);
+  --vp-home-hero-image-background-image: linear-gradient(-45deg, #b8860b33 50%, #d4a01733);
+  --vp-home-hero-image-filter: blur(44px);
+
+  /* Slightly tighter code blocks */
+  --vp-code-line-height: 1.6;
+}
+
+.dark {
+  --vp-c-brand-1: #ffc04c;
+  --vp-c-brand-2: #d4a017;
+  --vp-c-brand-3: #b8860b;
+  --vp-c-brand-soft: rgba(255, 192, 76, 0.16);
+  --vp-c-bg: #1a1612;
+  --vp-c-bg-alt: #221c14;
+}
+
+/* Phase-picker grid used on the landing page */
+.phase-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+
+.phase-card {
+  display: block;
+  padding: 1.1rem 1.25rem;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-alt);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.phase-card:hover {
+  border-color: var(--vp-c-brand-1);
+  transform: translateY(-2px);
+  text-decoration: none;
+}
+
+.phase-card__signal {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--vp-c-brand-1);
+  margin-bottom: 0.35rem;
+}
+
+.phase-card__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.phase-card__desc {
+  font-size: 0.85rem;
+  color: var(--vp-c-text-2);
+  line-height: 1.45;
+}
+
+/* Status badges for RFC pages */
+.rfc-badge {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.rfc-badge--draft {
+  background: #fce8b3;
+  color: #6b4d00;
+}
+
+.rfc-badge--accepted {
+  background: #d4f0d4;
+  color: #1d4d1d;
+}
+
+.rfc-badge--rejected {
+  background: #f5cdcd;
+  color: #6b1d1d;
+}
+
+.dark .rfc-badge--draft {
+  background: rgba(255, 192, 76, 0.18);
+  color: #ffc04c;
+}
+.dark .rfc-badge--accepted {
+  background: rgba(120, 220, 120, 0.18);
+  color: #8be38b;
+}
+.dark .rfc-badge--rejected {
+  background: rgba(220, 120, 120, 0.18);
+  color: #e38b8b;
+}

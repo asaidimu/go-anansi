@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="Go-Anansi">
+  <!-- Spider-silk amber mark on a transparent background. -->
+  <!-- 8 radial spokes + 4 concentric arcs — a stylized web. -->
+  <defs>
+    <linearGradient id="silk" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffc04c"/>
+      <stop offset="100%" stop-color="#b8860b"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Outer ring -->
+  <circle cx="100" cy="100" r="92" fill="none" stroke="url(#silk)" stroke-width="1.5" opacity="0.4"/>
+
+  <!-- 8 spokes -->
+  <g stroke="url(#silk)" stroke-width="2" stroke-linecap="round" fill="none">
+    <line x1="100" y1="20" x2="100" y2="180"/>
+    <line x1="20" y1="100" x2="180" y2="100"/>
+    <line x1="43" y1="43" x2="157" y2="157"/>
+    <line x1="157" y1="43" x2="43" y2="157"/>
+  </g>
+
+  <!-- 4 concentric arcs (top half only, web-like) -->
+  <g stroke="url(#silk)" stroke-width="1.25" fill="none" opacity="0.85">
+    <path d="M 30 100 A 70 70 0 0 1 170 100"/>
+    <path d="M 50 100 A 50 50 0 0 1 150 100"/>
+    <path d="M 70 100 A 30 30 0 0 1 130 100"/>
+    <path d="M 88 100 A 12 12 0 0 1 112 100"/>
+  </g>
+
+  <!-- Center mark — a small filled node -->
+  <circle cx="100" cy="100" r="4" fill="url(#silk)"/>
+</svg>
