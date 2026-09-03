@@ -7,6 +7,12 @@
 
 # Go-Anansi: A Schema-Driven, Hybrid Persistence Layer for Go
 
+> **📖 Documentation:** The full docs site lives at
+> **[asaidimu.github.io/go-anansi](https://asaidimu.github.io/go-anansi/)** —
+> tutorial, guides, reference, explanations, RFCs, and examples.
+>
+> This README is a quick orientation. For everything else, use the docs site.
+
 ![Go Version](https://img.shields.io/badge/Go-1.27%2B-00ADD8?style=for-the-badge&logo=go)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 ![Build Status](https://img.shields.io/badge/Build-Passing-brightgreen?style=for-the-badge)
