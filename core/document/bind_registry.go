@@ -59,6 +59,7 @@ var (
 	ErrBindEmptyFieldName       = common.NewSystemError("ERR_DOCUMENT_BIND_EMPTY_FIELD_NAME", "doc tag has empty field name")
 	ErrBindUnknownDocTagOption  = common.NewSystemError("ERR_DOCUMENT_BIND_UNKNOWN_DOC_TAG_OPTION", "unknown doc tag option")
 	ErrBindKeyNotFound          = common.NewSystemError("ERR_DOCUMENT_BIND_KEY_NOT_FOUND", "key not found")
+	ErrBindCannotTraverse       = common.NewSystemError("ERR_DOCUMENT_BIND_CANNOT_TRAVERSE", "cannot traverse into non-object value")
 )
 
 // ---------- Field Sources ----------
@@ -104,11 +105,15 @@ func (m mapSource) Metadata() map[string]any { return make(map[string]any) }
 
 // bindFieldInfo is the binder's per-field record: the flattened index path
 // into the target struct, the field's schema name (from the anansi tag), and
-// the original StructField for error context.
+// the original StructField for error context. omitEmpty and isSystemEmbed
+// are only consumed by the struct walker (bind_walk.go); the reader ignores
+// them.
 type bindFieldInfo struct {
-	index       []int
-	name        string
-	structField reflect.StructField
+	index         []int
+	name          string
+	structField   reflect.StructField
+	omitEmpty     bool
+	isSystemEmbed bool
 }
 
 type bindFieldsKey struct {
@@ -140,7 +145,7 @@ func bindFieldsFor(t reflect.Type, tag string) ([]bindFieldInfo, error) {
 		return info.fields, info.err
 	}
 
-	fields, err := buildBindFields(t, nil, resolveBindTagChain(tag))
+	fields, err := buildBindFields(t, nil, resolveBindTagChain(tag), false)
 	info := &cachedBindFields{fields: fields, err: err}
 	bindFieldsCache.Store(key, info)
 	return fields, err
@@ -149,8 +154,9 @@ func bindFieldsFor(t reflect.Type, tag string) ([]bindFieldInfo, error) {
 // buildBindFields walks t's fields, flattening anonymous struct embeds and
 // resolving each field's schema name through the tag chain. Tag values are
 // read via the core/reflect registry (cached per type, zero-copy) rather
-// than reflect.StructTag.Get.
-func buildBindFields(t reflect.Type, indexPrefix []int, tagChain []string) ([]bindFieldInfo, error) {
+// than reflect.StructTag.Get. isSystemEmbed marks the whole subtree as
+// system-embedded (identity fields), propagated from enclosing embeds.
+func buildBindFields(t reflect.Type, indexPrefix []int, tagChain []string, isSystemEmbed bool) ([]bindFieldInfo, error) {
 	var fields []bindFieldInfo
 
 	for i := 0; i < t.NumField(); i++ {
@@ -158,7 +164,11 @@ func buildBindFields(t reflect.Type, indexPrefix []int, tagChain []string) ([]bi
 		indexPath := append(append([]int(nil), indexPrefix...), i)
 
 		if f.Anonymous && f.Type.Kind() == reflect.Struct {
-			subFields, err := buildBindFields(f.Type, indexPath, tagChain)
+			// System-model embeds (e.g. DocumentModel) mark their whole
+			// subtree so the struct walker can skip identity fields for
+			// partial writes.
+			sysEmbed := isSystemEmbed || IsSystemModelType(f.Type)
+			subFields, err := buildBindFields(f.Type, indexPath, tagChain, sysEmbed)
 			if err != nil {
 				return nil, err
 			}
@@ -189,15 +199,17 @@ func buildBindFields(t reflect.Type, indexPrefix []int, tagChain []string) ([]bi
 			continue
 		}
 
-		fieldName, _, sysErr := parseBindTag(docTag)
+		fieldName, omitEmpty, sysErr := parseBindTag(docTag)
 		if sysErr != nil {
 			return nil, sysErr.WithPath(f.Name)
 		}
 
 		fields = append(fields, bindFieldInfo{
-			index:       indexPath,
-			name:        fieldName,
-			structField: f,
+			index:         indexPath,
+			name:          fieldName,
+			structField:   f,
+			omitEmpty:     omitEmpty,
+			isSystemEmbed: isSystemEmbed,
 		})
 	}
 

@@ -1,6 +1,8 @@
 package data
 
 // Index provides fast lookups for document collections.
+//
+// Deprecated: Use container.Collection instead.
 type DocumentIndex struct {
 	keyIndex     map[string]map[any][]int // key -> value -> document indices
 	documents    []Document
@@ -8,6 +10,8 @@ type DocumentIndex struct {
 }
 
 // NewDocumentIndex creates a new index for documents.
+//
+// Deprecated: Use container.Collection instead.
 func NewDocumentIndex(docs []Document, keyExtractor func(Document) map[string]any) *DocumentIndex {
 	index := &DocumentIndex{
 		keyIndex:     make(map[string]map[any][]int),
@@ -35,6 +39,8 @@ func (di *DocumentIndex) rebuild() {
 }
 
 // Find returns documents matching the key-value pair.
+//
+// Deprecated: Use container.Collection instead.
 func (di *DocumentIndex) Find(key string, value any) []Document {
 	if valueMap, ok := di.keyIndex[key]; ok {
 		if indices, ok := valueMap[value]; ok {

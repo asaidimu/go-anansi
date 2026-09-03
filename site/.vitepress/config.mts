@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitepress'
+import { withMermaid } from 'vitepress-plugin-mermaid'
 
 // Go-Anansi docs site configuration.
 // Sidebar grouping follows the phase-signal routing from
@@ -7,7 +8,7 @@ import { defineConfig } from 'vitepress'
 // Diátaxis spine: Tutorial / Guides / Reference / Explanations
 // plus RFCs (walled off), Examples, and Contribute.
 
-export default defineConfig({
+export default withMermaid(defineConfig({
   lang: 'en-US',
   title: 'Go-Anansi',
   description:
@@ -21,7 +22,7 @@ export default defineConfig({
   lastUpdated: true,
 
   head: [
-    ['meta', { name: 'theme-color', content: '#b8860b' }],
+    ['meta', { name: 'theme-color', content: '#4070b8' }],
     ['meta', { property: 'og:type', content: 'website' }],
     ['meta', { property: 'og:title', content: 'Go-Anansi' }],
     [
@@ -39,6 +40,17 @@ export default defineConfig({
     toc: { level: [2, 3] },
     // Note: raw HTML is allowed in markdown by default in VitePress, so the
     // landing page's <div class="phase-picker"> works without extra plugins.
+  },
+
+  vite: {
+    optimizeDeps: {
+      // mermaid and its UMD-only transitive dep fastdom must be prebundled
+      // eagerly: left to lazy discovery, Vite dev serves fastdom's raw UMD
+      // file, which has no default export and breaks rendering with
+      // "does not provide an export named 'default'".
+      // (withMermaid appends its own entries to this list.)
+      include: ['mermaid', 'fastdom'],
+    },
   },
 
   // Built-in local search — no Algolia account needed for an alpha project.
@@ -73,6 +85,7 @@ export default defineConfig({
           { text: 'Examples', link: '/examples/' },
           { text: 'RFCs', link: '/rfc/' },
           { text: 'Contribute', link: '/contribute/getting-started' },
+          { text: 'Thesis (original)', link: '/thesis/' },
           { text: 'Changelog', link: '/changelog' },
         ],
       },
@@ -121,23 +134,34 @@ export default defineConfig({
         },
       ],
 
+      // Ordered by dependency: the schema spine (format → rules →
+      // versioning → migration) first, then authoring paths, codegen,
+      // runtime, query, and tooling. Design proposals are walled off at
+      // the end so they can't be mistaken for implemented behavior.
       '/reference/': [
         {
           text: 'Reference',
           collapsed: false,
           items: [
             { text: 'Schema format', link: '/reference/schema-format' },
-            { text: 'Query DSL', link: '/reference/query-dsl' },
-            { text: 'Struct tag spec', link: '/reference/struct-tag-spec' },
-            { text: 'Schema IR', link: '/reference/schema-ir' },
             { text: 'Schema rules', link: '/reference/schema-rules' },
-            { text: 'Schema addressing', link: '/reference/schema-addressing' },
             { text: 'Schema versioning', link: '/reference/schema-versioning' },
             { text: 'Migration semantics', link: '/reference/migration-semantics' },
+            { text: 'Struct tag spec', link: '/reference/struct-tag-spec' },
             { text: 'Codegen modes', link: '/reference/codegen-modes' },
             { text: 'Collection internals', link: '/reference/collection-internals' },
+            { text: 'Query DSL', link: '/reference/query-dsl' },
             { text: 'CLI & config', link: '/reference/cli' },
             { text: 'TypeScript package', link: '/reference/ts-package' },
+          ],
+        },
+        {
+          text: 'Design proposals',
+          collapsed: true,
+          items: [
+            { text: 'Schema IR', link: '/reference/schema-ir' },
+            { text: 'Schema addressing', link: '/reference/schema-addressing' },
+            { text: 'Container serialization', link: '/reference/container-serialization' },
           ],
         },
       ],
@@ -192,6 +216,23 @@ export default defineConfig({
         },
       ],
 
+      // Imported wholesale from the original anansi thesis docs; content
+      // decisions (revise/rewrite/cruft) are a later pass. Order mirrors the
+      // source IA.
+      '/thesis/': [
+        {
+          text: 'Thesis (original)',
+          collapsed: false,
+          items: [
+            { text: 'Editorial: plan vs reality', link: '/thesis/editorial' },
+            { text: 'Thesis home', link: '/thesis/' },
+            { text: 'Enterprise systems evolution', link: '/thesis/enterprise-systems-evolution' },
+            { text: 'Schema-driven development', link: '/thesis/schema-driven-development' },
+            { text: 'Evolution framework', link: '/thesis/evolution-framework' },
+          ],
+        },
+      ],
+
       '/contribute/': [
         {
           text: 'Contribute',
@@ -240,4 +281,4 @@ export default defineConfig({
 
     externalLinkIcon: true,
   },
-})
+}))

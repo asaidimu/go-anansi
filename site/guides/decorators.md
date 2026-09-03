@@ -22,7 +22,7 @@ type NegativeAmountValidator struct {
     logger *zap.Logger
 }
 
-func (d *NegativeAmountValidator) CreateOne(ctx context.Context, doc *data.Document) (base.CreateResult, error) {
+func (d *NegativeAmountValidator) CreateOne(ctx context.Context, doc data.Documenter) (base.CreateResult, error) {
     if amt, err := doc.GetInt("amount"); err == nil && amt < 0 {
         return base.CreateResult{Status: base.StatusFailedValidation, Data: doc}, errors.New("amount cannot be negative")
     }

@@ -6,6 +6,8 @@ import (
 )
 
 // MarshalJSON implements the json.Marshaler interface.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) MarshalJSON() ([]byte, error) {
 	if d == nil || d.data == nil {
 		return []byte("null"), nil
@@ -15,6 +17,8 @@ func (d *Document) MarshalJSON() ([]byte, error) {
 }
 
 // UnmarshalJSON implements the json.Unmarshaler interface.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) UnmarshalJSON(data []byte) error {
 	if d == nil {
 		return fmt.Errorf("cannot unmarshal into nil document")

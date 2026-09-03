@@ -93,6 +93,8 @@ func SchemaFromWithTag[T any](tag string, omitSystemField ...bool) ([]byte, erro
 // ExtractDTOSchemaDirect streams JSON bytes directly into a buffer without
 // intermediate maps or struct serialization. Uses the default "anansi" tag.
 // omitSystemField controls whether embedded registered system models (e.g. DocumentModel) are skipped.
+//
+// Deprecated: Use SchemaFrom instead.
 func ExtractDTOSchemaDirect(target any, omitSystemField ...bool) ([]byte, error) {
 	omit := false
 	if len(omitSystemField) > 0 {
@@ -103,6 +105,8 @@ func ExtractDTOSchemaDirect(target any, omitSystemField ...bool) ([]byte, error)
 
 // ExtractDTOSchemaDirectWithTag does the same as ExtractDTOSchemaDirect but
 // uses the given custom tag for name/path resolution (see SchemaFromWithTag).
+//
+// Deprecated: Use SchemaFromWithTag instead.
 func ExtractDTOSchemaDirectWithTag(target any, tag string, omitSystemField ...bool) ([]byte, error) {
 	if target == nil {
 		return nil, fmt.Errorf("root DTO target cannot be nil")

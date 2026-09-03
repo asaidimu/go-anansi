@@ -9,6 +9,8 @@ import (
 )
 
 // Get with generic type support
+//
+// Deprecated: Use document.Document getters instead.
 func Get[T any](doc *Document, key string) (T, error) {
 	var zero T
 	val, err := doc.Get(key)
@@ -23,6 +25,8 @@ func Get[T any](doc *Document, key string) (T, error) {
 }
 
 // GetWithCoercion attempts type coercion for common types
+//
+// Deprecated: Use document.Document getters instead.
 func GetWithCoercion[T any](doc *Document, key string) (T, error) {
 	var zero T
 	val, err := doc.Get(key)
@@ -70,6 +74,8 @@ func GetWithCoercion[T any](doc *Document, key string) (T, error) {
 }
 
 // GetNested with generic type support
+//
+// Deprecated: Use document.Document getters instead.
 func GetNested[T any](doc *Document, path string) (T, error) {
 	var zero T
 	val, err := doc.GetNested(path)

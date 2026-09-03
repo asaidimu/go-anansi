@@ -7,6 +7,8 @@ import (
 )
 
 // Query creates a new fluent query interface
+//
+// Deprecated: Use core/query instead.
 func Query(docs DocumentSet) *FluentQuery {
 	return &FluentQuery{
 		docs:    docs,
@@ -15,6 +17,8 @@ func Query(docs DocumentSet) *FluentQuery {
 }
 
 // FluentQuery provides a fluent interface for querying documents
+//
+// Deprecated: Use core/query instead.
 type FluentQuery struct {
 	docs    DocumentSet
 	filters []func(Documenter) bool
@@ -23,12 +27,17 @@ type FluentQuery struct {
 	offset  int
 }
 
+// SortCriteria is a sort specification with Key and Desc fields.
+//
+// Deprecated: Use core/query instead.
 type SortCriteria struct {
 	Key  string
 	Desc bool
 }
 
 // Where adds an equality filter
+//
+// Deprecated: Use core/query instead.
 func (fq *FluentQuery) Where(key string, value any) *FluentQuery {
 	fq.filters = append(fq.filters, func(d Documenter) bool {
 		val, err := d.Get(key)
@@ -41,26 +50,38 @@ func (fq *FluentQuery) Where(key string, value any) *FluentQuery {
 }
 
 // WhereFunc adds a custom filter function
+//
+// Deprecated: Use core/query instead.
 func (fq *FluentQuery) WhereFunc(predicate func(Documenter) bool) *FluentQuery {
 	fq.filters = append(fq.filters, predicate)
 	return fq
 }
 
 // Comparison helpers for fluent queries
+//
+// Deprecated: Use core/query instead.
 type FieldComparison struct {
 	query *FluentQuery
 	key   string
 }
 
 // Where returns a field comparison helper
+//
+// Deprecated: Use core/query instead.
 func (fq *FluentQuery) WhereField(key string) *FieldComparison {
 	return &FieldComparison{query: fq, key: key}
 }
 
+// Equals adds an equality comparison.
+//
+// Deprecated: Use core/query instead.
 func (fc *FieldComparison) Equals(value any) *FluentQuery {
 	return fc.query.Where(fc.key, value)
 }
 
+// GreaterThan adds a greater-than comparison.
+//
+// Deprecated: Use core/query instead.
 func (fc *FieldComparison) GreaterThan(value any) *FluentQuery {
 	fc.query.filters = append(fc.query.filters, func(d Documenter) bool {
 		val, err := d.Get(fc.key)
@@ -72,6 +93,9 @@ func (fc *FieldComparison) GreaterThan(value any) *FluentQuery {
 	return fc.query
 }
 
+// LessThan adds a less-than comparison.
+//
+// Deprecated: Use core/query instead.
 func (fc *FieldComparison) LessThan(value any) *FluentQuery {
 	fc.query.filters = append(fc.query.filters, func(d Documenter) bool {
 		val, err := d.Get(fc.key)
@@ -83,6 +107,9 @@ func (fc *FieldComparison) LessThan(value any) *FluentQuery {
 	return fc.query
 }
 
+// Contains adds a case-insensitive substring match.
+//
+// Deprecated: Use core/query instead.
 func (fc *FieldComparison) Contains(substr string) *FluentQuery {
 	fc.query.filters = append(fc.query.filters, func(d Documenter) bool {
 		val, err := d.GetString(fc.key)
@@ -94,6 +121,9 @@ func (fc *FieldComparison) Contains(substr string) *FluentQuery {
 	return fc.query
 }
 
+// In adds a set-membership check.
+//
+// Deprecated: Use core/query instead.
 func (fc *FieldComparison) In(values ...any) *FluentQuery {
 	valueSet := make(map[any]bool)
 	for _, v := range values {
@@ -111,37 +141,55 @@ func (fc *FieldComparison) In(values ...any) *FluentQuery {
 }
 
 // Sorting
+//
+// Deprecated: Use core/query instead.
 func (fq *FluentQuery) SortBy(key string) *FluentQuery {
 	fq.sorters = append(fq.sorters, SortCriteria{Key: key, Desc: false})
 	return fq
 }
 
+// SortByDesc adds a descending sort.
+//
+// Deprecated: Use core/query instead.
 func (fq *FluentQuery) SortByDesc(key string) *FluentQuery {
 	fq.sorters = append(fq.sorters, SortCriteria{Key: key, Desc: true})
 	return fq
 }
 
 // Pagination
+//
+// Deprecated: Use core/query instead.
 func (fq *FluentQuery) Limit(n int) *FluentQuery {
 	fq.limit = n
 	return fq
 }
 
+// Offset sets the result offset.
+//
+// Deprecated: Use core/query instead.
 func (fq *FluentQuery) Offset(n int) *FluentQuery {
 	fq.offset = n
 	return fq
 }
 
+// Skip is an alias for Offset.
+//
+// Deprecated: Use core/query instead.
 func (fq *FluentQuery) Skip(n int) *FluentQuery {
 	return fq.Offset(n)
 }
 
 // Aggregation helpers
+//
+// Deprecated: Use core/query instead.
 func (fq *FluentQuery) Count() int {
 	result := fq.Execute()
 	return len(result)
 }
 
+// First returns the first matching document.
+//
+// Deprecated: Use core/query instead.
 func (fq *FluentQuery) First() (Documenter, bool) {
 	result := fq.Limit(1).Execute()
 	if len(result) == 0 {
@@ -150,11 +198,16 @@ func (fq *FluentQuery) First() (Documenter, bool) {
 	return result[0], true
 }
 
+// Exists returns true if any document matches.
+//
+// Deprecated: Use core/query instead.
 func (fq *FluentQuery) Exists() bool {
 	return fq.Limit(1).Count() > 0
 }
 
 // Execute applies all filters, sorts, and pagination
+//
+// Deprecated: Use core/query instead.
 func (fq *FluentQuery) Execute() DocumentSet {
 	result := make(DocumentSet, 0, len(fq.docs))
 

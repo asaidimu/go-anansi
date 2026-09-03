@@ -7,6 +7,8 @@ package data
 //
 // This is a lightweight alternative to NewDocumentFromStruct that skips the
 // factory pipeline (no UUID generation, no metadata initialization).
+//
+// Deprecated: Use document.DocumentPool.FromStruct instead.
 func ToDoc(s any) (*Document, error) {
 	docData, err := structToMap(s, false, AnansiTag)
 	if err != nil {
@@ -22,6 +24,8 @@ func ToDoc(s any) (*Document, error) {
 // FromDoc populates a typed struct from a Document by matching its user data
 // keys against the struct's anansi tags. System fields (_id_, _metadata_)
 // in the Document are bound to the struct's DocumentModel if present.
+//
+// Deprecated: Use document.Document.BindTo instead.
 func FromDoc[Dst any](doc *Document) (Dst, error) {
 	var v Dst
 	err := doc.BindTo(&v)
@@ -31,6 +35,8 @@ func FromDoc[Dst any](doc *Document) (Dst, error) {
 // MapTo copies fields from src to dst via Document as the interchange format.
 // Fields are matched by anansi tag name. The destination type may embed
 // DocumentModel to capture identity; if it does not, system fields are dropped.
+//
+// Deprecated: Use document.DocumentPool.FromStruct with BindTo instead.
 func MapTo[Dst any](src any) (Dst, error) {
 	doc, err := ToDoc(src)
 	if err != nil {

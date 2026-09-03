@@ -54,6 +54,10 @@ import (
 //
 //	// Serialization includes everything
 //	m := doc.ToMap()                     // ✓ Contains _id, _metadata_, name, age
+//
+// Deprecated: Use document.Document instead. The map-backed data.Document
+// incurs map allocations and pools nothing; document.Document is the
+// container/pool-backed fast path.
 type Document struct {
 	id       string
 	ctx      context.Context
@@ -63,11 +67,15 @@ type Document struct {
 
 // Patch represents a set of fields to be updated.
 // It is a map[string]any but signifies that it is a partial document.
+//
+// Deprecated: Use document.DocumentPool.Patch instead.
 type Patch map[string]any
 
 // Document converts the Patch into a Document.
 // It uses the same logic as your existing Patch function:
 // bypassing auto-IDs and Metadata.
+//
+// Deprecated: Use document.DocumentPool.Patch instead.
 func (p Patch) Document(ctx ...context.Context) *Document {
 	data := map[string]any(p)
 	if data == nil {
@@ -116,6 +124,8 @@ func convertToDocumentMap(data any) (map[string]any, error) {
 }
 
 // NewDocument creates a new Document from a map[string]any.
+//
+// Deprecated: Use document.DocumentPool.FromMap instead.
 func NewDocument(data any, ctx ...context.Context) (*Document, error) {
 	docMap, err := convertToDocumentMap(data)
 	if err != nil {
@@ -129,6 +139,8 @@ func NewDocument(data any, ctx ...context.Context) (*Document, error) {
 }
 
 // MustNewDocument creates a new Document from various map forms, panics on failure.
+//
+// Deprecated: Use document.DocumentPool.MustFromMap instead.
 func MustNewDocument(data any, ctx ...context.Context) *Document {
 	docMap, err := convertToDocumentMap(data)
 	if err != nil {
@@ -149,6 +161,8 @@ func MustNewDocument(data any, ctx ...context.Context) *Document {
 }
 
 // Context returns the document's context.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Context() context.Context {
 	if d.ctx == nil {
 		return context.Background()
@@ -157,6 +171,8 @@ func (d *Document) Context() context.Context {
 }
 
 // WithContext returns a new Document with the provided context.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) WithContext(ctx context.Context) Documenter {
 	return &Document{
 		id:       d.id,
@@ -178,6 +194,8 @@ func (d *Document) WithContext(ctx context.Context) Documenter {
 //
 //	name, err := doc.Get("name")  // ✓ Works - user data
 //	id, err := doc.Get("_id")     // ✗ Error - use ID() instead
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Get(key string) (any, error) {
 	val, ok := utils.GetValueByPath(d.data, key)
 	if !ok {
@@ -187,6 +205,8 @@ func (d *Document) Get(key string) (any, error) {
 }
 
 // GetOr retrieves a value or returns a default if not found.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetOr(key string, defaultValue any) any {
 	if val, ok := utils.GetValueByPath(d.data, key); ok {
 		return val
@@ -195,6 +215,8 @@ func (d *Document) GetOr(key string, defaultValue any) any {
 }
 
 // MustGet retrieves a value, panics if not found.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) MustGet(key string) any {
 	val, ok := utils.GetValueByPath(d.data, key)
 	if !ok {
@@ -215,6 +237,8 @@ func (d *Document) MustGet(key string) any {
 //	doc.Set("name", "John")              // ✓ Works
 //	doc.Set("_id", "custom")             // ✗ Does nothing - not in user data
 //	doc.SetMetadataValue("author", "me") // ✓ Correct way for metadata
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Set(key string, value any) error {
 	return d.SetNested(key, value)
 }
@@ -225,36 +249,50 @@ func (d *Document) Set(key string, value any) error {
 // map storing exactly the value given.
 
 // SetString stores a string value.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) SetString(key string, value string) error {
 	return d.Set(key, value)
 }
 
 // SetInt stores an integer value.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) SetInt(key string, value int) error {
 	return d.Set(key, value)
 }
 
 // SetFloat64 stores a number value.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) SetFloat64(key string, value float64) error {
 	return d.Set(key, value)
 }
 
 // SetBool stores a boolean value.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) SetBool(key string, value bool) error {
 	return d.Set(key, value)
 }
 
 // SetStringArray stores an array of strings.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) SetStringArray(key string, value []string) error {
 	return d.Set(key, value)
 }
 
 // SetIntArray stores an array of integers.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) SetIntArray(key string, value []int) error {
 	return d.Set(key, value)
 }
 
 // Unset removes a key from the document's user data.
+//
+// Deprecated: Use document.Document instead.
 // System-managed fields (_id_, _metadata_) cannot be removed.
 func (d *Document) Unset(key string) {
 	if ReservedSystemField(key) {
@@ -264,6 +302,8 @@ func (d *Document) Unset(key string) {
 }
 
 // SetIfNotExists sets a value only if the key doesn't exist.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) SetIfNotExists(key string, value any) bool {
 	if d.data == nil {
 		d.data = make(map[string]any)
@@ -276,6 +316,8 @@ func (d *Document) SetIfNotExists(key string, value any) bool {
 }
 
 // GetString with comprehensive type coercion and path support.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetString(keyOrPath string) (string, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(""), "GetString")
 	if err != nil {
@@ -285,6 +327,8 @@ func (d *Document) GetString(keyOrPath string) (string, error) {
 }
 
 // GetInt with comprehensive numeric coercion and path support.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetInt(keyOrPath string) (int, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(0), "GetInt")
 	if err != nil {
@@ -294,6 +338,8 @@ func (d *Document) GetInt(keyOrPath string) (int, error) {
 }
 
 // GetFloat64 with numeric coercion and path support.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetFloat64(keyOrPath string) (float64, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(0.0), "GetFloat64")
 	if err != nil {
@@ -303,6 +349,8 @@ func (d *Document) GetFloat64(keyOrPath string) (float64, error) {
 }
 
 // GetBool with string parsing support and path support.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetBool(keyOrPath string) (bool, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(false), "GetBool")
 	if err != nil {
@@ -312,6 +360,8 @@ func (d *Document) GetBool(keyOrPath string) (bool, error) {
 }
 
 // GetTime parses time from various formats with path support.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetTime(keyOrPath string) (time.Time, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(time.Time{}), "GetTime")
 	if err != nil {
@@ -321,6 +371,8 @@ func (d *Document) GetTime(keyOrPath string) (time.Time, error) {
 }
 
 // GetDocument retrieves a nested document with path support.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetDocument(keyOrPath string) (Documenter, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf(&Document{}), "GetDocument")
 	if err != nil {
@@ -330,6 +382,8 @@ func (d *Document) GetDocument(keyOrPath string) (Documenter, error) {
 }
 
 // GetDocumentArray retrieves an array of documents with path support.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetDocumentArray(keyOrPath string) ([]Documenter, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]*Document{}), "GetDocumentArray")
 	if err != nil {
@@ -344,6 +398,8 @@ func (d *Document) GetDocumentArray(keyOrPath string) ([]Documenter, error) {
 }
 
 // GetStringArray retrieves a slice of strings with path support.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetStringArray(keyOrPath string) ([]string, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]string{}), "GetStringArray")
 	if err != nil {
@@ -353,6 +409,8 @@ func (d *Document) GetStringArray(keyOrPath string) ([]string, error) {
 }
 
 // GetIntArray retrieves a slice of integers with path support.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetIntArray(keyOrPath string) ([]int, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]int{}), "GetIntArray")
 	if err != nil {
@@ -362,6 +420,8 @@ func (d *Document) GetIntArray(keyOrPath string) ([]int, error) {
 }
 
 // GetArray retrieves a generic slice ([]any) with path support.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetArray(keyOrPath string) ([]any, error) {
 	val, err := d.getAndCoerce(keyOrPath, reflect.TypeOf([]any{}), "GetArray")
 	if err != nil {
@@ -415,6 +475,8 @@ func (d *Document) getAndCoerce(keyOrPath string, targetType reflect.Type, opera
 }
 
 // Keys returns all user data keys sorted alphabetically.
+//
+// Deprecated: Use document.Document instead.
 // System fields (_id, _metadata_) are NOT included.
 //
 // To access all fields including system fields, use ToMap().
@@ -431,6 +493,8 @@ func (d *Document) Keys() []string {
 }
 
 // Values returns all user data values in key-sorted order.
+//
+// Deprecated: Use document.Document instead.
 // System fields are NOT included.
 func (d *Document) Values() []any {
 	keys := d.Keys()
@@ -442,6 +506,8 @@ func (d *Document) Values() []any {
 }
 
 // Clone creates a deep copy of the document.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Clone() Documenter {
 	if d == nil {
 		return nil
@@ -490,6 +556,8 @@ func deepCloneValue(v any) any {
 }
 
 // Merge combines multiple documents. The receiving document is modified in place.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Merge(others ...Documenter) {
 	for _, other := range others {
 		if other != nil {
@@ -502,6 +570,8 @@ func (d *Document) Merge(others ...Documenter) {
 }
 
 // DeepMerge performs a recursive merge of nested objects. The receiving document is modified in place.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) DeepMerge(others ...Documenter) {
 	for _, other := range others {
 		if other != nil {
@@ -540,6 +610,8 @@ func (d *Document) deepMergeInto(other Documenter) {
 }
 
 // String provides a readable JSON representation of the document's data.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) String() string {
 	if d == nil {
 		return "Document{nil}"
@@ -552,6 +624,8 @@ func (d *Document) String() string {
 }
 
 // Len returns the number of user data fields in the document.
+//
+// Deprecated: Use document.Document instead.
 // System fields (_id, _metadata_) are NOT counted.
 func (d *Document) Len() int {
 	if d == nil || d.data == nil {
@@ -561,12 +635,16 @@ func (d *Document) Len() int {
 }
 
 // IsEmpty checks if the document has no user data fields.
+//
+// Deprecated: Use document.Document instead.
 // System fields (_id, _metadata_) are NOT considered.
 func (d *Document) IsEmpty() bool {
 	return d == nil || len(d.data) == 0
 }
 
 // HasKey checks if a key exists in the document's user data.
+//
+// Deprecated: Use document.Document instead.
 // System fields (_id, _metadata_) will return false.
 // Use ID() and Metadata() to check for system fields.
 func (d *Document) HasKey(key string) bool {
@@ -579,6 +657,8 @@ func (d *Document) HasKey(key string) bool {
 
 // HasPath checks if a path exists in the document's user data (supports dot notation).
 // System fields are NOT accessible via paths.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) HasPath(keyOrPath string) bool {
 	if d == nil || d.data == nil {
 		return false
@@ -588,6 +668,8 @@ func (d *Document) HasPath(keyOrPath string) bool {
 }
 
 // Is performs deep equality comparison on two documents, including ID and metadata.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Is(other Documenter) bool {
 	if d == nil && other == nil {
 		return true
@@ -602,6 +684,8 @@ func (d *Document) Is(other Documenter) bool {
 
 // Equals performs content-only deep equality comparison on the user data,
 // ignoring auto-generated IDs and metadata.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Equals(other Documenter) bool {
 	if d == nil && other == nil {
 		return true
@@ -635,6 +719,8 @@ func (d *Document) Equals(other Documenter) bool {
 //	// }
 //
 //	json.Marshal(m)  // Serialize complete document
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) ToMap() map[string]any {
 	if d == nil {
 		return nil
@@ -666,6 +752,8 @@ func (d *Document) ToMap() map[string]any {
 //	data := doc.Data()
 //	// data = {"name": "John", "age": 30}
 //	// No _id or _metadata_ included
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Data() map[string]any {
 	if d == nil || d.data == nil {
 		return make(map[string]any)
@@ -709,6 +797,8 @@ func asMapValue(v any) any {
 
 // ID returns the document's unique identifier.
 //
+// Deprecated: Use document.Document instead.
+//
 // The ID is automatically generated during document creation and is immutable.
 // It cannot be changed after the document is created.
 func (d *Document) ID() string {
@@ -719,6 +809,8 @@ func (d *Document) ID() string {
 }
 
 // Metadata returns a copy of the document's metadata map.
+//
+// Deprecated: Use document.Document instead.
 //
 // The metadata includes both system-managed fields (version, timestamps,
 // checksums) and custom fields set via SetMetadataValue().
@@ -739,6 +831,8 @@ func (d *Document) Metadata() map[string]any {
 }
 
 // SetMetadata replaces the entire metadata map.
+//
+// Deprecated: Use document.Document instead.
 // This is primarily used internally by the factory.
 // For adding custom metadata, use SetMetadataValue() instead.
 func (d *Document) SetMetadata(metadata map[string]any) {
@@ -754,6 +848,8 @@ func (d *Document) SetMetadata(metadata map[string]any) {
 }
 
 // StripMetadata removes metadata and returns a clean copy.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) StripMetadata() Documenter {
 	return &Document{
 		id:   d.id,
@@ -766,6 +862,8 @@ func (d *Document) StripMetadata() Documenter {
 // --- Data Integrity ---
 
 // Hash computes and sets the HMAC-SHA256 hash of the metadata block.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Hash() error {
 	hash, err := getFactory().calculateHash(d)
 	if err != nil {
@@ -780,6 +878,8 @@ func (d *Document) Hash() error {
 }
 
 // VerifyHash checks the integrity of the metadata block against its hash.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) VerifyHash() (bool, error) {
 	if d.metadata == nil {
 		return false, nil
@@ -800,9 +900,13 @@ func (d *Document) VerifyHash() (bool, error) {
 
 // Release is a no-op for the map-backed Document: it holds no pooled
 // containers.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Release() {}
 
 // Sign computes and sets the RSA signature for the entire document.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Sign(privateKey *rsa.PrivateKey) error {
 	signature, err := getFactory().signDocument(d, privateKey)
 	if err != nil {
@@ -817,6 +921,8 @@ func (d *Document) Sign(privateKey *rsa.PrivateKey) error {
 }
 
 // Verify checks the RSA signature of the document.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Verify(publicKey *rsa.PublicKey) error {
 	if d.metadata == nil {
 		return common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.Document.Verify")
@@ -833,6 +939,8 @@ func (d *Document) Verify(publicKey *rsa.PublicKey) error {
 // --- Metadata Accessors ---
 
 // GetMetadataValue retrieves a value from the document's metadata map.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetMetadataValue(key string) (any, error) {
 	if d.metadata == nil {
 		return nil, common.SystemErrorFrom(ErrNoMetadata).WithOperation("data.Document.GetMetadataValue").WithPath(key)
@@ -853,6 +961,8 @@ func (d *Document) GetMetadataValue(key string) (any, error) {
 //
 //	doc.SetMetadataValue("author", "John Doe")
 //	doc.SetMetadataValue("department", "Engineering")
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) SetMetadataValue(key string, value any) error {
 	switch key {
 	case MetadataChecksum, MetadataSignature, MetadataVersion, MetadataCreated, MetadataUpdated:
@@ -867,6 +977,8 @@ func (d *Document) SetMetadataValue(key string, value any) error {
 }
 
 // Version returns the document's version number.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Version() (int, error) {
 	val, err := d.GetMetadataValue(MetadataVersion)
 	if err != nil {
@@ -880,6 +992,8 @@ func (d *Document) Version() (int, error) {
 }
 
 // Checksum returns the document's checksum string.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Checksum() (string, error) {
 	val, err := d.GetMetadataValue(MetadataChecksum)
 	if err != nil {
@@ -893,6 +1007,8 @@ func (d *Document) Checksum() (string, error) {
 }
 
 // Signature returns the document's signature string.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Signature() (string, error) {
 	val, err := d.GetMetadataValue(MetadataSignature)
 	if err != nil {
@@ -906,6 +1022,8 @@ func (d *Document) Signature() (string, error) {
 }
 
 // CreatedAt returns the document's creation timestamp.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) CreatedAt() (time.Time, error) {
 	val, err := d.GetMetadataValue(MetadataCreated)
 	if err != nil {
@@ -919,6 +1037,8 @@ func (d *Document) CreatedAt() (time.Time, error) {
 }
 
 // UpdatedAt returns the document's last update timestamp.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) UpdatedAt() (time.Time, error) {
 	val, err := d.GetMetadataValue(MetadataUpdated)
 	if err != nil {
@@ -932,6 +1052,8 @@ func (d *Document) UpdatedAt() (time.Time, error) {
 }
 
 // GetMetadataString returns a metadata value as a string.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetMetadataString(key string) (string, error) {
 	val, err := d.GetMetadataValue(key)
 	if err != nil {
@@ -945,6 +1067,8 @@ func (d *Document) GetMetadataString(key string) (string, error) {
 }
 
 // GetMetadataInt returns a metadata value as an int.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetMetadataInt(key string) (int, error) {
 	val, err := d.GetMetadataValue(key)
 	if err != nil {
@@ -958,6 +1082,8 @@ func (d *Document) GetMetadataInt(key string) (int, error) {
 }
 
 // GetMetadataFloat returns a metadata value as a float64.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetMetadataFloat(key string) (float64, error) {
 	val, err := d.GetMetadataValue(key)
 	if err != nil {
@@ -971,6 +1097,8 @@ func (d *Document) GetMetadataFloat(key string) (float64, error) {
 }
 
 // GetMetadataBool returns a metadata value as a bool.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetMetadataBool(key string) (bool, error) {
 	val, err := d.GetMetadataValue(key)
 	if err != nil {
@@ -984,6 +1112,8 @@ func (d *Document) GetMetadataBool(key string) (bool, error) {
 }
 
 // GetMetadataTime returns a metadata value as a time.Time.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) GetMetadataTime(key string) (time.Time, error) {
 	val, err := d.GetMetadataValue(key)
 	if err != nil {

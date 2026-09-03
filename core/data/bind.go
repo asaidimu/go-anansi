@@ -18,6 +18,8 @@ import (
 // ============================================================================
 
 // DocumentUnmarshaler allows generated structs to bypass reflection completely.
+//
+// Deprecated: Use the document package's binding methods instead.
 type DocumentUnmarshaler interface {
 	UnmarshalDocument(doc *Document) error
 }
@@ -43,6 +45,8 @@ type TypedFieldBinder interface {
 }
 
 // DocumentTagUnmarshaler allows tag-aware custom unmarshaling without reflection.
+//
+// Deprecated: Use the document package's binding methods instead.
 type DocumentTagUnmarshaler interface {
 	UnmarshalDocumentTag(doc *Document, tag string) error
 }
@@ -198,21 +202,29 @@ type parsedField struct {
 // ============================================================================
 
 // BindTo binds document fields into target using the default tag resolution chain.
+//
+// Deprecated: Use the document package's binding methods instead.
 func (d *Document) BindTo(target any) error {
 	return d.BindToWithContext(context.Background(), target)
 }
 
 // BindToWithContext is BindTo with an explicit context for cancellation.
+//
+// Deprecated: Use the document package's binding methods instead.
 func (d *Document) BindToWithContext(ctx context.Context, target any) error {
 	return BindSourced(d, func() (*Document, error) { return d, nil }, target, ctx, "")
 }
 
 // BindToTag binds document fields into target using a custom struct tag name.
+//
+// Deprecated: Use the document package's binding methods instead.
 func (d *Document) BindToTag(target any, tag string) error {
 	return d.BindToTagWithContext(context.Background(), target, tag)
 }
 
 // BindToTagWithContext is BindToTagWithContext with an explicit context for cancellation.
+//
+// Deprecated: Use the document package's binding methods instead.
 func (d *Document) BindToTagWithContext(ctx context.Context, target any, tag string) error {
 	return BindSourced(d, func() (*Document, error) { return d, nil }, target, ctx, tag)
 }
@@ -222,6 +234,8 @@ func (d *Document) BindToTagWithContext(ctx context.Context, target any, tag str
 // materialize, called only for them); every other target binds lazily through
 // src.Get/ID/Metadata, one field at a time, so container-backed documents
 // materialize at most a single nested subtree instead of the whole document.
+//
+// Deprecated: Use the document package's binding methods instead.
 func BindSourced(src FieldSource, materialize func() (*Document, error), target any, ctx context.Context, tag string) error {
 	if tag == "" {
 		if _, ok := target.(DocumentUnmarshaler); ok {
@@ -252,6 +266,9 @@ func BindSourced(src FieldSource, materialize func() (*Document, error), target 
 // Document Creation from Structs
 // ============================================================================
 
+// NewDocumentFromStruct creates a new Document from a struct with anansi tags.
+//
+// Deprecated: Use document.DocumentPool.FromStruct instead.
 func NewDocumentFromStruct(s any, ctx ...context.Context) (*Document, error) {
 	docData, err := structToMap(s, false, "")
 	if err != nil {
@@ -260,6 +277,9 @@ func NewDocumentFromStruct(s any, ctx ...context.Context) (*Document, error) {
 	return getFactory().newDocument(extractContext(ctx), docData)
 }
 
+// NewDocumentFromStructWithTag creates a new Document from a struct using a custom tag.
+//
+// Deprecated: Use document.DocumentPool.FromStruct instead.
 func NewDocumentFromStructWithTag(s any, tag string, ctx ...context.Context) (*Document, error) {
 	docData, err := structToMap(s, false, tag)
 	if err != nil {
@@ -268,6 +288,9 @@ func NewDocumentFromStructWithTag(s any, tag string, ctx ...context.Context) (*D
 	return getFactory().newDocument(extractContext(ctx), docData)
 }
 
+// NewPartialDocumentFromStruct creates a partial (Patch) Document from a struct.
+//
+// Deprecated: Use document.DocumentPool.FromPartialStruct instead.
 func NewPartialDocumentFromStruct(s any, ctx ...context.Context) (*Document, error) {
 	docData, err := structToMap(s, true, "")
 	if err != nil {
@@ -276,6 +299,9 @@ func NewPartialDocumentFromStruct(s any, ctx ...context.Context) (*Document, err
 	return Patch(docData).Document(extractContext(ctx)), nil
 }
 
+// NewPartialDocumentFromStructWithTag creates a partial Document from a struct with a custom tag.
+//
+// Deprecated: Use document.DocumentPool.FromPartialStruct instead.
 func NewPartialDocumentFromStructWithTag(s any, tag string, ctx ...context.Context) (*Document, error) {
 	docData, err := structToMap(s, true, tag)
 	if err != nil {
@@ -284,6 +310,9 @@ func NewPartialDocumentFromStructWithTag(s any, tag string, ctx ...context.Conte
 	return Patch(docData).Document(extractContext(ctx)), nil
 }
 
+// MustNewDocumentFromStruct is NewDocumentFromStruct that panics on error.
+//
+// Deprecated: Use document.DocumentPool.MustFromStruct instead.
 func MustNewDocumentFromStruct(s any, ctx ...context.Context) *Document {
 	doc, err := NewDocumentFromStruct(s, ctx...)
 	if err != nil {
@@ -292,6 +321,9 @@ func MustNewDocumentFromStruct(s any, ctx ...context.Context) *Document {
 	return doc
 }
 
+// MustNewDocumentFromStructWithTag is NewDocumentFromStructWithTag that panics on error.
+//
+// Deprecated: Use document.DocumentPool.MustFromStruct instead.
 func MustNewDocumentFromStructWithTag(s any, tag string, ctx ...context.Context) *Document {
 	doc, err := NewDocumentFromStructWithTag(s, tag, ctx...)
 	if err != nil {
@@ -726,6 +758,8 @@ func compileSetter(fieldType reflect.Type, offset uintptr) fieldSetterFunc {
 
 // StructFieldValue pairs a tagged struct field's document path with its
 // normalized value.
+//
+// Deprecated: Use document.DocumentPool.FromStruct instead.
 type StructFieldValue struct {
 	Path  string
 	Value any
@@ -737,11 +771,15 @@ type StructFieldValue struct {
 // skipped. This is the field-walking core shared with NewDocumentFromStruct;
 // callers can use it to populate other document implementations (e.g. a
 // container-backed document.Document) field-by-field.
+//
+// Deprecated: Use document.DocumentPool.FromStruct instead.
 func StructFieldValues(s any, partial bool) ([]StructFieldValue, error) {
 	return structFieldValues(s, partial, "")
 }
 
 // StructFieldValuesWithTag is StructFieldValues with a custom struct tag name.
+//
+// Deprecated: Use document.DocumentPool.FromStruct instead.
 func StructFieldValuesWithTag(s any, partial bool, tag string) ([]StructFieldValue, error) {
 	return structFieldValues(s, partial, tag)
 }

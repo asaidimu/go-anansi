@@ -6,6 +6,8 @@ import (
 )
 
 // DocumentDiff represents differences between two documents.
+//
+// Deprecated: Use document.Document.Diff and Apply instead.
 type DocumentDiff struct {
 	Added    map[string]any       `json:"added"`
 	Removed  map[string]any       `json:"removed"`
@@ -13,6 +15,8 @@ type DocumentDiff struct {
 }
 
 // DiffValue represents a changed value.
+//
+// Deprecated: Use document.Document.Diff and Apply instead.
 type DiffValue struct {
 	Old any `json:"old"`
 	New any `json:"new"`
@@ -24,6 +28,8 @@ func ReservedSystemField(key string) bool {
 }
 
 // Diff computes differences between two documents.
+//
+// Deprecated: Use document.Document.Diff and Apply instead.
 func (d *Document) Diff(other Documenter) DocumentDiff {
 	diff := DocumentDiff{
 		Added:    make(map[string]any),
@@ -58,11 +64,15 @@ func (d *Document) Diff(other Documenter) DocumentDiff {
 }
 
 // HasChanges returns true if there are any differences.
+//
+// Deprecated: Use document.Document.Diff and Apply instead.
 func (dd DocumentDiff) HasChanges() bool {
 	return len(dd.Added) > 0 || len(dd.Removed) > 0 || len(dd.Modified) > 0
 }
 
 // Apply applies the diff to create a new document.
+//
+// Deprecated: Use document.Document.Diff and Apply instead.
 func (d *Document) Apply(diff DocumentDiff) Documenter {
 	result := d.Clone().(*Document)
 

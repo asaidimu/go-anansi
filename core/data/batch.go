@@ -8,9 +8,13 @@ import (
 )
 
 // DocumentSet represents a collection of documents with batch operations.
+//
+// Deprecated: Use container.Collection instead.
 type DocumentSet []Documenter
 
 // NewDocumentSet creates a new DocumentSet from a variety of slice types.
+//
+// Deprecated: Use container.Collection instead.
 // It intelligently converts []map[string]any, []any, and []Document into a
 // consistent DocumentSet. It accepts an optional context that is passed down
 // during the creation of each new Document, allowing for contextual metadata injection.
@@ -57,6 +61,8 @@ func NewDocumentSet(v any, ctx ...context.Context) (DocumentSet, bool) {
 	}
 }
 // MapDocumentSet transforms each document into a value of type T.
+//
+// Deprecated: Use container.Collection instead.
 // This is the generic, type-safe implementation of map.
 func MapDocumentSet[T any](ds DocumentSet, transformer func(Documenter) T) []T {
 	result := make([]T, len(ds))
@@ -68,12 +74,16 @@ func MapDocumentSet[T any](ds DocumentSet, transformer func(Documenter) T) []T {
 }
 
 // Map applies a transformation to all documents in the set.
+//
+// Deprecated: Use container.Collection instead.
 // This is the non-generic version that returns []any for backwards compatibility.
 func (ds DocumentSet) Map(transformer func(Documenter) any) []any {
 	return MapDocumentSet(ds, transformer)
 }
 
 // ReduceDocumentSet accumulates all documents into a single value of type T.
+//
+// Deprecated: Use container.Collection instead.
 // This is the generic, type-safe implementation of reduce.
 func ReduceDocumentSet[T any](ds DocumentSet, initial T, reducer func(T, Documenter) T) T {
 	result := initial
@@ -84,12 +94,16 @@ func ReduceDocumentSet[T any](ds DocumentSet, initial T, reducer func(T, Documen
 }
 
 // Reduce applies a reducer function to all documents.
+//
+// Deprecated: Use container.Collection instead.
 // This is the non-generic version that works with any for backwards compatibility.
 func (ds DocumentSet) Reduce(initial any, reducer func(any, Documenter) any) any {
 	return ReduceDocumentSet(ds, initial, reducer)
 }
 
 // Filter applies a filter to all documents in the set.
+//
+// Deprecated: Use container.Collection instead.
 func (ds DocumentSet) Filter(predicate func(Documenter) bool) DocumentSet {
 	result := make(DocumentSet, 0)
 	for _, doc := range ds {
@@ -101,6 +115,8 @@ func (ds DocumentSet) Filter(predicate func(Documenter) bool) DocumentSet {
 }
 
 // Find returns the first document matching the predicate.
+//
+// Deprecated: Use container.Collection instead.
 func (ds DocumentSet) Find(predicate func(Documenter) bool) (Documenter, bool) {
 	for _, doc := range ds {
 		if predicate(doc) {
@@ -111,6 +127,8 @@ func (ds DocumentSet) Find(predicate func(Documenter) bool) (Documenter, bool) {
 }
 
 // Where returns documents where the specified key equals the value.
+//
+// Deprecated: Use container.Collection instead.
 func (ds DocumentSet) Where(key string, value any) DocumentSet {
 	return ds.Filter(func(d Documenter) bool {
 		val, err := d.Get(key)
@@ -122,6 +140,8 @@ func (ds DocumentSet) Where(key string, value any) DocumentSet {
 }
 
 // SortBy sorts documents by a key in ascending order.
+//
+// Deprecated: Use container.Collection instead.
 func (ds DocumentSet) SortBy(key string) DocumentSet {
 	result := make(DocumentSet, len(ds))
 	copy(result, ds)
@@ -147,6 +167,8 @@ func (ds DocumentSet) SortBy(key string) DocumentSet {
 }
 
 // SortByDesc sorts documents by a key in descending order.
+//
+// Deprecated: Use container.Collection instead.
 func (ds DocumentSet) SortByDesc(key string) DocumentSet {
 	result := ds.SortBy(key)
 	// Reverse the slice
@@ -158,6 +180,8 @@ func (ds DocumentSet) SortByDesc(key string) DocumentSet {
 }
 
 // GroupBy groups documents by a key value.
+//
+// Deprecated: Use container.Collection instead.
 func (ds DocumentSet) GroupBy(key string) map[string]DocumentSet {
 	groups := make(map[string]DocumentSet)
 
@@ -177,6 +201,8 @@ func (ds DocumentSet) GroupBy(key string) map[string]DocumentSet {
 }
 
 // Aggregate performs common aggregation operations.
+//
+// Deprecated: Use container.Collection instead.
 func (ds DocumentSet) Aggregate(key string) AggregationResult {
 	var sum float64
 	var count int
@@ -234,6 +260,8 @@ func (ds DocumentSet) Aggregate(key string) AggregationResult {
 }
 
 // AggregationResult contains statistical aggregation results.
+//
+// Deprecated: Use container.Collection instead.
 type AggregationResult struct {
 	Count   int     `json:"count"`
 	Sum     float64 `json:"sum"`
@@ -245,6 +273,8 @@ type AggregationResult struct {
 }
 
 // ToMaps converts the set of Documents back into a slice of raw maps.
+//
+// Deprecated: Use container.Collection instead.
 // This is perfect for JSON encoding or legacy API compatibility.
 func (ds DocumentSet) ToMaps() []map[string]any {
 	result := make([]map[string]any, len(ds))
@@ -255,6 +285,8 @@ func (ds DocumentSet) ToMaps() []map[string]any {
 }
 
 // Sanitize applies context-aware masking to every document in the set.
+//
+// Deprecated: Use container.Collection instead.
 func (ds DocumentSet) Sanitize(ctx ...context.Context) (DocumentSet, error) {
 	result := make(DocumentSet, len(ds))
 	for i, doc := range ds {

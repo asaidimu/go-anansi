@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="Go-Anansi">
-  <!-- Spider-silk amber mark on a transparent background. -->
+  <!-- Ice-blue web mark on a transparent background. -->
   <!-- 8 radial spokes + 4 concentric arcs — a stylized web. -->
   <defs>
     <linearGradient id="silk" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#ffc04c"/>
-      <stop offset="100%" stop-color="#b8860b"/>
+      <stop offset="0%" stop-color="#7ba3d4"/>
+      <stop offset="100%" stop-color="#4070b8"/>
     </linearGradient>
   </defs>
 

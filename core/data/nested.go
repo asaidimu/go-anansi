@@ -10,6 +10,8 @@ import (
 )
 
 // GetNested with enhanced path parsing and error handling.
+//
+// Deprecated: Use document.Document instead.
 func (d Document) GetNested(path string) (any, error) {
 	if path == "" {
 		return nil, common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.GetNested").WithPath(path)
@@ -23,6 +25,8 @@ func (d Document) GetNested(path string) (any, error) {
 }
 
 // SetNested with path validation and intermediate map creation.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) SetNested(path string, value any) error {
 	if ReservedSystemField(path) {
 		return ErrReadOnlyField.WithPath(path).WithMessage("Attempting to set read only value on a document").WithOperation("data.Document.SetNested")
@@ -60,6 +64,8 @@ func (d *Document) SetNested(path string, value any) error {
 }
 
 // Delete removes a value at a nested path.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) Delete(path string) error {
 	if path == "" {
 		return common.SystemErrorFrom(ErrKeyEmpty).WithOperation("data.Document.DeleteNested").WithPath(path)

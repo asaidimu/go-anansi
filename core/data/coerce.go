@@ -4,6 +4,8 @@ import "context"
 
 // DocumentFrom attempts to convert any value to a *Document.
 // It also accepts an optional context for metadata injection.
+//
+// Deprecated: Use document.DocumentPool.FromMap instead.
 func DocumentFrom(v any, ctx ...context.Context) (*Document, bool) {
 	switch val := v.(type) {
 	case *Document:

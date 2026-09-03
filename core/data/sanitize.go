@@ -23,6 +23,8 @@ import (
 //   - Sanitization operation fails
 //
 // The returned document is a new instance; the original is unchanged.
+//
+// Deprecated: Use document.Document.Sanitize instead.
 func (d *Document) Sanitize(ctx ...context.Context) (Documenter, error) {
 	sanitizer, err := sanitize.Registry().GetForContext(d.ctx, ctx...)
 	if err != nil {
@@ -61,6 +63,8 @@ func (d *Document) Sanitize(ctx ...context.Context) (Documenter, error) {
 // SafeString returns a sanitized string representation suitable for logging.
 // Uses context to determine appropriate sanitization rules.
 // If sanitization fails, returns error string representation.
+//
+// Deprecated: Use document.Document.SafeString instead.
 func (d *Document) SafeString(ctx ...context.Context) string {
 	sanitized, err := d.Sanitize(ctx...)
 	if err != nil {
@@ -75,6 +79,8 @@ func (d *Document) SafeString(ctx ...context.Context) string {
 
 // SanitizeDocumentArray sanitizes an array of documents.
 // Each document uses its own embedded context for scope resolution.
+//
+// Deprecated: Use document.Document.Sanitize instead.
 func SanitizeDocumentArray(docs []*Document) ([]Documenter, error) {
 	if len(docs) == 0 {
 		return nil, nil
@@ -99,6 +105,8 @@ func SanitizeDocumentArray(docs []*Document) ([]Documenter, error) {
 }
 
 // SanitizeDocumentArrayWithContexts sanitizes documents with per-document contexts.
+//
+// Deprecated: Use document.Document.Sanitize instead.
 func SanitizeDocumentArrayWithContexts(docs []*Document, contexts []context.Context) ([]Documenter, error) {
 	if len(docs) != len(contexts) {
 		return nil, common.NewSystemError("ERR_SANITIZATION_CONFIG_INVALID").
@@ -126,6 +134,8 @@ func SanitizeDocumentArrayWithContexts(docs []*Document, contexts []context.Cont
 
 // SanitizeValue sanitizes any value that might contain documents.
 // For Documents, uses their embedded context. For raw maps, uses provided context.
+//
+// Deprecated: Use document.Document.Sanitize instead.
 func SanitizeValue(ctx context.Context, value any) (any, error) {
 	if value == nil {
 		return nil, nil

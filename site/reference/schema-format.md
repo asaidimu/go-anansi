@@ -1,40 +1,73 @@
 ---
 title: Schema Format
-description: "The JSON schema format — top-level structure, field properties, nested schemas, projections, the generated Go shape, and the DTO to schema reverse path (data.SchemaFrom[T])."
+description: "The schema JSON document: what it is, a complete example first, then each part in reading order — identity, fields, nesting, indexes, constraints, extensions."
 ---
-The schema is a JSON file (conventionally `<Name>.schema.json`) describing one
-collection. It is the single source of truth for storage, validation,
-migrations, and codegen. This reference covers the JSON format and the Go types
-codegen emits.
+A schema is one JSON document per collection: the shape of the records, the
+rules they obey, and the metadata the tooling needs. Storage, validation,
+migrations, and codegen all build from it — nothing is hand-duplicated
+downstream. Start from the example, then read each part in order.
 
-## Top-level structure
+## A complete example
+
+This is the authoring form — field keys are names, system fields absent.
+`normalize` rewrites it into the production form (see
+[Names vs IDs](#names-vs-ids)):
 
 ```json
 {
   "name": "Products",
   "version": "1.0.0",
-  "description": "optional",
-  "fields": { "<FieldId>": { ... }, ... },
-  "schemas": { "<SchemaId>": { "name": "...", "fields": { ... } }, ... },
-  "indexes": { ... },
-  "constraints": { ... },
-  "metadata": { "projections": { ... } }
+  "description": "Sellable items in the catalog.",
+  "fields": {
+    "name":  { "name": "name", "type": "string", "required": true },
+    "price": { "name": "price", "type": "number", "required": true },
+    "status": { "name": "status", "type": "enum", "required": true,
+                "schema": { "type": "string",
+                            "values": ["draft", "live", "retired"] } },
+    "shipping_address": { "name": "shipping_address", "type": "object",
+                "schema": { "id": "<address schema id>" } }
+  },
+  "schemas": {
+    "<address schema id>": {
+      "name": "address",
+      "fields": {
+        "city": { "name": "city", "type": "string", "required": true },
+        "zip":  { "name": "zip",  "type": "string", "required": false }
+      }
+    }
+  },
+  "indexes": {
+    "by_name": { "name": "by_name", "fields": ["name"], "type": "unique" }
+  },
+  "constraints": {
+    "price_sane": { "name": "price_sane", "fields": ["price"],
+                    "predicate": "<a registered predicate>",
+                    "parameters": 0 }
+  },
+  "metadata": {
+    "projections": {
+      "ProductSummary": { "fields": { "include": ["name", "price"] } }
+    }
+  }
 }
 ```
 
-- `name` and `version` are required.
-- `fields` is a map. The keys are stable field IDs. **While authoring, use the
-  field's name as the key** (e.g. `"shipping_address": { ... }`); anansi's
-  `normalize` step rewrites them to UUIDv7. Production mode requires UUIDv7
-  keys (`ERR_REGISTRY_INVALID_SCHEMA` otherwise); dev mode
-  (`ANANSI_ENV=development`) accepts field-name keys as-is. IDs must be
-  globally unique across ALL schemas in the document, including nested ones.
-- `schemas` holds named nested schemas (objects, arrays/sets of objects,
-  records, unions, composites).
-- `indexes` and `constraints` are optional; `metadata.projections` declares
-  projection shapes — author them in the schema; codegen emits the DTOs.
+The rest of this page walks the example top to bottom. Each section answers
+three questions: what the key holds, who consumes it, and what can go wrong.
 
-## Field properties
+## Identity: `name`, `version`, `description`
+
+- `name` (required) names the collection. Generated code, the registry, and
+  the collection handle all use it.
+- `version` (required) names this revision. The collection registry tracks
+  one active version per collection, and migrations record version
+  transitions — bump it when the shape changes (`migrate generate` handles
+  this in the schema-change workflow).
+- `description` is free-form text, carried through untouched.
+
+## Fields
+
+`fields` maps field IDs to definitions. Each definition:
 
 ```json
 "019fb22d-...": {
@@ -50,304 +83,116 @@ codegen emits.
 }
 ```
 
-| Key | Meaning |
-| --- | --- |
-| `name` | Field name (snake_case convention in examples). |
-| `type` | One of: `string`, `number`, `integer`, `boolean`, `bytes`, `array`, `set`, `enum`, `object`, `record`, `union`, `composite`, `geometry`. |
-| `required` | Present in every record. Drives Go value vs pointer type. |
-| `nullable` | May hold a null. |
-| `unique` | Value must be unique across all records. |
-| `default` | Default value (stored, used by codegen). |
-| `deprecated` | Structurally valid; codegen may warn/suppress. |
-| `schema` | Nested type information (see below). |
+| Key | Holds | Consumed by |
+| --- | --- | --- |
+| `name` | The field's address. Queries, projections, indexes, and constraints all use `name` — never the ID. Snake_case convention. | Everything addressable |
+| `type` | One of `string`, `number`, `integer`, `decimal`, `boolean`, `bytes`, `array`, `enum`, `object`, `record`, `union`, `composite`, `geometry`, `unknown`. | Storage (column types), validation, codegen mapping, query paths |
+| `required` | Present in every record. | Validation rejects writes missing it; storage emits `NOT NULL`; codegen emits a value type instead of a pointer |
+| `nullable` | May hold null (pointers imply it). | Validation; codegen pointer types |
+| `unique` | Storage-enforced uniqueness. | Storage emits a `UNIQUE` constraint; violations surface as backend unique-constraint errors |
+| `default` | Default literal (not allowed on `composite`/`union`). | Storage emits the column `DEFAULT`; codegen carries it into the `anansi` tag |
+| `deprecated` | Intent-to-remove marker. Tracked by schema diff, enforced by nothing. | Tooling signal only |
+| `description` | Free-form text. | Carried through untouched |
+| `schema` | Nested type info (next section). Absent for scalars and `geometry`. | Storage, validation, codegen |
 
-## `schema` (nested type info) forms
+## Names vs IDs
 
-- **Array/set of scalars** — inline element type:
-  ```json
-  { "type": "array", "schema": { "id": "", "type": "string" } }
-  ```
-- **Enum** — element type + value list:
-  ```json
-  { "type": "enum", "schema": { "type": "string", "values": ["admin", "member"] } }
-  ```
-- **Reference to a nested schema** (object / array-of-objects / record):
-  ```json
-  {
-    "type": "object",
-    "schema": { "id": "019d7775-6565-7ed7-..." }
-  }
-  ```
-  The `id` must match a schema under the top-level `schemas` map. A `record`
-  (key-value map) can also just be `{ "type": "record" }` (free-form map).
+Names and IDs do different jobs, and confusing them is the most common
+authoring mistake:
 
-## Nested schema modes (exclusivity rule)
+- **Names** are the human label and the *only* addressing scheme.
+- **IDs** (`fields` map keys) are the stable identity that migrations and
+  the lockfile pin a field to. They must be unique across ALL schemas in
+  the document, including nested ones ([Rule 1](/reference/schema-rules)).
 
-Each entry under `schemas` must use exactly ONE of:
+The workflow follows from that split. **Author with names as keys**
+(`"shipping_address": { ... }`); `anansi schema normalize` rewrites keys to
+UUIDv7 and injects the `_id_` / `_metadata_` system fields. Production mode
+requires UUIDv7 keys (`ERR_REGISTRY_INVALID_SCHEMA` otherwise); dev mode
+(`ANANSI_ENV=development`) accepts names as-is. `migrate generate`
+normalizes as a side effect.
 
-- **Schema mode**: has `name` + `fields` (+ optional `indexes`,
-  `constraints`, `metadata`). Describes a full object shape.
-- **Type mode**: describes a type (`type` + `schema`) only — e.g. the element
-  type of an array, the value type of a record, union/composite variants.
+**Never invent, reuse, or reassign an ID.** A new field gets a fresh ID from
+normalize; changing an existing field's ID breaks its lockfile linkage —
+it reads as a delete plus an add.
+
+## Nested schemas (`schemas`)
+
+Complex field types reference entries under `schemas` by `id`. Each entry
+uses exactly ONE mode (mixing them is invalid):
+
+- **Schema mode**: `name` + `fields` (+ optional `indexes`, `constraints`,
+  `metadata`). A full object shape, like `address` above.
+- **Type mode**: `type` + `schema` only — an element, value, or variant type.
 - **Enum mode**: `type: "enum"` with `values`.
 
-Mixing schema-mode fields and type-mode properties in one nested schema is
-invalid. `object` is never a valid Type-mode type — an object is expressed by
-referencing a schema-mode nested schema that has `fields`.
+The `schema` forms per type:
 
-## Projections (`metadata.projections`)
+- **Array of scalars** — inline element type:
+  `{ "type": "array", "schema": { "type": "string" } }`
+- **Array of objects** — reference: `{ "type": "array", "schema": { "id": "…" } }`
+- **Enum** — `{ "type": "enum", "schema": { "type": "string", "values": […] } }`
+- **Object** — reference only; `object` is never inline:
+  `{ "type": "object", "schema": { "id": "…" } }`
+- **Record** — free-form `{ "type": "record" }`, or typed via reference/inline.
+- **Union / composite** — variant references:
+  `{ "type": "union", "schema": [{ "id": "…" }, { "id": "…" }] }`
 
-```json
-"metadata": {
-  "projections": {
-    "ProductSummary": { "fields": { "include": ["name", "price"] } },
-    "ProductCreate":  { "fields": { "include": ["name", "price", "stock"], "required": ["name", "price"] } },
-    "ProductUpdate":  { "fields": { "exclude": ["stock"], "optional": ["price"] } },
-    "OrderCreate": {
-      "fields": {
-        "include": ["total"],
-        "required": ["total"],
-        "tags": {
-          "total": { "input": "arguments.{name}", "schema": "{type}:{required}" }
-        }
-      }
-    }
-  }
-}
-```
+## Indexes and constraints
 
-| Key | Meaning |
-| --- | --- |
-| `fields.include` | Whitelist (default: all root fields). |
-| `fields.exclude` | Remove from the final set. |
-| `fields.required` | Force `required=true` (value type). |
-| `fields.optional` | Force `required=false` (pointer type). |
-| `fields.tags` | Custom struct tags per field with `{name}`, `{type}`, `{required}`, `{nullable}`, `{default}`, `{goName}` placeholders. |
+Both are declarations the backends enforce — addressed by field **name**:
 
-Resolution: base set → `include` → `exclude` → required/optional overrides →
-tags. Codegen **fails fast** on: unknown fields, `include` ∩ `exclude`,
-`required` ∩ `optional`, overrides referencing fields outside the set, or a
-projection name colliding with the root model type. Overriding `required`
-changes both the emitted type and the `anansi` tag (e.g. an optional base field
-upgraded to required becomes a value type).
+- `indexes` maps index IDs to `{ name, description?, order?, condition?,
+  fields, type, unique? }`, where `type` is one of `normal`, `unique`,
+  `primary`, `spatial`, `fulltext`. Storage turns these into DDL
+  (`unique` → a `UNIQUE` index).
+- `constraints` maps constraint IDs to validation rules: a single rule
+  `{ name, description?, fields?, predicate, parameters }` or a group
+  `{ name, rules, operator }`. Predicate *names* come from the
+  caller-supplied predicate map handed to the validator — the schema only
+  declares which predicate applies with what parameters.
 
-### Custom tags (projections only)
+## `metadata`: opaque extension space
 
-`tags` is declared **per projection** under `metadata.projections.<name>.fields.tags`:
-a map of field name → { tag key → template }. Templates expand `{name}`,
-`{type}`, `{required}`, `{nullable}`, `{default}`, `{goName}` placeholders from
-the field. The projection above renders:
+`metadata` is `map[string]any`: compiled, linked, and diffed as data, never
+interpreted by the schema pipeline. The one well-known key is a codegen
+extension, not canonical format:
 
-```go
-Total decimal.Decimal `anansi:"total,required=true" json:"total" input:"arguments.total" schema:"decimal:true"`
-```
+**`metadata.projections` (codegen only).** Defined and solely consumed by
+`anansi codegen golang`: each projection selects a field subset
+(`include`/`exclude`, `required`/`optional` overrides, per-field custom
+`tags`) that codegen emits as a DTO struct. The full DSL lives where it
+belongs — [Projections](/tutorial/projections) for the workflow and
+[Codegen modes](/reference/codegen-modes) for the emission rules.
 
-Notes:
+## Producing schemas
 
-- **Regular (root) fields cannot carry custom tags** — `tags` exists only inside
-  a projection's `fields`. There is no per-field `tags` on the base `Field`.
-- All projection references (`include`, `exclude`, `required`, `optional`,
-  `tags`) address fields by **field `name`**, never by field ID. A field is
-  addressable only if it is declared in the schema's `fields` map. So ordinary
-  user fields can be tagged whether or not the schema is normalized
-  (normalization only rewrites the `fields` map *keys* to UUIDv7, leaving each
-  field's `name` intact).
-- To tag a **system field** (`_id_`, `_metadata_`), you MUST normalize first:
-  pre-normalize those fields don't exist in `rootFields` (they're only
-  synthesized as shadow fields at render) so a projection referencing `_id_`
-  fails with `references unknown field "_id_"`. Post-normalize they are declared
-  as ordinary named fields and are taggable like any other.
-- Unknown placeholders (e.g. `{frobnicate}`) fail fast at codegen; a non-string
-  tag value fails too ("must be a string").
+Schemas reach the shape above three ways:
 
-## Generated Go
-
-`anansi codegen golang` (default mode `full`) emits per schema:
-
-```go
-// enum (named or inline) -> typed string constants
-type UserRoleEnum string
-const ( UserRoleEnumAdmin UserRoleEnum = "admin"; UserRoleEnumMember UserRoleEnum = "member" )
-
-// model struct: embeds a DocumentModel (id/metadata system fields)
-type User struct {
-    document.DocumentModel
-    ID    string        `json:"_id_,omitempty" anansi:"_id_,required=true,omitempty"`
-    Email string        `anansi:"email,required=true" json:"email"`
-    Age   *int64        `anansi:"age,required=false,nullable=true" json:"age,omitempty"`
-    Role  *UserRoleEnum `anansi:"role,required=false,type=enum" json:"role,omitempty"`
-}
-func NewUser(model User) *User { return document.New(&model) }
-
-// collection wrapper + idempotent singleton
-type Users struct { *collection.ModelCollection[*User] }
-const UsersCollectionName = "User"
-func InitUsersModel(p base.Persistence, logger *zap.Logger, opts ...collection.ModelCollectionOptions[*User]) (*Users, error)
-func UsersModel() (*Users, error)
-
-// each projection -> struct embedding document.DocumentModel
-type UserSummary struct { document.DocumentModel; Email string `anansi:"email,required=true" json:"email"` }
-```
-
-Key facts:
-
-- **Type rules**: required non-nullable → value type; optional/nullable →
-  pointer. This is why `required` must be right up front.
-- **ID/Metadata shadows**: when the schema doesn't declare the `_id_` /
-  `_metadata_` system fields, codegen emits shadow `ID`/`Metadata` struct
-  fields (renamed to `ModelID`/`ModelMetadata` if the schema claims that Go
-  name) plus an explicit `GetID()`. If the schema does declare them (e.g. after
-  `anansi schema normalize`), they're emitted as ordinary fields — never
-  duplicated.
-- **Metadata struct is per collection**: the `_metadata_` nested schema (the
-  system integrity envelope injected by normalize) generates a *typed* struct
-  named `rootName + "Metadata"` — `UserMetadata`, `OrderMetadata`, etc. — not a
-  bare `Metadata`. Each schema in a package gets its own struct, so multiple
-  collections in one package neither collide nor leak each other's tags. It
-  carries `Checksum`, `Created`, `Updated`, `Signature *string`, `Version
-  float64`; the root field is `Metadata *UserMetadata json:"_metadata_"`.
-- **Overwrite warning**: the generated file is fully regenerated every run.
-  Extend models in separate files (e.g. `user_utils.go`).
-- Codegen has no projection accessors — projections are used via the generic
-  shape methods `ReadAs[R]` / `CreateFrom[R]` / `UpdateFrom[R]`, which require
-  Go 1.27+ (`go 1.27rc1` in `go.mod`).
-
-## DTO → schema (reverse direction): `data.SchemaFrom[T]`
-
-Schemas are the source of truth, but anansi also supports the **reverse
-direction**: derive a schema JSON document directly from a Go struct via
-`data.SchemaFrom[T]` (in `core/data`). This is a public, tested feature — the
-DTO shapes the schema without hand-writing a `.schema.json`:
-
-```go
-import "github.com/asaidimu/go-anansi/v8/core/data"
-
-type Order struct {
-    ID    int       `anansi:"order_id,required=true"`
-    Total decimal.Decimal `anansi:"total,required=true"`
-    Note  *string   `anansi:"note"` // pointer → nullable
-    Tags  []string  `anansi:"tags"` // array with inline element type
-}
-
-schemaJSON, err := data.SchemaFrom[Order]()  // []byte, JSON schema
-s, err := definition.FromJSON(schemaJSON)     // parse into *definition.Schema
-```
-
-**Variants:**
-- `data.SchemaFrom[T](omitSystemField ...bool) ([]byte, error)` — default
-  `anansi` tag; `omitSystemField[0]=true` skips embedded registered system
-  models (e.g. `document.DocumentModel`).
-- `data.SchemaFromWithTag[T](tag string, omitSystemField ...bool)` — use a
-  custom tag for field-name resolution (dot-separated paths allowed), falling
-  back to the `anansi` tag name, then snake-cased Go field name.
-- `data.ExtractDTOSchemaDirect(target any, ...)` / `...WithTag` — same, but
-  accepts a value instead of a type parameter and streams JSON directly.
-- Results are cached globally per `(reflect.Type, tag, omit)`.
-
-**The `anansi` struct tag grammar** (parsed by `parseSchemaTag`):
-
-| Tag form | Meaning |
-| --- | --- |
-| `anansi:"name"` | Field name; first comma-separated part before any `k=v` |
-| `anansi:"-"` | Skip the field entirely |
-| `anansi:"name,required=true"` | `required` flag |
-| `anansi:"name,nullable=true"` | `nullable` flag (pointers also imply nullable) |
-| `anansi:"name,type=<override>"` | Type override: `composite`, `union`, `enum`, or a field type |
-| `anansi:"name,values=a\|b\|c"` | Enum values, `\|`-separated |
-| `anansi:"name,default=<lit>"` | Default literal (not allowed on `composite`/`union`) |
-
-**Behavior notes:**
-- Field names resolve: custom tag → `anansi` tag name → snake-cased Go name.
-- Anonymous embedded structs are **flattened**; `omitSystemField` skips
-  `document.DocumentModel`-style embeds (name-shadowing via `_id_`/`_metadata_`
-  fields works as usual).
-- Dot-separated names (`anansi:"billing.address"`) build **synthetic nested
-  schemas** automatically.
-- Generated field IDs are **deterministic UUIDv7s** (from field ordinal + name),
-  and inline array/element schemas carry no `id` (Rule 20), so output
-  round-trips through `definition.FromJSON` without drift.
-
-## Composed schemas (request/result envelopes) via `Schema.WithSchema`
-
-To build an **envelope schema** (API request/response, wrapper around a payload
-body) from an existing schema — or a DTO-derived schema — embed it as a nested
-schema with `definition.Schema.WithSchema(sub)`:
-
-```go
-import (
-    "github.com/asaidimu/go-anansi/v8/core/common"
-    "github.com/asaidimu/go-anansi/v8/core/data"
-    "github.com/asaidimu/go-anansi/v8/core/schema/definition"
-)
-
-// 1. Payload schema — hand-written or DTO-derived:
-payloadSchema, err := func() (*definition.Schema, error) {
-    raw, err := data.SchemaFrom[Order]()
-    if err != nil {
-        return nil, err
-    }
-    return definition.FromJSON(raw)
-}()
-
-// 2. Envelope schema that composes the payload as a nested schema:
-envelope := &definition.Schema{
-    Version:    common.MustNewVersion("1.0.0"),
-    BaseSchema: definition.BaseSchema{Name: "OrderRequest"},
-}
-envelopeWithBody, bodyID, err := envelope.WithSchema(payloadSchema)
-if err != nil { /* ... */ }
-
-// 3. Mount the composed body from a root field:
-payloadField := definition.Field{
-    Name: "payload",
-    Required: true,
-    FieldProperties: definition.FieldProperties{
-        Type:   definition.FieldTypeObject,
-        Schema: definition.NewSchemaReference(definition.SchemaReference{ID: bodyID}),
-    },
-}
-envelopeFinal, _, _, err := envelopeWithBody.WithFieldEnsured(&payloadField)
-if err != nil { /* ... */ }
-```
-
-**How it works:**
-
-- `WithSchema(sub)` returns `(*Schema, SchemaId, error)`. The returned
-  `SchemaId` is the handle you attach to a root field via a
-  `SchemaReference{ID: ...}` — nothing is auto-mounted, so the envelope's
-  own field layout stays under your control.
-- `sub.Fields` become the composed body's fields (a **nested** schema — the
-  sub's root fields are NOT spliced into the receiver's root level). `sub`'s
-  own nested schemas (`sub.Schemas`) are merged into the receiver's nested
-  registry.
-- **ID collisions are handled**: if a nested `SchemaId` from `sub` already
-  exists in the receiver, it is remapped to a fresh UUIDv7 and every field
-  reference to the old ID within the merged subtree is rewritten, so the body
-  stays internally consistent.
-- **Non-mutating**: `WithSchema` deep-copies the receiver; use its result.
-  A `nil` sub returns an error.
-- The receiver keeps its own root fields untouched — composition adds the
-  nested body alongside them, not into them. (Field *flattening* — merging a
-  sub's root fields into the receiver's root level — is a different operation
-  and is not provided; `WithSchema` is for nesting.)
-
-**Recommended flow for API envelopes:** derive the payload with
-`data.SchemaFrom[T]` (or author its schema directly) → `WithSchema` to embed it
-→ `WithField`/`WithFieldEnsured` to add envelope-level fields (id, meta,
-paging, status) that reference the composed body → `ToJSON()`/`AsMap()` to
-write the final `.schema.json`, or hand the `*definition.Schema` straight to
-`anansi.Setup`.
+1. **Hand-written JSON**, as in the example.
+2. **Derived from a Go struct** via `data.SchemaFrom[T]` — the DTO shapes
+   the schema without hand-writing JSON. The `anansi` tag grammar behind it
+   is specified in [Struct tag spec](/reference/struct-tag-spec).
+3. **Composed in Go** — embed an existing schema as a nested schema with
+   `definition.Schema.WithSchema(sub)`, which returns the composed schema
+   plus a `SchemaId` you mount from a root field via
+   `SchemaReference{ID: …}`. Non-mutating (use the result); ID collisions
+   are remapped; nothing is auto-mounted. Recommended for API envelopes:
+   derive the payload (`SchemaFrom[T]` or hand-written) → `WithSchema` →
+   `WithField`/`WithFieldEnsured` for envelope fields → `ToJSON()`/`AsMap()`
+   or straight to `anansi.Setup`.
 
 ## Authoring tips
 
-- **Write field keys as field names, never hand-invented UUIDs.** An LLM cannot
-  be trusted to emit valid UUIDv7s, and normalize fixes them anyway.
+- **Write field keys as field names, never hand-invented UUIDs.** An LLM
+  cannot be trusted to emit valid UUIDv7s, and normalize fixes them anyway.
 - `anansi schema normalize <schema>` rewrites field-name keys to UUIDv7 and
-  injects the `_id_` / `_metadata_` system fields (with the `_metadata_` nested
-  schema) that production collections require.
+  injects the `_id_` / `_metadata_` system fields (with the `_metadata_`
+  nested schema) that production collections require.
 - `anansi migrate generate` runs the same normalization as a side effect, so
-  the schema-change workflow (`migrate generate --dry-run` → `migrate generate`
-  → `anansi codegen golang`) both normalizes and migrates in one pass.
+  the schema-change workflow (`migrate generate --dry-run` →
+  `migrate generate` → `anansi codegen golang`) both normalizes and migrates
+  in one pass.
 - If your schema needs system `_id_` / `_metadata_` fields visible in the
   struct, run `anansi schema normalize` — the fields are then emitted as
   ordinary schema fields.

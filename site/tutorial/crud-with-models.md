@@ -1,6 +1,6 @@
 ---
 title: "CRUD with generated models"
-description: "Wire Playground persistence, bind the generated model, and run Create, FindByID, Read with a query, Update, Delete. The core loop, with the actual generated method names."
+description: "Wire Playground persistence, bind the generated model, and run Create, FindByID, Read with a query, Update, Delete. The core loop against the promoted ModelCollection methods."
 ---
 
 # CRUD with generated models
@@ -71,14 +71,14 @@ func main() {
         Price: 1200.00,
         Stock: 50,
     })
-    laptop, err = productsModel.CreateProduct(ctx, laptop)
+    laptop, err = productsModel.Create(ctx, laptop)
     if err != nil {
         log.Fatalf("create: %v", common.SystemErrorFrom(err).ToIssue())
     }
     logger.Info("created", zap.String("id", laptop.ID))
 
     // --- CreateMany ---
-    created, err := productsModel.CreateProducts(ctx, []*products.Product{
+    created, err := productsModel.CreateMany(ctx, []*products.Product{
         {Name: "Mouse", Price: 25.00, Stock: 200},
         {Name: "Keyboard", Price: 75.00, Stock: 150},
     })
@@ -88,7 +88,7 @@ func main() {
     _ = created
 
     // --- Find by ID ---
-    found, err := productsModel.GetProduct(ctx, laptop.ID)
+    found, err := productsModel.FindByID(ctx, laptop.ID)
     if err != nil {
         log.Fatalf("get: %v", err)
     }
@@ -96,14 +96,14 @@ func main() {
 
     // --- Query (price > 100) ---
     q := query.NewQueryBuilder().Where("price").Gt(100.0).Build()
-    expensive, err := productsModel.FindProducts(ctx, &q)
+    expensive, err := productsModel.Read(ctx, &q)
     if err != nil {
         log.Fatalf("query: %v", err)
     }
     logger.Info("expensive", zap.Int("count", len(expensive)))
 
     // --- Partial update (zero fields skipped) ---
-    updated, err := productsModel.UpdateProduct(ctx, laptop.ID, &products.Product{
+    updated, err := productsModel.Update(ctx, laptop.ID, &products.Product{
         Stock: 45, // only stock is updated
     })
     if err != nil {
@@ -112,41 +112,41 @@ func main() {
     _ = updated
 
     // --- Delete ---
-    if err := productsModel.DeleteProduct(ctx, laptop.ID); err != nil {
+    if err := productsModel.DeleteByID(ctx, laptop.ID); err != nil {
         log.Fatalf("delete: %v", err)
     }
 }
 ```
 
-## The generated CRUD methods
+## The CRUD methods
 
-`Products` (the generated wrapper) promotes CRUD methods whose names derive
-from the schema name. For a schema named `Product`:
+Codegen generates no per-schema method names. `Products` embeds
+`*collection.ModelCollection[*Product]`, so every method below is a promoted
+`ModelCollection` method working directly on `*Product`:
 
-| Generated method | Behaviour |
+| Method | Behaviour |
 | --- | --- |
-| `CreateProduct(ctx, *Product) (*Product, error)` | Persist; return hydrated struct with ID generated. |
-| `CreateProducts(ctx, []*Product) ([]*Product, error)` | Batch create. |
-| `GetProduct(ctx, id) (*Product, error)` | Read by ID. |
-| `ListAllProducts(ctx) ([]*Product, error)` | Read all. |
-| `FindProducts(ctx, *query.Query) ([]*Product, error)` | Read with a query. |
-| `UpdateProduct(ctx, id, *Product) (*Product, error)` | Partial update; zero fields skipped. |
-| `DeleteProduct(ctx, id) error` | Delete by ID. Evicts cache. |
-| `Validate(ctx, *Product, bool) ([]common.Issue, bool)` | Schema validation. |
+| `Create(ctx, *Product) (*Product, error)` | Persist; return hydrated struct with ID generated. |
+| `CreateMany(ctx, []*Product) ([]*Product, error)` | Batch create. |
+| `FindByID(ctx, id) (*Product, error)` | Read by ID (id-cache aware when caching is configured). |
+| `Read(ctx, *query.Query) ([]*Product, error)` | Read with a query. |
+| `Update(ctx, id, *Product) (*Product, error)` | Partial update; zero fields skipped. |
+| `Replace(ctx, id, *Product) (*Product, error)` | Full replace. |
+| `DeleteByID(ctx, id) error` | Delete by ID. Evicts cache. |
+| `Validate(ctx, *Product, loose) error` | Schema validation. |
 
-These are convenience wrappers over the underlying `ModelCollection[P]`
-methods. When you need finer control (raw results, status codes, batched
-writes), drop down to the underlying methods via `productsModel.ModelCollection`
-or grab the raw `base.Collection` from `p.Collection(ctx, "Product")`.
+When you need finer control (raw results, status codes, batched writes),
+grab the raw `base.Collection` from `p.Collection(ctx, "Product")` — same
+collection, unwrapped.
 
 ## The raw collection
 
-For document-shaped access — scripting, bulk scans, generated queries — grab
-the raw handle:
+For document-shaped access — scripting, bulk scans, generated queries — no
+separate handle needed. `Products` embeds `base.Collection`, so the model
+itself satisfies the raw interface:
 
 ```go
-coll, err := p.Collection(ctx, "Product")
-if err != nil { /* ... */ }
+var coll base.Collection = productsModel // the model IS a raw collection
 
 // Read returns pooled documents that are YOURS to Release().
 result, err := coll.Read(ctx, &query.Query{})
@@ -157,11 +157,17 @@ defer func() {
 }()
 
 // CreateOne returns a status, not just an error.
-res, err := coll.CreateOne(ctx, data.MustNewDocument(map[string]any{
+// Build the document through the collection's own pool — never data.MustNewDocument (deprecated).
+pool, err := coll.DocumentPool(ctx)
+if err != nil { /* ... */ }
+doc, err := pool.FromMap(map[string]any{
     "name":  "Mouse",
     "price": 25.00,
     "stock": 200,
-}))
+})
+if err != nil { /* validation failure */ }
+defer pool.Release(doc)
+res, err := coll.CreateOne(ctx, doc)
 if err != nil { /* driver failure */ }
 switch res.Status {
 case base.StatusCreated:
@@ -173,10 +179,10 @@ case base.StatusFailedPersistence:
 }
 ```
 
-Two differences from the model wrapper:
+Two differences from the model-typed methods on the same object:
 
 - **Raw `Read` returns pooled documents that are yours to `Release()`.** The
-  model wrapper releases internally; raw `Read` does not. Forgetting to
+  model-typed methods release internally; raw `Read` does not. Forgetting to
   release causes memory pressure under load.
 - **Raw `CreateOne` returns a status, not just an error.** Check
   `res.Status` (`StatusCreated` / `StatusFailedValidation` /
@@ -185,13 +191,14 @@ Two differences from the model wrapper:
 
 ## Closing a collection vs closing the store
 
-`coll.Close()` only stops the managed cache's background goroutines. It's a
-**no-op when no cache is configured** (the default — a cache is only created
-if you pass `Cache` / `CacheConfig` to `Init<X>Model`). It never touches the
-embedded collection or the DB.
+`productsModel.Close()` stops the model's cache background goroutines. It's
+a **no-op when no cache is configured** (the default — a cache is only
+created if you pass `Cache` / `CacheConfig` to `Init<X>Model`). It never
+touches the embedded collection or the DB. (The raw `base.Collection` has
+no `Close` method — closing is a model-wrapper concern.)
 
 The **store** is closed separately: `cleanup()` from `Playground`, or closing
-your `DatabaseInteracter`. Don't conflate the two.
+your `DatabaseInteractor`. Don't conflate the two.
 
 See [Collection internals](/reference/collection-internals) for the full
 layer-by-layer request path.

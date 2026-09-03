@@ -108,26 +108,26 @@ func WithMetadata(m map[string]any) Option {
 // populateFromStruct writes the anansi-tagged fields of s into the container
 // (or record view), honoring the reserved "_id_" and "_metadata_" fields.
 func (d *Document) populateFromStruct(s any, partial bool) error {
-	fields, err := data.StructFieldValues(s, partial)
+	fields, err := walkStructFields(s, partial)
 	if err != nil {
 		return err
 	}
 	for _, f := range fields {
-		switch f.Path {
+		switch f.path {
 		case data.DocumentIDField:
-			if s, ok := f.Value.(string); ok && isValidID(s) {
+			if s, ok := f.value.(string); ok && isValidID(s) {
 				d.setID(s)
 			}
 			continue
 		case data.MetadataField:
-			if m, ok := f.Value.(map[string]any); ok {
+			if m, ok := f.value.(map[string]any); ok {
 				if err := d.populateMetadata(m); err != nil {
 					return err
 				}
 			}
 			continue
 		}
-		if err := d.set(f.Path, f.Value); err != nil {
+		if err := d.set(f.path, f.value); err != nil {
 			return err
 		}
 	}

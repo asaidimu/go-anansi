@@ -7,6 +7,8 @@ import (
 )
 
 // ToStruct converts to a struct with better error handling.
+//
+// Deprecated: Use document.Document.BindTo instead.
 func (d *Document) ToStruct(target any) error {
 	data, err := json.Marshal(d)
 	if err != nil {

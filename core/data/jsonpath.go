@@ -9,6 +9,8 @@ import (
 )
 
 // JSONPathQuery executes a JSONPath-like query on the document.
+//
+// Deprecated: Use document.Document instead.
 func (d *Document) JSONPathQuery(path string) ([]any, error) {
 	if path == "" || path == "$" {
 		return []any{d.data}, nil

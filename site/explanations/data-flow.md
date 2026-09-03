@@ -11,35 +11,21 @@ are answerable by walking this path.
 
 ## The path, top to bottom
 
-```
-Your code
-   │  productsModel.FindProducts(ctx, &q)
-   ▼
-collection.ModelCollection[P]   ← typed wrapper (caching, shape methods)
-   │
-   ▼
-decorators (audit, encrypt, validate, sanitize)   ← you wrap Persistence
-   │
-   ▼
-events (DocumentCreateStart, DocumentCreateSuccess, ...)
-   │
-   ▼
-managed.Collection   ← caching layer (if configured)
-   │
-   ▼
-polyfill.Collection   ← back-compat shims
-   │
-   ▼
-base.Collection   ← the raw collection
-   │
-   ▼
-QueryEngine   ← partitions: DB-supported → SQL, residual → in-memory
-   │
-   ▼
-DatabaseInteractor   ← SQLite (reference), pluggable
-   │
-   ▼
-SQL   ← runs in the backend
+```mermaid
+flowchart TD
+    CODE["Your code<br/>productsModel.FindProducts(ctx, &q)"] --> MC["collection.ModelCollection[P]<br/>typed wrapper: caching, shape methods"]
+    MC --> DEC["decorators<br/>audit · encrypt · validate · sanitize"]
+    DEC --> EVT["events<br/>DocumentCreateStart → DocumentCreateSuccess …"]
+    EVT --> MAN["managed.Collection<br/>caching layer, if configured"]
+    MAN --> POLY["polyfill.Collection<br/>back-compat shims"]
+    POLY --> BASE["base.Collection<br/>the raw collection"]
+    BASE --> QE{"QueryEngine<br/>partition by Capabilities"}
+    QE -->|DB-supported| INTER["DatabaseInteractor<br/>SQLite reference, pluggable"]
+    INTER --> SQL[("SQL<br/>runs in the backend")]
+    QE -->|residual| HELPER["QueryHelper<br/>in-memory filter / sort / paginate"]
+    SQL --> DOCS["data.Documenter<br/>container-backed documents"]
+    HELPER --> DOCS
+    DOCS --> BIND["ModelCollection binds<br/>BindToWithContext → *Product"]
 ```
 
 For the full layer-by-layer breakdown and the "What happens when I..." /
@@ -76,7 +62,7 @@ The DB-supported parts compile to SQL; the residual becomes an in-memory
 
 ### 4. Results bind into typed structs
 
-Results come back as `data.Documenter` (a `map[string]any`-shaped document).
+Results come back as `data.Documenter` (container-backed documents — or schema-free record views for projections and joins).
 The `ModelCollection` binds these into your typed struct via
 `BindToWithContext`:
 

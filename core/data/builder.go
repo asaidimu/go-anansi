@@ -1,11 +1,15 @@
 package data
 
 // DocumentBuilder provides a fluent interface for building documents.
+//
+// Deprecated: Use document.DocumentPool instead.
 type DocumentBuilder struct {
 	doc *Document
 }
 
 // NewDocumentBuilder creates a new document builder.
+//
+// Deprecated: Use document.DocumentPool instead.
 func NewDocumentBuilder() *DocumentBuilder {
 	return &DocumentBuilder{
 		doc: MustNewDocument(nil),
@@ -13,12 +17,16 @@ func NewDocumentBuilder() *DocumentBuilder {
 }
 
 // Set adds a key-value pair.
+//
+// Deprecated: Use document.DocumentPool instead.
 func (db *DocumentBuilder) Set(key string, value any) *DocumentBuilder {
 	db.doc.Set(key, value)
 	return db
 }
 
 // SetIf conditionally adds a key-value pair.
+//
+// Deprecated: Use document.DocumentPool instead.
 func (db *DocumentBuilder) SetIf(condition bool, key string, value any) *DocumentBuilder {
 	if condition {
 		db.doc.Set(key, value)
@@ -27,6 +35,8 @@ func (db *DocumentBuilder) SetIf(condition bool, key string, value any) *Documen
 }
 
 // SetNested adds a nested value.
+//
+// Deprecated: Use document.DocumentPool instead.
 func (db *DocumentBuilder) SetNested(path string, value any) (*DocumentBuilder, error) {
 	if err := db.doc.SetNested(path, value); err != nil {
 		return nil, err
@@ -35,6 +45,8 @@ func (db *DocumentBuilder) SetNested(path string, value any) (*DocumentBuilder, 
 }
 
 // WithMetadata adds metadata.
+//
+// Deprecated: Use document.DocumentPool instead.
 func (db *DocumentBuilder) WithMetadata(metadata map[string]any) (*DocumentBuilder, error) {
 	for key, value := range metadata {
 		if err := db.doc.SetMetadataValue(key, value); err != nil {
@@ -46,6 +58,8 @@ func (db *DocumentBuilder) WithMetadata(metadata map[string]any) (*DocumentBuild
 }
 
 // Build returns the constructed document.
+//
+// Deprecated: Use document.DocumentPool instead.
 func (db *DocumentBuilder) Build() Documenter {
 	return db.doc.Clone()
 }
