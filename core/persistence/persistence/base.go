@@ -179,6 +179,16 @@ func (p *basePersistence) CreateCollections(ctx context.Context, schemas []*defi
         return nil
 }
 
+// CreateView registers a read-only view collection backed by the given query.
+// The view's result schema is derived from the query's projection; no physical
+// table is created. The returned Collection rejects all write operations.
+func (p *basePersistence) CreateView(ctx context.Context, name string, view *query.Query) (base.Collection, error) {
+        if _, err := p.registry.CreateView(ctx, name, view); err != nil {
+                return nil, err
+        }
+        return p.Collection(ctx, name)
+}
+
 func (p *basePersistence) HasCollection(ctx context.Context, name string) (bool, error) {
         _, err := (p.registry).GetRegistryEntry(ctx, name)
         if err != nil {

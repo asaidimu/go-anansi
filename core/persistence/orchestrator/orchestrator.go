@@ -17,11 +17,11 @@
 //
 // Usage is a two-step registration:
 //
-//	o := orchestrator.New(logger)
-//	_ = o.RegisterBackend("app", appPersistence)
-//	_ = o.RegisterBackend("logs", logsPersistence)
-//	_ = o.RouteCollection("orders", "app")
-//	_ = o.RouteCollection("access_log", "logs")
+//      o := orchestrator.New(logger)
+//      _ = o.RegisterBackend("app", appPersistence)
+//      _ = o.RegisterBackend("logs", logsPersistence)
+//      _ = o.RouteCollection("orders", "app")
+//      _ = o.RouteCollection("access_log", "logs")
 //
 // Collections must be routed *before* they are created through the
 // orchestrator: CreateCollection / CreateCollections require an existing
@@ -64,17 +64,17 @@
 package orchestrator
 
 import (
-	"context"
-	"errors"
-	"fmt"
-	"sort"
-	"sync"
-	"sync/atomic"
+        "context"
+        "errors"
+        "fmt"
+        "sort"
+        "sync"
+        "sync/atomic"
 
-	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v8/core/query"
-	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
-	"go.uber.org/zap"
+        "github.com/asaidimu/go-anansi/v8/core/persistence/base"
+        "github.com/asaidimu/go-anansi/v8/core/query"
+        "github.com/asaidimu/go-anansi/v8/core/schema/definition"
+        "go.uber.org/zap"
 )
 
 // Compile-time assertion that Orchestrator satisfies base.Persistence.
@@ -85,28 +85,28 @@ var _ base.Persistence = (*Orchestrator)(nil)
 // ---------------------------------------------------------------------
 
 var (
-	// ErrNoRouteRegistered is returned when an operation references a
-	// collection name that has no backend registered for it via
-	// RouteCollection.
-	ErrNoRouteRegistered = errors.New("orchestrator: no backend registered for collection")
+        // ErrNoRouteRegistered is returned when an operation references a
+        // collection name that has no backend registered for it via
+        // RouteCollection.
+        ErrNoRouteRegistered = errors.New("orchestrator: no backend registered for collection")
 
-	// ErrCrossBackendTransaction is always returned by Transact. See the
-	// package documentation for why cross-backend transactions are not
-	// supported.
-	ErrCrossBackendTransaction = errors.New("orchestrator: cross-backend transactions are not supported; obtain a specific backend via Backend(label) or BackendFor(collection) and transact on it directly")
+        // ErrCrossBackendTransaction is always returned by Transact. See the
+        // package documentation for why cross-backend transactions are not
+        // supported.
+        ErrCrossBackendTransaction = errors.New("orchestrator: cross-backend transactions are not supported; obtain a specific backend via Backend(label) or BackendFor(collection) and transact on it directly")
 
-	// ErrCrossBackendRawQuery is returned by Query when the supplied
-	// RawQuery references collections that resolve to more than one
-	// backend.
-	ErrCrossBackendRawQuery = errors.New("orchestrator: raw query references collections across more than one backend")
+        // ErrCrossBackendRawQuery is returned by Query when the supplied
+        // RawQuery references collections that resolve to more than one
+        // backend.
+        ErrCrossBackendRawQuery = errors.New("orchestrator: raw query references collections across more than one backend")
 
-	// ErrBackendNotFound is returned by Backend and RouteCollection when no
-	// backend has been registered under the given label.
-	ErrBackendNotFound = errors.New("orchestrator: no backend registered under that label")
+        // ErrBackendNotFound is returned by Backend and RouteCollection when no
+        // backend has been registered under the given label.
+        ErrBackendNotFound = errors.New("orchestrator: no backend registered under that label")
 
-	// ErrAlreadyClosed is returned by any operation attempted after Close
-	// has been called on the Orchestrator.
-	ErrAlreadyClosed = errors.New("orchestrator: orchestrator instance is closed")
+        // ErrAlreadyClosed is returned by any operation attempted after Close
+        // has been called on the Orchestrator.
+        ErrAlreadyClosed = errors.New("orchestrator: orchestrator instance is closed")
 )
 
 // ---------------------------------------------------------------------
@@ -118,31 +118,31 @@ var (
 // is not collection-scoped, so there is no backend to delegate to — the
 // orchestrator just provides the goroutine/Future plumbing itself.
 type future struct {
-	done   chan struct{}
-	result any
-	err    error
+        done   chan struct{}
+        result any
+        err    error
 }
 
 func newFuture(ctx context.Context, f func(ctx context.Context) (any, error)) *future {
-	fut := &future{done: make(chan struct{})}
-	go func() {
-		defer close(fut.done)
-		defer func() {
-			if r := recover(); r != nil {
-				fut.err = fmt.Errorf("orchestrator: async function panicked: %v", r)
-			}
-		}()
-		fut.result, fut.err = f(ctx)
-	}()
-	return fut
+        fut := &future{done: make(chan struct{})}
+        go func() {
+                defer close(fut.done)
+                defer func() {
+                        if r := recover(); r != nil {
+                                fut.err = fmt.Errorf("orchestrator: async function panicked: %v", r)
+                        }
+                }()
+                fut.result, fut.err = f(ctx)
+        }()
+        return fut
 }
 
 // Await blocks until the underlying function has completed and returns its
 // result and error. Await may be called more than once; subsequent calls
 // return the same result.
 func (f *future) Await() (any, error) {
-	<-f.done
-	return f.result, f.err
+        <-f.done
+        return f.result, f.err
 }
 
 // ---------------------------------------------------------------------
@@ -155,8 +155,8 @@ func (f *future) Await() (any, error) {
 // by backend in CreateCollections) without relying on base.Persistence being
 // comparable.
 type backendEntry struct {
-	label       string
-	persistence base.Persistence
+        label       string
+        persistence base.Persistence
 }
 
 // facadeSubscription tracks a single subscription registered through the
@@ -164,14 +164,14 @@ type backendEntry struct {
 // per-backend registrations that resulted from fanning that subscription out
 // to every backend.
 type facadeSubscription struct {
-	id            string
-	options       base.SubscriptionOptions
-	registrations []subscriptionRegistration
+        id            string
+        options       base.SubscriptionOptions
+        registrations []subscriptionRegistration
 }
 
 type subscriptionRegistration struct {
-	entry        *backendEntry
-	backendSubID string
+        entry        *backendEntry
+        backendSubID string
 }
 
 // Orchestrator is a base.Persistence facade that routes every collection-
@@ -181,43 +181,43 @@ type subscriptionRegistration struct {
 // see the package documentation for why, and for the recommended
 // alternative.
 type Orchestrator struct {
-	mu sync.RWMutex
+        mu sync.RWMutex
 
-	// routes maps a collection name to the backend responsible for it.
-	routes map[string]*backendEntry
+        // routes maps a collection name to the backend responsible for it.
+        routes map[string]*backendEntry
 
-	// backendsByLabel allows callers (and RouteCollection) to resolve a
-	// human-readable label to its backend.
-	backendsByLabel map[string]*backendEntry
+        // backendsByLabel allows callers (and RouteCollection) to resolve a
+        // human-readable label to its backend.
+        backendsByLabel map[string]*backendEntry
 
-	// allBackends is the deduplicated, insertion-ordered set of every
-	// backend that has been registered. Used for fan-out operations
-	// (ListCollections, Metadata, Subscribe, Close, ...).
-	allBackends []*backendEntry
+        // allBackends is the deduplicated, insertion-ordered set of every
+        // backend that has been registered. Used for fan-out operations
+        // (ListCollections, Metadata, Subscribe, Close, ...).
+        allBackends []*backendEntry
 
-	// subscriptions tracks every subscription registered through this
-	// Orchestrator, keyed by the facade-level subscription ID returned from
-	// Subscribe.
-	subscriptions map[string]*facadeSubscription
-	nextSubID     atomic.Int64
+        // subscriptions tracks every subscription registered through this
+        // Orchestrator, keyed by the facade-level subscription ID returned from
+        // Subscribe.
+        subscriptions map[string]*facadeSubscription
+        nextSubID     atomic.Int64
 
-	logger *zap.Logger
-	closed bool
+        logger *zap.Logger
+        closed bool
 }
 
 // New creates an empty Orchestrator. At least one backend must be attached
 // via RegisterBackend, and at least one collection routed via
 // RouteCollection, before any collection-scoped operation will succeed.
 func New(logger *zap.Logger) *Orchestrator {
-	if logger == nil {
-		logger = zap.NewNop()
-	}
-	return &Orchestrator{
-		routes:          make(map[string]*backendEntry),
-		backendsByLabel: make(map[string]*backendEntry),
-		subscriptions:   make(map[string]*facadeSubscription),
-		logger:          logger,
-	}
+        if logger == nil {
+                logger = zap.NewNop()
+        }
+        return &Orchestrator{
+                routes:          make(map[string]*backendEntry),
+                backendsByLabel: make(map[string]*backendEntry),
+                subscriptions:   make(map[string]*facadeSubscription),
+                logger:          logger,
+        }
 }
 
 // RegisterBackend attaches a backend under a human-readable label (e.g.
@@ -230,30 +230,30 @@ func New(logger *zap.Logger) *Orchestrator {
 // since silently re-pointing a label could route future collections to the
 // wrong physical store without anyone noticing.
 func (o *Orchestrator) RegisterBackend(label string, p base.Persistence) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
+        o.mu.Lock()
+        defer o.mu.Unlock()
 
-	if o.closed {
-		return ErrAlreadyClosed
-	}
-	if label == "" {
-		return fmt.Errorf("orchestrator: backend label must not be empty")
-	}
-	if p == nil {
-		return fmt.Errorf("orchestrator: backend for label %q must not be nil", label)
-	}
+        if o.closed {
+                return ErrAlreadyClosed
+        }
+        if label == "" {
+                return fmt.Errorf("orchestrator: backend label must not be empty")
+        }
+        if p == nil {
+                return fmt.Errorf("orchestrator: backend for label %q must not be nil", label)
+        }
 
-	if existing, ok := o.backendsByLabel[label]; ok {
-		if existing.persistence != p {
-			return fmt.Errorf("orchestrator: label %q is already registered to a different backend", label)
-		}
-		return nil
-	}
+        if existing, ok := o.backendsByLabel[label]; ok {
+                if existing.persistence != p {
+                        return fmt.Errorf("orchestrator: label %q is already registered to a different backend", label)
+                }
+                return nil
+        }
 
-	entry := &backendEntry{label: label, persistence: p}
-	o.backendsByLabel[label] = entry
-	o.allBackends = append(o.allBackends, entry)
-	return nil
+        entry := &backendEntry{label: label, persistence: p}
+        o.backendsByLabel[label] = entry
+        o.allBackends = append(o.allBackends, entry)
+        return nil
 }
 
 // RouteCollection declares that the named collection is owned by the backend
@@ -267,23 +267,23 @@ func (o *Orchestrator) RegisterBackend(label string, p base.Persistence) error {
 // inconsistent picture of which backend owns the collection — it is a
 // startup-time configuration operation, not a runtime one.
 func (o *Orchestrator) RouteCollection(name string, label string) error {
-	o.mu.Lock()
-	defer o.mu.Unlock()
+        o.mu.Lock()
+        defer o.mu.Unlock()
 
-	if o.closed {
-		return ErrAlreadyClosed
-	}
-	if name == "" {
-		return fmt.Errorf("orchestrator: collection name must not be empty")
-	}
+        if o.closed {
+                return ErrAlreadyClosed
+        }
+        if name == "" {
+                return fmt.Errorf("orchestrator: collection name must not be empty")
+        }
 
-	entry, ok := o.backendsByLabel[label]
-	if !ok {
-		return fmt.Errorf("%w: %q", ErrBackendNotFound, label)
-	}
+        entry, ok := o.backendsByLabel[label]
+        if !ok {
+                return fmt.Errorf("%w: %q", ErrBackendNotFound, label)
+        }
 
-	o.routes[name] = entry
-	return nil
+        o.routes[name] = entry
+        return nil
 }
 
 // Backend returns the backend registered under the given label. This is the
@@ -291,17 +291,17 @@ func (o *Orchestrator) RouteCollection(name string, label string) error {
 // you need and call Transact on it directly, rather than through the
 // Orchestrator.
 func (o *Orchestrator) Backend(label string) (base.Persistence, error) {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
+        o.mu.RLock()
+        defer o.mu.RUnlock()
 
-	if o.closed {
-		return nil, ErrAlreadyClosed
-	}
-	entry, ok := o.backendsByLabel[label]
-	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrBackendNotFound, label)
-	}
-	return entry.persistence, nil
+        if o.closed {
+                return nil, ErrAlreadyClosed
+        }
+        entry, ok := o.backendsByLabel[label]
+        if !ok {
+                return nil, fmt.Errorf("%w: %q", ErrBackendNotFound, label)
+        }
+        return entry.persistence, nil
 }
 
 // BackendFor returns the backend that owns the given collection name,
@@ -309,54 +309,54 @@ func (o *Orchestrator) Backend(label string) (base.Persistence, error) {
 // needs a real ACID transaction can fetch the right backend and call
 // Transact on it directly.
 func (o *Orchestrator) BackendFor(collectionName string) (base.Persistence, error) {
-	entry, err := o.resolve(collectionName)
-	if err != nil {
-		return nil, err
-	}
-	return entry.persistence, nil
+        entry, err := o.resolve(collectionName)
+        if err != nil {
+                return nil, err
+        }
+        return entry.persistence, nil
 }
 
 // Labels returns the labels of every backend currently registered, in
 // registration order.
 func (o *Orchestrator) Labels() []string {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
+        o.mu.RLock()
+        defer o.mu.RUnlock()
 
-	labels := make([]string, len(o.allBackends))
-	for i, entry := range o.allBackends {
-		labels[i] = entry.label
-	}
-	return labels
+        labels := make([]string, len(o.allBackends))
+        for i, entry := range o.allBackends {
+                labels[i] = entry.label
+        }
+        return labels
 }
 
 // Routes returns a snapshot of the current collection-name-to-backend-label
 // routing table, primarily for debugging and operational introspection.
 func (o *Orchestrator) Routes() map[string]string {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
+        o.mu.RLock()
+        defer o.mu.RUnlock()
 
-	routes := make(map[string]string, len(o.routes))
-	for name, entry := range o.routes {
-		routes[name] = entry.label
-	}
-	return routes
+        routes := make(map[string]string, len(o.routes))
+        for name, entry := range o.routes {
+                routes[name] = entry.label
+        }
+        return routes
 }
 
 // resolve looks up the backend responsible for a collection name. It is the
 // single choke point every collection-scoped method goes through, so the
 // "closed" and "not registered" checks only need to live in one place.
 func (o *Orchestrator) resolve(name string) (*backendEntry, error) {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
+        o.mu.RLock()
+        defer o.mu.RUnlock()
 
-	if o.closed {
-		return nil, ErrAlreadyClosed
-	}
-	entry, ok := o.routes[name]
-	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrNoRouteRegistered, name)
-	}
-	return entry, nil
+        if o.closed {
+                return nil, ErrAlreadyClosed
+        }
+        entry, ok := o.routes[name]
+        if !ok {
+                return nil, fmt.Errorf("%w: %q", ErrNoRouteRegistered, name)
+        }
+        return entry, nil
 }
 
 // snapshotBackends returns a copy of the current backend list, safe to range
@@ -365,15 +365,15 @@ func (o *Orchestrator) resolve(name string) (*backendEntry, error) {
 // holding o.mu, to avoid blocking unrelated RouteCollection/RegisterBackend
 // calls for the duration of a slow fan-out).
 func (o *Orchestrator) snapshotBackends() ([]*backendEntry, error) {
-	o.mu.RLock()
-	defer o.mu.RUnlock()
+        o.mu.RLock()
+        defer o.mu.RUnlock()
 
-	if o.closed {
-		return nil, ErrAlreadyClosed
-	}
-	backends := make([]*backendEntry, len(o.allBackends))
-	copy(backends, o.allBackends)
-	return backends, nil
+        if o.closed {
+                return nil, ErrAlreadyClosed
+        }
+        backends := make([]*backendEntry, len(o.allBackends))
+        copy(backends, o.allBackends)
+        return backends, nil
 }
 
 // ---------------------------------------------------------------------
@@ -383,11 +383,11 @@ func (o *Orchestrator) snapshotBackends() ([]*backendEntry, error) {
 // Collection returns a handle to the named collection from whichever backend
 // it is routed to.
 func (o *Orchestrator) Collection(ctx context.Context, name string) (base.Collection, error) {
-	entry, err := o.resolve(name)
-	if err != nil {
-		return nil, err
-	}
-	return entry.persistence.Collection(ctx, name)
+        entry, err := o.resolve(name)
+        if err != nil {
+                return nil, err
+        }
+        return entry.persistence.Collection(ctx, name)
 }
 
 // ListCollections returns the names of every collection known to every
@@ -398,30 +398,30 @@ func (o *Orchestrator) Collection(ctx context.Context, name string) (base.Collec
 // created directly against the backend), so we still de-duplicate
 // defensively rather than assume the routing table is exhaustive.
 func (o *Orchestrator) ListCollections(ctx context.Context) ([]string, error) {
-	backends, err := o.snapshotBackends()
-	if err != nil {
-		return nil, err
-	}
+        backends, err := o.snapshotBackends()
+        if err != nil {
+                return nil, err
+        }
 
-	seen := make(map[string]struct{})
-	var names []string
+        seen := make(map[string]struct{})
+        var names []string
 
-	for _, entry := range backends {
-		backendNames, err := entry.persistence.ListCollections(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("orchestrator: listing collections on backend %q: %w", entry.label, err)
-		}
-		for _, n := range backendNames {
-			if _, dup := seen[n]; dup {
-				continue
-			}
-			seen[n] = struct{}{}
-			names = append(names, n)
-		}
-	}
+        for _, entry := range backends {
+                backendNames, err := entry.persistence.ListCollections(ctx)
+                if err != nil {
+                        return nil, fmt.Errorf("orchestrator: listing collections on backend %q: %w", entry.label, err)
+                }
+                for _, n := range backendNames {
+                        if _, dup := seen[n]; dup {
+                                continue
+                        }
+                        seen[n] = struct{}{}
+                        names = append(names, n)
+                }
+        }
 
-	sort.Strings(names)
-	return names, nil
+        sort.Strings(names)
+        return names, nil
 }
 
 // Delete removes the named collection from its backend, and — on success —
@@ -429,33 +429,33 @@ func (o *Orchestrator) ListCollections(ctx context.Context) ([]string, error) {
 // collection of the same name must be explicitly re-routed rather than
 // silently inheriting a stale route.
 func (o *Orchestrator) Delete(ctx context.Context, name string) (bool, error) {
-	entry, err := o.resolve(name)
-	if err != nil {
-		return false, err
-	}
+        entry, err := o.resolve(name)
+        if err != nil {
+                return false, err
+        }
 
-	deleted, err := entry.persistence.Delete(ctx, name)
-	if err != nil {
-		return deleted, err
-	}
+        deleted, err := entry.persistence.Delete(ctx, name)
+        if err != nil {
+                return deleted, err
+        }
 
-	if deleted {
-		o.mu.Lock()
-		delete(o.routes, name)
-		o.mu.Unlock()
-	}
+        if deleted {
+                o.mu.Lock()
+                delete(o.routes, name)
+                o.mu.Unlock()
+        }
 
-	return deleted, nil
+        return deleted, nil
 }
 
 // Schema retrieves a schema definition from the backend that owns the named
 // collection.
 func (o *Orchestrator) Schema(ctx context.Context, name string, version ...string) (*definition.Schema, error) {
-	entry, err := o.resolve(name)
-	if err != nil {
-		return nil, err
-	}
-	return entry.persistence.Schema(ctx, name, version...)
+        entry, err := o.resolve(name)
+        if err != nil {
+                return nil, err
+        }
+        return entry.persistence.Schema(ctx, name, version...)
 }
 
 // Metadata fans out to every registered backend and merges the results: counts
@@ -466,60 +466,60 @@ func (o *Orchestrator) Schema(ctx context.Context, name string, version ...strin
 // caller debugging a multi-backend deployment needs to know which backend is
 // unhealthy, not just that one of them is.
 func (o *Orchestrator) Metadata(ctx context.Context, filter *base.MetadataFilter) (base.Metadata, error) {
-	backends, err := o.snapshotBackends()
-	if err != nil {
-		return base.Metadata{}, err
-	}
+        backends, err := o.snapshotBackends()
+        if err != nil {
+                return base.Metadata{}, err
+        }
 
-	var merged base.Metadata
-	var totalCollections int64
-	var totalStorage int64
-	storageKnown := false
+        var merged base.Metadata
+        var totalCollections int64
+        var totalStorage int64
+        storageKnown := false
 
-	for _, entry := range backends {
-		meta, err := entry.persistence.Metadata(ctx, filter)
-		if err != nil {
-			return base.Metadata{}, fmt.Errorf("orchestrator: fetching metadata from backend %q: %w", entry.label, err)
-		}
+        for _, entry := range backends {
+                meta, err := entry.persistence.Metadata(ctx, filter)
+                if err != nil {
+                        return base.Metadata{}, fmt.Errorf("orchestrator: fetching metadata from backend %q: %w", entry.label, err)
+                }
 
-		if meta.CollectionCount != nil {
-			totalCollections += *meta.CollectionCount
-		}
-		if meta.StorageUsageBytes != nil {
-			totalStorage += *meta.StorageUsageBytes
-			storageKnown = true
-		}
+                if meta.CollectionCount != nil {
+                        totalCollections += *meta.CollectionCount
+                }
+                if meta.StorageUsageBytes != nil {
+                        totalStorage += *meta.StorageUsageBytes
+                        storageKnown = true
+                }
 
-		merged.Schemas = append(merged.Schemas, meta.Schemas...)
-		merged.Collections = append(merged.Collections, meta.Collections...)
-		merged.Subscriptions = append(merged.Subscriptions, meta.Subscriptions...)
+                merged.Schemas = append(merged.Schemas, meta.Schemas...)
+                merged.Collections = append(merged.Collections, meta.Collections...)
+                merged.Subscriptions = append(merged.Subscriptions, meta.Subscriptions...)
 
-		if meta.ConnectionStatus != nil && *meta.ConnectionStatus != "healthy" {
-			status := fmt.Sprintf("%s (%s)", *meta.ConnectionStatus, entry.label)
-			merged.ConnectionStatus = &status
-		}
+                if meta.ConnectionStatus != nil && *meta.ConnectionStatus != "healthy" {
+                        status := fmt.Sprintf("%s (%s)", *meta.ConnectionStatus, entry.label)
+                        merged.ConnectionStatus = &status
+                }
 
-		if meta.ConnectionError != nil {
-			labeled := fmt.Sprintf("[%s] %s", entry.label, *meta.ConnectionError)
-			if merged.ConnectionError == nil {
-				merged.ConnectionError = &labeled
-			} else {
-				joined := *merged.ConnectionError + "; " + labeled
-				merged.ConnectionError = &joined
-			}
-		}
-	}
+                if meta.ConnectionError != nil {
+                        labeled := fmt.Sprintf("[%s] %s", entry.label, *meta.ConnectionError)
+                        if merged.ConnectionError == nil {
+                                merged.ConnectionError = &labeled
+                        } else {
+                                joined := *merged.ConnectionError + "; " + labeled
+                                merged.ConnectionError = &joined
+                        }
+                }
+        }
 
-	merged.CollectionCount = &totalCollections
-	if storageKnown {
-		merged.StorageUsageBytes = &totalStorage
-	}
-	if merged.ConnectionStatus == nil {
-		healthy := "healthy"
-		merged.ConnectionStatus = &healthy
-	}
+        merged.CollectionCount = &totalCollections
+        if storageKnown {
+                merged.StorageUsageBytes = &totalStorage
+        }
+        if merged.ConnectionStatus == nil {
+                healthy := "healthy"
+                merged.ConnectionStatus = &healthy
+        }
 
-	return merged, nil
+        return merged, nil
 }
 
 // Async spawns the given function in a goroutine and returns a Future for
@@ -527,7 +527,7 @@ func (o *Orchestrator) Metadata(ctx context.Context, filter *base.MetadataFilter
 // so there is no backend to delegate to — the Orchestrator provides this
 // directly rather than arbitrarily picking one backend's implementation.
 func (o *Orchestrator) Async(ctx context.Context, f func(ctx context.Context) (any, error)) base.Future {
-	return newFuture(ctx, f)
+        return newFuture(ctx, f)
 }
 
 // Query executes a raw, templated query. Every collection referenced in
@@ -538,33 +538,33 @@ func (o *Orchestrator) Async(ctx context.Context, f func(ctx context.Context) (a
 // which backend should run the query and returns an error rather than
 // guessing.
 func (o *Orchestrator) Query(ctx context.Context, rawQuery *query.RawQuery) (*query.RawQueryResult, error) {
-	if rawQuery == nil {
-		return nil, fmt.Errorf("orchestrator: raw query must not be nil")
-	}
-	if len(rawQuery.Collections) == 0 {
-		return nil, fmt.Errorf("orchestrator: raw query must specify at least one entry in Collections so the orchestrator can determine which backend to run it against")
-	}
+        if rawQuery == nil {
+                return nil, fmt.Errorf("orchestrator: raw query must not be nil")
+        }
+        if len(rawQuery.Collections) == 0 {
+                return nil, fmt.Errorf("orchestrator: raw query must specify at least one entry in Collections so the orchestrator can determine which backend to run it against")
+        }
 
-	var resolved *backendEntry
-	var resolvedPlaceholder string
+        var resolved *backendEntry
+        var resolvedPlaceholder string
 
-	for placeholder, target := range rawQuery.Collections {
-		entry, err := o.resolve(target.Collection)
-		if err != nil {
-			return nil, fmt.Errorf("orchestrator: resolving raw query placeholder %q: %w", placeholder, err)
-		}
-		if resolved == nil {
-			resolved = entry
-			resolvedPlaceholder = placeholder
-			continue
-		}
-		if resolved != entry {
-			return nil, fmt.Errorf("%w: placeholder %q resolves to backend %q but placeholder %q resolves to backend %q",
-				ErrCrossBackendRawQuery, placeholder, entry.label, resolvedPlaceholder, resolved.label)
-		}
-	}
+        for placeholder, target := range rawQuery.Collections {
+                entry, err := o.resolve(target.Collection)
+                if err != nil {
+                        return nil, fmt.Errorf("orchestrator: resolving raw query placeholder %q: %w", placeholder, err)
+                }
+                if resolved == nil {
+                        resolved = entry
+                        resolvedPlaceholder = placeholder
+                        continue
+                }
+                if resolved != entry {
+                        return nil, fmt.Errorf("%w: placeholder %q resolves to backend %q but placeholder %q resolves to backend %q",
+                                ErrCrossBackendRawQuery, placeholder, entry.label, resolvedPlaceholder, resolved.label)
+                }
+        }
 
-	return resolved.persistence.Query(ctx, rawQuery)
+        return resolved.persistence.Query(ctx, rawQuery)
 }
 
 // ---------------------------------------------------------------------
@@ -577,15 +577,15 @@ func (o *Orchestrator) Query(ctx context.Context, rawQuery *query.RawQuery) (*qu
 // the Orchestrator never guesses a default backend for an unrouted
 // collection, since that would defeat the point of explicit routing.
 func (o *Orchestrator) CreateCollection(ctx context.Context, sc *definition.Schema) (base.Collection, error) {
-	if sc == nil {
-		return nil, fmt.Errorf("orchestrator: schema must not be nil")
-	}
+        if sc == nil {
+                return nil, fmt.Errorf("orchestrator: schema must not be nil")
+        }
 
-	entry, err := o.resolve(sc.Name)
-	if err != nil {
-		return nil, fmt.Errorf("%w; call RouteCollection(%q, <backend label>) before creating it", err, sc.Name)
-	}
-	return entry.persistence.CreateCollection(ctx, sc)
+        entry, err := o.resolve(sc.Name)
+        if err != nil {
+                return nil, fmt.Errorf("%w; call RouteCollection(%q, <backend label>) before creating it", err, sc.Name)
+        }
+        return entry.persistence.CreateCollection(ctx, sc)
 }
 
 // CreateCollections creates multiple collections, grouping them by their
@@ -600,34 +600,53 @@ func (o *Orchestrator) CreateCollection(ctx context.Context, sc *definition.Sche
 // be handled by the caller (e.g. by checking which collections now exist via
 // HasCollection and deciding how to proceed).
 func (o *Orchestrator) CreateCollections(ctx context.Context, schemas []*definition.Schema) error {
-	if len(schemas) == 0 {
-		return nil
-	}
+        if len(schemas) == 0 {
+                return nil
+        }
 
-	grouped := make(map[*backendEntry][]*definition.Schema)
-	var order []*backendEntry
+        grouped := make(map[*backendEntry][]*definition.Schema)
+        var order []*backendEntry
 
-	for _, sc := range schemas {
-		if sc == nil {
-			return fmt.Errorf("orchestrator: schema list contains a nil schema")
-		}
-		entry, err := o.resolve(sc.Name)
-		if err != nil {
-			return fmt.Errorf("%w; call RouteCollection(%q, <backend label>) before creating it", err, sc.Name)
-		}
-		if _, ok := grouped[entry]; !ok {
-			order = append(order, entry)
-		}
-		grouped[entry] = append(grouped[entry], sc)
-	}
+        for _, sc := range schemas {
+                if sc == nil {
+                        return fmt.Errorf("orchestrator: schema list contains a nil schema")
+                }
+                entry, err := o.resolve(sc.Name)
+                if err != nil {
+                        return fmt.Errorf("%w; call RouteCollection(%q, <backend label>) before creating it", err, sc.Name)
+                }
+                if _, ok := grouped[entry]; !ok {
+                        order = append(order, entry)
+                }
+                grouped[entry] = append(grouped[entry], sc)
+        }
 
-	for _, entry := range order {
-		if err := entry.persistence.CreateCollections(ctx, grouped[entry]); err != nil {
-			return fmt.Errorf("orchestrator: creating collections on backend %q: %w", entry.label, err)
-		}
-	}
+        for _, entry := range order {
+                if err := entry.persistence.CreateCollections(ctx, grouped[entry]); err != nil {
+                        return fmt.Errorf("orchestrator: creating collections on backend %q: %w", entry.label, err)
+                }
+        }
 
-	return nil
+        return nil
+}
+
+// HasCollection reports whether the named collection is both routed and
+// present on its backend. A collection name with no route registered is
+// treated as simply not existing (false, nil) rather than as an error,
+// matching the intuitive meaning of "has collection" — callers checking
+// existence shouldn't have to distinguish "doesn't exist" from "exists but
+// nobody told me where to look for it".
+func (o *Orchestrator) CreateView(ctx context.Context, name string, view *query.Query) (base.Collection, error) {
+        if view == nil {
+                return nil, fmt.Errorf("orchestrator: view query must not be nil")
+        }
+        // Views are routed the same way as collections — by name. The caller
+        // must RouteCollection(name, backendLabel) before creating the view.
+        entry, err := o.resolve(name)
+        if err != nil {
+                return nil, fmt.Errorf("%w; call RouteCollection(%q, <backend label>) before creating the view", err, name)
+        }
+        return entry.persistence.CreateView(ctx, name, view)
 }
 
 // HasCollection reports whether the named collection is both routed and
@@ -637,14 +656,14 @@ func (o *Orchestrator) CreateCollections(ctx context.Context, schemas []*definit
 // existence shouldn't have to distinguish "doesn't exist" from "exists but
 // nobody told me where to look for it".
 func (o *Orchestrator) HasCollection(ctx context.Context, name string) (bool, error) {
-	entry, err := o.resolve(name)
-	if err != nil {
-		if errors.Is(err, ErrNoRouteRegistered) {
-			return false, nil
-		}
-		return false, err
-	}
-	return entry.persistence.HasCollection(ctx, name)
+        entry, err := o.resolve(name)
+        if err != nil {
+                if errors.Is(err, ErrNoRouteRegistered) {
+                        return false, nil
+                }
+                return false, err
+        }
+        return entry.persistence.HasCollection(ctx, name)
 }
 
 // Transact always returns ErrCrossBackendTransaction. The Orchestrator
@@ -655,13 +674,13 @@ func (o *Orchestrator) HasCollection(ctx context.Context, name string) (bool, er
 // to get a specific backend and call Transact on it directly; that
 // transaction will be scoped to that backend's collections only.
 func (o *Orchestrator) Transact(ctx context.Context, callback func(ctx context.Context, p base.BasePersistence) (any, error)) (any, error) {
-	return nil, ErrCrossBackendTransaction
+        return nil, ErrCrossBackendTransaction
 }
 
 // TransactWithOptions is like Transact but accepts options for retry configuration.
 // Cross-backend transactions are not supported; this always returns ErrCrossBackendTransaction.
 func (o *Orchestrator) TransactWithOptions(ctx context.Context, options base.TransactOptions, callback func(ctx context.Context, p base.BasePersistence) (any, error)) (any, error) {
-	return nil, ErrCrossBackendTransaction
+        return nil, ErrCrossBackendTransaction
 }
 
 // Subscribe registers the given subscription against every currently
@@ -675,51 +694,51 @@ func (o *Orchestrator) TransactWithOptions(ctx context.Context, options base.Tra
 // subscription. Register all backends before subscribing if you need
 // guaranteed coverage.
 func (o *Orchestrator) Subscribe(ctx context.Context, options base.SubscriptionOptions) string {
-	backends, err := o.snapshotBackends()
-	if err != nil {
-		// Orchestrator is closed; base.Persistence.Subscribe has no error
-		// return, so we signal failure the only way the interface allows:
-		// an empty ID that will never match a real subscription.
-		o.logger.Warn("subscribe called on closed orchestrator")
-		return ""
-	}
+        backends, err := o.snapshotBackends()
+        if err != nil {
+                // Orchestrator is closed; base.Persistence.Subscribe has no error
+                // return, so we signal failure the only way the interface allows:
+                // an empty ID that will never match a real subscription.
+                o.logger.Warn("subscribe called on closed orchestrator")
+                return ""
+        }
 
-	facadeID := fmt.Sprintf("orch-sub-%d", o.nextSubID.Add(1))
-	sub := &facadeSubscription{id: facadeID, options: options}
+        facadeID := fmt.Sprintf("orch-sub-%d", o.nextSubID.Add(1))
+        sub := &facadeSubscription{id: facadeID, options: options}
 
-	for _, entry := range backends {
-		backendID := entry.persistence.Subscribe(ctx, options)
-		sub.registrations = append(sub.registrations, subscriptionRegistration{
-			entry:        entry,
-			backendSubID: backendID,
-		})
-	}
+        for _, entry := range backends {
+                backendID := entry.persistence.Subscribe(ctx, options)
+                sub.registrations = append(sub.registrations, subscriptionRegistration{
+                        entry:        entry,
+                        backendSubID: backendID,
+                })
+        }
 
-	o.mu.Lock()
-	o.subscriptions[facadeID] = sub
-	o.mu.Unlock()
+        o.mu.Lock()
+        o.subscriptions[facadeID] = sub
+        o.mu.Unlock()
 
-	return facadeID
+        return facadeID
 }
 
 // Unsubscribe removes a facade-level subscription previously returned by
 // Subscribe, unsubscribing it from every backend it was registered against.
 // Unsubscribing an unknown or already-removed ID is a no-op.
 func (o *Orchestrator) Unsubscribe(ctx context.Context, id string) {
-	o.mu.Lock()
-	sub, ok := o.subscriptions[id]
-	if ok {
-		delete(o.subscriptions, id)
-	}
-	o.mu.Unlock()
+        o.mu.Lock()
+        sub, ok := o.subscriptions[id]
+        if ok {
+                delete(o.subscriptions, id)
+        }
+        o.mu.Unlock()
 
-	if !ok {
-		return
-	}
+        if !ok {
+                return
+        }
 
-	for _, reg := range sub.registrations {
-		reg.entry.persistence.Unsubscribe(ctx, reg.backendSubID)
-	}
+        for _, reg := range sub.registrations {
+                reg.entry.persistence.Unsubscribe(ctx, reg.backendSubID)
+        }
 }
 
 // Subscriptions returns every subscription currently registered through this
@@ -730,54 +749,54 @@ func (o *Orchestrator) Unsubscribe(ctx context.Context, id string) {
 // Subscriptions made directly against an underlying backend, bypassing this
 // Orchestrator, are not visible here.
 func (o *Orchestrator) Subscriptions(ctx context.Context) ([]base.SubscriptionInfo, error) {
-	o.mu.RLock()
-	if o.closed {
-		o.mu.RUnlock()
-		return nil, ErrAlreadyClosed
-	}
-	subs := make([]*facadeSubscription, 0, len(o.subscriptions))
-	for _, sub := range o.subscriptions {
-		subs = append(subs, sub)
-	}
-	o.mu.RUnlock()
+        o.mu.RLock()
+        if o.closed {
+                o.mu.RUnlock()
+                return nil, ErrAlreadyClosed
+        }
+        subs := make([]*facadeSubscription, 0, len(o.subscriptions))
+        for _, sub := range o.subscriptions {
+                subs = append(subs, sub)
+        }
+        o.mu.RUnlock()
 
-	infos := make([]base.SubscriptionInfo, 0, len(subs))
-	for _, sub := range subs {
-		id := sub.id
-		infos = append(infos, base.SubscriptionInfo{
-			Id:          &id,
-			Event:       sub.options.Event,
-			Label:       sub.options.Label,
-			Description: sub.options.Description,
-			Unsubscribe: func() { o.Unsubscribe(context.Background(), id) },
-		})
-	}
+        infos := make([]base.SubscriptionInfo, 0, len(subs))
+        for _, sub := range subs {
+                id := sub.id
+                infos = append(infos, base.SubscriptionInfo{
+                        Id:          &id,
+                        Event:       sub.options.Event,
+                        Label:       sub.options.Label,
+                        Description: sub.options.Description,
+                        Unsubscribe: func() { o.Unsubscribe(context.Background(), id) },
+                })
+        }
 
-	sort.Slice(infos, func(i, j int) bool {
-		return *infos[i].Id < *infos[j].Id
-	})
+        sort.Slice(infos, func(i, j int) bool {
+                return *infos[i].Id < *infos[j].Id
+        })
 
-	return infos, nil
+        return infos, nil
 }
 
 // Rollback reverts a schema migration on the backend that owns the named
 // collection.
 func (o *Orchestrator) Rollback(ctx context.Context, name string, version *string, dryRun *bool) (base.Collection, error) {
-	entry, err := o.resolve(name)
-	if err != nil {
-		return nil, err
-	}
-	return entry.persistence.Rollback(ctx, name, version, dryRun)
+        entry, err := o.resolve(name)
+        if err != nil {
+                return nil, err
+        }
+        return entry.persistence.Rollback(ctx, name, version, dryRun)
 }
 
 // Migrate applies a schema migration on the backend that owns the named
 // collection.
 func (o *Orchestrator) Migrate(ctx context.Context, name string, migration any, dryRun *bool) (base.Collection, error) {
-	entry, err := o.resolve(name)
-	if err != nil {
-		return nil, err
-	}
-	return entry.persistence.Migrate(ctx, name, migration, dryRun)
+        entry, err := o.resolve(name)
+        if err != nil {
+                return nil, err
+        }
+        return entry.persistence.Migrate(ctx, name, migration, dryRun)
 }
 
 // Close terminates every registered backend and marks the Orchestrator
@@ -785,17 +804,17 @@ func (o *Orchestrator) Migrate(ctx context.Context, name string, migration any, 
 // Subscribe, an empty string, since that method has no error return). Close
 // is idempotent — calling it more than once is a no-op after the first call.
 func (o *Orchestrator) Close(ctx context.Context) {
-	o.mu.Lock()
-	if o.closed {
-		o.mu.Unlock()
-		return
-	}
-	o.closed = true
-	backends := make([]*backendEntry, len(o.allBackends))
-	copy(backends, o.allBackends)
-	o.mu.Unlock()
+        o.mu.Lock()
+        if o.closed {
+                o.mu.Unlock()
+                return
+        }
+        o.closed = true
+        backends := make([]*backendEntry, len(o.allBackends))
+        copy(backends, o.allBackends)
+        o.mu.Unlock()
 
-	for _, entry := range backends {
-		entry.persistence.Close(ctx)
-	}
+        for _, entry := range backends {
+                entry.persistence.Close(ctx)
+        }
 }

@@ -1,94 +1,135 @@
 package query
 
 import (
-	"fmt"
-	"strings"
+        "fmt"
+        "strings"
 
-	"github.com/asaidimu/go-anansi/v8/core/query"
-	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+        "github.com/asaidimu/go-anansi/v8/core/query"
+        "github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 func (f *sqliteFactory) buildCreateIndexTree(q *query.Query, extra any) (SQLNode, error) {
-	index, ok := extra.(*definition.Index)
-	if !ok {
-		// Try value type if pointer fails
-		if idxVal, ok := extra.(definition.Index); ok {
-			index = &idxVal
-		} else {
-			return nil, ErrIndexExtraNotIndexDefinition
-		}
-	}
-	return &createIndexTree{collection: q.Target.Name, index: index}, nil
+        index, ok := extra.(*definition.Index)
+        if !ok {
+                // Try value type if pointer fails
+                if idxVal, ok := extra.(definition.Index); ok {
+                        index = &idxVal
+                } else {
+                        return nil, ErrIndexExtraNotIndexDefinition
+                }
+        }
+        // Full-text indexes are emitted as FTS5 virtual tables + sync triggers
+        // rather than a regular B-tree CREATE INDEX statement. FTS5 needs the
+        // schema to look up field types; we accept that the schema may be nil
+        // when called via the standalone CreateIndex path (in which case the
+        // createFTSTree will reject unknown fields at DDL time rather than at
+        // Build time).
+        if index.Type == definition.IndexTypeFullText {
+                var collectionName string
+                var sc *definition.Schema
+                if q.Target != nil {
+                        collectionName = q.Target.Name
+                        sc = q.Target.Schema
+                }
+                return &createFTSTree{
+                        collection: collectionName,
+                        schema:     sc,
+                        index:      *index,
+                }, nil
+        }
+        // Defensive: the original code accesses q.Target.Name directly. If
+        // Target is nil (shouldn't happen in normal usage, but the FTS path
+        // above handles it gracefully), fall through with an empty name and
+        // let createIndexTree.Value() reject it.
+        collectionName := ""
+        if q.Target != nil {
+                collectionName = q.Target.Name
+        }
+        return &createIndexTree{collection: collectionName, index: index}, nil
 }
 
 func (t *createIndexTree) Value() (string, []any, error) {
-	if len(t.collection) == 0 {
-		return "", nil, ErrIndexSchemaNotDefined
-	}
-	if t.index == nil {
-		return "", nil, ErrIndexIndexNotDefined
-	}
+        if len(t.collection) == 0 {
+                return "", nil, ErrIndexSchemaNotDefined
+        }
+        if t.index == nil {
+                return "", nil, ErrIndexIndexNotDefined
+        }
 
-	collection := quoteIdentifier(t.collection)
-	index := t.index
+        collection := quoteIdentifier(t.collection)
+        index := t.index
 
-	var sb strings.Builder
-	sb.WriteString("CREATE ")
-	if index.Unique || index.Type == definition.IndexTypeUnique {
-		sb.WriteString("UNIQUE ")
-	}
-	sb.WriteString("INDEX IF NOT EXISTS ")
-	indexName := index.Name
-	if indexName == "" {
-		unquotedTableName := strings.Trim(collection, `"`)
-		stringFields := make([]string, len(index.Fields))
-		for i, fn := range index.Fields {
-			stringFields[i] = string(fn)
-		}
-		indexName = fmt.Sprintf("idx_%s_%s", unquotedTableName, strings.Join(stringFields, "_"))
-	}
-	sb.WriteString(quoteIdentifier(indexName))
-	sb.WriteString(fmt.Sprintf(" ON %s (", collection))
+        var sb strings.Builder
+        sb.WriteString("CREATE ")
+        if index.Unique || index.Type == definition.IndexTypeUnique {
+                sb.WriteString("UNIQUE ")
+        }
+        sb.WriteString("INDEX IF NOT EXISTS ")
+        indexName := index.Name
+        if indexName == "" {
+                unquotedTableName := strings.Trim(collection, `"`)
+                stringFields := make([]string, len(index.Fields))
+                for i, fn := range index.Fields {
+                        stringFields[i] = string(fn)
+                }
+                indexName = fmt.Sprintf("idx_%s_%s", unquotedTableName, strings.Join(stringFields, "_"))
+        }
+        sb.WriteString(quoteIdentifier(indexName))
+        sb.WriteString(fmt.Sprintf(" ON %s (", collection))
 
-	var fieldParts []string
-	for _, field := range index.Fields {
-		colName := string(field)
-		part := ""
-		if strings.Contains(colName, ".") {
-			tablePart := colName[:strings.Index(colName, ".")]
-			fieldPart := colName[strings.Index(colName, ".")+1:]
-			jsonPath := "$." + strings.ReplaceAll(fieldPart, ".", ".")
-			part = fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(tablePart), jsonPath)
-		} else {
-			part = quoteIdentifier(colName)
-		}
-		if index.Order != "" && strings.ToUpper(index.Order) == "DESC" {
-			part += " DESC"
-		}
-		fieldParts = append(fieldParts, part)
-	}
-	sb.WriteString(strings.Join(fieldParts, ", ") + ")")
-	sb.WriteString(";")
-	return sb.String(), nil, nil
+        var fieldParts []string
+        for _, field := range index.Fields {
+                colName := string(field)
+                part := ""
+                if strings.Contains(colName, ".") {
+                        tablePart := colName[:strings.Index(colName, ".")]
+                        fieldPart := colName[strings.Index(colName, ".")+1:]
+                        jsonPath := "$." + strings.ReplaceAll(fieldPart, ".", ".")
+                        part = fmt.Sprintf("json_extract(%s, '%s')", quoteIdentifier(tablePart), jsonPath)
+                } else {
+                        part = quoteIdentifier(colName)
+                }
+                if index.Order != "" && strings.ToUpper(index.Order) == "DESC" {
+                        part += " DESC"
+                }
+                fieldParts = append(fieldParts, part)
+        }
+        sb.WriteString(strings.Join(fieldParts, ", ") + ")")
+        sb.WriteString(";")
+        return sb.String(), nil, nil
 }
 
-func (f *sqliteFactory) buildDropIndexTree(_ *query.Query, extra any) (SQLNode, error) {
-	index, ok := extra.(*definition.Index)
-	if !ok {
-		// Try value type if pointer fails
-		if idxVal, ok := extra.(definition.Index); ok {
-			index = &idxVal
-		} else {
-			return nil, ErrIndexExtraNotIndexDefinition
-		}
-	}
-	return &dropIndexTree{index: index}, nil
+func (f *sqliteFactory) buildDropIndexTree(q *query.Query, extra any) (SQLNode, error) {
+        index, ok := extra.(*definition.Index)
+        if !ok {
+                // Try value type if pointer fails
+                if idxVal, ok := extra.(definition.Index); ok {
+                        index = &idxVal
+                } else {
+                        return nil, ErrIndexExtraNotIndexDefinition
+                }
+        }
+        // Drop the FTS5 virtual table (and its triggers) for full-text indexes.
+        // The collection name is needed to derive the FTS table name and the
+        // trigger names.
+        if index.Type == definition.IndexTypeFullText {
+                collection := ""
+                if q.Target != nil {
+                        collection = q.Target.Name
+                }
+                return &dropFTSTree{
+                        collection: collection,
+                        schema:     nil,
+                        index:      *index,
+                }, nil
+        }
+        return &dropIndexTree{index: index}, nil
 }
 
 func (t *dropIndexTree) Value() (string, []any, error) {
-	if t.index == nil {
-		return "", nil, ErrIndexIndexNotDefined
-	}
+        if t.index == nil {
+                return "", nil, ErrIndexIndexNotDefined
+        }
 
-	return fmt.Sprintf("DROP INDEX IF EXISTS %s;", quoteIdentifier(t.index.Name)), nil, nil
+        return fmt.Sprintf("DROP INDEX IF EXISTS %s;", quoteIdentifier(t.index.Name)), nil, nil
 }

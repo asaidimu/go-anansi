@@ -1,9 +1,9 @@
 package registry
 
 import (
-	"fmt"
+        "fmt"
 
-	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
+        "github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 // REGISTRY_COLLECTION_NAME is the constant name for the internal collection that
@@ -35,9 +35,9 @@ var RegistryCollectionSchemaJson = fmt.Sprintf(`
     "019f4066-0000-7000-8000-000000000004": {
       "name": "versions",
       "type": "record",
-   	  "schema": {
+          "schema": {
         "id": "019f4066-0000-7000-8000-000000000005"
-   	  },
+          },
       "required": false,
       "description": "A list of legacy schemas, their physical name & their corresponding schema."
     }
@@ -53,17 +53,23 @@ var RegistryCollectionSchemaJson = fmt.Sprintf(`
           "required": false,
           "description": "The physical name of the collection in the database."
         },
-   	    "019f4066-0000-7000-8000-000000000007": {
+            "019f4066-0000-7000-8000-000000000007": {
           "name": "schema",
           "type": "record",
           "required": true,
           "description": "The full schema definition as a JSON object."
+        },
+            "019f4066-0000-7000-8000-000000000008": {
+          "name": "view",
+          "type": "record",
+          "required": false,
+          "description": "The stored query for view-backed collections. When present, the version is a read-only view; the schema field carries a derived result schema."
         }
       }
     }
   },
   "indexes": {
-    "019f4066-0000-7000-8000-000000000008": {
+    "019f4066-0000-7000-8000-000000000009": {
       "name": "name_index",
       "fields": ["name"],
       "type": "normal",
@@ -74,12 +80,12 @@ var RegistryCollectionSchemaJson = fmt.Sprintf(`
 `, REGISTRY_COLLECTION_NAME)
 
 func RegistrySchema() *definition.Schema {
-	def, err := definition.FromJSON([]byte(RegistryCollectionSchemaJson))
-	if err != nil {
-		// This should ideally not happen as the JSON is hardcoded and controlled.
-		// If it does, it indicates a critical internal error.
-		panic(fmt.Sprintf("failed to unmarshal registry schema: %v", err))
-	}
+        def, err := definition.FromJSON([]byte(RegistryCollectionSchemaJson))
+        if err != nil {
+                // This should ideally not happen as the JSON is hardcoded and controlled.
+                // If it does, it indicates a critical internal error.
+                panic(fmt.Sprintf("failed to unmarshal registry schema: %v", err))
+        }
 
-	return MustEnrichSchema(def)
+        return MustEnrichSchema(def)
 }

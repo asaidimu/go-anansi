@@ -415,6 +415,13 @@ type Persistence interface {
         // It returns a slice of Collection interfaces for the successfully created collections.
         CreateCollections(ctx context.Context, schemas []*definition.Schema) error
 
+        // CreateView registers a read-only view collection backed by the
+        // given query rather than a physical table. The view's result
+        // schema is derived from the query's projection. The returned
+        // Collection is read-only: Create/Update/Delete/Validate on it
+        // return ErrReadOnly.
+        CreateView(ctx context.Context, name string, view *query.Query) (Collection, error)
+
         // HasCollection checks if a collection with the given name exists.
         HasCollection(ctx context.Context, name string) (bool, error)
 
