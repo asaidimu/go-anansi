@@ -20,6 +20,8 @@ import (
 // The goal is to move the application away from direct DatabaseInteractor usage
 // and towards a native Document-centric persistence model.
 
+// @note #qpt45v todo : Populate interface
+//
 // TransactionalEngine defines the set of operations available within a transaction.
 // It is a limited subset of the full StorageEngine API, ensuring that non-transactional
 // operations (like creating new collections) cannot be performed within the transaction callback.
@@ -27,6 +29,13 @@ type TransactionalEngine interface {
 	// Collection returns a handle to a specific collection, scoped to the current transaction.
 	// All operations performed on the returned Collection will be part of the transaction.
 	Collection(ctx context.Context, name string) (base.Collection, error)
+}
+
+// @note #jq3c65 todo :  Populate struct
+//
+// Populate this struct and use it properly
+type TransactionOptions struct {
+
 }
 
 // StorageEngine is the definitive, top-level interface for the Anansi persistence layer.
@@ -57,7 +66,7 @@ type StorageEngine interface {
 	// Transact executes a series of operations within a single, atomic transaction.
 	// The provided callback function receives a transaction-scoped engine. If the callback
 	// returns an error, the transaction is automatically rolled back.
-	Transact(ctx context.Context, callback func(ctx context.Context, tx TransactionalEngine) (any, error)) (any, error)
+	Transact(ctx context.Context, opts *TransactionOptions, callback func(ctx context.Context, tx TransactionalEngine) (any, error)) (any, error)
 
 	// Schema retrieves a specific schema definition from the engine's registry by name and optional version.
 	Schema(ctx context.Context, name string, version ...string) (*definition.Schema, error)

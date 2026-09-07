@@ -17,7 +17,6 @@ package anansi
 
 import (
         "context"
-        "database/sql"
         "fmt"
         "sync"
 
@@ -26,15 +25,12 @@ import (
         pevents "github.com/asaidimu/go-anansi/v8/core/persistence/events"
         "github.com/asaidimu/go-anansi/v8/core/persistence/persistence"
         "github.com/asaidimu/go-anansi/v8/core/query"
-        "github.com/asaidimu/go-anansi/v8/core/query/native"
         "github.com/asaidimu/go-anansi/v8/core/data"
         "github.com/asaidimu/go-anansi/v8/core/sanitize"
         "github.com/asaidimu/go-anansi/v8/core/schema/definition"
         putils "github.com/asaidimu/go-anansi/v8/core/persistence/utils"
+        "github.com/asaidimu/go-anansi/v8/sqlite"
         "github.com/asaidimu/go-anansi/v8/utils"
-        sqliteExecutor "github.com/asaidimu/go-anansi/v8/sqlite/executor"
-        sqliteQuery "github.com/asaidimu/go-anansi/v8/sqlite/query"
-        _ "github.com/mattn/go-sqlite3"
         "go.uber.org/zap"
 )
 
@@ -236,49 +232,42 @@ func Playground(cfg PlaygroundConfig) (base.Persistence, func(), error) {
         // -----------------------------------------------------------------
         //  Database
         // -----------------------------------------------------------------
-        dsn := cfg.DBPath
-        if cfg.DBPath != ":memory:" {
-                dsn = fmt.Sprintf("file:%s?cache=shared&_fk=1&_journal_mode=WAL&_busy_timeout=5000", cfg.DBPath)
+        var handle *sqlite.Handle
+        var dbErr error
+
+        if cfg.DBPath == "" || cfg.DBPath == ":memory:" {
+                name := cfg.DBPath
+                if name == "" {
+                        name = sqlite.DefaultMemoryName
+                }
+                handle, dbErr = sqlite.NewMemoryInteractor(sqlite.Config{
+                        Path:   name,
+                        Logger: logger,
+                })
+        } else {
+                handle, dbErr = sqlite.NewInteractor(sqlite.Config{
+                        Path:   cfg.DBPath,
+                        Logger: logger,
+                })
         }
-
-        db, err := sql.Open("sqlite3", dsn)
-        if err != nil {
-                return nil, func() {}, err
-        }
-
-        // SQLite is single-writer. With WAL mode, one connection can write
-        // while up to 3 others read concurrently. Limiting the pool prevents
-        // unbounded connection creation that amplifies lock contention.
-        db.SetMaxOpenConns(4)
-        db.SetMaxIdleConns(4)
-
-        executor, err := sqliteExecutor.NewSQLiteExecutor(db, logger)
-        if err != nil {
-                db.Close()
-                return nil, func() {}, err
-        }
-
-        queryFactory := sqliteQuery.NewSQLiteFactory(logger)
-        interactor, err := native.NewNativeInteractor(executor, queryFactory, logger)
-        if err != nil {
-                db.Close()
-                return nil, func() {}, err
+        if dbErr != nil {
+                return nil, func() {}, dbErr
         }
 
         cleanup := func() {
-                _ = db.Close()
+                _ = handle.DB.Close()
                 if busCleanup != nil {
                         busCleanup()
                 }
         }
 
         p, err := Setup(SetupConfig{
-                Interactor:    interactor,
-                Logger:        logger,
-                EventBus:      bus,
+                Interactor:           handle.Interactor,
+                Logger:               logger,
+                EventBus:             bus,
                 DocumentFactoryConfig: data.DocumentFactoryConfig{},
-                Decorators:    &putils.Decorators{},
-                Schemas:       cfg.Schemas,
+                Decorators:           &putils.Decorators{},
+                Schemas:              cfg.Schemas,
         })
 
         if err != nil {
