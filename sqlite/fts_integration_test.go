@@ -208,6 +208,42 @@ func TestSQLite_FTS5_PhraseSearchMatchesContiguousPhrase(t *testing.T) {
         }
 }
 
+func TestSQLite_FTS5_RanksPureTextSearchByRelevance(t *testing.T) {
+        p := newTestPersistence(t)
+        ctx := context.Background()
+
+        _, err := p.CreateCollection(ctx, ftsTestSchema())
+        require.NoError(t, err)
+
+        articles, err := p.Collection(ctx, "Articles")
+        require.NoError(t, err)
+
+        // Insert single-term matches FIRST and the best (both-term) match
+        // LAST: relevance order must differ from insertion order.
+        _, err = articles.CreateMany(ctx, []data.Documenter{
+                data.MustNewDocument(map[string]any{"id": "r1", "title": "cooking with fire", "body": "database recipes for campfires"}),
+                data.MustNewDocument(map[string]any{"id": "r2", "title": "go kart racing", "body": "go fast, turn left"}),
+                data.MustNewDocument(map[string]any{"id": "r3", "title": "go database drivers", "body": "go database internals and more go database examples"}),
+        })
+        require.NoError(t, err)
+
+        // Pure text-search read with no explicit sort ranks by bm25.
+        // Scoped to body, where each doc carries its terms.
+        q := query.NewQueryBuilder().
+                From("Articles").
+                TextSearch("body").Contains("go database").
+                Build()
+        res, err := articles.Read(ctx, &q)
+        require.NoError(t, err)
+        require.Equal(t, 3, res.Count, "expected all three docs to match 'go database'")
+
+        // r3 matches both terms repeatedly; it must rank first despite being
+        // inserted last.
+        first, err := res.Data[0].Get("id")
+        require.NoError(t, err)
+        assert.Equal(t, "r3", first, "expected best match first (bm25 relevance), not insertion order")
+}
+
 func TestSQLite_FTS5_UpdateReindexesDocument(t *testing.T) {
         p := newTestPersistence(t)
         ctx := context.Background()

@@ -211,8 +211,8 @@ func (p *SQLiteSelectProjection) buildFunctionCall(fc *query.FunctionCall) (stri
 
                 sql := fmt.Sprintf("(%s %s %s)", arg1SQL, sqlOp, arg2SQL)
                 params := append(arg1Params, arg2Params...)
-                return sql, params, nil
-        }
+        return sql, params, nil
+}
 
         // Default to standard function call
         var args []string
@@ -410,36 +410,10 @@ func (p *SQLiteSelectProjection) buildFilterGroup(group *query.FilterGroup) (str
 }
 
 func (p *SQLiteSelectProjection) buildTextSearch(search *query.TextSearchQuery) (string, []any, error) {
-        // Resolve the FTS5 virtual table backing this collection's fulltext
-        // index. We need both:
-        //   - the SQL alias used to reference the main collection in the
-        //     FROM clause (so the rowid predicate resolves correctly)
-        //   - the original (physical) collection name, used to derive the
-        //     FTS virtual table name (<physical>_fts)
-        //
-        // primaryTargetName returns whichever name the FROM clause uses to
-        // address the table — the alias when set, the physical name otherwise.
-        // We derive the FTS table name from the ORIGINAL physical name by
-        // looking it up via the factory's aliases map.
-        collectionAlias := p.factory.primaryTargetName()
-        if collectionAlias == "" {
-                return "", nil, ErrSelectNoTargetSpecified.WithCause(
-                        fmt.Errorf("text search requires a query target"))
+        collectionQuoted, ftsTable, err := resolveFTSScope(p.factory)
+        if err != nil {
+                return "", nil, err
         }
-
-        // Derive the physical collection name (for FTS table name derivation).
-        // If collectionAlias is the alias (not the original), find the original
-        // via the aliases map. If collectionAlias is the original (no alias set),
-        // the same name is used.
-        physicalName := collectionAlias
-        for original, alias := range p.factory.aliases {
-                if alias == collectionAlias {
-                        physicalName = original
-                        break
-                }
-        }
-
-        ftsTable := quoteIdentifier(ftsIndexName(physicalName))
 
         // Validate that the requested search fields actually exist as columns
         // on the FTS5 virtual table. The FTS table mirrors the string-typed
@@ -451,10 +425,8 @@ func (p *SQLiteSelectProjection) buildTextSearch(search *query.TextSearchQuery) 
         // validates the field name against the schema, which is sufficient for
         // the FTS5 case since the FTS table uses the same field names as the
         // underlying collection.
-        for _, field := range search.Fields {
-                if _, err := p.factory.resolveFieldReference(field, p.schemas); err != nil {
-                        return "", nil, err
-                }
+        if err := validateFTSSearchFields(p.factory, p.schemas, search); err != nil {
+                return "", nil, err
         }
 
         // Build the FTS5 MATCH query string. FTS5 syntax:
@@ -464,8 +436,92 @@ func (p *SQLiteSelectProjection) buildTextSearch(search *query.TextSearchQuery) 
         //   - prefix*                  → prefix match (contains)
         // The MATCH operator is applied to the whole FTS table; we then
         // filter the result by rowid to map back to the collection rows.
-        var matchExpr string
         param := p.factory.nextParam()
+        matchExpr, err := buildFTSMatchExpr(search)
+        if err != nil {
+                return "", nil, err
+        }
+
+        // Build the predicate. We use a subquery against the FTS table to
+        // keep the main query's FROM clause untouched — the caller does not
+        // need to know whether the search is backed by FTS or by LIKE.
+        //
+        //   <collectionAlias>.rowid IN (
+        //     SELECT rowid FROM <fts_table> WHERE <fts_table> MATCH ?
+        //   )
+        //
+        // The alias is used because the FROM clause emits the table with an
+        // AS alias; SQLite requires aliased tables to be referenced by their
+        // alias, not the original name.
+        //
+        // FTS5 is case-insensitive by default for ASCII text, so the
+        // CaseSensitive flag is honored only approximately (FTS5 has no
+        // per-query case sensitivity toggle; the choice is made at index
+        // creation time). We accept the param so callers get the same shape
+        // as the LIKE-based path.
+        sql := fmt.Sprintf(
+                "%s.%s IN (SELECT %s FROM %s WHERE %s MATCH %s)",
+                collectionQuoted, ftsRowIDColumn,
+                ftsRowIDColumn, ftsTable, ftsTable, param,
+        )
+
+        // Honor the per-field restriction by scoping the MATCH to the listed
+        // columns (FTS5 {col1 col2} : query syntax).
+        params := []any{scopeFTSMatch(search, matchExpr)}
+
+        return sql, params, nil
+}
+
+// resolveFTSScope returns the quoted collection alias used in the FROM clause
+// and the quoted FTS5 virtual table derived from the physical collection name
+// (<physical>_fts). It is shared by the MATCH filter and the bm25 ranking
+// clause so both address the same tables.
+func resolveFTSScope(f *sqliteFactory) (collectionQuoted, ftsQuoted string, err error) {
+        // primaryTargetName returns whichever name the FROM clause uses to
+        // address the table — the alias when set, the physical name otherwise.
+        // We derive the FTS table name from the ORIGINAL physical name by
+        // looking it up via the factory's aliases map.
+        collectionAlias := f.primaryTargetName()
+        if collectionAlias == "" {
+                return "", "", ErrSelectNoTargetSpecified.WithCause(
+                        fmt.Errorf("text search requires a query target"))
+        }
+
+        // If collectionAlias is the alias (not the original), find the original
+        // via the aliases map. If it is the original (no alias set), the same
+        // name is used.
+        physicalName := collectionAlias
+        for original, alias := range f.aliases {
+                if alias == collectionAlias {
+                        physicalName = original
+                        break
+                }
+        }
+
+        // The alias is used because the FROM clause emits the table with an
+        // AS alias; SQLite requires aliased tables to be referenced by their
+        // alias, not the original name.
+        return quoteIdentifier(collectionAlias), quoteIdentifier(ftsIndexName(physicalName)), nil
+}
+
+// validateFTSSearchFields rejects search fields that do not exist as columns
+// on the FTS5 virtual table (which mirrors the collection's indexed fields).
+func validateFTSSearchFields(f *sqliteFactory, schemas map[string]*definition.Schema, search *query.TextSearchQuery) error {
+        for _, field := range search.Fields {
+                if _, err := f.resolveFieldReference(field, schemas); err != nil {
+                        return err
+                }
+        }
+        return nil
+}
+
+// buildFTSMatchExpr renders the FTS5 MATCH right-hand side for a search:
+//   - contains → "term1"* OR "term2"* (prefix match per term)
+//   - exact / phrase → "whole query" (quoted match)
+// Column scoping ({col} : ...) is applied by the caller, which owns the
+// parameter placeholder.
+func buildFTSMatchExpr(search *query.TextSearchQuery) (string, error) {
+        var matchExpr string
 
         switch search.Type {
         case query.TextSearchTypeContains:
@@ -475,7 +531,7 @@ func (p *SQLiteSelectProjection) buildTextSearch(search *query.TextSearchQuery) 
                 // so that "go database" matches rows containing either term.
                 terms := tokenize(search.Query)
                 if len(terms) == 0 {
-                        return "", nil, ErrSelectUnsupportedTextSearchType.WithCause(
+                        return "", ErrSelectUnsupportedTextSearchType.WithCause(
                                 fmt.Errorf("contains query is empty after tokenization"))
                 }
                 parts := make([]string, 0, len(terms))
@@ -505,50 +561,24 @@ func (p *SQLiteSelectProjection) buildTextSearch(search *query.TextSearchQuery) 
                 matchExpr = `"` + escaped + `"`
 
         default:
-                return "", nil, ErrSelectUnsupportedTextSearchType.WithCause(
+                return "", ErrSelectUnsupportedTextSearchType.WithCause(
                         fmt.Errorf("unsupported text search type: %s", search.Type))
         }
 
-        // Build the predicate. We use a subquery against the FTS table to
-        // keep the main query's FROM clause untouched — the caller does not
-        // need to know whether the search is backed by FTS or by LIKE.
-        //
-        //   <collectionAlias>.rowid IN (
-        //     SELECT rowid FROM <fts_table> WHERE <fts_table> MATCH ?
-        //   )
-        //
-        // The alias is used because the FROM clause emits the table with an
-        // AS alias; SQLite requires aliased tables to be referenced by their
-        // alias, not the original name.
-        //
-        // FTS5 is case-insensitive by default for ASCII text, so the
-        // CaseSensitive flag is honored only approximately (FTS5 has no
-        // per-query case sensitivity toggle; the choice is made at index
-        // creation time). We accept the param so callers get the same shape
-        // as the LIKE-based path.
-        collectionQuoted := quoteIdentifier(collectionAlias)
-        sql := fmt.Sprintf(
-                "%s.%s IN (SELECT %s FROM %s WHERE %s MATCH %s)",
-                collectionQuoted, ftsRowIDColumn,
-                ftsRowIDColumn, ftsTable, ftsTable, param,
-        )
-        params := []any{matchExpr}
+        return matchExpr, nil
+}
 
-        // Honor the per-field restriction by adding extra MATCH clauses
-        // scoped to the listed columns. FTS5 supports column-scoped MATCH
-        // via the {col1 col2} : query syntax. When the user specifies
-        // fields, we restrict the MATCH to those columns only.
-        if len(search.Fields) > 0 {
-                var cols []string
-                for _, f := range search.Fields {
-                        cols = append(cols, string(f))
-                }
-                // Re-build with column-scoped MATCH.
-                colList := "{" + strings.Join(cols, " ") + "}"
-                params = []any{colList + " : " + matchExpr}
+// scopeFTSMatch applies the caller's per-field restriction to a match
+// expression using FTS5's {col1 col2} : query column-scoped syntax.
+func scopeFTSMatch(search *query.TextSearchQuery, matchExpr string) string {
+        if len(search.Fields) == 0 {
+                return matchExpr
         }
-
-        return sql, params, nil
+        var cols []string
+        for _, f := range search.Fields {
+                cols = append(cols, string(f))
+        }
+        return "{" + strings.Join(cols, " ") + "}" + " : " + matchExpr
 }
 
 // tokenize splits a free-text search query into individual terms suitable
@@ -884,6 +914,10 @@ type SQLiteOrderByClause struct {
         sorts      []query.SortConfiguration
         schemas    map[string]*definition.Schema
         pagination *query.PaginationOptions
+        // rankSearch, when set with no explicit sorts, orders pure
+        // text-search reads by FTS5 bm25 relevance (best match first).
+        // See rankEligibleQuery in buildSelectTree.
+        rankSearch *query.TextSearchQuery
 }
 
 func (o *SQLiteOrderByClause) Value() (string, []any, error) {
@@ -892,6 +926,15 @@ func (o *SQLiteOrderByClause) Value() (string, []any, error) {
 
         if o.pagination != nil && len(o.pagination.Order) > 0 {
                 allSorts = append(allSorts, o.pagination.Order...) // pagination sorts appended
+        }
+
+        // No explicit ordering on a pure text-search read: rank by relevance.
+        // bm25() yields negative scores with lower-is-better, so a plain
+        // ascending ORDER BY returns the best match first. The score is
+        // computed per row in a correlated subquery running the same MATCH,
+        // keeping the main FROM clause untouched (no JOIN restructuring).
+        if len(allSorts) == 0 && o.rankSearch != nil {
+                return o.buildRankOrder(o.rankSearch)
         }
 
         if len(allSorts) == 0 {
@@ -912,6 +955,31 @@ func (o *SQLiteOrderByClause) Value() (string, []any, error) {
         }
 
         return fmt.Sprintf("ORDER BY %s", strings.Join(parts, ", ")), nil, nil
+}
+
+// buildRankOrder emits ORDER BY (SELECT bm25(...) ...) for a pure text-search
+// read. The correlated subquery re-runs the same MATCH for the outer row and
+// scores it; only rows that passed the identical WHERE filter reach ORDER BY,
+// so bm25() is always evaluated in a valid MATCH context.
+func (o *SQLiteOrderByClause) buildRankOrder(search *query.TextSearchQuery) (string, []any, error) {
+        collectionQuoted, ftsTable, err := resolveFTSScope(o.factory)
+        if err != nil {
+                return "", nil, err
+        }
+        if err := validateFTSSearchFields(o.factory, o.schemas, search); err != nil {
+                return "", nil, err
+        }
+        matchExpr, err := buildFTSMatchExpr(search)
+        if err != nil {
+                return "", nil, err
+        }
+        param := o.factory.nextParam()
+        sql := fmt.Sprintf(
+                "ORDER BY (SELECT bm25(%s) FROM %s WHERE %s MATCH %s AND %s.%s = %s.%s)",
+                ftsTable, ftsTable, ftsTable, param,
+                ftsTable, ftsRowIDColumn, collectionQuoted, ftsRowIDColumn,
+        )
+        return sql, []any{scopeFTSMatch(search, matchExpr)}, nil
 }
 
 // SQLiteLimitClause handles LIMIT and OFFSET clauses
@@ -954,6 +1022,9 @@ func (u *SQLiteUnionClause) Value() (string, []any, error) {
 
         for i, subQuery := range u.union.Queries {
                 subFactory := newSQLiteFactory(u.factory.logger)
+                // UNION legs cannot carry ORDER BY without LIMIT — suppress
+                // implicit clauses (e.g. bm25 ranking) in leg scopes.
+                subFactory.inCompound = true
                 selectTree, err := subFactory.buildSelectTree(&subQuery)
                 if err != nil {
                         return "", nil, err
@@ -1030,6 +1101,34 @@ func (s *SQLiteSelectStatement) Value() (string, []any, error) {
 
 func (s *SQLiteSelectStatement) StatementType() string {
         return "SELECT"
+}
+
+// rankEligibleQuery returns the text search to rank by when q is a pure
+// text-search read: the whole filter is a single TextSearchQuery with no
+// explicit ordering, aggregations, or distinct. Mixed filters (groups,
+// conditions) and explicit sorts keep their existing behavior — ranking an
+// arbitrary boolean combination by one of its clauses would be surprising,
+// and an explicit sort always wins over implicit relevance.
+//
+// Ranking is top-level only (depth 0, outside UNION legs): ORDER BY is
+// meaningless in CTAS/subquery scopes and illegal in compound legs.
+func rankEligibleQuery(q *query.Query, f *sqliteFactory) *query.TextSearchQuery {
+        if f.depth != 0 || f.inCompound {
+                return nil
+        }
+        if q.Filters == nil || q.Filters.TextSearchQuery == nil {
+                return nil
+        }
+        if q.Filters.Condition != nil || q.Filters.Group != nil {
+                return nil
+        }
+        if len(q.Aggregations) > 0 {
+                return nil
+        }
+        if q.Distinct != nil && ((q.Distinct.IsDistinct != nil && *q.Distinct.IsDistinct) || len(q.Distinct.Fields) > 0) {
+                return nil
+        }
+        return q.Filters.TextSearchQuery
 }
 
 // buildSelectTree builds the complete query tree with proper schema context.
@@ -1114,13 +1213,22 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
                 }
         }
 
-        // Build ORDER BY clause
+        // Build ORDER BY clause. Explicit sorts (or pagination order) win.
+        // A pure text-search read with no explicit ordering ranks by bm25
+        // relevance instead of returning storage order.
         if len(q.Sort) > 0 || (q.Pagination != nil && len(q.Pagination.Order) > 0) {
                 tree.orderBy = &SQLiteOrderByClause{
                         factory:    f,
                         sorts:      q.Sort,
                         schemas:    f.schemas,
                         pagination: q.Pagination,
+                }
+        } else if rankSearch := rankEligibleQuery(q, f); rankSearch != nil {
+                tree.orderBy = &SQLiteOrderByClause{
+                        factory:    f,
+                        schemas:    f.schemas,
+                        pagination: q.Pagination,
+                        rankSearch: rankSearch,
                 }
         }
 

@@ -22,6 +22,10 @@ type sqliteFactory struct {
 
         // Depth tracking to prevent infinite recursion
         depth int
+        // inCompound marks scopes built for UNION legs (fresh factories with
+        // depth 0). ORDER BY is illegal in a compound leg without LIMIT, so
+        // implicit clauses such as bm25 ranking must not be emitted there.
+        inCompound bool
         logger      *zap.Logger
 }
 

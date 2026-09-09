@@ -31,7 +31,7 @@ jobs:
         run: make test
 
       - name: Go build
-        run: go build -v ./...
+        run: go build -tags sqlite_fts5 -v ./...
 
       - name: TypeScript package tests (@asaidimu/anansi)
         working-directory: packages/anansi

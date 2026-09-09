@@ -21,6 +21,11 @@ ANANSI_ENV=development make test
 cd packages/anansi && bun install && bun test && bunx tsc --noEmit
 ```
 
+`make` builds and tests with `-tags sqlite_fts5`: mattn/go-sqlite3 only
+compiles the FTS5 module with that tag, so full-text indexes and
+`TextSearch` queries fail at runtime without it. If you invoke `go test` /
+`go build` directly, add the tag yourself.
+
 If you touched anything that affects encoded bytes, regenerate golden
 vectors and verify both languages still agree:
 

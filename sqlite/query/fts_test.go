@@ -55,6 +55,8 @@ func TestCreateFTSTree_EmitsVirtualTableAndTriggers(t *testing.T) {
         assert.Contains(t, sql, `"title", "body"`)
         assert.Contains(t, sql, `content='Articles'`)
         assert.Contains(t, sql, `content_rowid='rowid'`)
+        // Prefix indexes so Contains ("term"*) queries seek instead of scanning.
+        assert.Contains(t, sql, `prefix='2 3 4'`)
 
         // 2. AFTER INSERT trigger.
         assert.Contains(t, sql, `CREATE TRIGGER IF NOT EXISTS "fts_Articles_articles_fts_ai" AFTER INSERT ON "Articles"`)

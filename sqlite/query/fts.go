@@ -16,6 +16,14 @@ const ftsTableSuffix = "_fts"
 // main table.
 const ftsRowIDColumn = "rowid"
 
+// ftsPrefixIndexes lists the prefix lengths indexed for FTS5 prefix queries.
+// Contains searches always emit trailing-* prefix queries ("term"*), which
+// without prefix indexes degrade to full index scans over the vocabulary.
+// '2 3 4' is the standard balance: prefixes of 2+ characters use the index
+// (single-character prefixes still scan). Longer sets bloat the index for
+// rapidly diminishing returns.
+const ftsPrefixIndexes = "2 3 4"
+
 // ftsIndexName derives the FTS5 virtual table name from a base collection
 // name. Exported for use by the SQLite executor / helpers and tests.
 func ftsIndexName(collection string) string {
@@ -82,13 +90,15 @@ func (t *createFTSTree) Value() (string, []any, error) {
         //    (content='<table>', content_rowid='rowid') so the FTS index never
         //    duplicates row data — only the tokenized index. The 'rowid'
         //    column on the underlying collection table is the implicit
-        //    integer primary key in SQLite.
+        //    integer primary key in SQLite. prefix='2 3 4' keeps prefix
+        //    indexes so Contains ("term"*) queries seek instead of scanning.
         sb.WriteString(fmt.Sprintf(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS %s USING fts5(%s, content='%s', content_rowid='%s');\n",
+                "CREATE VIRTUAL TABLE IF NOT EXISTS %s USING fts5(%s, content='%s', content_rowid='%s', prefix='%s');\n",
                 ftsName,
                 strings.Join(ftsColumns, ", "),
                 t.collection,
                 ftsRowIDColumn,
+                ftsPrefixIndexes,
         ))
 
         // Trigger name prefix — sanitized to be SQLite-safe (no quotes here;

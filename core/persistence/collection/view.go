@@ -52,6 +52,9 @@ func composeViewQuery(view, user *query.Query) (*query.Query, error) {
         composed.Filters = andMergeFilters(view.Filters, user.Filters)
 
         // 3. Projection: intersect if both set; otherwise the set one wins.
+        // Copy so downstream mutation (ensureMetadataProjection appends
+        // _metadata_) never writes into the stored view definition or the
+        // caller's query.
         if view.Projection != nil && user.Projection != nil {
                 intersected, err := intersectProjections(view.Projection, user.Projection)
                 if err != nil {
@@ -59,9 +62,11 @@ func composeViewQuery(view, user *query.Query) (*query.Query, error) {
                 }
                 composed.Projection = intersected
         } else if view.Projection != nil {
-                composed.Projection = view.Projection
+                composed.Projection = copyProjection(view.Projection)
+        } else if user.Projection != nil {
+                composed.Projection = copyProjection(user.Projection)
         }
-        // else: user.Projection stays (may be nil)
+        // else: both nil, nothing to do
 
         // 4. Sort: view's first, user's appended.
         if len(view.Sort) > 0 {
@@ -80,6 +85,19 @@ func composeViewQuery(view, user *query.Query) (*query.Query, error) {
         // else: user.Limit (already in composed)
 
         return &composed, nil
+}
+
+// copyProjection deep-copies the slice headers of a projection so appending
+// (e.g. ensureMetadataProjection adding _metadata_) never mutates the source.
+func copyProjection(p *query.ProjectionConfiguration) *query.ProjectionConfiguration {
+        if p == nil {
+                return nil
+        }
+        out := *p
+        out.Include = append([]query.ProjectionField(nil), p.Include...)
+        out.Exclude = append([]query.ProjectionField(nil), p.Exclude...)
+        out.Computed = append([]query.ProjectionComputedItem(nil), p.Computed...)
+        return &out
 }
 
 // andMergeFilters combines two QueryFilter trees under a single AND group.

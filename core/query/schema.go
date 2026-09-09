@@ -303,12 +303,31 @@ func addJoinField(rootSchema *definition.Schema, targetBase *definition.BaseSche
 	return nil
 }
 
+// findFieldByName locates a field in m by its logical Name. It first tries
+// a direct map-key lookup (fast path for development schemas where the
+// FieldId equals the field name), then falls back to scanning values by
+// Field.Name (required for production schemas where FieldIds are UUIDv7).
+func findFieldByName(m map[definition.FieldId]definition.Field, name string) (definition.FieldId, definition.Field, bool) {
+	if f, ok := m[definition.FieldId(name)]; ok {
+		return definition.FieldId(name), f, true
+	}
+	for id, f := range m {
+		if string(f.Name) == name {
+			return id, f, true
+		}
+	}
+	return "", definition.Field{}, false
+}
+
 // applyProjectionToSchema modifies the schema based on projection configuration
 func applyProjectionToSchema(resultSchema *definition.Schema, projection *ProjectionConfiguration, originalSchema *definition.Schema, options *SchemaFromQueryOptions) error {
 	// Handle exclusions first
 	if len(projection.Exclude) > 0 {
 		for _, exclude := range projection.Exclude {
-			fieldId := definition.FieldId(exclude.Name)
+			fieldId, _, ok := findFieldByName(resultSchema.Fields, exclude.Name)
+			if !ok {
+				continue
+			}
 
 			// Handle nested exclusions
 			if exclude.Nested != nil {
@@ -335,8 +354,8 @@ func applyProjectionToSchema(resultSchema *definition.Schema, projection *Projec
 				fieldName = *include.Alias
 			}
 
-			oldFieldId := definition.FieldId(include.Name)
-			if originalField, exists := originalSchema.Fields[oldFieldId]; exists {
+			oldFieldId, originalField, ok := findFieldByName(originalSchema.Fields, include.Name)
+			if ok {
 				// Clone the field (already cloned by DeepCopy of resultSchema, but let's be safe if we want a fresh one)
 				newField := originalField // Struct copy is enough since we will modify it
 				newField.Name = definition.FieldName(fieldName)
@@ -348,7 +367,14 @@ func applyProjectionToSchema(resultSchema *definition.Schema, projection *Projec
 					}
 				}
 
-				newFields[definition.FieldId(fieldName)] = newField
+				// Preserve the original FieldId when there is no alias so
+				// production (UUIDv7-keyed) schemas keep valid IDs. When an
+				// alias renames the field, key by the alias like before.
+				key := oldFieldId
+				if include.Alias != nil {
+					key = definition.FieldId(fieldName)
+				}
+				newFields[key] = newField
 			}
 		}
 
@@ -409,7 +435,7 @@ func createCaseFieldDefinition(expr *CaseExpression) *definition.Field {
 func inferAggregationFieldType(agg AggregationConfiguration, targetSchema *definition.Schema, options *SchemaFromQueryOptions) definition.FieldType {
 	// For MIN and MAX, try to use the original field type
 	if agg.Type == AggregationTypeMin || agg.Type == AggregationTypeMax {
-		if field, exists := targetSchema.Fields[definition.FieldId(agg.Field)]; exists {
+		if _, field, ok := findFieldByName(targetSchema.Fields, agg.Field); ok {
 			// For numeric types, return the same type
 			switch field.Type {
 			case definition.FieldTypeNumber, definition.FieldTypeInteger, definition.FieldTypeDecimal:
@@ -587,7 +613,10 @@ func applyProjectionToFieldsMap(rootSchema *definition.Schema, fields map[defini
 	// Handle exclusions first
 	if len(projection.Exclude) > 0 {
 		for _, exclude := range projection.Exclude {
-			fieldId := definition.FieldId(exclude.Name)
+			fieldId, _, ok := findFieldByName(fields, exclude.Name)
+			if !ok {
+				continue
+			}
 			if exclude.Nested != nil {
 				// Apply nested projection before excluding the field
 				if field, exists := fields[fieldId]; exists {
@@ -613,8 +642,8 @@ func applyProjectionToFieldsMap(rootSchema *definition.Schema, fields map[defini
 				fieldName = *include.Alias
 			}
 
-			oldFieldId := definition.FieldId(include.Name)
-			if originalField, exists := fields[oldFieldId]; exists {
+			oldFieldId, originalField, ok := findFieldByName(fields, include.Name)
+			if ok {
 				// Clone the field
 				newField := originalField
 				newField.Name = definition.FieldName(fieldName)
@@ -626,7 +655,11 @@ func applyProjectionToFieldsMap(rootSchema *definition.Schema, fields map[defini
 					}
 				}
 
-				newFields[definition.FieldId(fieldName)] = newField
+				key := oldFieldId
+				if include.Alias != nil {
+					key = definition.FieldId(fieldName)
+				}
+				newFields[key] = newField
 			} else {
 				// Field doesn't exist in the original schema
 				return common.NewSystemError("ERR_QUERY_SCHEMA_PROJECTION_INCLUDE_FIELD_NOT_EXIST", fmt.Sprintf("field %s specified in projection include does not exist", include.Name)).WithOperation("applyProjectionToFieldsMap").WithCause(errors.New("field specified in projection include does not exist"))
