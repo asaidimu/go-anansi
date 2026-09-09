@@ -415,12 +415,26 @@ type Persistence interface {
         // It returns a slice of Collection interfaces for the successfully created collections.
         CreateCollections(ctx context.Context, schemas []*definition.Schema) error
 
-        // CreateView registers a read-only view collection backed by the
-        // given query rather than a physical table. The view's result
-        // schema is derived from the query's projection. The returned
-        // Collection is read-only: Create/Update/Delete/Validate on it
-        // return ErrReadOnly.
-        CreateView(ctx context.Context, name string, view *query.Query) (Collection, error)
+        // CreateView registers a read-only view collection backed by the given query.
+        //
+        // When materialized is false, the view is virtual: no DDL is issued,
+        // reads compose the stored query with the user's query at runtime.
+        //
+        // When materialized is true, the view is materialized: a physical
+        // table is created via CREATE TABLE AS SELECT and populated. Reads
+        // target the materialized table directly; Refresh re-populates it.
+        // The view's indexes (declared on its derived schema) are created
+        // against the materialized table.
+        //
+        // The returned Collection is read-only: Create/Update/Delete/Validate
+        // on it return ErrReadOnly. Materialized views expose a Refresh
+        // method via the MaterializedView interface.
+        CreateView(ctx context.Context, name string, view *query.Query, materialized bool) (Collection, error)
+
+        // RefreshView re-populates a materialized view's physical table from
+        // its stored SELECT. Returns ErrNotMaterialized for non-materialized
+        // collections.
+        RefreshView(ctx context.Context, name string) error
 
         // HasCollection checks if a collection with the given name exists.
         HasCollection(ctx context.Context, name string) (bool, error)
@@ -589,6 +603,13 @@ type Collection interface {
         // the transaction is rolled back, otherwise it is committed. When called
         // inside an existing transaction, fn joins it instead of starting a new one.
         Transact(ctx context.Context, fn func(ctx context.Context) (any, error)) (any, error)
+
+        // Refresh re-populates a materialized view's physical table from its
+        // stored SELECT. Returns ErrNotMaterialized for non-materialized
+        // collections (schema-backed collections and virtual views).
+        // The refresh is atomic from the caller's perspective: either the
+        // materialized table is fully replaced or it is left untouched.
+        Refresh(ctx context.Context) error
 
         // DocumentPoolProvider is embedded so every collection exposes its
         // container-backed document pool. The pool is schema-bound and owned by the

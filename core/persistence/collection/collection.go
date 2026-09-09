@@ -1,56 +1,65 @@
 package collection
 
 import (
-	"context"
+        "context"
 
-	"github.com/asaidimu/go-anansi/v8/core/events"
-	"github.com/asaidimu/go-anansi/v8/core/persistence/base"
-	"github.com/asaidimu/go-anansi/v8/core/query"
-	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
-	"go.uber.org/zap"
+        "github.com/asaidimu/go-anansi/v8/core/events"
+        "github.com/asaidimu/go-anansi/v8/core/persistence/base"
+        "github.com/asaidimu/go-anansi/v8/core/query"
+        "github.com/asaidimu/go-anansi/v8/core/schema/definition"
+        "go.uber.org/zap"
 )
 
 // NewCollection creates a new Collection instance, wrapping it with all necessary decorators.
 // The schema and validator are resolved on-demand through the provided SchemaProvider,
 // so the collection always operates on the active schema version.
+//
+// refreshFunc, when non-nil, is called by Collection.Refresh to re-populate
+// a materialized view's physical table. It receives the collection name
+// and is expected to delegate to Persistence.RefreshView. Pass nil for
+// collections that never need refresh (e.g. the bootstrap registry
+// collection); Collection.Refresh will return ErrNotMaterialized in
+// that case.
 func NewCollection(
-	eventEmitter *events.EventEmitter[base.PersistenceEvent],
-	name string,
-	provider base.SchemaProvider,
-	interactor query.DatabaseInteractor,
-	engine *query.QueryEngine,
-	logger *zap.Logger,
-	resolveSchema func(ctx context.Context, name string) (string, *definition.Schema, error),
-	processor base.RawQueryProcessor,
+        eventEmitter *events.EventEmitter[base.PersistenceEvent],
+        name string,
+        provider base.SchemaProvider,
+        interactor query.DatabaseInteractor,
+        engine *query.QueryEngine,
+        logger *zap.Logger,
+        resolveSchema func(ctx context.Context, name string) (string, *definition.Schema, error),
+        processor base.RawQueryProcessor,
+        refreshFunc func(ctx context.Context, name string) error,
 ) (base.Collection, error) {
-	base, err := newBaseCollection(eventEmitter, name, provider, interactor, engine, logger)
-	if err != nil {
-		return nil, err
-	}
+        base, err := newBaseCollection(eventEmitter, name, provider, interactor, engine, logger)
+        if err != nil {
+                return nil, err
+        }
 
-	// Decorate the base collection with polyfills for missing database features.
-	polyfilled := newPolyfillCollection(base, interactor, logger)
+        // Decorate the base collection with polyfills for missing database features.
+        polyfilled := newPolyfillCollection(base, interactor, logger)
 
-	// Resolve the initial physical name from the provider for managed collection setup.
-	physicalName, err := provider.PhysicalName(context.Background())
-	if err != nil {
-		return nil, err
-	}
+        // Resolve the initial physical name from the provider for managed collection setup.
+        physicalName, err := provider.PhysicalName(context.Background())
+        if err != nil {
+                return nil, err
+        }
 
-	// Decorate the polyfilled collection with the managed collection for metadata and versioning.
-	managed, err := newManagedCollection(
-		provider,
-		name,
-		physicalName,
-		polyfilled,
-		resolveSchema,
-		processor,
-	)
-	if err != nil {
-		return nil, err
-	}
+        // Decorate the polyfilled collection with the managed collection for metadata and versioning.
+        managed, err := newManagedCollection(
+                provider,
+                name,
+                physicalName,
+                polyfilled,
+                resolveSchema,
+                processor,
+                refreshFunc,
+        )
+        if err != nil {
+                return nil, err
+        }
 
-	// Decorate the managed collection with event emission.
-	eventEmitting := newEventEmittingCollection(name, managed, eventEmitter, logger)
-	return eventEmitting, nil
+        // Decorate the managed collection with event emission.
+        eventEmitting := newEventEmittingCollection(name, managed, eventEmitter, logger)
+        return eventEmitting, nil
 }

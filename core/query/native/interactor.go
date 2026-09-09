@@ -500,6 +500,45 @@ func (i *NativeInteractor[T]) RenameColumn(ctx context.Context, collection strin
         return err
 }
 
+// CreateView creates a materialized view by issuing CREATE TABLE <name> AS SELECT ...
+// The selectQuery's Target.Name must carry the physical name of the materialized
+// view table (the caller resolves the registry-generated name before calling).
+// The selectQuery itself carries the physical names of underlying collections
+// in its Target.Name and any join targets — the caller is responsible for
+// resolving logical → physical names before calling CreateView.
+func (i *NativeInteractor[T]) CreateView(ctx context.Context, name string, selectQuery *query.Query) error {
+        // The CTAS builder reads the materialized view's physical name from
+        // q.Target.Name, so we set it to the caller-provided name.
+        dsl := &query.Query{Target: &query.QueryTarget{Name: name}}
+        compiled, err := i.b.Build(dsl, StmtCreateView, selectQuery)
+        if err != nil {
+                return common.SystemErrorFrom(err, ErrCouldNotBuildCreateViewQuery.Code, ErrCouldNotBuildCreateViewQuery.Message).WithOperation("native.NativeInteractor.CreateView")
+        }
+        if _, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil}); err != nil {
+                return common.SystemErrorFrom(err, ErrCouldNotCreateView.Code, ErrCouldNotCreateView.Message).WithOperation("native.NativeInteractor.CreateView")
+        }
+        return nil
+}
+
+// RefreshView drops and re-creates a materialized view's physical table
+// from the stored SELECT. The refresh is implemented as DROP TABLE IF EXISTS
+// followed by CREATE TABLE AS SELECT, emitted as a single Exec call so
+// the two statements run in order.
+//
+// The selectQuery's Target.Name must carry the physical name of the
+// materialized view table (same name used in the original CreateView).
+func (i *NativeInteractor[T]) RefreshView(ctx context.Context, name string, selectQuery *query.Query) error {
+        dsl := &query.Query{Target: &query.QueryTarget{Name: name}}
+        compiled, err := i.b.Build(dsl, StmtRefreshView, selectQuery)
+        if err != nil {
+                return common.SystemErrorFrom(err, ErrCouldNotBuildRefreshViewQuery.Code, ErrCouldNotBuildRefreshViewQuery.Message).WithOperation("native.NativeInteractor.RefreshView")
+        }
+        if _, err = i.ix.Exec(ctx, NativeQuery[T]{Query: compiled, Schema: nil}); err != nil {
+                return common.SystemErrorFrom(err, ErrCouldNotRefreshView.Code, ErrCouldNotRefreshView.Message).WithOperation("native.NativeInteractor.RefreshView")
+        }
+        return nil
+}
+
 // Capabilities returns the capabilities of the underlying database dialect.
 func (i *NativeInteractor[T]) Capabilities() query.Capabilities {
         return i.qf.Capabilities()

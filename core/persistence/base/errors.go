@@ -41,4 +41,5 @@ var (
         ErrRawQueryProcessorPhysicalNameResolutionFailed = common.NewSystemError("ERR_PERSISTENCE_RAW_QUERY_PROCESSOR_PHYSICAL_NAME_RESOLUTION_FAILED", "failed to resolve physical name for raw query processing")
         ErrFailedToStartTransaction                      = common.NewSystemError("ERR_PERSISTENCE_FAILED_TO_START_TRANSACTION", "failed to start transaction")
         ErrReadOnly                                      = common.NewSystemError("ERR_PERSISTENCE_READ_ONLY", "operation not permitted on a read-only view collection")
+        ErrNotMaterialized                               = common.NewSystemError("ERR_PERSISTENCE_NOT_MATERIALIZED", "refresh is only supported on materialized views")
 )

@@ -64,6 +64,12 @@ var RegistryCollectionSchemaJson = fmt.Sprintf(`
           "type": "record",
           "required": false,
           "description": "The stored query for view-backed collections. When present, the version is a read-only view; the schema field carries a derived result schema."
+        },
+            "019f4066-0000-7000-8000-000000000009": {
+          "name": "materialized",
+          "type": "boolean",
+          "required": false,
+          "description": "When true with a non-null view, marks this version as a materialized view: a physical table populated by executing the view query."
         }
       }
     }

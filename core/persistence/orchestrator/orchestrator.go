@@ -636,7 +636,7 @@ func (o *Orchestrator) CreateCollections(ctx context.Context, schemas []*definit
 // matching the intuitive meaning of "has collection" — callers checking
 // existence shouldn't have to distinguish "doesn't exist" from "exists but
 // nobody told me where to look for it".
-func (o *Orchestrator) CreateView(ctx context.Context, name string, view *query.Query) (base.Collection, error) {
+func (o *Orchestrator) CreateView(ctx context.Context, name string, view *query.Query, materialized bool) (base.Collection, error) {
         if view == nil {
                 return nil, fmt.Errorf("orchestrator: view query must not be nil")
         }
@@ -646,7 +646,17 @@ func (o *Orchestrator) CreateView(ctx context.Context, name string, view *query.
         if err != nil {
                 return nil, fmt.Errorf("%w; call RouteCollection(%q, <backend label>) before creating the view", err, name)
         }
-        return entry.persistence.CreateView(ctx, name, view)
+        return entry.persistence.CreateView(ctx, name, view, materialized)
+}
+
+// RefreshView routes to the backend registered for the named collection
+// and re-populates its materialized table.
+func (o *Orchestrator) RefreshView(ctx context.Context, name string) error {
+        entry, err := o.resolve(name)
+        if err != nil {
+                return fmt.Errorf("%w; call RouteCollection(%q, <backend label>) before refreshing the view", err, name)
+        }
+        return entry.persistence.RefreshView(ctx, name)
 }
 
 // HasCollection reports whether the named collection is both routed and

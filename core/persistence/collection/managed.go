@@ -25,6 +25,10 @@ type managedCollection struct {
         schemaProvider    base.SchemaProvider
         rawQueryProcessor base.RawQueryProcessor
         resolveSchema     func(ctx context.Context, name string) (string, *definition.Schema, error)
+        // refreshFunc, when non-nil, is invoked by Refresh to re-populate
+        // a materialized view's physical table. It delegates to the
+        // persistence layer's RefreshView.
+        refreshFunc func(ctx context.Context, name string) error
 }
 
 // newManagedCollection creates a new ManagedCollection decorator.
@@ -35,6 +39,7 @@ func newManagedCollection(
         wrapped base.Collection,
         resolveSchema func(ctx context.Context, name string) (string, *definition.Schema, error),
         processor base.RawQueryProcessor,
+        refreshFunc func(ctx context.Context, name string) error,
 ) (*managedCollection, error) {
 
         if wrapped == nil {
@@ -48,6 +53,7 @@ func newManagedCollection(
                 wrapped:           wrapped,
                 resolveSchema:     resolveSchema,
                 rawQueryProcessor: processor,
+                refreshFunc:       refreshFunc,
         }, nil
 }
 
@@ -142,44 +148,73 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
                 allTranslations = translations
         }
 
-        // For view-backed collections, compose the stored view query with the
-        // user's query. The view's query carries the underlying collection's
-        // logical Target name; we then resolve that logical name to the
-        // underlying collection's physical name so the engine addresses the
-        // right physical table.
+        // For view-backed collections, the read path depends on whether the
+        // view is virtual or materialized:
+        //
+        //   - Materialized views: the materialized table already contains
+        //     the join result. We target the materialized table directly
+        //     with the user's query — no composition, no join resolution.
+        //     The user's filters/sort/limit apply directly to the
+        //     materialized rows.
+        //
+        //   - Virtual views: compose the stored view query with the user's
+        //     query (filters AND-merged, sort appended, projection
+        //     intersected, limit min'd). Then resolve the underlying
+        //     collection's logical name to its physical name so the engine
+        //     addresses the right physical table.
         if c.schemaProvider.IsView() {
-                viewQuery, err := c.schemaProvider.CurrentView(ctx)
-                if err != nil {
-                        return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_RESOLVE_VIEW_QUERY_FAILED")
-                }
-                if viewQuery != nil {
-                        composed, err := composeViewQuery(viewQuery, fq)
+                if c.schemaProvider.IsMaterialized() {
+                        // Materialized: target the materialized table directly.
+                        // The materialized view's Physical name is the same as
+                        // c.physicalName (set at construction from
+                        // provider.PhysicalName). We just need to set the
+                        // target's schema to the view's derived schema so the
+                        // engine knows the column shape.
+                        sc, err := c.currentSchema(ctx)
                         if err != nil {
-                                return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_VIEW_QUERY_COMPOSITION_FAILED")
+                                return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_RESOLVE_SCHEMA_FAILED")
                         }
-                        fq = composed
-                }
+                        fq.Target = &query.QueryTarget{
+                                Name:   c.physicalName,
+                                Alias:  &c.logicalName,
+                                Schema: sc.DeepCopy(),
+                        }
+                        if allTranslations == nil {
+                                allTranslations = make(map[string]string)
+                        }
+                        allTranslations[c.physicalName] = c.logicalName
+                } else {
+                        // Virtual: compose the stored view query with the user's query.
+                        viewQuery, err := c.schemaProvider.CurrentView(ctx)
+                        if err != nil {
+                                return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_RESOLVE_VIEW_QUERY_FAILED")
+                        }
+                        if viewQuery != nil {
+                                composed, err := composeViewQuery(viewQuery, fq)
+                                if err != nil {
+                                        return nil, common.SystemErrorFrom(err, "ERR_PERSISTENCE_VIEW_QUERY_COMPOSITION_FAILED")
+                                }
+                                fq = composed
+                        }
 
-                // Resolve the view's underlying collection's logical name to its
-                // physical name. The composed query's Target.Name is the view's
-                // underlying collection logical name (e.g. "Users"); we rewrite
-                // it to the physical name (e.g. "users_1_0_0") so the engine
-                // finds the physical table.
-                if fq.Target != nil {
-                        underlyingLogical := fq.Target.Name
-                        physicalName, _, err := c.resolveSchema(ctx, underlyingLogical)
-                        if err == nil && physicalName != "" {
-                                alias := underlyingLogical
-                                sc := fq.Target.Schema
-                                fq.Target = &query.QueryTarget{
-                                        Name:   physicalName,
-                                        Alias:  &alias,
-                                        Schema: sc,
+                        // Resolve the view's underlying collection's logical name to its
+                        // physical name.
+                        if fq.Target != nil {
+                                underlyingLogical := fq.Target.Name
+                                physicalName, _, err := c.resolveSchema(ctx, underlyingLogical)
+                                if err == nil && physicalName != "" {
+                                        alias := underlyingLogical
+                                        sc := fq.Target.Schema
+                                        fq.Target = &query.QueryTarget{
+                                                Name:   physicalName,
+                                                Alias:  &alias,
+                                                Schema: sc,
+                                        }
+                                        if allTranslations == nil {
+                                                allTranslations = make(map[string]string)
+                                        }
+                                        allTranslations[physicalName] = underlyingLogical
                                 }
-                                if allTranslations == nil {
-                                        allTranslations = make(map[string]string)
-                                }
-                                allTranslations[physicalName] = underlyingLogical
                         }
                 }
         } else {
@@ -201,7 +236,13 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
                 allTranslations[c.physicalName] = c.logicalName
         }
 
-        fq = ensureMetadataProjection(fq)
+        // Materialized views don't have _metadata_ / _id_ system columns
+        // (CTAS only produces the columns from the SELECT's projection).
+        // Skip ensureMetadataProjection for materialized views to avoid
+        // referencing non-existent columns.
+        if !c.schemaProvider.IsMaterialized() {
+                fq = ensureMetadataProjection(fq)
+        }
 
         if fq.Pagination == nil {
                 fq.Pagination = &query.PaginationOptions{
@@ -607,6 +648,55 @@ func (c *managedCollection) Capabilities(ctx context.Context) *query.Capabilitie
 
 func (c *managedCollection) Transact(ctx context.Context, fn func(ctx context.Context) (any, error)) (any, error) {
         return c.wrapped.Transact(ctx, fn)
+}
+
+// Refresh re-populates a materialized view's physical table by delegating
+// to the persistence layer's RefreshView (injected as refreshFunc at
+// construction time).
+//
+// For non-materialized collections (schema-backed collections and virtual
+// views), Refresh returns ErrNotMaterialized. Schema-backed collections
+// don't need refresh; virtual views don't have a materialized table.
+func (c *managedCollection) Refresh(ctx context.Context) error {
+        if !c.schemaProvider.IsMaterialized() {
+                return base.ErrNotMaterialized.WithOperation("managedCollection.Refresh")
+        }
+        if c.refreshFunc == nil {
+                return base.ErrNotMaterialized.WithOperation("managedCollection.Refresh").WithMessage(
+                        "no refresh function wired (collection was constructed without refreshFunc)")
+        }
+        return c.refreshFunc(ctx, c.logicalName)
+}
+
+// stripSystemFieldProjection removes _id_ and _metadata_ from a query's
+// projection. Materialized views don't have system columns (CTAS only
+// produces columns from the SELECT's projection), so referencing them
+// would cause SQL errors.
+func stripSystemFieldProjection(q *query.Query) *query.Query {
+        if q == nil || q.Projection == nil {
+                return q
+        }
+        // Remove system fields from Include list.
+        if len(q.Projection.Include) > 0 {
+                filtered := q.Projection.Include[:0]
+                for _, f := range q.Projection.Include {
+                        if f.Name != data.DocumentIDField && f.Name != data.MetadataField {
+                                filtered = append(filtered, f)
+                        }
+                }
+                q.Projection.Include = filtered
+        }
+        // Remove system fields from Exclude list.
+        if len(q.Projection.Exclude) > 0 {
+                filtered := q.Projection.Exclude[:0]
+                for _, f := range q.Projection.Exclude {
+                        if f.Name != data.DocumentIDField && f.Name != data.MetadataField {
+                                filtered = append(filtered, f)
+                        }
+                }
+                q.Projection.Exclude = filtered
+        }
+        return q
 }
 
 func ensureMetadataProjection(q *query.Query) *query.Query {

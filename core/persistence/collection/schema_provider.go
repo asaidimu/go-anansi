@@ -41,6 +41,14 @@ func (p *registrySchemaProvider) IsView() bool {
         return entry.IsView()
 }
 
+func (p *registrySchemaProvider) IsMaterialized() bool {
+        entry, err := p.registry.GetRegistryEntry(context.Background(), p.name)
+        if err != nil || entry == nil {
+                return false
+        }
+        return entry.IsMaterialized()
+}
+
 func (p *registrySchemaProvider) CurrentView(ctx context.Context) (*query.Query, error) {
         return p.registry.CurrentView(ctx, p.name)
 }
@@ -83,6 +91,7 @@ func (p *staticSchemaProvider) PhysicalName(_ context.Context) (string, error) {
 // The static provider backs only the bootstrap registry collection, which is
 // always schema-backed. It can never represent a view.
 func (p *staticSchemaProvider) IsView() bool                       { return false }
+func (p *staticSchemaProvider) IsMaterialized() bool               { return false }
 func (p *staticSchemaProvider) CurrentView(_ context.Context) (*query.Query, error) {
         return nil, nil
 }

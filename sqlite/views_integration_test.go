@@ -52,7 +52,7 @@ func TestSQLite_View_RegistrationPersists(t *testing.T) {
                 Build()
         viewQuery.Target = &query.QueryTarget{Name: "Users", Schema: sc}
 
-        coll, err := p.CreateView(ctx, "ActiveUsers", &viewQuery)
+        coll, err := p.CreateView(ctx, "ActiveUsers", &viewQuery, false)
         require.NoError(t, err, "expected CreateView to succeed")
         require.NotNil(t, coll)
 
@@ -87,7 +87,7 @@ func TestSQLite_View_ReadReturnsFilteredResults(t *testing.T) {
                 Build()
         viewQuery.Target = &query.QueryTarget{Name: "Users", Schema: sc}
 
-        _, err = p.CreateView(ctx, "ActiveUsers", &viewQuery)
+        _, err = p.CreateView(ctx, "ActiveUsers", &viewQuery, false)
         require.NoError(t, err)
 
         // Read the view — should return only the 2 active users.
@@ -130,7 +130,7 @@ func TestSQLite_View_RejectsWrites(t *testing.T) {
                 Build()
         viewQuery.Target = &query.QueryTarget{Name: "Users", Schema: sc}
 
-        _, err = p.CreateView(ctx, "ActiveUsers", &viewQuery)
+        _, err = p.CreateView(ctx, "ActiveUsers", &viewQuery, false)
         require.NoError(t, err)
 
         view, err := p.Collection(ctx, "ActiveUsers")
@@ -182,7 +182,7 @@ func TestSQLite_View_ReadComposesWithUserFilters(t *testing.T) {
                 Build()
         viewQuery.Target = &query.QueryTarget{Name: "Users", Schema: sc}
 
-        _, err = p.CreateView(ctx, "ActiveUsers", &viewQuery)
+        _, err = p.CreateView(ctx, "ActiveUsers", &viewQuery, false)
         require.NoError(t, err)
 
         view, err := p.Collection(ctx, "ActiveUsers")
@@ -214,7 +214,7 @@ func TestSQLite_View_ValidatorIsNoOp(t *testing.T) {
                 Build()
         viewQuery.Target = &query.QueryTarget{Name: "Users", Schema: sc}
 
-        _, err = p.CreateView(ctx, "ActiveUsers", &viewQuery)
+        _, err = p.CreateView(ctx, "ActiveUsers", &viewQuery, false)
         require.NoError(t, err)
 
         view, err := p.Collection(ctx, "ActiveUsers")

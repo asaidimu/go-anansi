@@ -1,6 +1,7 @@
 package query
 
 import (
+        "encoding/json"
         "fmt"
         "sort"
         "strings"
@@ -613,9 +614,30 @@ func (p *SQLiteSelectProjection) buildFilterValue(value *query.FilterValue) (str
                 return p.buildSubquery(value.SubqueryVal)
         }
         if value.ObjectVal != nil {
-                // For object values, we serialize to JSON
+                // ObjectVal can be either:
+                // 1. A genuine object value (JSON column) — serialize to JSON.
+                // 2. A mis-deserialized FieldRefVal — after JSON roundtrip
+                //    via Query.Clone(), FilterValue{FieldRefVal: &FieldReference{Field: "x"}}
+                //    becomes FilterValue{ObjectVal: map[string]any{"field":"x","type":""}}
+                //    because the custom UnmarshalJSON requires type:"field" but
+                //    FieldReference.Type defaults to "". Detect case 2 by
+                //    checking for the "field" key.
+                if fieldName, ok := value.ObjectVal["field"].(string); ok && fieldName != "" {
+                        resolvedField, err := p.factory.resolveFieldReference(fieldName, p.schemas)
+                        if err == nil {
+                                return resolvedField, nil, nil
+                        }
+                        // If field resolution fails, treat as a
+                        // genuine object value and fall through to JSON.
+                }
+                // Genuine object value — serialize to JSON before binding.
+                jsonBytes, err := json.Marshal(value.ObjectVal)
+                if err != nil {
+                        return "", nil, ErrConvertMarshalValueFailed.WithCause(
+                                fmt.Errorf("failed to marshal object filter value: %w", err))
+                }
                 param := p.factory.nextParam()
-                return param, []any{value.ObjectVal}, nil
+                return param, []any{string(jsonBytes)}, nil
         }
 
         return "NULL", nil, nil

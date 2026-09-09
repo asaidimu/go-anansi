@@ -72,7 +72,7 @@ func (e *eventsPersistence) CreateCollections(ctx context.Context, schemas []*de
 // CreateView wraps the underlying persistence's CreateView method, adding event emission.
 // Views are read-only collections; the same create-collection event types are reused
 // since semantically a view is still a collection being created.
-func (e *eventsPersistence) CreateView(ctx context.Context, name string, view *query.Query) (base.Collection, error) {
+func (e *eventsPersistence) CreateView(ctx context.Context, name string, view *query.Query, materialized bool) (base.Collection, error) {
         config := events.OperationConfig{
                 Operation:         "createView",
                 StartEventTypes:   []string{string(base.CollectionCreateStart)},
@@ -82,13 +82,30 @@ func (e *eventsPersistence) CreateView(ctx context.Context, name string, view *q
         }
 
         result, err := e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {
-                return e.persistence.CreateView(ctx, name, view)
+                return e.persistence.CreateView(ctx, name, view, materialized)
         })
 
         if err != nil {
                 return nil, err
         }
         return result.(base.Collection), nil
+}
+
+// RefreshView wraps the underlying persistence's RefreshView method, adding event emission.
+func (e *eventsPersistence) RefreshView(ctx context.Context, name string) error {
+        config := events.OperationConfig{
+                Operation:         "refreshView",
+                StartEventTypes:   []string{string(base.CollectionCreateStart)},
+                SuccessEventTypes: []string{string(base.CollectionCreateSuccess)},
+                FailedEventTypes:  []string{string(base.CollectionCreateFailed)},
+                Input:             name,
+        }
+
+        _, err := e.eventEmitter.WithEventEmission(ctx, config, func() (any, error) {
+                return nil, e.persistence.RefreshView(ctx, name)
+        })
+
+        return err
 }
 
 // Delete wraps the underlying persistence's Delete method, adding event emission.

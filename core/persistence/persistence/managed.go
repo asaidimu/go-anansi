@@ -79,11 +79,19 @@ func (m *managedPersistence) CreateCollections(ctx context.Context, schemas []*d
 
 // CreateView passes through to the wrapped persistence; managed persistence
 // does not need to inject metadata for views (they are read-only).
-func (m *managedPersistence) CreateView(ctx context.Context, name string, view *query.Query) (base.Collection, error) {
+func (m *managedPersistence) CreateView(ctx context.Context, name string, view *query.Query, materialized bool) (base.Collection, error) {
         if err := m.checkClosed(); err != nil {
                 return nil, err
         }
-        return m.wrapped.CreateView(ctx, name, view)
+        return m.wrapped.CreateView(ctx, name, view, materialized)
+}
+
+// RefreshView passes through to the wrapped persistence.
+func (m *managedPersistence) RefreshView(ctx context.Context, name string) error {
+        if err := m.checkClosed(); err != nil {
+                return err
+        }
+        return m.wrapped.RefreshView(ctx, name)
 }
 
 func (m *managedPersistence) HasCollection(ctx context.Context, name string) (bool, error) {

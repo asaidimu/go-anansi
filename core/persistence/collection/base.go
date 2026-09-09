@@ -92,6 +92,37 @@ func (c *baseCollection) Transact(ctx context.Context, fn func(ctx context.Conte
         })
 }
 
+// Refresh re-populates a materialized view's physical table.
+//
+// For materialized views, this delegates to the registry's RefreshView,
+// which drops and re-creates the materialized table from the stored SELECT
+// and re-creates the view's indexes against it.
+//
+// For non-materialized collections (schema-backed collections and virtual
+// views), Refresh returns ErrNotMaterialized. Schema-backed collections
+// don't need refresh (their data is authoritative); virtual views don't
+// have a materialized table to refresh.
+func (c *baseCollection) Refresh(ctx context.Context) error {
+        if !c.schemaProvider.IsMaterialized() {
+                return base.ErrNotMaterialized.WithOperation("baseCollection.Refresh")
+        }
+        // Materialized views need a registry reference to call RefreshView.
+        // The baseCollection doesn't hold a registry pointer directly — the
+        // managedCollection decorator does (via resolveSchema's caller).
+        // We delegate up to managedCollection by panicking if called here
+        // directly; the managedCollection.Refresh override handles the actual
+        // dispatch. This is safe because the collection is always wrapped
+        // by managedCollection in production (see NewCollection wiring).
+        //
+        // If we ever need base-only Refresh (e.g. for tests that bypass
+        // managed), we'd need to thread a registry reference into
+        // baseCollection. For now the contract is: Refresh is only callable
+        // on the decorated Collection returned by Persistence.Collection,
+        // which is always managed-wrapped.
+        return base.ErrNotMaterialized.WithOperation("baseCollection.Refresh").WithMessage(
+                "Refresh must be called on the managed-decorated collection, not the base")
+}
+
 // documentPoolFor resolves the container-backed document pool for a collection.
 // The pool is owned by the lowest collection level (baseCollection), which
 // every collection reaches through the embedded DocumentPoolProvider; this

@@ -100,17 +100,22 @@ func (r *collectionRegistry) CreateCollection(ctx context.Context, sc *definitio
 }
 
 // CreateView registers a read-only view collection backed by the given query.
-// No physical table is created; the view's data is fetched at read time by
-// composing the stored query with the user's read query. The view's result
-// schema is derived from the query's projection via query.SchemaFromQuery and
-// cached on the version record so callers (e.g. the read path's container
-// scanner) can resolve field types without re-running the derivation.
 //
-// The view's name is taken from view.Target.Name. If the caller wants the
-// view to be addressable under a different name (e.g. "active_users" backed
-// by a query against "users"), set view.Target.Name accordingly before
-// calling CreateView — the registry persists the entry under that name.
-func (r *collectionRegistry) CreateView(ctx context.Context, name string, view *query.Query) (*RegistryEntry, error) {
+// When materialized is false, the view is virtual: no physical table is
+// created and reads compose the stored query with the user's query at
+// runtime. This is the cheapest option but re-runs the view's query
+// (including any joins) on every read.
+//
+// When materialized is true, the view is materialized: a physical table
+// is created via CREATE TABLE <name> AS SELECT ... and populated by
+// executing the view's SELECT. The view's indexes (declared on the
+// derived schema) are created against the materialized table. Reads
+// target the materialized table directly (no query composition);
+// RefreshView re-populates it on demand.
+//
+// The view's result schema is derived from the query's projection via
+// query.SchemaFromQuery and cached on the version record.
+func (r *collectionRegistry) CreateView(ctx context.Context, name string, view *query.Query, materialized bool) (*RegistryEntry, error) {
         if name == "" {
                 return nil, common.NewSystemError("ERR_REGISTRY_VIEW_NAME_REQUIRED", "view name is required")
         }
@@ -132,20 +137,57 @@ func (r *collectionRegistry) CreateView(ctx context.Context, name string, view *
         // Derive the view's result schema. SchemaFromQuery needs a target
         // schema; the view query must carry one (callers set view.Target.Schema
         // to the underlying collection's schema before calling CreateView).
-        derivedSchema, err := query.SchemaFromQuery(view, nil)
+        //
+        // SchemaFromQuery has a fast path that returns q.Target.Schema directly
+        // (no copy) when there are no joins/projection. We deep-copy the result
+        // BEFORE mutating it so we don't corrupt the caller's original schema.
+        derivedFromQuery, err := query.SchemaFromQuery(view, nil)
         if err != nil {
                 return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_VIEW_SCHEMA_DERIVATION_FAILED",
                         fmt.Sprintf("failed to derive result schema for view '%s'", name))
         }
+        derivedSchema := derivedFromQuery.DeepCopy()
+
         // Re-stamp the derived schema with the view's logical name so callers
         // see the view's name when introspecting CurrentSchema.
         derivedSchema.Name = name
         derivedSchema.Description = fmt.Sprintf("Derived schema for view '%s'", name)
 
+        // Strip system fields (_id_, _metadata_) from the derived schema.
+        // Materialized views don't have system columns (CTAS only produces
+        // the columns from the SELECT's projection); virtual views don't
+        // need them either (the composed query runs against the underlying
+        // collection which has its own system fields). Carrying system fields
+        // on the derived schema would cause the read path to reference
+        // non-existent columns.
+        if derivedSchema.Fields != nil {
+                for fid, f := range derivedSchema.Fields {
+                        // Strip system fields (_id_, _metadata_).
+                        if string(f.Name) == data.DocumentIDField || string(f.Name) == data.MetadataField {
+                                delete(derivedSchema.Fields, fid)
+                                continue
+                        }
+                        // Strip join-added nested-schema fields (FieldTypeObject
+                        // with a schema reference). These are artifacts of
+                        // SchemaFromQuery's applyJoinsToSchema and don't
+                        // correspond to real columns in the materialized table.
+                        // Keeping them causes schema validation failures (duplicate
+                        // field IDs across the root and nested schemas) and
+                        // "no such column" errors at read time.
+                        if f.Type == definition.FieldTypeObject && !f.Schema.IsZero() {
+                                delete(derivedSchema.Fields, fid)
+                        }
+                }
+        }
+        // Clear nested schemas entirely — the materialized table is a flat
+        // table with only scalar columns from the main target.
+        derivedSchema.Schemas = nil
+
         // Drop any indexes the derived schema inherited from the target schema
-        // that reference fields no longer present after projection. Views are
-        // read-only and never issue DDL against the underlying collection, so
-        // carrying stale index definitions would only cause validation failures.
+        // that reference fields no longer present after projection. For virtual
+        // views this avoids stale metadata; for materialized views it ensures
+        // we only create physical indexes against columns that actually exist
+        // in the materialized table.
         if derivedSchema.Indexes != nil {
                 fieldNames := make(map[string]struct{}, len(derivedSchema.Fields))
                 for _, f := range derivedSchema.Fields {
@@ -169,13 +211,28 @@ func (r *collectionRegistry) CreateView(ctx context.Context, name string, view *
         }
 
         // Validate the derived schema — it must be self-consistent before we
-        // store it. We skip the registry's meta-schema validator because the
-        // derived schema may legitimately lack _id_/_metadata_ (views do not
-        // own identity). Compile() exercises the schema IR and is sufficient
-        // to catch structurally invalid schemas.
+        // store it. Compile() exercises the schema IR and is sufficient to
+        // catch structurally invalid schemas.
         if _, err := definition.Compile(derivedSchema); err != nil {
                 return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_VIEW_DERIVED_SCHEMA_INVALID",
                         fmt.Sprintf("derived schema for view '%s' is invalid: %v", name, err))
+        }
+
+        // Generate a physical name for the materialized view's table when
+        // materialized. Virtual views leave Physical empty.
+        var physicalName string
+        if materialized {
+                // Reuse the registry's physical-name generator so materialized
+                // view tables follow the same naming convention as collections.
+                tempSc := &definition.Schema{
+                        BaseSchema: definition.BaseSchema{Name: name},
+                        Version:    common.MustNewVersion("1.0.0"),
+                }
+                physicalName, err = generatePhysicalName(tempSc)
+                if err != nil {
+                        return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_FAILED_TO_GENERATE_PHYSICAL_NAME",
+                                fmt.Sprintf("for materialized view '%s'", name))
+                }
         }
 
         version := common.MustNewVersion("1.0.0")
@@ -185,20 +242,52 @@ func (r *collectionRegistry) CreateView(ctx context.Context, name string, view *
                 ActiveVersion: version,
                 Versions: map[string]*SchemaVersionRecord{
                         version.String(): {
-                                Physical: "", // No physical table — views are virtual
-                                Schema:   *derivedSchema,
-                                View:     view,
+                                Physical:     physicalName,
+                                Schema:       *derivedSchema,
+                                View:         view,
+                                Materialized: materialized,
                         },
                 },
         }
 
-        // Persist the registry entry. Views skip the manager.CreateCollection
-        // call — they only exist as a row in _schemas_.
+        // Persist the registry entry AND issue DDL for materialized views.
         requiresTransaction := true
         if _, ok := transaction.GetCurrentTransaction(ctx); ok {
                 requiresTransaction = false
         }
         persisted, err := execute(ctx, r.executor, requiresTransaction, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (*RegistryEntry, error) {
+                // For materialized views, issue CREATE TABLE AS SELECT and
+                // create the view's indexes against the materialized table.
+                // The CTAS needs the view's query to reference physical names
+                // of underlying collections — we resolve them via the
+                // registry before issuing the DDL.
+                if materialized {
+                        resolvedView, rerr := r.resolveViewQueryPhysicalNames(tctx, view, derivedSchema)
+                        if rerr != nil {
+                                return nil, rerr
+                        }
+                        if err := manager.CreateView(tctx, physicalName, resolvedView); err != nil {
+                                return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_VIEW_MATERIALIZATION_FAILED",
+                                        fmt.Sprintf("failed to materialize view '%s'", name))
+                        }
+                        // Create the view's indexes against the materialized table.
+                        for _, idx := range derivedSchema.Indexes {
+                                if idx.Type == definition.IndexTypePrimary {
+                                        continue
+                                }
+                                // FTS indexes on materialized views are created via
+                                // CreateIndex (the createIndexTree builder emits the
+                                // FTS5 virtual table + triggers against the target
+                                // collection name). We don't skip them here because
+                                // the materialized table doesn't go through
+                                // createTableTree's inline FTS emission.
+                                if err := manager.CreateIndex(tctx, physicalName, idx); err != nil {
+                                        return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_VIEW_INDEX_CREATION_FAILED",
+                                                fmt.Sprintf("failed to create index '%s' on materialized view '%s'", idx.Name, name))
+                                }
+                        }
+                }
+
                 return r.persistRegistryEntry(tctx, collection, entry)
         })
         if err != nil {
@@ -207,6 +296,193 @@ func (r *collectionRegistry) CreateView(ctx context.Context, name string, view *
         result := persisted
         r.cache.Set(name, result)
         return result, nil
+}
+
+// RefreshView re-populates a materialized view's physical table by dropping
+// and re-creating it from the stored SELECT. Returns an error if the named
+// collection is not a materialized view.
+func (r *collectionRegistry) RefreshView(ctx context.Context, name string) (*RegistryEntry, error) {
+        entry, err := r.GetRegistryEntry(ctx, name)
+        if err != nil {
+                return nil, err
+        }
+        if !entry.IsMaterialized() {
+                return nil, base.ErrNotMaterialized.WithMessage(fmt.Sprintf("collection '%s' is not a materialized view", name))
+        }
+
+        activeStr := entry.ActiveVersion.String()
+        versionRecord, ok := entry.Versions[activeStr]
+        if !ok {
+                return nil, common.NewSystemError("ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION",
+                        fmt.Sprintf("active version '%s' not found for collection '%s'", activeStr, name))
+        }
+
+        // Resolve the view's query to physical names of underlying collections
+        // before issuing the refresh DDL.
+        resolvedView, err := r.resolveViewQueryPhysicalNames(ctx, versionRecord.View, &versionRecord.Schema)
+        if err != nil {
+                return nil, err
+        }
+
+        requiresTransaction := true
+        if _, ok := transaction.GetCurrentTransaction(ctx); ok {
+                requiresTransaction = false
+        }
+        _, err = execute(ctx, r.executor, requiresTransaction, func(tctx context.Context, collection base.Collection, manager query.SchemaManager) (any, error) {
+                if err := manager.RefreshView(tctx, versionRecord.Physical, resolvedView); err != nil {
+                        return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_VIEW_REFRESH_FAILED",
+                                fmt.Sprintf("failed to refresh materialized view '%s'", name))
+                }
+                // Re-create the view's indexes against the freshly-populated table.
+                for _, idx := range versionRecord.Schema.Indexes {
+                        if idx.Type == definition.IndexTypePrimary {
+                                continue
+                        }
+                        if err := manager.CreateIndex(tctx, versionRecord.Physical, idx); err != nil {
+                                return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_VIEW_INDEX_RECREATION_FAILED",
+                                        fmt.Sprintf("failed to recreate index '%s' on materialized view '%s'", idx.Name, name))
+                        }
+                }
+                return &RegistryEntry{}, nil // non-nil placeholder so execute's type assertion succeeds
+        })
+        if err != nil {
+                return nil, err
+        }
+
+        return entry, nil
+}
+
+// resolveViewQueryPhysicalNames returns a deep copy of the view's stored query
+// with all logical collection names (the main target and any join targets)
+// rewritten to their physical names. This is required before issuing CTAS
+// DDL because the emitted SQL references physical table names directly.
+//
+// The view's stored query carries the underlying collection's logical name
+// in view.Target.Name; joins carry each join target's logical name in
+// join.Target.Name. We look each up via the registry and rewrite.
+//
+// The derivedSchema parameter is set as the resolved query's Target.Schema
+// so the CTAS builder can derive the correct column alias list (the view's
+// derived schema has system fields stripped and carries only the fields
+// the materialized table should have).
+func (r *collectionRegistry) resolveViewQueryPhysicalNames(ctx context.Context, view *query.Query, derivedSchema *definition.Schema) (*query.Query, error) {
+        if view == nil {
+                return nil, nil
+        }
+
+        // Deep-copy the view via Clone (not JSON roundtrip — JSON roundtrip
+        // corrupts FilterValue's tagged union because FieldRefVal serializes
+        // to {"field":"...","type":""} which unmarshals into ObjectVal instead
+        // of FieldRefVal).
+        resolved, err := view.Clone()
+        if err != nil {
+                return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_VIEW_CLONE_FAILED")
+        }
+
+        // Resolve the main target's logical → physical name.
+        if resolved.Target != nil && resolved.Target.Name != "" {
+                originalLogical := resolved.Target.Name
+                physName, _, err := r.resolveUnderlyingPhysicalName(ctx, originalLogical)
+                if err != nil {
+                        return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_VIEW_TARGET_RESOLUTION_FAILED",
+                                fmt.Sprintf("failed to resolve underlying collection '%s' for view", originalLogical))
+                }
+                resolved.Target.Name = physName
+                // Set the alias to the original logical name so SQL
+                // field references can use "LogicalName.field" instead
+                // of the physical name.
+                alias := originalLogical
+                resolved.Target.Alias = &alias
+                // Override the schema with the view's derived schema so the
+                // CTAS builder can derive the correct column alias list.
+                if derivedSchema != nil {
+                        resolved.Target.Schema = derivedSchema
+                }
+        }
+
+        // Add a projection with explicit column aliases so the CTAS
+        // produces a materialized table with plain (un-qualified)
+        // column names. Without this, CREATE TABLE foo AS SELECT * FROM
+        // bar produces columns named "bar.col1", "bar.col2".
+        //
+        // For join queries, each field must be qualified with the main
+        // target's alias to avoid "ambiguous column name" errors (both
+        // the main table and join targets may have columns with the same
+        // name, e.g. "id").
+        if derivedSchema != nil && len(derivedSchema.Fields) > 0 {
+                // Determine the alias to qualify fields with.
+                mainAlias := ""
+                if resolved.Target != nil {
+                        if resolved.Target.Alias != nil {
+                                mainAlias = *resolved.Target.Alias
+                        } else {
+                                mainAlias = resolved.Target.Name
+                        }
+                }
+                fieldNames := derivedSchema.FieldNames()
+                projFields := make([]query.ProjectionField, 0, len(fieldNames))
+                for _, fn := range fieldNames {
+                        // Skip fields that are nested-schema references
+                        // (added by SchemaFromQuery's applyJoinsToSchema).
+                        // These are FieldTypeObject fields pointing to
+                        // nested schemas — they don't correspond to real
+                        // columns in the underlying table and would cause
+                        // "no such column" errors if included in the
+                        // CTAS projection.
+                        _, field := derivedSchema.FindField(fn)
+                        if field != nil && field.Type == definition.FieldTypeObject && !field.Schema.IsZero() {
+                                continue
+                        }
+                        // For join queries, qualify the field with the
+                        // main target's alias to avoid "ambiguous column
+                        // name" errors.
+                        qualifiedName := fn
+                        if mainAlias != "" && len(resolved.Joins) > 0 {
+                                qualifiedName = mainAlias + "." + fn
+                        }
+                        projFields = append(projFields, query.ProjectionField{
+                                Name:  qualifiedName,
+                        })
+                }
+                resolved.Projection = &query.ProjectionConfiguration{
+                        Include: projFields,
+                }
+        }
+
+        // Resolve each join target's logical → physical name.
+        for i := range resolved.Joins {
+                if resolved.Joins[i].Target.Name != "" {
+                        originalJoinLogical := resolved.Joins[i].Target.Name
+                        physName, joinSchema, err := r.resolveUnderlyingPhysicalName(ctx, originalJoinLogical)
+                        if err != nil {
+                                return nil, common.SystemErrorFrom(err, "ERR_REGISTRY_VIEW_JOIN_RESOLUTION_FAILED",
+                                        fmt.Sprintf("failed to resolve join target '%s' for view", originalJoinLogical))
+                        }
+                        resolved.Joins[i].Target.Name = physName
+                        // Set the alias to the original logical name so
+                        // field references like "Profiles.user_id" in the
+                        // ON clause resolve correctly (buildSelectTree
+                        // registers the schema under the alias).
+                        alias := originalJoinLogical
+                        resolved.Joins[i].Target.Alias = &alias
+                        if joinSchema != nil {
+                                resolved.Joins[i].Target.Schema = joinSchema
+                        }
+                }
+        }
+
+        return resolved, nil
+}
+
+// resolveUnderlyingPhysicalName looks up a collection by its logical name
+// and returns (physicalName, schema, nil). Used by resolveViewQueryPhysicalNames
+// to rewrite the view's stored query before issuing CTAS DDL.
+func (r *collectionRegistry) resolveUnderlyingPhysicalName(ctx context.Context, logicalName string) (string, *definition.Schema, error) {
+        sc, err := r.GetSchema(ctx, logicalName)
+        if err != nil {
+                return "", nil, err
+        }
+        return sc.Name, sc, nil
 }
 
 // CurrentView returns the stored view query for the active version of a
@@ -434,11 +710,28 @@ func (r *collectionRegistry) CurrentValidator(ctx context.Context, name string) 
 
 // ResolvePhysicalName returns the physical name for a collection, optionally for a specific version.
 func (r *collectionRegistry) ResolvePhysicalName(ctx context.Context, name string, version ...string) (string, error) {
-        sc, err := r.GetSchema(ctx, name, version...)
+        // For materialized views, the physical name is stored on the version
+        // record's Physical field — the schema's Name field carries the view's
+        // logical name (set by CreateView), not the physical table name.
+        entry, err := r.GetRegistryEntry(ctx, name)
         if err != nil {
                 return "", err
         }
-        return sc.Name, nil
+        resolvedVersion := entry.ActiveVersion.String()
+        if len(version) > 0 {
+                resolvedVersion = version[0]
+        }
+        vr, ok := entry.Versions[resolvedVersion]
+        if !ok {
+                return "", common.NewSystemError("ERR_REGISTRY_VERSION_NOT_FOUND_FOR_COLLECTION",
+                        fmt.Sprintf("version '%s' not found for collection '%s'", resolvedVersion, name))
+        }
+        if vr.IsMaterialized() && vr.Physical != "" {
+                return vr.Physical, nil
+        }
+        // Non-materialized: fall back to the schema's Name field (which the
+        // registry rewrote to the physical name during CreateCollection).
+        return vr.Schema.Name, nil
 }
 
 // AddSchemaVersion adds a new schema version to an existing collection.
@@ -810,8 +1103,9 @@ func deepCopyEntry(src *RegistryEntry) *RegistryEntry {
         versions := make(map[string]*SchemaVersionRecord, len(src.Versions))
         for k, v := range src.Versions {
                 copied := &SchemaVersionRecord{
-                        Physical: v.Physical,
-                        Schema:   *v.Schema.DeepCopy(),
+                        Physical:     v.Physical,
+                        Schema:       *v.Schema.DeepCopy(),
+                        Materialized: v.Materialized,
                 }
                 // Deep-copy the View query (if present) via JSON roundtrip so
                 // the cached copy doesn't share pointers with the source.

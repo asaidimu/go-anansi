@@ -21,13 +21,32 @@ type SchemaVersionRecord struct {
         // operations (Create/Update/Delete/Validate).
         View *query.Query `json:"view,omitempty"`
 
+        // Materialized, when true with a non-nil View, marks this version
+        // as a materialized view: a physical table whose contents are
+        // populated by executing View's SELECT. The Physical field carries
+        // the materialized table's name. Reads target the materialized table
+        // directly (no query composition); RefreshView re-populates it.
+        //
+        // When false with a non-nil View, the view is virtual: reads
+        // compose the View query with the user's query at runtime (no
+        // physical table is created).
+        Materialized bool `json:"materialized,omitempty"`
+
         validatorOnce sync.Once
         validator     *definition.DocumentValidator
 }
 
 // IsView reports whether this version is a view-backed (read-only) collection.
+// Both virtual and materialized views return true.
 func (r *SchemaVersionRecord) IsView() bool {
         return r != nil && r.View != nil
+}
+
+// IsMaterialized reports whether this version is a materialized view:
+// a physical table populated by executing the stored View query.
+// Returns false for virtual views and non-view collections.
+func (r *SchemaVersionRecord) IsMaterialized() bool {
+        return r != nil && r.View != nil && r.Materialized
 }
 
 // Validator returns the lazily-built DocumentValidator for this schema version.
@@ -60,13 +79,25 @@ type RegistryEntry struct {
 }
 
 // IsView reports whether the active version of this entry is a view-backed
-// (read-only) collection.
+// (read-only) collection. Both virtual and materialized views return true.
 func (e *RegistryEntry) IsView() bool {
         if e == nil || e.ActiveVersion == nil {
                 return false
         }
         if v, ok := e.Versions[e.ActiveVersion.String()]; ok {
                 return v.IsView()
+        }
+        return false
+}
+
+// IsMaterialized reports whether the active version is a materialized view
+// (a physical table populated by executing the stored View query).
+func (e *RegistryEntry) IsMaterialized() bool {
+        if e == nil || e.ActiveVersion == nil {
+                return false
+        }
+        if v, ok := e.Versions[e.ActiveVersion.String()]; ok {
+                return v.IsMaterialized()
         }
         return false
 }
@@ -89,7 +120,15 @@ type SchemaProvider interface {
         // IsView reports whether this provider backs a read-only view
         // collection. When true, CurrentView returns the stored view query
         // and write operations must be rejected by the collection layer.
+        // Both virtual and materialized views return true.
         IsView() bool
+
+        // IsMaterialized reports whether this provider backs a materialized
+        // view: a physical table populated by executing the stored View
+        // query. Reads target the materialized table directly (no query
+        // composition); Refresh re-populates it.
+        // Returns false for virtual views and non-view collections.
+        IsMaterialized() bool
 
         // CurrentView returns the stored view query for a view-backed
         // collection. Returns (nil, nil) for schema-backed collections.
@@ -122,12 +161,22 @@ type CollectionRegistry interface {
         // physical collection provisioned in the database.
         CreateCollections(ctx context.Context, schemas []*definition.Schema) ([]*RegistryEntry, error)
 
-        // CreateView registers a read-only view collection backed by the given query
-        // rather than a physical table. The view's result schema is derived from the
-        // query's projection via query.SchemaFromQuery and cached on the version
-        // record. No DDL is issued against the database; the view's data is fetched
-        // by composing the stored query with the user's read query at runtime.
-        CreateView(ctx context.Context, name string, view *query.Query) (*RegistryEntry, error)
+        // CreateView registers a read-only view collection backed by the given query.
+        //
+        // When materialized is false, the view is virtual: no DDL is issued,
+        // and reads compose the stored query with the user's query at runtime.
+        //
+        // When materialized is true, the view is materialized: a physical
+        // table is created via CREATE TABLE <name> AS SELECT ... and the
+        // view's indexes are created against it. Reads target the
+        // materialized table directly (no query composition); RefreshView
+        // re-populates it on demand.
+        CreateView(ctx context.Context, name string, view *query.Query, materialized bool) (*RegistryEntry, error)
+
+        // RefreshView re-populates a materialized view's physical table by
+        // dropping and re-creating it from the stored SELECT. Returns an
+        // error if the named collection is not a materialized view.
+        RefreshView(ctx context.Context, name string) (*RegistryEntry, error)
 
         // DropCollection removes a collection's entire schema history from the registry.
         // The options force the caller to be explicit about deleting the underlying physical data.

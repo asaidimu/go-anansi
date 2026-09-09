@@ -64,6 +64,7 @@ func newBasePersistence(
                         return registrySchema.Name, registrySchema, nil
                 },
                 nil,
+                nil, // bootstrap registry collection never needs refresh
         )
 
         if err != nil {
@@ -137,6 +138,14 @@ func (p *basePersistence) Collection(ctx context.Context, name string) (base.Col
                         return sc.Name, sc, nil
                 },
                 p.rawQueryProcessor,
+                // Refresh delegates to the persistence layer's RefreshView,
+                // which calls registry.RefreshView to drop+recreate the
+                // materialized table. The closure captures `p` (the
+                // basePersistence) so the collection can refresh itself
+                // without holding a direct registry reference.
+                func(ctx context.Context, name string) error {
+                        return p.RefreshView(ctx, name)
+                },
         )
 
         if err != nil {
@@ -180,13 +189,23 @@ func (p *basePersistence) CreateCollections(ctx context.Context, schemas []*defi
 }
 
 // CreateView registers a read-only view collection backed by the given query.
-// The view's result schema is derived from the query's projection; no physical
-// table is created. The returned Collection rejects all write operations.
-func (p *basePersistence) CreateView(ctx context.Context, name string, view *query.Query) (base.Collection, error) {
-        if _, err := p.registry.CreateView(ctx, name, view); err != nil {
+// When materialized is true, a physical table is created and populated via
+// CREATE TABLE AS SELECT; reads target the materialized table directly.
+// When false, the view is virtual: reads compose the stored query with the
+// user's query at runtime.
+func (p *basePersistence) CreateView(ctx context.Context, name string, view *query.Query, materialized bool) (base.Collection, error) {
+        if _, err := p.registry.CreateView(ctx, name, view, materialized); err != nil {
                 return nil, err
         }
         return p.Collection(ctx, name)
+}
+
+// RefreshView re-populates a materialized view's physical table by dropping
+// and re-creating it from the stored SELECT. Returns an error if the named
+// collection is not a materialized view.
+func (p *basePersistence) RefreshView(ctx context.Context, name string) error {
+        _, err := p.registry.RefreshView(ctx, name)
+        return err
 }
 
 func (p *basePersistence) HasCollection(ctx context.Context, name string) (bool, error) {
