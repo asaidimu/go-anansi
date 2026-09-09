@@ -1,8 +1,8 @@
-import { DocumentValidator } from "./validator";
+import { DocumentValidator } from "./validator.ts";
 import schema from "./schema.json";
-import { metaSchemaPredicateMap } from "./predicates";
-import type { SchemaDefinition } from "./types/schema-definition";
-import type { Issue } from "./types/validator";
+import { metaSchemaPredicateMap } from "./predicates.ts";
+import type { SchemaDefinition } from "./types/schema-definition.ts";
+import type { Issue } from "./types/validator.ts";
 
 /**
  * A dedicated validator for ensuring schema definitions themselves

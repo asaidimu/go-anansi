@@ -1,6 +1,6 @@
-import type { Issue, PredicateMap } from "./types/validator";
-import { createIssue } from "./types/validator";
-import { isInteger, isNumber } from "./utils";
+import type { Issue, PredicateMap } from "./types/validator.ts";
+import { createIssue } from "./types/validator.ts";
+import { isInteger, isNumber } from "./utils.ts";
 
 const primitiveTypes = new Set([
   "string",

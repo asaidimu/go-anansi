@@ -5,8 +5,8 @@
  * Mirrors every node type in validator.go faithfully.
  */
 
-import type { ValidationGraph } from "./graph";
-import type { FieldType } from "./types";
+import type { ValidationGraph } from "./graph.ts";
+import type { FieldType } from "./types/index.ts";
 import {
   type ConstraintScope,
   type Issue,
@@ -19,7 +19,7 @@ import {
   type ValidatorConstraintRule,
   failNode,
   createIssue,
-} from "./types/validator";
+} from "./types/validator.ts";
 import {
   buildPath,
   deepEqual,
@@ -31,7 +31,7 @@ import {
   isNumber,
   isSafeComparable,
   resolveConstraintFieldPaths,
-} from "./utils";
+} from "./utils.ts";
 
 // ---------------------------------------------------------------------------
 // ValidationNode interface

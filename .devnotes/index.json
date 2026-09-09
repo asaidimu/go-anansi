@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-09-02T20:52:19.3894481Z",
+  "generatedAt": "2026-09-09T12:14:43.889676458Z",
   "root": ".",
   "notes": {
     "0ar5g0": {
@@ -11,72 +11,57 @@
       "body": "Resolved: same fieldIndex lookup as #5nhvz2 -- a single O(1) access to\nthe field's handles instead of scanning meta.fields for a name match.\n",
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 408,
+        "startLine": 517,
         "startCol": 3,
-        "endLine": 411,
+        "endLine": 520,
         "endCol": 3
       },
       "hash": "aa5b6d2c2a620d97"
     },
     "1k51l3": {
       "id": "1k51l3",
-      "category": "issue",
-      "status": "open",
+      "category": "status",
+      "status": "resolved",
       "title": "Library Anti pattern. Use common.SystemError",
-      "body": "common.SystemError satisfies error as well as\nproviding means to add richer error context,\nwhich is invaluable in tracing issues from low level\nutilities such as this one, if and when such errors\nimpact higher level implementations.\n",
+      "body": "Resolved: common.SystemError satisfies error as well as\nproviding means to add richer error context, which is\ninvaluable in tracing issues from low level utilities such\nas this one, if and when such errors impact higher level\nimplementations.\n",
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 123,
+        "startLine": 170,
         "startCol": 3,
-        "endLine": 129,
+        "endLine": 176,
         "endCol": 3
       },
-      "hash": "99b0eba25fcaba85"
+      "hash": "ccf8df4d8641d866"
     },
     "397ju0": {
       "id": "397ju0",
-      "category": "todo",
-      "status": "open",
+      "category": "status",
+      "status": "resolved",
       "title": "Refactor out helpers #cruft",
-      "body": "Resolved in place, not extracted: typeHash32/fieldHash32 are not\ngeneral-purpose hash utilities. They exist solely to pick a bucket for\nfieldTagMap's bucket+verify scheme, and every current caller of\nfieldTagMap depends on that scheme's correctness guarantee (identity\nverification against the real (type, field) pair), not on hash quality\nin isolation. Moving these into a shared utility package would let a\nfuture caller reuse the hash function alone, without the verification\nstep that makes using it safe, silently reintroducing the collision risk\nthis rework was meant to close.\n",
+      "body": "Resolved by removal: typeHash32/fieldHash32/fieldKeyOf and the\nstructFieldKey hash-bucket scheme were deleted outright when the map was\nre-keyed on the natively comparable (reflect.Type, string) pair. There are\nno hash helpers left to extract, and the collision-verification caveat they\nexisted to mitigate is gone by construction.\n",
       "location": {
         "file": "core/reflect/field_tag_map.go",
-        "startLine": 175,
+        "startLine": 86,
         "startCol": 3,
-        "endLine": 185,
+        "endLine": 92,
         "endCol": 3
       },
-      "hash": "318d67c93699b110"
-    },
-    "4dl3nn": {
-      "id": "4dl3nn",
-      "category": "issue",
-      "status": "open",
-      "title": "Inefficient binding.",
-      "body": "We should ideally walk the data container\nand populate the struct\n",
-      "location": {
-        "file": "core/document/bind.go",
-        "startLine": 55,
-        "startCol": 3,
-        "endLine": 58,
-        "endCol": 3
-      },
-      "hash": "cd8fbcbab793cd98"
+      "hash": "571b8f2725b2765b"
     },
     "5nhvz2": {
       "id": "5nhvz2",
       "category": "status",
       "status": "resolved",
       "title": "Inefficient field access",
-      "body": "Resolved: FieldTag now does a single fieldIndex.Get(type, fieldName)\nlookup (composite-keyed, bucket+verify -- see map.go) followed by a\nmap lookup on that field's tagIndex for the tag key. Both are O(1)\naverage instead of the original linear scan over every field followed\nby a linear scan over that field's tags.\n",
+      "body": "Resolved: FieldTag now does a single fieldIndex.Get(type, fieldName)\nlookup (composite-keyed, see field_tag_map.go) followed by a linear scan\nof that field's handles for the tag key. Both are O(1)/O(k) with k = tags\nper field (single digits) instead of the original linear scan over every\nfield followed by a linear scan over that field's tags.\n",
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 375,
+        "startLine": 479,
         "startCol": 3,
-        "endLine": 381,
+        "endLine": 485,
         "endCol": 3
       },
-      "hash": "3b53f5ee54715c82"
+      "hash": "89c03ecee3c9f8af"
     },
     "9c5yn5": {
       "id": "9c5yn5",
@@ -100,9 +85,9 @@
       "body": "Resolved: structMetadata now carries byKey, a map[string][]tagRef built\nonce in buildMetadata alongside the rest of a type's metadata. KeyTags\nreads meta.byKey[tagKey] directly, so its cost is proportional to the\nnumber of matching tags, not to the total number of tags on the type.\n",
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 462,
+        "startLine": 571,
         "startCol": 3,
-        "endLine": 467,
+        "endLine": 576,
         "endCol": 3
       },
       "hash": "60fc957138207fd2"
@@ -115,9 +100,9 @@
       "body": "Resolved: ValueKind is now computed once per tag in buildMetadata and\npacked into 2 previously-unused bits of the handle (bits 60-61). Tag.\nValueKind() is now a bit-mask extraction with no string scan. See\ncomputeValueKind and the handle layout documented on the Tag struct.\n",
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 72,
+        "startLine": 113,
         "startCol": 3,
-        "endLine": 77,
+        "endLine": 118,
         "endCol": 3
       },
       "hash": "e52924354066b37e"
@@ -145,9 +130,9 @@
       "body": "In a very complex, dynamic application where module use flactuates at\nruntime, a dynamic cache may be more performant memory wise.\n",
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 189,
+        "startLine": 244,
         "startCol": 3,
-        "endLine": 192,
+        "endLine": 247,
         "endCol": 3
       },
       "hash": "110fad3967e6a4d9"
@@ -160,12 +145,42 @@
       "body": "Resolved as \"already optimal\": Tags yields every field/tag pair by\ndefinition, so visiting each one once is O(n) in the size of the output,\nwhich is the best any implementation can do here -- there is no name or\nkey to look up that could turn this into a sub-linear operation. The\nactual per-call overhead #g23h8y was pointing at (repeatedly re-deriving\nfield/tag structure) is what #5nhvz2 and #0ar5g0 address for the\nsingle-field lookup paths; this function was never doing that redundant\nwork in the first place, since it already reads directly from the\ntype's cached structMetadata built once by buildMetadata.\n",
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 433,
+        "startLine": 542,
         "startCol": 3,
-        "endLine": 443,
+        "endLine": 552,
         "endCol": 3
       },
       "hash": "b240949f136fd871"
+    },
+    "jq3c65": {
+      "id": "jq3c65",
+      "category": "todo",
+      "status": "open",
+      "title": "Populate struct",
+      "body": "Populate this struct and use it properly\n",
+      "location": {
+        "file": "core/storage/storage_spec.go",
+        "startLine": 33,
+        "startCol": 3,
+        "endLine": 35,
+        "endCol": 3
+      },
+      "hash": "521f53443e9970c1"
+    },
+    "qpt45v": {
+      "id": "qpt45v",
+      "category": "todo",
+      "status": "open",
+      "title": "Populate interface",
+      "body": "TransactionalEngine defines the set of operations available within a transaction.\nIt is a limited subset of the full StorageEngine API, ensuring that non-transactional\noperations (like creating new collections) cannot be performed within the transaction callback.\n",
+      "location": {
+        "file": "core/storage/storage_spec.go",
+        "startLine": 22,
+        "startCol": 3,
+        "endLine": 26,
+        "endCol": 3
+      },
+      "hash": "7d8f24dc72e7cf50"
     },
     "sanitize-type-blindness": {
       "id": "sanitize-type-blindness",
@@ -200,7 +215,7 @@
   },
   "files": {
     "anansi.go": {
-      "hash": "7bcb947fd9833698"
+      "hash": "c8467ee0361e79b0"
     },
     "cmd/anansi/internal/agents.go": {
       "hash": "86a8b60a75148878"
@@ -347,19 +362,19 @@
       "hash": "e456c53dd77b6079"
     },
     "core/data/batch.go": {
-      "hash": "fadc46ef2421ad64"
+      "hash": "cdb15cb2969b282f"
     },
     "core/data/bind.go": {
-      "hash": "c991c39a634405a3"
+      "hash": "440d743182335f97"
     },
     "core/data/builder.go": {
-      "hash": "1e309a305dda7c9d"
+      "hash": "464c368d4d11a348"
     },
     "core/data/cache.go": {
-      "hash": "4d26d50571e24911"
+      "hash": "f7f99d6f4ad08c21"
     },
     "core/data/coerce.go": {
-      "hash": "007720e4c3544a91"
+      "hash": "9e65c4eeeedef6d4"
     },
     "core/data/container/collection.go": {
       "hash": "3acba19eb3c6dda1"
@@ -374,13 +389,13 @@
       "hash": "b003eedb66f775b6"
     },
     "core/data/convert.go": {
-      "hash": "bba7aca16ad5b17d"
+      "hash": "e115a0ea3a2957db"
     },
     "core/data/diff.go": {
-      "hash": "42ae4a93955cac59"
+      "hash": "12605ffab021f18a"
     },
     "core/data/document.go": {
-      "hash": "c6387562a584f632"
+      "hash": "d0b430061a9e3853"
     },
     "core/data/enrich.go": {
       "hash": "8d2693f48b3a82f6"
@@ -398,19 +413,19 @@
       "hash": "8940fa4c72c80a2a"
     },
     "core/data/generic.go": {
-      "hash": "19b3417346589cfb"
+      "hash": "2f0ba038eeee9fef"
     },
     "core/data/index.go": {
-      "hash": "68c878d60bf9caec"
+      "hash": "e2b73d8c749ce7d8"
     },
     "core/data/interface.go": {
       "hash": "90c719a8d855c3cd"
     },
     "core/data/json.go": {
-      "hash": "39c4cb8bf9538389"
+      "hash": "130ef8f80d8aef20"
     },
     "core/data/jsonpath.go": {
-      "hash": "c459520dd078511b"
+      "hash": "b18374e6019dbd9f"
     },
     "core/data/metadata.go": {
       "hash": "5891d360f4cfd018"
@@ -419,28 +434,28 @@
       "hash": "c1ddbab13c6e11a8"
     },
     "core/data/must.go": {
-      "hash": "cb81eb8ca948c85e"
+      "hash": "809b819034286c30"
     },
     "core/data/nested.go": {
-      "hash": "09c033062a77bc89"
+      "hash": "9577ee6beaf497db"
     },
     "core/data/normalize.go": {
-      "hash": "c01f3a24a29d6332"
+      "hash": "60850ec78958f3b3"
     },
     "core/data/query.go": {
-      "hash": "c4e6d4da407df5a9"
+      "hash": "036d3f26d918edfb"
     },
     "core/data/sanitize.go": {
-      "hash": "43af35fd281e88e5"
+      "hash": "94e759190bfd1d34"
     },
     "core/data/schema_extractor.go": {
-      "hash": "2e0a3004a9e0301e",
+      "hash": "a980cb06cb258515",
       "noteIds": [
         "cwzt7j"
       ]
     },
     "core/data/serialization.go": {
-      "hash": "f5e4f2b95844324f"
+      "hash": "3b2dd1d386ea04f0"
     },
     "core/data/zz_paths_test.go": {
       "hash": "86366144219cc411"
@@ -452,16 +467,22 @@
       ]
     },
     "core/document/bind.go": {
-      "hash": "1d6e70fcd5fd9b40",
-      "noteIds": [
-        "4dl3nn"
-      ]
+      "hash": "45b8615e0c87631b"
     },
     "core/document/bind_field.go": {
-      "hash": "23ab3d07b3fbfa91"
+      "hash": "d2e9fe7453a49bb6"
     },
     "core/document/bind_field_test.go": {
       "hash": "0493d188f1b627d4"
+    },
+    "core/document/bind_registry.go": {
+      "hash": "6c986d82da52f198"
+    },
+    "core/document/bind_walk.go": {
+      "hash": "914c6b15ee767b11"
+    },
+    "core/document/bind_walk_test.go": {
+      "hash": "a4d2a4420f5ba848"
     },
     "core/document/clone.go": {
       "hash": "363936f0618212b0"
@@ -473,7 +494,7 @@
       "hash": "c6d455a9465e3d82"
     },
     "core/document/document.go": {
-      "hash": "709853316463d25b"
+      "hash": "ac62bfa3afe6fa01"
     },
     "core/document/document_test.go": {
       "hash": "a0a1a84f83d47046"
@@ -671,7 +692,7 @@
       "hash": "b7a70fa7097dd38e"
     },
     "core/ephemeral/interactor.go": {
-      "hash": "834420064cc7710a"
+      "hash": "97e6dbc315e277a7"
     },
     "core/ephemeral/store.go": {
       "hash": "1a816b5531b1053a"
@@ -692,7 +713,7 @@
       "hash": "18426423a871693a"
     },
     "core/persistence/base/errors.go": {
-      "hash": "bef3cf9723fb9880"
+      "hash": "64fe2d303b929fd3"
     },
     "core/persistence/base/migration.go": {
       "hash": "d63e3f2f91caaac2"
@@ -701,19 +722,19 @@
       "hash": "ff1c127a26d22091"
     },
     "core/persistence/base/registry_types.go": {
-      "hash": "67f457f7624df364"
+      "hash": "60ce51bc0fcd5572"
     },
     "core/persistence/base/types.go": {
-      "hash": "c415039f873dab69"
+      "hash": "284ecf1a35125e54"
     },
     "core/persistence/base/utils.go": {
       "hash": "d0985e1a50f40719"
     },
     "core/persistence/collection/base.go": {
-      "hash": "d7c2c15496f6562f"
+      "hash": "c9122fe9f9c3789f"
     },
     "core/persistence/collection/collection.go": {
-      "hash": "af04c8ee515344d7"
+      "hash": "bfe5a078a888144a"
     },
     "core/persistence/collection/errors.go": {
       "hash": "7f0f89ce0c96da79"
@@ -725,10 +746,10 @@
       "hash": "1d291cef43a6593e"
     },
     "core/persistence/collection/live_collections_test.go": {
-      "hash": "280d6059da2c8edc"
+      "hash": "734ba5bb76d5b1ac"
     },
     "core/persistence/collection/managed.go": {
-      "hash": "f3b5bd8162b0462c"
+      "hash": "834f7c091e79ea8e"
     },
     "core/persistence/collection/model_collection.go": {
       "hash": "e7628df9ffb98d21"
@@ -737,7 +758,10 @@
       "hash": "c3434752816edd3e"
     },
     "core/persistence/collection/schema_provider.go": {
-      "hash": "58befbf37347ead7"
+      "hash": "d090582cc4bc2f8c"
+    },
+    "core/persistence/collection/view.go": {
+      "hash": "9a35fc9581109120"
     },
     "core/persistence/events/bus.go": {
       "hash": "65fa1049d92e1dfd"
@@ -758,19 +782,19 @@
       "hash": "fc6a34726c6cba9a"
     },
     "core/persistence/orchestrator/orchestrator.go": {
-      "hash": "1b24a26f2a42882e"
+      "hash": "f6144803f2f0c0a3"
     },
     "core/persistence/persistence/base.go": {
-      "hash": "c43b2fe4e973b92e"
+      "hash": "46aa53d01d0d9222"
     },
     "core/persistence/persistence/errors.go": {
       "hash": "ff98ad2b3a6b13f4"
     },
     "core/persistence/persistence/events.go": {
-      "hash": "dcb96b3803f302bf"
+      "hash": "fd248b223b6b0639"
     },
     "core/persistence/persistence/managed.go": {
-      "hash": "90f7ceb593c7f3ff"
+      "hash": "f5bfb18d5e7f895e"
     },
     "core/persistence/persistence/persistence.go": {
       "hash": "0b64f26ae6f31224"
@@ -782,10 +806,10 @@
       "hash": "478464123e0b3530"
     },
     "core/persistence/registry/registry.go": {
-      "hash": "8dcf986b834f444b"
+      "hash": "1f93a6a311495bdb"
     },
     "core/persistence/registry/schema.go": {
-      "hash": "96545a0fd12be0fb"
+      "hash": "fd0bc8ba778bdc8d"
     },
     "core/persistence/registry/utils.go": {
       "hash": "422f0c04d08ea98e"
@@ -818,7 +842,7 @@
       "hash": "e3b82c32a7acb1c1"
     },
     "core/query/interactor.go": {
-      "hash": "880be7dbc7cf79a8"
+      "hash": "750b07336c023280"
     },
     "core/query/interface.go": {
       "hash": "69be423716912f82"
@@ -836,16 +860,16 @@
       "hash": "c64009f260a5130e"
     },
     "core/query/native/errors.go": {
-      "hash": "b2549bd49c6c212a"
+      "hash": "9dfe3317b51c2d2b"
     },
     "core/query/native/interactor.go": {
-      "hash": "0c36c8b0a588e5ce"
+      "hash": "7b28a3ebbb79b742"
     },
     "core/query/native/interactor_test.go": {
       "hash": "4f9efe26310711f9"
     },
     "core/query/native/types.go": {
-      "hash": "589c2faabcc36735"
+      "hash": "62758e57001d1479"
     },
     "core/query/parser/errors.go": {
       "hash": "06c1a95618eec3eb"
@@ -866,13 +890,13 @@
       "hash": "e52f846b907ebf42"
     },
     "core/query/schema.go": {
-      "hash": "b5c4ba228a1a0739"
+      "hash": "683273f92e19f9ea"
     },
     "core/query/utils.go": {
       "hash": "a4ed5cd4b10360bc"
     },
     "core/reflect/field_tag_map.go": {
-      "hash": "3341510ff96c5642",
+      "hash": "49ad555bc96f711f",
       "noteIds": [
         "397ju0"
       ]
@@ -881,7 +905,7 @@
       "hash": "01e13f2543d4d5ef"
     },
     "core/reflect/tags_registry.go": {
-      "hash": "e43fd733432365d4",
+      "hash": "5128a859aae0efc6",
       "noteIds": [
         "0ar5g0",
         "1k51l3",
@@ -1100,7 +1124,11 @@
       "hash": "f61859d505b17b9a"
     },
     "core/storage/storage_spec.go": {
-      "hash": "d903cace40c001c7"
+      "hash": "e585efbff6904689",
+      "noteIds": [
+        "jq3c65",
+        "qpt45v"
+      ]
     },
     "core/types/decimal/decimal.go": {
       "hash": "53966184706e0eac"
@@ -1222,6 +1250,9 @@
     "example/events/main.go": {
       "hash": "d648b8d5e995de59"
     },
+    "example/fts/main.go": {
+      "hash": "6a5e0d824ca1a1fa"
+    },
     "example/migration/main.go": {
       "hash": "04adf63e894a221e"
     },
@@ -1240,14 +1271,17 @@
     "example/rpc/rpc_test.go": {
       "hash": "67c04f7a550e2871"
     },
-    "packages/anansi/.sync-package.ts": {
-      "hash": "d945396255d7b176"
+    "example/views/main.go": {
+      "hash": "4a9c9b4fe9f8e4a8"
     },
     "packages/anansi/dist/index.cjs": {
-      "hash": "7b6b8bf432339d82"
+      "hash": "0b1adbafda22e74d"
     },
     "packages/anansi/dist/index.mjs": {
-      "hash": "3f8b46ea273e3613"
+      "hash": "e7ddf4cfd2a330bb"
+    },
+    "packages/anansi/scripts/sync-package.ts": {
+      "hash": "9ef2bf99a24ee2fd"
     },
     "packages/anansi/src/codec.ts": {
       "hash": "edd54804187732cd"
@@ -1256,7 +1290,7 @@
       "hash": "bf6222873f49eb6a"
     },
     "packages/anansi/src/index.ts": {
-      "hash": "8d8383d996b65ee3"
+      "hash": "4dfb74cac8d2c39b"
     },
     "packages/anansi/src/schema/compile.ts": {
       "hash": "110140987b4dc193"
@@ -1280,40 +1314,40 @@
       "hash": "7d4bf6f4d1fe2424"
     },
     "packages/anansi/src/validation/graph.ts": {
-      "hash": "62f471f9c67ec6b1"
+      "hash": "d5037c6218a7d37a"
     },
     "packages/anansi/src/validation/index.ts": {
-      "hash": "504b953c2b5ee468"
+      "hash": "612289cd214d63ff"
     },
     "packages/anansi/src/validation/nodes.ts": {
-      "hash": "37f8ee60132500d6"
+      "hash": "76945c4f5b8ed5f3"
     },
     "packages/anansi/src/validation/predicates.ts": {
-      "hash": "a9fb0f5c309ce9d9"
+      "hash": "32f520264eeb383d"
     },
     "packages/anansi/src/validation/schema-validator.ts": {
-      "hash": "4eb341201f023a11"
+      "hash": "7a9d820dd392ab9a"
     },
     "packages/anansi/src/validation/standard-schema.ts": {
-      "hash": "97b719989995f5ea"
+      "hash": "a374e151391141c1"
     },
     "packages/anansi/src/validation/types/hints.ts": {
       "hash": "a9b51366575a1041"
     },
     "packages/anansi/src/validation/types/index.ts": {
-      "hash": "7a0b0c3ed9fa401f"
+      "hash": "4acb91b1e2a04636"
     },
     "packages/anansi/src/validation/types/schema-definition.ts": {
-      "hash": "458ec8b0b08611a4"
+      "hash": "ecc480836fa99660"
     },
     "packages/anansi/src/validation/types/validator.ts": {
-      "hash": "5ea0fe9c3fe7b1e2"
+      "hash": "747fef62d9271721"
     },
     "packages/anansi/src/validation/utils.ts": {
-      "hash": "570657967d583045"
+      "hash": "cc9bb12e1fc10e18"
     },
     "packages/anansi/src/validation/validator.ts": {
-      "hash": "04ddd72455f01102"
+      "hash": "8b58f6af5aefe697"
     },
     "packages/anansi/src/wire/packet.ts": {
       "hash": "4acd20d720f860c7"
@@ -1348,6 +1382,9 @@
     "packages/anansi/test/parity.test.ts": {
       "hash": "58a95537fdcc3743"
     },
+    "packages/anansi/test/public-exports.test.ts": {
+      "hash": "4881a00396ee828e"
+    },
     "packages/anansi/test/record.regression.test.ts": {
       "hash": "6234473e3e21f2f8"
     },
@@ -1361,7 +1398,7 @@
       "hash": "895f89a985262fe0"
     },
     "packages/anansi/tsdown.config.ts": {
-      "hash": "7744d086d9246200"
+      "hash": "8045371eb38e82b1"
     },
     "skills/anansi/embed.go": {
       "hash": "c7b00f79a703c073"
@@ -1375,17 +1412,29 @@
     "sqlite/executor/utils.go": {
       "hash": "fb32ced7bd3925ad"
     },
+    "sqlite/fts_integration_test.go": {
+      "hash": "5a946ca2cb07bbe5"
+    },
+    "sqlite/helpers.go": {
+      "hash": "4002ef4aa2ae16fe"
+    },
+    "sqlite/helpers_test.go": {
+      "hash": "11cd7f6c5c0a474a"
+    },
+    "sqlite/materialized_views_test.go": {
+      "hash": "5e9543abfe1a3f0d"
+    },
     "sqlite/query/builder.go": {
-      "hash": "d7c3e98f3c6cb3bc"
+      "hash": "71364868c1d29511"
     },
     "sqlite/query/capabilities.go": {
-      "hash": "d5f2afa03e360c2b"
+      "hash": "a7dc5d114083929f"
     },
     "sqlite/query/capabilities_test.go": {
       "hash": "2397a9a097d0d594"
     },
     "sqlite/query/collection.go": {
-      "hash": "48ded7bbab0a8350"
+      "hash": "916dd479283fe99b"
     },
     "sqlite/query/convert.go": {
       "hash": "7b040da82bc470e9"
@@ -1394,22 +1443,28 @@
       "hash": "b1d4b9b4d2cf4ed6"
     },
     "sqlite/query/errors.go": {
-      "hash": "1f7a474f3b1c3335"
+      "hash": "a4761e614fe49922"
     },
     "sqlite/query/factory.go": {
-      "hash": "1259e81901217600"
+      "hash": "8d2da4caac2bff1b"
+    },
+    "sqlite/query/fts.go": {
+      "hash": "98301603616df5f8"
+    },
+    "sqlite/query/fts_test.go": {
+      "hash": "313007095679883c"
     },
     "sqlite/query/index.go": {
-      "hash": "6c8ee5ea6b277d62"
+      "hash": "d525368a5cf84814"
     },
     "sqlite/query/insert.go": {
       "hash": "2375f167a2916180"
     },
     "sqlite/query/select.go": {
-      "hash": "c2e03dabf4d66cba"
+      "hash": "5a1f5620e8fa2e6b"
     },
     "sqlite/query/types.go": {
-      "hash": "9c4255cd58cfcf67"
+      "hash": "8046fa8f80fa0972"
     },
     "sqlite/query/update.go": {
       "hash": "94a8afbf4c46d891"
@@ -1417,8 +1472,14 @@
     "sqlite/query/utils.go": {
       "hash": "fe2bf72a929021ff"
     },
+    "sqlite/query/view.go": {
+      "hash": "d83200a414b8ab21"
+    },
     "sqlite/types/types.go": {
       "hash": "f3e77339b5f62d3c"
+    },
+    "sqlite/views_integration_test.go": {
+      "hash": "8c5c2e5639c8c71f"
     },
     "tests/benchmark/pipeline_bench_test.go": {
       "hash": "fbbb168856f72f72"
@@ -1469,7 +1530,7 @@
       "hash": "8a6de2b71d1df60d"
     },
     "tests/integration/query/sqlite_capabilities_test.go": {
-      "hash": "deef2bf5d2cdaa80"
+      "hash": "50783e8a08e5338c"
     },
     "tests/integration/query/sqlite_partitioner_test.go": {
       "hash": "a6183a07587e86c6"
@@ -1622,7 +1683,7 @@
       "hash": "781bfd0e9cb4e7f4"
     },
     "tests/unit/persistence/collection_test.go": {
-      "hash": "823c19498f7842d7"
+      "hash": "82f05fda4b81b35d"
     },
     "tests/unit/persistence/model_collection_document_model_test.go": {
       "hash": "3e4176b7149ddc03"
@@ -1646,7 +1707,7 @@
       "hash": "8467c41d466e5616"
     },
     "tests/unit/persistence/registry_test.go": {
-      "hash": "d44ee90a0b015a2c"
+      "hash": "e31473fb9b963bca"
     },
     "tests/unit/query/builder_test.go": {
       "hash": "4b9bc05e7aa2fa15"
@@ -1667,7 +1728,7 @@
       "hash": "a7bf7e850287a95a"
     },
     "tests/unit/sqlite/mapper_test.go": {
-      "hash": "6e91908852ac2d49"
+      "hash": "95d1ed9949568b4e"
     },
     "tests/unit/sqlite/sql_injection_test.go": {
       "hash": "e32e89f012fa1666"

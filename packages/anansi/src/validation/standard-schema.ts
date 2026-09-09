@@ -1,7 +1,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
-import { DocumentValidator } from "./validator";
-import type { SchemaDefinition } from "./types/schema-definition";
-import type { PredicateMap, ValidationConfig } from "./types/validator";
+import { DocumentValidator } from "./validator.ts";
+import type { SchemaDefinition } from "./types/schema-definition.ts";
+import type { PredicateMap, ValidationConfig } from "./types/validator.ts";
 
 /**
  * A Standard Schema V1 compatible wrapper for the DocumentValidator.

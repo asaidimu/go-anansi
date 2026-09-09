@@ -6,6 +6,7 @@
   "main": "./dist/index.cjs",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.mts",
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": {
@@ -14,7 +15,8 @@
       },
       "import": "./dist/index.mjs",
       "require": "./dist/index.cjs"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist"
@@ -23,9 +25,10 @@
     "ci": "bun install --frozen-lockfile",
     "build": "tsdown",
     "test": "bun test",
-    "clean": "[ -e ./dist ] && rm -rf ./dist || echo No dist",
-    "prebuild": "bun clean",
-    "postbuild": "cp README.md ./dist && bun run .sync-package.ts && mv out.package.json ./dist/package.json",
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "prebuild": "bun run clean",
+    "postbuild": "bun run ./tooling/sync-package.ts",
     "prepublishOnly": "bun run build"
   },
   "keywords": [

@@ -11,10 +11,10 @@
  *   const loose     = await validator.validateLoose(document);
  */
 
-import type { SchemaDefinition } from "./types/schema-definition";
-import type { Issue, PredicateMap, ValidationConfig } from "./types/validator";
-import { defaultValidationConfig } from "./types/validator";
-import { ValidationGraph, BuildContext } from "./graph";
+import type { SchemaDefinition } from "./types/schema-definition.ts";
+import type { Issue, PredicateMap, ValidationConfig } from "./types/validator.ts";
+import { defaultValidationConfig } from "./types/validator.ts";
+import { ValidationGraph, BuildContext } from "./graph.ts";
 
 export type { Issue, PredicateMap, ValidationConfig };
 export { defaultValidationConfig };

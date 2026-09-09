@@ -22,13 +22,13 @@ import {
   SpecificityTopLevel,
   toConstraintMap,
   toValidatorConstraint,
-} from "./types/validator";
+} from "./types/validator.ts";
 
 import {
   buildPathAndParts,
   getNodeValue,
   resolveConstraintFieldPaths,
-} from "./utils";
+} from "./utils.ts";
 
 import type {
   FieldDefinition,
@@ -36,7 +36,7 @@ import type {
   NestedSchemaDefinition,
   SchemaDefinition,
   SchemaReference,
-} from "./types/schema-definition";
+} from "./types/schema-definition.ts";
 
 import {
   type ValidationNode,
@@ -53,7 +53,7 @@ import {
   TypeCheckNode,
   UnexpectedFieldsNode,
   UnionValidationNode,
-} from "./nodes";
+} from "./nodes.ts";
 
 // ---------------------------------------------------------------------------
 // DFS state constants

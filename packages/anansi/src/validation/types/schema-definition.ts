@@ -7,7 +7,7 @@
  */
 
 import type { LogicalOperator } from "@asaidimu/query";
-import type { InputHint, SchemaHint } from "./hints";
+import type { InputHint, SchemaHint } from "./hints.ts";
 
 // ============================================================================
 // Primitives & Enums

@@ -11,15 +11,16 @@ cd "$(dirname "$0")/../packages/anansi"
 bun -e "
 import { readFileSync, writeFileSync } from 'node:fs';
 const v = '${VERSION}';
-for (const f of ['package.json', 'dist.package.json']) {
-  const j = JSON.parse(readFileSync(f, 'utf8'));
-  j.version = v;
-  writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
-  console.log('stamped', f, '→', v);
-}
+const f = 'package.json';
+const j = JSON.parse(readFileSync(f, 'utf8'));
+j.version = v;
+writeFileSync(f, JSON.stringify(j, null, 2) + '\n');
+console.log('stamped', f, '→', v);
 "
+# dist/package.json is derived from package.json at build time (postbuild),
+# so no second manifest needs stamping.
 
-# Fresh build so dist/package.json (via out.package.json) carries the version.
+# Fresh build so dist/package.json carries the version.
 bun run clean || true
 bun install --frozen-lockfile
 bun run build

@@ -19,7 +19,7 @@ import type {
   ConstraintRule as SchemaConstraintRule,
   ConstraintGroup as SchemaConstraintGroup,
   Constraint as SchemaConstraint,
-} from "./schema-definition";
+} from "./schema-definition.ts";
 
 // Re-export the schema definition types so the rest of the validator
 // imports from a single location.

@@ -1,6 +1,6 @@
 // @asaidimu/anansi — self-contained TypeScript implementation of the
 // Anansi binary wire format: schema compile/link/addressing, packet codecs,
-// and (planned) document validation.
+// transforms, validation, and migrations.
 
 export * from "./schema/types.ts";
 export { Compiler, buildEnum } from "./schema/compile.ts";
@@ -56,18 +56,11 @@ export type { EngineState, DryRunResult } from "./engine.ts";
 export { deepMerge, sha256 } from "./utils.ts";
 
 // Validation (adopted validator): documents against schemas, and schemas
-// against the meta-schema.
-export {
-  DocumentValidator,
-  SchemaValidator,
-  metaSchemaPredicateMap,
-  defaultValidationConfig,
-} from "./validation/index.ts";
-export type {
-  Issue,
-  PredicateMap,
-  ValidationConfig,
-} from "./validation/index.ts";
+// against the meta-schema. Re-exported wholesale so additions to
+// ./validation/index.ts become public automatically — do not cherry-pick
+// here, a forgotten entry silently drops the export from the published
+// bundle (previously lost StandardDocumentValidator).
+export * from "./validation/index.ts";
 
 // Transforms (compression / integrity / encryption) — async, browser-safe.
 export {

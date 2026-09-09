@@ -5,7 +5,7 @@
  * Mirrors the Go utilities in validator.go and the `utils` package.
  */
 
-import type { ValidationContext } from "./types";
+import type { ValidationContext } from "./types/index.ts";
 
 // ---------------------------------------------------------------------------
 // Path helpers
