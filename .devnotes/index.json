@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-09-09T12:14:43.889676458Z",
+  "generatedAt": "2026-09-10T07:39:17.046827098Z",
   "root": ".",
   "notes": {
     "0ar5g0": {
@@ -166,6 +166,28 @@
         "endCol": 3
       },
       "hash": "521f53443e9970c1"
+    },
+    "physical-name-truncation-collide-496cab49": {
+      "id": "physical-name-truncation-collide-496cab49",
+      "category": "issue",
+      "status": "resolved",
+      "priority": "P1",
+      "tags": [
+        "persistence",
+        "views",
+        "data-corruption"
+      ],
+      "title": "Physical-name truncation collides distinct collections/views onto one table",
+      "body": "\ngeneratePhysicalName caps physical table names at 24 chars, truncating the sanitized logical name to ~18 chars. Distinct collections/views sharing a name prefix + version (e.g. e2e_view_snap-\u003cts\u003e-\u003crand\u003e, whose timestamp prefix is stable for days and whose random suffix is truncated off) resolve to the SAME physical table, and CTAS CREATE TABLE IF NOT EXISTS then silently reuses the stale table: reads serve another collection's rows with no error.\n\nReproduced from hestia E2E: materialized snapshots repeatedly served a 3-row table from an earlier run while their base had 2 rows; green only after a server restart wiped :memory:.\n\nFix direction: suffix physical names with a uniqueness component (short hash of the full logical name), and/or fail CreateView/DropCollection loudly when the physical table already belongs to another entry instead of reusing it.\nCalculate available space for truncation\n",
+      "assignee": "opencode",
+      "location": {
+        "file": "core/persistence/registry/utils.go",
+        "startLine": 42,
+        "startCol": 3,
+        "endLine": 51,
+        "endCol": 3
+      },
+      "hash": "104716dd64ca6041"
     },
     "qpt45v": {
       "id": "qpt45v",
@@ -812,7 +834,10 @@
       "hash": "fd0bc8ba778bdc8d"
     },
     "core/persistence/registry/utils.go": {
-      "hash": "422f0c04d08ea98e"
+      "hash": "e1dbdfeb6e2e11ba",
+      "noteIds": [
+        "physical-name-truncation-collide-496cab49"
+      ]
     },
     "core/persistence/transaction/transaction.go": {
       "hash": "7611fbe2830a203f"

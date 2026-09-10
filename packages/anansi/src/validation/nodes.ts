@@ -325,8 +325,49 @@ export class EnumValidationNode extends BaseNode implements ValidationNode {
 // ArrayValidationNode
 // ---------------------------------------------------------------------------
 
-export class ArrayValidationNode extends BaseNode implements ValidationNode {
-  readonly graph: ValidationGraph | null;
+// ---------------------------------------------------------------------------
+// UnresolvableTypeNode
+// ---------------------------------------------------------------------------
+
+/**
+ * Fail-closed placeholder for array/record items whose named schema declares
+ * no usable type (no `type`, no `fields`, no forwardable `schema` reference).
+ * Every present item is rejected with TYPE_MISMATCH so such schemas can never
+ * silently accept malformed data. Mirrors Go's zero-type item check.
+ */
+export class UnresolvableTypeNode extends BaseNode implements ValidationNode {
+  private readonly detail: string;
+
+  constructor(
+    id: number,
+    path: string,
+    pathParts: string[],
+    detail: string,
+    deps: number[] = [],
+  ) {
+    super(id, path, pathParts, deps);
+    this.detail = detail;
+  }
+
+  async execute(ctx: ValidationContext): Promise<NodeResult> {
+    const [value, exists] = getNodeValue(ctx, this.pathParts);
+    if (!exists || value === undefined) return SUCCESS;
+
+    return failNode([
+      createIssue(
+        "TYPE_MISMATCH",
+        `Cannot validate item: ${this.detail}`,
+        this.path,
+      ),
+    ]);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// ArrayValidationNode
+// ---------------------------------------------------------------------------
+
+export class ArrayValidationNode extends BaseNode implements ValidationNode {  readonly graph: ValidationGraph | null;
 
   constructor(
     id: number,

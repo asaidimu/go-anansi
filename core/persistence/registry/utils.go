@@ -2,6 +2,7 @@ package registry
 
 import (
 	"fmt"
+	"hash/fnv"
 	"regexp"
 	"strings"
 
@@ -39,26 +40,51 @@ func generatePhysicalName(s *schema.Schema) (string, error) {
 		sanitizedName = "t_" + sanitizedName
 	}
 
+	// @note #physical-name-truncation-collide-496cab49 issue resolved P1 #persistence,#views,#data-corruption : Physical-name truncation collides distinct collections/views onto one table
+	// @assignee opencode
+	// Fixed: generatePhysicalName now suffixes truncated names with 8 hex chars of FNV-1a over the raw name+version, so distinct logical names can no longer collide on one physical table. Short names keep the legacy name_version form byte-for-byte. Regression tests in core/persistence/registry/utils_test.go.
+	//
+	// generatePhysicalName caps physical table names at 24 chars, truncating the sanitized logical name to ~18 chars. Distinct collections/views sharing a name prefix + version (e.g. e2e_view_snap-<ts>-<rand>, whose timestamp prefix is stable for days and whose random suffix is truncated off) resolve to the SAME physical table, and CTAS CREATE TABLE IF NOT EXISTS then silently reuses the stale table: reads serve another collection's rows with no error.
+	//
+	// Reproduced from hestia E2E: materialized snapshots repeatedly served a 3-row table from an earlier run while their base had 2 rows; green only after a server restart wiped :memory:.
+	//
+	// Fix direction: suffix physical names with a uniqueness component (short hash of the full logical name), and/or fail CreateView/DropCollection loudly when the physical table already belongs to another entry instead of reusing it.
 	// Calculate available space for truncation
 	const maxLength = 24
 	const separator = "_"
+	// hashSuffixLength reserves room for a short FNV-1a hash of the full
+	// logical identity. Truncating the sanitized name alone lets distinct
+	// collections/views sharing a prefix resolve to the SAME physical table
+	// (see #physical-name-truncation-collide-496cab49); the hash suffix keeps
+	// them distinct while staying within the length limit.
+	const hashSuffixLength = 8
 	separatorLength := len(separator)
 	versionLength := len(sanitizedVersion)
 
-	// Reserve space for version and separator
-	maxNameLength := maxLength - versionLength - separatorLength
+	// Reserve space for version, separators, and the hash suffix
+	maxNameLength := maxLength - versionLength - separatorLength - hashSuffixLength - separatorLength
 
 	if maxNameLength < 1 {
 		return "", common.NewSystemError("ERR_REGISTRY_VERSION_TOO_LONG", fmt.Sprintf("version too long to fit in %d character limit", maxLength))
 	}
 
-	// Truncate name if necessary
-	if len(sanitizedName) > maxNameLength {
-		sanitizedName = sanitizedName[:maxNameLength]
+	var physicalName string
+	if len(sanitizedName) <= maxNameLength {
+		// Fits with room to spare: keep the legacy name_version form
+		// byte-for-byte so existing physical tables keep resolving.
+		physicalName = fmt.Sprintf("%s%s%s", sanitizedName, separator, sanitizedVersion)
+	} else {
+		// Truncate the name and suffix a hash of the full logical identity
+		// (raw name + version, pre-sanitization, so names that sanitize
+		// identically still diverge). Deterministic: same input always maps
+		// to the same physical table.
+		truncated := strings.TrimRight(sanitizedName[:maxNameLength], "_")
+		if truncated == "" {
+			truncated = "t"
+		}
+		suffix := physicalNameHash(s.Name, versionStr)
+		physicalName = fmt.Sprintf("%s%s%s%s%s", truncated, separator, suffix, separator, sanitizedVersion)
 	}
-
-	// Combine name and version
-	physicalName := fmt.Sprintf("%s%s%s", sanitizedName, separator, sanitizedVersion)
 
 	// Final validation
 	if len(physicalName) > maxLength {
@@ -66,6 +92,17 @@ func generatePhysicalName(s *schema.Schema) (string, error) {
 	}
 
 	return physicalName, nil
+}
+
+// physicalNameHash returns 8 lowercase hex chars of FNV-1a over the raw
+// logical name and version. FNV is deterministic across runs and platforms,
+// unlike salted hashes, so registry lookups stay stable.
+func physicalNameHash(name, version string) string {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(name))
+	_, _ = h.Write([]byte{0})
+	_, _ = h.Write([]byte(version))
+	return fmt.Sprintf("%08x", h.Sum32())
 }
 
 // sanitizeForDatabase removes invalid characters and converts to lowercase

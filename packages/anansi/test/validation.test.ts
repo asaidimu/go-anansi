@@ -106,6 +106,98 @@ describe("nullable semantics (drift fix)", () => {
   });
 });
 
+describe("array-item validation (Event/Participant gap)", () => {
+  const build = (fields: Record<string, unknown>, schemas?: Record<string, unknown>) =>
+    DocumentValidator.create(
+      { name: "Event", version: "1.0.0", fields, schemas } as never,
+      metaSchemaPredicateMap,
+    );
+
+  const participant = {
+    name: "Participant",
+    fields: {
+      p_type: { name: "typeId", type: "string", required: true },
+      p_role: { name: "roleId", type: "string", required: true },
+    },
+  };
+  const participantsField = {
+    name: "participants",
+    type: "array",
+    schema: { id: "Participant" },
+  };
+
+  it("flags required fields missing inside array items", async () => {
+    const v = await build(
+      { f_parts: participantsField },
+      { Participant: participant },
+    );
+    expect(
+      await v.validate({ participants: [{ typeId: "t", roleId: "r" }] }),
+    ).toEqual([]);
+
+    const issues = await v.validate({ participants: [{}] });
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues.map((i) => i.code)).toContain("REQUIRED_FIELD_MISSING");
+    expect(issues.map((i) => i.path)).toContain("participants[0].typeId");
+    expect(issues.map((i) => i.path)).toContain("participants[0].roleId");
+  });
+
+  it("validates union items declared without an explicit type", async () => {
+    const schemas = {
+      PartUnion: { name: "PartUnion", schema: [{ id: "PA" }, { id: "PB" }] },
+      PA: { name: "PA", fields: { a_x: { name: "x", type: "string", required: true } } },
+      PB: { name: "PB", fields: { b_y: { name: "y", type: "string", required: true } } },
+    };
+    const v = await build(
+      { f_parts: { name: "participants", type: "array", schema: { id: "PartUnion" } } },
+      schemas,
+    );
+
+    // Malformed items must be detected, not silently accepted.
+    const bad = await v.validate({ participants: [{}] });
+    expect(bad.length).toBeGreaterThan(0);
+    expect(bad.map((i) => i.code)).toContain("UNION_MISMATCH");
+
+    // Items matching a variant still pass.
+    expect(await v.validate({ participants: [{ x: "hi" }] })).toEqual([]);
+  });
+
+  it("validates named-enum array items instead of throwing at build", async () => {
+    const v = await build(
+      { f_tags: { name: "tags", type: "array", schema: { id: "Color" } } },
+      { Color: { name: "Color", type: "enum", values: ["red", "green"] } },
+    );
+    expect(await v.validate({ tags: ["red", "green"] })).toEqual([]);
+
+    const issues = await v.validate({ tags: ["red", "blue"] });
+    expect(issues.length).toBe(1);
+    expect(issues[0]?.code).toBe("ENUM_VIOLATION");
+    expect(issues[0]?.path).toBe("tags[1]");
+  });
+
+  it("fail-closes array items whose schema declares no usable type", async () => {
+    const v = await build(
+      { f_parts: { name: "participants", type: "array", schema: { id: "Empty" } } },
+      { Empty: { name: "Empty" } },
+    );
+    const issues = await v.validate({ participants: [{}] });
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues[0]?.code).toBe("TYPE_MISMATCH");
+    expect(issues[0]?.path).toBe("participants[0]");
+  });
+
+  it("validates scalar-alias array items", async () => {
+    const v = await build(
+      { f_tags: { name: "tags", type: "array", schema: { id: "StrAlias" } } },
+      { StrAlias: { name: "StrAlias", type: "string" } },
+    );
+    expect(await v.validate({ tags: ["a", "b"] })).toEqual([]);
+    const issues = await v.validate({ tags: ["a", 1] });
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues[0]?.path).toBe("tags[1]");
+  });
+});
+
 describe("index predicates resolve paths, not ids (drift fix)", () => {
   // Fields are keyed by UUID-ish IDs in root.fields; references use NAMES.
   const schema = {

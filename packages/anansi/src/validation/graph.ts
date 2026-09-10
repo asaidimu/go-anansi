@@ -53,6 +53,7 @@ import {
   TypeCheckNode,
   UnexpectedFieldsNode,
   UnionValidationNode,
+  UnresolvableTypeNode,
 } from "./nodes.ts";
 
 // ---------------------------------------------------------------------------
@@ -1057,6 +1058,57 @@ export class ValidationGraph {
         }
 
         const effectiveType = getNestedSchemaEffectiveType(nestedDef);
+
+        // Named enum item schema: carry the value set directly instead of
+        // forwarding a (nonexistent) inner schema reference. Mirrors Go's
+        // ItemEnum retention for value arrays.
+        if (effectiveType === "enum") {
+          return makeNode(
+            this.createEnumItemSubGraph(nestedDef, schemaRef.id, fieldPath),
+          );
+        }
+
+        // Typeless item schema (no `type`, no `fields`): the only structural
+        // signal is the inner `schema` reference itself.
+        if (
+          effectiveType === "unknown" &&
+          !("type" in nestedDef && (nestedDef as { type?: unknown }).type)
+        ) {
+          const innerSchema =
+            "schema" in nestedDef
+              ? (nestedDef as { schema?: unknown }).schema
+              : undefined;
+          const innerFsr = FieldSchemaReference.fromFieldSchema(innerSchema as any);
+          if (innerFsr.isMultiple()) {
+            // A bare multi-ref item schema is a union of variants declared
+            // structurally. Validate each item against every variant so
+            // malformed items are reported instead of silently accepted.
+            const tempRootField: FieldDefinition = {
+              name: "item",
+              type: "union",
+              schema: innerFsr.asMultiple(),
+            };
+            const rawDefault =
+              "default" in nestedDef ? (nestedDef as any).default : undefined;
+            if (rawDefault !== undefined)
+              (tempRootField as any).default = rawDefault;
+            const subGraph = await this.createSubGraph(
+              "item",
+              tempRootField,
+              fieldPath,
+              topLevelSchema,
+              buildCtx,
+              true,
+              false,
+            );
+            return makeNode(subGraph);
+          }
+          // No usable inner schema: fail closed (Go parity — Go's zero-type
+          // item check rejects every item) rather than pass items silently.
+          return makeNode(
+            this.createUnresolvableItemSubGraph(schemaRef.id),
+          );
+        }
         const skipUnexpected =
           effectiveType === "composite" || effectiveType === "union";
 
@@ -1571,6 +1623,66 @@ export class ValidationGraph {
   }
 
   // ── Sub-graph factory ─────────────────────────────────────────────────────
+
+  /**
+   * Builds an item subgraph for a named enum schema from its declared values.
+   * Named enum schemas carry no inner `schema` reference, so the value set is
+   * used directly. Mirrors Go's ItemEnum retention for value arrays.
+   */
+  private createEnumItemSubGraph(
+    nestedDef: NestedSchemaDefinition,
+    schemaID: string,
+    fieldPath: string,
+  ): ValidationGraph {
+    const values = (nestedDef as { values?: Array<string | number> }).values;
+    if (!values || values.length === 0) {
+      throw new Error(
+        `Enum schema '${schemaID}' has no values defined at path '${fieldPath}'`,
+      );
+    }
+    const nestedType = (nestedDef as { type?: string }).type;
+    const expectNumeric =
+      nestedType === "number" ||
+      nestedType === "integer" ||
+      nestedType === "decimal";
+    const { lookup, complex } = buildEnumLookup(values);
+
+    const subGraph = new ValidationGraph();
+    subGraph.addNode(
+      new EnumValidationNode(
+        subGraph.buildNodeID(),
+        "item",
+        ["item"],
+        lookup,
+        complex,
+        expectNumeric,
+        [],
+      ),
+    );
+    subGraph.finalize();
+    return subGraph;
+  }
+
+  /**
+   * Builds a fail-closed item subgraph for an item schema that declares no
+   * usable type. Every present item is rejected with TYPE_MISMATCH so that
+   * unresolvable item schemas can never silently accept malformed data.
+   * Mirrors Go's zero-type item check, which rejects every item.
+   */
+  private createUnresolvableItemSubGraph(schemaID: string): ValidationGraph {
+    const subGraph = new ValidationGraph();
+    subGraph.addNode(
+      new UnresolvableTypeNode(
+        subGraph.buildNodeID(),
+        "item",
+        ["item"],
+        `item schema '${schemaID}' declares no type`,
+        [],
+      ),
+    );
+    subGraph.finalize();
+    return subGraph;
+  }
 
   /**
    * Creates a standalone ValidationGraph for a single field, used by array /
