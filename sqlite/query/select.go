@@ -18,7 +18,71 @@ type SQLiteSelectProjection struct {
         aggregations []query.AggregationConfiguration
         distinct     *query.QueryDistinctConfig
         schemas      map[string]*definition.Schema
+        // joins carries the query's join configurations so the default
+        // fallback can honor per-join Projection settings
+        // (#join-projection-ignored). Nil when the query has no joins or
+        // the projection is only used for filter rendering.
+        joins []query.JoinConfiguration
         total        bool
+}
+
+// joinColumnRestriction limits which columns of one joined schema the
+// default SELECT fallback emits. It is built from a join's Projection:
+//   - include (non-empty): emit only the listed columns (hasInclude).
+//     The value is an output-alias override ("" = default alias).
+//   - exclude: drop the listed columns from the select-all default.
+//
+// Include/Exclude names may be bare ("amount") or table-qualified
+// ("orders.amount"); both normalize to the bare column name. Join-level
+// Computed entries cannot be rendered by the fallback and are ignored
+// (a projection with only Computed entries yields no restriction).
+type joinColumnRestriction struct {
+        include    map[string]string
+        exclude    map[string]bool
+        hasInclude bool
+}
+
+// joinColumnRestrictions indexes per-join column restrictions by the schema
+// key buildSelectTree registers the join's schema under (target alias when
+// set, physical name otherwise).
+func joinColumnRestrictions(joins []query.JoinConfiguration) map[string]*joinColumnRestriction {
+        out := make(map[string]*joinColumnRestriction)
+        for _, j := range joins {
+                if j.Projection == nil {
+                        continue
+                }
+                key := j.Target.Name
+                if j.Target.Alias != nil {
+                        key = *j.Target.Alias
+                }
+                r := &joinColumnRestriction{
+                        include: make(map[string]string),
+                        exclude: make(map[string]bool),
+                }
+                for _, f := range j.Projection.Include {
+                        name := f.Name
+                        if idx := strings.LastIndex(name, "."); idx >= 0 {
+                                name = name[idx+1:]
+                        }
+                        outAlias := ""
+                        if f.Alias != nil {
+                                outAlias = *f.Alias
+                        }
+                        r.include[name] = outAlias
+                }
+                r.hasInclude = len(r.include) > 0
+                for _, f := range j.Projection.Exclude {
+                        name := f.Name
+                        if idx := strings.LastIndex(name, "."); idx >= 0 {
+                                name = name[idx+1:]
+                        }
+                        r.exclude[name] = true
+                }
+                if r.hasInclude || len(r.exclude) > 0 {
+                        out[key] = r
+                }
+        }
+        return out
 }
 
 func (p *SQLiteSelectProjection) Value() (string, []any, error) {
@@ -148,6 +212,17 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
                 threshold = 1
         }
 
+        // @note #join-projection-ignored status resolved issue priority=P1 : Join-level WithProjection is silently ignored
+        // Join-level WithProjection was silently ignored: when the main query
+        // had no explicit projection, the default fallback (this block)
+        // selected ALL columns from ALL schemas, never consulting
+        // JoinConfiguration.Projection.
+        //
+        // Fixed: SQLiteSelectProjection now carries q.Joins and the fallback
+        // applies per-join restrictions via joinColumnRestrictions
+        // (include/exclude/alias honored; joins without a projection keep
+        // select-all). Covered by TestSelectJoin_JoinLevelProjection* and
+        // TestJoin_JoinLevelProjection_LimitsColumns.
         if len(parts) == threshold {
                 if len(p.schemas) > 0 {
                         var aliasedFields []string
@@ -166,18 +241,46 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
                         // with the table alias to avoid ambiguity.
                         qualifyColumns := len(p.schemas) > 1
 
+                        // Per-join column restrictions from JoinConfiguration
+                        // .Projection (#join-projection-ignored). A join with
+                        // an explicit projection contributes only its
+                        // included (minus excluded) columns; joins without
+                        // one keep the historical select-all behavior.
+                        restrictions := joinColumnRestrictions(p.joins)
+
                         for _, alias := range aliases {
                                 schemaDef := p.schemas[alias]
                                 if schemaDef != nil && len(schemaDef.Fields) > 0 {
                 for _, name := range schemaDef.FieldNames() {
                                 _, field := schemaDef.FindField(name)
+                                // Apply the join-level restriction, if any.
+                                outAlias := ""
+                                if r, ok := restrictions[alias]; ok {
+                                        if r.hasInclude {
+                                                a, ok := r.include[string(field.Name)]
+                                                if !ok {
+                                                        continue
+                                                }
+                                                outAlias = a
+                                        } else if r.exclude[string(field.Name)] {
+                                                continue
+                                        }
+                                }
                                 var resolvedField, fieldAlias string
                                 if qualifyColumns {
                                         resolvedField = fmt.Sprintf("%s.%s", quoteIdentifier(alias), quoteIdentifier(string(field.Name)))
-                                        fieldAlias = fmt.Sprintf("'%s.%s'", alias, field.Name)
+                                        if outAlias != "" {
+                                                fieldAlias = quoteIdentifier(outAlias)
+                                        } else {
+                                                fieldAlias = fmt.Sprintf("'%s.%s'", alias, field.Name)
+                                        }
                                 } else {
                                         resolvedField = quoteIdentifier(string(field.Name))
-                                        fieldAlias = fmt.Sprintf("'%s'", field.Name)
+                                        if outAlias != "" {
+                                                fieldAlias = quoteIdentifier(outAlias)
+                                        } else {
+                                                fieldAlias = fmt.Sprintf("'%s'", field.Name)
+                                        }
                                 }
                                 aliasedFields = append(aliasedFields, fmt.Sprintf("%s AS %s", resolvedField, fieldAlias))
                                         }
@@ -1179,6 +1282,7 @@ func (f *sqliteFactory) buildSelectTree(q *query.Query) (SQLNode, error) {
                 aggregations: q.Aggregations,
                 distinct:     q.Distinct,
                 schemas:      f.schemas,
+                joins:        q.Joins,
                 total: q.Pagination != nil && q.Pagination.IncludeTotal != nil && *q.Pagination.IncludeTotal,
         }
 

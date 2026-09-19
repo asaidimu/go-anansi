@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-09-19T11:11:33.690665169Z",
+  "generatedAt": "2026-09-19T13:05:15.101195276Z",
   "root": ".",
   "notes": {
     "0ar5g0": {
@@ -167,6 +167,21 @@
       },
       "hash": "b240949f136fd871"
     },
+    "join-projection-ignored": {
+      "id": "join-projection-ignored",
+      "category": "status",
+      "status": "resolved",
+      "title": "Join-level WithProjection is silently ignored",
+      "body": "had no explicit projection, the default fallback (this block)\nselected ALL columns from ALL schemas, never consulting\nJoinConfiguration.Projection.\n\nFixed: SQLiteSelectProjection now carries q.Joins and the fallback\napplies per-join restrictions via joinColumnRestrictions\n(include/exclude/alias honored; joins without a projection keep\nselect-all). Covered by TestSelectJoin_JoinLevelProjection* and\nTestJoin_JoinLevelProjection_LimitsColumns.\n",
+      "location": {
+        "file": "sqlite/query/select.go",
+        "startLine": 214,
+        "startCol": 3,
+        "endLine": 224,
+        "endCol": 3
+      },
+      "hash": "5a1712a025bace25"
+    },
     "jq3c65": {
       "id": "jq3c65",
       "category": "todo",
@@ -181,6 +196,21 @@
         "endCol": 3
       },
       "hash": "521f53443e9970c1"
+    },
+    "metadata-ambiguous-on-joins": {
+      "id": "metadata-ambiguous-on-joins",
+      "category": "status",
+      "status": "resolved",
+      "title": "ensureMetadataProjection injects unqualified _metadata_",
+      "body": "include, which SQLite rejects with \"ambiguous column name\"\nwhen joins put _metadata_ on multiple tables.\n\nFixed via option (b) at the SQL layer instead of here:\nsqliteFactory.resolveInCurrentScope now qualifies any bare\nfield present on multiple tables with the primary target\n(see primaryTarget in sqlite/query/factory.go). This fixes\nthe injection path and every other bare colliding reference\n(filters, sorts) uniformly. Covered by\nTestSelectJoin_MetadataDisambiguated and\nTestJoin_WithProjection_NoAmbiguousMetadata.\n",
+      "location": {
+        "file": "core/persistence/collection/managed.go",
+        "startLine": 243,
+        "startCol": 3,
+        "endLine": 255,
+        "endCol": 3
+      },
+      "hash": "d158f1119714c34f"
     },
     "physical-name-truncation-collide-496cab49": {
       "id": "physical-name-truncation-collide-496cab49",
@@ -789,7 +819,10 @@
       "hash": "734ba5bb76d5b1ac"
     },
     "core/persistence/collection/managed.go": {
-      "hash": "834f7c091e79ea8e"
+      "hash": "694085567428cb7e",
+      "noteIds": [
+        "metadata-ambiguous-on-joins"
+      ]
     },
     "core/persistence/collection/model_collection.go": {
       "hash": "e7628df9ffb98d21"
@@ -1492,7 +1525,7 @@
       "hash": "a4761e614fe49922"
     },
     "sqlite/query/factory.go": {
-      "hash": "8d2da4caac2bff1b"
+      "hash": "98c011c25c7a2802"
     },
     "sqlite/query/fts.go": {
       "hash": "98301603616df5f8"
@@ -1507,7 +1540,10 @@
       "hash": "2375f167a2916180"
     },
     "sqlite/query/select.go": {
-      "hash": "8e1cdea4f5ef1a3b"
+      "hash": "05987056acd61a72",
+      "noteIds": [
+        "join-projection-ignored"
+      ]
     },
     "sqlite/query/types.go": {
       "hash": "8046fa8f80fa0972"
@@ -1555,7 +1591,7 @@
       "hash": "d77bc4584957c494"
     },
     "tests/integration/persistence/join_crud_test.go": {
-      "hash": "80ec36949ce04ba0"
+      "hash": "0550700bb3d45e3a"
     },
     "tests/integration/persistence/manual_goroutine_transaction_test.go": {
       "hash": "081a7a448f2d94fc"
@@ -1774,7 +1810,7 @@
       "hash": "4945e9a3ca4564a1"
     },
     "tests/unit/sqlite/builder_test.go": {
-      "hash": "b59d31a3bcf0eab0"
+      "hash": "8649558426a09170"
     },
     "tests/unit/sqlite/mapper_test.go": {
       "hash": "95d1ed9949568b4e"

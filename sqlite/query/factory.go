@@ -2,6 +2,7 @@ package query
 
 import (
         "fmt"
+        "sort"
         "strings"
 
         "github.com/asaidimu/go-anansi/v8/core/schema/definition"
@@ -13,6 +14,14 @@ type sqliteFactory struct {
         // Local state for this scope
         aliases map[string]string
         schemas map[string]*definition.Schema
+
+        // primaryTarget is the schema key (alias when set, physical name
+        // otherwise) of the query's primary FROM target. It is captured on
+        // the first addSchema call — buildSelectTree always registers the
+        // main target before joins — so colliding bare column references
+        // (e.g. _metadata_ present on every table) resolve deterministically
+        // to the primary table instead of raising "ambiguous column name".
+        primaryTarget string
 
         // Shared state across all scopes (for parameter numbering)
         globalParamCounter *int
@@ -72,6 +81,11 @@ func (f *sqliteFactory) addAlias(original, alias string) {
 // addSchema registers a schema in the current scope.
 func (f *sqliteFactory) addSchema(name string, schemaDef *definition.Schema) {
         f.schemas[name] = schemaDef
+        // The first registered schema is the primary FROM target
+        // (buildSelectTree registers q.Target before any joins).
+        if f.primaryTarget == "" {
+                f.primaryTarget = name
+        }
 }
 
 // primaryTargetName returns the name that the query's primary FROM target
@@ -190,14 +204,35 @@ func (f *sqliteFactory) resolveFieldReference(fieldRef string, schemas map[strin
 }
 
 // resolveInCurrentScope attempts to resolve a field in the current scope only.
+//
+// A bare field that exists on more than one table in scope (e.g. the
+// _metadata_ system column present on every collection) is qualified with
+// the primary target instead of being emitted bare, which SQLite would
+// reject with "ambiguous column name". Primary-wins is deterministic;
+// previously the qualify=true path returned whichever holder the map
+// iteration happened to visit first.
 func (f *sqliteFactory) resolveInCurrentScope(fieldName string, schemas map[string]*definition.Schema, qualify ...bool) (string, error) {
-        if qualify != nil && qualify[0] {
-                for alias, schemaDef := range schemas {
-                        if _, fieldDef := schemaDef.FindField(fieldName); fieldDef != nil {
-                                // Return table-qualified name: "users"."id"
-                                return fmt.Sprintf("%s.%s", quoteIdentifier(alias), quoteIdentifier(fieldName)), nil
-                        }
+        holders := make([]string, 0, 1)
+        for alias, schemaDef := range schemas {
+                if schemaDef == nil {
+                        continue
                 }
+                if _, fieldDef := schemaDef.FindField(fieldName); fieldDef != nil {
+                        holders = append(holders, alias)
+                }
+        }
+        if len(holders) > 1 {
+                table := f.primaryTarget
+                if table == "" {
+                        // Deterministic fallback when no primary was captured
+                        // (should not happen — addSchema always captures one).
+                        sort.Strings(holders)
+                        table = holders[0]
+                }
+                return fmt.Sprintf("%s.%s", quoteIdentifier(table), quoteIdentifier(fieldName)), nil
+        }
+        if qualify != nil && qualify[0] && len(holders) == 1 {
+                return fmt.Sprintf("%s.%s", quoteIdentifier(holders[0]), quoteIdentifier(fieldName)), nil
         }
         return quoteIdentifier(fieldName), nil
 }

@@ -200,7 +200,10 @@ func TestSelectComplex(t *testing.T) {
 	assert.NoError(t, err)
 	assert.NotNil(t, nq)
 
-	expectedSQL := `SELECT "id", "order_date", "total_amount" FROM "orders" INNER JOIN "customers" ON "orders"."customer_id" = "customers"."id" WHERE ("total_amount" >= $1 AND "customers"."region" = $2) ORDER BY "orders"."order_date" DESC LIMIT 10 OFFSET 20`
+        // "id" exists on both joined tables, so it is qualified with the
+        // primary target (#metadata-ambiguous-on-joins); order_date and
+        // total_amount are unambiguous and stay bare.
+        expectedSQL := `SELECT "orders"."id", "order_date", "total_amount" FROM "orders" INNER JOIN "customers" ON "orders"."customer_id" = "customers"."id" WHERE ("total_amount" >= $1 AND "customers"."region" = $2) ORDER BY "orders"."order_date" DESC LIMIT 10 OFFSET 20`
 	assert.Equal(t, expectedSQL, nq.Raw().SQL)
 	assert.Equal(t, 2, len(nq.Raw().Params))
 	assert.Equal(t, 100.0, nq.Raw().Params[0])
@@ -509,4 +512,137 @@ func TestSQLiteFactory_SelectImplicitFields(t *testing.T) {
 	assert.Equal(t, expectedSQL, nq.Raw().SQL)
 	assert.Equal(t, 1, len(nq.Raw().Params))
 	assert.Equal(t, "A", nq.Raw().Params[0])
+}
+
+// joinMetadataSchemas returns user/order schemas that both carry the
+// _metadata_ system column, reproducing the managed-collection shape that
+// triggered #metadata-ambiguous-on-joins.
+func joinMetadataSchemas() (*definition.Schema, *definition.Schema) {
+	users := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "users",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "name", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f3": {Name: "_metadata_", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+		},
+	}
+	orders := &definition.Schema{
+		BaseSchema: definition.BaseSchema{
+			Name: "orders",
+			Fields: map[definition.FieldId]definition.Field{
+				"f1": {Name: "id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f2": {Name: "user_id", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+				"f3": {Name: "amount", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeNumber}},
+				"f4": {Name: "_metadata_", FieldProperties: definition.FieldProperties{Type: definition.FieldTypeString}},
+			},
+		},
+	}
+	return users, orders
+}
+
+func joinOnUserID() query.QueryFilter {
+	return query.QueryFilter{
+		Condition: &query.FilterCondition{
+			Field:    "users.id",
+			Operator: query.ComparisonOperatorEq,
+			Value:    query.FilterValue{FieldRefVal: &query.FieldReference{Field: "orders.user_id"}},
+		},
+	}
+}
+
+// TestSelectJoin_MetadataDisambiguated is the regression test for
+// #metadata-ambiguous-on-joins: a bare _metadata_ reference in a join query
+// must resolve to the primary table instead of emitting an ambiguous
+// bare column.
+func TestSelectJoin_MetadataDisambiguated(t *testing.T) {
+	builder := sqlite.NewSQLiteFactory(nil)
+	users, orders := joinMetadataSchemas()
+
+	qb := query.NewQueryBuilder().
+		From("users").Schema(users).
+		Select().Include("name", "_metadata_").End().
+		InnerJoin("orders").Schema(orders).On(joinOnUserID()).End()
+
+	q := qb.Build()
+	nq, err := builder.Build(&q, native.StmtSelect, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, nq)
+
+	expectedSQL := `SELECT "name", "users"."_metadata_" FROM "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id"`
+	assert.Equal(t, expectedSQL, nq.Raw().SQL)
+}
+
+// TestSelectJoin_JoinLevelProjectionInclude is the regression test for
+// #join-projection-ignored: a join WithProjection(Include) must restrict
+// the default fallback to the listed join columns.
+func TestSelectJoin_JoinLevelProjectionInclude(t *testing.T) {
+	builder := sqlite.NewSQLiteFactory(nil)
+	users, orders := joinMetadataSchemas()
+
+	qb := query.NewQueryBuilder().
+		From("users").Schema(users).
+		InnerJoin("orders").Schema(orders).
+		WithProjection(&query.ProjectionConfiguration{
+			Include: []query.ProjectionField{{Name: "amount"}},
+		}).
+		On(joinOnUserID()).End()
+
+	q := qb.Build()
+	nq, err := builder.Build(&q, native.StmtSelect, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, nq)
+
+	// Aliases sorted: orders before users. Orders contributes only amount;
+	// users keeps the full default column set.
+	expectedSQL := `SELECT "orders"."amount" AS 'orders.amount', "users"."_metadata_" AS 'users._metadata_', "users"."id" AS 'users.id', "users"."name" AS 'users.name' FROM "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id"`
+	assert.Equal(t, expectedSQL, nq.Raw().SQL)
+}
+
+// TestSelectJoin_JoinLevelProjectionExclude verifies join WithProjection
+// with only Exclude entries drops those columns from the fallback.
+func TestSelectJoin_JoinLevelProjectionExclude(t *testing.T) {
+	builder := sqlite.NewSQLiteFactory(nil)
+	users, orders := joinMetadataSchemas()
+
+	qb := query.NewQueryBuilder().
+		From("users").Schema(users).
+		InnerJoin("orders").Schema(orders).
+		WithProjection(&query.ProjectionConfiguration{
+			Exclude: []query.ProjectionField{{Name: "user_id"}, {Name: "_metadata_"}},
+		}).
+		On(joinOnUserID()).End()
+
+	q := qb.Build()
+	nq, err := builder.Build(&q, native.StmtSelect, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, nq)
+
+	expectedSQL := `SELECT "orders"."amount" AS 'orders.amount', "orders"."id" AS 'orders.id', "users"."_metadata_" AS 'users._metadata_', "users"."id" AS 'users.id', "users"."name" AS 'users.name' FROM "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id"`
+	assert.Equal(t, expectedSQL, nq.Raw().SQL)
+}
+
+// TestSelectJoin_JoinLevelProjectionAlias verifies a join projection alias
+// overrides the default dotted output column name.
+func TestSelectJoin_JoinLevelProjectionAlias(t *testing.T) {
+	builder := sqlite.NewSQLiteFactory(nil)
+	users, orders := joinMetadataSchemas()
+
+	total := "total"
+	qb := query.NewQueryBuilder().
+		From("users").Schema(users).
+		InnerJoin("orders").Schema(orders).
+		WithProjection(&query.ProjectionConfiguration{
+			Include: []query.ProjectionField{{Name: "orders.amount", Alias: &total}},
+		}).
+		On(joinOnUserID()).End()
+
+	q := qb.Build()
+	nq, err := builder.Build(&q, native.StmtSelect, nil)
+	assert.NoError(t, err)
+	assert.NotNil(t, nq)
+
+	expectedSQL := `SELECT "orders"."amount" AS "total", "users"."_metadata_" AS 'users._metadata_', "users"."id" AS 'users.id', "users"."name" AS 'users.name' FROM "users" INNER JOIN "orders" ON "users"."id" = "orders"."user_id"`
+	assert.Equal(t, expectedSQL, nq.Raw().SQL)
 }

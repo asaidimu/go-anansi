@@ -241,6 +241,19 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
         // Skip ensureMetadataProjection for materialized views to avoid
         // referencing non-existent columns.
         if !c.schemaProvider.IsMaterialized() {
+                // @note #metadata-ambiguous-on-joins status resolved issue priority=P1 : ensureMetadataProjection injects unqualified _metadata_
+                // ensureMetadataProjection injected an unqualified _metadata_
+                // include, which SQLite rejects with "ambiguous column name"
+                // when joins put _metadata_ on multiple tables.
+                //
+                // Fixed via option (b) at the SQL layer instead of here:
+                // sqliteFactory.resolveInCurrentScope now qualifies any bare
+                // field present on multiple tables with the primary target
+                // (see primaryTarget in sqlite/query/factory.go). This fixes
+                // the injection path and every other bare colliding reference
+                // (filters, sorts) uniformly. Covered by
+                // TestSelectJoin_MetadataDisambiguated and
+                // TestJoin_WithProjection_NoAmbiguousMetadata.
                 fq = ensureMetadataProjection(fq)
         }
 

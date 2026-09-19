@@ -331,3 +331,125 @@ func TestJoin_EffectiveSchema(t *testing.T) {
 	require.NotNil(t, plainSc, "plain read should have an effective schema")
 	assert.Contains(t, string(plainSc.Name), "users", "plain read schema should derive from the collection schema")
 }
+
+// TestJoin_WithProjection_NoAmbiguousMetadata is the end-to-end regression
+// test for #metadata-ambiguous-on-joins: a join query with an explicit
+// projection goes through ensureMetadataProjection (which injects a bare
+// _metadata_ include). Both tables define _metadata_, so the generated SQL
+// must qualify it with the primary table instead of failing with
+// "ambiguous column name: _metadata_".
+func TestJoin_WithProjection_NoAmbiguousMetadata(t *testing.T) {
+	p, cleanup := setupJoinTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	usersColl, err := p.CreateCollection(ctx, newUsersSchema())
+	require.NoError(t, err)
+	ordersColl, err := p.CreateCollection(ctx, newOrdersSchema())
+	require.NoError(t, err)
+
+	_, err = usersColl.CreateMany(ctx, []data.Documenter{
+		data.MustNewDocument(map[string]any{"id": "u1", "name": "Alice"}),
+	})
+	require.NoError(t, err)
+
+	_, err = ordersColl.CreateMany(ctx, []data.Documenter{
+		data.MustNewDocument(map[string]any{"id": "o1", "user_id": "u1", "amount": 100.00}),
+	})
+	require.NoError(t, err)
+
+	joinQuery := query.NewQueryBuilder().
+		Select().Include("name").End().
+		InnerJoin("orders").
+		On(query.QueryFilter{
+			Condition: &query.FilterCondition{
+				Field:    "users.id",
+				Operator: query.ComparisonOperatorEq,
+				Value: query.FilterValue{
+					FieldRefVal: &query.FieldReference{
+						Type:  "field",
+						Field: "orders.user_id",
+					},
+				},
+			},
+		}).
+		End().
+		Build()
+
+	result, err := usersColl.Read(ctx, &joinQuery)
+	require.NoError(t, err, "join with explicit projection must not raise ambiguous _metadata_")
+	require.Len(t, result.Data, 1)
+
+	doc := result.Data[0]
+	name, err := doc.Get("name")
+	require.NoError(t, err)
+	assert.Equal(t, "Alice", name)
+	// The injected _metadata_ include resolves to the primary table.
+	meta, err := doc.Get("_metadata_")
+	require.NoError(t, err)
+	assert.NotNil(t, meta, "primary table _metadata_ must be present")
+}
+
+// TestJoin_JoinLevelProjection_LimitsColumns is the end-to-end regression
+// test for #join-projection-ignored: a join WithProjection(Include) must
+// restrict the joined table's columns in the executed SQL.
+func TestJoin_JoinLevelProjection_LimitsColumns(t *testing.T) {
+	p, cleanup := setupJoinTest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	usersColl, err := p.CreateCollection(ctx, newUsersSchema())
+	require.NoError(t, err)
+	ordersColl, err := p.CreateCollection(ctx, newOrdersSchema())
+	require.NoError(t, err)
+
+	_, err = usersColl.CreateMany(ctx, []data.Documenter{
+		data.MustNewDocument(map[string]any{"id": "u1", "name": "Alice"}),
+	})
+	require.NoError(t, err)
+
+	_, err = ordersColl.CreateMany(ctx, []data.Documenter{
+		data.MustNewDocument(map[string]any{"id": "o1", "user_id": "u1", "amount": 100.00}),
+	})
+	require.NoError(t, err)
+
+	joinQuery := query.NewQueryBuilder().
+		InnerJoin("orders").
+		WithProjection(&query.ProjectionConfiguration{
+			Include: []query.ProjectionField{{Name: "amount"}},
+		}).
+		On(query.QueryFilter{
+			Condition: &query.FilterCondition{
+				Field:    "users.id",
+				Operator: query.ComparisonOperatorEq,
+				Value: query.FilterValue{
+					FieldRefVal: &query.FieldReference{
+						Type:  "field",
+						Field: "orders.user_id",
+					},
+				},
+			},
+		}).
+		End().
+		Build()
+
+	result, err := usersColl.Read(ctx, &joinQuery)
+	require.NoError(t, err)
+	require.Len(t, result.Data, 1)
+
+	doc := result.Data[0]
+	m := doc.ToMap()
+	assert.Contains(t, m, "orders.amount", "projected join column must be present")
+
+	// Columns outside the join projection must be absent.
+	for _, key := range []string{"orders.user_id", "orders.id"} {
+		assert.NotContains(t, m, key, "non-projected join column %s must be absent", key)
+	}
+
+	// Primary-table columns are unaffected by the join projection.
+	userID, err := doc.Get("users.id")
+	require.NoError(t, err)
+	assert.Equal(t, "u1", userID)
+}
