@@ -10,6 +10,7 @@ type ContextKey string
 const CollectionNameContextKey ContextKey = "anansi.collection.name"
 const SanitizationScopeContextKey ContextKey = "anansi.sanitization.scope"
 const RetryContextKey ContextKey = "anansi.retry.context"
+const SchemaContextKey ContextKey = "anansi.schema"
 
 // ============================================================================
 // Context Helpers

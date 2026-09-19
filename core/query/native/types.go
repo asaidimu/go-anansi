@@ -144,12 +144,12 @@ type Query[T any] interface {
 // Type parameter T represents the database's native query format.
 type NativeQuery[T any] struct {
 
-        // Query contains the database-specific query representation
-        Query Query[T]
+	// Query contains the database-specific query representation
+	Query Query[T]
 
-        // Schema defines the structure and constraints for the data being queried.
-        // This is used for result mapping, validation, and type conversion.
-        Schema *definition.Schema
+	// Schema defines the structure and constraints for the data being queried.
+	// This is used for result mapping, validation, and type conversion.
+	Schema *definition.Schema
 }
 
 // QueryFactory is implemented by each database dialect (SQL, MongoDB, etc.).

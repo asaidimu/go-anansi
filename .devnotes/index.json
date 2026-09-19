@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-09-10T07:39:17.046827098Z",
+  "generatedAt": "2026-09-19T11:11:33.690665169Z",
   "root": ".",
   "notes": {
     "0ar5g0": {
@@ -32,6 +32,21 @@
         "endCol": 3
       },
       "hash": "ccf8df4d8641d866"
+    },
+    "1kkx9p": {
+      "id": "1kkx9p",
+      "category": "todo",
+      "status": "open",
+      "title": "Migrate to document package",
+      "body": ".\nDocumentSet represents a collection of documents with batch operations.\n",
+      "location": {
+        "file": "core/data/batch.go",
+        "startLine": 9,
+        "startCol": 3,
+        "endLine": 12,
+        "endCol": 3
+      },
+      "hash": "90c11ab299bd10de"
     },
     "397ju0": {
       "id": "397ju0",
@@ -384,7 +399,10 @@
       "hash": "e456c53dd77b6079"
     },
     "core/data/batch.go": {
-      "hash": "cdb15cb2969b282f"
+      "hash": "cb9c4460e6ab8c49",
+      "noteIds": [
+        "1kkx9p"
+      ]
     },
     "core/data/bind.go": {
       "hash": "440d743182335f97"
@@ -417,7 +435,7 @@
       "hash": "12605ffab021f18a"
     },
     "core/data/document.go": {
-      "hash": "d0b430061a9e3853"
+      "hash": "293e86313b61b3d1"
     },
     "core/data/enrich.go": {
       "hash": "8d2693f48b3a82f6"
@@ -441,7 +459,7 @@
       "hash": "e2b73d8c749ce7d8"
     },
     "core/data/interface.go": {
-      "hash": "90c719a8d855c3cd"
+      "hash": "eda65046ab682648"
     },
     "core/data/json.go": {
       "hash": "130ef8f80d8aef20"
@@ -516,7 +534,7 @@
       "hash": "c6d455a9465e3d82"
     },
     "core/document/document.go": {
-      "hash": "ac62bfa3afe6fa01"
+      "hash": "52f8d534278b543b"
     },
     "core/document/document_test.go": {
       "hash": "a0a1a84f83d47046"
@@ -839,6 +857,9 @@
         "physical-name-truncation-collide-496cab49"
       ]
     },
+    "core/persistence/registry/utils_test.go": {
+      "hash": "59e310d78dbaf884"
+    },
     "core/persistence/transaction/transaction.go": {
       "hash": "7611fbe2830a203f"
     },
@@ -894,7 +915,7 @@
       "hash": "4f9efe26310711f9"
     },
     "core/query/native/types.go": {
-      "hash": "62758e57001d1479"
+      "hash": "ac7636ca5b7906c1"
     },
     "core/query/parser/errors.go": {
       "hash": "06c1a95618eec3eb"
@@ -1305,9 +1326,6 @@
     "packages/anansi/dist/index.mjs": {
       "hash": "e7ddf4cfd2a330bb"
     },
-    "packages/anansi/scripts/sync-package.ts": {
-      "hash": "9ef2bf99a24ee2fd"
-    },
     "packages/anansi/src/codec.ts": {
       "hash": "edd54804187732cd"
     },
@@ -1339,13 +1357,13 @@
       "hash": "7d4bf6f4d1fe2424"
     },
     "packages/anansi/src/validation/graph.ts": {
-      "hash": "d5037c6218a7d37a"
+      "hash": "4f4c944a27a2ace3"
     },
     "packages/anansi/src/validation/index.ts": {
       "hash": "612289cd214d63ff"
     },
     "packages/anansi/src/validation/nodes.ts": {
-      "hash": "76945c4f5b8ed5f3"
+      "hash": "4a784b9c053d33c4"
     },
     "packages/anansi/src/validation/predicates.ts": {
       "hash": "32f520264eeb383d"
@@ -1420,7 +1438,10 @@
       "hash": "56900c0281843999"
     },
     "packages/anansi/test/validation.test.ts": {
-      "hash": "895f89a985262fe0"
+      "hash": "1add928c13e76bae"
+    },
+    "packages/anansi/tooling/sync-package.ts": {
+      "hash": "9ef2bf99a24ee2fd"
     },
     "packages/anansi/tsdown.config.ts": {
       "hash": "8045371eb38e82b1"
@@ -1435,7 +1456,7 @@
       "hash": "6a98da81cb8e1004"
     },
     "sqlite/executor/utils.go": {
-      "hash": "fb32ced7bd3925ad"
+      "hash": "d8796f9be57a26e0"
     },
     "sqlite/fts_integration_test.go": {
       "hash": "5a946ca2cb07bbe5"
@@ -1486,7 +1507,7 @@
       "hash": "2375f167a2916180"
     },
     "sqlite/query/select.go": {
-      "hash": "5a1f5620e8fa2e6b"
+      "hash": "8e1cdea4f5ef1a3b"
     },
     "sqlite/query/types.go": {
       "hash": "8046fa8f80fa0972"
@@ -1533,6 +1554,9 @@
     "tests/integration/persistence/event_integration_test.go": {
       "hash": "d77bc4584957c494"
     },
+    "tests/integration/persistence/join_crud_test.go": {
+      "hash": "80ec36949ce04ba0"
+    },
     "tests/integration/persistence/manual_goroutine_transaction_test.go": {
       "hash": "081a7a448f2d94fc"
     },
@@ -1543,7 +1567,7 @@
       "hash": "8aebf08447b7e578"
     },
     "tests/integration/persistence/persistence_test.go": {
-      "hash": "83a318d3ab5e511e"
+      "hash": "5eba75cda85a873f"
     },
     "tests/integration/persistence/raw_query_test.go": {
       "hash": "6bf07709b405fd5b"
@@ -1555,7 +1579,7 @@
       "hash": "8a6de2b71d1df60d"
     },
     "tests/integration/query/sqlite_capabilities_test.go": {
-      "hash": "50783e8a08e5338c"
+      "hash": "7929281d98f57814"
     },
     "tests/integration/query/sqlite_partitioner_test.go": {
       "hash": "a6183a07587e86c6"
@@ -1600,7 +1624,7 @@
       "hash": "2ea8d248dad40854"
     },
     "tests/integration/sqlite/subqueries_test.go": {
-      "hash": "3ffc6956fc06ff24"
+      "hash": "f6a8c4cac2e18f53"
     },
     "tests/integration/sqlite/update_subquery_test.go": {
       "hash": "9be41c87c1269c6e"
@@ -1750,7 +1774,7 @@
       "hash": "4945e9a3ca4564a1"
     },
     "tests/unit/sqlite/builder_test.go": {
-      "hash": "a7bf7e850287a95a"
+      "hash": "b59d31a3bcf0eab0"
     },
     "tests/unit/sqlite/mapper_test.go": {
       "hash": "95d1ed9949568b4e"

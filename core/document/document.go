@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/data/container"
 	canansi "github.com/asaidimu/go-anansi/v8/core/encoding/anansi"
@@ -16,6 +17,29 @@ import (
 	"github.com/asaidimu/go-anansi/v8/core/utils"
 	"github.com/google/uuid"
 )
+
+// ============================================================================
+// Schema context helpers
+// ============================================================================
+
+// ContextWithSchema attaches a schema to the context. Downstream calls to
+// Record will extract it automatically, so each pipeline stage can attach the
+// schema it considers correct without threading an extra parameter.
+func ContextWithSchema(ctx context.Context, sc *definition.Schema) context.Context {
+	return context.WithValue(ctx, common.SchemaContextKey, sc)
+}
+
+// SchemaFromContext extracts the schema attached via ContextWithSchema.
+// Returns nil when no schema is present (raw queries, ad-hoc maps).
+func SchemaFromContext(ctx context.Context) *definition.Schema {
+	if ctx == nil {
+		return nil
+	}
+	if sc, ok := ctx.Value(common.SchemaContextKey).(*definition.Schema); ok {
+		return sc
+	}
+	return nil
+}
 
 // Document is a schema-addressed, container-backed implementation of
 // data.Documenter.
@@ -41,6 +65,8 @@ import (
 // Compile-time assertion: the interface data.Documenter is fully implemented.
 var _ data.Documenter = (*Document)(nil)
 
+type DocumentSet []data.Documenter
+
 // Document is the schema-backed implementation of the Documenter interface.
 type Document struct {
 	cs  *definition.CompiledSchema // user-data compiled schema
@@ -60,6 +86,12 @@ type Document struct {
 
 	// record is non-nil for schema-free record views (nested record fields).
 	record map[string]any
+
+	// effectiveSchema is the schema that produced this document. It is nil for
+	// truly schemaless documents (raw queries, ad-hoc maps). For collection
+	// reads it is the collection's schema; for joins/projections it is the
+	// derived schema from SchemaFromQuery.
+	effectiveSchema *definition.Schema
 }
 
 // ============================================================================
@@ -134,32 +166,72 @@ func (d *Document) populateFromStruct(s any, partial bool) error {
 	return nil
 }
 
-// newRecordView builds a schema-free document view over a record map.
-func newRecordView(m map[string]any, ctx context.Context) *Document {
+// Record builds a document view over a record map, extracting the schema from
+// the context (attached via ContextWithSchema). When no schema is present the
+// document is schemaless — keys never error and EffectiveSchema() returns nil.
+//
+// This is the single entry point for creating record-backed documents. Each
+// pipeline stage that transforms data attaches the schema it considers correct
+// to the context before calling Record, so the data template follows the data
+// through every transformation step.
+func Record(m map[string]any, ctx context.Context) *Document {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return &Document{ctx: ctx, record: m}
+	return &Document{ctx: ctx, record: m, effectiveSchema: SchemaFromContext(ctx)}
+}
+
+// newRecordView is an internal alias for Record.
+func newRecordView(m map[string]any, ctx context.Context) *Document {
+	return Record(m, ctx)
 }
 
 // NewRecordView builds a schema-free document view over a record map.
 //
-// Unlike pool-built documents, a record view carries no compiled schema: keys
-// never error (unknown paths are stored and returned as-is), typed getters
-// coerce their stored values, and identity/metadata are ordinary map entries
-// rather than dedicated slots. The persistence layer produces all egress
-// documents this way, so rows that do not conform to the collection schema
-// (joined projections, mismatched value types) still surface as
-// document.Documents.
+// Deprecated: Use Record(m, ctx) instead. Attach the schema to context via
+// ContextWithSchema if EffectiveSchema propagation is needed.
 func NewRecordView(m map[string]any, ctx ...context.Context) *Document {
 	var c context.Context
 	if len(ctx) > 0 {
 		c = ctx[0]
 	}
-	return newRecordView(m, c)
+	return Record(m, c)
+}
+
+// NewRecordViewWithSchema builds a document view over a record map,
+// associating it with the given effective schema.
+//
+// Deprecated: Use ContextWithSchema + Record instead.
+func NewRecordViewWithSchema(m map[string]any, sc *definition.Schema, ctx context.Context) *Document {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return &Document{ctx: ctx, record: m, effectiveSchema: sc}
 }
 
 func (d *Document) isRecord() bool { return d.record != nil }
+
+// EffectiveSchema returns the schema that produced this document. Nil means
+// the document is truly schemaless (raw query, ad-hoc map). For collection
+// reads it is the collection's schema; for joins/projections it is the
+// derived schema from SchemaFromQuery.
+func (d *Document) EffectiveSchema() *definition.Schema {
+	if d == nil {
+		return nil
+	}
+	return d.effectiveSchema
+}
+
+// WithEffectiveSchema attaches the schema that produced this document and
+// returns the document for chaining. Used by executors on the pooled
+// container fast path, which bypasses Record. Nil clears the association
+// (truly schemaless).
+func (d *Document) WithEffectiveSchema(sc *definition.Schema) *Document {
+	if d != nil {
+		d.effectiveSchema = sc
+	}
+	return d
+}
 
 // ============================================================================
 // Identity and Context
@@ -243,6 +315,12 @@ func (d *Document) Get(key string) (any, error) {
 		return nil, d.keyErr(key)
 	}
 	if d.isRecord() {
+		// Try exact key match first — this handles flat join keys like "users.id"
+		// where the dot is part of the literal key name, not a path separator.
+		if val, ok := d.record[key]; ok {
+			return val, nil
+		}
+		// Fall back to path traversal for nested maps (e.g. "metadata.version").
 		val, ok := utils.GetValueByPath(d.record, key)
 		if !ok {
 			return nil, d.keyErr(key)
@@ -480,6 +558,9 @@ func (d *Document) HasKey(key string) bool {
 		return false
 	}
 	if d.isRecord() {
+		if _, ok := d.record[key]; ok {
+			return true
+		}
 		_, ok := utils.GetValueByPath(d.record, key)
 		return ok
 	}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/asaidimu/go-anansi/v8/core/utils"
 )
 
@@ -197,6 +198,11 @@ func (d *Document) WithContext(ctx context.Context) Documenter {
 //
 // Deprecated: Use document.Document instead.
 func (d *Document) Get(key string) (any, error) {
+	// Try exact key match first — this handles flat join keys like "users.id"
+	// where the dot is part of the literal key name, not a path separator.
+	if val, ok := d.data[key]; ok {
+		return val, nil
+	}
 	val, ok := utils.GetValueByPath(d.data, key)
 	if !ok {
 		return nil, common.SystemErrorFrom(ErrKeyNotFound).WithOperation("data.Document.Get").WithPath(key)
@@ -208,6 +214,9 @@ func (d *Document) Get(key string) (any, error) {
 //
 // Deprecated: Use document.Document instead.
 func (d *Document) GetOr(key string, defaultValue any) any {
+	if val, ok := d.data[key]; ok {
+		return val
+	}
 	if val, ok := utils.GetValueByPath(d.data, key); ok {
 		return val
 	}
@@ -218,6 +227,9 @@ func (d *Document) GetOr(key string, defaultValue any) any {
 //
 // Deprecated: Use document.Document instead.
 func (d *Document) MustGet(key string) any {
+	if val, ok := d.data[key]; ok {
+		return val
+	}
 	val, ok := utils.GetValueByPath(d.data, key)
 	if !ok {
 		panic(common.SystemErrorFrom(ErrKeyNotFound).WithOperation("data.Document.MustGet").WithPath(key))
@@ -432,7 +444,11 @@ func (d *Document) GetArray(keyOrPath string) ([]any, error) {
 
 // getAndCoerce is a private helper function to retrieve a value by path and coerce it to a target type.
 func (d *Document) getAndCoerce(keyOrPath string, targetType reflect.Type, operation string) (any, error) {
-	val, ok := utils.GetValueByPath(d.data, keyOrPath)
+	var val any
+	var ok bool
+	if val, ok = d.data[keyOrPath]; !ok {
+		val, ok = utils.GetValueByPath(d.data, keyOrPath)
+	}
 	if !ok {
 		return nil, common.SystemErrorFrom(ErrKeyNotFound).WithOperation("data.Document." + operation).WithPath(keyOrPath)
 	}
@@ -897,6 +913,11 @@ func (d *Document) VerifyHash() (bool, error) {
 
 	return providedHash == calculatedHash, nil
 }
+
+// EffectiveSchema returns nil for the map-backed Document — it has no schema.
+//
+// Deprecated: Use document.Document instead.
+func (d *Document) EffectiveSchema() *definition.Schema { return nil }
 
 // Release is a no-op for the map-backed Document: it holds no pooled
 // containers.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/rsa"
 	"time"
+
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 // ============================================================================
@@ -118,6 +120,12 @@ type Documenter interface {
 
 	Sanitize(ctx ...context.Context) (Documenter, error)
 	SafeString(ctx ...context.Context) string
+
+	// EffectiveSchema returns the schema that produced this document. Nil
+	// means the document is truly schemaless (raw query, ad-hoc map). For
+	// collection reads it is the collection's schema; for joins/projections
+	// it is the derived schema from SchemaFromQuery.
+	EffectiveSchema() *definition.Schema
 
 	// Release returns pooled resources (e.g. container.DataContainer) to their
 	// pools. After Release the document must not be used. It is safe to call

@@ -63,9 +63,24 @@ func (s *sqliteExecutor) Query(ctx context.Context, nq native.NativeQuery[types.
 
         // Single-table queries carrying a schema-bound pool are scanned directly
         // into pooled containers, bypassing the map-backed record view entirely.
+        // Attach the effective schema from context (falling back to the native
+        // query schema) so pooled documents carry the same provenance as
+        // Record-built ones.
         if q.Shape().DirectScan() {
                 if dp := q.DocumentPool(); dp != nil {
                         results, count, err := ReadRowsIntoContainer(ctx, dp, rows, query.MatchCountName)
+                        if err != nil {
+                                return nil, 0, err
+                        }
+                        if sc := document.SchemaFromContext(ctx); sc != nil {
+                                for _, d := range results {
+                                        d.WithEffectiveSchema(sc)
+                                }
+                        } else if nq.Schema != nil {
+                                for _, d := range results {
+                                        d.WithEffectiveSchema(nq.Schema)
+                                }
+                        }
                         return results, count, err
                 }
         }

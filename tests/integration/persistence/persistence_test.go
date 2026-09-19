@@ -621,29 +621,24 @@ func TestPersistence_SimpleLeftJoin(t *testing.T) {
 	// 6. Assert Results
 	assert.Len(t, d, 3) // Expecting 3 documents (all users)
 
-	// Verify content
+	// Verify content using flat keys (e.g. "users.uid", "profiles.bio")
 	for _, doc := range d {
-
-		userData, errUser := doc.GetDocument("users")
-		require.NoError(t, errUser) // We expect "users" to always exist
-
-		profileData, errProfile := doc.GetDocument("profiles") // profileData can be nil if not found
-
-		switch userData.Must().GetString("uid") {
+		uid := doc.Must().GetString("users.uid")
+		switch uid {
 		case "user1":
-			assert.NoError(t, errProfile) // We expect a profile here
-			assert.Equal(t, "Alice", userData.Must().GetString("name"))
-			assert.Equal(t, "Loves Go programming", profileData.Must().GetString("bio"))
+			assert.Equal(t, "Alice", doc.Must().GetString("users.name"))
+			assert.Equal(t, "Loves Go programming", doc.Must().GetString("profiles.bio"))
 		case "user2":
-			assert.NoError(t, errProfile) // We expect a profile here
-			assert.Equal(t, "Bob", userData.Must().GetString("name"))
-			assert.Equal(t, "Enjoys testing", profileData.Must().GetString("bio"))
+			assert.Equal(t, "Bob", doc.Must().GetString("users.name"))
+			assert.Equal(t, "Enjoys testing", doc.Must().GetString("profiles.bio"))
 		case "user3":
-			assert.NoError(t, errProfile) // We expect NO profile here
-			assert.Nil(t, profileData.Must().Get("bio"))
-			assert.Equal(t, "Charlie", userData.Must().GetString("name"))
+			assert.Equal(t, "Charlie", doc.Must().GetString("users.name"))
+			// Left join: no profile row for user3, so profile fields are nil
+			bio, errProfile := doc.Get("profiles.bio")
+			assert.NoError(t, errProfile)
+			assert.Nil(t, bio)
 		default:
-			t.Errorf("Unexpected user ID: %v", userData.Must().GetString("uid"))
+			t.Errorf("Unexpected user ID: %v", uid)
 		}
 	}
 }

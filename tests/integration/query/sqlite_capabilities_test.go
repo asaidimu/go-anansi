@@ -35,7 +35,7 @@ func TestSQLiteCapabilities_LogicalOperators(t *testing.T) {
         qAnd := qbAnd.Build()
         nqAnd, errAnd := builder.Build(&qAnd, native.StmtSelect, nil)
         require.NoError(t, errAnd)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name' FROM "users" WHERE ("age" > $1 AND "name" = $2)`, nqAnd.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name' FROM "users" WHERE ("age" > $1 AND "name" = $2)`, nqAnd.Raw().SQL)
 
         // Test OR operator
         qbOr := query.NewQueryBuilder().From("users").Schema(schema).Where("age").Gt(30).OrFilter(query.QueryFilter{
@@ -48,7 +48,7 @@ func TestSQLiteCapabilities_LogicalOperators(t *testing.T) {
         qOr := qbOr.Build()
         nqOr, errOr := builder.Build(&qOr, native.StmtSelect, nil)
         require.NoError(t, errOr)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name' FROM "users" WHERE ("age" > $1 OR "name" = $2)`, nqOr.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name' FROM "users" WHERE ("age" > $1 OR "name" = $2)`, nqOr.Raw().SQL)
 }
 
 func TestSQLiteCapabilities_ComparisonOperators(t *testing.T) {
@@ -68,62 +68,62 @@ func TestSQLiteCapabilities_ComparisonOperators(t *testing.T) {
         // Test Eq
         qEq := query.NewQueryBuilder().From("users").Schema(schema).Where("name").Eq("John").Build()
         nqEq, _ := builder.Build(&qEq, native.StmtSelect, nil)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name', "users"."profile" AS 'users.profile', "users"."status" AS 'users.status' FROM "users" WHERE "name" = $1`, nqEq.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name', "profile" AS 'profile', "status" AS 'status' FROM "users" WHERE "name" = $1`, nqEq.Raw().SQL)
 
         // Test Neq
         qNeq := query.NewQueryBuilder().From("users").Schema(schema).Where("name").Neq("John").Build()
         nqNeq, _ := builder.Build(&qNeq, native.StmtSelect, nil)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name', "users"."profile" AS 'users.profile', "users"."status" AS 'users.status' FROM "users" WHERE "name" != $1`, nqNeq.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name', "profile" AS 'profile', "status" AS 'status' FROM "users" WHERE "name" != $1`, nqNeq.Raw().SQL)
 
         // Test Lt
         qLt := query.NewQueryBuilder().From("users").Schema(schema).Where("age").Lt(30).Build()
         nqLt, _ := builder.Build(&qLt, native.StmtSelect, nil)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name', "users"."profile" AS 'users.profile', "users"."status" AS 'users.status' FROM "users" WHERE "age" < $1`, nqLt.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name', "profile" AS 'profile', "status" AS 'status' FROM "users" WHERE "age" < $1`, nqLt.Raw().SQL)
 
         // Test Lte
         qLte := query.NewQueryBuilder().From("users").Schema(schema).Where("age").Lte(30).Build()
         nqLte, _ := builder.Build(&qLte, native.StmtSelect, nil)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name', "users"."profile" AS 'users.profile', "users"."status" AS 'users.status' FROM "users" WHERE "age" <= $1`, nqLte.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name', "profile" AS 'profile', "status" AS 'status' FROM "users" WHERE "age" <= $1`, nqLte.Raw().SQL)
 
         // Test Gt
         qGt := query.NewQueryBuilder().From("users").Schema(schema).Where("age").Gt(30).Build()
         nqGt, _ := builder.Build(&qGt, native.StmtSelect, nil)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name', "users"."profile" AS 'users.profile', "users"."status" AS 'users.status' FROM "users" WHERE "age" > $1`, nqGt.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name', "profile" AS 'profile', "status" AS 'status' FROM "users" WHERE "age" > $1`, nqGt.Raw().SQL)
 
         // Test Gte
         qGte := query.NewQueryBuilder().From("users").Schema(schema).Where("age").Gte(30).Build()
         nqGte, _ := builder.Build(&qGte, native.StmtSelect, nil)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name', "users"."profile" AS 'users.profile', "users"."status" AS 'users.status' FROM "users" WHERE "age" >= $1`, nqGte.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name', "profile" AS 'profile', "status" AS 'status' FROM "users" WHERE "age" >= $1`, nqGte.Raw().SQL)
 
         // Test In
         qIn := query.NewQueryBuilder().From("users").Schema(schema).Where("status").In("active", "pending").Build()
         nqIn, _ := builder.Build(&qIn, native.StmtSelect, nil)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name', "users"."profile" AS 'users.profile', "users"."status" AS 'users.status' FROM "users" WHERE "status" IN ($1, $2)`, nqIn.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name', "profile" AS 'profile', "status" AS 'status' FROM "users" WHERE "status" IN ($1, $2)`, nqIn.Raw().SQL)
 
         // Test Nin
         qNin := query.NewQueryBuilder().From("users").Schema(schema).Where("status").Nin("inactive", "archived").Build()
         nqNin, _ := builder.Build(&qNin, native.StmtSelect, nil)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name', "users"."profile" AS 'users.profile', "users"."status" AS 'users.status' FROM "users" WHERE "status" NOT IN ($1, $2)`, nqNin.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name', "profile" AS 'profile', "status" AS 'status' FROM "users" WHERE "status" NOT IN ($1, $2)`, nqNin.Raw().SQL)
 
         // Test Contains
         qContains := query.NewQueryBuilder().From("users").Schema(schema).Where("name").Contains("John").Build()
         nqContains, _ := builder.Build(&qContains, native.StmtSelect, nil)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name', "users"."profile" AS 'users.profile', "users"."status" AS 'users.status' FROM "users" WHERE "name" LIKE '%' || $1 || '%'`, nqContains.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name', "profile" AS 'profile', "status" AS 'status' FROM "users" WHERE "name" LIKE '%' || $1 || '%'`, nqContains.Raw().SQL)
 
         // Test NotContains
         qNotContains := query.NewQueryBuilder().From("users").Schema(schema).Where("name").NotContains("John").Build()
         nqNotContains, _ := builder.Build(&qNotContains, native.StmtSelect, nil)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name', "users"."profile" AS 'users.profile', "users"."status" AS 'users.status' FROM "users" WHERE "name" NOT LIKE '%' || $1 || '%'`, nqNotContains.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name', "profile" AS 'profile', "status" AS 'status' FROM "users" WHERE "name" NOT LIKE '%' || $1 || '%'`, nqNotContains.Raw().SQL)
 
         // Test Exists
         qExists := query.NewQueryBuilder().From("users").Schema(schema).Where("profile").Exists().Build()
         nqExists, _ := builder.Build(&qExists, native.StmtSelect, nil)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name', "users"."profile" AS 'users.profile', "users"."status" AS 'users.status' FROM "users" WHERE "profile" IS NOT NULL`, nqExists.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name', "profile" AS 'profile', "status" AS 'status' FROM "users" WHERE "profile" IS NOT NULL`, nqExists.Raw().SQL)
 
         // Test NotExists
         qNotExists := query.NewQueryBuilder().From("users").Schema(schema).Where("profile").NotExists().Build()
         nqNotExists, _ := builder.Build(&qNotExists, native.StmtSelect, nil)
-        assert.Equal(t, `SELECT "users"."age" AS 'users.age', "users"."name" AS 'users.name', "users"."profile" AS 'users.profile', "users"."status" AS 'users.status' FROM "users" WHERE "profile" IS NULL`, nqNotExists.Raw().SQL)
+        assert.Equal(t, `SELECT "age" AS 'age', "name" AS 'name', "profile" AS 'profile', "status" AS 'status' FROM "users" WHERE "profile" IS NULL`, nqNotExists.Raw().SQL)
 
 }
 

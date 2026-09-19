@@ -37,6 +37,9 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
                 }
         }
 
+        // Attach the schema to context so downstream Record calls extract it.
+        ctx = document.ContextWithSchema(ctx, schemaDef)
+
         c, err := i.store.getCollection(schemaDef.Name)
         if err != nil {
                 return nil, 0, err
@@ -119,7 +122,7 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
                 if err != nil {
                         return nil, 0, err
                 }
-                return []*document.Document{document.NewRecordView(aggregationResults)}, 0, nil
+                return []*document.Document{document.Record(aggregationResults, ctx)}, 0, nil
         }
 
         // Apply Sorting
@@ -145,13 +148,13 @@ func (i *EphemeralDatabaseInteractor) SelectDocuments(ctx context.Context, schem
                 return nil, 0, err
         }
 
-        return toDocuments(projectedDocs), totalCount, nil
+        return toDocuments(ctx, projectedDocs), totalCount, nil
 }
 
-func toDocuments(docs []map[string]any) []*document.Document {
+func toDocuments(ctx context.Context, docs []map[string]any) []*document.Document {
         out := make([]*document.Document, 0, len(docs))
         for _, m := range docs {
-                out = append(out, document.NewRecordView(m))
+                out = append(out, document.Record(m, ctx))
         }
         return out
 }
@@ -263,7 +266,7 @@ func (i *EphemeralDatabaseInteractor) UpdateDocuments(ctx context.Context, schem
                         if err != nil {
                                 return nil, updatedCount, err
                         }
-                        updatedDocuments = append(updatedDocuments, document.NewRecordView(map[string]any(retrievedDoc.Data)))
+                        updatedDocuments = append(updatedDocuments, document.Record(map[string]any(retrievedDoc.Data), ctx))
                 }
         }
 
@@ -318,7 +321,7 @@ func (i *EphemeralDatabaseInteractor) InsertDocuments(ctx context.Context, schem
                 }
 
                 insertedDoc := map[string]any(retrieved.Data)
-                insertedDocs = append(insertedDocs, document.NewRecordView(insertedDoc))
+                insertedDocs = append(insertedDocs, document.Record(insertedDoc, ctx))
         }
 
         return insertedDocs, nil

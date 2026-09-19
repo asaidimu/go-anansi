@@ -7,14 +7,14 @@ import (
 	"sort"
 )
 
-// DocumentSet represents a collection of documents with batch operations.
+// @note #1kkx9p todo : Migrate to document package
 //
-// Deprecated: Use container.Collection instead.
+// .
+// DocumentSet represents a collection of documents with batch operations.
 type DocumentSet []Documenter
 
 // NewDocumentSet creates a new DocumentSet from a variety of slice types.
 //
-// Deprecated: Use container.Collection instead.
 // It intelligently converts []map[string]any, []any, and []Document into a
 // consistent DocumentSet. It accepts an optional context that is passed down
 // during the creation of each new Document, allowing for contextual metadata injection.

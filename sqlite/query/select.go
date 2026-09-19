@@ -160,13 +160,25 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
 
                         sort.Strings(aliases)
 
+                        // For single-table queries use bare field names so the
+                        // result columns are unqualified (e.g. "id" not
+                        // "orders.id"). For multi-table (join) queries qualify
+                        // with the table alias to avoid ambiguity.
+                        qualifyColumns := len(p.schemas) > 1
+
                         for _, alias := range aliases {
                                 schemaDef := p.schemas[alias]
                                 if schemaDef != nil && len(schemaDef.Fields) > 0 {
                 for _, name := range schemaDef.FieldNames() {
                                 _, field := schemaDef.FindField(name)
-                                resolvedField := fmt.Sprintf("%s.%s", quoteIdentifier(alias), quoteIdentifier(string(field.Name)))
-                                fieldAlias := fmt.Sprintf("'%s.%s'", alias, field.Name)
+                                var resolvedField, fieldAlias string
+                                if qualifyColumns {
+                                        resolvedField = fmt.Sprintf("%s.%s", quoteIdentifier(alias), quoteIdentifier(string(field.Name)))
+                                        fieldAlias = fmt.Sprintf("'%s.%s'", alias, field.Name)
+                                } else {
+                                        resolvedField = quoteIdentifier(string(field.Name))
+                                        fieldAlias = fmt.Sprintf("'%s'", field.Name)
+                                }
                                 aliasedFields = append(aliasedFields, fmt.Sprintf("%s AS %s", resolvedField, fieldAlias))
                                         }
                                 }

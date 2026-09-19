@@ -94,6 +94,15 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *definition.Schema, d
         dbQuery.Shape = InferShape(dbQuery)
         dbQuery.DocumentPool = dsl.DocumentPool
 
+        // Compute the result schema and attach it to context so downstream
+        // document creation (ReadRows, post-projection) can extract it
+        // automatically via Record(m, ctx). Best-effort only: if the query
+        // has no usable target (e.g. empty query used in cancellation tests)
+        // proceed without a schema rather than failing fast.
+        if resultSchema, schemaErr := SchemaFromQuery(dsl, nil); schemaErr == nil && resultSchema != nil {
+                ctx = document.ContextWithSchema(ctx, resultSchema)
+        }
+
         // Execute the database part of the query with retry on transient errors.
         result, err := e.executeRead(ctx, interactor, schemaDef, dsl, dbQuery)
         if err != nil {
@@ -131,7 +140,7 @@ func (e *QueryEngine) Query(ctx context.Context, schemaDef *definition.Schema, d
 
         final := make([]*document.Document, 0, len(finalDocs))
         for _, m := range finalDocs {
-                final = append(final, document.NewRecordView(m))
+                final = append(final, document.Record(m, ctx))
         }
 
         return &QueryResult{
