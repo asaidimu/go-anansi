@@ -2,13 +2,13 @@
 // exact source payload, and re-encode to byte-identical packets.
 
 import { describe, it, expect } from "bun:test";
-import { makeStripNulls, hexToBytes, bytesToHex } from "./helpers.ts";
+import { makeStripNulls, hexToBytes, bytesToHex } from "../helpers.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { link, buildManifest } from "../src/schema/link.ts";
+import { link, buildManifest } from "../../src/schema/link.ts";
 import {
   encodeDocument, decodeDocument, encodeBatchRows, encodeBatchColumnar, decodeBatch,
-} from "../src/wire/packet.ts";
+} from "../../src/wire/packet.ts";
 
 interface GoldenCase {
   name: string;
@@ -27,7 +27,7 @@ interface Golden {
 }
 
 const GOLDEN = JSON.parse(
-  readFileSync(join(import.meta.dir, "..", "testdata", "golden.json"), "utf8"),
+  readFileSync(join(import.meta.dir, "..", "..", "testdata", "golden.json"), "utf8"),
 ) as Golden;
 
 const linked = link(GOLDEN.schema as never);

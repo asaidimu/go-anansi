@@ -5,19 +5,22 @@
 // you prefer finer-grained caching) and hold it for the lifetime of your
 // app; instances are immutable and safe to share concurrently.
 
-import type { ManifestField, LinkResult } from "./schema/link.ts";
-import { link, buildManifest } from "./schema/link.ts";
+import type { LinkResult, ManifestField } from "./schema/link.ts";
+import { buildManifest, link } from "./schema/link.ts";
 import { parseSchema, type SchemaDefinition } from "./schema/types.ts";
-import {
-  encodeDocument, decodeDocument,
-  encodeBatchRows, decodeBatch,
-} from "./wire/packet.ts";
 import type { EncodeKind } from "./wire/packet.ts";
 import {
-  encodeAnansiPacket, decodeAnansiPacket,
-  encodeAnansiBatchRows, encodeAnansiBatchColumnar, decodeAnansiBatch,
-} from "./wire/transforms.ts";
+    encodeBatchRows,
+    encodeDocument
+} from "./wire/packet.ts";
 import type { DecodeTransforms, EncodeTransforms } from "./wire/transforms.ts";
+import {
+    decodeAnansiBatch,
+    decodeAnansiPacket,
+    encodeAnansiBatchColumnar,
+    encodeAnansiBatchRows,
+    encodeAnansiPacket,
+} from "./wire/transforms.ts";
 
 export interface AnansiCodecOptions extends EncodeTransforms {
   /** Schema version stamped into outgoing packets (0–1023). */

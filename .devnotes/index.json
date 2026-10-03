@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-09-19T13:05:15.101195276Z",
+  "generatedAt": "2026-10-03T12:00:05.782965064Z",
   "root": ".",
   "notes": {
     "0ar5g0": {
@@ -167,6 +167,21 @@
       },
       "hash": "b240949f136fd871"
     },
+    "index-fields-dotted-path": {
+      "id": "index-fields-dotted-path",
+      "category": "issue",
+      "status": "resolved",
+      "priority": "P2",
+      "title": "index_fields_reference_valid checks top-level names only, rejecting valid dotted index paths",
+      "location": {
+        "file": "core/schema/meta/predicates.go",
+        "startLine": 1601,
+        "startCol": 3,
+        "endLine": 1601,
+        "endCol": 3
+      },
+      "hash": "0f914c8a387ef8a3"
+    },
     "join-projection-ignored": {
       "id": "join-projection-ignored",
       "category": "status",
@@ -211,6 +226,22 @@
         "endCol": 3
       },
       "hash": "d158f1119714c34f"
+    },
+    "migration-id-sort": {
+      "id": "migration-id-sort",
+      "category": "issue",
+      "status": "resolved",
+      "priority": "P2",
+      "title": "Migration IDs ordered with localeCompare, not numeric order",
+      "body": "\nMigration IDs are Date.now().toString() (set in add()). Two sites used\nlocaleCompare: this method's sort and rollbackToVersion's (now\ngetRollbackMigrations). localeCompare is locale-aware string\ncollation, which is correct only while every ID is a same-length\n13-digit timestamp. Mixed-length or externally-supplied IDs order\nwrongly (\"999\" \u003e \"1000\") and collation varies by locale. Fix by\nsorting with a numeric comparator (e.g. Number(b.id) - Number(a.id))\nwhen IDs are timestamps, or by issuing sort-safe IDs in add().\nNote: schemaVersion sorting/filtering in this file has the same\nlexicographic flaw and is being replaced by the core/common/version.go\nport (src/version.ts) — that port does not cover migration-ID ordering;\ncompareMigrationIds handles it here.\n",
+      "location": {
+        "file": "packages/anansi/src/migration/engine.ts",
+        "startLine": 580,
+        "startCol": 3,
+        "endLine": 594,
+        "endCol": 3
+      },
+      "hash": "a741ee9079231ea4"
     },
     "physical-name-truncation-collide-496cab49": {
       "id": "physical-name-truncation-collide-496cab49",
@@ -402,7 +433,7 @@
       "hash": "3164080e1079d36c"
     },
     "core/common/context.go": {
-      "hash": "ed252939717554b4"
+      "hash": "09d82c76f03cb5eb"
     },
     "core/common/error.go": {
       "hash": "cf8cbeca7f27ee77"
@@ -762,7 +793,7 @@
       "hash": "b7a70fa7097dd38e"
     },
     "core/ephemeral/interactor.go": {
-      "hash": "97e6dbc315e277a7"
+      "hash": "fddbdfc698115632"
     },
     "core/ephemeral/store.go": {
       "hash": "1a816b5531b1053a"
@@ -912,7 +943,7 @@
       "hash": "d4f5937fc98a33ca"
     },
     "core/query/engine.go": {
-      "hash": "0051c2d24ef6cf43"
+      "hash": "32e04e8b0870f82f"
     },
     "core/query/errors.go": {
       "hash": "f5a1361a9d4a04b5"
@@ -1175,11 +1206,17 @@
     "core/schema/meta/ids.go": {
       "hash": "ddfaa21c69fc5463"
     },
+    "core/schema/meta/index_path_test.go": {
+      "hash": "7f0a554eaed6e668"
+    },
     "core/schema/meta/normalize.go": {
       "hash": "5295d04856b7506b"
     },
     "core/schema/meta/predicates.go": {
-      "hash": "606cbe7b3a8ef196"
+      "hash": "494fc6c087ce6ece",
+      "noteIds": [
+        "index-fields-dotted-path"
+      ]
     },
     "core/schema/meta/repro_test.go": {
       "hash": "f60334a00f4ae4b5"
@@ -1354,22 +1391,31 @@
       "hash": "4a9c9b4fe9f8e4a8"
     },
     "packages/anansi/dist/index.cjs": {
-      "hash": "0b1adbafda22e74d"
+      "hash": "828b78ddfc426242"
     },
     "packages/anansi/dist/index.mjs": {
-      "hash": "e7ddf4cfd2a330bb"
+      "hash": "74e962d0608fb659"
     },
     "packages/anansi/src/codec.ts": {
-      "hash": "edd54804187732cd"
-    },
-    "packages/anansi/src/engine.ts": {
-      "hash": "bf6222873f49eb6a"
+      "hash": "26f71563fbd29f1b"
     },
     "packages/anansi/src/index.ts": {
-      "hash": "4dfb74cac8d2c39b"
+      "hash": "baa913c1d84b21df"
+    },
+    "packages/anansi/src/migration/engine.ts": {
+      "hash": "2a557446253dd481",
+      "noteIds": [
+        "migration-id-sort"
+      ]
+    },
+    "packages/anansi/src/migration/migration.ts": {
+      "hash": "3bef19c67c3a5b7f"
+    },
+    "packages/anansi/src/migration/version.ts": {
+      "hash": "d3626cb156adf61d"
     },
     "packages/anansi/src/schema/compile.ts": {
-      "hash": "110140987b4dc193"
+      "hash": "6e4c45c22cb2134a"
     },
     "packages/anansi/src/schema/dt.ts": {
       "hash": "f23e475a9f1195ff"
@@ -1378,10 +1424,7 @@
       "hash": "026171cfeb9e28ae"
     },
     "packages/anansi/src/schema/link.ts": {
-      "hash": "f095ff1bb994eba7"
-    },
-    "packages/anansi/src/schema/migration.ts": {
-      "hash": "103d47239176fc77"
+      "hash": "a00ffd91bb74ec42"
     },
     "packages/anansi/src/schema/types.ts": {
       "hash": "9324fdf1f08944f1"
@@ -1390,88 +1433,91 @@
       "hash": "7d4bf6f4d1fe2424"
     },
     "packages/anansi/src/validation/graph.ts": {
-      "hash": "4f4c944a27a2ace3"
+      "hash": "e63eb72be36ee71a"
     },
     "packages/anansi/src/validation/index.ts": {
-      "hash": "612289cd214d63ff"
+      "hash": "a108b3bc86e3e3da"
     },
     "packages/anansi/src/validation/nodes.ts": {
-      "hash": "4a784b9c053d33c4"
+      "hash": "33c6e35f14151207"
     },
     "packages/anansi/src/validation/predicates.ts": {
-      "hash": "32f520264eeb383d"
+      "hash": "4e4704b8c6bb8203"
     },
     "packages/anansi/src/validation/schema-validator.ts": {
-      "hash": "7a9d820dd392ab9a"
+      "hash": "039d14dc795b16de"
     },
     "packages/anansi/src/validation/standard-schema.ts": {
-      "hash": "a374e151391141c1"
-    },
-    "packages/anansi/src/validation/types/hints.ts": {
-      "hash": "a9b51366575a1041"
-    },
-    "packages/anansi/src/validation/types/index.ts": {
-      "hash": "4acb91b1e2a04636"
-    },
-    "packages/anansi/src/validation/types/schema-definition.ts": {
-      "hash": "ecc480836fa99660"
-    },
-    "packages/anansi/src/validation/types/validator.ts": {
-      "hash": "747fef62d9271721"
+      "hash": "6a58875859ccaca2"
     },
     "packages/anansi/src/validation/utils.ts": {
-      "hash": "cc9bb12e1fc10e18"
+      "hash": "ff623339ea55ced9"
+    },
+    "packages/anansi/src/validation/validator-types.ts": {
+      "hash": "f4440f489ee10bf1"
     },
     "packages/anansi/src/validation/validator.ts": {
-      "hash": "8b58f6af5aefe697"
+      "hash": "c46c71dc71c523da"
     },
     "packages/anansi/src/wire/packet.ts": {
-      "hash": "4acd20d720f860c7"
+      "hash": "b66f3b5817bfa01f"
     },
     "packages/anansi/src/wire/transforms.ts": {
-      "hash": "9b67a9968035afe1"
+      "hash": "a26c63c2c3e1a8c4"
     },
     "packages/anansi/src/wire/values.ts": {
-      "hash": "faddc07e44f5229b"
+      "hash": "385ebca1a7e9e10f"
     },
     "packages/anansi/src/wire/varint.ts": {
-      "hash": "63cefc4b85f3f1b9"
+      "hash": "909555be1927f8ab"
     },
     "packages/anansi/test/codec.test.ts": {
       "hash": "df7f5e84014b78de"
     },
-    "packages/anansi/test/engine.test.ts": {
-      "hash": "68a08de8da1bc67a"
-    },
-    "packages/anansi/test/golden.test.ts": {
-      "hash": "4e3b62c1ec6e133a"
-    },
     "packages/anansi/test/helpers.ts": {
       "hash": "4c30b6c66ed09ac6"
     },
-    "packages/anansi/test/migration.test.ts": {
-      "hash": "2ba5a7d8a6f11367"
+    "packages/anansi/test/migration/engine.test.ts": {
+      "hash": "e82ea3d321f31c21"
     },
-    "packages/anansi/test/null-states.test.ts": {
-      "hash": "90d33ce01939cbaf"
+    "packages/anansi/test/migration/migration.test.ts": {
+      "hash": "aeab82d77d933b56"
     },
-    "packages/anansi/test/parity.test.ts": {
-      "hash": "58a95537fdcc3743"
+    "packages/anansi/test/migration/version.test.ts": {
+      "hash": "d461c9f6d806c219"
     },
     "packages/anansi/test/public-exports.test.ts": {
       "hash": "4881a00396ee828e"
     },
-    "packages/anansi/test/record.regression.test.ts": {
-      "hash": "6234473e3e21f2f8"
+    "packages/anansi/test/schema/compile.test.ts": {
+      "hash": "e6571c5d4b27e15f"
     },
-    "packages/anansi/test/transforms.test.ts": {
-      "hash": "487dda6bec76ca04"
+    "packages/anansi/test/schema/parity.test.ts": {
+      "hash": "58e5b0342d4a0217"
     },
     "packages/anansi/test/utils.test.ts": {
       "hash": "56900c0281843999"
     },
-    "packages/anansi/test/validation.test.ts": {
-      "hash": "1add928c13e76bae"
+    "packages/anansi/test/validation/record.regression.test.ts": {
+      "hash": "7d378c7564641b13"
+    },
+    "packages/anansi/test/validation/validation.test.ts": {
+      "hash": "62326e2749fd6353"
+    },
+    "packages/anansi/test/wire/golden.test.ts": {
+      "hash": "5fdbfe035cebe71e"
+    },
+    "packages/anansi/test/wire/lookup.test.ts": {
+      "hash": "069c6212065504d0"
+    },
+    "packages/anansi/test/wire/null-states.test.ts": {
+      "hash": "db8af0cd1bac7339"
+    },
+    "packages/anansi/test/wire/transforms.test.ts": {
+      "hash": "e63839cc21a2d69d"
+    },
+    "packages/anansi/test/wire/varint.test.ts": {
+      "hash": "c24b155507e39546"
     },
     "packages/anansi/tooling/sync-package.ts": {
       "hash": "9ef2bf99a24ee2fd"
@@ -1486,10 +1532,10 @@
       "hash": "3806ef87ef88990a"
     },
     "sqlite/executor/executor.go": {
-      "hash": "6a98da81cb8e1004"
+      "hash": "df98d15b6b05095c"
     },
     "sqlite/executor/utils.go": {
-      "hash": "d8796f9be57a26e0"
+      "hash": "691c9e0d5aa5ebe1"
     },
     "sqlite/fts_integration_test.go": {
       "hash": "5a946ca2cb07bbe5"
@@ -1810,7 +1856,7 @@
       "hash": "4945e9a3ca4564a1"
     },
     "tests/unit/sqlite/builder_test.go": {
-      "hash": "8649558426a09170"
+      "hash": "4baf868cd3324e23"
     },
     "tests/unit/sqlite/mapper_test.go": {
       "hash": "95d1ed9949568b4e"

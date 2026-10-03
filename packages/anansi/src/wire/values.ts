@@ -1,13 +1,8 @@
 // Per-DataType value codecs (spec 2.5) over the TS linked model.
 
 import { putUvarint, putVarint, Reader, putUvarintBig } from "./varint.ts";
-
-export const C = {
-  Unknown: 0, Int: 1, Float: 2, String: 3, Bool: 4, Bytes: 5,
-  Geometry: 6, Record: 7, ArrayUnknown: 8, ArrayInt: 9, ArrayFloat: 10,
-  ArrayString: 11, ArrayBool: 12, ArrayBytes: 13, ArrayObject: 14,
-  ArrayGeometry: 15,
-} as const;
+import { container } from "../schema/dt.ts";
+import { AnansiCodes, anansiError } from "../errors.ts";
 
 const enc = new TextEncoder();
 const dec = new TextDecoder();
@@ -33,7 +28,7 @@ export type Buf = number[];
 
 export function checkInt(v: number): void {
   if (!Number.isSafeInteger(v)) {
-    throw new Error(`anansi: integer ${v} is not a safe JS integer`);
+    throw anansiError(AnansiCodes.WIR.UNSAFE_INTEGER, `anansi: integer ${v} is not a safe JS integer`);
   }
 }
 
@@ -114,10 +109,10 @@ export function readGeometry(r: Reader): number[][] {
 
 // ── any / record (sorted-key maps + tagged unions) ──────────────────────────
 export const TAG = {
-  Null: 0, Int: C.Int, Float: C.Float, String: C.String, Bool: C.Bool,
-  Bytes: C.Bytes, Geometry: C.Geometry, Record: C.Record,
-  ArrUnknown: C.ArrayUnknown, ArrInt: C.ArrayInt, ArrFloat: C.ArrayFloat,
-  ArrString: C.ArrayString, ArrBool: C.ArrayBool, ArrBytes: C.ArrayBytes,
+  Null: 0, Int: container.TypeInt, Float: container.TypeFloat, String: container.TypeString, Bool: container.TypeBool,
+  Bytes: container.TypeBytes, Geometry: container.TypeGeometry, Record: container.TypeRecord,
+  ArrUnknown: container.TypeArrayUnknown, ArrInt: container.TypeArrayInt, ArrFloat: container.TypeArrayFloat,
+  ArrString: container.TypeArrayString, ArrBool: container.TypeArrayBool, ArrBytes: container.TypeArrayBytes,
 } as const;
 
 function isRecordArray(v: unknown[]): v is number[][][] {
@@ -174,7 +169,7 @@ export function writeAny(b: Buf, v: unknown): void {
       return;
     }
     default:
-      throw new Error(`anansi: unsupported any value ${typeof v}`);
+      throw anansiError(AnansiCodes.WIR.UNSUPPORTED_VALUE, `anansi: unsupported any value ${typeof v}`);
   }
 }
 
@@ -210,7 +205,7 @@ export function readAny(r: Reader): unknown {
       return Array.from({ length: n }, () => readAny(r));
     }
     default:
-      throw new Error(`anansi: unknown any tag ${tag}`);
+      throw anansiError(AnansiCodes.WIR.UNKNOWN_VALUE_TAG, `anansi: unknown any tag ${tag}`);
   }
 }
 

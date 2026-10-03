@@ -5,8 +5,8 @@
 import { describe, it, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { link, addressForSteps, internalDP } from "../src/schema/link.ts";
-import type { LinkedSlot } from "../src/schema/link.ts";
+import { link, addressForSteps, internalDP } from "../../src/schema/link.ts";
+import type { LinkedSlot } from "../../src/schema/link.ts";
 
 interface DumpField {
   slot: number; idx: number; path: string; name: string;
@@ -20,7 +20,7 @@ interface Dump {
 }
 
 const GOLDEN = JSON.parse(
-  readFileSync(join(import.meta.dir, "..", "testdata", "golden.json"), "utf8"),
+  readFileSync(join(import.meta.dir, "..", "..", "testdata", "golden.json"), "utf8"),
 ) as {
   schema: Record<string, unknown>;
   compileDump: Dump;

@@ -5,15 +5,15 @@
  *
  * Usage:
  *
- *   const validator = await newDocumentValidator(schema, predicateMap);
+ *   const validator = DocumentValidator.create(schema, predicateMap);
  *   const issues    = await validator.validate(document);
  *   const partial   = await validator.validatePartial(document);
  *   const loose     = await validator.validateLoose(document);
  */
 
-import type { SchemaDefinition } from "./types/schema-definition.ts";
-import type { Issue, PredicateMap, ValidationConfig } from "./types/validator.ts";
-import { defaultValidationConfig } from "./types/validator.ts";
+import type { SchemaDefinition } from "../schema/generated.ts";
+import type { Issue, PredicateMap, ValidationConfig } from "./validator-types.ts";
+import { defaultValidationConfig } from "./validator-types.ts";
 import { ValidationGraph, BuildContext } from "./graph.ts";
 
 export type { Issue, PredicateMap, ValidationConfig };
@@ -42,14 +42,17 @@ export class DocumentValidator {
   /**
    * Full validation: reports missing required fields, unexpected fields,
    * type mismatches, and constraint violations.
+   *
+   * Accepts `unknown` (Go parity: `Validate(doc any)`) — reporting bad
+   * shapes is this type's job, not the caller's.
    */
-  async validate(document: Record<string, unknown>): Promise<Issue[]> {
+  async validate(document: unknown): Promise<Issue[]> {
     return this.graph.traverse(
       this.fmap,
-      document,
+      document as Record<string, unknown>,
       "strict",
       this.config.maxDepth,
-      document,
+      document as Record<string, unknown>,
     );
   }
 
@@ -57,13 +60,13 @@ export class DocumentValidator {
    * Partial-strict validation: suppresses REQUIRED_FIELD_MISSING issues.
    * Use when validating partial updates (e.g. PATCH payloads).
    */
-  async validatePartial(document: Record<string, unknown>): Promise<Issue[]> {
+  async validatePartial(document: unknown): Promise<Issue[]> {
     return this.graph.traverse(
       this.fmap,
-      document,
+      document as Record<string, unknown>,
       "partialStrict",
       this.config.maxDepth,
-      document,
+      document as Record<string, unknown>,
     );
   }
 
@@ -72,13 +75,13 @@ export class DocumentValidator {
    * UNEXPECTED_FIELD issues.  Validates only present fields for type and
    * constraints.
    */
-  async validateLoose(document: Record<string, unknown>): Promise<Issue[]> {
+  async validateLoose(document: unknown): Promise<Issue[]> {
     return this.graph.traverse(
       this.fmap,
-      document,
+      document as Record<string, unknown>,
       "loose",
       this.config.maxDepth,
-      document,
+      document as Record<string, unknown>,
     );
   }
 
@@ -91,21 +94,22 @@ export class DocumentValidator {
    *
    * This compiles the schema into a validation DAG exactly once; subsequent
    * calls to `validate()` / `validatePartial()` / `validateLoose()` traverse
-   * the pre-compiled graph and are fast.
+   * the pre-compiled graph and are fast. Construction is synchronous (Go
+   * parity); only traversal is async, because predicates may be.
    *
    * Throws if the schema contains structural errors that prevent graph construction
    * (e.g. dangling schema references, composite parts with unsupported types).
    */
-  public static async create(
+  public static create(
     schema: SchemaDefinition,
     fmap: PredicateMap,
     config: ValidationConfig = defaultValidationConfig(),
-  ) {
+  ): DocumentValidator {
     const graph = new ValidationGraph();
     const buildCtx = new BuildContext();
     const addedConstraints = new Map<string, boolean>();
 
-    await graph.buildFromSchema(
+    graph.buildFromSchema(
       schema,
       "",
       [],

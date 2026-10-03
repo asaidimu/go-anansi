@@ -59,6 +59,8 @@
   },
   "dependencies": {
     "@asaidimu/query": "^1.1.2",
+    "@asaidimu/utils-error": "^1.1.10",
+    "@asaidimu/utils-version": "^1.0.0",
     "@standard-schema/spec": "^1.1.0",
     "fzstd": "^0.1.1",
     "hash-wasm": "^4.12.0"

@@ -6,7 +6,7 @@
  */
 
 import type { ValidationGraph } from "./graph.ts";
-import type { FieldType } from "./types/index.ts";
+import type { FieldType } from "../schema/generated.ts";
 import {
   type ConstraintScope,
   type Issue,
@@ -19,7 +19,7 @@ import {
   type ValidatorConstraintRule,
   failNode,
   createIssue,
-} from "./types/validator.ts";
+} from "./validator-types.ts";
 import {
   buildPath,
   deepEqual,
@@ -417,11 +417,10 @@ export class ArrayValidationNode extends BaseNode implements ValidationNode {  r
         ctx.originalRoot,
       );
       for (const issue of itemIssues) {
+        const p = issue.path ?? "";
         allIssues.push({
           ...issue,
-          path: issue.path.startsWith("item")
-            ? issue.path.replace("item", itemPath)
-            : issue.path,
+          path: p.startsWith("item") ? p.replace("item", itemPath) : p,
         });
       }
     }
@@ -489,127 +488,15 @@ export class RecordValidationNode extends BaseNode implements ValidationNode {
         ctx.originalRoot,
       );
       for (const issue of itemIssues) {
+        const p = issue.path ?? "";
         allIssues.push({
           ...issue,
-          path: issue.path.startsWith("item")
-            ? issue.path.replace("item", itemPath)
-            : issue.path,
+          path: p.startsWith("item") ? p.replace("item", itemPath) : p,
         });
       }
     }
 
     return allIssues.length > 0 ? failNode(allIssues) : SUCCESS;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// SetValidationNode
-// ---------------------------------------------------------------------------
-
-export class SetValidationNode extends BaseNode implements ValidationNode {
-  private readonly itemGraph: ValidationGraph | null;
-
-  constructor(
-    id: number,
-    path: string,
-    pathParts: string[],
-    itemGraph: ValidationGraph | null,
-    deps: number[] = [],
-  ) {
-    super(id, path, pathParts, deps);
-    this.itemGraph = itemGraph;
-  }
-
-  async execute(ctx: ValidationContext): Promise<NodeResult> {
-    const [value, exists] = getNodeValue(ctx, this.pathParts);
-    if (!exists || value === undefined) return SUCCESS;
-
-    if (!Array.isArray(value)) {
-      return failNode([
-        createIssue(
-          "SET_TYPE_MISMATCH",
-          "Expected array for set validation",
-          this.path,
-        ),
-      ]);
-    }
-
-    // Validate element types if an itemGraph is present
-    if (this.itemGraph) {
-      const currentDepth = getPathDepth(this.pathParts);
-      if (currentDepth >= ctx.maxDepth) {
-        return failNode([
-          createIssue(
-            "MAX_DEPTH_EXCEEDED",
-            `Maximum nesting depth of ${ctx.maxDepth} exceeded`,
-            this.path,
-          ),
-        ]);
-      }
-      const remainingDepth = ctx.maxDepth - currentDepth;
-      const allIssues: Issue[] = [];
-
-      for (let i = 0; i < value.length; i++) {
-        const itemPath = `${this.path}[${i}]`;
-        const itemIssues = await this.itemGraph.traverse(
-          ctx.functionMap,
-          { item: value[i] },
-          ctx.mode,
-          remainingDepth,
-          ctx.originalRoot,
-        );
-        for (const issue of itemIssues) {
-          allIssues.push({
-            ...issue,
-            path: issue.path.startsWith("item")
-              ? issue.path.replace("item", itemPath)
-              : issue.path,
-          });
-        }
-      }
-
-      if (allIssues.length > 0) return failNode(allIssues);
-    }
-
-    // Uniqueness check
-    if (value.length <= 1) return SUCCESS;
-
-    const seenComparable = new Map<unknown, number>();
-    const seenComplex: Array<{ val: unknown; index: number }> = [];
-
-    for (let i = 0; i < value.length; i++) {
-      const item = value[i];
-
-      if (isSafeComparable(item)) {
-        const firstIdx = seenComparable.get(item);
-        if (firstIdx !== undefined) {
-          return failNode([
-            createIssue(
-              "SET_DUPLICATE",
-              `Duplicate value at index ${i} (first seen at index ${firstIdx})`,
-              this.path,
-            ),
-          ]);
-        }
-        seenComparable.set(item, i);
-      } else {
-        const dup = seenComplex.find((prev) =>
-          deepEqual(item, prev.val, false),
-        );
-        if (dup) {
-          return failNode([
-            createIssue(
-              "SET_DUPLICATE",
-              `Duplicate value at index ${i} (first seen at index ${dup.index})`,
-              this.path,
-            ),
-          ]);
-        }
-        seenComplex.push({ val: item, index: i });
-      }
-    }
-
-    return SUCCESS;
   }
 }
 
@@ -748,10 +635,10 @@ export class RecursionMarkerNode extends BaseNode implements ValidationNode {
     );
 
     // Rewrite paths from subgraph context back to parent path.
-    const rewritten = issues.map((issue) => ({
-      ...issue,
-      path: issue.path === "" ? this.path : buildPath(this.path, issue.path),
-    }));
+    const rewritten = issues.map((issue) => {
+      const p = issue.path ?? "";
+      return { ...issue, path: p === "" ? this.path : buildPath(this.path, p) };
+    });
 
     return rewritten.length > 0 ? failNode(rewritten) : SUCCESS;
   }
@@ -803,26 +690,16 @@ export class UnionValidationNode extends BaseNode implements ValidationNode {
         );
 
         // Rewrite "root" prefix back to this node's path and tag with variant index.
-        const rewritten = issues.map((issue) => ({
-          ...issue,
-          path: issue.path.startsWith("root")
-            ? issue.path.replace("root", this.path)
-            : issue.path,
-          message: `[variant ${idx}] ${issue.message}`,
-        }));
+        const rewritten = issues.map((issue) => {
+          const p = issue.path ?? "";
+          return {
+            ...issue,
+            path: p.startsWith("root") ? p.replace("root", this.path) : p,
+            message: `[variant ${idx}] ${issue.message}`,
+          };
+        });
 
-        // If the graph reported failure but produced no issues, synthesize one.
         const ok = rewritten.length === 0;
-        if (!ok && rewritten.length === 0) {
-          rewritten.push(
-            createIssue(
-              "INTERNAL_ERROR",
-              `Variant ${idx} failed without reporting any issues`,
-              this.path,
-            ),
-          );
-        }
-
         return { ok, issues: rewritten };
       }),
     );
@@ -1210,11 +1087,10 @@ async function runConstraintPredicate(
   });
 
   if (rawIssues.length > 0) {
-    const issues = rawIssues.map((issue) => ({
-      ...issue,
-      path:
-        issue.path === "" ? contextPath : buildPath(contextPath, issue.path),
-    }));
+    const issues = rawIssues.map((issue) => {
+      const p = issue.path ?? "";
+      return { ...issue, path: p === "" ? contextPath : buildPath(contextPath, p) };
+    });
     return failNode(issues);
   }
 

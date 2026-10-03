@@ -1,6 +1,15 @@
-import type { Issue, PredicateMap } from "./types/validator.ts";
-import { createIssue } from "./types/validator.ts";
+import type { Issue, PredicateMap } from "./validator-types.ts";
+import { createIssue } from "./validator-types.ts";
 import { isInteger, isNumber } from "./utils.ts";
+
+/**
+ * Meta-schema predicate issue. Go's meta predicates always emit
+ * `Severity: "error"` (core/schema/meta/predicates.go), so every issue
+ * originating from this file carries it too.
+ */
+function metaIssue(code: string, message: string, path: string): Issue {
+  return { ...createIssue(code, message, path), severity: "error" };
+}
 
 const primitiveTypes = new Set([
   "string",
@@ -80,7 +89,7 @@ function validateNamedEnumSchema(
   const schemaMap = getSchemaByID(root, schemaID);
   if (!schemaMap) {
     return [
-      createIssue(
+      metaIssue(
         "ENUM_NAMED_SCHEMA_NOT_FOUND",
         `Enum referenced schema '${schemaID}' does not exist`,
         fieldPath,
@@ -92,7 +101,7 @@ function validateNamedEnumSchema(
   const typeVal = schemaMap["type"];
   if (typeVal === undefined || typeVal === null) {
     issues.push(
-      createIssue(
+      metaIssue(
         "ENUM_NAMED_SCHEMA_NO_TYPE",
         `Enum referenced schema '${schemaID}' must have a 'type' (string or numeric)`,
         fieldPath,
@@ -104,7 +113,7 @@ function validateNamedEnumSchema(
   const typeStr = String(typeVal);
   if (!(typeStr === "string" || isNumericType(typeStr))) {
     issues.push(
-      createIssue(
+      metaIssue(
         "ENUM_NAMED_SCHEMA_INVALID_TYPE",
         `Enum referenced schema '${schemaID}' type must be string or numeric, got '${typeVal}'`,
         fieldPath,
@@ -116,7 +125,7 @@ function validateNamedEnumSchema(
   const valuesVal = schemaMap["values"];
   if (valuesVal === undefined || valuesVal === null) {
     issues.push(
-      createIssue(
+      metaIssue(
         "ENUM_NAMED_SCHEMA_MISSING_VALUES",
         `Enum schema '${schemaID}' must have a 'values' array`,
         fieldPath,
@@ -128,7 +137,7 @@ function validateNamedEnumSchema(
   const valuesArr = valuesVal as any[];
   if (!Array.isArray(valuesArr) || valuesArr.length === 0) {
     issues.push(
-      createIssue(
+      metaIssue(
         "ENUM_NAMED_SCHEMA_EMPTY_VALUES",
         `Enum schema '${schemaID}' 'values' must be a non-empty array`,
         fieldPath,
@@ -143,7 +152,7 @@ function validateNamedEnumSchema(
     if (isStringEnum) {
       if (typeof val !== "string") {
         issues.push(
-          createIssue(
+          metaIssue(
             "ENUM_NAMED_VALUE_TYPE_MISMATCH",
             `Enum schema '${schemaID}': value at index ${i} must be string, got ${typeof val}`,
             `${fieldPath} (values[${i}])`,
@@ -153,7 +162,7 @@ function validateNamedEnumSchema(
     } else if (isNumericType(typeStr)) {
       if (!isNumber(val)) {
         issues.push(
-          createIssue(
+          metaIssue(
             "ENUM_NAMED_VALUE_TYPE_MISMATCH",
             `Enum schema '${schemaID}': value at index ${i} must be numeric (type '${typeStr}'), got ${typeof val}`,
             `${fieldPath} (values[${i}])`,
@@ -169,7 +178,7 @@ function validateNamedEnumSchema(
       const m = val as Record<string, any>;
       if (Object.keys(m).length > 0) {
         issues.push(
-          createIssue(
+          metaIssue(
             "ENUM_NAMED_SCHEMA_HAS_FIELDS",
             `Enum referenced schema '${schemaID}' must not have '${key}' (must be a simple value schema)`,
             fieldPath,
@@ -190,7 +199,7 @@ function validateInlineEnumDescriptor(
   const typeVal = refMap["type"];
   if (typeVal === undefined || typeVal === null) {
     issues.push(
-      createIssue(
+      metaIssue(
         "ENUM_INLINE_NO_TYPE",
         "Inline enum descriptor must have a 'type' (string or numeric)",
         fieldPath,
@@ -202,7 +211,7 @@ function validateInlineEnumDescriptor(
   const typeStr = String(typeVal);
   if (!(typeStr === "string" || isNumericType(typeStr))) {
     issues.push(
-      createIssue(
+      metaIssue(
         "ENUM_INLINE_INVALID_TYPE",
         `Inline enum descriptor type must be string or numeric, got '${typeVal}'`,
         fieldPath,
@@ -214,7 +223,7 @@ function validateInlineEnumDescriptor(
   const valuesVal = refMap["values"];
   if (valuesVal === undefined || valuesVal === null) {
     issues.push(
-      createIssue(
+      metaIssue(
         "ENUM_INLINE_MISSING_VALUES",
         "Inline enum descriptor must have a 'values' array",
         fieldPath,
@@ -226,7 +235,7 @@ function validateInlineEnumDescriptor(
   const valuesArr = valuesVal as any[];
   if (!Array.isArray(valuesArr) || valuesArr.length === 0) {
     issues.push(
-      createIssue(
+      metaIssue(
         "ENUM_INLINE_EMPTY_VALUES",
         "Inline enum descriptor 'values' must be a non-empty array",
         fieldPath,
@@ -241,7 +250,7 @@ function validateInlineEnumDescriptor(
     if (isStringEnum) {
       if (typeof val !== "string") {
         issues.push(
-          createIssue(
+          metaIssue(
             "ENUM_INLINE_VALUE_TYPE_MISMATCH",
             `Inline enum value at index ${i} must be string, got ${typeof val}`,
             `${fieldPath}.values[${i}]`,
@@ -251,7 +260,7 @@ function validateInlineEnumDescriptor(
     } else if (isNumericType(typeStr)) {
       if (!isNumber(val)) {
         issues.push(
-          createIssue(
+          metaIssue(
             "ENUM_INLINE_VALUE_TYPE_MISMATCH",
             `Inline enum value at index ${i} must be numeric (type '${typeStr}'), got ${typeof val}`,
             `${fieldPath}.values[${i}]`,
@@ -271,7 +280,7 @@ function validateEnumReference(
 ): Issue[] {
   if (typeof ref !== "object" || ref === null) {
     return [
-      createIssue(
+      metaIssue(
         "ENUM_REF_INVALID",
         "Enum schema reference must be an object",
         fieldPath,
@@ -285,7 +294,7 @@ function validateEnumReference(
 
   if (hasID && hasType) {
     return [
-      createIssue(
+      metaIssue(
         "ENUM_REF_AMBIGUOUS",
         "Enum schema reference cannot have both 'id' (named) and 'type' (inline)",
         fieldPath,
@@ -297,7 +306,7 @@ function validateEnumReference(
     const idVal = refMap["id"];
     if (idVal === undefined || idVal === null || idVal === "") {
       return [
-        createIssue(
+        metaIssue(
           "ENUM_NAMED_REF_INVALID_ID",
           "Named enum reference 'id' must be a non-empty string",
           fieldPath,
@@ -312,7 +321,7 @@ function validateEnumReference(
   }
 
   return [
-    createIssue(
+    metaIssue(
       "ENUM_REF_NO_ID_OR_TYPE",
       "Enum schema reference must have either 'id' (named) or 'type' (inline)",
       fieldPath,
@@ -391,7 +400,7 @@ export const metaSchemaPredicateMap: PredicateMap = {
       schemaVal !== null
     ) {
       return [
-        createIssue(
+        metaIssue(
           "PRIMITIVE_HAS_SCHEMA",
           `Primitive type '${typeStr}' cannot have a schema reference`,
           "",
@@ -411,7 +420,7 @@ export const metaSchemaPredicateMap: PredicateMap = {
     const schemaVal = field["schema"];
     if (schemaVal === undefined || schemaVal === null) {
       return [
-        createIssue(
+        metaIssue(
           "ENUM_MISSING_SCHEMA",
           "Enum field must have a schema reference",
           "",
@@ -422,7 +431,7 @@ export const metaSchemaPredicateMap: PredicateMap = {
     const [refs, isArray] = getSchemaReferenceObjects(field);
     if (refs.length === 0) {
       return [
-        createIssue(
+        metaIssue(
           "ENUM_NO_VALID_REFS",
           "Enum field has no valid schema references",
           "",
@@ -448,7 +457,7 @@ export const metaSchemaPredicateMap: PredicateMap = {
     if (hasType && typeStr === "composite") {
       if (schemaVal === undefined || schemaVal === null) {
         return [
-          createIssue(
+          metaIssue(
             "COMPOSITE_MISSING_SCHEMA",
             "Composite type must have schema references",
             "",
@@ -458,7 +467,7 @@ export const metaSchemaPredicateMap: PredicateMap = {
       if (Array.isArray(schemaVal)) {
         if (schemaVal.length < minSchemas) {
           return [
-            createIssue(
+            metaIssue(
               "COMPOSITE_INSUFFICIENT_SCHEMAS",
               `Composite must have at least ${minSchemas} schema references`,
               "",
@@ -467,7 +476,7 @@ export const metaSchemaPredicateMap: PredicateMap = {
         }
       } else {
         return [
-          createIssue(
+          metaIssue(
             "COMPOSITE_SCHEMA_NOT_ARRAY",
             "Composite 'schema' must be an array of references",
             "",
@@ -523,7 +532,7 @@ export const metaSchemaPredicateMap: PredicateMap = {
 
       if (!isObjectLikeSchema(schemaMap)) {
         currentIssues.push(
-          createIssue(
+          metaIssue(
             "COMPOSITE_REF_NOT_OBJECT",
             `Composite schema '${schemaID}' must effectively represent an object type (has fields, or type 'object'/'record')`,
             fieldPath,
@@ -555,7 +564,7 @@ export const metaSchemaPredicateMap: PredicateMap = {
     if (hasType && typeStr === "object") {
       if (schemaVal === undefined || schemaVal === null) {
         return [
-          createIssue(
+          metaIssue(
             "OBJECT_MISSING_SCHEMA",
             "Object type must have a schema reference",
             "",
@@ -591,7 +600,7 @@ export const metaSchemaPredicateMap: PredicateMap = {
     const fields = schemaMap["fields"];
     if (fields === undefined || fields === null) {
       return [
-        createIssue(
+        metaIssue(
           "OBJECT_REF_NO_FIELDS",
           `Object field references schema '${schemaID}' which has no 'fields' (must be Schema mode)`,
           "",
@@ -600,7 +609,7 @@ export const metaSchemaPredicateMap: PredicateMap = {
     }
     if (typeof fields !== "object" || Object.keys(fields).length === 0) {
       return [
-        createIssue(
+        metaIssue(
           "OBJECT_REF_EMPTY_FIELDS",
           `Object field references schema '${schemaID}' which has empty fields`,
           "",
@@ -630,7 +639,7 @@ spatial_index_on_geometry_field: (params) => {
       const fieldType = resolved.def["type"];
       if (fieldType !== "geometry") {
         return [
-          createIssue(
+          metaIssue(
             "SPATIAL_INDEX_NON_GEOMETRY",
             `Spatial index can only reference geometry fields, but field '${fieldPath}' has type '${fieldType}'`,
             "",
@@ -675,7 +684,7 @@ spatial_index_on_geometry_field: (params) => {
 
     if (!ok) {
       return [
-        createIssue(
+        metaIssue(
           "INDEX_CONDITION_VALUE_TYPE_MISMATCH",
           `Value for field '${fieldPath}' must be ${fieldType}`,
           "",
@@ -698,7 +707,7 @@ spatial_index_on_geometry_field: (params) => {
         const idVal = ref.id;
         if (typeof idVal === "string" && !schemasMap[idVal]) {
           issues.push(
-            createIssue(
+            metaIssue(
               "SCHEMA_REFERENCE_NOT_FOUND",
               `Referenced schema '${idVal}' does not exist`,
               path,
@@ -784,7 +793,7 @@ spatial_index_on_geometry_field: (params) => {
 
     if (errMsg) {
       return [
-        createIssue(
+        metaIssue(
           "DEFAULT_VALUE_TYPE_MISMATCH",
           `Default value ${JSON.stringify(defaultVal)} ${errMsg} for type ${typeStr}`,
           "",
@@ -807,7 +816,7 @@ spatial_index_on_geometry_field: (params) => {
         const existingPath = seen.get(id);
         if (existingPath) {
           issues.push(
-            createIssue(
+            metaIssue(
               "DUPLICATE_FIELD_ID",
               `Field ID '${id}' is not unique; already used at ${existingPath}`,
               `${path}.${id}`,
@@ -887,7 +896,7 @@ spatial_index_on_geometry_field: (params) => {
               if (typeof fieldPath === "string") {
                 if (!resolveFieldPath(fieldPath, contextFields)) {
                   issues.push(
-                    createIssue(
+                    metaIssue(
                       "CONSTRAINT_FIELD_NOT_FOUND",
                       `Constraint '${constraintID}' references non-existent field path '${fieldPath}'`,
                       `${basePath}constraints.${constraintID}.fields[${i}]`,
@@ -937,7 +946,7 @@ spatial_index_on_geometry_field: (params) => {
     const fieldTypeStr = String(fieldTypeVal);
     if (!allowedToHaveInline.has(fieldTypeStr)) {
       return [
-        createIssue(
+        metaIssue(
           "INLINE_DESCRIPTOR_NOT_ALLOWED_FOR_FIELD_TYPE",
           `Inline type descriptors are only allowed for fields of type record, array, set, or enum, but got '${fieldTypeStr}'`,
           "",
@@ -958,7 +967,7 @@ spatial_index_on_geometry_field: (params) => {
     ]);
     if (!allowedInline.has(inlineTypeStr)) {
       return [
-        createIssue(
+        metaIssue(
           "INLINE_DESCRIPTOR_INVALID_TYPE",
           `Inline descriptor type '${inlineTypeStr}' is not allowed (only primitives and 'record')`,
           "",
@@ -970,7 +979,7 @@ spatial_index_on_geometry_field: (params) => {
     if (valuesVal !== undefined && valuesVal !== null) {
       if (inlineTypeStr !== "string" && !isNumericType(inlineTypeStr)) {
         return [
-          createIssue(
+          metaIssue(
             "INLINE_DESCRIPTOR_VALUES_WITHOUT_ENUM",
             "'values' can only be used with string or numeric inline types",
             "",
@@ -979,7 +988,7 @@ spatial_index_on_geometry_field: (params) => {
       }
       if (!Array.isArray(valuesVal) || valuesVal.length === 0) {
         return [
-          createIssue(
+          metaIssue(
             "INLINE_DESCRIPTOR_VALUES_NOT_ARRAY",
             "'values' must be a non‑empty array",
             "",
@@ -1007,7 +1016,7 @@ spatial_index_on_geometry_field: (params) => {
     if (Array.isArray(schemaVal)) {
       if (schemaVal.length === 0) {
         return [
-          createIssue(
+          metaIssue(
             "SCHEMA_REF_FORM_INVALID",
             `Field type '${typeStr}' requires at least one reference`,
             "",
@@ -1020,7 +1029,7 @@ spatial_index_on_geometry_field: (params) => {
         typeStr !== "enum"
       ) {
         return [
-          createIssue(
+          metaIssue(
             "SCHEMA_REF_FORM_INVALID",
             `Field type '${typeStr}' cannot use an array of references`,
             "",
@@ -1031,7 +1040,7 @@ spatial_index_on_geometry_field: (params) => {
         const item = schemaVal[i];
         if (typeof item !== "object" || item === null) {
           return [
-            createIssue(
+            metaIssue(
               "SCHEMA_REF_FORM_INVALID",
               `Element ${i} of schema array is not an object`,
               "",
@@ -1042,7 +1051,7 @@ spatial_index_on_geometry_field: (params) => {
         if (typeStr === "enum") {
           if (!isNamed && !isInline) {
             return [
-              createIssue(
+              metaIssue(
                 "SCHEMA_REF_FORM_INVALID",
                 `Enum array element ${i} must be a named reference or inline descriptor`,
                 "",
@@ -1052,7 +1061,7 @@ spatial_index_on_geometry_field: (params) => {
         } else {
           if (!isNamed) {
             return [
-              createIssue(
+              metaIssue(
                 "SCHEMA_REF_FORM_INVALID",
                 `Field type '${typeStr}' array element ${i} must be a named schema reference (with 'id')`,
                 "",
@@ -1072,7 +1081,7 @@ spatial_index_on_geometry_field: (params) => {
         case "enum":
           if (!isNamed && !isInline) {
             return [
-              createIssue(
+              metaIssue(
                 "SCHEMA_REF_FORM_INVALID",
                 `Field type '${typeStr}' requires a single named reference or an inline descriptor`,
                 "",
@@ -1083,7 +1092,7 @@ spatial_index_on_geometry_field: (params) => {
         case "object":
           if (!isNamed) {
             return [
-              createIssue(
+              metaIssue(
                 "SCHEMA_REF_FORM_INVALID",
                 "Object field requires a single named schema reference",
                 "",
@@ -1094,7 +1103,7 @@ spatial_index_on_geometry_field: (params) => {
         case "union":
         case "composite":
           return [
-            createIssue(
+            metaIssue(
               "SCHEMA_REF_FORM_INVALID",
               `Field type '${typeStr}' requires an array of references`,
               "",
@@ -1118,7 +1127,7 @@ spatial_index_on_geometry_field: (params) => {
       (schemaVal === undefined || schemaVal === null)
     ) {
       return [
-        createIssue(
+        metaIssue(
           "COLLECTION_MISSING_SCHEMA",
           `Collection type '${typeStr}' must have a schema reference`,
           "",
@@ -1139,7 +1148,7 @@ spatial_index_on_geometry_field: (params) => {
     const schemaVal = data["schema"];
     if (schemaVal === undefined || schemaVal === null) {
       return [
-        createIssue(
+        metaIssue(
           "UNION_MISSING_SCHEMA",
           "Union type must have schema references",
           "",
@@ -1148,7 +1157,7 @@ spatial_index_on_geometry_field: (params) => {
     }
     if (!Array.isArray(schemaVal)) {
       return [
-        createIssue(
+        metaIssue(
           "UNION_SCHEMA_NOT_ARRAY",
           "Union type schema must be an array of schema references",
           "",
@@ -1157,7 +1166,7 @@ spatial_index_on_geometry_field: (params) => {
     }
     if (schemaVal.length < minSchemas) {
       return [
-        createIssue(
+        metaIssue(
           "UNION_INSUFFICIENT_SCHEMAS",
           `Union type must have at least ${minSchemas} schema references, got ${schemaVal.length}`,
           "",
@@ -1177,7 +1186,7 @@ spatial_index_on_geometry_field: (params) => {
     const schemaVal = data["schema"];
     if (Array.isArray(schemaVal)) {
       return [
-        createIssue(
+        metaIssue(
           "RECORD_SCHEMA_ARRAY",
           "Record type must have zero or one schema reference, not an array",
           "",
@@ -1216,7 +1225,7 @@ spatial_index_on_geometry_field: (params) => {
 
     if (hasBaseSchema && hasFieldProps) {
       return [
-        createIssue(
+        metaIssue(
           "NESTED_SCHEMA_MIXED_MODE",
           "NestedSchema cannot mix BaseSchema fields (fields/indexes/constraints) with FieldProperties (type/values/schema)",
           "",
@@ -1225,7 +1234,7 @@ spatial_index_on_geometry_field: (params) => {
     }
     if (!hasBaseSchema && !hasFieldProps) {
       return [
-        createIssue(
+        metaIssue(
           "NESTED_SCHEMA_NO_MODE",
           "NestedSchema must have either BaseSchema fields or FieldProperties, not neither",
           "",
@@ -1249,7 +1258,7 @@ spatial_index_on_geometry_field: (params) => {
 
     if (hasRule && hasGroup) {
       return [
-        createIssue(
+        metaIssue(
           "CONSTRAINT_MIXED_TYPE",
           "Constraint cannot have both predicate (rule) and operator+rules (group)",
           name,
@@ -1258,7 +1267,7 @@ spatial_index_on_geometry_field: (params) => {
     }
     if (!hasRule && !hasGroup) {
       return [
-        createIssue(
+        metaIssue(
           "CONSTRAINT_NO_TYPE",
           "Constraint must have either predicate (rule) or operator+rules (group)",
           name,
@@ -1275,7 +1284,7 @@ spatial_index_on_geometry_field: (params) => {
     const val = data["predicate"];
     if (val === undefined)
       return [
-        createIssue(
+        metaIssue(
           "REQUIRED_FIELD_MISSING",
           "Required field 'predicate' is missing",
           "predicate",
@@ -1283,7 +1292,7 @@ spatial_index_on_geometry_field: (params) => {
       ];
     if (val === null)
       return [
-        createIssue(
+        metaIssue(
           "REQUIRED_FIELD_NULL",
           "Required field 'predicate' cannot be null",
           "predicate",
@@ -1291,7 +1300,7 @@ spatial_index_on_geometry_field: (params) => {
       ];
     if (typeof val !== "string")
       return [
-        createIssue(
+        metaIssue(
           "REQUIRED_FIELD_WRONG_TYPE",
           "Required field 'predicate' must be a string",
           "predicate",
@@ -1299,7 +1308,7 @@ spatial_index_on_geometry_field: (params) => {
       ];
     if (val.trim() === "")
       return [
-        createIssue(
+        metaIssue(
           "REQUIRED_FIELD_EMPTY",
           "Required field 'predicate' cannot be empty",
           "predicate",
@@ -1325,7 +1334,7 @@ spatial_index_on_geometry_field: (params) => {
 
     if (hasSingle && hasGroup) {
       return [
-        createIssue(
+        metaIssue(
           "INDEX_CONDITION_MIXED_TYPE",
           "IndexCondition cannot have both single condition fields and group fields",
           "",
@@ -1334,7 +1343,7 @@ spatial_index_on_geometry_field: (params) => {
     }
     if (!hasSingle && !hasGroup) {
       return [
-        createIssue(
+        metaIssue(
           "INDEX_CONDITION_NO_TYPE",
           "IndexCondition must be either a single condition or a group",
           "",
@@ -1351,7 +1360,7 @@ spatial_index_on_geometry_field: (params) => {
     const val = data["name"];
     if (val === undefined || val === null || String(val).trim() === "") {
       return [
-        createIssue("SCHEMA_NAME_MISSING", "Schema name is required", "name"),
+        metaIssue("SCHEMA_NAME_MISSING", "Schema name is required", "name"),
       ];
     }
     return [];
@@ -1364,7 +1373,7 @@ spatial_index_on_geometry_field: (params) => {
     const val = data["name"];
     if (val === undefined || val === null || String(val).trim() === "") {
       return [
-        createIssue("FIELD_NAME_MISSING", "Field name is required", "name"),
+        metaIssue("FIELD_NAME_MISSING", "Field name is required", "name"),
       ];
     }
     return [];
@@ -1377,7 +1386,7 @@ spatial_index_on_geometry_field: (params) => {
     const fields = data["fields"];
     if (!Array.isArray(fields) || fields.length === 0) {
       return [
-        createIssue(
+        metaIssue(
           "INDEX_FIELDS_EMPTY",
           "Index must reference at least one field",
           "fields",
@@ -1394,7 +1403,7 @@ spatial_index_on_geometry_field: (params) => {
     const val = data["id"];
     if (val === undefined || val === null || String(val).trim() === "") {
       return [
-        createIssue(
+        metaIssue(
           "SCHEMA_REFERENCE_ID_MISSING",
           "SchemaReference ID is required",
           "id",
@@ -1405,33 +1414,35 @@ spatial_index_on_geometry_field: (params) => {
   },
 
   index_fields_reference_valid: (params) => {
-    // TODO: Check that declared paths can be reached from the root by
-    // following the path
-    return [];
+    const root = params.root;
+    const data = params.data;
+    if (typeof data !== "object" || data === null) return [];
+    const index = data as Record<string, unknown>;
 
-    // const root = params.root;
-    // const data = params.data as Record<string, any>;
-    // if (typeof data !== "object" || data === null) return [];
-    //
-    // const schemaFields = root["fields"] as Record<string, any>;
-    // if (!schemaFields) return [];
-    //
-    // const fieldsArray = data["fields"];
-    // if (!Array.isArray(fieldsArray)) return [];
-    //
-    // const name = String(data["name"] || "UNNAMED");
-    // const issues: Issue[] = [];
-    // fieldsArray.forEach((fieldID, i) => {
-    //   if (!schemaFields[String(fieldID)]) {
-    //     issues.push(
-    //       createIssue(
-    //         "INDEX_FIELD_NOT_FOUND",
-    //         `Index '${name}' references non-existent field '${fieldID}'`,
-    //         `fields[${i}]`,
-    //       ),
-    //     );
-    //   }
-    // });
-    // return issues;
+    const schemaFields = root["fields"];
+    if (typeof schemaFields !== "object" || schemaFields === null) return [];
+
+    const fieldsArray = index["fields"];
+    if (!Array.isArray(fieldsArray)) return [];
+
+    let name = "PLEASE_NAME_YOUR_INDEXES";
+    if (typeof index["name"] === "string") name = index["name"];
+
+    const issues: Issue[] = [];
+    fieldsArray.forEach((fieldRef, i) => {
+      if (typeof fieldRef !== "string") return;
+      // Entries are dotted paths resolved by NAME at each level — never
+      // field-id keys of root.fields. Mirrors the condition predicate.
+      if (!resolveFieldByPath(root, fieldRef)) {
+        issues.push(
+          metaIssue(
+            "INDEX_FIELD_NOT_FOUND",
+            `Index '${name}' references non-existent field '${fieldRef}'`,
+            `fields[${i}]`,
+          ),
+        );
+      }
+    });
+    return issues;
   },
 };

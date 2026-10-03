@@ -2,7 +2,7 @@ import { describe, it, expect } from "bun:test";
 import {
   DocumentValidator,
   metaSchemaPredicateMap,
-} from "../src/validation/index.ts";
+} from "../../src/validation/index.ts";
 
 // Parity with core/schema/definition/validator_record_test.go: an array
 // declared with the inline descriptor { "type": "record" } must accept plain

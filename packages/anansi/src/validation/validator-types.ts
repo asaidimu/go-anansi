@@ -1,5 +1,5 @@
 /**
- * types.ts
+ * validator-types.ts
  *
  * Core type definitions for the schema validator.
  * Mirrors the Go type system faithfully, with idiomatic TypeScript adaptations:
@@ -8,6 +8,9 @@
  *   - Predicate returns boolean | Promise<boolean> to support async (DB-backed) validation
  */
 
+import type {
+  Issue,
+} from "@asaidimu/utils-error";
 import type {
   FieldType,
   FieldDefinition,
@@ -19,33 +22,21 @@ import type {
   ConstraintRule as SchemaConstraintRule,
   ConstraintGroup as SchemaConstraintGroup,
   Constraint as SchemaConstraint,
-} from "./schema-definition.ts";
-
-// Re-export the schema definition types so the rest of the validator
-// imports from a single location.
-export type {
-  FieldType,
-  FieldDefinition,
-  SchemaDefinition,
-  NestedSchemaDefinition,
-  SchemaReference,
-  InlineTypeDescriptor,
-  IndexDefinition,
-};
+} from "../schema/generated.ts";
+import { internalError } from "../errors.ts";
 
 // ---------------------------------------------------------------------------
 // Issue
 // ---------------------------------------------------------------------------
 
-/** A single validation failure produced by a node. */
-export interface Issue {
-  /** Machine-readable error code (e.g. "TYPE_MISMATCH", "REQUIRED_FIELD_MISSING"). */
-  code: string;
-  /** Human-readable description. */
-  message: string;
-  /** Dot-separated path to the offending value (e.g. "user.address.street"). */
-  path: string;
-}
+/**
+ * A single validation failure produced by a node.
+ *
+ * Re-exported from @asaidimu/utils-error (the TypeScript mirror of Go's
+ * `common.Issue`): adds optional `severity` / `index` / `description` /
+ * `cause`, and makes `path` optional (`path?: string`).
+ */
+export type { Issue };
 
 // ---------------------------------------------------------------------------
 // ValidationMode
@@ -210,7 +201,7 @@ export class FieldSchemaReference {
 
   asSingle(): SchemaReference {
     if (this.raw.kind !== "single") {
-      throw new Error(
+      throw internalError(
         `FieldSchemaReference is '${this.raw.kind}', not 'single'`,
       );
     }
@@ -219,7 +210,7 @@ export class FieldSchemaReference {
 
   asMultiple(): SchemaReference[] {
     if (this.raw.kind !== "multiple") {
-      throw new Error(
+      throw internalError(
         `FieldSchemaReference is '${this.raw.kind}', not 'multiple'`,
       );
     }
@@ -228,7 +219,7 @@ export class FieldSchemaReference {
 
   asInline(): InlineTypeDescriptor {
     if (this.raw.kind !== "inline") {
-      throw new Error(
+      throw internalError(
         `FieldSchemaReference is '${this.raw.kind}', not 'inline'`,
       );
     }
@@ -290,8 +281,8 @@ export function toValidatorConstraint(
     const rule = raw as SchemaConstraintRule;
     return {
       kind: "rule" as const,
-      name: rule.name,
-      description: rule.description ?? undefined,
+      name: raw.name,
+      description: raw.description ?? undefined,
       predicate: rule.predicate,
       parameters: rule.parameters ?? undefined,
       fields: (rule.fields ?? []) as string[],
@@ -301,8 +292,8 @@ export function toValidatorConstraint(
   const group = raw as SchemaConstraintGroup;
   return {
     kind: "group" as const,
-    name: group.name,
-    description: group.description ?? undefined,
+    name: raw.name,
+    description: raw.description ?? undefined,
     operator: group.operator as string,
     rules: (group.rules ?? []).map((r) =>
       toValidatorConstraint(r as SchemaConstraint),

@@ -4,20 +4,17 @@
 // (slotIdx,fieldIdx) coordinates are assigned by link.ts, which owns slot
 // allocation — mirroring the Go split.
 
-import { Literal } from "./types.ts";
+import { Literal, type FieldDef } from "./types.ts";
 import type {
-  FieldDefinition,
   FieldType as MetaFieldType,
   InlineTypeDescriptor,
   SchemaDefinition,
   SchemaReference as SchemaRef,
 } from "./generated.ts";
+import { AnansiCodes, anansiError } from "../errors.ts";
 
 /** Canonical field-type union, straight from the meta schema. */
 export type FieldType = MetaFieldType;
-
-/** FieldDefinition plus Go-supported field-level enum `values`. */
-export type FieldDef = FieldDefinition & { values?: unknown[] };
 
 export interface ResolvedEnum {
   lookup: Map<string, unknown>;
@@ -76,7 +73,12 @@ function isMultiRef(s: FieldDef["schema"]): s is SchemaRef[] {
   return Array.isArray(s);
 }
 function isInline(s: FieldDef["schema"]): s is InlineTypeDescriptor {
-  return !!s && !Array.isArray(s) && typeof (s as SchemaRef).id !== "string";
+  if (!s || Array.isArray(s)) return false;
+  if (typeof (s as SchemaRef).id === "string") return false;
+  // Go IsInline: an inline descriptor must declare a type or values —
+  // a bare object without either is not a descriptor.
+  const cand = s as InlineTypeDescriptor;
+  return typeof cand.type === "string" || (cand.values?.length ?? 0) > 0;
 }
 function joinPath(prefix: string, name: string): string {
   return prefix ? `${prefix}.${name}` : name;
@@ -102,7 +104,7 @@ export class Compiler {
     if (this.building.has(id)) return null; // cycle → recursive at caller
 
     const def = (this.source.schemas ?? {})[id];
-    if (!def) throw new Error(`anansi: schema '${id}' not found`);
+    if (!def) throw anansiError(AnansiCodes.SCH.SCHEMA_NOT_FOUND, `anansi: schema '${id}' not found`);
 
     this.building.add(id);
     try {
@@ -157,7 +159,7 @@ export class Compiler {
       required: !!f.required,
       deprecated: !!f.deprecated,
       unique: !!f.unique,
-      nullable: f.nullable !== false,
+      nullable: f.nullable !== false, // absent → nullable (Go: ResolvedNullable)
       hasDefault: !Literal.fromJSON(f.default).isZero(),
       kind: { tag: "scalar" },
     };
@@ -180,7 +182,7 @@ export class Compiler {
 
       case "array": {
         if (isMultiRef(ref)) {
-          throw new Error(`anansi: ${rf.path}: array cannot reference multiple schemas`);
+          throw anansiError(AnansiCodes.SCH.SCHEMA_REF_INVALID, `anansi: ${rf.path}: array cannot reference multiple schemas`);
         }
         if (isSingleRef(ref)) {
           const target = this.require(ref.id, rf.path);
@@ -278,7 +280,7 @@ export class Compiler {
 
   private require(id: string, at: string): ResolvedNested {
     const n = this.resolve(id);
-    if (!n) throw new Error(`anansi: ${at}: unresolvable schema reference '${id}'`);
+    if (!n) throw anansiError(AnansiCodes.SCH.SCHEMA_REF_INVALID, `anansi: ${at}: unresolvable schema reference '${id}'`);
     return n;
   }
 

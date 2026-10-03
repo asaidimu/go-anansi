@@ -127,6 +127,61 @@ func getSchemaReferenceObjects(field map[string]any) (refs []any, isArray bool) 
 	return refs, isArray
 }
 
+// resolveFieldByPath resolves a dotted field PATH (e.g. "customer.email") or a
+// bare field NAME against the schema definition, matching each segment by
+// NAME at its level and descending through named-object schema references
+// (root.schemas by id) and inline object descriptors. Index/constraint field
+// references are paths into the document shape — never map keys of
+// root.fields (which are field IDs). Port of
+// packages/anansi/src/validation/predicates.ts resolveFieldByPath.
+func resolveFieldByPath(root map[string]any, path string) (map[string]any, bool) {
+	segs := strings.Split(path, ".")
+
+	var scopeFields map[string]any
+	if rf, ok := root["fields"].(map[string]any); ok {
+		scopeFields = rf
+	}
+
+	var def map[string]any
+	for i, seg := range segs {
+		if scopeFields == nil {
+			return nil, false
+		}
+		var found map[string]any
+		for _, v := range scopeFields {
+			if fm, ok := v.(map[string]any); ok {
+				if name, ok := fm["name"].(string); ok && name == seg {
+					found = fm
+					break
+				}
+			}
+		}
+		if found == nil {
+			return nil, false
+		}
+		def = found
+		if i < len(segs)-1 {
+			ref, isObj := found["schema"].(map[string]any)
+			if !isObj {
+				return nil, false
+			}
+			if id, ok := ref["id"].(string); ok {
+				var nested map[string]any
+				if schemas, ok := root["schemas"].(map[string]any); ok {
+					nested, _ = schemas[id].(map[string]any)
+				}
+				if nested == nil {
+					return nil, false
+				}
+				scopeFields, _ = nested["fields"].(map[string]any)
+			} else {
+				scopeFields, _ = ref["fields"].(map[string]any)
+			}
+		}
+	}
+	return def, def != nil
+}
+
 // validateEnumReference validates a single enum reference (named or inline).
 // Returns issues if invalid.
 func validateEnumReference(ref any, fieldPath string, root map[string]any) []common.Issue {
@@ -607,29 +662,19 @@ var MetaSchemaPredicates = definition.PredicateMap{
 		if !ok {
 			return nil
 		}
-		schemaFields, ok := root["fields"].(map[string]any)
-		if !ok {
-			return nil
-		}
-		// Build name-to-type map
-		fieldTypeByName := make(map[string]string, len(schemaFields))
-		for _, f := range schemaFields {
-			if fMap, ok := f.(map[string]any); ok {
-				if fName, ok := fMap["name"].(string); ok {
-					fType, _ := fMap["type"].(string)
-					fieldTypeByName[fName] = fType
-				}
-			}
-		}
 		for _, f := range fieldsArr {
 			fieldName, ok := f.(string)
 			if !ok {
 				continue
 			}
-			fieldType, exists := fieldTypeByName[fieldName]
-			if !exists {
+			// Index field references are PATHS/NAMES resolved per segment;
+			// unresolvable entries are INDEX_FIELD_NOT_FOUND's concern, not
+			// this predicate's (matches the TS port).
+			def, resolved := resolveFieldByPath(root, fieldName)
+			if !resolved {
 				continue
 			}
+			fieldType, _ := def["type"].(string)
 			if fieldType != "geometry" {
 				return []common.Issue{{
 					Code:     "SPATIAL_INDEX_NON_GEOMETRY",
@@ -650,23 +695,13 @@ var MetaSchemaPredicates = definition.PredicateMap{
 			return nil
 		}
 		value := condition["value"]
-		schemaFields, ok := root["fields"].(map[string]any)
-		if !ok {
+		// Index condition field references are PATHS/NAMES, not map keys
+		// (matches the TS port).
+		def, resolved := resolveFieldByPath(root, fieldName)
+		if !resolved {
 			return nil
 		}
-		// Look up field by name instead of by ID
-		var fieldType string
-		for _, f := range schemaFields {
-			if fMap, ok := f.(map[string]any); ok {
-				if fName, ok := fMap["name"].(string); ok && fName == fieldName {
-					fieldType, _ = fMap["type"].(string)
-					break
-				}
-			}
-		}
-		if fieldType == "" {
-			return nil
-		}
+		fieldType, _ := def["type"].(string)
 		switch fieldType {
 		case "string":
 			if _, ok := value.(string); !ok && value != nil {
@@ -1564,14 +1599,36 @@ var MetaSchemaPredicates = definition.PredicateMap{
 		return nil
 	},
 
-	"index_fields_reference_valid": func(params definition.PredicateParams) []common.Issue {
+	// @note #index-fields-dotted-path issue resolved P2 : index_fields_reference_valid checks top-level names only, rejecting valid dotted index paths
+//
+// Fixed: resolveFieldByPath (port of the TS helper) resolves index/constraint
+// field refs segment-by-segment by NAME through root.schemas and inline
+// descriptors; index_fields_reference_valid, spatial_index_on_geometry_field,
+// and index_condition_value_matches_field_type all use it now. Path verified:
+// the constraint's contextPath is always "" (probed at root and
+// nested-schema indexes), so the absolute "indexes.%s.fields[%d]" path is
+// correct and not doubled in Go — the doubling was a TS-traversal concern
+// (fixed there with relative "fields[%d]"). Regression tests in
+// core/schema/meta/index_path_test.go.
+//
+// index.fields entries are PATHS: sqlite/query/index.go treats a dotted
+// entry as column + json path (json_extract). But this predicate builds a
+// name set from root["fields"] only, so "user.email" is never a member and a
+// valid dotted index is flagged INDEX_FIELD_NOT_FOUND. Nothing here walks
+// nested schemas either (spatial_index_on_geometry_field silently skips
+// dotted entries instead). The TS port fixed this in
+// packages/anansi/src/validation/predicates.ts via resolveFieldByPath
+// (match by NAME at each segment, descend through root.schemas) — Go should
+// follow. Also verify this predicate's Path is absolute ("indexes.%s...")
+// while sibling predicates return relative paths ("fields"): the TS
+// traversal prefixes the index path and doubled it.
+"index_fields_reference_valid": func(params definition.PredicateParams) []common.Issue {
 		root := params.Root
 		data, ok := params.Data.(map[string]any)
 		if !ok {
 			return nil
 		}
-		schemaFields, ok := root["fields"].(map[string]any)
-		if !ok {
+		if _, ok := root["fields"].(map[string]any); !ok {
 			return nil
 		}
 		var issues []common.Issue
@@ -1590,21 +1647,14 @@ var MetaSchemaPredicates = definition.PredicateMap{
 				name = n
 			}
 		}
-		// Build a set of field names from the schema's fields map (value.name)
-		fieldNameSet := make(map[string]bool, len(schemaFields))
-		for _, f := range schemaFields {
-			if fMap, ok := f.(map[string]any); ok {
-				if fName, ok := fMap["name"].(string); ok {
-					fieldNameSet[fName] = true
-				}
-			}
-		}
 		for i, fieldRef := range fieldsArray {
 			fieldName, ok := fieldRef.(string)
 			if !ok {
 				continue
 			}
-			if !fieldNameSet[fieldName] {
+			// Entries are dotted paths resolved by NAME at each level — never
+			// field-id keys of root.fields (matches the TS port).
+			if _, resolved := resolveFieldByPath(root, fieldName); !resolved {
 				issues = append(issues, common.Issue{
 					Code:     "INDEX_FIELD_NOT_FOUND",
 					Message:  fmt.Sprintf("Index '%s' references non-existent field '%s'", name, fieldName),

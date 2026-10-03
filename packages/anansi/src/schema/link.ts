@@ -4,6 +4,7 @@
 import { container, TYPE_NAMES } from "./dt.ts";
 import { Compiler, ResolvedField, ResolvedNested, FieldType, ResolvedEnum } from "./compile.ts";
 import { SchemaDefinition } from "./types.ts";
+import { AnansiCodes, anansiError } from "../errors.ts";
 
 // ── constants (must match Go exactly) ────────────────────────────────────────
 export const FD_NO_CHILD = 0x3f;
@@ -179,7 +180,7 @@ class Linker {
 
   assignSlot(rns: ResolvedNested): number {
     if (this.slots.length >= MAX_SCHEMA_SLOTS) {
-      throw new Error(`anansi: exceeds maximum of ${MAX_SCHEMA_SLOTS} nested schemas while assigning '${rns.name}'`);
+      throw anansiError(AnansiCodes.SCH.SCHEMA_SLOT_LIMIT, `anansi: exceeds maximum of ${MAX_SCHEMA_SLOTS} nested schemas while assigning '${rns.name}'`);
     }
     const idx = this.slots.length;
     this.slots.push({ fieldStart: -1, fieldCount: -1, footprint: -1 });
@@ -210,7 +211,7 @@ class Linker {
 
     for (let i = 0; i < fields.length; i++) {
       if (fields.length > MAX_FIELDS_PER_SCHEMA) {
-        throw new Error(`anansi: slot ${schemaIdx} exceeds ${MAX_FIELDS_PER_SCHEMA} fields`);
+        throw anansiError(AnansiCodes.SCH.SCHEMA_SLOT_LIMIT, `anansi: slot ${schemaIdx} exceeds ${MAX_FIELDS_PER_SCHEMA} fields`);
       }
       const rf = fields[i];
       const [dt, kind, terminal] = classify(rf);
@@ -346,8 +347,7 @@ export function userDataDP(dt: number, addr: number): number {
 
 export function link(source: SchemaDefinition): LinkResult {
   const compiler = new Compiler(source);
-  const { root: rootFields, schemas } = compiler.compile();
-  void schemas;
+  const { root: rootFields } = compiler.compile();
 
   const l = new Linker();
   // Root slot.

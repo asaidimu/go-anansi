@@ -1,7 +1,7 @@
 import type { StandardSchemaV1 } from "@standard-schema/spec";
 import { DocumentValidator } from "./validator.ts";
-import type { SchemaDefinition } from "./types/schema-definition.ts";
-import type { PredicateMap, ValidationConfig } from "./types/validator.ts";
+import type { SchemaDefinition } from "../schema/generated.ts";
+import type { PredicateMap, ValidationConfig } from "./validator-types.ts";
 
 /**
  * A Standard Schema V1 compatible wrapper for the DocumentValidator.
@@ -20,7 +20,7 @@ export class StandardDocumentValidator<T = unknown> implements StandardSchemaV1<
       version: 1,
       vendor: "asaidimu-utils-schema",
       validate: async (value: unknown): Promise<StandardSchemaV1.Result<T>> => {
-        const issues = await this.validator.validate(value as any);
+        const issues = await this.validator.validate(value);
         if (issues.length === 0) {
           return { value: value as T };
         }
@@ -36,14 +36,15 @@ export class StandardDocumentValidator<T = unknown> implements StandardSchemaV1<
   }
 
   /**
-   * Factory method to create a StandardDocumentValidator.
+   * Factory method to create a StandardDocumentValidator (synchronous —
+   * graph construction does no I/O; only `validate` is async).
    */
-  static async create<T = unknown>(
+  static create<T = unknown>(
     schema: SchemaDefinition,
     predicateMap: PredicateMap = {},
     config?: ValidationConfig,
-  ): Promise<StandardDocumentValidator<T>> {
-    const validator = await DocumentValidator.create(
+  ): StandardDocumentValidator<T> {
+    const validator = DocumentValidator.create(
       schema,
       predicateMap,
       config,

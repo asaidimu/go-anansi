@@ -4,14 +4,14 @@
 import { describe, it, expect } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { link, buildManifest } from "../src/schema/link.ts";
+import { link, buildManifest } from "../../src/schema/link.ts";
 import {
   encodeDocument, decodeDocument,
   encodeBatchRows, encodeBatchColumnar, decodeBatch,
-} from "../src/wire/packet.ts";
+} from "../../src/wire/packet.ts";
 
 const GOLDEN = JSON.parse(
-  readFileSync(join(import.meta.dir, "..", "testdata", "golden.json"), "utf8"),
+  readFileSync(join(import.meta.dir, "..", "..", "testdata", "golden.json"), "utf8"),
 ) as { schema: Record<string, unknown> };
 
 const fields = buildManifest(link(GOLDEN.schema as never));

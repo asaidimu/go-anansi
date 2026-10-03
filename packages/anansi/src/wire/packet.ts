@@ -1,11 +1,12 @@
 // Packet engine: dense/sparse/batch encode+decode over a linked manifest
 // (spec sections 3.1–3.3). Full duplex — every direction, every kind.
 
-import { Reader, putUvarint, putVarint } from "./varint.ts";
-import * as V from "./values.ts";
-import { C } from "./values.ts";
-import type { Buf } from "./values.ts";
 import type { ManifestField } from "../schema/link.ts";
+import type { Buf } from "./values.ts";
+import * as V from "./values.ts";
+import { container } from "../schema/dt.ts";
+import { Reader, putUvarint } from "./varint.ts";
+import { AnansiCodes, anansiError } from "../errors.ts";
 
 export const PACKET = { Dense: 0, Sparse: 1, Batch: 2, Stream: 3 } as const;
 export const FLAG_COMPRESSED = 0x04;
@@ -19,13 +20,15 @@ export const BATCH_FLAG_SPARSE = 0x02;
 type State = "notSet" | "null" | "value";
 
 /** Resolve a dotted path against a document. Returns [found, value]. */
-function lookup(doc: Record<string, unknown>, path: string): [boolean, unknown] {
+export function lookup(doc: Record<string, unknown>, path: string): [boolean, unknown] {
   const segs = path.split(".");
   let cur: unknown = doc;
   for (let i = 0; i < segs.length; i++) {
     if (cur === null || typeof cur !== "object") return [false, undefined];
     const obj = cur as Record<string, unknown>;
-    if (!(segs[i] in obj)) return [false, undefined];
+    // Own properties only: `in` walks the prototype chain, so paths like
+    // "constructor"/"__proto__" would resolve against Object.prototype.
+    if (!Object.hasOwn(obj, segs[i]!)) return [false, undefined];
     cur = obj[segs[i]!];
   }
   if (cur === undefined) return [false, undefined];
@@ -42,13 +45,44 @@ function stateOf(doc: Record<string, unknown>, f: ManifestField): State {
   return "value";
 }
 
+/** Fields with an explicit wire state — value AND null count as present
+ * (Go: `st != stateNotSet`; spec 2.7). */
+export function countPresent(
+  fields: ManifestField[],
+  doc: Record<string, unknown>,
+): number {
+  let present = 0;
+  for (const f of fields) if (stateOf(doc, f) !== "notSet") present++;
+  return present;
+}
+
+/** Spec 6.1 density heuristic: >64 fields and ≤25% present → sparse. */
+export function shouldUseSparse(
+  fieldCount: number,
+  present: number,
+  possible = fieldCount,
+): boolean {
+  return fieldCount > 64 && possible > 0 && present / possible <= 0.25;
+}
+
 function elementKey(child: ManifestField, mount: string): ManifestField {
   const strip = mount.length + 1;
   return { ...child, path: child.path.slice(strip) };
 }
 
+const elementCache = new WeakMap<ManifestField[], Map<string, ManifestField[]>>();
+
 function elementFields(child: ManifestField[], mount: string): ManifestField[] {
-  return child.map((c) => elementKey(c, mount));
+  let byMount = elementCache.get(child);
+  if (!byMount) {
+    byMount = new Map();
+    elementCache.set(child, byMount);
+  }
+  const hit = byMount.get(mount);
+  if (hit) return hit;
+  const out = child.map((c) => elementKey(c, mount));
+  byMount.set(mount, out);
+  return out;
 }
 
 // ── value dispatch ──────────────────────────────────────────────────────────
@@ -71,7 +105,7 @@ function writeValue(b: Buf, f: ManifestField, v: unknown): void {
     case "array_geometry": V.writeArrayGeometry(b, v as number[][][]); break;
     case "array_unknown": V.writeArrayUnknown(b, v as unknown[]); break;
     default:
-      throw new Error(`anansi: cannot write value for type ${f.t} field ${f.path}`);
+      throw anansiError(AnansiCodes.WIR.UNSUPPORTED_VALUE, `anansi: cannot write value for type ${f.t} field ${f.path}`);
   }
 }
 
@@ -93,7 +127,7 @@ function readValue(r: Reader, f: ManifestField): unknown {
     case "array_geometry": return V.readArrayGeometry(r);
     case "array_unknown": return V.readArrayUnknown(r);
     default:
-      throw new Error(`anansi: cannot read value for type ${f.t} field ${f.path}`);
+      throw anansiError(AnansiCodes.WIR.UNSUPPORTED_VALUE, `anansi: cannot read value for type ${f.t} field ${f.path}`);
   }
 }
 
@@ -111,10 +145,7 @@ function writeNestedPacket(
   putUvarint(b, elements.length);
   for (const el of elements) {
     // Auto-select density for this element, emit its own 2-byte header.
-    let present = 0;
-    for (const f of child) if (stateOf(el, f) !== "notSet") present++;
-    const density = child.length > 0 ? present / child.length : 1;
-    const useSparse = !(child.length <= 64 || density > 0.25);
+    const useSparse = shouldUseSparse(child.length, countPresent(child, el));
     // Element headers inherit the parent's non-transform, non-type bits —
     // notably the columnar bit inside columnar batches — mirroring Go's
     // encodePacket mask (which strips type/transforms but keeps bit 3).
@@ -135,22 +166,18 @@ function writeNestedPacket(
 }
 
 /** Encode one element/body against fields; header written by caller. */
-function encodeBody(
+export function encodeBody(
   fields: ManifestField[],
   doc: Record<string, unknown>,
   _ev: [number, number],
 ): number[] {
   // Auto-select per spec 6.1 (recursive schemas don't exist at this level).
-  let present = 0;
-  for (const f of fields) {
-    if (stateOf(doc, f) !== "notSet") present++;
-  }
-  const density = fields.length > 0 ? present / fields.length : 1;
-  const dense = fields.length <= 64 || density > 0.25;
-
   const buf: Buf = [];
-  if (dense) encodeDenseInto(buf, fields, doc);
-  else encodeSparseInto(buf, fields, doc);
+  if (shouldUseSparse(fields.length, countPresent(fields, doc))) {
+    encodeSparseInto(buf, fields, doc);
+  } else {
+    encodeDenseInto(buf, fields, doc);
+  }
   return buf;
 }
 
@@ -172,7 +199,7 @@ function readNestedPacket(
     const pt = elFlags & 0x03;
     if (pt === PACKET.Dense) decodeDenseInto(pr, child, el, mount);
     else if (pt === PACKET.Sparse) decodeSparseInto(pr, child, el, mount);
-    else throw new Error(`anansi: unsupported nested packet type ${pt}`);
+    else throw anansiError(AnansiCodes.WIR.UNSUPPORTED_VALUE, `anansi: unsupported nested packet type ${pt}`);
     out.push(el);
   }
 }
@@ -192,7 +219,8 @@ export function encodeDenseInto(buf: Buf, fields: ManifestField[], doc: Record<s
   const nBits = 2 * fields.length;
   const packed = new Uint8Array((nBits + 7) >> 3);
   fields.forEach((f, i) => {
-    const code = stateOf(doc, f) === "notSet" ? 0 : stateOf(doc, f) === "null" ? 1 : 2;
+    const st = stateOf(doc, f);
+    const code = st === "notSet" ? 0 : st === "null" ? 1 : 2;
     packed[i >> 2] |= code << ((i & 3) << 1);
   });
   for (const x of packed) buf.push(x);
@@ -202,18 +230,16 @@ export function encodeDenseInto(buf: Buf, fields: ManifestField[], doc: Record<s
   for (let dt = 0; dt <= 15; dt++) {
     const fs = byDt[dt];
     if (!fs || fs.length === 0) continue;
-    if (dt === C.Bool) {
+    if (dt === container.TypeBool) {
       const values: boolean[] = [];
-      for (const f of fs) {
-        const st = stateOf(doc, f);
-        if (st !== "value") continue;
+      for (const { f } of fs) {
+        if (stateOf(doc, f) !== "value") continue;
         values.push(lookup(doc, f.path)[1] as boolean);
-        void st;
       }
       V.writeBoolBits(buf, values);
       continue;
     }
-    for (const f of fs) {
+    for (const { f } of fs) {
       if (stateOf(doc, f) !== "value") continue;
       if (f.t === "array_object") {
         writeNestedPacket(buf, f.child!, f.name, (lookup(doc, f.path)[1] ?? []) as Record<string, unknown>[], ctx);
@@ -241,20 +267,19 @@ export function decodeDenseInto(
   for (let dt = 0; dt <= 15; dt++) {
     const fs = byDt[dt];
     if (!fs) continue;
-    if (dt === C.Bool) {
-      const count = fs.filter((_, i) => states[fields.indexOf(fs[i]!)] === 2).length;
+    if (dt === container.TypeBool) {
+      let count = 0;
+      for (const { i } of fs) if (states[i] === 2) count++;
       const values = V.readBoolBits(r, count);
       let next = 0;
-      fs.forEach((f) => {
-        const gi = fields.indexOf(f);
-        if (states[gi] !== 2) return;
+      for (const { f, i } of fs) {
+        if (states[i] !== 2) continue;
         assign(out, f.path, mount, values[next++]);
-      });
+      }
       continue;
     }
-    for (const f of fs) {
-      const gi = fields.indexOf(f);
-      const st = states[gi];
+    for (const { f, i } of fs) {
+      const st = states[i];
       if (st === 0) continue;
       if (st === 1) { assign(out, f.path, mount, null); continue; }
       if (f.t === "array_object") {
@@ -303,7 +328,7 @@ export function decodeSparseInto(
     const wireDP = r.uvarint();
     const isNull = (wireDP & 1) !== 0;
     const f = byDP.get(wireDP & 0xfffffffe);
-    if (!f) throw new Error(`anansi: sparse packet references unknown data point ${wireDP}`);
+    if (!f) throw anansiError(AnansiCodes.WIR.UNKNOWN_DATA_POINT, `anansi: sparse packet references unknown data point ${wireDP}`);
     if (isNull) { assign(out, f.path, mount, null); continue; }
     if (f.t === "array_object") {
       const els: Record<string, unknown>[] = [];
@@ -344,23 +369,38 @@ function setPath(obj: Record<string, unknown>, segs: string[], v: unknown): void
   cur[segs[segs.length - 1]!] = v;
 }
 
-function groupByType(fields: ManifestField[]): (ManifestField[] | undefined)[] {
-  const g: (ManifestField[] | undefined)[] = [];
-  for (const f of fields) {
-    const dt = TYPE_TO_DT[f.t] ?? C.Unknown;
-    (g[dt] ??= []).push(f);
+/** A manifest field paired with its index in the source manifest. */
+interface Grouped {
+  f: ManifestField;
+  i: number;
+}
+
+const groupCache = new WeakMap<ManifestField[], (Grouped[] | undefined)[]>();
+
+// Shared read-only grouping: callers only iterate, and the grouped arrays
+// carry precomputed source indices so decode never rescans with indexOf.
+// Manifests are treated as immutable after build (buildManifest output).
+function groupByType(fields: ManifestField[]): (Grouped[] | undefined)[] {
+  const hit = groupCache.get(fields);
+  if (hit) return hit;
+  const g: (Grouped[] | undefined)[] = [];
+  for (let i = 0; i < fields.length; i++) {
+    const f = fields[i]!;
+    const dt = TYPE_TO_DT[f.t] ?? container.TypeUnknown;
+    (g[dt] ??= []).push({ f, i });
   }
+  groupCache.set(fields, g);
   return g;
 }
 
 const TYPE_TO_DT: Record<string, number> = Object.fromEntries(
   Object.entries({
-    unknown: C.Unknown, int: C.Int, float: C.Float, string: C.String,
-    bool: C.Bool, bytes: C.Bytes, geometry: C.Geometry, record: C.Record,
-    array_unknown: C.ArrayUnknown, array_int: C.ArrayInt,
-    array_float: C.ArrayFloat, array_string: C.ArrayString,
-    array_bool: C.ArrayBool, array_bytes: C.ArrayBytes,
-    array_object: C.ArrayObject, array_geometry: C.ArrayGeometry,
+    unknown: container.TypeUnknown, int: container.TypeInt, float: container.TypeFloat, string: container.TypeString,
+    bool: container.TypeBool, bytes: container.TypeBytes, geometry: container.TypeGeometry, record: container.TypeRecord,
+    array_unknown: container.TypeArrayUnknown, array_int: container.TypeArrayInt,
+    array_float: container.TypeArrayFloat, array_string: container.TypeArrayString,
+    array_bool: container.TypeArrayBool, array_bytes: container.TypeArrayBytes,
+    array_object: container.TypeArrayObject, array_geometry: container.TypeArrayGeometry,
   }),
 );
 
@@ -371,7 +411,7 @@ export interface PacketHeader {
   version: number;
 }
 export function fullVersionToHeader(v: number): PacketHeader {
-  if (v < 0 || v > 1023) throw new Error(`anansi: schema version ${v} exceeds maximum of 1023`);
+  if (v < 0 || v > 1023) throw anansiError(AnansiCodes.WIR.SCHEMA_VERSION_EXCEEDED, `anansi: schema version ${v} exceeds maximum of 1023`);
   return { flags: (v >> 8) << 4, version: v & 0xff };
 }
 export function headerFullVersion(flags: number, version: number): number {
@@ -387,11 +427,10 @@ export function encodeDocument(
   kind: EncodeKind = "auto",
 ): Uint8Array {
   const hv = fullVersionToHeader(fullVersion);
-  let present = 0;
-  for (const f of fields) if (stateOf(doc, f) !== "notSet") present++;
-  const density = fields.length ? present / fields.length : 1;
   const useSparse =
-    kind === "sparse" || (kind === "auto" && !(fields.length <= 64 || density > 0.25));
+    kind === "sparse" ||
+    (kind === "auto" &&
+      shouldUseSparse(fields.length, countPresent(fields, doc)));
 
   const flags = hv.flags | (useSparse ? PACKET.Sparse : PACKET.Dense);
   const head = [flags, hv.version];
@@ -409,15 +448,15 @@ export function decodeDocument(
   const r = new Reader(data);
   const flags = r.byte();
   const version = r.byte();
-  if (((flags >> 4) & 3) === PACKET.Stream) throw new Error("anansi: stream packets unsupported");
+  if (((flags >> 4) & 3) === PACKET.Stream) throw anansiError(AnansiCodes.WIR.TRANSFORM_UNAVAILABLE, "anansi: stream packets unsupported");
   if (flags & (0x04 | 0x40 | 0x80)) {
-    throw new Error("anansi: compressed/encrypted/hashed packets require transform support not enabled in this build");
+    throw anansiError(AnansiCodes.WIR.TRANSFORM_UNAVAILABLE, "anansi: compressed/encrypted/hashed packets require transform support not enabled in this build");
   }
   const pt = flags & 0x03;
   const out: Record<string, unknown> = {};
   if (pt === PACKET.Dense) decodeDenseInto(r, fields, out);
   else if (pt === PACKET.Sparse) decodeSparseInto(r, fields, out);
-  else throw new Error(`anansi: use batch API for packet type ${pt}`);
+  else throw anansiError(AnansiCodes.WIR.NOT_BATCH_PACKET, `anansi: use batch API for packet type ${pt}`);
   return { version: headerFullVersion(flags, version), doc: out };
 }
 
@@ -431,11 +470,10 @@ export function encodeBatchRows(
   const hv = fullVersionToHeader(fullVersion);
   let present = 0, possible = 0;
   for (const d of docs) {
-    for (const f of fields) if (stateOf(d, f) !== "notSet") present++;
+    present += countPresent(fields, d);
     possible += fields.length;
   }
-  const density = possible ? present / possible : 1;
-  const useSparse = fields.length > 64 && density <= 0.25;
+  const useSparse = shouldUseSparse(fields.length, present, possible);
 
   const head = [hv.flags | PACKET.Batch, hv.version];
   const buf: Buf = [];
@@ -479,7 +517,7 @@ export function encodeBatchColumnarBody(
     const nBits = 2 * fs.length * docs.length;
     const col = new Uint8Array((nBits + 7) >> 3);
     let bit = 0;
-    for (const f of fs) {
+    for (const { f } of fs) {
       for (const d of docs) {
         const st = stateOf(d, f);
         const code = st === "notSet" ? 0 : st === "null" ? 1 : 2;
@@ -489,8 +527,8 @@ export function encodeBatchColumnarBody(
     }
     for (const x of col) buf.push(x);
 
-    if (dt === C.Bool) {
-      for (const f of fs) {
+    if (dt === container.TypeBool) {
+      for (const { f } of fs) {
         const vals: boolean[] = [];
         for (const d of docs) {
           if (stateOf(d, f) !== "value") continue;
@@ -500,7 +538,7 @@ export function encodeBatchColumnarBody(
       }
       continue;
     }
-    for (const f of fs) {
+    for (const { f } of fs) {
       for (const d of docs) {
         if (stateOf(d, f) !== "value") continue;
         if (f.t === "array_object") {
@@ -521,9 +559,9 @@ export function decodeBatch(
   const r = new Reader(data);
   const flags = r.byte();
   const version = r.byte();
-  if ((flags & 0x03) !== PACKET.Batch) throw new Error("anansi: not a batch packet");
+  if ((flags & 0x03) !== PACKET.Batch) throw anansiError(AnansiCodes.WIR.NOT_BATCH_PACKET, "anansi: not a batch packet");
   if (flags & (0x04 | 0x40 | 0x80)) {
-    throw new Error("anansi: transformed batch packets unsupported in this build");
+    throw anansiError(AnansiCodes.WIR.TRANSFORM_UNAVAILABLE, "anansi: transformed batch packets unsupported in this build");
   }
   const count = r.uvarint();
   const batchFlags = r.byte();
@@ -565,8 +603,8 @@ export function decodeColumnarInto(
       states.push(row);
     }
 
-    if (dt === C.Bool) {
-      fs.forEach((f, fi) => {
+    if (dt === container.TypeBool) {
+      fs.forEach(({ f }, fi) => {
         const nVals = states[fi]!.filter((s) => s === 2).length;
         const values = V.readBoolBits(r, nVals);
         let next = 0;
@@ -579,7 +617,7 @@ export function decodeColumnarInto(
       continue;
     }
 
-    fs.forEach((f, fi) => {
+    fs.forEach(({ f }, fi) => {
       states[fi]!.forEach((st, ri) => {
         if (st === 0) return;
         if (st === 1) { assign(docs[ri]!, f.path, undefined, null); return; }

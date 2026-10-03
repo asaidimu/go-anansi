@@ -6,7 +6,7 @@ import {
   bumpVersion,
   type SchemaChange,
   type SchemaDefinition,
-} from "../src/schema/migration.ts";
+} from "../../src/migration/migration.ts";
 
 const baseSchema: SchemaDefinition = {
   name: "User",

@@ -22,7 +22,7 @@ import {
   SpecificityTopLevel,
   toConstraintMap,
   toValidatorConstraint,
-} from "./types/validator.ts";
+} from "./validator-types.ts";
 
 import {
   buildPathAndParts,
@@ -36,7 +36,7 @@ import type {
   NestedSchemaDefinition,
   SchemaDefinition,
   SchemaReference,
-} from "./types/schema-definition.ts";
+} from "../schema/generated.ts";
 
 import {
   type ValidationNode,
@@ -49,12 +49,12 @@ import {
   RecordValidationNode,
   RecursionMarkerNode,
   RequiredFieldNode,
-  SetValidationNode,
   TypeCheckNode,
   UnexpectedFieldsNode,
   UnionValidationNode,
   UnresolvableTypeNode,
 } from "./nodes.ts";
+import { AnansiCodes, anansiError } from "../errors.ts";
 
 // ---------------------------------------------------------------------------
 // DFS state constants
@@ -133,12 +133,12 @@ class BuildContext {
     return `${schemaID}:${ids.join(",")}`;
   }
 
-  async getOrBuildRecursiveGraph(
+  getOrBuildRecursiveGraph(
     schemaID: string,
     schemaDef: NestedSchemaDefinition,
     instanceConstraints: SchemaConstraintMap,
     topLevelSchema: SchemaDefinition,
-  ): Promise<ValidationGraph> {
+  ): ValidationGraph {
     const cacheKey = this.makeGraphCacheKey(schemaID, instanceConstraints);
     const cached = this.recursiveGraphCache.get(cacheKey);
     if (cached) return cached;
@@ -155,7 +155,7 @@ class BuildContext {
         topLevelSchema,
       );
 
-      await graph.buildFromSchema(
+      graph.buildFromSchema(
         effectiveSchema,
         "",
         [],
@@ -225,7 +225,6 @@ function isComplexType(t: FieldType): boolean {
   switch (t) {
     case "object":
     case "array":
-    case "set":
     case "record":
     case "union":
     case "composite":
@@ -320,7 +319,7 @@ function collectConstraints(
 // Enum value lookup builder
 // ---------------------------------------------------------------------------
 
-function buildEnumLookup(values: Array<string | number>): {
+function buildEnumLookup(values: readonly unknown[]): {
   lookup: Map<unknown, true>;
   complex: unknown[];
 } {
@@ -398,7 +397,7 @@ export class ValidationGraph {
   private visitedState: Map<number, number> = new Map();
   private executionOrder: number[] = [];
   private nextNodeID = 1;
-  /** Paths explicitly marked nullable:true (null is a legal value). */
+  /** Paths whose field resolves nullable (absent flag defaults to true; only explicit nullable:false excludes). */
   readonly nullablePaths: Set<string> = new Set();
 
   buildNodeID(): number {
@@ -500,7 +499,8 @@ export class ValidationGraph {
       if ((this.visitedState.get(nodeID) ?? DFS_UNVISITED) === DFS_UNVISITED) {
         visit(nodeID);
         if (hasCycle) {
-          throw new Error(
+          throw anansiError(
+            AnansiCodes.GPH.VALIDATION_GRAPH_CYCLE,
             `Circular dependency detected in validation graph at node ${nodeID}`,
           );
         }
@@ -613,7 +613,7 @@ export class ValidationGraph {
    * Returns the root TrackNodes (for wiring dependencies).
    * Mirrors Go's `graph.buildFromSchema`.
    */
-  async buildFromSchema(
+  buildFromSchema(
     schema: SchemaDefinition,
     basePath: string,
     baseParts: string[],
@@ -624,18 +624,18 @@ export class ValidationGraph {
     buildCtx: BuildContext,
     skipUnexpectedCheck: boolean,
     skipUnexpectedForObjects: boolean,
-  ): Promise<TrackNode[]> {
+  ): TrackNode[] {
     const rootNodes: TrackNode[] = [];
 
     // Determine the field set to process.
-    const fieldsToProcess =
-      nsd && "fields" in nsd && nsd.fields ? nsd.fields : schema.fields;
+    const fieldsToProcess: Record<string, FieldDefinition> =
+      (nsd && "fields" in nsd && nsd.fields ? nsd.fields : schema.fields) ?? {};
 
     // 1. Unexpected-fields guard
     let unexpectedNode: UnexpectedFieldsNode | null = null;
     if (!skipUnexpectedCheck) {
       const expectedFields = new Set<string>(
-        Object.values(fieldsToProcess).map((f: any) => f.name),
+        Object.values(fieldsToProcess).map((f) => f.name),
       );
       unexpectedNode = this.createUnexpectedFieldsNode(
         basePath,
@@ -651,8 +651,8 @@ export class ValidationGraph {
     // 2. Field nodes
     const allFieldNodes: TrackNode[] = [];
     for (const fieldDef of Object.values(fieldsToProcess)) {
-      const fieldNodes = await this.buildFieldNodes(
-        fieldDef as FieldDefinition,
+      const fieldNodes = this.buildFieldNodes(
+        fieldDef,
         basePath,
         baseParts,
         baseDepsForFields,
@@ -706,7 +706,7 @@ export class ValidationGraph {
 
   // ── Field node builders ───────────────────────────────────────────────────
 
-  private async buildFieldNodes(
+  private buildFieldNodes(
     fieldDef: FieldDefinition,
     basePath: string,
     baseParts: string[],
@@ -716,16 +716,17 @@ export class ValidationGraph {
     topLevelSchema: SchemaDefinition,
     buildCtx: BuildContext,
     skipUnexpectedForObjects: boolean,
-  ): Promise<TrackNode[]> {
+  ): TrackNode[] {
     const [fieldPath, fieldPathParts] = buildPathAndParts(
       basePath,
       baseParts,
       fieldDef.name,
     );
 
-    // Track nullable paths: `nullable:true` means null is a legal value and
-    // type/constraint nodes are skipped for it. Absence of the flag defaults
-    // to NOT nullable — null on such fields surfaces as a type error.
+    // Track nullable paths: a field resolves nullable unless explicitly
+    // marked `nullable:false` — an absent flag defaults to nullable
+    // (Go: ResolvedNullable, backward compatibility). Only paths explicitly
+    // non-nullable fall through so the type node rejects null (TYPE_MISMATCH).
     if (fieldDef.nullable !== false) {
       this.nullablePaths.add(fieldPath);
     }
@@ -762,7 +763,7 @@ export class ValidationGraph {
     }
 
     // Type-specific structural nodes
-    const typeSpecificNodes = await this.buildFieldTypeNodes(
+    const typeSpecificNodes = this.buildFieldTypeNodes(
       fieldDef,
       fieldPath,
       fieldPathParts,
@@ -778,7 +779,7 @@ export class ValidationGraph {
     return nodes;
   }
 
-  private async buildFieldTypeNodes(
+  private buildFieldTypeNodes(
     fieldDef: FieldDefinition,
     fieldPath: string,
     fieldPathParts: string[],
@@ -788,13 +789,13 @@ export class ValidationGraph {
     topLevelSchema: SchemaDefinition,
     buildCtx: BuildContext,
     skipUnexpectedForObjects: boolean,
-  ): Promise<TrackNode[]> {
+  ): TrackNode[] {
     const nodes: TrackNode[] = [];
     let node: ValidationNode | null = null;
 
     switch (fieldDef.type) {
       case "enum": {
-        node = await this.buildEnumNode(
+        node = this.buildEnumNode(
           fieldDef,
           fieldPath,
           fieldPathParts,
@@ -804,7 +805,7 @@ export class ValidationGraph {
         break;
       }
       case "array": {
-        node = await this.buildContainerNode(
+        node = this.buildContainerNode(
           fieldDef,
           fieldPath,
           fieldPathParts,
@@ -816,32 +817,8 @@ export class ValidationGraph {
         );
         break;
       }
-      case "set": {
-        const containerNode = await this.buildContainerNode(
-          fieldDef,
-          fieldPath,
-          fieldPathParts,
-          currentDeps,
-          topLevelSchema,
-          buildCtx,
-          "array",
-          "set elements",
-        );
-        const itemGraph =
-          containerNode instanceof ArrayValidationNode
-            ? containerNode.graph
-            : null;
-        node = new SetValidationNode(
-          this.buildNodeID(),
-          fieldPath,
-          fieldPathParts,
-          itemGraph,
-          currentDeps,
-        );
-        break;
-      }
       case "record": {
-        node = await this.buildContainerNode(
+        node = this.buildContainerNode(
           fieldDef,
           fieldPath,
           fieldPathParts,
@@ -854,7 +831,7 @@ export class ValidationGraph {
         break;
       }
       case "union": {
-        node = await this.buildUnionNode(
+        node = this.buildUnionNode(
           fieldDef,
           fieldPath,
           fieldPathParts,
@@ -865,7 +842,7 @@ export class ValidationGraph {
         break;
       }
       case "composite": {
-        const compositeNodes = await this.buildCompositeNode(
+        const compositeNodes = this.buildCompositeNode(
           fieldDef,
           fieldPath,
           fieldPathParts,
@@ -886,7 +863,7 @@ export class ValidationGraph {
         break;
       }
       case "object": {
-        const objectNodes = await this.buildObjectFieldNodes(
+        const objectNodes = this.buildObjectFieldNodes(
           fieldDef,
           fieldPath,
           fieldPathParts,
@@ -913,7 +890,7 @@ export class ValidationGraph {
 
   // ── Object field nodes ────────────────────────────────────────────────────
 
-  private async buildObjectFieldNodes(
+  private buildObjectFieldNodes(
     fieldDef: FieldDefinition,
     fieldPath: string,
     fieldPathParts: string[],
@@ -922,17 +899,19 @@ export class ValidationGraph {
     topLevelSchema: SchemaDefinition,
     buildCtx: BuildContext,
     skipUnexpected: boolean,
-  ): Promise<TrackNode[]> {
+  ): TrackNode[] {
     const nodes: TrackNode[] = [];
     const fsr = FieldSchemaReference.fromFieldSchema(fieldDef.schema);
 
     if (fsr.isZero()) {
-      throw new Error(
+      throw anansiError(
+        AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
         `FieldSchemaReference is zero/uninitialized at path '${fieldPath}'`,
       );
     }
     if (!fsr.isSingle()) {
-      throw new Error(
+      throw anansiError(
+        AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
         `Object field must use a single schema reference at path '${fieldPath}'`,
       );
     }
@@ -940,7 +919,8 @@ export class ValidationGraph {
     const schemaRef = fsr.asSingle();
     const nestedDef = topLevelSchema.schemas?.[schemaRef.id];
     if (!nestedDef) {
-      throw new Error(
+      throw anansiError(
+        AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
         `Nested schema '${schemaRef.id}' not found for field '${fieldDef.name}' at path '${fieldPath}'`,
       );
     }
@@ -948,7 +928,7 @@ export class ValidationGraph {
     // Recursive reference detection
     if (buildCtx.isRecursive(schemaRef.id)) {
       const instanceConstraints = toConstraintMap(schemaRef.constraints as any);
-      const recursiveGraph = await buildCtx.getOrBuildRecursiveGraph(
+      const recursiveGraph = buildCtx.getOrBuildRecursiveGraph(
         schemaRef.id,
         nestedDef,
         instanceConstraints,
@@ -975,7 +955,7 @@ export class ValidationGraph {
 
     buildCtx.markBuilding(schemaRef.id);
     try {
-      const nestedNodes = await this.buildFromSchema(
+      const nestedNodes = this.buildFromSchema(
         effectiveSchema,
         fieldPath,
         fieldPathParts,
@@ -1012,7 +992,7 @@ export class ValidationGraph {
    * Mirrors Go's `buildContainerNode`.
    * Returns an ArrayValidationNode or RecordValidationNode depending on `itemKind`.
    */
-  private async buildContainerNode(
+  private buildContainerNode(
     fieldDef: FieldDefinition,
     fieldPath: string,
     fieldPathParts: string[],
@@ -1021,7 +1001,7 @@ export class ValidationGraph {
     buildCtx: BuildContext,
     itemKind: "array" | "record",
     errContext: string,
-  ): Promise<ArrayValidationNode | RecordValidationNode> {
+  ): ArrayValidationNode | RecordValidationNode {
     const makeNode = (subGraph: ValidationGraph | null) => {
       if (itemKind === "array") {
         return new ArrayValidationNode(
@@ -1052,7 +1032,8 @@ export class ValidationGraph {
       if (schemaRef.id !== "") {
         const nestedDef = topLevelSchema.schemas?.[schemaRef.id];
         if (!nestedDef) {
-          throw new Error(
+          throw anansiError(
+            AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
             `Nested schema '${schemaRef.id}' not found for ${errContext} at path '${fieldPath}'`,
           );
         }
@@ -1092,7 +1073,7 @@ export class ValidationGraph {
               "default" in nestedDef ? (nestedDef as any).default : undefined;
             if (rawDefault !== undefined)
               (tempRootField as any).default = rawDefault;
-            const subGraph = await this.createSubGraph(
+            const subGraph = this.createSubGraph(
               "item",
               tempRootField,
               fieldPath,
@@ -1144,7 +1125,7 @@ export class ValidationGraph {
         if (rawDefault !== undefined)
           (tempRootField as any).default = rawDefault;
 
-        const subGraph = await this.createSubGraph(
+        const subGraph = this.createSubGraph(
           "item",
           tempRootField,
           fieldPath,
@@ -1162,7 +1143,8 @@ export class ValidationGraph {
     if (fsr.isInline()) {
       const inline = fsr.asInline();
       if (!inline.type) {
-        throw new Error(
+        throw anansiError(
+          AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
           `Inline descriptor missing 'type' field at path '${fieldPath}'`,
         );
       }
@@ -1181,7 +1163,7 @@ export class ValidationGraph {
         };
         if (topLevelSchema.schemas !== undefined)
           syntheticSchema.schemas = topLevelSchema.schemas;
-        await subGraph.buildFromSchema(
+        subGraph.buildFromSchema(
           syntheticSchema,
           "",
           [],
@@ -1207,23 +1189,25 @@ export class ValidationGraph {
       return makeNode(subGraph);
     }
 
-    throw new Error(
+    throw anansiError(
+      AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
       `Invalid schema reference for ${errContext} at path '${fieldPath}'`,
     );
   }
 
   // ── Enum node builder ─────────────────────────────────────────────────────
 
-  private async buildEnumNode(
+  private buildEnumNode(
     fieldDef: FieldDefinition,
     fieldPath: string,
     fieldPathParts: string[],
     currentDeps: number[],
     topLevelSchema: SchemaDefinition,
-  ): Promise<EnumValidationNode> {
+  ): EnumValidationNode {
     const fsr = FieldSchemaReference.fromFieldSchema(fieldDef.schema);
     if (fsr.isZero()) {
-      throw new Error(
+      throw anansiError(
+        AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
         `Enum field must have schema reference at path '${fieldPath}'`,
       );
     }
@@ -1235,7 +1219,8 @@ export class ValidationGraph {
         : [];
 
     if (refs.length === 0 && !fsr.isInline()) {
-      throw new Error(
+      throw anansiError(
+        AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
         `Enum schema reference must be single, multiple, or inline at path '${fieldPath}'`,
       );
     }
@@ -1244,12 +1229,14 @@ export class ValidationGraph {
     if (fsr.isInline()) {
       const inline = fsr.asInline();
       if (!inline.type) {
-        throw new Error(
+        throw anansiError(
+          AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
           `Inline enum descriptor missing 'type' at path '${fieldPath}'`,
         );
       }
       if (!inline.values || inline.values.length === 0) {
-        throw new Error(
+        throw anansiError(
+          AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
           `Inline enum descriptor missing 'values' at path '${fieldPath}'`,
         );
       }
@@ -1282,7 +1269,8 @@ export class ValidationGraph {
       if (ref.id !== "") {
         const nestedSchema = topLevelSchema.schemas?.[ref.id];
         if (!nestedSchema) {
-          throw new Error(
+          throw anansiError(
+            AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
             `Enum schema '${ref.id}' not found at path '${fieldPath}'`,
           );
         }
@@ -1290,7 +1278,8 @@ export class ValidationGraph {
           !("values" in nestedSchema) ||
           !(nestedSchema as any).values?.length
         ) {
-          throw new Error(
+          throw anansiError(
+            AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
             `Enum schema '${ref.id}' has no values defined at path '${fieldPath}'`,
           );
         }
@@ -1298,7 +1287,8 @@ export class ValidationGraph {
         ({ lookup, complex } = buildEnumLookup((nestedSchema as any).values));
       } else {
         // Inline ref in an array (shouldn't happen per Rule 21, but guard it)
-        throw new Error(
+        throw anansiError(
+          AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
           `Inline descriptor in named-reference array is not permitted at path '${fieldPath}'`,
         );
       }
@@ -1325,17 +1315,18 @@ export class ValidationGraph {
 
   // ── Union node builder ────────────────────────────────────────────────────
 
-  private async buildUnionNode(
+  private buildUnionNode(
     fieldDef: FieldDefinition,
     fieldPath: string,
     fieldPathParts: string[],
     deps: number[],
     topLevelSchema: SchemaDefinition,
     buildCtx: BuildContext,
-  ): Promise<UnionValidationNode> {
+  ): UnionValidationNode {
     const fsr = FieldSchemaReference.fromFieldSchema(fieldDef.schema);
     if (fsr.isZero() || !fsr.isMultiple()) {
-      throw new Error(
+      throw anansiError(
+        AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
         `Union field must reference multiple schemas at path '${fieldPath}'`,
       );
     }
@@ -1346,7 +1337,8 @@ export class ValidationGraph {
     for (const ref of refs) {
       const nestedDef = topLevelSchema.schemas?.[ref.id];
       if (!nestedDef) {
-        throw new Error(
+        throw anansiError(
+          AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
           `Nested schema '${ref.id}' not found for union at path '${fieldPath}'`,
         );
       }
@@ -1370,7 +1362,7 @@ export class ValidationGraph {
         };
       }
 
-      const unionGraph = await this.createSubGraph(
+      const unionGraph = this.createSubGraph(
         "root",
         tempRootField,
         fieldPath,
@@ -1393,17 +1385,18 @@ export class ValidationGraph {
 
   // ── Composite node builder ────────────────────────────────────────────────
 
-  private async buildCompositeNode(
+  private buildCompositeNode(
     fieldDef: FieldDefinition,
     fieldPath: string,
     fieldPathParts: string[],
     _: number[],
     topLevelSchema: SchemaDefinition,
     buildCtx: BuildContext,
-  ): Promise<TrackNode[]> {
+  ): TrackNode[] {
     const fsr = FieldSchemaReference.fromFieldSchema(fieldDef.schema);
     if (fsr.isZero() || !fsr.isMultiple()) {
-      throw new Error(
+      throw anansiError(
+        AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
         `Composite field must reference multiple schemas at path '${fieldPath}'`,
       );
     }
@@ -1425,7 +1418,8 @@ export class ValidationGraph {
     for (const ref of refs) {
       const nestedDef = topLevelSchema.schemas?.[ref.id];
       if (!nestedDef) {
-        throw new Error(
+        throw anansiError(
+          AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
           `Nested schema '${ref.id}' not found for composite at path '${fieldPath}'`,
         );
       }
@@ -1442,7 +1436,7 @@ export class ValidationGraph {
         buildCtx.markBuilding(ref.id);
         let partNodes: TrackNode[];
         try {
-          partNodes = await this.buildFromSchema(
+          partNodes = this.buildFromSchema(
             effectiveSchema,
             fieldPath,
             fieldPathParts,
@@ -1470,7 +1464,8 @@ export class ValidationGraph {
       } else if (effectiveType === "union") {
         // Union part: build per-variant sub-graphs and wrap in a UnionValidationNode.
         if (!("schema" in nestedDef) || !(nestedDef as any).schema) {
-          throw new Error(
+          throw anansiError(
+            AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
             `Union part '${ref.id}' in composite must reference multiple schemas at path '${fieldPath}'`,
           );
         }
@@ -1479,7 +1474,8 @@ export class ValidationGraph {
           (nestedDef as any).schema,
         );
         if (!variantFsr.isMultiple()) {
-          throw new Error(
+          throw anansiError(
+            AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
             `Union part '${ref.id}' in composite must reference multiple schemas at path '${fieldPath}'`,
           );
         }
@@ -1490,7 +1486,8 @@ export class ValidationGraph {
         for (const vRef of variantRefs) {
           const variantDef = topLevelSchema.schemas?.[vRef.id];
           if (!variantDef) {
-            throw new Error(
+            throw anansiError(
+              AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
               `Union variant schema '${vRef.id}' not found at path '${fieldPath}'`,
             );
           }
@@ -1515,7 +1512,7 @@ export class ValidationGraph {
             };
           }
 
-          const vGraph = await this.createSubGraph(
+          const vGraph = this.createSubGraph(
             "root",
             tempRootField,
             fieldPath,
@@ -1537,7 +1534,8 @@ export class ValidationGraph {
         this.addNode(memberNode);
         allPartNodes.push({ id: memberNode.getID(), deps: baseDeps });
       } else {
-        throw new Error(
+        throw anansiError(
+          AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
           `Composite part '${ref.id}' has unsupported effective type '${effectiveType}'; composite parts must be object or union schemas at path '${fieldPath}'`,
         );
       }
@@ -1636,7 +1634,8 @@ export class ValidationGraph {
   ): ValidationGraph {
     const values = (nestedDef as { values?: Array<string | number> }).values;
     if (!values || values.length === 0) {
-      throw new Error(
+      throw anansiError(
+        AnansiCodes.SCH.VALIDATOR_BUILD_FAILED,
         `Enum schema '${schemaID}' has no values defined at path '${fieldPath}'`,
       );
     }
@@ -1689,7 +1688,7 @@ export class ValidationGraph {
    * record / union / composite nodes.
    * Mirrors Go's `graph.createSubGraph`.
    */
-  async createSubGraph(
+  createSubGraph(
     rootFieldName: string,
     rootFieldDef: FieldDefinition,
     basePath: string,
@@ -1697,7 +1696,7 @@ export class ValidationGraph {
     buildCtx: BuildContext,
     skipUnexpectedCheck: boolean,
     skipUnexpectedForObjects: boolean,
-  ): Promise<ValidationGraph> {
+  ): ValidationGraph {
     const tempSchema: SchemaDefinition = {
       name: `subgraph_${basePath}`,
       version: "0",
@@ -1709,7 +1708,7 @@ export class ValidationGraph {
     const subGraph = new ValidationGraph();
     const addedConstraints = new Map<string, boolean>();
 
-    await subGraph.buildFromSchema(
+    subGraph.buildFromSchema(
       tempSchema,
       "",
       [],

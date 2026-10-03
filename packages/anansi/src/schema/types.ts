@@ -6,6 +6,7 @@
 // Go's LiteralValue zero/null semantics, tolerant parse) on top.
 
 import type { FieldDefinition, SchemaDefinition } from "./generated.ts";
+import { AnansiCodes, anansiError } from "../errors.ts";
 
 export * from "./generated.ts";
 
@@ -33,7 +34,7 @@ export class Literal {
     }
     if (Array.isArray(v)) return new Literal("array", v);
     if (typeof v === "object") return new Literal("object", v);
-    throw new Error(`anansi: unsupported literal ${typeof v}`);
+    throw anansiError(AnansiCodes.SCH.SCHEMA_LITERAL_UNSUPPORTED, `anansi: unsupported literal ${typeof v}`);
   }
 }
 
@@ -43,6 +44,6 @@ export function parseSchema(
   const s = (
     typeof data === "string" ? JSON.parse(data) : data
   ) as unknown as SchemaDefinition;
-  if (!s.name) throw new Error("anansi: schema requires a name");
+  if (!s.name) throw anansiError(AnansiCodes.SCH.SCHEMA_NAME_MISSING, "anansi: schema requires a name");
   return s;
 }

@@ -26,27 +26,30 @@
 //
 // All transformed entry points are async because of WebCrypto/hash-wasm.
 
-import { blake3 } from "hash-wasm";
 import { decompress as fzstdDecompress } from "fzstd";
-import { Reader, putUvarint } from "./varint.ts";
-import {
-  PACKET, fullVersionToHeader, headerFullVersion,
-  encodeBatchColumnar,
-  FLAG_COMPRESSED, FLAG_ENCRYPTED, FLAG_HASH_PRESENT,
-} from "./packet.ts";
+import { blake3 } from "hash-wasm";
+import type { ManifestField } from "../schema/link.ts";
 import type { EncodeKind } from "./packet.ts";
+import {
+    BATCH_FLAG_COLUMNAR,
+    BATCH_FLAG_SPARSE,
+    FLAG_COMPRESSED, FLAG_ENCRYPTED, FLAG_HASH_PRESENT,
+    PACKET,
+    countPresent,
+    decodeColumnarInto,
+    decodeDenseInto, decodeSparseInto,
+    encodeBatchColumnarBody,
+    encodeDenseInto, encodeSparseInto,
+    fullVersionToHeader, headerFullVersion,
+    shouldUseSparse,
+} from "./packet.ts";
+import { Reader, putUvarint } from "./varint.ts";
+import { AnansiCodes, anansiError } from "../errors.ts";
 
 const packetTypeFromFlags = (flags: number): number => flags & 0x03;
-import {
-  encodeDenseInto, encodeSparseInto,
-  decodeDenseInto, decodeSparseInto, decodeColumnarInto,
-  encodeBatchColumnarBody,
-  BATCH_FLAG_SPARSE, BATCH_FLAG_COLUMNAR,
-} from "./packet.ts";
-import type { ManifestField } from "../schema/link.ts";
 
 export {
-  FLAG_COMPRESSED, FLAG_ENCRYPTED, FLAG_HASH_PRESENT,
+    FLAG_COMPRESSED, FLAG_ENCRYPTED, FLAG_HASH_PRESENT
 } from "./packet.ts";
 
 const HASH_SIZE = 16;
@@ -81,7 +84,8 @@ function nodeZlib(): ZlibLike | undefined {
 function zstdCompress(body: Uint8Array): Uint8Array {
   const z = nodeZlib()?.zstdCompressSync?.(body);
   if (!z) {
-    throw new Error(
+    throw anansiError(
+      AnansiCodes.WIR.TRANSFORM_UNAVAILABLE,
       "anansi: zstd compression is unavailable in this runtime (no node:zlib). " +
       "Send plain packets, or provide a WASM compressor.",
     );
@@ -107,7 +111,7 @@ async function blake3Digest16(payload: Uint8Array): Promise<Uint8Array> {
 
 async function aesGCM(key: Uint8Array): Promise<CryptoKey> {
   if (key.length !== 32) {
-    throw new Error(`anansi: AES-256-GCM requires a 32-byte key, got ${key.length}`);
+    throw anansiError(AnansiCodes.WIR.CRYPTO_KEY_INVALID, `anansi: AES-256-GCM requires a 32-byte key, got ${key.length}`);
   }
   return crypto.subtle.importKey("raw", key as BufferSource, "AES-GCM", false, [
     "encrypt",
@@ -193,9 +197,9 @@ export async function openFrame(
 
   if (flags & FLAG_ENCRYPTED) {
     if (!cfg.decryptionKey) {
-      throw new Error("anansi: encrypted packet but no decryption key provided");
+      throw anansiError(AnansiCodes.WIR.CRYPTO_KEY_INVALID, "anansi: encrypted packet but no decryption key provided");
     }
-    if (data.length < NONCE_SIZE) throw new Error("anansi: truncated nonce");
+    if (data.length < NONCE_SIZE) throw anansiError(AnansiCodes.WIR.CRYPTO_KEY_INVALID, "anansi: truncated nonce");
     const nonce = data.subarray(0, NONCE_SIZE);
     data = data.subarray(NONCE_SIZE);
     const cryptoKey = await aesGCM(cfg.decryptionKey);
@@ -212,11 +216,11 @@ export async function openFrame(
   if (flags & FLAG_COMPRESSED) {
     plainLen = rr.uvarint();
     if (plainLen > MAX_DECOMPRESSED) {
-      throw new Error(`anansi: declared uncompressed size ${plainLen} exceeds limit`);
+      throw anansiError(AnansiCodes.WIR.SIZE_LIMIT_EXCEEDED, `anansi: declared uncompressed size ${plainLen} exceeds limit`);
     }
     const inflated = zstdDecompress(data.subarray(rr.pos), plainLen);
     if (inflated.length !== plainLen) {
-      throw new Error(`anansi: decompressed ${inflated.length} bytes, header declared ${plainLen}`);
+      throw anansiError(AnansiCodes.WIR.SIZE_LIMIT_EXCEEDED, `anansi: decompressed ${inflated.length} bytes, header declared ${plainLen}`);
     }
     data = inflated;
   }
@@ -225,7 +229,7 @@ export async function openFrame(
     const want = await blake3Digest16(data);
     for (let i = 0; i < HASH_SIZE; i++) {
       if (stored[i] !== want[i]) {
-        throw new Error("anansi: integrity check failed (packet digest mismatch)");
+        throw anansiError(AnansiCodes.WIR.DIGEST_MISMATCH, "anansi: integrity check failed (packet digest mismatch)");
       }
     }
   }
@@ -238,26 +242,11 @@ export { packetTypeFromFlags };
 // ── high-level duplex API ───────────────────────────────────────────────────
 
 function selectDensity(fields: ManifestField[], doc: Record<string, unknown>): "dense" | "sparse" {
-  let present = 0;
-  for (const f of fields) {
-    const [ok, v] = lookupExported(doc, f.path);
-    if (ok && v !== null && v !== undefined) present++;
-  }
-  return fields.length <= 64 || fields.length === 0 || present / fields.length > 0.25
-    ? "dense"
-    : "sparse";
-}
-
-// lookup is module-private in packet.ts; tiny local copy.
-function lookupExported(doc: Record<string, unknown>, path: string): [boolean, unknown] {
-  let cur: unknown = doc;
-  for (const seg of path.split(".")) {
-    if (cur === null || typeof cur !== "object") return [false, undefined];
-    const o = cur as Record<string, unknown>;
-    if (!(seg in o)) return [false, undefined];
-    cur = o[seg];
-  }
-  return [cur !== undefined, cur];
+  // Shared spec 6.1 heuristic — same null-counts-as-present semantics as
+  // packet.ts encodeDocument (Go: st != stateNotSet).
+  return shouldUseSparse(fields.length, countPresent(fields, doc))
+    ? "sparse"
+    : "dense";
 }
 
 function documentBody(
@@ -300,31 +289,27 @@ export async function decodeAnansiPacket(
   const flags = r.byte();
   const version = r.byte();
   if ((flags & FLAG_ENCRYPTED) && !opts.decryptionKey) {
-    throw new Error("anansi: encrypted packet but no decryption key provided");
+    throw anansiError(AnansiCodes.WIR.CRYPTO_KEY_INVALID, "anansi: encrypted packet but no decryption key provided");
   }
   const body = await openFrame(r, flags, opts);
   const out: Record<string, unknown> = {};
   const pt = packetTypeFromFlags(flags);
   if (pt === PACKET.Dense) decodeDenseInto(body, fields, out);
   else if (pt === PACKET.Sparse) decodeSparseInto(body, fields, out);
-  else throw new Error(`anansi: use batch API for packet type ${pt}`);
+  else throw anansiError(AnansiCodes.WIR.NOT_BATCH_PACKET, `anansi: use batch API for packet type ${pt}`);
   return { version: headerFullVersion(flags, version), doc: out };
 }
 
 function batchRowsBody(
   fields: ManifestField[],
   docs: Record<string, unknown>[],
-): { body: Uint8Array; sparse: boolean } {
+): Uint8Array {
   let present = 0, possible = 0;
   for (const d of docs) {
-    for (const f of fields) {
-      const [ok, v] = lookupExported(d, f.path);
-      if (ok && v !== null && v !== undefined) present++;
-      possible++;
-    }
+    present += countPresent(fields, d);
+    possible += fields.length;
   }
-  const density = possible > 0 ? present / possible : 1;
-  const sparse = fields.length > 64 && density <= 0.25;
+  const sparse = shouldUseSparse(fields.length, present, possible);
 
   const buf: number[] = [];
   putUvarint(buf, docs.length);
@@ -333,7 +318,7 @@ function batchRowsBody(
     if (sparse) encodeSparseInto(buf, fields, d);
     else encodeDenseInto(buf, fields, d);
   }
-  return { body: new Uint8Array(buf), sparse };
+  return new Uint8Array(buf);
 }
 
 /** Batch row-oriented encode with transforms. */
@@ -344,16 +329,10 @@ export async function encodeAnansiBatchRows(
   opts: EncodeTransforms = {},
 ): Promise<Uint8Array> {
   const hv = fullVersionToHeader(fullVersion);
-  const { body, sparse } = batchRowsBody(fields, docs);
-  const baseFlags = hv.flags | PACKET.Batch | (sparse ? BATCH_FLAG_SPARSE : 0);
-  return finishFrame(baseFlags, hv.version, body, opts);
+  const body = batchRowsBody(fields, docs);
+  return finishFrame(hv.flags | PACKET.Batch, hv.version, body, opts);
 }
 
-/**
- * Columnar batch encode. Transforms are supported only on the row paths —
- * columnar ENCODE parity is still pending in TS; pass empty options to emit
- * a plain packet (decoding transformed columnar packets IS supported).
- */
 /** Columnar batch encode with transforms — full duplex. */
 export async function encodeAnansiBatchColumnar(
   fields: ManifestField[],
@@ -379,7 +358,7 @@ export async function decodeAnansiBatch(
   const flags = r.byte();
   const version = r.byte();
   if (packetTypeFromFlags(flags) !== PACKET.Batch) {
-    throw new Error("anansi: not a batch packet");
+    throw anansiError(AnansiCodes.WIR.NOT_BATCH_PACKET, "anansi: not a batch packet");
   }
   const body = await openFrame(r, flags, opts);
   const count = body.uvarint();

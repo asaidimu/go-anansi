@@ -8,10 +8,10 @@ import {
   DocumentValidator,
   SchemaValidator,
   metaSchemaPredicateMap,
-} from "../src/validation/index.ts";
+} from "../../src/validation/index.ts";
 
 const GOLDEN = JSON.parse(
-  readFileSync(join(import.meta.dir, "..", "testdata", "golden.json"), "utf8"),
+  readFileSync(join(import.meta.dir, "..", "..", "testdata", "golden.json"), "utf8"),
 );
 
 describe("validation module", () => {
@@ -263,5 +263,68 @@ describe("index predicates resolve paths, not ids (drift fix)", () => {
     expect(issues.some((i) => i.code === "SPATIAL_INDEX_NON_GEOMETRY")).toBe(
       true,
     );
+  });
+
+  it("index fields resolve as paths by name, not field ids", async () => {
+    // i1.fields: ["shape"] — map key is f_geom, name is "shape": must pass.
+    const issues = await SchemaValidator.validate(schema as never);
+    expect(
+      issues.filter((i) => i.code === "INDEX_FIELD_NOT_FOUND"),
+    ).toEqual([]);
+  });
+
+  it("flags index field entries whose path does not resolve", async () => {
+    const bad = {
+      ...schema,
+      indexes: {
+        i1: {
+          name: "i1",
+          type: "normal",
+          // location.zip resolves through the nested schema; location.nope
+          // and gone do not.
+          fields: ["location.zip", "location.nope", "gone"],
+        },
+      },
+    };
+    const issues = await SchemaValidator.validate(bad as never);
+    expect(
+      issues.filter((i) => i.code === "INDEX_FIELD_NOT_FOUND"),
+    ).toEqual([
+      {
+        code: "INDEX_FIELD_NOT_FOUND",
+        message: "Index 'i1' references non-existent field 'location.nope'",
+        path: "indexes.i1.fields[1]",
+        severity: "error",
+      },
+      {
+        code: "INDEX_FIELD_NOT_FOUND",
+        message: "Index 'i1' references non-existent field 'gone'",
+        path: "indexes.i1.fields[2]",
+        severity: "error",
+      },
+    ]);
+  });
+
+  it("every meta-schema issue carries severity 'error' (Go parity)", async () => {
+    const bad = {
+      ...schema,
+      indexes: {
+        i1: { name: "i1", type: "spatial", fields: ["title"] },
+      },
+    };
+    const issues = await SchemaValidator.validate(bad as never);
+    expect(issues.map((i) => i.code)).toContain("SPATIAL_INDEX_NON_GEOMETRY");
+    for (const issue of issues) {
+      expect(issue.severity).toBe("error");
+    }
+  });
+
+  it("document validation issues carry no severity (Go doc validator parity)", async () => {
+    const v = await DocumentValidator.create(schema as never, {});
+    const issues = await v.validate({ title: 123 });
+    expect(issues.map((i) => i.code)).toContain("TYPE_MISMATCH");
+    for (const issue of issues) {
+      expect(issue.severity).toBeUndefined();
+    }
   });
 });

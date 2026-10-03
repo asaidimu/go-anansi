@@ -1,8 +1,9 @@
 import { DocumentValidator } from "./validator.ts";
 import schema from "./schema.json";
 import { metaSchemaPredicateMap } from "./predicates.ts";
-import type { SchemaDefinition } from "./types/schema-definition.ts";
-import type { Issue } from "./types/validator.ts";
+import type { Issue } from "./validator-types.ts";
+import type { SchemaDefinition } from "../schema/generated.ts";
+import { parseSchema } from "../schema/types.ts";
 
 /**
  * A dedicated validator for ensuring schema definitions themselves
@@ -16,8 +17,8 @@ export class SchemaValidator {
    */
   static async validate(schemaDef: SchemaDefinition): Promise<Issue[]> {
     if (!this.validator) {
-      this.validator = await DocumentValidator.create(
-        schema as any,
+      this.validator = DocumentValidator.create(
+        parseSchema(schema),
         metaSchemaPredicateMap,
       );
     }

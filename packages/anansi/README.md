@@ -54,6 +54,7 @@ wires it into `fetch` like this:
 import {
   AnansiCodec,
   DocumentValidator, metaSchemaPredicateMap,
+  anansiError,
 } from "@asaidimu/anansi";
 
 export class AnansiClient {
@@ -69,7 +70,7 @@ export class AnansiClient {
     const { schema, fullVersion } = await res.json();
 
     const codec = await AnansiCodec.create(schema, { fullVersion });
-    const validator = await DocumentValidator.create(
+    const validator = DocumentValidator.create(
       schema as never, metaSchemaPredicateMap,
     );
     return new AnansiClient(baseUrl, codec, validator);
@@ -79,7 +80,7 @@ export class AnansiClient {
   async send(path: string, doc: Record<string, unknown>) {
     // Optional but recommended: validate user input before encoding.
     const issues = await this.validator.validate(doc);
-    if (issues.length) throw new Error(`invalid document: ${issues[0]!.code}`);
+    if (issues.length) throw anansiError(issues[0]!.code, `invalid document: ${issues[0]!.message}`);
 
     const wire = await this.codec.encode(doc);
 
@@ -176,8 +177,8 @@ import {
   DocumentValidator, SchemaValidator, metaSchemaPredicateMap,
 } from "@asaidimu/anansi";
 
-const validator = await DocumentValidator.create(schemaJSON, metaSchemaPredicateMap);
-validator.validate(doc);          // strict
+const validator = DocumentValidator.create(schemaJSON, metaSchemaPredicateMap);
+validator.validate(doc);          // strict — async: predicates may be async
 validator.validatePartial(patch); // PATCH payloads: skips REQUIRED_FIELD_MISSING
 validator.validateLoose(draft);   // also skips UNEXPECTED_FIELD
 
@@ -186,6 +187,56 @@ await SchemaValidator.validate(schemaJSON); // schema ↔ meta-schema conformanc
 
 Modes, issue codes, constraint scoping, and predicate semantics mirror the Go
 implementation in `core/schema/definition/validator.go`.
+
+## SchemaUtil
+
+Schema-bound document helpers — defaults, scaffolding, and a memoized
+validator behind one object:
+
+```ts
+import { SchemaUtil } from "@asaidimu/anansi";
+
+const util = new SchemaUtil(schemaJSON); // throws SCH-001 if malformed
+
+util.hydrate(partial);        // fills absent keys from `default`s and recurses
+                              // into nested objects; explicit `null` is kept,
+                              // arrays/extras pass through, input never mutates
+                              // (also: SchemaUtil.hydrate(schema, doc))
+util.defaults();              // hydrate({}) — every schema default applied
+util.empty();                 // type-zero doc (""/0/false/[]/{}…, defaults win)
+util.pick(doc, ["a", "b"]);   // top-level subset; missing keys omitted
+util.required();              // ["title", "author", "author.name"] — dotted, recursive
+
+await util.validate(doc);           // full strict validation → Issue[]
+util.standardValidator();           // Standard Schema V1 wrapper (sync)
+util.validator();                   // compiled DocumentValidator — memoized
+                                    // instance; build failure throws SCH-006 + cause
+```
+
+## Error handling
+
+Every error anansi throws is a `SystemError` (from `@asaidimu/utils-error`)
+carrying a registered code — never a bare `Error`:
+
+```ts
+import { AnansiCodes, SystemError, isAnansiError } from "@asaidimu/anansi";
+
+try {
+  await codec.decode(bytes);
+} catch (e) {
+  if (e instanceof SystemError && e.code === AnansiCodes.WIR.END_OF_BUFFER) {
+    // truncated input
+  }
+  if (isAnansiError(e)) {
+    // e.code is registered: category, httpStatus, logLevel, action
+  }
+  throw e;
+}
+```
+
+Code groups: `MIG-*` (migration engine), `VER-*` (semantic versions),
+`SCH-*` (schema parse/compile + SchemaUtil), `WIR-*` (wire codecs & transforms),
+`GPH-*` (validation graph). Invariant violations use the built-in `SYS-001`.
 
 ## Semantics worth knowing
 
@@ -232,6 +283,8 @@ repository:
 | `encodeDocument`, `decodeDocument`, `encodeBatchRows`, `encodeBatchColumnar`, `decodeBatch` | functional form |
 | Transforms (async) | `encodeAnansiPacket`, `decodeAnansiPacket`, `encodeAnansiBatchRows`, `encodeAnansiBatchColumnar`, `decodeAnansiBatch` |
 | Validation | `DocumentValidator`, `SchemaValidator`, `metaSchemaPredicateMap` |
+| Schema helpers | `SchemaUtil` (hydrate · defaults · empty · pick · required · validate) |
+| Errors | `SystemError`, `AnansiCodes`, `anansiError`, `isAnansiError` |
 
 ## Development
 

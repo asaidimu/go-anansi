@@ -4,15 +4,17 @@
 // self round-trip only.
 
 import { describe, it, expect } from "bun:test";
-import { makeStripNulls, hexToBytes, bytesToHex } from "./helpers.ts";
+import { makeStripNulls, hexToBytes, bytesToHex } from "../helpers.ts";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { link, buildManifest } from "../src/schema/link.ts";
+import { link, buildManifest } from "../../src/schema/link.ts";
 import {
   encodeAnansiPacket, decodeAnansiPacket,
   encodeAnansiBatchRows, decodeAnansiBatch,
   encodeAnansiBatchColumnar,
-} from "../src/wire/transforms.ts";
+} from "../../src/wire/transforms.ts";
+import { encodeDocument, PACKET } from "../../src/wire/packet.ts";
+import type { SchemaDefinition } from "../../src/schema/generated.ts";
 
 interface GoldenCase {
   name: string;
@@ -27,7 +29,7 @@ interface Golden {
 }
 
 const GOLDEN = JSON.parse(
-  readFileSync(join(import.meta.dir, "..", "testdata", "golden.json"), "utf8"),
+  readFileSync(join(import.meta.dir, "..", "..", "testdata", "golden.json"), "utf8"),
 ) as Golden;
 
 const fields = buildManifest(link(GOLDEN.schema as never));
@@ -218,5 +220,43 @@ describe("transformed columnar (full duplex)", () => {
         expect((back.docs[i] as Record<string, unknown>)[k]).toEqual(v);
       }
     }
+  });
+});
+
+describe("auto density heuristic (spec 6.1, shared with packet.ts)", () => {
+  // 100 fields, 40 explicit nulls: null counts as present (Go: st !=
+  // stateNotSet) → density 0.40 > 0.25 → Dense. The old transforms-local
+  // lookup counted null as absent and chose Sparse, disagreeing with
+  // encodeDocument's auto mode on the same input.
+  const wide = buildManifest(link({
+    name: "wide",
+    version: "1.0.0",
+    fields: Object.fromEntries(
+      Array.from({ length: 100 }, (_, i) => [`f${i}`, { name: `f${i}`, type: "string" as const }]),
+    ),
+  } as SchemaDefinition));
+
+  const nullHeavy: Record<string, unknown> = {};
+  for (let i = 0; i < 40; i++) nullHeavy[`f${i}`] = null;
+
+  it("high-level auto agrees with encodeDocument auto on null-heavy docs", async () => {
+    const low = encodeDocument(wide, nullHeavy, 0, "auto");
+    const high = await encodeAnansiPacket(wide, nullHeavy, 0, { kind: "auto" });
+    expect(high[0]! & 0x03).toBe(low[0]! & 0x03);
+    expect(high[0]! & 0x03).toBe(PACKET.Dense);
+
+    const back = await decodeAnansiPacket(high, wide);
+    expect(back.doc).toEqual(nullHeavy);
+  });
+
+  it("still picks sparse when values are genuinely absent", async () => {
+    const sparseDoc: Record<string, unknown> = { f0: "only one" };
+    const low = encodeDocument(wide, sparseDoc, 0, "auto");
+    const high = await encodeAnansiPacket(wide, sparseDoc, 0, { kind: "auto" });
+    expect(high[0]! & 0x03).toBe(PACKET.Sparse);
+    expect(high[0]! & 0x03).toBe(low[0]! & 0x03);
+
+    const back = await decodeAnansiPacket(high, wide);
+    expect(back.doc).toEqual(sparseDoc);
   });
 });

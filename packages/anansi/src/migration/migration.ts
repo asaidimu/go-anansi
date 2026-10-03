@@ -8,9 +8,10 @@ import type {
   IndexDefinition,
   SchemaDefinition,
   Constraint,
-} from "./generated.ts";
+} from "../schema/generated.ts";
+import { parseVersion } from "@asaidimu/utils-version";
 
-export type { SchemaDefinition } from "./generated.ts";
+export type { SchemaDefinition } from "../schema/generated.ts";
 
 // ── Partial-update (patch) types ────────────────────────────────────────────
 
@@ -214,7 +215,6 @@ export function classifyChangeImpact(
     case "addIndex":
     case "addConstraint":
     case "addSchema":
-    case "deprecateField" as unknown:
       return "minor";
 
     case "modifySchema": {
@@ -258,13 +258,15 @@ export function bumpVersion(
   current: string,
   kind: ChangeImpact,
 ): string {
-  const match = current.replace(/^v/, "").match(/^(\d+)\.(\d+)\.(\d+)/);
-  if (!match) throw new Error(`anansi: invalid version format "${current}"`);
-  let [, maj, min, pat] = match.map(Number);
+  // Parity with Go's VersionBump.Apply: parse, bump, render — bumps always
+  // land on a stable version (prerelease tags are dropped).
+  const v = parseVersion(current);
   switch (kind) {
-    case "major": maj++; min = 0; pat = 0; break;
-    case "minor": min++; pat = 0; break;
-    case "patch": pat++; break;
+    case "major":
+      return v.bumpMajor().toString();
+    case "minor":
+      return v.bumpMinor().toString();
+    case "patch":
+      return v.bumpPatch().toString();
   }
-  return `${maj}.${min}.${pat}`;
 }

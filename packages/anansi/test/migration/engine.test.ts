@@ -1,6 +1,12 @@
 import { describe, it, expect } from "bun:test";
-import { MigrationEngine, MigrationError, MigrationErrorCode } from "../src/engine.ts";
-import type { SchemaDefinition } from "../src/schema/generated.ts";
+import { SystemError, isKnownErrorCode } from "@asaidimu/utils-error";
+import {
+  MigrationEngine,
+  compareMigrationIds,
+  migrationChecksum,
+} from "../../src/migration/engine.ts";
+import { AnansiCodes } from "../../src/errors.ts";
+import type { SchemaDefinition } from "../../src/schema/generated.ts";
 
 const baseSchema: SchemaDefinition = {
   name: "User",
@@ -74,6 +80,18 @@ describe("MigrationEngine", () => {
     await expect(engine.add({ changes: [], description: "empty" })).rejects.toThrow("must include changes");
   });
 
+  it("add() rejects string transforms", async () => {
+    const engine = new MigrationEngine(baseSchema);
+    await expect(
+      engine.add({
+        changes: [{ type: "addField", id: "email", definition: { name: "email", type: "string" } }],
+        description: "remote transform",
+        transform: "https://evil.example/transform.js",
+      }),
+    ).rejects.toMatchObject({ code: AnansiCodes.MIG.TRANSFORM_ERROR });
+    expect(engine.data().migrations).toHaveLength(0);
+  });
+
   // ── dryRun() ─────────────────────────────────────────────────────────
 
   it("dryRun forward simulates schema and returns data preview", async () => {
@@ -111,6 +129,32 @@ describe("MigrationEngine", () => {
     const dry = await engine.dryRun(input, "backward");
     expect(dry.newSchema.version).toBe("1.0.0");
     expect(fieldKeys(dry.newSchema)).toEqual(["id", "name"]);
+  });
+
+  it("dryRun backward throws VERSION_NOT_FOUND like rollbackToVersion", async () => {
+    const engine = new MigrationEngine(baseSchema, [], [{ ...baseSchema }]);
+    await expect(
+      engine.dryRun(streamFrom([{ id: "1" }]), "backward", "9.9.9"),
+    ).rejects.toMatchObject({ code: AnansiCodes.MIG.VERSION_NOT_FOUND });
+  });
+
+  it("dryRun does not mutate schema, history, or migrations", async () => {
+    const v1 = { ...baseSchema };
+    const v2: SchemaDefinition = { ...baseSchema, version: "2.0.0", fields: { id: baseSchema.fields!.id, email: { name: "email", type: "string" } } };
+    const engine = new MigrationEngine(
+      v2,
+      [{ id: "m1", schemaVersion: "1.0.0", changes: [{ type: "addField", id: "email", definition: { name: "email", type: "string" } }], status: "applied", description: "", checksum: "", createdAt: "" }],
+      [v1],
+    );
+    const before = engine.data();
+
+    await engine.dryRun(streamFrom([{ id: "1" }]), "forward");
+    await engine.dryRun(streamFrom([{ id: "1", email: "alice@test.com" }]), "backward");
+
+    const after = engine.data();
+    expect(after.schema).toEqual(before.schema);
+    expect(after.history).toEqual(before.history);
+    expect(after.migrations).toEqual(before.migrations);
   });
 
   // ── migrate() ────────────────────────────────────────────────────────
@@ -190,6 +234,58 @@ describe("MigrationEngine", () => {
     expect(chunks[0]).toEqual({ id: "1", name: "Alice", email: "alice@test.com", age: 0 });
   });
 
+  it("migrate() rejects string transforms and leaves state untouched", async () => {
+    const changes = [{ type: "addField" as const, id: "email", definition: { name: "email", type: "string" as const } }];
+    const migration = {
+      id: "m1",
+      schemaVersion: "1.0.0",
+      changes,
+      description: "remote transform",
+      status: "pending" as const,
+      transform: "https://evil.example/transform.js",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      checksum: "",
+    };
+    migration.checksum = await migrationChecksum(migration);
+    const engine = new MigrationEngine(baseSchema, [migration]);
+
+    const err = await engine
+      .migrate(streamFrom([{ id: "1", name: "Alice" }]))
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SystemError);
+    expect(err).toMatchObject({
+      code: AnansiCodes.MIG.TRANSFORM_ERROR,
+      name: "SystemError",
+      path: migration.id,
+    });
+
+    const state = engine.data();
+    expect(state.schema.version).toBe("1.0.0");
+    expect(state.history).toHaveLength(0);
+    expect(state.migrations[0].status).toBe("pending");
+  });
+
+  it("migrate() with a failing schema change leaves history empty", async () => {
+    const engine = new MigrationEngine(baseSchema);
+    await engine.add({
+      changes: [{ type: "modifyField", id: "missing", changes: { description: "x" } }],
+      description: "broken change",
+    });
+
+    const err = await engine
+      .migrate(streamFrom([{ id: "1" }]))
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(SystemError);
+    expect((err as SystemError).name).toBe("SystemError");
+    expect((err as SystemError).code).toBe(AnansiCodes.MIG.INVALID_SCHEMA);
+    expect(isKnownErrorCode((err as SystemError).code)).toBe(true);
+
+    const state = engine.data();
+    expect(state.schema.version).toBe("1.0.0");
+    expect(state.history).toHaveLength(0);
+    expect(state.migrations[0].status).toBe("pending");
+  });
+
   // ── rollback() ───────────────────────────────────────────────────────
 
   it("rollback() reverts last applied migration with stream", async () => {
@@ -240,6 +336,27 @@ describe("MigrationEngine", () => {
     expect(chunks).toHaveLength(1);
   });
 
+  it("rollbackToVersion replays backward transforms newest-id-first numerically", async () => {
+    const v1 = { ...baseSchema };
+    const v2: SchemaDefinition = { ...baseSchema, version: "2.0.0", fields: { id: baseSchema.fields!.id, email: { name: "email", type: "string" } } };
+    const engine = new MigrationEngine(
+      v2,
+      [
+        { id: "999", schemaVersion: "1.0.0", changes: [], status: "applied", description: "", checksum: "", createdAt: "",
+          transform: { forward: (d: any) => d, backward: (d: any) => ({ ...d, log: `${d.log ?? ""}999,` }) } },
+        { id: "1000", schemaVersion: "1.0.0", changes: [], status: "applied", description: "", checksum: "", createdAt: "",
+          transform: { forward: (d: any) => d, backward: (d: any) => ({ ...d, log: `${d.log ?? ""}1000,` }) } },
+      ],
+      [v1],
+    );
+
+    const out = await collect(
+      await engine.rollbackToVersion("1.0.0", streamFrom([{ id: "1", log: "" }])),
+    );
+    // Locale string order would put "999" first; numeric ids put "1000" first.
+    expect(out[0].log).toBe("1000,999,");
+  });
+
   // ── checksum validation ──────────────────────────────────────────────
 
   it("checksum is deterministic", async () => {
@@ -247,16 +364,45 @@ describe("MigrationEngine", () => {
     const changes = [{ type: "addField" as const, id: "x", definition: { name: "x", type: "string" as const } }];
     await engine.add({ changes, description: "test" });
     const m = engine.data().migrations[0];
-    const { sha256 } = await import("../src/utils.ts");
-    const payload = JSON.stringify({
-      id: m.id,
-      schemaVersion: m.schemaVersion,
-      changes: m.changes,
-      description: m.description,
-      rollback: m.rollback,
-      createdAt: m.createdAt,
-    });
-    expect(m.checksum).toBe(await sha256(payload));
+    expect(m.checksum).toMatch(/^[a-f0-9]{64}$/);
+    expect(m.checksum).toBe(await migrationChecksum(m));
+    // Recomputing over the same content yields the same value.
+    expect(await migrationChecksum(m)).toBe(await migrationChecksum({ ...m }));
+  });
+
+  it("checksum is independent of key insertion order", async () => {
+    const a = {
+      id: "m1",
+      schemaVersion: "1.0.0",
+      changes: [{ type: "addField" as const, id: "x", definition: { name: "x", type: "string" as const } }],
+      description: "d",
+      rollback: [{ type: "removeField" as const, id: "x" }],
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const b = {
+      createdAt: "2026-01-01T00:00:00.000Z",
+      rollback: [{ id: "x", type: "removeField" as const }],
+      description: "d",
+      changes: [{ definition: { type: "string" as const, name: "x" }, id: "x", type: "addField" as const }],
+      schemaVersion: "1.0.0",
+      id: "m1",
+    };
+    expect(await migrationChecksum(a)).toBe(await migrationChecksum(b));
+  });
+
+  // ── migration id ordering ────────────────────────────────────────────
+
+  it("compareMigrationIds orders all-digit ids numerically", () => {
+    expect(compareMigrationIds("999", "1000")).toBeLessThan(0);
+    expect(compareMigrationIds("1000", "999")).toBeGreaterThan(0);
+    expect(compareMigrationIds("1000", "1000")).toBe(0);
+  });
+
+  it("compareMigrationIds falls back to code-unit order for non-numeric ids", () => {
+    expect(compareMigrationIds("m1", "m2")).toBeLessThan(0);
+    expect(compareMigrationIds("m2", "m1")).toBeGreaterThan(0);
+    expect(compareMigrationIds("1000", "m1")).toBeLessThan(0);
+    expect(compareMigrationIds("m1", "1000")).toBeGreaterThan(0);
   });
 
   // ── concurrent guard ─────────────────────────────────────────────────
@@ -309,29 +455,24 @@ describe("MigrationEngine", () => {
     expect(engine.data().schema.version).toBe("1.0.1");
   });
 
-  // ── MigrationError ───────────────────────────────────────────────────
+  // ── migration errors ─────────────────────────────────────────────────
 
-  it("MigrationError has correct properties", () => {
-    const err = new MigrationError("test", MigrationErrorCode.CHECKSUM_MISMATCH, "m1");
-    expect(err.message).toBe("test");
-    expect(err.code).toBe(MigrationErrorCode.CHECKSUM_MISMATCH);
-    expect(err.migrationId).toBe("m1");
-    expect(err.name).toBe("MigrationError");
-  });
-
-  it("MigrationErrorCode has all expected codes", () => {
-    const codes: Record<string, string> = MigrationErrorCode;
-    expect(codes.INVALID_SCHEMA).toBe("INVALID_SCHEMA");
-    expect(codes.INVALID_MIGRATION).toBe("INVALID_MIGRATION");
-    expect(codes.CHECKSUM_MISMATCH).toBe("CHECKSUM_MISMATCH");
-    expect(codes.TIMEOUT).toBe("TIMEOUT");
-    expect(codes.MEMORY_LIMIT).toBe("MEMORY_LIMIT");
-    expect(codes.CONCURRENT_OPERATION).toBe("CONCURRENT_OPERATION");
-    expect(codes.TRANSFORM_ERROR).toBe("TRANSFORM_ERROR");
-    expect(codes.VERSION_NOT_FOUND).toBe("VERSION_NOT_FOUND");
-    expect(codes.CIRCULAR_DEPENDENCY).toBe("CIRCULAR_DEPENDENCY");
-    expect(codes.STREAM_ERROR).toBe("STREAM_ERROR");
-    expect(codes.ROLLBACK_ERROR).toBe("ROLLBACK_ERROR");
-    expect(codes.MISSING_TRANSFORM).toBe("MISSING_TRANSFORM");
+  it("MIG code registry covers all expected codes", () => {
+    const mig: Record<string, string> = AnansiCodes.MIG;
+    expect(mig.INVALID_SCHEMA).toBe("MIG-001");
+    expect(mig.INVALID_MIGRATION).toBe("MIG-002");
+    expect(mig.CHECKSUM_MISMATCH).toBe("MIG-003");
+    expect(mig.TIMEOUT).toBe("MIG-004");
+    expect(mig.MEMORY_LIMIT).toBe("MIG-005");
+    expect(mig.CONCURRENT_OPERATION).toBe("MIG-006");
+    expect(mig.TRANSFORM_ERROR).toBe("MIG-007");
+    expect(mig.VERSION_NOT_FOUND).toBe("MIG-008");
+    expect(mig.CIRCULAR_DEPENDENCY).toBe("MIG-009");
+    expect(mig.STREAM_ERROR).toBe("MIG-010");
+    expect(mig.ROLLBACK_ERROR).toBe("MIG-011");
+    expect(mig.MISSING_TRANSFORM).toBe("MIG-012");
+    for (const code of Object.values(mig)) {
+      expect(isKnownErrorCode(code)).toBe(true);
+    }
   });
 });
