@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/asaidimu/go-anansi/v8/core/data/container"
+	"github.com/asaidimu/go-anansi/v8/core/container"
 )
 
 // cloneContainer deep-copies a DataContainer, recursively cloning array-of-

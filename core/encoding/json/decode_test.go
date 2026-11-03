@@ -5,7 +5,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/asaidimu/go-anansi/v8/core/data/container"
+	"github.com/asaidimu/go-anansi/v8/core/container"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

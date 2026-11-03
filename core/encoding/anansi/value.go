@@ -5,7 +5,7 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/asaidimu/go-anansi/v8/core/data/container"
+	"github.com/asaidimu/go-anansi/v8/core/container"
 )
 
 // This file implements the decode half of spec section 2.5 (Field Type
@@ -14,7 +14,7 @@ import (
 // readRecord and readArrayObjectField comments):
 //
 //   - TypeRecord in this engine is a schema-free map[string]any (see
-//     core/data/container's DataType doc comment), not a *DataContainer
+//     core/container's DataType doc comment), not a *DataContainer
 //     bound to a known schema as the abstract spec's "TypeRecord
 //     (*DataContainer)" describes. It is encoded/decoded the same
 //     self-describing way as TypeUnknown.

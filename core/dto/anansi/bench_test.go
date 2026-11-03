@@ -5,10 +5,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/document"
 	anansi "github.com/asaidimu/go-anansi/v8/core/dto/anansi"
 	"github.com/asaidimu/go-anansi/v8/core/dto/anansijson"
+	cschema "github.com/asaidimu/go-anansi/v8/core/schema"
 )
 
 type Address struct {
@@ -302,7 +302,7 @@ func BenchmarkDocumentPathMarshal(b *testing.B) {
 		for t.Kind() == reflect.Pointer {
 			t = t.Elem()
 		}
-		schema, err := data.ExtractDTOSchemaDirect(reflect.New(t).Interface(), true)
+		schema, err := cschema.ExtractDTOSchemaDirect(reflect.New(t).Interface(), true)
 		if err != nil {
 			b.Fatal(err)
 		}

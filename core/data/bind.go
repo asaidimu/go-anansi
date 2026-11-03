@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
+	"github.com/asaidimu/go-anansi/v8/core/schema"
 	"github.com/asaidimu/go-anansi/v8/core/utils"
 )
 
@@ -66,7 +67,7 @@ var (
 				WithMessage("doc tag has empty field name")
 )
 
-const AnansiTag = "anansi"
+const AnansiTag = schema.AnansiTag
 
 var (
 	docModelType = reflect.TypeFor[DocumentModel]()
@@ -77,22 +78,11 @@ var (
 // Registered system-model embed types beyond data.DocumentModel. Packages that
 // provide their own embedded model (e.g. document.DocumentModel) register it so
 // struct binding, struct extraction, and DTO schema generation treat it exactly
-// like data.DocumentModel.
-type systemModelRegistration struct {
-	typ reflect.Type
-	// linkParent restores the embedded model's parent-struct reference after
-	// binding so promoted methods (Document, Patch) work on materialized
-	// results. It is provided by the registering package, keeping parent
-	// manipulation internal to that package.
-	linkParent func(embed any, parent any)
+// like data.DocumentModel. The canonical registry lives in core/schema; this
+// package seeds it with its own model at init and delegates the API.
+func init() {
+	schema.RegisterSystemModelType(docModelType, linkDocumentModelParent)
 }
-
-var (
-	systemModelRegistrationsMu sync.RWMutex
-	systemModelRegistrations   = []systemModelRegistration{
-		{typ: docModelType, linkParent: linkDocumentModelParent},
-	}
-)
 
 func linkDocumentModelParent(embed any, parent any) {
 	if dm, ok := embed.(*DocumentModel); ok {
@@ -110,65 +100,19 @@ func linkDocumentModelParent(embed any, parent any) {
 // results. It lives in the registering package so parent manipulation stays
 // internal; pass nil to skip parent linking.
 func RegisterSystemModelType(t reflect.Type, linkParent func(embed any, parent any)) {
-	systemModelRegistrationsMu.Lock()
-	defer systemModelRegistrationsMu.Unlock()
-	for _, existing := range systemModelRegistrations {
-		if existing.typ == t {
-			return
-		}
-	}
-	systemModelRegistrations = append(systemModelRegistrations, systemModelRegistration{typ: t, linkParent: linkParent})
+	schema.RegisterSystemModelType(t, linkParent)
 }
 
 // IsSystemModelType reports whether t is a registered system-model embed.
 func IsSystemModelType(t reflect.Type) bool {
-	systemModelRegistrationsMu.RLock()
-	defer systemModelRegistrationsMu.RUnlock()
-	for _, reg := range systemModelRegistrations {
-		if reg.typ == t {
-			return true
-		}
-	}
-	return false
+	return schema.IsSystemModelType(t)
 }
 
 // linkSystemModelParents restores the parent reference on every embedded
 // registered system model within outer, so promoted methods can access the
 // outer struct on read-back results.
 func linkSystemModelParents(outer reflect.Value, parent any) {
-	systemModelRegistrationsMu.RLock()
-	defer systemModelRegistrationsMu.RUnlock()
-	for _, reg := range systemModelRegistrations {
-		if reg.linkParent == nil {
-			continue
-		}
-		if idx, ok := findEmbeddedTypeIndex(outer.Type(), reg.typ); ok {
-			fv := outer.FieldByIndex(idx)
-			if fv.Kind() == reflect.Struct && fv.CanAddr() {
-				reg.linkParent(fv.Addr().Interface(), parent)
-			}
-		}
-	}
-}
-
-// findEmbeddedTypeIndex returns the field index path of the first anonymous
-// embed of type target within t, or (nil, false).
-func findEmbeddedTypeIndex(t reflect.Type, target reflect.Type) ([]int, bool) {
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if !f.Anonymous {
-			continue
-		}
-		if f.Type == target {
-			return []int{i}, true
-		}
-		if f.Type.Kind() == reflect.Struct {
-			if sub, ok := findEmbeddedTypeIndex(f.Type, target); ok {
-				return append([]int{i}, sub...), true
-			}
-		}
-	}
-	return nil, false
+	schema.LinkSystemModelParents(outer, parent)
 }
 
 // ============================================================================

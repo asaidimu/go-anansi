@@ -4,7 +4,7 @@ import (
 	"testing"
 	"unsafe"
 
-	"github.com/asaidimu/go-anansi/v8/core/data/container"
+	"github.com/asaidimu/go-anansi/v8/core/container"
 	cjson "github.com/asaidimu/go-anansi/v8/core/encoding/json"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )

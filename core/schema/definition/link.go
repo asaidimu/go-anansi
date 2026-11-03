@@ -3,7 +3,7 @@ package definition
 import (
 	"fmt"
 
-	"github.com/asaidimu/go-anansi/v8/core/data/container"
+	"github.com/asaidimu/go-anansi/v8/core/container"
 )
 
 // =============================================================================

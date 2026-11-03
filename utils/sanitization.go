@@ -167,7 +167,7 @@ func (p *sanitizationStore) ensureCollection(ctx context.Context) (*collection.M
 
 // createPolicyCollectionSchema derives the schema for the sanitization policies
 // collection from the sanitizationPolicyModel struct. Field and enum-schema IDs
-// are produced by the DTO schema extractor (core/data), whose deterministic
+// are produced by the DTO schema extractor (core/schema), whose deterministic
 // UUIDv7 generation starts from an epoch that sorts strictly after the injected
 // system fields (_id_, _metadata_). This guarantees the enriched schema's system
 // fields always lead, so the schema compiles regardless of future field

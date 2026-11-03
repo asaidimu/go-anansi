@@ -3,7 +3,7 @@ package document
 import (
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/schema"
 )
 
 type ScratchModel struct {
@@ -12,7 +12,7 @@ type ScratchModel struct {
 }
 
 func TestScratchPipeline(t *testing.T) {
-	schemaBytes, err := data.ExtractDTOSchemaDirect(ScratchModel{})
+	schemaBytes, err := schema.ExtractDTOSchemaDirect(ScratchModel{})
 	if err != nil {
 		t.Fatalf("ExtractDTOSchemaDirect: %v", err)
 	}

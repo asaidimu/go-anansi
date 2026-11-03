@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/asaidimu/go-anansi/v8/core/data"
-	"github.com/asaidimu/go-anansi/v8/core/data/container"
+	"github.com/asaidimu/go-anansi/v8/core/container"
+	"github.com/asaidimu/go-anansi/v8/core/schema"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
@@ -30,7 +30,7 @@ type Pool struct {
 
 // Compile compiles a schema JSON document into a Pool. The schema is used as
 // provided: to bind DTO structs, pass a schema produced by
-// data.ExtractDTOSchemaDirect(target, true) (system fields omitted) so the
+// schema.ExtractDTOSchemaDirect(target, true) (system fields omitted) so the
 // container stays free of document-model bookkeeping.
 func Compile(schemaJSON []byte) (*Pool, error) {
 	s, err := definition.FromJSON(schemaJSON)
@@ -71,7 +71,7 @@ func PoolForType(t reflect.Type) (*Pool, error) {
 	if v, ok := poolCache.Load(t); ok {
 		return v.(*Pool), nil
 	}
-	schemaBytes, err := data.ExtractDTOSchemaDirect(reflect.New(t).Interface(), true)
+	schemaBytes, err := schema.ExtractDTOSchemaDirect(reflect.New(t).Interface(), true)
 	if err != nil {
 		return nil, fmt.Errorf("binding: deriving schema for %s: %w", t, err)
 	}

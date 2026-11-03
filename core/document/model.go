@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/schema"
 	"github.com/asaidimu/go-anansi/v8/core/schema/binding"
 )
 
@@ -46,7 +47,6 @@ type DocumentModel struct {
 func (dm *DocumentModel) GetID() string {
 	return dm.ID
 }
-
 
 // Document builds a fully initialized container-backed document from the
 // enclosing struct via the DTO schema of its type. Requires the model to have
@@ -253,7 +253,7 @@ func poolFromType(t reflect.Type) (*DocumentPool, error) {
 	if v, ok := modelPoolCache.Load(t); ok {
 		return v.(*DocumentPool), nil
 	}
-	schemaBytes, err := data.ExtractDTOSchemaDirect(reflect.New(t).Interface())
+	schemaBytes, err := schema.ExtractDTOSchemaDirect(reflect.New(t).Interface())
 	if err != nil {
 		return nil, err
 	}

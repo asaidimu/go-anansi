@@ -1,7 +1,7 @@
 // Package anansi provides idiomatic struct-level serialization on top of the
 // Anansi binary wire format. Marshal and Unmarshal operate directly on
 // anansi-tagged structs: the compiled schema is derived from the Go type once
-// (data.ExtractDTOSchemaDirect with system fields omitted) and cached, so
+// (schema.ExtractDTOSchemaDirect with system fields omitted) and cached, so
 // steady-state calls never touch the schema pipeline.
 //
 // The path is deliberately document-free: a binding.Pool compiles the schema

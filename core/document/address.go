@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/asaidimu/go-anansi/v8/core/data/container"
+	"github.com/asaidimu/go-anansi/v8/core/container"
 	"github.com/asaidimu/go-anansi/v8/core/schema/binding"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )

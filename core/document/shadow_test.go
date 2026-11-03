@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/schema"
 )
 
 // shadowProduct models what codegen emits when the schema lacks system
@@ -29,7 +30,7 @@ type shadowProductPreSet struct {
 }
 
 func TestShadowModel_ExtractorDedupesSystemFields(t *testing.T) {
-	schemaBytes, err := data.ExtractDTOSchemaDirect(&shadowProduct{})
+	schemaBytes, err := schema.ExtractDTOSchemaDirect(&shadowProduct{})
 	require.NoError(t, err)
 
 	var parsed map[string]any

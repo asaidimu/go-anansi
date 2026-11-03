@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v8/core/data"
-	"github.com/asaidimu/go-anansi/v8/core/data/container"
+	"github.com/asaidimu/go-anansi/v8/core/container"
 )
 
 func TestDebugID(t *testing.T) {
