@@ -114,6 +114,7 @@ func (c *Collection) FilterCopy(keep func(*DataContainer) bool) (*Collection, er
 // The caller must Release the returned collection.
 func (c *Collection) Project(keys []DataContainerKey) (*Collection, error) {
 	// @note #fe45qi issue : Project doesn't propagate backing
+// @status resolved
 	//
 	// copyDataContainer correctly does:
 	//
@@ -205,6 +206,14 @@ func copyDataContainer(src, dst *DataContainer, pool *Pool) error {
 }
 
 func projectDataContainer(src, dst *DataContainer, keys []DataContainerKey, pool *Pool) error {
+	// Copied string values keep their headers (they still alias whatever
+	// buffer src's strings alias), so the projection must hold the same
+	// backing — exactly as copyDataContainer does (#fe45qi). Otherwise a
+	// pooled source released before the projection is consumed drops its
+	// oversized backing and the projected strings dangle.
+	if b := src.Backing(); b != nil {
+		dst.OwnBacking(b)
+	}
 	for _, key := range keys {
 		if !src.IsSet(key) {
 			continue
@@ -364,3 +373,8 @@ func cloneAny(v any) any {
 		return v
 	}
 }
+//
+// Resolved: projectDataContainer now opens with the same prologue as
+// copyDataContainer — it attaches src.Backing() to the projected document,
+// so projected strings hold the source's backing buffer alive for as long
+// as the projection holds them.

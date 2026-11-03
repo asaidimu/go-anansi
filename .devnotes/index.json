@@ -1,16 +1,17 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-03T13:22:59.590832805Z",
+  "generatedAt": "2026-11-03T14:46:42.043609497Z",
   "root": ".",
   "notes": {
     "0ar5g0": {
       "id": "0ar5g0",
       "category": "status",
-      "status": "resolved",
+      "status": "open",
       "title": "Inefficient access",
       "body": "Resolved: same fieldIndex lookup as #5nhvz2 -- a single O(1) access to\nthe field's handles instead of scanning meta.fields for a name match.\n",
       "extensions": {
-        "issue": ""
+        "issue": "",
+        "status": "resolved"
       },
       "location": {
         "file": "core/reflect/tags_registry.go",
@@ -19,16 +20,17 @@
         "endLine": 528,
         "endCol": 3
       },
-      "hash": "aa5b6d2c2a620d97"
+      "hash": "ba7b1596fe4385b4"
     },
     "1k51l3": {
       "id": "1k51l3",
       "category": "status",
-      "status": "resolved",
+      "status": "open",
       "title": "Library Anti pattern. Use common.SystemError",
       "body": "Resolved: common.SystemError satisfies error as well as\nproviding means to add richer error context, which is\ninvaluable in tracing issues from low level utilities such\nas this one, if and when such errors impact higher level\nimplementations.\n",
       "extensions": {
-        "issue": ""
+        "issue": "",
+        "status": "resolved"
       },
       "location": {
         "file": "core/reflect/tags_registry.go",
@@ -37,7 +39,7 @@
         "endLine": 180,
         "endCol": 3
       },
-      "hash": "ccf8df4d8641d866"
+      "hash": "efbb3f2cc589059f"
     },
     "1kkx9p": {
       "id": "1kkx9p",
@@ -72,10 +74,11 @@
     "397ju0": {
       "id": "397ju0",
       "category": "status",
-      "status": "resolved",
+      "status": "open",
       "title": "Refactor out helpers #cruft",
       "body": "Resolved by removal: typeHash32/fieldHash32/fieldKeyOf and the\nstructFieldKey hash-bucket scheme were deleted outright when the map was\nre-keyed on the natively comparable (reflect.Type, string) pair. There are\nno hash helpers left to extract, and the collision-verification caveat they\nexisted to mitigate is gone by construction.\n",
       "extensions": {
+        "status": "resolved",
         "todo": ""
       },
       "location": {
@@ -85,16 +88,17 @@
         "endLine": 94,
         "endCol": 3
       },
-      "hash": "571b8f2725b2765b"
+      "hash": "1d819a2ed4ccc949"
     },
     "5nhvz2": {
       "id": "5nhvz2",
       "category": "status",
-      "status": "resolved",
+      "status": "open",
       "title": "Inefficient field access",
       "body": "Resolved: FieldTag now does a single fieldIndex.Get(type, fieldName)\nlookup (composite-keyed, see field_tag_map.go) followed by a linear scan\nof that field's handles for the tag key. Both are O(1)/O(k) with k = tags\nper field (single digits) instead of the original linear scan over every\nfield followed by a linear scan over that field's tags.\n",
       "extensions": {
-        "issue": ""
+        "issue": "",
+        "status": "resolved"
       },
       "location": {
         "file": "core/reflect/tags_registry.go",
@@ -103,7 +107,7 @@
         "endLine": 491,
         "endCol": 3
       },
-      "hash": "89c03ecee3c9f8af"
+      "hash": "765652b6f39a79df"
     },
     "9c5yn5": {
       "id": "9c5yn5",
@@ -122,11 +126,12 @@
     "a23h8y": {
       "id": "a23h8y",
       "category": "status",
-      "status": "resolved",
+      "status": "open",
       "title": "Inefficient access",
       "body": "Resolved: structMetadata now carries byKey, a map[string][]tagRef built\nonce in buildMetadata alongside the rest of a type's metadata. KeyTags\nreads meta.byKey[tagKey] directly, so its cost is proportional to the\nnumber of matching tags, not to the total number of tags on the type.\n",
       "extensions": {
-        "issue": ""
+        "issue": "",
+        "status": "resolved"
       },
       "location": {
         "file": "core/reflect/tags_registry.go",
@@ -135,7 +140,7 @@
         "endLine": 588,
         "endCol": 3
       },
-      "hash": "60fc957138207fd2"
+      "hash": "db7ee75cb230538e"
     },
     "ah4hqh": {
       "id": "ah4hqh",
@@ -155,11 +160,12 @@
     "cd05t4": {
       "id": "cd05t4",
       "category": "status",
-      "status": "resolved",
+      "status": "open",
       "title": "Unneccessary computations",
       "body": "Resolved: ValueKind is now computed once per tag in buildMetadata and\npacked into 2 previously-unused bits of the handle (bits 60-61). Tag.\nValueKind() is now a bit-mask extraction with no string scan. See\ncomputeValueKind and the handle layout documented on the Tag struct.\n",
       "extensions": {
-        "issue": ""
+        "issue": "",
+        "status": "resolved"
       },
       "location": {
         "file": "core/reflect/tags_registry.go",
@@ -168,7 +174,7 @@
         "endLine": 120,
         "endCol": 3
       },
-      "hash": "e52924354066b37e"
+      "hash": "037b83f9949d78bf"
     },
     "cwzt7j": {
       "id": "cwzt7j",
@@ -190,105 +196,126 @@
       "category": "issue",
       "status": "open",
       "title": "Dense decoder doesn't mirror the encoder's docView fast path",
-      "body": "inverted.go's encoder is SBE-class on the populate path: viewDoc captures\nthe document in one Walk (one positions lookup per field), caches slot\npointers per used DataType, and reads values via (*(*[]T)(v.slots[dt]))[idx]\nwith zero map access on the hot path. scanPacketBodyAs + putPacketBody\nthen walk res.byType[dt] — a pre-computed per-DataType field list — so the\nouter loop is a fixed 16-iter type walk and the inner switch is jump-table\npredictable.\n\ndense.go's decodeDenseBody was not built to the same standard. Per field it\ncalls doc.SetBool / doc.SetNull / readFieldPayload, and SetXxx does, in order:\n  1. type check (key.Type() != TypeX) — redundant, decode already dispatched\n  2. positions[int64(key)] lookup\n  3. claimHole(TypeX) — backward scan of d.holes\n  4. write at [idx] (or AppendXxx if no hole)\n  5. positions[int64(key)] = idx\nSo per field decode pays ~2 map ops + 1 hole scan + 1 append, where encode\npays 1 map op (amortized into viewDoc) + 1 array read.\n\nThis is the umbrella for #dcd002-#dcd006. The fix pattern already exists in\ninverted.go: decoder should use doc.Walk to capture slot pointers and\nper-field indices once, pre-size each used type slice from the state map\ncount (mirroring how the encoder sizes from state map counts), and write\ndirectly through slot+idx — one positions write per field, no hole claim,\nno type check, no growth.\n\nExpected: decode-wide64 drops from ~2-4x the encoder's latency to ~1.5-2x,\nand pooled decode hits 0 allocs/op.\n\n@see #dcd002\n@see #dcd003\n@see #dcd004\n",
+      "body": "inverted.go's encoder is SBE-class on the populate path: viewDoc captures\nthe document in one Walk (one positions lookup per field), caches slot\npointers per used DataType, and reads values via (*(*[]T)(v.slots[dt]))[idx]\nwith zero map access on the hot path. scanPacketBodyAs + putPacketBody\nthen walk res.byType[dt] — a pre-computed per-DataType field list — so the\nouter loop is a fixed 16-iter type walk and the inner switch is jump-table\npredictable.\n\ndense.go's decodeDenseBody was not built to the same standard. Per field it\ncalls doc.SetBool / doc.SetNull / readFieldPayload, and SetXxx does, in order:\n  1. type check (key.Type() != TypeX) — redundant, decode already dispatched\n  2. positions[int64(key)] lookup\n  3. claimHole(TypeX) — backward scan of d.holes\n  4. write at [idx] (or AppendXxx if no hole)\n  5. positions[int64(key)] = idx\nSo per field decode pays ~2 map ops + 1 hole scan + 1 append, where encode\npays 1 map op (amortized into viewDoc) + 1 array read.\n\nThis is the umbrella for #dcd002-#dcd006. The fix pattern already exists in\ninverted.go: decoder should use doc.Walk to capture slot pointers and\nper-field indices once, pre-size each used type slice from the state map\ncount (mirroring how the encoder sizes from state map counts), and write\ndirectly through slot+idx — one positions write per field, no hole claim,\nno type check, no growth.\n\nExpected: decode-wide64 drops from ~2-4x the encoder's latency to ~1.5-2x,\nand pooled decode hits 0 allocs/op.\n\nResolved: decodeDenseBody was rebuilt to the encoder's standard — one\nstate-map validation pass counts exact per-type values, PreSize sizes each\nused slot once (no append growth), scalar types read and append inline with\nthe dispatch hoisted per type, and all writes go through the AppendXxx\ndecode primitive (no positions probe, no hole claim). Dense wide64 fresh\ndecode dropped 9.403us -\u003e 8.312us (-11.6%); reuse 3.541us -\u003e 3.333us; pooled\nallocations on the scalar tiny shape fell 3 -\u003e 1 per decode (the remaining\none is the pre-existing top-level byteReader escape). The full\n\"decode ~= 1.5-2x encode\" goal is bounded by inherent array-value\nallocations (21 array-typed fields each materialize their slice); pooled\nscalar decode is at 1 alloc, not 0.\n\n@see #dcd002\n@see #dcd003\n@see #dcd004\n",
+      "extensions": {
+        "status": "resolved"
+      },
       "location": {
         "file": "core/encoding/anansi/anansi.go",
-        "startLine": 148,
+        "startLine": 153,
         "startCol": 3,
-        "endLine": 180,
+        "endLine": 198,
         "endCol": 3
       },
-      "hash": "dad3cf5cee21e868"
+      "hash": "7bb0e35f1a7435b6"
     },
     "dcd002": {
       "id": "dcd002",
       "category": "issue",
       "status": "open",
       "title": "decodeDenseStateMap allocates []fieldState; Columnar already shows the fix",
-      "body": "Confirmed by columnar.go inspection: decodeColumnarBlock does NOT allocate\na []fieldState. It reads the packed field-major state column in place via\nstateAtBit(packed, bit), a single array-index + shift + mask. Dense should\ndo the same for its state map — the encoder's putPacketBody writes it with\nthe same bit-shift pattern, so the decoder can read it with the same.\n\nThis is now a local comparison: two decoders in the same package, one reads\nthe state bits in place (Columnar) and one materializes a slice (Dense).\nFollowing Columnar's lead here removes the allocation with no new design.\n\nSame applies to any future state-map-like decoder (e.g. Stream packets if\nthey land): read the bits, don't materialize the slice.\n\n@see #dcd001\n",
+      "body": "Confirmed by columnar.go inspection: decodeColumnarBlock does NOT allocate\na []fieldState. It reads the packed field-major state column in place via\nstateAtBit(packed, bit), a single array-index + shift + mask. Dense should\ndo the same for its state map — the encoder's putPacketBody writes it with\nthe same bit-shift pattern, so the decoder can read it with the same.\n\nThis is now a local comparison: two decoders in the same package, one reads\nthe state bits in place (Columnar) and one materializes a slice (Dense).\nFollowing Columnar's lead here removes the allocation with no new design.\n\nSame applies to any future state-map-like decoder (e.g. Stream packets if\nthey land): read the bits, don't materialize the slice.\n\nResolved: decodeDenseStateMap is gone. decodeDenseBody reads the packed\nstate map in place via columnar.go's stateAtBit — the []fieldState\nmaterialization is removed, and the same single pass validates the reserved\n0b11 code and counts per-type values for pre-sizing.\n\n@see #dcd001\n",
+      "extensions": {
+        "status": "resolved"
+      },
       "location": {
         "file": "core/encoding/anansi/anansi.go",
-        "startLine": 182,
+        "startLine": 200,
         "startCol": 3,
-        "endLine": 197,
+        "endLine": 221,
         "endCol": 3
       },
-      "hash": "7348568717f734a8"
+      "hash": "64c8801064a380b7"
     },
     "dcd003": {
       "id": "dcd003",
       "category": "issue",
       "status": "open",
       "title": "Decoder doesn't pre-size typed slices; AppendXxx grows from cap 8",
-      "body": "DataContainer.initSlice defaults to cap 8. For a fresh (unpooled) container\ndecoding 64 values of the same type, AppendXxx grows 8 -\u003e 16 -\u003e 32 -\u003e 64 -\u003e\n128: ~5 reallocations plus copies per type. This dominates the \"fresh\"\nvariant of BenchmarkDecodeDense/wide64.\n\nThe encoder sizes its output exactly by scanning the state map first\n(inverted.go:scanPacketBodyAs). The decoder has the same information: after\nreading the state map it knows exact counts per DataType (nInt, nFloat,\nnString, ...), so it can pre-size each used slot with slot(dt, nDt) before\nthe value loop. One allocation per used type, zero reallocations.\n\n@see #dcd001\n",
+      "body": "DataContainer.initSlice defaults to cap 8. For a fresh (unpooled) container\ndecoding 64 values of the same type, AppendXxx grows 8 -\u003e 16 -\u003e 32 -\u003e 64 -\u003e\n128: ~5 reallocations plus copies per type. This dominates the \"fresh\"\nvariant of BenchmarkDecodeDense/wide64.\n\nThe encoder sizes its output exactly by scanning the state map first\n(inverted.go:scanPacketBodyAs). The decoder has the same information: after\nreading the state map it knows exact counts per DataType (nInt, nFloat,\nnString, ...), so it can pre-size each used slot with slot(dt, nDt) before\nthe value loop. One allocation per used type, zero reallocations.\n\nResolved: after the state-map pass the decoder knows exact per-DataType\ncounts and calls DataContainer.PreSize(dt, n) for each used type — one\nallocation per used type, zero append growth. wide64/fresh allocations fell\n54 -\u003e 46 per decode (the remainder are the 21 array fields' value slices,\nwhich are the decoded values themselves), and BatchRows/fresh B/op fell\n79.2KB -\u003e 60.8KB per 100-record batch.\n\n@see #dcd001\n",
+      "extensions": {
+        "status": "resolved"
+      },
       "location": {
         "file": "core/encoding/anansi/anansi.go",
-        "startLine": 199,
+        "startLine": 223,
         "startCol": 3,
-        "endLine": 212,
+        "endLine": 244,
         "endCol": 3
       },
-      "hash": "3200214689577cb9"
+      "hash": "4173c7bdb950fc29"
     },
     "dcd004": {
       "id": "dcd004",
       "category": "issue",
       "status": "open",
       "title": "SetXxx does redundant type check + unnecessary hole scan on decode path",
-      "body": "data_container.go: every SetInt/SetFloat/SetString/... starts with\n    if key.Type() != TypeX { return ErrTypeMismatch }\nand then calls claimHole(TypeX), a backward scan of d.holes for a matching\ntype. On the decode path both are wasted work:\n\n  - The type comes from wf.fd.DataType(); the decoder dispatched on it a few\n    instructions earlier. The check cannot fail on valid input, and on\n    invalid input the decode already produced garbage.\n\n  - doc was either freshly allocated (holes empty) or Clear()'d by the pool\n    (Clear resets holes to [:0]). claimHole scans, finds nothing, returns -1,\n    and AppendXxx runs. Decode pays for a scan that cannot succeed.\n\nThe direct-write path from #dcd001 skips both: the write is typed by\nconstruction and a fresh decode never reuses freed slots. If the decoder\ncan't adopt Walk for some reason, a fallback is a Container API variant\n\"SetFromEmpty\" that skips type check + hole claim for known-typed fills.\n\n@see #dcd001\n",
+      "body": "data_container.go: every SetInt/SetFloat/SetString/... starts with\n    if key.Type() != TypeX { return ErrTypeMismatch }\nand then calls claimHole(TypeX), a backward scan of d.holes for a matching\ntype. On the decode path both are wasted work:\n\n  - The type comes from wf.fd.DataType(); the decoder dispatched on it a few\n    instructions earlier. The check cannot fail on valid input, and on\n    invalid input the decode already produced garbage.\n\n  - doc was either freshly allocated (holes empty) or Clear()'d by the pool\n    (Clear resets holes to [:0]). claimHole scans, finds nothing, returns -1,\n    and AppendXxx runs. Decode pays for a scan that cannot succeed.\n\nThe direct-write path from #dcd001 skips both: the write is typed by\nconstruction and a fresh decode never reuses freed slots. If the decoder\ncan't adopt Walk for some reason, a fallback is a Container API variant\n\"SetFromEmpty\" that skips type check + hole claim for known-typed fills.\n\nResolved: readFieldPayload became fillValue and every decoder now writes\nthrough the typed AppendXxx API. The positions-map probe and hole-claim\nscan (guaranteed no-ops on a fresh/Clear()ed/pool-fresh decode target) are\ngone from the decode path; AppendXxx's own type check remains as one\nwell-predicted branch that also keeps the identifierMask guard. Sparse\nadditionally validates its wire field count against the schema so a\nhostile count cannot drive unbounded appends.\n\n@see #dcd001\n",
+      "extensions": {
+        "status": "resolved"
+      },
       "location": {
         "file": "core/encoding/anansi/anansi.go",
-        "startLine": 214,
+        "startLine": 246,
         "startCol": 3,
-        "endLine": 234,
+        "endLine": 275,
         "endCol": 3
       },
-      "hash": "c4422977bd9f3fce"
+      "hash": "d525c95fe02ecf96"
     },
     "dcd005": {
       "id": "dcd005",
       "category": "issue",
       "status": "open",
       "title": "Sparse and Batch inherit every Dense issue; confirmed across all decoders",
-      "body": "Inspected sparse.go, batch.go, columnar.go. Status per issue:\n\n  #dcd001 (Walk fast path)  — ALL FOUR decoders miss it. Dense, Sparse,\n                               Batch-Row (via dispatch), Columnar all use\n                               doc.SetXxx per field.\n  #dcd002 ([]fieldState)    — Dense only. Columnar reads bits in place.\n                               Sparse has no state map. Batch inherits\n                               whichever decoder it dispatches to.\n  #dcd003 (no pre-size)     — All four. Sparse too: many present fields\n                               still grows via AppendXxx.\n  #dcd004 (redundant checks)— All four. Every SetXxx pays type check +\n                               hole scan on a fresh/pooled container.\n  #dcd006 (readFieldPayload)— All four call it. Single lever, four wins.\n\nFix pattern: one shared \"fillFromReader\" helper that walks the target\ncontainer once, pre-sizes from field count (sparse) or state-map counts\n(dense / batch-row / batch-columnar), and writes through slot+idx.\nOne helper, four decoders.\n\n@see #dcd001\n@see #dcd006\n",
+      "body": "Inspected sparse.go, batch.go, columnar.go. Status per issue:\n\n  #dcd001 (Walk fast path)  — ALL FOUR decoders miss it. Dense, Sparse,\n                               Batch-Row (via dispatch), Columnar all use\n                               doc.SetXxx per field.\n  #dcd002 ([]fieldState)    — Dense only. Columnar reads bits in place.\n                               Sparse has no state map. Batch inherits\n                               whichever decoder it dispatches to.\n  #dcd003 (no pre-size)     — All four. Sparse too: many present fields\n                               still grows via AppendXxx.\n  #dcd004 (redundant checks)— All four. Every SetXxx pays type check +\n                               hole scan on a fresh/pooled container.\n  #dcd006 (readFieldPayload)— All four call it. Single lever, four wins.\n\nFix pattern: one shared \"fillFromReader\" helper that walks the target\ncontainer once, pre-sizes from field count (sparse) or state-map counts\n(dense / batch-row / batch-columnar), and writes through slot+idx.\nOne helper, four decoders.\n\nResolved: the shared helper is fillValue (dispatch.go) — Dense, Sparse,\nBatch-Row (via the dense/sparse paths) and Columnar all write through it,\nwith no SetXxx left on any decode path. Dense additionally hoists the\nscalar dispatch per type and pre-sizes from the state map; Sparse and\nColumnar keep field-major loops (wire order there is per-field, so the\nper-field dispatch stands). Measured: BatchRows/decode/pooled -14.6%,\nBatchColumnar/decode/pooled -6.3%, nested20 decode -9% to -19% across all\ncontainer lifecycles, no regressions elsewhere.\n\n@see #dcd001\n@see #dcd006\n",
+      "extensions": {
+        "status": "resolved"
+      },
       "location": {
         "file": "core/encoding/anansi/anansi.go",
-        "startLine": 236,
+        "startLine": 277,
         "startCol": 3,
-        "endLine": 258,
+        "endLine": 309,
         "endCol": 3
       },
-      "hash": "751fb1f78925fc84"
+      "hash": "c6c9382a664d2b6e"
     },
     "dcd006": {
       "id": "dcd006",
       "category": "todo",
       "status": "open",
       "title": "Verify readFieldPayload isn't re-dispatching per field",
-      "body": "decodeDenseBody iterates res.byType[dt] — the same pre-computed per-DataType\ngrouping the encoder uses — which is correct. But then it calls\nreadFieldPayload per field. If readFieldPayload switches on wf.fd.DataType()\nagain, the grouping's benefit is thrown away: dispatch is paid once per field\ninstead of once per type.\n\nConfirm by reading readFieldPayload's body. If it does switch, inline the\nper-type read into the outer type loop so the dispatch cost is paid once per\ntype (mirroring inverted.go:putValue's structure, where the switch is on\nwf.fd.DataType() but the caller has already grouped by type).\n\n@see #dcd001\n",
+      "body": "decodeDenseBody iterates res.byType[dt] — the same pre-computed per-DataType\ngrouping the encoder uses — which is correct. But then it calls\nreadFieldPayload per field. If readFieldPayload switches on wf.fd.DataType()\nagain, the grouping's benefit is thrown away: dispatch is paid once per field\ninstead of once per type.\n\nConfirm by reading readFieldPayload's body. If it does switch, inline the\nper-type read into the outer type loop so the dispatch cost is paid once per\ntype (mirroring inverted.go:putValue's structure, where the switch is on\nwf.fd.DataType() but the caller has already grouped by type).\n\nResolved: readFieldPayload did switch per field; it is now fillValue.\nDense routes its scalar types (int/float/string, plus the bool block)\nthrough inline per-type loops, so the dispatch is paid once per type;\ncomplex types and the Sparse/Columnar field-major loops call fillValue per\nfield, where the block-constant type keeps the branch predictable.\n\n@see #dcd001\n",
+      "extensions": {
+        "status": "resolved"
+      },
       "location": {
         "file": "core/encoding/anansi/anansi.go",
-        "startLine": 260,
+        "startLine": 311,
         "startCol": 3,
-        "endLine": 273,
+        "endLine": 331,
         "endCol": 3
       },
-      "hash": "531589e7c707e6cf"
+      "hash": "c4a319cd73784003"
     },
     "dcd007": {
       "id": "dcd007",
       "category": "issue",
       "status": "open",
       "title": "readBoolBits allocates []bool per bool block; caller iterates and discards",
-      "body": "dense.go:decodeDenseBody and columnar.go:decodeColumnarBlock both call\nreadBoolBits, which returns a fresh []bool per bool block. The caller then\niterates the slice and calls doc.SetBool on each element, then discards the\nslice. Two costs compound:\n\n  1. The []bool allocation itself (one per Dense bool block; one per bool\n     FIELD per Columnar block — Columnar pays it N times where Dense pays\n     it once).\n  2. The intermediate slice prevents direct writes into the target\n     container's bool slice via Walk.\n\nThe encoder's mirror (putPacketBody's TypeBool branch and\nEncodeBatchColumnar's bool loop) writes bits directly into the output\nbuffer with no intermediate. The decoder should do the same: read bits\nin place and set the target bool value per bit, no []bool in between.\n\n@see #dcd001\n@see #dcd002\n",
+      "body": "dense.go:decodeDenseBody and columnar.go:decodeColumnarBlock both call\nreadBoolBits, which returns a fresh []bool per bool block. The caller then\niterates the slice and calls doc.SetBool on each element, then discards the\nslice. Two costs compound:\n\n  1. The []bool allocation itself (one per Dense bool block; one per bool\n     FIELD per Columnar block — Columnar pays it N times where Dense pays\n     it once).\n  2. The intermediate slice prevents direct writes into the target\n     container's bool slice via Walk.\n\nThe encoder's mirror (putPacketBody's TypeBool branch and\nEncodeBatchColumnar's bool loop) writes bits directly into the output\nbuffer with no intermediate. The decoder should do the same: read bits\nin place and set the target bool value per bit, no []bool in between.\n\nResolved: readBoolBits is no longer on any decode path. Dense and\nColumnar read the packed bool block with readN and unpack each bit\nstraight into AppendBool — the per-block []bool is gone. (readBoolBits\nitself remains for bool_test.go.)\n\n@see #dcd001\n@see #dcd002\n",
+      "extensions": {
+        "status": "resolved"
+      },
       "location": {
         "file": "core/encoding/anansi/anansi.go",
-        "startLine": 275,
+        "startLine": 333,
         "startCol": 3,
-        "endLine": 294,
+        "endLine": 358,
         "endCol": 3
       },
-      "hash": "14ef00207a60f704"
+      "hash": "890c655ec8550c3d"
     },
     "dcd008": {
       "id": "dcd008",
@@ -298,9 +325,9 @@
       "body": "batch.go:DecodeBatchRows does docs := make([]*container.DataContainer,\nrecordCount) unconditionally — even when the caller will consume and\ndiscard in the same scope. For a 1000-record batch that's 8KB of\npointers per call. Smaller than the per-field issues but constant, and it\nsits on the same hot path.\n\nOptions: (a) accept it — the slice IS the return value, and callers can't\navoid needing the pointers; (b) pool the slice; (c) offer an iterator API\n(DecodeBatchEach(pool, fn)) that avoids the slice entirely for streaming\nconsumers. (c) is the most useful for large batches — the caller often\nwants to process-and-release one record at a time anyway.\n\n@see #dcd005\n",
       "location": {
         "file": "core/encoding/anansi/anansi.go",
-        "startLine": 296,
+        "startLine": 360,
         "startCol": 3,
-        "endLine": 310,
+        "endLine": 374,
         "endCol": 3
       },
       "hash": "0af32628b1cca4ad"
@@ -310,15 +337,18 @@
       "category": "todo",
       "status": "open",
       "title": "Zero-copy string path copies the entire remaining body unconditionally",
-      "body": "anansi.go:DecodeAnansiInto and batch.go:DecodeBatchRows both do:\n\n    buf := doc.AcquireBacking(body.remaining())\n    copy(buf, body.data[body.pos:])\n\nThis is correct — the caller's wire buffer must not be retained, so a\nsnapshot is needed if any string aliases it. But the copy happens even\nwhen the schema has NO string fields, in which case there's nothing to\nalias and the copy is pure waste. For a batch of integer-only records the\nentire body is copied for no reason.\n\nPrecomputed fix: res knows whether any field of the schema is string-typed\n(or array-of-string). If not, skip the snapshot. Cheap to check at\nresourcesFor time, stored on the slotCodec.\n\n@see #dcd005\n",
+      "body": "anansi.go:DecodeAnansiInto and batch.go:DecodeBatchRows both do:\n\n    buf := doc.AcquireBacking(body.remaining())\n    copy(buf, body.data[body.pos:])\n\nThis is correct — the caller's wire buffer must not be retained, so a\nsnapshot is needed if any string aliases it. But the copy happens even\nwhen the schema has NO string fields, in which case there's nothing to\nalias and the copy is pure waste. For a batch of integer-only records the\nentire body is copied for no reason.\n\nPrecomputed fix: res knows whether any field of the schema is string-typed\n(or array-of-string). If not, skip the snapshot. Cheap to check at\nresourcesFor time, stored on the slotCodec.\n\nResolved: slotCodec now carries an `aliasable` bit — true when any field\nreachable from the slot (including nested TypeArrayObject element slots)\ncan produce wire-aliasing strings (TypeString, TypeArrayString, and the\nschema-free Record/Unknown carriers). DecodeAnansiInto and DecodeBatchRows\nsnapshot the caller's wire only when that bit is set; a string-free packet\nno longer copies its body at all.\n\n@see #dcd005\n",
+      "extensions": {
+        "status": "resolved"
+      },
       "location": {
         "file": "core/encoding/anansi/anansi.go",
-        "startLine": 312,
+        "startLine": 376,
         "startCol": 3,
-        "endLine": 329,
+        "endLine": 401,
         "endCol": 3
       },
-      "hash": "c805f383ebadb25e"
+      "hash": "f0cde599044e4ca5"
     },
     "dcd010": {
       "id": "dcd010",
@@ -350,50 +380,29 @@
       },
       "hash": "110fad3967e6a4d9"
     },
-    "encoder-array-object-recursion": {
-      "id": "encoder-array-object-recursion",
-      "category": "issue",
-      "status": "resolved",
-      "priority": "critical",
-      "tags": [
-        "encoder",
-        "arrays"
-      ],
-      "title": "emitObject recursed forever encoding array\u003cobject\u003e children resolved through the root address map",
-      "body": "RESOLVED 2026-08-23: writeChildren now emits elements via writeObjectAt,\nwhich resolves entry names against the CHILD schema slot (bare local field\nnames) instead of the root address reverse-map. Regression tests in\nnotif_matrix_test.go (TestDecode_GeneratedNotifSchema/d-actions,\nTestEncode_ArrayObjectElements) pin the shape.\n\nThe bug: array-element containers are keyed by descriptors of the child\nschema slot, but nameFor resolved their DataPoint IDs through\nPathNameForAddress, which returned full ROOT paths (e.g.\n\"payload.actions.label\"). Under writeChildren's element prefix (\"actions\")\nthose names never strip, so emitObject kept recursing on\njoinPrefix(prefix,\"payload\") — unbounded prefix growth, one '{' and a sort\nper level, RSS to OOM within seconds. Triggered by any document containing\na populated array\u003cobject\u003e field reaching this encoder (e.g. metadata\nchecksum finalization inside DocumentPool.FromJSON). Known limitation of\nthe slot-local naming: object-typed MEMBERS inside array children emit\nflattened rather than nested; no crash, fix upstream when needed. Elements are containers keyed by the CHILD schema slot's\nfields, so each element is emitted via writeObjectAt against that slot —\nresolving names slot-locally. Resolving them through the root address map\nwould return full root paths (e.g. \"payload.actions.label\") that never match\nthe element prefix, sending emitObject into unbounded prefix-growing\nrecursion.\n",
-      "assignee": "opencode",
-      "location": {
-        "file": "core/encoding/json/encoder.go",
-        "startLine": 388,
-        "startCol": 3,
-        "endLine": 415,
-        "endCol": 3
-      },
-      "hash": "26b5d5dc5055449a"
-    },
     "fe45qi": {
       "id": "fe45qi",
       "category": "issue",
       "status": "open",
       "title": "Project doesn't propagate backing",
-      "body": "copyDataContainer correctly does:\n\nif b := src.Backing(); b != nil {\n    dst.OwnBacking(b)\n}\nprojectDataContainer does not. It copies string values via copyField →\nSetString(key, v), where v aliases src.backing, but the projected\ndocument never holds a reference to that buffer. If the source is pooled\nand Clear drops an oversized backing (\u003e 1 MiB), the projected strings\ndangle.\n\nThis is narrow — it requires zero-copy decode + oversized source +\nprojection outliving the source — but it's exactly the codec's likely\npath for selective field materialization (Sparse-style partial decode).\nFix: mirror the copyDataContainer prologue in projectDataContainer.\n",
       "location": {
         "file": "core/data/container/collection.go",
         "startLine": 115,
         "startCol": 3,
-        "endLine": 131,
+        "endLine": 115,
         "endCol": 3
       },
-      "hash": "25c5f8508a2a4534"
+      "hash": "eaeb7ae5f10c2175"
     },
     "g23h8y": {
       "id": "g23h8y",
       "category": "status",
-      "status": "resolved",
+      "status": "open",
       "title": "Inefficient access",
       "body": "Resolved as \"already optimal\": Tags yields every field/tag pair by\ndefinition, so visiting each one once is O(n) in the size of the output,\nwhich is the best any implementation can do here -- there is no name or\nkey to look up that could turn this into a sub-linear operation. The\nactual per-call overhead #g23h8y was pointing at (repeatedly re-deriving\nfield/tag structure) is what #5nhvz2 and #0ar5g0 address for the\nsingle-field lookup paths; this function was never doing that redundant\nwork in the first place, since it already reads directly from the\ntype's cached structMetadata built once by buildMetadata.\n",
       "extensions": {
-        "issue": ""
+        "issue": "",
+        "status": "resolved"
       },
       "location": {
         "file": "core/reflect/tags_registry.go",
@@ -402,22 +411,25 @@
         "endLine": 562,
         "endCol": 3
       },
-      "hash": "b240949f136fd871"
+      "hash": "8a716f708df99c30"
     },
     "hbivg7": {
       "id": "hbivg7",
       "category": "issue",
       "status": "open",
       "title": "Wasted Storage",
-      "body": "holes []DataContainerKey — still a real inefficiency, scoped narrowly.\nclaimHole reads only .Type() and .DataPoint().ID(). The descriptor half\nis dead weight in the current hole mechanism. That's not a critique of\nthe 64-bit key design — it's a local observation that if holes are never\nmatched by descriptor (and today they aren't), []DataPoint would halve\nthe slice. If future code wants \"same-descriptor hole claiming\" for\nconstraint-stable reuse, the descriptor matters; if not, it's carrying\nbytes no one reads.\n",
+      "body": "Resolved: holes is now []DataPoint (type + freed index) instead of\n[]DataContainerKey. claimHole reads only .Type() and .ID(), so the\n64-bit key's descriptor half was dead weight; DataPoint halves the\nper-hole storage. The mechanism is unchanged — if future code wants\nsame-descriptor hole claiming, the descriptor can return.\n",
+      "extensions": {
+        "status": "resolved"
+      },
       "location": {
         "file": "core/data/container/data_container.go",
-        "startLine": 65,
+        "startLine": 66,
         "startCol": 3,
-        "endLine": 74,
+        "endLine": 73,
         "endCol": 3
       },
-      "hash": "5b6210aff4c887d9"
+      "hash": "ddc780918d779460"
     },
     "hol8mc": {
       "id": "hol8mc",
@@ -437,9 +449,12 @@
     "index-fields-dotted-path": {
       "id": "index-fields-dotted-path",
       "category": "issue",
-      "status": "resolved",
-      "priority": "medium",
+      "status": "open",
       "title": "index_fields_reference_valid checks top-level names only, rejecting valid dotted index paths",
+      "extensions": {
+        "priority": "medium",
+        "status": "resolved"
+      },
       "location": {
         "file": "core/schema/meta/predicates.go",
         "startLine": 1601,
@@ -447,17 +462,18 @@
         "endLine": 1603,
         "endCol": 3
       },
-      "hash": "0ae35ea01d9de448"
+      "hash": "a6d8f7149299fc34"
     },
     "join-projection-ignored": {
       "id": "join-projection-ignored",
       "category": "status",
-      "status": "resolved",
-      "priority": "high",
+      "status": "open",
       "title": "Join-level WithProjection is silently ignored",
       "body": "had no explicit projection, the default fallback (this block)\nselected ALL columns from ALL schemas, never consulting\nJoinConfiguration.Projection.\n\nFixed: SQLiteSelectProjection now carries q.Joins and the fallback\napplies per-join restrictions via joinColumnRestrictions\n(include/exclude/alias honored; joins without a projection keep\nselect-all). Covered by TestSelectJoin_JoinLevelProjection* and\nTestJoin_JoinLevelProjection_LimitsColumns.\n",
       "extensions": {
-        "issue": ""
+        "issue": "",
+        "priority": "high",
+        "status": "resolved"
       },
       "location": {
         "file": "sqlite/query/select.go",
@@ -466,7 +482,7 @@
         "endLine": 227,
         "endCol": 3
       },
-      "hash": "418f03f61c75051d"
+      "hash": "a029e1693cc48f13"
     },
     "jq3c65": {
       "id": "jq3c65",
@@ -486,12 +502,13 @@
     "metadata-ambiguous-on-joins": {
       "id": "metadata-ambiguous-on-joins",
       "category": "status",
-      "status": "resolved",
-      "priority": "high",
+      "status": "open",
       "title": "ensureMetadataProjection injects unqualified _metadata_",
       "body": "include, which SQLite rejects with \"ambiguous column name\"\nwhen joins put _metadata_ on multiple tables.\n\nFixed via option (b) at the SQL layer instead of here:\nsqliteFactory.resolveInCurrentScope now qualifies any bare\nfield present on multiple tables with the primary target\n(see primaryTarget in sqlite/query/factory.go). This fixes\nthe injection path and every other bare colliding reference\n(filters, sorts) uniformly. Covered by\nTestSelectJoin_MetadataDisambiguated and\nTestJoin_WithProjection_NoAmbiguousMetadata.\n",
       "extensions": {
-        "issue": ""
+        "issue": "",
+        "priority": "high",
+        "status": "resolved"
       },
       "location": {
         "file": "core/persistence/collection/managed.go",
@@ -500,15 +517,18 @@
         "endLine": 258,
         "endCol": 3
       },
-      "hash": "97899239adeeccbe"
+      "hash": "c916c22264dfa239"
     },
     "migration-id-sort": {
       "id": "migration-id-sort",
       "category": "issue",
-      "status": "resolved",
-      "priority": "medium",
+      "status": "open",
       "title": "Migration IDs ordered with localeCompare, not numeric order",
       "body": "\nMigration IDs are Date.now().toString() (set in add()). Two sites used\nlocaleCompare: this method's sort and rollbackToVersion's (now\ngetRollbackMigrations). localeCompare is locale-aware string\ncollation, which is correct only while every ID is a same-length\n13-digit timestamp. Mixed-length or externally-supplied IDs order\nwrongly (\"999\" \u003e \"1000\") and collation varies by locale. Fix by\nsorting with a numeric comparator (e.g. Number(b.id) - Number(a.id))\nwhen IDs are timestamps, or by issuing sort-safe IDs in add().\nNote: schemaVersion sorting/filtering in this file has the same\nlexicographic flaw and is being replaced by the core/common/version.go\nport (src/version.ts) — that port does not cover migration-ID ordering;\ncompareMigrationIds handles it here.\n",
+      "extensions": {
+        "priority": "medium",
+        "status": "resolved"
+      },
       "location": {
         "file": "packages/anansi/src/migration/engine.ts",
         "startLine": 554,
@@ -516,21 +536,20 @@
         "endLine": 570,
         "endCol": 3
       },
-      "hash": "ec8b3cf59a5993d4"
+      "hash": "9fde60d526dba6f5"
     },
     "physical-name-truncation-collide-496cab49": {
       "id": "physical-name-truncation-collide-496cab49",
       "category": "issue",
-      "status": "resolved",
-      "priority": "high",
-      "tags": [
-        "persistence",
-        "views",
-        "data-corruption"
-      ],
+      "status": "open",
       "title": "Physical-name truncation collides distinct collections/views onto one table",
       "body": "\ngeneratePhysicalName caps physical table names at 24 chars, truncating the sanitized logical name to ~18 chars. Distinct collections/views sharing a name prefix + version (e.g. e2e_view_snap-\u003cts\u003e-\u003crand\u003e, whose timestamp prefix is stable for days and whose random suffix is truncated off) resolve to the SAME physical table, and CTAS CREATE TABLE IF NOT EXISTS then silently reuses the stale table: reads serve another collection's rows with no error.\n\nReproduced from hestia E2E: materialized snapshots repeatedly served a 3-row table from an earlier run while their base had 2 rows; green only after a server restart wiped :memory:.\n\nFix direction: suffix physical names with a uniqueness component (short hash of the full logical name), and/or fail CreateView/DropCollection loudly when the physical table already belongs to another entry instead of reusing it.\nCalculate available space for truncation\n",
       "assignee": "opencode",
+      "extensions": {
+        "priority": "high",
+        "status": "resolved",
+        "tags": "#persistence #views #data-corruption"
+      },
       "location": {
         "file": "core/persistence/registry/utils.go",
         "startLine": 42,
@@ -538,7 +557,7 @@
         "endLine": 54,
         "endCol": 3
       },
-      "hash": "eb29ea765e3ddee5"
+      "hash": "6ed5e7a1608e3543"
     },
     "qpt45v": {
       "id": "qpt45v",
@@ -559,13 +578,13 @@
       "id": "sanitize-type-blindness",
       "category": "issue",
       "status": "open",
-      "priority": "high",
-      "tags": [
-        "sanitizer",
-        "types"
-      ],
       "title": "applyPolicy is type-blind and cannot mask non-string fields",
       "body": "applyPolicy/hashValue stringify every value (fmt.Sprintf %v), so a policy\nmatch on a non-string slot (array/object/number) produces a string. The\ncontainer pipeline (core/document/sanitize.go sanitizeContainerLeaves)\ncorrectly refuses to write a masked string into a non-string slot and\nreturns \"cannot store sanitized value ... in \u003ctype\u003e slot\", which fails\nSanitize() for the WHOLE document. Real-world fallout: hestia's global\n(?i)auth pattern matched the array field `authors` of its dynamic `notes`\ncollection, so every document failed sanitization and the query API\nsilently returned data:[] with correct pagination counts (the HTTP layer\ndrops documents whose Sanitize errors).\n\nDecision (2026-08-22): fix belongs at the app config level for now (keep\nmasking rules targeted/collection-scoped so patterns only ever hit string\nfields); no library change shipped. If this is ever fixed here, likely\nshapes are: element-wise masking for arrays of strings, skipping\nnon-maskable slots with a warning, or schema-type-aware policies threaded\nthrough FieldMaskConfig.\n",
+      "extensions": {
+        "priority": "high",
+        "status": "open",
+        "tags": "#sanitizer #types"
+      },
       "location": {
         "file": "core/sanitize/sanitizer.go",
         "startLine": 116,
@@ -573,7 +592,7 @@
         "endLine": 137,
         "endCol": 3
       },
-      "hash": "9bc21bd40411324a"
+      "hash": "d4520fa8abf5db8f"
     },
     "smsm4t": {
       "id": "smsm4t",
@@ -589,27 +608,6 @@
         "endCol": 3
       },
       "hash": "39473d13401d20f6"
-    },
-    "tx-watcher-goroutine-leak": {
-      "id": "tx-watcher-goroutine-leak",
-      "category": "issue",
-      "status": "resolved",
-      "priority": "critical",
-      "tags": [
-        "transactions",
-        "goroutines"
-      ],
-      "title": "cancellation watcher leaked one goroutine per transaction on uncancelable contexts",
-      "body": "RESOLVED 2026-08-23: the watcher is now only spawned when ctx.Done() != nil;\nregression tests in interactor_test.go pin both directions (no watcher for\ncontext.Background(), rollback-on-cancel still works).\n\nThe watcher goroutine used to be spawned unconditionally and blocked on\n\u003c-ctx.Done(). For contexts without a Done channel — context.Background(),\nscheduler/boot jobs, fasthttp-derived request contexts — Done() returns nil,\nso the receive parked forever: every StartTransaction call (i.e. every\ntop-level write through persistence/transaction.Execute) permanently leaked\none goroutine. Observed from hestia: +1 goroutine per notification create /\nsettings write; ~200 writes → 200 parked goroutines holding stacks (RSS\ngrowth) until process exit.\n",
-      "assignee": "opencode",
-      "location": {
-        "file": "core/query/native/interactor.go",
-        "startLine": 249,
-        "startCol": 3,
-        "endLine": 266,
-        "endCol": 3
-      },
-      "hash": "6c232741ca2fafe9"
     },
     "xsixg9": {
       "id": "xsixg9",
@@ -794,13 +792,13 @@
       "hash": "9e65c4eeeedef6d4"
     },
     "core/data/container/collection.go": {
-      "hash": "fad923339cf34369",
+      "hash": "0d15f44d54aa91cd",
       "noteIds": [
         "fe45qi"
       ]
     },
     "core/data/container/data_container.go": {
-      "hash": "f52f9658546adc7c",
+      "hash": "7b065f95d8f5a624",
       "noteIds": [
         "hbivg7"
       ]
@@ -1010,7 +1008,7 @@
       "hash": "b03ec9bd0342bcf8"
     },
     "core/encoding/anansi/anansi.go": {
-      "hash": "863128f638e72e4f",
+      "hash": "6200cda12e302f5c",
       "noteIds": [
         "dcd001",
         "dcd002",
@@ -1037,7 +1035,7 @@
       "hash": "fa4f61ef315943f4"
     },
     "core/encoding/anansi/columnar.go": {
-      "hash": "37769d693c8b2af3"
+      "hash": "b618f0a36ee70e4c"
     },
     "core/encoding/anansi/columnar_test.go": {
       "hash": "86c08aa32c12c4bd"
@@ -1048,11 +1046,14 @@
     "core/encoding/anansi/crypto_test.go": {
       "hash": "e7e5000ab06ceda8"
     },
+    "core/encoding/anansi/dcd009_bench_test.go": {
+      "hash": "88748ac7b580aa99"
+    },
     "core/encoding/anansi/dense.go": {
-      "hash": "bf157a32e951eae7"
+      "hash": "835429a5c51d204b"
     },
     "core/encoding/anansi/dispatch.go": {
-      "hash": "5f144c79d6f95432"
+      "hash": "d58a48633f9693ad"
     },
     "core/encoding/anansi/erp_bench_test.go": {
       "hash": "137b4263eab80492"
@@ -1082,10 +1083,10 @@
       "hash": "400f515401474447"
     },
     "core/encoding/anansi/resources.go": {
-      "hash": "8c1bbd327090185d"
+      "hash": "8644cb575d063141"
     },
     "core/encoding/anansi/sparse.go": {
-      "hash": "f9964782aaee563d"
+      "hash": "7e34797eb838809f"
     },
     "core/encoding/anansi/value.go": {
       "hash": "62c62a9a09c9f0aa"
@@ -1109,10 +1110,7 @@
       "hash": "62b3c2d95ac48f5d"
     },
     "core/encoding/json/encoder.go": {
-      "hash": "8fbb836ea5979ba6",
-      "noteIds": [
-        "encoder-array-object-recursion"
-      ]
+      "hash": "a5ed0a23b8c8e7dc"
     },
     "core/encoding/json/encoder_bench_test.go": {
       "hash": "7b51b9f8814bf967"
@@ -1193,7 +1191,7 @@
       "hash": "734ba5bb76d5b1ac"
     },
     "core/persistence/collection/managed.go": {
-      "hash": "6574fa3397bee177",
+      "hash": "a6d00cee4bb1cd98",
       "noteIds": [
         "metadata-ambiguous-on-joins"
       ]
@@ -1322,10 +1320,7 @@
       "hash": "9dfe3317b51c2d2b"
     },
     "core/query/native/interactor.go": {
-      "hash": "af5934e12ba11c13",
-      "noteIds": [
-        "tx-watcher-goroutine-leak"
-      ]
+      "hash": "a3bfc18313804621"
     },
     "core/query/native/interactor_test.go": {
       "hash": "c887d9f7362356dd"
@@ -1397,7 +1392,7 @@
       "hash": "842333cb5a03966e"
     },
     "core/sanitize/sanitizer.go": {
-      "hash": "78461a14548ef00d",
+      "hash": "ae2e2d0b3aed9a19",
       "noteIds": [
         "sanitize-type-blindness"
       ]
@@ -1745,12 +1740,6 @@
     "example/views/main.go": {
       "hash": "4a9c9b4fe9f8e4a8"
     },
-    "packages/anansi/dist/index.cjs": {
-      "hash": "4e0d76b9ac804139"
-    },
-    "packages/anansi/dist/index.mjs": {
-      "hash": "4b61c86ab0c55dcf"
-    },
     "packages/anansi/src/codec.ts": {
       "hash": "26f71563fbd29f1b"
     },
@@ -1950,7 +1939,7 @@
       "hash": "2375f167a2916180"
     },
     "sqlite/query/select.go": {
-      "hash": "b7beb1e5d6775519",
+      "hash": "08bf41dc59bf0e68",
       "noteIds": [
         "join-projection-ignored"
       ]

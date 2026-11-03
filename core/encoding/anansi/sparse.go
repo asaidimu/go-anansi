@@ -19,6 +19,13 @@ func decodeSparseBody(r *byteReader, cs *definition.CompiledSchema, version head
 	if err != nil {
 		return fmt.Errorf("anansi: read sparse field count: %w", err)
 	}
+	// A well-formed packet lists each wire field at most once, so the field
+	// count is bounded by the schema's wire-field list. Validate before the
+	// loop allocates or appends (spec 9.2.1), since sparse value blocks
+	// follow their field tags in stream order and cannot be counted ahead.
+	if n > uint64(len(res.fields)) {
+		return fmt.Errorf("anansi: sparse packet field count %d exceeds schema field count %d", n, len(res.fields))
+	}
 	for i := uint64(0); i < n; i++ {
 		raw, err := r.readUvarint()
 		if err != nil {
@@ -36,7 +43,7 @@ func decodeSparseBody(r *byteReader, cs *definition.CompiledSchema, version head
 			doc.SetNull(wf.key)
 			continue
 		}
-		if err := readFieldPayload(r, cs, doc, *wf, pool); err != nil {
+		if err := fillValue(r, cs, doc, *wf, pool); err != nil {
 			return fmt.Errorf("anansi: decode sparse field %q: %w", wf.name, err)
 		}
 	}

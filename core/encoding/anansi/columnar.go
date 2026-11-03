@@ -223,7 +223,9 @@ func decodeColumnarBlock(r *byteReader, cs *definition.CompiledSchema, docs []*c
 					count++
 				}
 			}
-			values, err := readBoolBits(r, count)
+			// Unpack the bit block in place (#dcd007): no intermediate
+			// []bool between the wire and the target containers.
+			values, err := r.readN((count + 7) / 8)
 			if err != nil {
 				return fmt.Errorf("anansi: read columnar bool array for field %q: %w", wf.name, err)
 			}
@@ -232,10 +234,11 @@ func decodeColumnarBlock(r *byteReader, cs *definition.CompiledSchema, docs []*c
 				if stateAtBit(packed, (fi*len(docs)+ri)*2) != stateHasValue {
 					continue
 				}
-				if err := docs[ri].SetBool(wf.key, values[next]); err != nil {
+				v := values[next/8]&(1<<uint(next%8)) != 0
+				next++
+				if err := docs[ri].AppendBool(wf.key, v); err != nil {
 					return err
 				}
-				next++
 			}
 		}
 		return nil
@@ -251,7 +254,7 @@ func decodeColumnarBlock(r *byteReader, cs *definition.CompiledSchema, docs []*c
 			case stateNull:
 				docs[ri].SetNull(wf.key)
 			case stateHasValue:
-				if err := readFieldPayload(r, cs, docs[ri], *wf, pool); err != nil {
+				if err := fillValue(r, cs, docs[ri], *wf, pool); err != nil {
 					return fmt.Errorf("anansi: decode columnar field %q record %d: %w", wf.name, ri, err)
 				}
 			}

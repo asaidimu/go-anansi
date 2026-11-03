@@ -57,24 +57,23 @@ func (k DataContainerKey) IsNull() bool {
 // A value of -1 means the field is explicitly null (present but valueless).
 // Absence from the map means the field has never been set.
 //
-// holes tracks freed slice positions available for reuse, encoded as DataContainerKeys
-// whose embedded DataPoint ID field holds the freed slice index.
+// holes tracks freed slice positions available for reuse, encoded as DataPoints
+// whose type matches the freed slot and whose embedded ID field holds the freed
+// slice index.
 type DataContainer struct {
 	data      [16]unsafe.Pointer
 	positions map[int64]int32
 
 	// @note #hbivg7 issue : Wasted Storage
+	// @status resolved
 	//
-	// holes []DataContainerKey — still a real inefficiency, scoped narrowly.
-	// claimHole reads only .Type() and .DataPoint().ID(). The descriptor half
-	// is dead weight in the current hole mechanism. That's not a critique of
-	// the 64-bit key design — it's a local observation that if holes are never
-	// matched by descriptor (and today they aren't), []DataPoint would halve
-	// the slice. If future code wants "same-descriptor hole claiming" for
-	// constraint-stable reuse, the descriptor matters; if not, it's carrying
-	// bytes no one reads.
+	// Resolved: holes is now []DataPoint (type + freed index) instead of
+	// []DataContainerKey. claimHole reads only .Type() and .ID(), so the
+	// 64-bit key's descriptor half was dead weight; DataPoint halves the
+	// per-hole storage. The mechanism is unchanged — if future code wants
+	// same-descriptor hole claiming, the descriptor can return.
 
-	holes []DataContainerKey
+	holes []DataPoint
 
 	// backing is a private, immutable-after-fill byte buffer that decoded
 	// string values alias (zero-copy decode). Buffers are pooled implicitly:
@@ -189,12 +188,25 @@ func (d *DataContainer) slot(typ DataType, initialSize ...int) unsafe.Pointer {
 	return d.data[typ]
 }
 
+// PreSize ensures the typed slice for dt exists with capacity for n values,
+// so subsequent appends never grow it (#dcd003's decode-side pre-size). It is
+// a no-op when the slot already exists — reused and pool-cleared containers
+// keep their retained capacity — and when n is zero. Codecs call it once per
+// DataType before a value fill, with the exact count read from the wire's
+// state map; a direct method (rather than a Walk closure) keeps the call
+// allocation-free on the hot path.
+func (d *DataContainer) PreSize(typ DataType, n int) {
+	if n > 0 && d.data[typ] == nil {
+		d.initSlice(typ, n)
+	}
+}
+
 // claimHole searches holes (LIFO) for a free position of the given type.
 // Returns the slice index, or -1 if none found. Removes via swap-and-pop.
 func (d *DataContainer) claimHole(typ DataType) int32 {
 	for i := len(d.holes) - 1; i >= 0; i-- {
 		if d.holes[i].Type() == typ {
-			idx := d.holes[i].DataPoint().ID()
+			idx := d.holes[i].ID()
 			d.holes[i] = d.holes[len(d.holes)-1]
 			d.holes = d.holes[:len(d.holes)-1]
 			return idx
@@ -211,7 +223,7 @@ func (d *DataContainer) freePosition(key DataContainerKey, idx int32) {
 	if err != nil {
 		panic(fmt.Sprintf("document: DataContainer.freePosition: unexpected error encoding hole: %v", err))
 	}
-	d.holes = append(d.holes, NewDataContainerKey(hole, key.Descriptor()))
+	d.holes = append(d.holes, hole)
 }
 
 // --- Int64 ---

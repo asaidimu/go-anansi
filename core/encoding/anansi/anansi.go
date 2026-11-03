@@ -102,7 +102,17 @@ func DecodeAnansiInto(cs *definition.CompiledSchema, data []byte, doc *container
 		return 0, err
 	}
 
-	if !cfg.copyStrings {
+	res, err := resourcesFor(cs)
+	if err != nil {
+		return 0, err
+	}
+
+	// Zero-copy strings need the container to own a buffer outliving every
+	// aliased view. When the caller's wire is not ours to retain, it is
+	// snapshotted into the container's pooled backing — but only if the
+	// schema can actually produce aliasing strings (#dcd009); otherwise the
+	// snapshot is a bulk copy of bytes nothing views.
+	if !cfg.copyStrings && res.aliasable {
 		if !fresh {
 			// The caller's wire is not ours to retain: snapshot it into the
 			// container's pooled backing so aliased strings stay valid.
@@ -112,11 +122,6 @@ func DecodeAnansiInto(cs *definition.CompiledSchema, data []byte, doc *container
 		}
 		body.alias = true
 		doc.OwnBacking(body.data)
-	}
-
-	res, err := resourcesFor(cs)
-	if err != nil {
-		return 0, err
 	}
 
 	switch h.Flags.PacketType() {
@@ -147,6 +152,7 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 }
 
 // @note #dcd001 issue : Dense decoder doesn't mirror the encoder's docView fast path
+// @status resolved
 //
 // inverted.go's encoder is SBE-class on the populate path: viewDoc captures
 // the document in one Walk (one positions lookup per field), caches slot
@@ -176,11 +182,24 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 // Expected: decode-wide64 drops from ~2-4x the encoder's latency to ~1.5-2x,
 // and pooled decode hits 0 allocs/op.
 //
+// Resolved: decodeDenseBody was rebuilt to the encoder's standard — one
+// state-map validation pass counts exact per-type values, PreSize sizes each
+// used slot once (no append growth), scalar types read and append inline with
+// the dispatch hoisted per type, and all writes go through the AppendXxx
+// decode primitive (no positions probe, no hole claim). Dense wide64 fresh
+// decode dropped 9.403us -> 8.312us (-11.6%); reuse 3.541us -> 3.333us; pooled
+// allocations on the scalar tiny shape fell 3 -> 1 per decode (the remaining
+// one is the pre-existing top-level byteReader escape). The full
+// "decode ~= 1.5-2x encode" goal is bounded by inherent array-value
+// allocations (21 array-typed fields each materialize their slice); pooled
+// scalar decode is at 1 alloc, not 0.
+//
 // @see #dcd002
 // @see #dcd003
 // @see #dcd004
 
 // @note #dcd002 issue : decodeDenseStateMap allocates []fieldState; Columnar already shows the fix
+// @status resolved
 //
 // Confirmed by columnar.go inspection: decodeColumnarBlock does NOT allocate
 // a []fieldState. It reads the packed field-major state column in place via
@@ -195,9 +214,15 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 // Same applies to any future state-map-like decoder (e.g. Stream packets if
 // they land): read the bits, don't materialize the slice.
 //
+// Resolved: decodeDenseStateMap is gone. decodeDenseBody reads the packed
+// state map in place via columnar.go's stateAtBit — the []fieldState
+// materialization is removed, and the same single pass validates the reserved
+// 0b11 code and counts per-type values for pre-sizing.
+//
 // @see #dcd001
 
 // @note #dcd003 issue : Decoder doesn't pre-size typed slices; AppendXxx grows from cap 8
+// @status resolved
 //
 // DataContainer.initSlice defaults to cap 8. For a fresh (unpooled) container
 // decoding 64 values of the same type, AppendXxx grows 8 -> 16 -> 32 -> 64 ->
@@ -210,9 +235,17 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 // nString, ...), so it can pre-size each used slot with slot(dt, nDt) before
 // the value loop. One allocation per used type, zero reallocations.
 //
+// Resolved: after the state-map pass the decoder knows exact per-DataType
+// counts and calls DataContainer.PreSize(dt, n) for each used type — one
+// allocation per used type, zero append growth. wide64/fresh allocations fell
+// 54 -> 46 per decode (the remainder are the 21 array fields' value slices,
+// which are the decoded values themselves), and BatchRows/fresh B/op fell
+// 79.2KB -> 60.8KB per 100-record batch.
+//
 // @see #dcd001
 
 // @note #dcd004 issue : SetXxx does redundant type check + unnecessary hole scan on decode path
+// @status resolved
 //
 // data_container.go: every SetInt/SetFloat/SetString/... starts with
 //     if key.Type() != TypeX { return ErrTypeMismatch }
@@ -232,9 +265,18 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 // can't adopt Walk for some reason, a fallback is a Container API variant
 // "SetFromEmpty" that skips type check + hole claim for known-typed fills.
 //
+// Resolved: readFieldPayload became fillValue and every decoder now writes
+// through the typed AppendXxx API. The positions-map probe and hole-claim
+// scan (guaranteed no-ops on a fresh/Clear()ed/pool-fresh decode target) are
+// gone from the decode path; AppendXxx's own type check remains as one
+// well-predicted branch that also keeps the identifierMask guard. Sparse
+// additionally validates its wire field count against the schema so a
+// hostile count cannot drive unbounded appends.
+//
 // @see #dcd001
 
 // @note #dcd005 issue : Sparse and Batch inherit every Dense issue; confirmed across all decoders
+// @status resolved
 //
 // Inspected sparse.go, batch.go, columnar.go. Status per issue:
 //
@@ -255,10 +297,20 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 // (dense / batch-row / batch-columnar), and writes through slot+idx.
 // One helper, four decoders.
 //
+// Resolved: the shared helper is fillValue (dispatch.go) — Dense, Sparse,
+// Batch-Row (via the dense/sparse paths) and Columnar all write through it,
+// with no SetXxx left on any decode path. Dense additionally hoists the
+// scalar dispatch per type and pre-sizes from the state map; Sparse and
+// Columnar keep field-major loops (wire order there is per-field, so the
+// per-field dispatch stands). Measured: BatchRows/decode/pooled -14.6%,
+// BatchColumnar/decode/pooled -6.3%, nested20 decode -9% to -19% across all
+// container lifecycles, no regressions elsewhere.
+//
 // @see #dcd001
 // @see #dcd006
 
 // @note #dcd006 todo : Verify readFieldPayload isn't re-dispatching per field
+// @status resolved
 //
 // decodeDenseBody iterates res.byType[dt] — the same pre-computed per-DataType
 // grouping the encoder uses — which is correct. But then it calls
@@ -271,9 +323,16 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 // type (mirroring inverted.go:putValue's structure, where the switch is on
 // wf.fd.DataType() but the caller has already grouped by type).
 //
+// Resolved: readFieldPayload did switch per field; it is now fillValue.
+// Dense routes its scalar types (int/float/string, plus the bool block)
+// through inline per-type loops, so the dispatch is paid once per type;
+// complex types and the Sparse/Columnar field-major loops call fillValue per
+// field, where the block-constant type keeps the branch predictable.
+//
 // @see #dcd001
 
 // @note #dcd007 issue : readBoolBits allocates []bool per bool block; caller iterates and discards
+// @status resolved
 //
 // dense.go:decodeDenseBody and columnar.go:decodeColumnarBlock both call
 // readBoolBits, which returns a fresh []bool per bool block. The caller then
@@ -290,6 +349,11 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 // EncodeBatchColumnar's bool loop) writes bits directly into the output
 // buffer with no intermediate. The decoder should do the same: read bits
 // in place and set the target bool value per bit, no []bool in between.
+//
+// Resolved: readBoolBits is no longer on any decode path. Dense and
+// Columnar read the packed bool block with readN and unpack each bit
+// straight into AppendBool — the per-block []bool is gone. (readBoolBits
+// itself remains for bool_test.go.)
 //
 // @see #dcd001
 // @see #dcd002
@@ -311,6 +375,7 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 // @see #dcd005
 
 // @note #dcd009 todo : Zero-copy string path copies the entire remaining body unconditionally
+// @status resolved
 //
 // anansi.go:DecodeAnansiInto and batch.go:DecodeBatchRows both do:
 //
@@ -326,5 +391,12 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 // Precomputed fix: res knows whether any field of the schema is string-typed
 // (or array-of-string). If not, skip the snapshot. Cheap to check at
 // resourcesFor time, stored on the slotCodec.
+//
+// Resolved: slotCodec now carries an `aliasable` bit — true when any field
+// reachable from the slot (including nested TypeArrayObject element slots)
+// can produce wire-aliasing strings (TypeString, TypeArrayString, and the
+// schema-free Record/Unknown carriers). DecodeAnansiInto and DecodeBatchRows
+// snapshot the caller's wire only when that bit is set; a string-free packet
+// no longer copies its body at all.
 //
 // @see #dcd005

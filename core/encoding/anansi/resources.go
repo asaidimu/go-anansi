@@ -53,6 +53,29 @@ type slotCodec struct {
 	// columnar value blocks iterate only the fields that actually belong to
 	// a block instead of rescanning all fields once per DataType.
 	byType [16][]wireField
+
+	// aliasable reports whether any field reachable from this slot —
+	// including through nested TypeArrayObject element slots — can decode to
+	// a string that views the wire buffer in place (TypeString,
+	// TypeArrayString, and the schema-free Record/Unknown carriers whose
+	// keys and tagged values are strings). It gates the zero-copy decode
+	// prologue (#dcd009): when no string can alias the wire, the snapshot
+	// copy of the caller's buffer is pure waste and readString's plain copy
+	// path is used instead.
+	aliasable bool
+}
+
+// aliasableType reports whether a field of this DataType may decode to
+// strings aliasing the wire buffer. TypeBytes deliberately copies (readBytes
+// makes its own copy), and Geometry/Bool/Int/Float are scalar.
+func aliasableType(dt container.DataType) bool {
+	switch dt {
+	case container.TypeString, container.TypeArrayString,
+		container.TypeRecord, container.TypeUnknown, container.TypeArrayUnknown:
+		return true
+	default:
+		return false
+	}
 }
 
 func (sc *slotCodec) add(wf wireField) {
@@ -61,6 +84,9 @@ func (sc *slotCodec) add(wf wireField) {
 	last := &sc.fields[len(sc.fields)-1]
 	sc.byType[wf.fd.DataType()] = append(sc.byType[wf.fd.DataType()], *last)
 	sc.byDP[int32(wf.key.DataPoint())&^1] = last
+	if aliasableType(wf.fd.DataType()) || (wf.child != nil && wf.child.aliasable) {
+		sc.aliasable = true
+	}
 }
 
 // buildSlotCodec walks schemaIdx (recursing through flattened object slots
