@@ -1,4 +1,4 @@
-package document
+package binding
 
 import (
 	"fmt"
@@ -9,7 +9,8 @@ import (
 // that arbitrary Go values (JSON-decoded floats, ints, strings, nested arrays)
 // can be stored into the type-directed container slots.
 
-func asInt64(v any) (int64, error) {
+// AsInt64 coerces a scalar into an int64.
+func AsInt64(v any) (int64, error) {
 	switch t := v.(type) {
 	case float64:
 		return int64(t), nil
@@ -24,10 +25,11 @@ func asInt64(v any) (int64, error) {
 	case string:
 		return strconv.ParseInt(t, 10, 64)
 	}
-	return 0, fmt.Errorf("document: expected integer, got %T", v)
+	return 0, fmt.Errorf("binding: expected integer, got %T", v)
 }
 
-func asFloat64(v any) (float64, error) {
+// AsFloat64 coerces a scalar into a float64.
+func AsFloat64(v any) (float64, error) {
 	switch t := v.(type) {
 	case float64:
 		return t, nil
@@ -40,10 +42,11 @@ func asFloat64(v any) (float64, error) {
 	case string:
 		return strconv.ParseFloat(t, 64)
 	}
-	return 0, fmt.Errorf("document: expected number, got %T", v)
+	return 0, fmt.Errorf("binding: expected number, got %T", v)
 }
 
-func asString(v any) string {
+// AsString renders a scalar as a string.
+func AsString(v any) string {
 	switch t := v.(type) {
 	case string:
 		return t
@@ -60,7 +63,8 @@ func asString(v any) string {
 	}
 }
 
-func asGeometry(v any) ([][]float64, error) {
+// AsGeometry coerces a value into geometry coordinates.
+func AsGeometry(v any) ([][]float64, error) {
 	switch g := v.(type) {
 	case [][]float64:
 		out := make([][]float64, len(g))
@@ -73,19 +77,19 @@ func asGeometry(v any) ([][]float64, error) {
 	}
 	outer, ok := v.([]any)
 	if !ok {
-		return nil, fmt.Errorf("document: expected geometry (array of rings), got %T", v)
+		return nil, fmt.Errorf("binding: expected geometry (array of rings), got %T", v)
 	}
 	out := make([][]float64, len(outer))
 	for i, ring := range outer {
 		inner, ok := ring.([]any)
 		if !ok {
-			return nil, fmt.Errorf("document: geometry ring %d is not an array", i)
+			return nil, fmt.Errorf("binding: geometry ring %d is not an array", i)
 		}
 		out[i] = make([]float64, len(inner))
 		for j, coord := range inner {
-			f, err := asFloat64(coord)
+			f, err := AsFloat64(coord)
 			if err != nil {
-				return nil, fmt.Errorf("document: geometry ring %d coord %d: %w", i, j, err)
+				return nil, fmt.Errorf("binding: geometry ring %d coord %d: %w", i, j, err)
 			}
 			out[i][j] = f
 		}
@@ -93,9 +97,9 @@ func asGeometry(v any) ([][]float64, error) {
 	return out, nil
 }
 
-// toAnySlice normalizes any slice-like value (JSON-decoded []any or typed
+// ToAnySlice normalizes any slice-like value (JSON-decoded []any or typed
 // slices such as []string, []int64) into []any for element coercion.
-func toAnySlice(v any) ([]any, bool) {
+func ToAnySlice(v any) ([]any, bool) {
 	switch arr := v.(type) {
 	case []any:
 		return arr, true
@@ -146,14 +150,15 @@ func toAnySlice(v any) ([]any, bool) {
 	}
 }
 
-func asInt64Slice(v any) ([]int64, error) {
-	arr, ok := toAnySlice(v)
+// AsInt64Slice coerces a value into an int64 slice.
+func AsInt64Slice(v any) ([]int64, error) {
+	arr, ok := ToAnySlice(v)
 	if !ok {
-		return nil, fmt.Errorf("document: expected array, got %T", v)
+		return nil, fmt.Errorf("binding: expected array, got %T", v)
 	}
 	out := make([]int64, len(arr))
 	for i, e := range arr {
-		n, err := asInt64(e)
+		n, err := AsInt64(e)
 		if err != nil {
 			return nil, err
 		}
@@ -162,14 +167,15 @@ func asInt64Slice(v any) ([]int64, error) {
 	return out, nil
 }
 
-func asFloat64Slice(v any) ([]float64, error) {
-	arr, ok := toAnySlice(v)
+// AsFloat64Slice coerces a value into a float64 slice.
+func AsFloat64Slice(v any) ([]float64, error) {
+	arr, ok := ToAnySlice(v)
 	if !ok {
-		return nil, fmt.Errorf("document: expected array, got %T", v)
+		return nil, fmt.Errorf("binding: expected array, got %T", v)
 	}
 	out := make([]float64, len(arr))
 	for i, e := range arr {
-		f, err := asFloat64(e)
+		f, err := AsFloat64(e)
 		if err != nil {
 			return nil, err
 		}
@@ -178,53 +184,57 @@ func asFloat64Slice(v any) ([]float64, error) {
 	return out, nil
 }
 
-func asStringSlice(v any) []string {
-	arr, _ := toAnySlice(v)
+// AsStringSlice coerces a value into a string slice.
+func AsStringSlice(v any) []string {
+	arr, _ := ToAnySlice(v)
 	out := make([]string, len(arr))
 	for i, e := range arr {
-		out[i] = asString(e)
+		out[i] = AsString(e)
 	}
 	return out
 }
 
-func asBoolSlice(v any) ([]bool, error) {
-	arr, ok := toAnySlice(v)
+// AsBoolSlice coerces a value into a bool slice.
+func AsBoolSlice(v any) ([]bool, error) {
+	arr, ok := ToAnySlice(v)
 	if !ok {
-		return nil, fmt.Errorf("document: expected array, got %T", v)
+		return nil, fmt.Errorf("binding: expected array, got %T", v)
 	}
 	out := make([]bool, len(arr))
 	for i, e := range arr {
 		b, ok := e.(bool)
 		if !ok {
-			return nil, fmt.Errorf("document: array element %d is not a boolean", i)
+			return nil, fmt.Errorf("binding: array element %d is not a boolean", i)
 		}
 		out[i] = b
 	}
 	return out, nil
 }
 
-func asBytesSlice(v any) [][]byte {
-	arr, _ := toAnySlice(v)
+// AsBytesSlice coerces a value into a byte-slice slice.
+func AsBytesSlice(v any) [][]byte {
+	arr, _ := ToAnySlice(v)
 	out := make([][]byte, len(arr))
 	for i, e := range arr {
 		switch b := e.(type) {
 		case []byte:
 			out[i] = b
 		default:
-			out[i] = []byte(asString(e))
+			out[i] = []byte(AsString(e))
 		}
 	}
 	return out
 }
 
-func asGeometrySlice(v any) ([][][]float64, error) {
-	arr, ok := toAnySlice(v)
+// AsGeometrySlice coerces a value into geometry coordinate slices.
+func AsGeometrySlice(v any) ([][][]float64, error) {
+	arr, ok := ToAnySlice(v)
 	if !ok {
-		return nil, fmt.Errorf("document: expected array of geometry, got %T", v)
+		return nil, fmt.Errorf("binding: expected array of geometry, got %T", v)
 	}
 	out := make([][][]float64, len(arr))
 	for i, e := range arr {
-		g, err := asGeometry(e)
+		g, err := AsGeometry(e)
 		if err != nil {
 			return nil, err
 		}

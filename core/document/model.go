@@ -9,13 +9,16 @@ import (
 	"time"
 
 	"github.com/asaidimu/go-anansi/v8/core/data"
+	"github.com/asaidimu/go-anansi/v8/core/schema/binding"
 )
 
-// init registers document.DocumentModel with data's system-model registry so
+// init registers document.DocumentModel with the system-model registries so
 // struct binding, struct extraction, and DTO schema generation treat the embed
-// exactly like data.DocumentModel.
+// exactly like data.DocumentModel. data's registry serves the map-backed data
+// binder; binding's registry serves the shared struct binder and walker.
 func init() {
 	data.RegisterSystemModelType(reflect.TypeFor[DocumentModel](), linkDocumentModelParent)
+	binding.RegisterSystemModelType(reflect.TypeFor[DocumentModel](), linkDocumentModelParent)
 }
 
 func linkDocumentModelParent(embed any, parent any) {
