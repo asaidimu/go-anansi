@@ -3,8 +3,10 @@ package anansijson
 import (
 	"encoding/base64"
 	"fmt"
-	"strconv"
+	"math/bits"
 	"reflect"
+	"strconv"
+	"sync"
 	"unsafe"
 )
 
@@ -16,14 +18,25 @@ import (
 // compiled plan. Decisions mirror core/encoding/json's decoder: unknown keys
 // are skipped, null leaves a field untouched, integers reject fractional or
 // exponent forms, type mismatches error, and missing schema-required fields
-// error. Decoded strings are fresh copies — they never alias the input.
+// error. Decoded strings are fresh copies — they never alias the input — but
+// repeated values are served from the parser's intern cache, so the copies
+// are paid once per distinct value rather than once per occurrence.
 
 const maxDecodeDepth = 512
 
 type parser struct {
 	data []byte
 	pos  int
+	// scratch is reused as the unescape destination; the cache survives
+	// across Unmarshal calls so repeated string values stop allocating.
+	scratch []byte
+	cache   stringCache
 }
+
+// parserPool keeps parser objects — and with them the intern cache and
+// unescape scratch buffer — alive across Unmarshal calls, the way
+// encoding/json pools its decode state.
+var parserPool = sync.Pool{New: func() any { return new(parser) }}
 
 func decodeWithPlan(root *objPlan, data []byte, v any) error {
 	rv := reflect.ValueOf(v)
@@ -33,12 +46,15 @@ func decodeWithPlan(root *objPlan, data []byte, v any) error {
 		}
 		rv = rv.Elem()
 	}
-	p := &parser{data: data}
-	if err := decodeObject(root, p, unsafe.Pointer(rv.UnsafeAddr()), 0); err != nil {
+	ps := parserPool.Get().(*parser)
+	defer parserPool.Put(ps)
+	ps.data = data
+	ps.pos = 0
+	if err := decodeObject(root, ps, unsafe.Pointer(rv.UnsafeAddr()), 0); err != nil {
 		return err
 	}
-	p.skipWS()
-	if !p.eof() {
+	ps.skipWS()
+	if !ps.eof() {
 		return fmt.Errorf("anansijson: trailing data after JSON document")
 	}
 	return nil
@@ -244,16 +260,8 @@ func decodeField(n *fieldNode, ps *parser, fp unsafe.Pointer, depth int) error {
 		return decodeObject(n.child, ps, fp, depth+1)
 	case kArrayObject:
 		return decodeArrayObject(n, ps, fp, depth)
-	case kArrayString:
-		return decodeStringArray(n, ps, fp)
-	case kArrayInt:
-		return decodeIntArray(n, ps, fp)
-	case kArrayUint:
-		return decodeUintArray(n, ps, fp)
-	case kArrayFloat:
-		return decodeFloatArray(n, ps, fp)
-	case kArrayBool:
-		return decodeBoolArray(n, ps, fp)
+	case kArrayString, kArrayInt, kArrayUint, kArrayFloat, kArrayBool:
+		return decodeArray(n, ps, fp)
 	default:
 		return errRefused
 	}
@@ -306,13 +314,13 @@ func decodeArrayObject(n *fieldNode, ps *parser, fp unsafe.Pointer, depth int) e
 	if ps.take(']') {
 		// An empty JSON array decodes to an empty (non-nil) slice, matching
 		// the container round-trip.
-		setEmptySlice(fp, n.elemType)
+		setEmptySlice(fp, n)
 		return nil
 	}
 	for {
 		// Grow the slice by hand: the plan knows the element size and type.
 		if h.len == h.cap {
-			growSlice(h, n.elemSize, n.elemType)
+			growSlice(n, h)
 		}
 		ep := unsafe.Pointer(uintptr(h.data) + uintptr(h.len)*n.elemSize)
 		h.len++
@@ -328,98 +336,44 @@ func decodeArrayObject(n *fieldNode, ps *parser, fp unsafe.Pointer, depth int) e
 	}
 }
 
-// setEmptySlice stores a zero-length, non-nil slice at fp, matching what the
-// container round-trip produces for an empty JSON array.
-func setEmptySlice(fp unsafe.Pointer, elemType reflect.Type) {
-	st := reflect.SliceOf(elemType)
-	reflect.NewAt(st, fp).Elem().Set(reflect.MakeSlice(st, 0, 0))
+// setEmptySlice stores the plan's shared zero-length, non-nil slice header at
+// fp, matching what the container round-trip produces for an empty JSON
+// array. Its len and cap are zero, so handing the same header to every field
+// is safe: any append reallocates instead of writing into shared storage.
+func setEmptySlice(fp unsafe.Pointer, n *fieldNode) {
+	*(*sliceHeader)(fp) = n.emptyHdr
 }
 
-// growSlice doubles a slice in place through its header. The fresh backing
-// array is zeroed by reflect.MakeSlice, so a byte-wise copy of the
+// growSlice doubles a slice in place through its header. Growth allocates
+// through the plan's array ladder — one reflect.New of a [cap]elem type —
+// because reflect.MakeSlice boxes a second, header-shaped object for its
+// Value on every call. The fresh array is zeroed, so a byte-wise copy of the
 // initialized prefix keeps the new memory GC-consistent; h.data (an
 // unsafe.Pointer field) keeps it reachable afterwards.
-func growSlice(h *sliceHeader, elemSize uintptr, elemType reflect.Type) {
+func growSlice(n *fieldNode, h *sliceHeader) {
 	newCap := h.cap * 2
 	if newCap == 0 {
 		newCap = 4
 	}
-	sv := reflect.MakeSlice(reflect.SliceOf(elemType), newCap, newCap)
-	nd := unsafe.Pointer(sv.Index(0).Addr().UnsafePointer())
+	var nd unsafe.Pointer
+	if i := bits.Len32(uint32(newCap)) - 3; i >= 0 && i < len(n.growTypes) && newCap&(newCap-1) == 0 {
+		nd = reflect.New(n.growTypes[i]).UnsafePointer()
+	} else {
+		nd = reflect.MakeSlice(n.sliceType, newCap, newCap).UnsafePointer()
+	}
 	if h.len > 0 {
-		src := unsafe.Slice((*byte)(h.data), uintptr(h.len)*elemSize)
-		dst := unsafe.Slice((*byte)(nd), uintptr(h.len)*elemSize)
+		src := unsafe.Slice((*byte)(h.data), uintptr(h.len)*n.elemSize)
+		dst := unsafe.Slice((*byte)(nd), uintptr(h.len)*n.elemSize)
 		copy(dst, src)
 	}
 	h.data = nd
 	h.cap = newCap
 }
 
-func decodeStringArray(n *fieldNode, ps *parser, fp unsafe.Pointer) error {
-	return decodeArray(n, ps, fp, func(ep unsafe.Pointer) error {
-		s, err := ps.parseString()
-		if err != nil {
-			return err
-		}
-		*(*string)(ep) = s
-		return nil
-	})
-}
-
-func decodeIntArray(n *fieldNode, ps *parser, fp unsafe.Pointer) error {
-	return decodeArray(n, ps, fp, func(ep unsafe.Pointer) error {
-		v, err := ps.parseInteger()
-		if err != nil {
-			return err
-		}
-		setInt(ep, n.size, v)
-		return nil
-	})
-}
-
-func decodeUintArray(n *fieldNode, ps *parser, fp unsafe.Pointer) error {
-	return decodeArray(n, ps, fp, func(ep unsafe.Pointer) error {
-		v, err := ps.parseInteger()
-		if err != nil {
-			return err
-		}
-		if v < 0 {
-			return ps.errf("expected unsigned integer, got %d", v)
-		}
-		setUint(ep, n.size, uint64(v))
-		return nil
-	})
-}
-
-func decodeFloatArray(n *fieldNode, ps *parser, fp unsafe.Pointer) error {
-	return decodeArray(n, ps, fp, func(ep unsafe.Pointer) error {
-		f, err := ps.parseFloat()
-		if err != nil {
-			return err
-		}
-		if n.size == 4 {
-			*(*float32)(ep) = float32(f)
-		} else {
-			*(*float64)(ep) = f
-		}
-		return nil
-	})
-}
-
-func decodeBoolArray(n *fieldNode, ps *parser, fp unsafe.Pointer) error {
-	return decodeArray(n, ps, fp, func(ep unsafe.Pointer) error {
-		b, err := ps.parseBool()
-		if err != nil {
-			return err
-		}
-		*(*bool)(ep) = b
-		return nil
-	})
-}
-
-// decodeArray walks a JSON array, invoking set for each element at its slot
-// in the (grown) backing array.
-func decodeArray(n *fieldNode, ps *parser, fp unsafe.Pointer, set func(ep unsafe.Pointer) error) error {
+// decodeArray walks a JSON array of leaves, writing each element at its slot
+// in the (grown) backing array. The element decode is a direct switch on the
+// plan's kind: a closure here would escape and cost an allocation per array.
+func decodeArray(n *fieldNode, ps *parser, fp unsafe.Pointer) error {
 	ps.skipWS()
 	if ps.peek() != '[' {
 		return ps.errf("expected array")
@@ -427,16 +381,53 @@ func decodeArray(n *fieldNode, ps *parser, fp unsafe.Pointer, set func(ep unsafe
 	ps.pos++
 	h := (*sliceHeader)(fp)
 	if ps.take(']') {
-		setEmptySlice(fp, n.elemType)
+		setEmptySlice(fp, n)
 		return nil
 	}
 	for {
 		if h.len == h.cap {
-			growSlice(h, n.elemSize, n.elemType)
+			growSlice(n, h)
 		}
 		ep := unsafe.Pointer(uintptr(h.data) + uintptr(h.len)*n.elemSize)
 		h.len++
-		if err := set(ep); err != nil {
+		var err error
+		switch n.kind {
+		case kArrayString:
+			var s string
+			if s, err = ps.parseString(); err == nil {
+				*(*string)(ep) = s
+			}
+		case kArrayInt:
+			var v int64
+			if v, err = ps.parseInteger(); err == nil {
+				setInt(ep, n.size, v)
+			}
+		case kArrayUint:
+			var v int64
+			if v, err = ps.parseInteger(); err == nil {
+				if v < 0 {
+					return ps.errf("expected unsigned integer, got %d", v)
+				}
+				setUint(ep, n.size, uint64(v))
+			}
+		case kArrayFloat:
+			var f float64
+			if f, err = ps.parseFloat(); err == nil {
+				if n.size == 4 {
+					*(*float32)(ep) = float32(f)
+				} else {
+					*(*float64)(ep) = f
+				}
+			}
+		case kArrayBool:
+			var b bool
+			if b, err = ps.parseBool(); err == nil {
+				*(*bool)(ep) = b
+			}
+		default:
+			return errRefused
+		}
+		if err != nil {
 			return err
 		}
 		if ps.take(']') {
@@ -531,7 +522,7 @@ func (ps *parser) parseString() (string, error) {
 	for ps.pos < len(ps.data) {
 		c := ps.data[ps.pos]
 		if c == '"' {
-			s := string(ps.data[start:ps.pos])
+			s := ps.makeString(ps.data[start:ps.pos])
 			ps.pos++
 			return s, nil
 		}
@@ -554,7 +545,7 @@ func (ps *parser) parseStringSlow() (string, error) {
 		if c == '"' {
 			raw := ps.data[start:ps.pos]
 			ps.pos++
-			return unescapeJSON(raw)
+			return ps.unescapeJSON(raw)
 		}
 		if c == '\\' {
 			ps.pos += 2
@@ -569,9 +560,9 @@ func (ps *parser) parseStringSlow() (string, error) {
 }
 
 // unescapeJSON decodes a raw JSON string body (no surrounding quotes) into a
-// fresh string.
-func unescapeJSON(raw []byte) (string, error) {
-	out := make([]byte, 0, len(raw))
+// string, reusing the parser's scratch buffer and intern cache.
+func (ps *parser) unescapeJSON(raw []byte) (string, error) {
+	out := ps.scratch[:0]
 	for i := 0; i < len(raw); i++ {
 		c := raw[i]
 		if c != '\\' {
@@ -613,7 +604,9 @@ func unescapeJSON(raw []byte) (string, error) {
 			return "", fmt.Errorf("anansijson: invalid escape %q", string(raw[i]))
 		}
 	}
-	return string(out), nil
+	s := ps.makeString(out)
+	ps.scratch = out
+	return s, nil
 }
 
 // decodeUnicodeEscape decodes \uXXXX at the head of b, joining surrogate

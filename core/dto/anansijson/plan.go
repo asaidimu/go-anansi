@@ -65,19 +65,22 @@ type fieldNode struct {
 	omitEmpty bool
 
 	// object kinds
-	child      *objPlan      // kObject / kArrayObject element plan
-	elemSize   uintptr       // kArrayObject element stride
-	elemType   reflect.Type  // element Go type (kArrayObject growth)
-	zeroFn     func(unsafe.Pointer) bool // kObject: reports all-leaves-zero (IsZero parity)
-	required   bool          // decode: schema marks the field required
+	child     *objPlan                  // kObject / kArrayObject element plan
+	elemSize  uintptr                   // kArrayObject element stride
+	elemType  reflect.Type              // element Go type (kArrayObject growth)
+	sliceType reflect.Type              // precomputed reflect.SliceOf(elemType)
+	emptyHdr  sliceHeader               // shared zero-length, non-nil slice header for []
+	growTypes []reflect.Type            // [cap]elem array types for growth caps 4,8,...,1024; index = log2(cap)-2
+	zeroFn    func(unsafe.Pointer) bool // kObject: reports all-leaves-zero (IsZero parity)
+	required  bool                      // decode: schema marks the field required
 }
 
 type objPlan struct {
-	fields     []fieldNode // emit order (subtree-min name order, see sortFields)
-	byName     map[string]*fieldNode
-	required   []int16 // indices into fields of schema-required entries
-	nRequired  int
-	sizeHint   int
+	fields    []fieldNode // emit order (subtree-min name order, see sortFields)
+	byName    map[string]*fieldNode
+	required  []int16 // indices into fields of schema-required entries
+	nRequired int
+	sizeHint  int
 }
 
 type planEntry struct {
@@ -86,6 +89,22 @@ type planEntry struct {
 }
 
 var planCache sync.Map // reflect.Type -> *planEntry
+
+// initSliceGrowth precomputes the allocation machinery for a slice field:
+// the header of a shared zero-length, non-nil slice (an empty JSON array is
+// decoded by copying it in) and the typed array ladder growth allocates
+// through. Each doubling is a single reflect.New of a [cap]elem type;
+// reflect.MakeSlice would box a second, header-shaped object for its Value
+// on every call.
+func initSliceGrowth(n *fieldNode, elem reflect.Type) {
+	n.sliceType = reflect.SliceOf(elem)
+	n.elemSize = elem.Size()
+	v := reflect.MakeSlice(n.sliceType, 0, 0)
+	n.emptyHdr = sliceHeader{data: v.UnsafePointer(), len: 0, cap: 0}
+	for cap := 4; cap <= 1024; cap *= 2 {
+		n.growTypes = append(n.growTypes, reflect.ArrayOf(cap, elem))
+	}
+}
 
 var timeType = reflect.TypeFor[time.Time]()
 
@@ -275,7 +294,7 @@ func classifySlice(n *fieldNode, t reflect.Type, cs *definition.CompiledSchema, 
 	case elem.Kind() == reflect.Struct && elem != timeType:
 		n.kind = kArrayObject
 		n.elemType = elem
-		n.elemSize = elem.Size()
+		initSliceGrowth(n, elem)
 		var err error
 		n.child, err = buildPlan(elem, cs, int(childSlotIdx(cs, fd)), depth+1)
 		if err != nil {
@@ -301,7 +320,7 @@ func classifySlice(n *fieldNode, t reflect.Type, cs *definition.CompiledSchema, 
 		return errRefused
 	}
 	n.elemType = elem
-	n.elemSize = elem.Size()
+	initSliceGrowth(n, elem)
 	return nil
 }
 
