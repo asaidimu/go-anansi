@@ -38,6 +38,41 @@ type cachedBindFields struct {
 // malformed struct fails fast on every subsequent bind.
 var bindFieldsCache sync.Map // bindFieldsKey -> *cachedBindFields
 
+// FieldSpec is the exported per-field record of an anansi-tagged struct's
+// bindable fields. It lets consumers (e.g. the anansijson plan compiler)
+// build their own typed plans without re-parsing tags or diverging from the
+// binder's field semantics: embedded structs are flattened, unexported and
+// untagged fields are excluded, and Name is the schema name from the tag
+// chain.
+type FieldSpec struct {
+	Index         []int
+	Name          string
+	Type          reflect.Type
+	OmitEmpty     bool
+	IsSystemEmbed bool
+}
+
+// FieldsForType returns the cached flattened field metadata for t's
+// anansi-tagged fields. Parse errors are cached, so a malformed struct fails
+// identically on every call.
+func FieldsForType(t reflect.Type) ([]FieldSpec, error) {
+	fields, err := bindFieldsFor(t, "")
+	if err != nil {
+		return nil, err
+	}
+	out := make([]FieldSpec, len(fields))
+	for i, f := range fields {
+		out[i] = FieldSpec{
+			Index:         f.index,
+			Name:          f.name,
+			Type:          f.structField.Type,
+			OmitEmpty:     f.omitEmpty,
+			IsSystemEmbed: f.isSystemEmbed,
+		}
+	}
+	return out, nil
+}
+
 func resolveBindTagChain(customTag string) []string {
 	if customTag == "" {
 		return []string{AnansiTag}
