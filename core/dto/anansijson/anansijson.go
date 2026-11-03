@@ -44,6 +44,35 @@ func Marshal(v any) ([]byte, error) {
 	return marshalLegacy(v)
 }
 
+// MarshalAppend appends the JSON encoding of v to dst and returns the
+// extended buffer. The bytes are exactly Marshal's output. It exists for
+// long-running callers that serialize in a loop: reusing one buffer across
+// calls — buf = anansijson.MarshalAppend(buf[:0], v) — makes the steady state
+// allocation-free, so a hot endpoint generates no serialization garbage for
+// the GC to collect (Marshal's returned buffer, however sized, is per-call
+// garbage by contract since the caller owns it).
+//
+// The returned slice may share dst's array and is only valid until dst is
+// reused; copy it if the bytes must outlive the next call. Types the plan
+// refuses fall back to the container path with identical output. On error,
+// dst is returned unchanged.
+func MarshalAppend(dst []byte, v any) ([]byte, error) {
+	t := reflect.TypeOf(v)
+	for t != nil && t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t != nil && t.Kind() == reflect.Struct {
+		if e := planFor(t); e.err == nil {
+			return marshalAppendPlan(dst, e.root, v)
+		}
+	}
+	out, err := marshalLegacy(v)
+	if err != nil {
+		return dst, err
+	}
+	return append(dst, out...), nil
+}
+
 // Unmarshal parses schema-driven JSON into v, which must be a non-nil pointer
 // to an anansi-tagged struct whose shape matches the schema Marshal derived.
 // Fields absent from the payload keep their zero values. Decoding never

@@ -3,6 +3,7 @@ package anansijson
 import (
 	"bytes"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -37,25 +38,39 @@ type sliceHeader struct {
 	cap  int
 }
 
-func encodeWithPlan(root *objPlan, v any) ([]byte, error) {
+var errNilValue = errors.New("anansijson: nil value")
+
+// planValue resolves v to an addressable struct value for offset-based field
+// access. Value inputs are copied into a fresh cell once (pointer inputs — the
+// hot path — skip this).
+func planValue(v any) (reflect.Value, error) {
 	rv := reflect.ValueOf(v)
 	for rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
-			// The legacy path walks zero fields of a nil pointer and emits an
-			// empty document.
-			return []byte("{}"), nil
+			return reflect.Value{}, errNilValue
 		}
 		rv = rv.Elem()
 	}
 	if rv.Kind() != reflect.Struct {
-		return nil, fmt.Errorf("anansijson: value must be a struct, got %T", v)
+		return reflect.Value{}, fmt.Errorf("anansijson: value must be a struct, got %T", v)
 	}
-	// Offset-based access needs an addressable struct; value inputs are copied
-	// into a fresh cell once (pointer inputs — the hot path — skip this).
 	if !rv.CanAddr() {
 		fresh := reflect.New(rv.Type())
 		fresh.Elem().Set(rv)
 		rv = fresh.Elem()
+	}
+	return rv, nil
+}
+
+func encodeWithPlan(root *objPlan, v any) ([]byte, error) {
+	rv, err := planValue(v)
+	if err != nil {
+		if err == errNilValue {
+			// The legacy path walks zero fields of a nil pointer and emits an
+			// empty document.
+			return []byte("{}"), nil
+		}
+		return nil, err
 	}
 
 	bp := encPool.Get().(*[]byte)
@@ -64,7 +79,7 @@ func encodeWithPlan(root *objPlan, v any) ([]byte, error) {
 		dst = make([]byte, 0, root.sizeHint)
 	}
 
-	dst, err := encodeObject(root, dst, unsafe.Pointer(rv.UnsafeAddr()))
+	dst, err = encodeObject(root, dst, unsafe.Pointer(rv.UnsafeAddr()))
 
 	res := bytes.Clone(dst)
 	if cap(dst) <= maxPooledEncodeBuffer {
@@ -75,6 +90,26 @@ func encodeWithPlan(root *objPlan, v any) ([]byte, error) {
 		return nil, err
 	}
 	return res, nil
+}
+
+// marshalAppendPlan encodes v onto dst through the compiled plan, writing
+// straight into the caller's buffer: no pooled scratch, no output clone, no
+// per-call garbage. On error, dst is returned truncated to its original
+// length — a failed append leaves the buffer untouched.
+func marshalAppendPlan(dst []byte, root *objPlan, v any) ([]byte, error) {
+	rv, err := planValue(v)
+	if err != nil {
+		if err == errNilValue {
+			return append(dst, '{', '}'), nil
+		}
+		return dst, err
+	}
+	mark := len(dst)
+	out, err := encodeObject(root, dst, unsafe.Pointer(rv.UnsafeAddr()))
+	if err != nil {
+		return dst[:mark], err
+	}
+	return out, nil
 }
 
 func encodeObject(p *objPlan, dst []byte, base unsafe.Pointer) ([]byte, error) {

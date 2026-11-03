@@ -220,6 +220,18 @@ func BenchmarkJSONMarshal(b *testing.B) {
 			}
 		}
 	})
+	b.Run("anansijson-append/small", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ReportMetric(float64(len(stdSmall)), "bytes")
+		buf := make([]byte, 0, 1024)
+		for i := 0; i < b.N; i++ {
+			var err error
+			buf, err = anansijson.MarshalAppend(buf[:0], &small)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 	b.Run("stdlib/large", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ReportMetric(float64(len(stdLarge)), "bytes")
@@ -234,6 +246,18 @@ func BenchmarkJSONMarshal(b *testing.B) {
 		b.ReportMetric(float64(len(stdLarge)), "bytes")
 		for i := 0; i < b.N; i++ {
 			if _, err := anansijson.Marshal(&large); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("anansijson-append/large", func(b *testing.B) {
+		b.ReportAllocs()
+		b.ReportMetric(float64(len(stdLarge)), "bytes")
+		buf := make([]byte, 0, 1024)
+		for i := 0; i < b.N; i++ {
+			var err error
+			buf, err = anansijson.MarshalAppend(buf[:0], &large)
+			if err != nil {
 				b.Fatal(err)
 			}
 		}

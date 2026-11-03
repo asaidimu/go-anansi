@@ -74,12 +74,12 @@ type UnsupportedScalars struct {
 }
 
 type AllOmit struct {
-	Name   string  `anansi:"name,omitempty"`
-	Count  int     `anansi:"count,omitempty"`
-	Ratio  float64 `anansi:"ratio,omitempty"`
-	Flag   bool    `anansi:"flag,omitempty"`
-	Items  []string `anansi:"items,omitempty"`
-	Child  Inner   `anansi:"child,omitempty"`
+	Name  string   `anansi:"name,omitempty"`
+	Count int      `anansi:"count,omitempty"`
+	Ratio float64  `anansi:"ratio,omitempty"`
+	Flag  bool     `anansi:"flag,omitempty"`
+	Items []string `anansi:"items,omitempty"`
+	Child Inner    `anansi:"child,omitempty"`
 }
 
 type Inner struct {
@@ -100,7 +100,7 @@ type Nested struct {
 
 type Embedded struct {
 	Address `anansi:"addr"` // hmm: embed flattening — tags on the embed name it
-	Extra   string `anansi:"extra"`
+	Extra   string          `anansi:"extra"`
 }
 
 type Wide struct {
@@ -264,7 +264,26 @@ func TestMarshalParity(t *testing.T) {
 		t.Fatalf("Order should take the fast path")
 	}
 
-	values := []struct {
+	for _, tc := range marshalCases() {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			if got := requireFast(t, tc.v, tc.fast); got != tc.fast {
+				t.Fatalf("plan support mismatch: want fast=%v got %v", tc.fast, got)
+			}
+			assertMarshalParity(t, tc.name, tc.v)
+		})
+	}
+}
+
+// marshalCases is the shared marshal parity set: representative plan shapes,
+// edge shapes (empty/nil arrays, omission extremes) and fallback shapes the
+// plan refuses — refusal must never change behavior.
+func marshalCases() []struct {
+	name string
+	v    any
+	fast bool
+} {
+	return []struct {
 		name string
 		v    any
 		fast bool
@@ -319,15 +338,89 @@ func TestMarshalParity(t *testing.T) {
 		{"fallback/empty-child", EmptyChild{Name: "x"}, false},
 		{"fallback/unsupported-scalars", UnsupportedScalars{I8: 1, U: 2, F32: 1.5}, false},
 	}
+}
 
-	for _, tc := range values {
+// TestMarshalAppendParity pins MarshalAppend to Marshal byte-for-byte over
+// the same case set — nil destination and pre-sized destination alike —
+// including the fallback shapes, whose legacy output must append unchanged.
+func TestMarshalAppendParity(t *testing.T) {
+	for _, tc := range marshalCases() {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			if got := requireFast(t, tc.v, tc.fast); got != tc.fast {
-				t.Fatalf("plan support mismatch: want fast=%v got %v", tc.fast, got)
-			}
-			assertMarshalParity(t, tc.name, tc.v)
+			want, wantErr := Marshal(tc.v)
+
+			got, gotErr := MarshalAppend(nil, tc.v)
+			assertAppendEqual(t, "nil-dst", want, wantErr, got, gotErr)
+
+			scratch := make([]byte, 0, 4096)
+			got, gotErr = MarshalAppend(scratch, tc.v)
+			assertAppendEqual(t, "presized-dst", want, wantErr, got, gotErr)
 		})
+	}
+}
+
+func assertAppendEqual(t *testing.T, label string, want []byte, wantErr error, got []byte, gotErr error) {
+	t.Helper()
+	if (wantErr == nil) != (gotErr == nil) {
+		t.Fatalf("%s: error mismatch: Marshal err=%v, MarshalAppend err=%v", label, wantErr, gotErr)
+	}
+	if wantErr != nil {
+		return
+	}
+	if !bytes.Equal(want, got) {
+		t.Fatalf("%s: output mismatch\nMarshal:       %s\nMarshalAppend: %s", label, want, got)
+	}
+}
+
+// TestMarshalAppendSteadyStateAllocs is the GC-churn contract: a warm caller
+// reusing one buffer generates zero allocations, so a hot endpoint produces
+// no serialization garbage for the collector at all.
+func TestMarshalAppendSteadyStateAllocs(t *testing.T) {
+	o := sampleOrder()
+	buf := make([]byte, 0, 1024)
+	MarshalAppend(buf[:0], &o) // warm the plan cache and buffer
+	avg := testing.AllocsPerRun(200, func() {
+		buf, _ = MarshalAppend(buf[:0], &o)
+	})
+	if avg > 0 {
+		t.Fatalf("warm MarshalAppend allocates %v times/op (output %d bytes), want 0", avg, len(buf))
+	}
+}
+
+// TestMarshalAppendErrorRollback: a mid-encode failure (non-finite float)
+// leaves the destination buffer exactly as it was.
+func TestMarshalAppendErrorRollback(t *testing.T) {
+	o := sampleOrder()
+	o.Lines[0].UnitPrice = math.NaN()
+
+	dst := []byte("KEEP")
+	got, err := MarshalAppend(dst, &o)
+	if err == nil {
+		t.Fatalf("expected non-finite float error")
+	}
+	if string(got) != "KEEP" {
+		t.Fatalf("failed append must return dst unchanged, got %q", got)
+	}
+	if _, err := Marshal(&o); err == nil {
+		t.Fatalf("Marshal should fail the same way")
+	}
+}
+
+func TestMarshalAppendNilPointer(t *testing.T) {
+	var p *Order
+	if got, err := MarshalAppend(nil, p); err != nil || string(got) != "{}" {
+		t.Fatalf("nil pointer: want {}, got %q, err=%v", got, err)
+	}
+	dst := []byte("PRE")
+	if got, err := MarshalAppend(dst, p); err != nil || string(got) != "PRE{}" {
+		t.Fatalf("nil pointer onto buffer: want PRE{}, got %q, err=%v", got, err)
+	}
+	var pv any
+	if _, err := MarshalAppend(nil, pv); err == nil {
+		t.Fatalf("nil interface: want error")
+	}
+	if _, err := MarshalAppend(nil, 42); err == nil {
+		t.Fatalf("non-struct: want error")
 	}
 }
 
