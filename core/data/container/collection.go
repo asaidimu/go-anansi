@@ -113,6 +113,24 @@ func (c *Collection) FilterCopy(keep func(*DataContainer) bool) (*Collection, er
 // fields whose keys are in keys. DataContainers are obtained from pool.
 // The caller must Release the returned collection.
 func (c *Collection) Project(keys []DataContainerKey) (*Collection, error) {
+	// @note #fe45qi issue : Project doesn't propagate backing
+	//
+	// copyDataContainer correctly does:
+	//
+	// if b := src.Backing(); b != nil {
+	//     dst.OwnBacking(b)
+	// }
+	// projectDataContainer does not. It copies string values via copyField →
+	// SetString(key, v), where v aliases src.backing, but the projected
+	// document never holds a reference to that buffer. If the source is pooled
+	// and Clear drops an oversized backing (> 1 MiB), the projected strings
+	// dangle.
+	//
+	// This is narrow — it requires zero-copy decode + oversized source +
+	// projection outliving the source — but it's exactly the codec's likely
+	// path for selective field materialization (Sparse-style partial decode).
+	// Fix: mirror the copyDataContainer prologue in projectDataContainer.
+
 	if c.pool == nil {
 		return nil, fmt.Errorf("collection: Project requires a pool")
 	}

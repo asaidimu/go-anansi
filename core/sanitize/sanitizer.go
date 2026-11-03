@@ -114,7 +114,10 @@ func (s *Sanitizer) getPolicyForField(fieldName string) MaskedFieldPolicy {
 	return s.config.DefaultPolicy
 }
 
-// @note #sanitize-type-blindness issue status=open priority=P1 tags=#sanitizer,#types : applyPolicy is type-blind and cannot mask non-string fields
+// @note #sanitize-type-blindness issue : applyPolicy is type-blind and cannot mask non-string fields
+// @status open
+// @priority high
+// @tags #sanitizer #types
 //
 // applyPolicy/hashValue stringify every value (fmt.Sprintf %v), so a policy
 // match on a non-string slot (array/object/number) produces a string. The

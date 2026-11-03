@@ -342,3 +342,34 @@ func (e *QueryEngine) runPostProcessing(helper *QueryHelper, docs []map[string]a
 
         return processedDocs, nil
 }
+
+// @note #dcd010 issue : query engine's post-processing path forces []map[string]any, defeating DirectScan
+//
+// engine.go:Query does `d.ToMap()` on every result document before calling
+// runPostProcessing, and AggregateFunction is typed as
+// func(records []map[string]any, field string) (any, error). Combined with
+// InferShape counting aggregations and computed projections as ComputedFields,
+// this forces the map-shaped path for exactly the workloads where the
+// container's typed access matters most:
+//
+//   - sales analytics (SUM/AVG/GROUP BY aggregations)
+//   - dynamic pricing (computed fields like basePrice * (1 + tax) * discount)
+//
+// Both are the primary workloads the ERP analytics story depends on.
+//
+// Fix, in impact order:
+//   1. Aggregation functions accept []*container.DataContainer (or a columnar
+//      view) and a DataContainerKey, reading typed slices directly. No map.
+//   2. Computed field evaluation (FieldReference, FunctionCall, CaseExpression)
+//      resolves keys to typed container access instead of map[string]any.
+//   3. Post-processing Filter/Sort use container.Walk instead of ToMap().
+//
+// InferShape stays accurate afterward — DirectScan() returns false only for
+// operations that genuinely need map-shaped access (heterogeneous joins).
+// Aggregations and computed fields remain in the fast path.
+//
+// Composes with #dcd001–#dcd006: the codec fixes the ends of the pipeline,
+// this fixes the middle. Both are required for wire-to-result throughput.
+
+// @see #dcd001
+// @see #dcd005

@@ -209,7 +209,7 @@ Examples:
 
 #### 2.4.3 Maximum Size
 
-Varint encoding supports up to 64-bit values (9 bytes maximum).
+Varint encoding supports up to 64-bit values (10 bytes maximum).
 
 ### 2.5 Field Type Encoding
 
@@ -218,7 +218,7 @@ The following encoding applies to each `DataType`. These map directly to the 16 
 #### TypeInt (int64)
 ```
 Signed varint (zigzag + LEB128)
-1–9 bytes depending on magnitude
+1–10 bytes depending on magnitude
 ```
 
 #### TypeFloat (float64)
@@ -357,10 +357,10 @@ The Document Specification defines three field states. The wire format handles t
 
 #### 3.1.1 Eligibility
 
-A schema is eligible for Dense encoding if it is **non-recursive**: all fields eventually terminate in concrete DataTypes with no self-referential `TypeContainer` cycles. Schemas with `TypeContainer` fields that reference the same schema version are recursive and MUST use Sparse encoding.
+A schema is eligible for Dense encoding if it is **non-recursive**: all fields eventually terminate in concrete DataTypes with no self-referential `TypeRecord` cycles. Schemas with `TypeRecord` fields that reference the same schema version are recursive and MUST use Sparse encoding.
 
-Eligible example: a struct with TypeInt, TypeString, TypeContainer (where the nested schema is a different, finite schema).
-Ineligible example: a `Node` schema with a `TypeContainer` field that also uses the `Node` schema.
+Eligible example: a struct with TypeInt, TypeString, TypeRecord (where the nested schema is a different, finite schema).
+Ineligible example: a `Node` schema with a `TypeRecord` field that also uses the `Node` schema.
 
 #### 3.1.2 State Map
 
@@ -396,7 +396,7 @@ The state map is byte-aligned (padded with `00` bits to the next byte boundary i
 ├───────────────────────────────┤
 │ TypeGeometry Value Block      │
 ├───────────────────────────────┤
-│ TypeContainer Value Block     │
+│ TypeRecord Value Block     │
 ├───────────────────────────────┤
 │ TypeArray* Value Blocks       │  one block per array type, same ordering
 └───────────────────────────────┘
@@ -406,7 +406,7 @@ Value blocks appear in DataType iota order (TypeUnknown=0 through TypeArrayGeome
 
 #### 3.1.4 Handling Recursive Schemas
 
-If the schema is recursive (contains `TypeContainer` cycles), the encoder MUST switch to Sparse encoding. Dense encoding is undefined for recursive schemas.
+If the schema is recursive (contains `TypeRecord` cycles), the encoder MUST switch to Sparse encoding. Dense encoding is undefined for recursive schemas.
 
 ---
 
@@ -493,7 +493,7 @@ FOR EACH DATATYPE (TypeUnknown=0 through TypeArrayGeometry=15):
 ```
 
 Fixed-width types (TypeInt, TypeFloat, TypeBool): raw bytes for all N records, no per-value length prefix.
-Variable-width types (TypeString, TypeBytes, TypeGeometry, TypeContainer, TypeArray*): length-prefixed per value.
+Variable-width types (TypeString, TypeBytes, TypeGeometry, TypeRecord, TypeArray*): length-prefixed per value.
 
 ---
 
@@ -564,7 +564,7 @@ Anansi is a calculative format. To find the end of a record:
 
 1. **Dense:** Read the `2 × N` bit State Map (N = schema field count). Sum the sizes of all fields with state `10`, using the per-type encoding rules in section 2.5.
 2. **Sparse:** Read `field_count`. For each field, read the DataPoint (varint). If null bit = 0, read the value per the type encoded in DataPoint bits 1–4.
-3. **Variable-length fields:** TypeString, TypeBytes, TypeGeometry, TypeContainer, and all TypeArray* variants are length-prefixed with a varint.
+3. **Variable-length fields:** TypeString, TypeBytes, TypeGeometry, TypeRecord, and all TypeArray* variants are length-prefixed with a varint.
 
 ---
 
@@ -624,6 +624,7 @@ The specification does not mandate a specific algorithm. Implementations MUST do
 ```
 [flags: u8]               (bits 2, 6 = 1)
 [schema_version: u8]      (uncompressed)
+[nonce/IV: 12 bytes]      (algorithm-specific; 12 bytes for ChaCha20/AES-GCM)
 [encrypted_data...]       (compress → encrypt)
 ```
 
@@ -633,10 +634,11 @@ The specification does not mandate a specific algorithm. Implementations MUST do
 ```
 1. Check bit 2 of flags byte.
 2. Read schema_version (byte 1).
-3. If bit 7 set, read and verify hash (16 bytes).
+3. If bit 7 set, read hash (16 bytes) — stored for verification.
 4. Optionally read uncompressed_size.
 5. Decompress remaining bytes.
-6. Continue decoding based on packet type.
+6. If hash present, verify BLAKE3(plaintext)[0..16] against it.
+7. Continue decoding based on packet type.
 ```
 
 **With encryption:**
@@ -871,7 +873,7 @@ decoder(buf[2:], doc)
 2. Compute state map byte length: ceil(2 * N / 8).
 3. Read state map bytes.
 4. For each DataType (iota 0–15):
-   a. For each schema field of this type, in DataPoint order:
+   a. For each schema field of this type, in declaration order (§2.3):
       - Read 2-bit state from state map.
       - If state = 10 (Has Value): decode value, call doc.AppendXxx(point, value).
       - If state = 01 (Null): call doc.SetNull(point).
@@ -934,7 +936,7 @@ decoder(buf[2:], doc)
 |---|---|---|
 | Dense encode | O(N) | N = set fields; state map write is O(schema size) |
 | Dense decode | O(N) | DAG-compiled: no runtime schema lookups |
-| Sparse encode | O(M log M) | M = set fields; sort by DataPoint if not pre-sorted |
+| Sparse encode | O(M) | M = set fields; written in declaration order (§2.3) |
 | Sparse decode | O(M) | One map insert per field via doc.SetXxx |
 | Batch encode (row) | O(R × N) | R = records, N = fields per record |
 | Batch decode (columnar) | O(R × N) | Better cache performance for wide schemas |
@@ -962,7 +964,7 @@ By defining Anansi schemas for request/response metadata, routing, and error han
 TypeBool fields:   authenticated, compressed
 TypeInt  fields:   priority (enum as int), method (enum as int)
 TypeString fields: requestId, path
-TypeContainer:     body (nested Document, schema discriminated by method)
+TypeRecord:     body (nested Document, schema discriminated by method)
 ```
 
 **Wire format (Dense):**
@@ -983,7 +985,7 @@ TypeContainer:     body (nested Document, schema discriminated by method)
 [0x20][32 bytes]        // requestId (UUID)
 [0x0D]["/api/users"]    // path
 
-// TypeContainer block (1 field):
+// TypeRecord block (1 field):
 [payload_length][nested anansi bytes]
 
 Total envelope overhead: ~40 bytes vs ~200-300 bytes for HTTP headers
@@ -1023,7 +1025,7 @@ Implementations MUST:
 - Validate all length fields before allocation.
 - Set a maximum message size limit.
 - Check buffer bounds before every read.
-- Reject excessive varint sizes (> 9 bytes for 64-bit values).
+- Reject excessive varint sizes (> 10 bytes for 64-bit values).
 
 #### 9.2.2 Compression Bombs
 
@@ -1057,7 +1059,7 @@ Rate-limit schema requests. Cache compiled schemas. Set maximum DataPoint count 
 - All four packet types.
 - Signed integers (zigzag).
 - Compression support.
-- TypeContainer recursive encoding/decoding.
+- TypeRecord recursive encoding/decoding.
 
 **Level 3: Optimized**
 - DAG-based decoding.
@@ -1076,7 +1078,7 @@ Implementations MUST pass:
 - All four packet types.
 - Compression and encryption tests.
 - Stream interruption handling.
-- TypeContainer recursive encoding.
+- TypeRecord recursive encoding.
 - Conformance with Document v2.0 `Walk`-based serialization pattern.
 
 ---
@@ -1101,23 +1103,23 @@ active: DataPoint{TypeBool,   id=3} = 0x00000068  (TypeBool=4, id=3... see note)
 
 **State map:** 3 fields × 2 bits = 6 bits → 1 byte (padded to 8 bits)
 ```
-Field 0 (count):  10  (Has Value)
-Field 1 (name):   10  (Has Value)
-Field 2 (active): 10  (Has Value)
-Padded: 10 10 10 00 → 0b10101000 → 0xA8
+Field 0 (count):  10  (Has Value)  — bits 0–1
+Field 1 (name):   10  (Has Value)  — bits 2–3
+Field 2 (active): 10  (Has Value)  — bits 4–5
+Padded (LSB-first): bits 0–5 = 101010, bits 6–7 = 00 → 0b00101010 → 0x2A
 ```
 
 **Expected wire format (hex):**
 ```
 00 01       // flags=0x00 (Dense), version=1
-A8          // state map: all 3 fields present
-2A          // count=42 (TypeInt block, zigzag varint)
+2A          // state map: all 3 fields present (LSB-first)
+54          // count=42 (TypeInt block, zigzag(42)=84=0x54)
 04          // name length=4 (TypeString block)
 74 65 73 74 // "test"
-01          // active=true (TypeBool block, 1 byte in sparse; packed bit in dense)
+01          // active=true (TypeBool dense bit-packed block: 1 value → 1 byte, bit 0)
 ```
 
-**Total: 9 bytes**
+**Total: 10 bytes**
 
 ---
 
@@ -1129,15 +1131,15 @@ A8          // state map: all 3 fields present
 ```
 01 01       // flags=0x01 (Sparse), version=1
 02          // field_count=2
-22 00 00 00 // DataPoint (varint encoded int32) for count; null bit=0
-2A          // value=42 (zigzag varint)
-46 06 00 00 // DataPoint for name; null bit=0
+22          // DataPoint for count (varint): 0x22, null bit=0
+54          // value=42 (zigzag(42)=84=0x54)
+C6 0C       // DataPoint for name (varint): 0x646, null bit=0
 04 74 65 73 74 // "test"
 ```
 
-*(DataPoints varint-encoded as their int32 value.)*
+*(DataPoints varint-encoded; varint(0x646) = C6 0C.)*
 
-**Total: 14 bytes**
+**Total: 12 bytes**
 
 ---
 
@@ -1147,25 +1149,25 @@ A8          // state map: all 3 fields present
 
 **Input:** `{id: "123", age: 25}` — email is null
 
-**State map:** 3 fields; email=null (01), age=Has Value (10), id=Has Value (10)
+**State map:** 3 fields; id=Has Value (10), email=null (01), age=Has Value (10)
 ```
-Ordered by schema declaration (§2.3) — assume age is declared before email, email before id:
-age:   10
-email: 01
-id:    10
-Packed: 10 01 10 00 → 0b10011000 → 0x98
+Ordered by schema declaration (§2.3): id, email, age
+id:    10  — bits 0–1
+email: 01  — bits 2–3
+age:   10  — bits 4–5
+Padded (LSB-first): bits 0–5 = 100110, bits 6–7 = 00 → 0b00100110 → 0x26
 ```
 
 **Expected wire format (hex):**
 ```
 00 01       // flags=0x00 (Dense), version=1
-98          // state map
-19          // age=25 (TypeInt block, zigzag(25)=50=0x32... varint)
+26          // state map
+32          // age=25 (TypeInt block, zigzag(25)=50=0x32)
             // email: no bytes (state=01, null)
 03 31 32 33 // id="123" (TypeString block)
 ```
 
-**Total: 7 bytes**
+**Total: 8 bytes**
 
 ---
 
@@ -1179,20 +1181,20 @@ Packed: 10 01 10 00 → 0b10011000 → 0x98
 02          // record_count=2
 00          // batch_flags: row-oriented (bit 0=0), dense (bit 1=0)
 
-// Row 1: state map (all present) + values
-FC          // state map: 10 11 11 00 → all 3 present (illustrative)
-01          // active=true
-0A          // count=10 (zigzag varint)
-03 66 6F 6F // name="foo"
+// Row 1: state map (all present) + values in DataType iota order
+2A          // state map: 10 10 10 00 (LSB-first) → all 3 present
+14          // count=10 (TypeInt block, zigzag(10)=20=0x14)
+03 66 6F 6F // name="foo" (TypeString block)
+01          // active=true (TypeBool dense bit-packed block: 1 value → 1 byte)
 
 // Row 2
-FC          // state map
-00          // active=false
-14          // count=20
+2A          // state map
+28          // count=20 (zigzag(20)=40=0x28)
 03 62 61 72 // name="bar"
+00          // active=false (TypeBool dense bit-packed block)
 ```
 
-**Total: ~20 bytes**
+**Total: 18 bytes**
 
 ---
 
@@ -1227,21 +1229,21 @@ FC          // state map
 
 ---
 
-#### A.6 TypeContainer: Nested Document
+#### A.6 TypeRecord: Nested Document
 
-**Schema (v1):** `user` (TypeContainer, schema=UserSchema v1), `score` (TypeInt)
+**Schema (v1):** `user` (TypeRecord, schema=UserSchema v1), `score` (TypeInt)
 
 **Input:** `{score: 99, user: {name: "Alice", age: 30}}`
 
 **Expected wire format (hex):**
 ```
 00 01           // flags=0x00 (Dense), version=1
-[state map]     // 2 fields present
+0A              // state map: 10 10 00 00 (LSB-first) → 2 fields present
 
 // TypeInt block:
-63              // score=99 (zigzag varint)
+C6              // score=99 (TypeInt block, zigzag(99)=198=0xC6)
 
-// TypeContainer block:
+// TypeRecord block:
 [length varint] // byte length of nested packet
 00 01           // nested Dense packet, UserSchema v1
 [user state map + values]  // name="Alice", age=30 encoded per UserSchema

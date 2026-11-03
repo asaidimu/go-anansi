@@ -212,7 +212,10 @@ func (p *SQLiteSelectProjection) Value() (string, []any, error) {
                 threshold = 1
         }
 
-        // @note #join-projection-ignored status resolved issue priority=P1 : Join-level WithProjection is silently ignored
+        // @note #join-projection-ignored status : Join-level WithProjection is silently ignored
+        // @status resolved
+        // @issue
+        // @priority high
         // Join-level WithProjection was silently ignored: when the main query
         // had no explicit projection, the default fallback (this block)
         // selected ALL columns from ALL schemas, never consulting

@@ -270,6 +270,10 @@ func (mc *ModelCollection[P]) CreateMany(ctx context.Context, docs []P) ([]P, er
 // Read Operations
 // ============================================================================
 
+// @note #2ya2hp issue : Cache Poisoning
+//
+// `ModelCollection.FindByID` serves a document
+//  that was written inside a transaction that later rolled back
 func (mc *ModelCollection[P]) FindByID(ctx context.Context, id string) (P, error) {
 	if mc.cache != nil {
 		val, status := mc.cache.GetStatus(id)

@@ -15,6 +15,11 @@ const (
 	batchFlagSparse   = 0x02
 )
 
+// maxZeroFieldBatchRecords caps the record count of a Batch packet whose
+// schema has no wire fields — records that occupy zero bytes and so cannot
+// be validated against the remaining input (spec 9.2.1).
+const maxZeroFieldBatchRecords = 1 << 20
+
 // EncodeBatchRows encodes docs (each bound to schema slot 0 of cs) as a
 // single row-oriented Batch packet (spec 3.3.1/3.3.2), via the inverted
 // two-pass encoder (inverted.go): one scan pass over all records sizes the
@@ -133,6 +138,38 @@ func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container
 	res, err := resourcesFor(cs)
 	if err != nil {
 		return nil, 0, err
+	}
+
+	// Validate the record count against the bytes that can describe it
+	// before allocating (spec 9.2.1): a hostile count must not drive an
+	// unbounded makeslice — or a cap-out-of-range panic — ahead of the
+	// bounds checks the record loop would otherwise hit.
+	rem := uint64(body.remaining())
+	nFields := uint64(len(res.fields))
+	columnar := batchFlags&batchFlagColumnar != 0 || h.Flags.BatchColumnar()
+	var maxRecords uint64
+	switch {
+	case nFields == 0:
+		// Records of a field-less schema are zero bytes wide, so input
+		// size cannot bound them; fall back to a fixed ceiling.
+		maxRecords = maxZeroFieldBatchRecords
+	case columnar:
+		// Every record contributes 2·N bits to the state columns, so
+		// remaining ≥ ceil(2·N·records/8) for any well-formed packet.
+		const maxU = ^uint64(0)
+		if rem > maxU/8 {
+			maxRecords = maxU
+		} else {
+			maxRecords = rem * 8 / (2 * nFields)
+		}
+	default:
+		// Row records span at least one byte each — the dense state map
+		// (≥ 1 byte when the schema has fields) or the sparse field
+		// count varint.
+		maxRecords = rem
+	}
+	if recordCount > maxRecords {
+		return nil, 0, fmt.Errorf("anansi: batch record count %d exceeds capacity %d implied by %d remaining bytes: %w", recordCount, maxRecords, rem, ErrBufferUnderflow)
 	}
 
 	docs := make([]*container.DataContainer, recordCount)

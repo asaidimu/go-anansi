@@ -40,7 +40,10 @@ func generatePhysicalName(s *schema.Schema) (string, error) {
 		sanitizedName = "t_" + sanitizedName
 	}
 
-	// @note #physical-name-truncation-collide-496cab49 issue resolved P1 #persistence,#views,#data-corruption : Physical-name truncation collides distinct collections/views onto one table
+	// @note #physical-name-truncation-collide-496cab49 issue : Physical-name truncation collides distinct collections/views onto one table
+	// @status resolved
+	// @priority high
+	// @tags #persistence #views #data-corruption
 	// @assignee opencode
 	// Fixed: generatePhysicalName now suffixes truncated names with 8 hex chars of FNV-1a over the raw name+version, so distinct logical names can no longer collide on one physical table. Short names keep the legacy name_version form byte-for-byte. Regression tests in core/persistence/registry/utils_test.go.
 	//

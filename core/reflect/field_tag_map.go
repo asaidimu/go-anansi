@@ -84,7 +84,9 @@ func (m *fieldTagMap[P]) Clear() {
 	clear(m.entries)
 }
 
-// @note #397ju0 status resolved todo : Refactor out helpers #cruft
+// @note #397ju0 status : Refactor out helpers #cruft
+// @status resolved
+// @todo
 //
 // Resolved by removal: typeHash32/fieldHash32/fieldKeyOf and the
 // structFieldKey hash-bucket scheme were deleted outright when the map was

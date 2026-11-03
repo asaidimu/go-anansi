@@ -126,6 +126,11 @@ func readFieldPayload(r *byteReader, cs *definition.CompiledSchema, doc *contain
 		if err != nil {
 			return err
 		}
+		// Each element leads with its type tag (spec 9.2.1: validate
+		// length fields before allocation).
+		if err := r.checkElems(n, 1); err != nil {
+			return err
+		}
 		v := make([]any, 0, n)
 		for i := uint64(0); i < n; i++ {
 			e, err := readAny(r)

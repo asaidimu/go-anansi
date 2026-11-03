@@ -107,10 +107,16 @@ func readGeometry(r *byteReader) ([][]float64, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := r.checkElems(nRings, 1); err != nil {
+		return nil, err
+	}
 	rings := make([][]float64, 0, nRings)
 	for i := uint64(0); i < nRings; i++ {
 		nPoints, err := r.readUvarint()
 		if err != nil {
+			return nil, err
+		}
+		if err := r.checkElems(nPoints, 16); err != nil {
 			return nil, err
 		}
 		ring := make([]float64, 0, nPoints*2)
@@ -139,6 +145,9 @@ func readArrayInt(r *byteReader) ([]int64, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := r.checkElems(n, 1); err != nil {
+		return nil, err
+	}
 	out := make([]int64, 0, n)
 	for i := uint64(0); i < n; i++ {
 		x, err := readInt(r)
@@ -153,6 +162,9 @@ func readArrayInt(r *byteReader) ([]int64, error) {
 func readArrayFloat(r *byteReader) ([]float64, error) {
 	n, err := r.readUvarint()
 	if err != nil {
+		return nil, err
+	}
+	if err := r.checkElems(n, 8); err != nil {
 		return nil, err
 	}
 	out := make([]float64, 0, n)
@@ -171,6 +183,9 @@ func readArrayString(r *byteReader) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := r.checkElems(n, 1); err != nil {
+		return nil, err
+	}
 	out := make([]string, 0, n)
 	for i := uint64(0); i < n; i++ {
 		s, err := readString(r)
@@ -185,6 +200,9 @@ func readArrayString(r *byteReader) ([]string, error) {
 func readArrayBool(r *byteReader) ([]bool, error) {
 	n, err := r.readUvarint()
 	if err != nil {
+		return nil, err
+	}
+	if err := r.checkElems(n, 0); err != nil {
 		return nil, err
 	}
 	nBytes := (int(n) + 7) / 8
@@ -204,6 +222,9 @@ func readArrayBytes(r *byteReader) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := r.checkElems(n, 1); err != nil {
+		return nil, err
+	}
 	out := make([][]byte, 0, n)
 	for i := uint64(0); i < n; i++ {
 		b, err := readBytes(r)
@@ -218,6 +239,9 @@ func readArrayBytes(r *byteReader) ([][]byte, error) {
 func readArrayGeometry(r *byteReader) ([][][]float64, error) {
 	n, err := r.readUvarint()
 	if err != nil {
+		return nil, err
+	}
+	if err := r.checkElems(n, 1); err != nil {
 		return nil, err
 	}
 	out := make([][][]float64, 0, n)
@@ -285,6 +309,9 @@ func readAny(r *byteReader) (any, error) {
 		if err != nil {
 			return nil, err
 		}
+		if err := r.checkElems(n, 1); err != nil {
+			return nil, err
+		}
 		out := make([]any, 0, n)
 		for i := uint64(0); i < n; i++ {
 			e, err := readAny(r)
@@ -313,6 +340,11 @@ func readAny(r *byteReader) (any, error) {
 func readRecordBody(r *byteReader) (map[string]any, error) {
 	n, err := r.readUvarint()
 	if err != nil {
+		return nil, err
+	}
+	// Each entry spans at least two bytes: the key-length varint and the
+	// value's type tag.
+	if err := r.checkElems(n, 2); err != nil {
 		return nil, err
 	}
 	out := make(map[string]any, n)
@@ -371,6 +403,10 @@ func decodeNestedPacket(res *slotCodec, r *byteReader, doc *container.DataContai
 func readArrayObjectField(r *byteReader, res *slotCodec, pool *container.Pool) ([]*container.DataContainer, error) {
 	n, err := r.readUvarint()
 	if err != nil {
+		return nil, err
+	}
+	// Each element starts with its payload-length varint.
+	if err := r.checkElems(n, 1); err != nil {
 		return nil, err
 	}
 	out := make([]*container.DataContainer, 0, n)

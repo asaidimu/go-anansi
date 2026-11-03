@@ -23,7 +23,7 @@ func FuzzFieldDescriptor(f *testing.F) {
 		fd := definition.FieldDescriptor(raw)
 
 		dp := fd.DataPoint()
-		recovered := definition.FieldDescriptorFromDataPoint(dp)
+		recovered := definition.LossyFieldDescriptorFromDataPoint(dp)
 
 		// Fields stored in bits 31-5 survive the round-trip exactly.
 		if recovered.DataType() != fd.DataType() {
@@ -126,7 +126,7 @@ func FuzzSchemaLink(f *testing.F) {
 			seen[dp] = i
 
 			// Round-trip check for each descriptor.
-			recovered := definition.FieldDescriptorFromDataPoint(dp)
+			recovered := definition.LossyFieldDescriptorFromDataPoint(dp)
 			if recovered.DataType() != fd.DataType() {
 				t.Errorf("index %d: DataType mismatch after round-trip", i)
 				return

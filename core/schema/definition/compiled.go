@@ -182,13 +182,30 @@ func (f FieldDescriptor) Recursive() bool {
 	return uint32(f)&fdRecursive != 0
 }
 
+// @note #smsm4t issue : FieldDescriptorFromDataPoint is exported and cannot round-trip.
+//
+// FieldDescriptorFromDataPoint is exported and cannot round-trip.
+// It rebuilds bits 0–4 as zero — Recursive, Nullable, Terminal, Unique, Deprecated are lost.
+// If any caller assumes round-trip, they silently get wrong flags.
+// Three options:
+// 1. Document the lossiness and rename to something like
+// LossyFieldDescriptorFromDataPoint (or make it package-private).
+// 2. Keep the lossless path (DataContainerKey.Descriptor()) as the only public way
+// to recover a descriptor, and keep this function internal to the side-table
+// machinery where the loss is intentional.
+// 3. Evaluate it's actual usage and remove it if possible. The only point of
+// converting a field descriptor to a datapoint in the first place is to read
+// metadata in a compiled schema
+// Right now the function sits between those two worlds without saying which it's in.
+
 // DataPoint returns the 32-bit DataPoint for this field descriptor.
 func (f FieldDescriptor) DataPoint() uint32 {
 	return (uint32(f) & 0xFFFFFFE0) | ((uint32(f) >> 28) & 0xF) << 1
 }
 
-// FieldDescriptorFromDataPoint recovers a FieldDescriptor from a DataPoint.
-func FieldDescriptorFromDataPoint(dp uint32) FieldDescriptor {
+// LossyFieldDescriptorFromDataPoint recovers a FieldDescriptor from a DataPoint.
+// Deprecated : Marked for removal
+func LossyFieldDescriptorFromDataPoint(dp uint32) FieldDescriptor {
 	return FieldDescriptor((dp & 0xFFFFFFE0) | ((dp>>1)&0xF)<<28)
 }
 

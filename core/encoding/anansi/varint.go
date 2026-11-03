@@ -82,6 +82,36 @@ func newByteReader(data []byte) *byteReader {
 // remaining returns the number of unread bytes.
 func (r *byteReader) remaining() int { return len(r.data) - r.pos }
 
+// checkElems validates a wire-supplied element count n against the bytes
+// remaining, before the caller allocates storage for n elements (spec
+// 9.2.1: "Validate all length fields before allocation"). Without this, a
+// malformed or hostile count can drive an unbounded preallocation — or a
+// "makeslice: cap out of range" panic once n exceeds the int range — long
+// before any bounds-checked read would have rejected the input. perElem is
+// the minimum number of wire bytes one element occupies; 0 means elements
+// are bit-packed, so each remaining byte accounts for 8 of them.
+func (r *byteReader) checkElems(n uint64, perElem int) error {
+	avail := uint64(r.remaining())
+	const maxU = ^uint64(0)
+	var max uint64
+	switch {
+	case perElem <= 0:
+		if avail > maxU>>3 {
+			max = maxU
+		} else {
+			max = avail << 3
+		}
+	case avail > maxU/uint64(perElem):
+		max = maxU
+	default:
+		max = avail / uint64(perElem)
+	}
+	if n > max {
+		return fmt.Errorf("anansi: element count %d exceeds capacity %d implied by %d remaining bytes: %w", n, max, avail, ErrBufferUnderflow)
+	}
+	return nil
+}
+
 // eof reports whether the cursor has consumed all input.
 func (r *byteReader) eof() bool { return r.pos >= len(r.data) }
 

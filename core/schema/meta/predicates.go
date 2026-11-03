@@ -1599,7 +1599,9 @@ var MetaSchemaPredicates = definition.PredicateMap{
 		return nil
 	},
 
-	// @note #index-fields-dotted-path issue resolved P2 : index_fields_reference_valid checks top-level names only, rejecting valid dotted index paths
+	// @note #index-fields-dotted-path issue : index_fields_reference_valid checks top-level names only, rejecting valid dotted index paths
+	// @status resolved
+	// @priority medium
 //
 // Fixed: resolveFieldByPath (port of the TS helper) resolves index/constraint
 // field refs segment-by-segment by NAME through root.schemas and inline

@@ -386,7 +386,10 @@ func writeValue(cs *definition.CompiledSchema, slot func(container.DataType, ...
 // writeChildren emits an array-of-object field as a JSON array of
 // per-element objects.
 //
-// @note #encoder-array-object-recursion issue status=resolved priority=P0 tags=#encoder,#arrays : emitObject recursed forever encoding array<object> children resolved through the root address map
+// @note #encoder-array-object-recursion issue : emitObject recursed forever encoding array<object> children resolved through the root address map
+// @status resolved
+// @priority critical
+// @tags #encoder #arrays
 // @assignee opencode
 //
 // RESOLVED 2026-08-23: writeChildren now emits elements via writeObjectAt,

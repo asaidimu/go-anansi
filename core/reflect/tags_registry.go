@@ -111,7 +111,9 @@ func (t Tag) ValueKind() ValueKind {
 	return ValueKind((t.handle >> handleKindShift) & 0x3)
 }
 
-// @note #cd05t4 status resolved issue : Unneccessary computations
+// @note #cd05t4 status : Unneccessary computations
+// @status resolved
+// @issue
 //
 // Resolved: ValueKind is now computed once per tag in buildMetadata and
 // packed into 2 previously-unused bits of the handle (bits 60-61). Tag.
@@ -168,7 +170,9 @@ func (t Tag) ValuesIter() iter.Seq[string] {
 // Read populates a target struct K using its FromValues interface.
 func (t Tag) Read(target ValueUnmarshaler) error {
 	if target == nil {
-		// @note #1k51l3 status resolved issue : Library Anti pattern. Use common.SystemError
+		// @note #1k51l3 status : Library Anti pattern. Use common.SystemError
+		// @status resolved
+		// @issue
 		//
 		// Resolved: common.SystemError satisfies error as well as
 		// providing means to add richer error context, which is
@@ -477,7 +481,9 @@ func FieldTag[T any](fieldName, tagKey string) (Tag, bool) {
 	return FieldTagOf(reflect.TypeOf((*T)(nil)).Elem(), fieldName, tagKey)
 }
 
-// @note #5nhvz2 status resolved issue : Inefficient field access
+// @note #5nhvz2 status : Inefficient field access
+// @status resolved
+// @issue
 //
 // Resolved: FieldTag now does a single fieldIndex.Get(type, fieldName)
 // lookup (composite-keyed, see field_tag_map.go) followed by a linear scan
@@ -515,7 +521,9 @@ func FieldTags[T any](fieldName string) iter.Seq[Tag] {
 	return FieldTagsOf(reflect.TypeOf((*T)(nil)).Elem(), fieldName)
 }
 
-// @note #0ar5g0 status resolved issue : Inefficient access
+// @note #0ar5g0 status : Inefficient access
+// @status resolved
+// @issue
 //
 // Resolved: same fieldIndex lookup as #5nhvz2 -- a single O(1) access to
 // the field's handles instead of scanning meta.fields for a name match.
@@ -540,7 +548,9 @@ func Tags[T any]() iter.Seq2[string, Tag] {
 	return TagsOf(reflect.TypeOf((*T)(nil)).Elem())
 }
 
-// @note #g23h8y status resolved issue : Inefficient access
+// @note #g23h8y status : Inefficient access
+// @status resolved
+// @issue
 //
 // Resolved as "already optimal": Tags yields every field/tag pair by
 // definition, so visiting each one once is O(n) in the size of the output,
@@ -569,7 +579,9 @@ func KeyTags[T any](tagKey string) iter.Seq2[string, Tag] {
 	return KeyTagsOf(reflect.TypeOf((*T)(nil)).Elem(), tagKey)
 }
 
-// @note #a23h8y status resolved issue : Inefficient access
+// @note #a23h8y status : Inefficient access
+// @status resolved
+// @issue
 //
 // Resolved: structMetadata now carries byKey, a map[string][]tagRef built
 // once in buildMetadata alongside the rest of a type's metadata. KeyTags

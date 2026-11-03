@@ -53,6 +53,29 @@ func (p *Pool) Put(doc *DataContainer) {
 		return
 	}
 
+	// @note #ah4hqh issue : Put doesn't recurse into TypeUnknown / TypeArrayUnknown
+	//
+	// Put recurses into TypeArrayObject before clearing, and the doc explains
+	// that TypeRecord holds no pool children. But TypeUnknown is any and
+	// TypeArrayUnknown is []any — either can hold a *DataContainer. The spec
+	// says union values live in TypeUnknown, and arrays of union elements in
+	// TypeArrayUnknown. If a union variant is ever a nested Document, Put leaks
+	// it.
+	//
+	// Same root cause in copyField: TypeUnknown and TypeArrayUnknown copy the
+	// value directly (dst.SetUnknown(key, v)), sharing any *DataContainer
+	// pointer with the source. Releasing both would double-free.
+	//
+	// We have two options:
+	// (a) Enforce the invariant that these slots never contain pool-managed
+	// children. Document it on SetUnknown, SetArrayUnknown, and Put, and add a
+	// debug-build assertion. This matches the codebase's style (freePosition
+	// already panics on invariant violation) and is cheap..
+	// (b) Handle it by recursing in Put and deep-copying in copyField. More
+	// robust if the invariant might be violated, but adds a type switch on a
+	// hot path.
+	// Given the spec's union language ("can hold a scalar, array, map, or open value"), (a) is probably right — but it should be explicit, not implicit.
+
 	// Recurse into TypeArrayObject children before clearing the parent.
 	// slot() is not used here because we do not want to allocate a new slice
 	// if the type was never initialised.

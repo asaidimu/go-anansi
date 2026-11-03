@@ -247,7 +247,10 @@ func (i *NativeInteractor[T]) Query(ctx context.Context, raw *query.Query) (*que
 
 // StartTransaction begins a new transaction and returns a new interactor for it.
 //
-// @note #tx-watcher-goroutine-leak issue status=resolved priority=P0 tags=#transactions,#goroutines : cancellation watcher leaked one goroutine per transaction on uncancelable contexts
+// @note #tx-watcher-goroutine-leak issue : cancellation watcher leaked one goroutine per transaction on uncancelable contexts
+// @status resolved
+// @priority critical
+// @tags #transactions #goroutines
 // @assignee opencode
 //
 // RESOLVED 2026-08-23: the watcher is now only spawned when ctx.Done() != nil;

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-10-03T12:00:05.782965064Z",
+  "generatedAt": "2026-11-03T13:22:59.590832805Z",
   "root": ".",
   "notes": {
     "0ar5g0": {
@@ -9,11 +9,14 @@
       "status": "resolved",
       "title": "Inefficient access",
       "body": "Resolved: same fieldIndex lookup as #5nhvz2 -- a single O(1) access to\nthe field's handles instead of scanning meta.fields for a name match.\n",
+      "extensions": {
+        "issue": ""
+      },
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 517,
+        "startLine": 523,
         "startCol": 3,
-        "endLine": 520,
+        "endLine": 528,
         "endCol": 3
       },
       "hash": "aa5b6d2c2a620d97"
@@ -24,11 +27,14 @@
       "status": "resolved",
       "title": "Library Anti pattern. Use common.SystemError",
       "body": "Resolved: common.SystemError satisfies error as well as\nproviding means to add richer error context, which is\ninvaluable in tracing issues from low level utilities such\nas this one, if and when such errors impact higher level\nimplementations.\n",
+      "extensions": {
+        "issue": ""
+      },
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 170,
+        "startLine": 172,
         "startCol": 3,
-        "endLine": 176,
+        "endLine": 180,
         "endCol": 3
       },
       "hash": "ccf8df4d8641d866"
@@ -48,17 +54,35 @@
       },
       "hash": "90c11ab299bd10de"
     },
+    "2ya2hp": {
+      "id": "2ya2hp",
+      "category": "issue",
+      "status": "open",
+      "title": "Cache Poisoning",
+      "body": "`ModelCollection.FindByID` serves a document\n that was written inside a transaction that later rolled back\n",
+      "location": {
+        "file": "core/persistence/collection/model_collection.go",
+        "startLine": 272,
+        "startCol": 3,
+        "endLine": 275,
+        "endCol": 3
+      },
+      "hash": "2026a58d07babd21"
+    },
     "397ju0": {
       "id": "397ju0",
       "category": "status",
       "status": "resolved",
       "title": "Refactor out helpers #cruft",
       "body": "Resolved by removal: typeHash32/fieldHash32/fieldKeyOf and the\nstructFieldKey hash-bucket scheme were deleted outright when the map was\nre-keyed on the natively comparable (reflect.Type, string) pair. There are\nno hash helpers left to extract, and the collision-verification caveat they\nexisted to mitigate is gone by construction.\n",
+      "extensions": {
+        "todo": ""
+      },
       "location": {
         "file": "core/reflect/field_tag_map.go",
         "startLine": 86,
         "startCol": 3,
-        "endLine": 92,
+        "endLine": 94,
         "endCol": 3
       },
       "hash": "571b8f2725b2765b"
@@ -69,11 +93,14 @@
       "status": "resolved",
       "title": "Inefficient field access",
       "body": "Resolved: FieldTag now does a single fieldIndex.Get(type, fieldName)\nlookup (composite-keyed, see field_tag_map.go) followed by a linear scan\nof that field's handles for the tag key. Both are O(1)/O(k) with k = tags\nper field (single digits) instead of the original linear scan over every\nfield followed by a linear scan over that field's tags.\n",
+      "extensions": {
+        "issue": ""
+      },
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 479,
+        "startLine": 483,
         "startCol": 3,
-        "endLine": 485,
+        "endLine": 491,
         "endCol": 3
       },
       "hash": "89c03ecee3c9f8af"
@@ -98,14 +125,32 @@
       "status": "resolved",
       "title": "Inefficient access",
       "body": "Resolved: structMetadata now carries byKey, a map[string][]tagRef built\nonce in buildMetadata alongside the rest of a type's metadata. KeyTags\nreads meta.byKey[tagKey] directly, so its cost is proportional to the\nnumber of matching tags, not to the total number of tags on the type.\n",
+      "extensions": {
+        "issue": ""
+      },
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 571,
+        "startLine": 581,
         "startCol": 3,
-        "endLine": 576,
+        "endLine": 588,
         "endCol": 3
       },
       "hash": "60fc957138207fd2"
+    },
+    "ah4hqh": {
+      "id": "ah4hqh",
+      "category": "issue",
+      "status": "open",
+      "title": "Put doesn't recurse into TypeUnknown / TypeArrayUnknown",
+      "body": "Put recurses into TypeArrayObject before clearing, and the doc explains\nthat TypeRecord holds no pool children. But TypeUnknown is any and\nTypeArrayUnknown is []any — either can hold a *DataContainer. The spec\nsays union values live in TypeUnknown, and arrays of union elements in\nTypeArrayUnknown. If a union variant is ever a nested Document, Put leaks\nit.\n\nSame root cause in copyField: TypeUnknown and TypeArrayUnknown copy the\nvalue directly (dst.SetUnknown(key, v)), sharing any *DataContainer\npointer with the source. Releasing both would double-free.\n\nWe have two options:\n(a) Enforce the invariant that these slots never contain pool-managed\nchildren. Document it on SetUnknown, SetArrayUnknown, and Put, and add a\ndebug-build assertion. This matches the codebase's style (freePosition\nalready panics on invariant violation) and is cheap..\n(b) Handle it by recursing in Put and deep-copying in copyField. More\nrobust if the invariant might be violated, but adds a type switch on a\nhot path.\nGiven the spec's union language (\"can hold a scalar, array, map, or open value\"), (a) is probably right — but it should be explicit, not implicit.\n",
+      "location": {
+        "file": "core/data/container/pool.go",
+        "startLine": 55,
+        "startCol": 3,
+        "endLine": 76,
+        "endCol": 3
+      },
+      "hash": "f7ab9c560f8748cc"
     },
     "cd05t4": {
       "id": "cd05t4",
@@ -113,11 +158,14 @@
       "status": "resolved",
       "title": "Unneccessary computations",
       "body": "Resolved: ValueKind is now computed once per tag in buildMetadata and\npacked into 2 previously-unused bits of the handle (bits 60-61). Tag.\nValueKind() is now a bit-mask extraction with no string scan. See\ncomputeValueKind and the handle layout documented on the Tag struct.\n",
+      "extensions": {
+        "issue": ""
+      },
       "location": {
         "file": "core/reflect/tags_registry.go",
         "startLine": 113,
         "startCol": 3,
-        "endLine": 118,
+        "endLine": 120,
         "endCol": 3
       },
       "hash": "e52924354066b37e"
@@ -137,6 +185,156 @@
       },
       "hash": "9e1042292aaf79cb"
     },
+    "dcd001": {
+      "id": "dcd001",
+      "category": "issue",
+      "status": "open",
+      "title": "Dense decoder doesn't mirror the encoder's docView fast path",
+      "body": "inverted.go's encoder is SBE-class on the populate path: viewDoc captures\nthe document in one Walk (one positions lookup per field), caches slot\npointers per used DataType, and reads values via (*(*[]T)(v.slots[dt]))[idx]\nwith zero map access on the hot path. scanPacketBodyAs + putPacketBody\nthen walk res.byType[dt] — a pre-computed per-DataType field list — so the\nouter loop is a fixed 16-iter type walk and the inner switch is jump-table\npredictable.\n\ndense.go's decodeDenseBody was not built to the same standard. Per field it\ncalls doc.SetBool / doc.SetNull / readFieldPayload, and SetXxx does, in order:\n  1. type check (key.Type() != TypeX) — redundant, decode already dispatched\n  2. positions[int64(key)] lookup\n  3. claimHole(TypeX) — backward scan of d.holes\n  4. write at [idx] (or AppendXxx if no hole)\n  5. positions[int64(key)] = idx\nSo per field decode pays ~2 map ops + 1 hole scan + 1 append, where encode\npays 1 map op (amortized into viewDoc) + 1 array read.\n\nThis is the umbrella for #dcd002-#dcd006. The fix pattern already exists in\ninverted.go: decoder should use doc.Walk to capture slot pointers and\nper-field indices once, pre-size each used type slice from the state map\ncount (mirroring how the encoder sizes from state map counts), and write\ndirectly through slot+idx — one positions write per field, no hole claim,\nno type check, no growth.\n\nExpected: decode-wide64 drops from ~2-4x the encoder's latency to ~1.5-2x,\nand pooled decode hits 0 allocs/op.\n\n@see #dcd002\n@see #dcd003\n@see #dcd004\n",
+      "location": {
+        "file": "core/encoding/anansi/anansi.go",
+        "startLine": 148,
+        "startCol": 3,
+        "endLine": 180,
+        "endCol": 3
+      },
+      "hash": "dad3cf5cee21e868"
+    },
+    "dcd002": {
+      "id": "dcd002",
+      "category": "issue",
+      "status": "open",
+      "title": "decodeDenseStateMap allocates []fieldState; Columnar already shows the fix",
+      "body": "Confirmed by columnar.go inspection: decodeColumnarBlock does NOT allocate\na []fieldState. It reads the packed field-major state column in place via\nstateAtBit(packed, bit), a single array-index + shift + mask. Dense should\ndo the same for its state map — the encoder's putPacketBody writes it with\nthe same bit-shift pattern, so the decoder can read it with the same.\n\nThis is now a local comparison: two decoders in the same package, one reads\nthe state bits in place (Columnar) and one materializes a slice (Dense).\nFollowing Columnar's lead here removes the allocation with no new design.\n\nSame applies to any future state-map-like decoder (e.g. Stream packets if\nthey land): read the bits, don't materialize the slice.\n\n@see #dcd001\n",
+      "location": {
+        "file": "core/encoding/anansi/anansi.go",
+        "startLine": 182,
+        "startCol": 3,
+        "endLine": 197,
+        "endCol": 3
+      },
+      "hash": "7348568717f734a8"
+    },
+    "dcd003": {
+      "id": "dcd003",
+      "category": "issue",
+      "status": "open",
+      "title": "Decoder doesn't pre-size typed slices; AppendXxx grows from cap 8",
+      "body": "DataContainer.initSlice defaults to cap 8. For a fresh (unpooled) container\ndecoding 64 values of the same type, AppendXxx grows 8 -\u003e 16 -\u003e 32 -\u003e 64 -\u003e\n128: ~5 reallocations plus copies per type. This dominates the \"fresh\"\nvariant of BenchmarkDecodeDense/wide64.\n\nThe encoder sizes its output exactly by scanning the state map first\n(inverted.go:scanPacketBodyAs). The decoder has the same information: after\nreading the state map it knows exact counts per DataType (nInt, nFloat,\nnString, ...), so it can pre-size each used slot with slot(dt, nDt) before\nthe value loop. One allocation per used type, zero reallocations.\n\n@see #dcd001\n",
+      "location": {
+        "file": "core/encoding/anansi/anansi.go",
+        "startLine": 199,
+        "startCol": 3,
+        "endLine": 212,
+        "endCol": 3
+      },
+      "hash": "3200214689577cb9"
+    },
+    "dcd004": {
+      "id": "dcd004",
+      "category": "issue",
+      "status": "open",
+      "title": "SetXxx does redundant type check + unnecessary hole scan on decode path",
+      "body": "data_container.go: every SetInt/SetFloat/SetString/... starts with\n    if key.Type() != TypeX { return ErrTypeMismatch }\nand then calls claimHole(TypeX), a backward scan of d.holes for a matching\ntype. On the decode path both are wasted work:\n\n  - The type comes from wf.fd.DataType(); the decoder dispatched on it a few\n    instructions earlier. The check cannot fail on valid input, and on\n    invalid input the decode already produced garbage.\n\n  - doc was either freshly allocated (holes empty) or Clear()'d by the pool\n    (Clear resets holes to [:0]). claimHole scans, finds nothing, returns -1,\n    and AppendXxx runs. Decode pays for a scan that cannot succeed.\n\nThe direct-write path from #dcd001 skips both: the write is typed by\nconstruction and a fresh decode never reuses freed slots. If the decoder\ncan't adopt Walk for some reason, a fallback is a Container API variant\n\"SetFromEmpty\" that skips type check + hole claim for known-typed fills.\n\n@see #dcd001\n",
+      "location": {
+        "file": "core/encoding/anansi/anansi.go",
+        "startLine": 214,
+        "startCol": 3,
+        "endLine": 234,
+        "endCol": 3
+      },
+      "hash": "c4422977bd9f3fce"
+    },
+    "dcd005": {
+      "id": "dcd005",
+      "category": "issue",
+      "status": "open",
+      "title": "Sparse and Batch inherit every Dense issue; confirmed across all decoders",
+      "body": "Inspected sparse.go, batch.go, columnar.go. Status per issue:\n\n  #dcd001 (Walk fast path)  — ALL FOUR decoders miss it. Dense, Sparse,\n                               Batch-Row (via dispatch), Columnar all use\n                               doc.SetXxx per field.\n  #dcd002 ([]fieldState)    — Dense only. Columnar reads bits in place.\n                               Sparse has no state map. Batch inherits\n                               whichever decoder it dispatches to.\n  #dcd003 (no pre-size)     — All four. Sparse too: many present fields\n                               still grows via AppendXxx.\n  #dcd004 (redundant checks)— All four. Every SetXxx pays type check +\n                               hole scan on a fresh/pooled container.\n  #dcd006 (readFieldPayload)— All four call it. Single lever, four wins.\n\nFix pattern: one shared \"fillFromReader\" helper that walks the target\ncontainer once, pre-sizes from field count (sparse) or state-map counts\n(dense / batch-row / batch-columnar), and writes through slot+idx.\nOne helper, four decoders.\n\n@see #dcd001\n@see #dcd006\n",
+      "location": {
+        "file": "core/encoding/anansi/anansi.go",
+        "startLine": 236,
+        "startCol": 3,
+        "endLine": 258,
+        "endCol": 3
+      },
+      "hash": "751fb1f78925fc84"
+    },
+    "dcd006": {
+      "id": "dcd006",
+      "category": "todo",
+      "status": "open",
+      "title": "Verify readFieldPayload isn't re-dispatching per field",
+      "body": "decodeDenseBody iterates res.byType[dt] — the same pre-computed per-DataType\ngrouping the encoder uses — which is correct. But then it calls\nreadFieldPayload per field. If readFieldPayload switches on wf.fd.DataType()\nagain, the grouping's benefit is thrown away: dispatch is paid once per field\ninstead of once per type.\n\nConfirm by reading readFieldPayload's body. If it does switch, inline the\nper-type read into the outer type loop so the dispatch cost is paid once per\ntype (mirroring inverted.go:putValue's structure, where the switch is on\nwf.fd.DataType() but the caller has already grouped by type).\n\n@see #dcd001\n",
+      "location": {
+        "file": "core/encoding/anansi/anansi.go",
+        "startLine": 260,
+        "startCol": 3,
+        "endLine": 273,
+        "endCol": 3
+      },
+      "hash": "531589e7c707e6cf"
+    },
+    "dcd007": {
+      "id": "dcd007",
+      "category": "issue",
+      "status": "open",
+      "title": "readBoolBits allocates []bool per bool block; caller iterates and discards",
+      "body": "dense.go:decodeDenseBody and columnar.go:decodeColumnarBlock both call\nreadBoolBits, which returns a fresh []bool per bool block. The caller then\niterates the slice and calls doc.SetBool on each element, then discards the\nslice. Two costs compound:\n\n  1. The []bool allocation itself (one per Dense bool block; one per bool\n     FIELD per Columnar block — Columnar pays it N times where Dense pays\n     it once).\n  2. The intermediate slice prevents direct writes into the target\n     container's bool slice via Walk.\n\nThe encoder's mirror (putPacketBody's TypeBool branch and\nEncodeBatchColumnar's bool loop) writes bits directly into the output\nbuffer with no intermediate. The decoder should do the same: read bits\nin place and set the target bool value per bit, no []bool in between.\n\n@see #dcd001\n@see #dcd002\n",
+      "location": {
+        "file": "core/encoding/anansi/anansi.go",
+        "startLine": 275,
+        "startCol": 3,
+        "endLine": 294,
+        "endCol": 3
+      },
+      "hash": "14ef00207a60f704"
+    },
+    "dcd008": {
+      "id": "dcd008",
+      "category": "todo",
+      "status": "open",
+      "title": "Batch decode allocates the return []*DataContainer per call",
+      "body": "batch.go:DecodeBatchRows does docs := make([]*container.DataContainer,\nrecordCount) unconditionally — even when the caller will consume and\ndiscard in the same scope. For a 1000-record batch that's 8KB of\npointers per call. Smaller than the per-field issues but constant, and it\nsits on the same hot path.\n\nOptions: (a) accept it — the slice IS the return value, and callers can't\navoid needing the pointers; (b) pool the slice; (c) offer an iterator API\n(DecodeBatchEach(pool, fn)) that avoids the slice entirely for streaming\nconsumers. (c) is the most useful for large batches — the caller often\nwants to process-and-release one record at a time anyway.\n\n@see #dcd005\n",
+      "location": {
+        "file": "core/encoding/anansi/anansi.go",
+        "startLine": 296,
+        "startCol": 3,
+        "endLine": 310,
+        "endCol": 3
+      },
+      "hash": "0af32628b1cca4ad"
+    },
+    "dcd009": {
+      "id": "dcd009",
+      "category": "todo",
+      "status": "open",
+      "title": "Zero-copy string path copies the entire remaining body unconditionally",
+      "body": "anansi.go:DecodeAnansiInto and batch.go:DecodeBatchRows both do:\n\n    buf := doc.AcquireBacking(body.remaining())\n    copy(buf, body.data[body.pos:])\n\nThis is correct — the caller's wire buffer must not be retained, so a\nsnapshot is needed if any string aliases it. But the copy happens even\nwhen the schema has NO string fields, in which case there's nothing to\nalias and the copy is pure waste. For a batch of integer-only records the\nentire body is copied for no reason.\n\nPrecomputed fix: res knows whether any field of the schema is string-typed\n(or array-of-string). If not, skip the snapshot. Cheap to check at\nresourcesFor time, stored on the slotCodec.\n\n@see #dcd005\n",
+      "location": {
+        "file": "core/encoding/anansi/anansi.go",
+        "startLine": 312,
+        "startCol": 3,
+        "endLine": 329,
+        "endCol": 3
+      },
+      "hash": "c805f383ebadb25e"
+    },
+    "dcd010": {
+      "id": "dcd010",
+      "category": "issue",
+      "status": "open",
+      "title": "query engine's post-processing path forces []map[string]any, defeating DirectScan",
+      "body": "engine.go:Query does `d.ToMap()` on every result document before calling\nrunPostProcessing, and AggregateFunction is typed as\nfunc(records []map[string]any, field string) (any, error). Combined with\nInferShape counting aggregations and computed projections as ComputedFields,\nthis forces the map-shaped path for exactly the workloads where the\ncontainer's typed access matters most:\n\n  - sales analytics (SUM/AVG/GROUP BY aggregations)\n  - dynamic pricing (computed fields like basePrice * (1 + tax) * discount)\n\nBoth are the primary workloads the ERP analytics story depends on.\n\nFix, in impact order:\n  1. Aggregation functions accept []*container.DataContainer (or a columnar\n     view) and a DataContainerKey, reading typed slices directly. No map.\n  2. Computed field evaluation (FieldReference, FunctionCall, CaseExpression)\n     resolves keys to typed container access instead of map[string]any.\n  3. Post-processing Filter/Sort use container.Walk instead of ToMap().\n\nInferShape stays accurate afterward — DirectScan() returns false only for\noperations that genuinely need map-shaped access (heterogeneous joins).\nAggregations and computed fields remain in the fast path.\n\nComposes with #dcd001–#dcd006: the codec fixes the ends of the pipeline,\nthis fixes the middle. Both are required for wire-to-result throughput.\n",
+      "location": {
+        "file": "core/query/engine.go",
+        "startLine": 345,
+        "startCol": 3,
+        "endLine": 371,
+        "endCol": 3
+      },
+      "hash": "cb41381666653bf9"
+    },
     "dxwlvi": {
       "id": "dxwlvi",
       "category": "todo",
@@ -145,12 +343,48 @@
       "body": "In a very complex, dynamic application where module use flactuates at\nruntime, a dynamic cache may be more performant memory wise.\n",
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 244,
+        "startLine": 248,
         "startCol": 3,
-        "endLine": 247,
+        "endLine": 251,
         "endCol": 3
       },
       "hash": "110fad3967e6a4d9"
+    },
+    "encoder-array-object-recursion": {
+      "id": "encoder-array-object-recursion",
+      "category": "issue",
+      "status": "resolved",
+      "priority": "critical",
+      "tags": [
+        "encoder",
+        "arrays"
+      ],
+      "title": "emitObject recursed forever encoding array\u003cobject\u003e children resolved through the root address map",
+      "body": "RESOLVED 2026-08-23: writeChildren now emits elements via writeObjectAt,\nwhich resolves entry names against the CHILD schema slot (bare local field\nnames) instead of the root address reverse-map. Regression tests in\nnotif_matrix_test.go (TestDecode_GeneratedNotifSchema/d-actions,\nTestEncode_ArrayObjectElements) pin the shape.\n\nThe bug: array-element containers are keyed by descriptors of the child\nschema slot, but nameFor resolved their DataPoint IDs through\nPathNameForAddress, which returned full ROOT paths (e.g.\n\"payload.actions.label\"). Under writeChildren's element prefix (\"actions\")\nthose names never strip, so emitObject kept recursing on\njoinPrefix(prefix,\"payload\") — unbounded prefix growth, one '{' and a sort\nper level, RSS to OOM within seconds. Triggered by any document containing\na populated array\u003cobject\u003e field reaching this encoder (e.g. metadata\nchecksum finalization inside DocumentPool.FromJSON). Known limitation of\nthe slot-local naming: object-typed MEMBERS inside array children emit\nflattened rather than nested; no crash, fix upstream when needed. Elements are containers keyed by the CHILD schema slot's\nfields, so each element is emitted via writeObjectAt against that slot —\nresolving names slot-locally. Resolving them through the root address map\nwould return full root paths (e.g. \"payload.actions.label\") that never match\nthe element prefix, sending emitObject into unbounded prefix-growing\nrecursion.\n",
+      "assignee": "opencode",
+      "location": {
+        "file": "core/encoding/json/encoder.go",
+        "startLine": 388,
+        "startCol": 3,
+        "endLine": 415,
+        "endCol": 3
+      },
+      "hash": "26b5d5dc5055449a"
+    },
+    "fe45qi": {
+      "id": "fe45qi",
+      "category": "issue",
+      "status": "open",
+      "title": "Project doesn't propagate backing",
+      "body": "copyDataContainer correctly does:\n\nif b := src.Backing(); b != nil {\n    dst.OwnBacking(b)\n}\nprojectDataContainer does not. It copies string values via copyField →\nSetString(key, v), where v aliases src.backing, but the projected\ndocument never holds a reference to that buffer. If the source is pooled\nand Clear drops an oversized backing (\u003e 1 MiB), the projected strings\ndangle.\n\nThis is narrow — it requires zero-copy decode + oversized source +\nprojection outliving the source — but it's exactly the codec's likely\npath for selective field materialization (Sparse-style partial decode).\nFix: mirror the copyDataContainer prologue in projectDataContainer.\n",
+      "location": {
+        "file": "core/data/container/collection.go",
+        "startLine": 115,
+        "startCol": 3,
+        "endLine": 131,
+        "endCol": 3
+      },
+      "hash": "25c5f8508a2a4534"
     },
     "g23h8y": {
       "id": "g23h8y",
@@ -158,44 +392,81 @@
       "status": "resolved",
       "title": "Inefficient access",
       "body": "Resolved as \"already optimal\": Tags yields every field/tag pair by\ndefinition, so visiting each one once is O(n) in the size of the output,\nwhich is the best any implementation can do here -- there is no name or\nkey to look up that could turn this into a sub-linear operation. The\nactual per-call overhead #g23h8y was pointing at (repeatedly re-deriving\nfield/tag structure) is what #5nhvz2 and #0ar5g0 address for the\nsingle-field lookup paths; this function was never doing that redundant\nwork in the first place, since it already reads directly from the\ntype's cached structMetadata built once by buildMetadata.\n",
+      "extensions": {
+        "issue": ""
+      },
       "location": {
         "file": "core/reflect/tags_registry.go",
-        "startLine": 542,
+        "startLine": 550,
         "startCol": 3,
-        "endLine": 552,
+        "endLine": 562,
         "endCol": 3
       },
       "hash": "b240949f136fd871"
+    },
+    "hbivg7": {
+      "id": "hbivg7",
+      "category": "issue",
+      "status": "open",
+      "title": "Wasted Storage",
+      "body": "holes []DataContainerKey — still a real inefficiency, scoped narrowly.\nclaimHole reads only .Type() and .DataPoint().ID(). The descriptor half\nis dead weight in the current hole mechanism. That's not a critique of\nthe 64-bit key design — it's a local observation that if holes are never\nmatched by descriptor (and today they aren't), []DataPoint would halve\nthe slice. If future code wants \"same-descriptor hole claiming\" for\nconstraint-stable reuse, the descriptor matters; if not, it's carrying\nbytes no one reads.\n",
+      "location": {
+        "file": "core/data/container/data_container.go",
+        "startLine": 65,
+        "startCol": 3,
+        "endLine": 74,
+        "endCol": 3
+      },
+      "hash": "5b6210aff4c887d9"
+    },
+    "hol8mc": {
+      "id": "hol8mc",
+      "category": "todo",
+      "status": "open",
+      "title": "Implement struct serialization/deserialization",
+      "body": "Because schemas can be derived from tagged structs, I would think that\nit would be prudent to implement an anansi codec and register it with\ncodecs. For example\n\ntype AnansiCodec interface {\n    Marshal(v any) ([]byte, error) // v is a struct with anansi tags\n    Unmarshal(data []byte, v any) error // data is a an anansi frame\n    Name() string\n}\nthis native loop is not easily discoverable:\npool := document.NewPool(cs, nil)  // check NewPool signature\ndoc := pool.FromStruct(msg)        // struct → container\nwire := doc.ToAnansi(0)            // container → anansi binary\n\ndoc2 := pool.FromAnansi(wire)      // anansi binary → container (or pool.New + UnmarshalAnansi)\ndoc2.BindTo(\u0026msg)                  // container → struct\n",
+      "location": {
+        "file": "core/encoding/anansi/anansi.go",
+        "startLine": 42,
+        "startCol": 3,
+        "endLine": 59,
+        "endCol": 3
+      },
+      "hash": "54635d9c94c392c6"
     },
     "index-fields-dotted-path": {
       "id": "index-fields-dotted-path",
       "category": "issue",
       "status": "resolved",
-      "priority": "P2",
+      "priority": "medium",
       "title": "index_fields_reference_valid checks top-level names only, rejecting valid dotted index paths",
       "location": {
         "file": "core/schema/meta/predicates.go",
         "startLine": 1601,
         "startCol": 3,
-        "endLine": 1601,
+        "endLine": 1603,
         "endCol": 3
       },
-      "hash": "0f914c8a387ef8a3"
+      "hash": "0ae35ea01d9de448"
     },
     "join-projection-ignored": {
       "id": "join-projection-ignored",
       "category": "status",
       "status": "resolved",
+      "priority": "high",
       "title": "Join-level WithProjection is silently ignored",
       "body": "had no explicit projection, the default fallback (this block)\nselected ALL columns from ALL schemas, never consulting\nJoinConfiguration.Projection.\n\nFixed: SQLiteSelectProjection now carries q.Joins and the fallback\napplies per-join restrictions via joinColumnRestrictions\n(include/exclude/alias honored; joins without a projection keep\nselect-all). Covered by TestSelectJoin_JoinLevelProjection* and\nTestJoin_JoinLevelProjection_LimitsColumns.\n",
+      "extensions": {
+        "issue": ""
+      },
       "location": {
         "file": "sqlite/query/select.go",
         "startLine": 214,
         "startCol": 3,
-        "endLine": 224,
+        "endLine": 227,
         "endCol": 3
       },
-      "hash": "5a1712a025bace25"
+      "hash": "418f03f61c75051d"
     },
     "jq3c65": {
       "id": "jq3c65",
@@ -216,38 +487,42 @@
       "id": "metadata-ambiguous-on-joins",
       "category": "status",
       "status": "resolved",
+      "priority": "high",
       "title": "ensureMetadataProjection injects unqualified _metadata_",
       "body": "include, which SQLite rejects with \"ambiguous column name\"\nwhen joins put _metadata_ on multiple tables.\n\nFixed via option (b) at the SQL layer instead of here:\nsqliteFactory.resolveInCurrentScope now qualifies any bare\nfield present on multiple tables with the primary target\n(see primaryTarget in sqlite/query/factory.go). This fixes\nthe injection path and every other bare colliding reference\n(filters, sorts) uniformly. Covered by\nTestSelectJoin_MetadataDisambiguated and\nTestJoin_WithProjection_NoAmbiguousMetadata.\n",
+      "extensions": {
+        "issue": ""
+      },
       "location": {
         "file": "core/persistence/collection/managed.go",
         "startLine": 243,
         "startCol": 3,
-        "endLine": 255,
+        "endLine": 258,
         "endCol": 3
       },
-      "hash": "d158f1119714c34f"
+      "hash": "97899239adeeccbe"
     },
     "migration-id-sort": {
       "id": "migration-id-sort",
       "category": "issue",
       "status": "resolved",
-      "priority": "P2",
+      "priority": "medium",
       "title": "Migration IDs ordered with localeCompare, not numeric order",
       "body": "\nMigration IDs are Date.now().toString() (set in add()). Two sites used\nlocaleCompare: this method's sort and rollbackToVersion's (now\ngetRollbackMigrations). localeCompare is locale-aware string\ncollation, which is correct only while every ID is a same-length\n13-digit timestamp. Mixed-length or externally-supplied IDs order\nwrongly (\"999\" \u003e \"1000\") and collation varies by locale. Fix by\nsorting with a numeric comparator (e.g. Number(b.id) - Number(a.id))\nwhen IDs are timestamps, or by issuing sort-safe IDs in add().\nNote: schemaVersion sorting/filtering in this file has the same\nlexicographic flaw and is being replaced by the core/common/version.go\nport (src/version.ts) — that port does not cover migration-ID ordering;\ncompareMigrationIds handles it here.\n",
       "location": {
         "file": "packages/anansi/src/migration/engine.ts",
-        "startLine": 580,
+        "startLine": 554,
         "startCol": 3,
-        "endLine": 594,
+        "endLine": 570,
         "endCol": 3
       },
-      "hash": "a741ee9079231ea4"
+      "hash": "ec8b3cf59a5993d4"
     },
     "physical-name-truncation-collide-496cab49": {
       "id": "physical-name-truncation-collide-496cab49",
       "category": "issue",
       "status": "resolved",
-      "priority": "P1",
+      "priority": "high",
       "tags": [
         "persistence",
         "views",
@@ -260,10 +535,10 @@
         "file": "core/persistence/registry/utils.go",
         "startLine": 42,
         "startCol": 3,
-        "endLine": 51,
+        "endLine": 54,
         "endCol": 3
       },
-      "hash": "104716dd64ca6041"
+      "hash": "eb29ea765e3ddee5"
     },
     "qpt45v": {
       "id": "qpt45v",
@@ -284,16 +559,57 @@
       "id": "sanitize-type-blindness",
       "category": "issue",
       "status": "open",
+      "priority": "high",
+      "tags": [
+        "sanitizer",
+        "types"
+      ],
       "title": "applyPolicy is type-blind and cannot mask non-string fields",
       "body": "applyPolicy/hashValue stringify every value (fmt.Sprintf %v), so a policy\nmatch on a non-string slot (array/object/number) produces a string. The\ncontainer pipeline (core/document/sanitize.go sanitizeContainerLeaves)\ncorrectly refuses to write a masked string into a non-string slot and\nreturns \"cannot store sanitized value ... in \u003ctype\u003e slot\", which fails\nSanitize() for the WHOLE document. Real-world fallout: hestia's global\n(?i)auth pattern matched the array field `authors` of its dynamic `notes`\ncollection, so every document failed sanitization and the query API\nsilently returned data:[] with correct pagination counts (the HTTP layer\ndrops documents whose Sanitize errors).\n\nDecision (2026-08-22): fix belongs at the app config level for now (keep\nmasking rules targeted/collection-scoped so patterns only ever hit string\nfields); no library change shipped. If this is ever fixed here, likely\nshapes are: element-wise masking for arrays of strings, skipping\nnon-maskable slots with a warning, or schema-type-aware policies threaded\nthrough FieldMaskConfig.\n",
       "location": {
         "file": "core/sanitize/sanitizer.go",
         "startLine": 116,
         "startCol": 3,
-        "endLine": 134,
+        "endLine": 137,
         "endCol": 3
       },
-      "hash": "d4520fa8abf5db8f"
+      "hash": "9bc21bd40411324a"
+    },
+    "smsm4t": {
+      "id": "smsm4t",
+      "category": "issue",
+      "status": "open",
+      "title": "FieldDescriptorFromDataPoint is exported and cannot round-trip.",
+      "body": "FieldDescriptorFromDataPoint is exported and cannot round-trip.\nIt rebuilds bits 0–4 as zero — Recursive, Nullable, Terminal, Unique, Deprecated are lost.\nIf any caller assumes round-trip, they silently get wrong flags.\nThree options:\n1. Document the lossiness and rename to something like\nLossyFieldDescriptorFromDataPoint (or make it package-private).\n2. Keep the lossless path (DataContainerKey.Descriptor()) as the only public way\nto recover a descriptor, and keep this function internal to the side-table\nmachinery where the loss is intentional.\n3. Evaluate it's actual usage and remove it if possible. The only point of\nconverting a field descriptor to a datapoint in the first place is to read\nmetadata in a compiled schema\nRight now the function sits between those two worlds without saying which it's in.\n",
+      "location": {
+        "file": "core/schema/definition/compiled.go",
+        "startLine": 184,
+        "startCol": 3,
+        "endLine": 198,
+        "endCol": 3
+      },
+      "hash": "39473d13401d20f6"
+    },
+    "tx-watcher-goroutine-leak": {
+      "id": "tx-watcher-goroutine-leak",
+      "category": "issue",
+      "status": "resolved",
+      "priority": "critical",
+      "tags": [
+        "transactions",
+        "goroutines"
+      ],
+      "title": "cancellation watcher leaked one goroutine per transaction on uncancelable contexts",
+      "body": "RESOLVED 2026-08-23: the watcher is now only spawned when ctx.Done() != nil;\nregression tests in interactor_test.go pin both directions (no watcher for\ncontext.Background(), rollback-on-cancel still works).\n\nThe watcher goroutine used to be spawned unconditionally and blocked on\n\u003c-ctx.Done(). For contexts without a Done channel — context.Background(),\nscheduler/boot jobs, fasthttp-derived request contexts — Done() returns nil,\nso the receive parked forever: every StartTransaction call (i.e. every\ntop-level write through persistence/transaction.Execute) permanently leaked\none goroutine. Observed from hestia: +1 goroutine per notification create /\nsettings write; ~200 writes → 200 parked goroutines holding stacks (RSS\ngrowth) until process exit.\n",
+      "assignee": "opencode",
+      "location": {
+        "file": "core/query/native/interactor.go",
+        "startLine": 249,
+        "startCol": 3,
+        "endLine": 266,
+        "endCol": 3
+      },
+      "hash": "6c232741ca2fafe9"
     },
     "xsixg9": {
       "id": "xsixg9",
@@ -478,16 +794,25 @@
       "hash": "9e65c4eeeedef6d4"
     },
     "core/data/container/collection.go": {
-      "hash": "3acba19eb3c6dda1"
+      "hash": "fad923339cf34369",
+      "noteIds": [
+        "fe45qi"
+      ]
     },
     "core/data/container/data_container.go": {
-      "hash": "8c03c16ddb5fedb6"
+      "hash": "f52f9658546adc7c",
+      "noteIds": [
+        "hbivg7"
+      ]
     },
     "core/data/container/data_point.go": {
       "hash": "4f1aba7741896fdd"
     },
     "core/data/container/pool.go": {
-      "hash": "b003eedb66f775b6"
+      "hash": "69723c5c8c819c9b",
+      "noteIds": [
+        "ah4hqh"
+      ]
     },
     "core/data/convert.go": {
       "hash": "e115a0ea3a2957db"
@@ -685,13 +1010,25 @@
       "hash": "b03ec9bd0342bcf8"
     },
     "core/encoding/anansi/anansi.go": {
-      "hash": "8597325df7d41649"
+      "hash": "863128f638e72e4f",
+      "noteIds": [
+        "dcd001",
+        "dcd002",
+        "dcd003",
+        "dcd004",
+        "dcd005",
+        "dcd006",
+        "dcd007",
+        "dcd008",
+        "dcd009",
+        "hol8mc"
+      ]
     },
     "core/encoding/anansi/anansi_test.go": {
       "hash": "7e5b491622d1c8a2"
     },
     "core/encoding/anansi/batch.go": {
-      "hash": "93a5beeeae2c21a7"
+      "hash": "e16d8085e8366fa9"
     },
     "core/encoding/anansi/bool_test.go": {
       "hash": "1c5bb731453b031f"
@@ -705,6 +1042,9 @@
     "core/encoding/anansi/columnar_test.go": {
       "hash": "86c08aa32c12c4bd"
     },
+    "core/encoding/anansi/count_guard_test.go": {
+      "hash": "8e150797deb82346"
+    },
     "core/encoding/anansi/crypto_test.go": {
       "hash": "e7e5000ab06ceda8"
     },
@@ -712,7 +1052,7 @@
       "hash": "bf157a32e951eae7"
     },
     "core/encoding/anansi/dispatch.go": {
-      "hash": "d2c5bdfc51c777e6"
+      "hash": "5f144c79d6f95432"
     },
     "core/encoding/anansi/erp_bench_test.go": {
       "hash": "137b4263eab80492"
@@ -748,10 +1088,10 @@
       "hash": "f9964782aaee563d"
     },
     "core/encoding/anansi/value.go": {
-      "hash": "21d9fa501a37c322"
+      "hash": "62c62a9a09c9f0aa"
     },
     "core/encoding/anansi/varint.go": {
-      "hash": "398313825a73b5b3"
+      "hash": "68d4771e7d1e7a39"
     },
     "core/encoding/anansi/varint_test.go": {
       "hash": "e40862f798e2420e"
@@ -769,7 +1109,10 @@
       "hash": "62b3c2d95ac48f5d"
     },
     "core/encoding/json/encoder.go": {
-      "hash": "3d059dd6148745b4"
+      "hash": "8fbb836ea5979ba6",
+      "noteIds": [
+        "encoder-array-object-recursion"
+      ]
     },
     "core/encoding/json/encoder_bench_test.go": {
       "hash": "7b51b9f8814bf967"
@@ -850,13 +1193,16 @@
       "hash": "734ba5bb76d5b1ac"
     },
     "core/persistence/collection/managed.go": {
-      "hash": "694085567428cb7e",
+      "hash": "6574fa3397bee177",
       "noteIds": [
         "metadata-ambiguous-on-joins"
       ]
     },
     "core/persistence/collection/model_collection.go": {
-      "hash": "e7628df9ffb98d21"
+      "hash": "3269e0e21e3cb75c",
+      "noteIds": [
+        "2ya2hp"
+      ]
     },
     "core/persistence/collection/polyfill.go": {
       "hash": "c3434752816edd3e"
@@ -916,7 +1262,7 @@
       "hash": "fd0bc8ba778bdc8d"
     },
     "core/persistence/registry/utils.go": {
-      "hash": "e1dbdfeb6e2e11ba",
+      "hash": "942de5f75a9b97ac",
       "noteIds": [
         "physical-name-truncation-collide-496cab49"
       ]
@@ -943,7 +1289,10 @@
       "hash": "d4f5937fc98a33ca"
     },
     "core/query/engine.go": {
-      "hash": "32e04e8b0870f82f"
+      "hash": "400d4b24a3241caf",
+      "noteIds": [
+        "dcd010"
+      ]
     },
     "core/query/errors.go": {
       "hash": "f5a1361a9d4a04b5"
@@ -973,10 +1322,13 @@
       "hash": "9dfe3317b51c2d2b"
     },
     "core/query/native/interactor.go": {
-      "hash": "7b28a3ebbb79b742"
+      "hash": "af5934e12ba11c13",
+      "noteIds": [
+        "tx-watcher-goroutine-leak"
+      ]
     },
     "core/query/native/interactor_test.go": {
-      "hash": "4f9efe26310711f9"
+      "hash": "c887d9f7362356dd"
     },
     "core/query/native/types.go": {
       "hash": "ac7636ca5b7906c1"
@@ -1006,7 +1358,7 @@
       "hash": "a4ed5cd4b10360bc"
     },
     "core/reflect/field_tag_map.go": {
-      "hash": "49ad555bc96f711f",
+      "hash": "cd8e862c3867bbe3",
       "noteIds": [
         "397ju0"
       ]
@@ -1015,7 +1367,7 @@
       "hash": "01e13f2543d4d5ef"
     },
     "core/reflect/tags_registry.go": {
-      "hash": "5128a859aae0efc6",
+      "hash": "bd91ec85c5994e24",
       "noteIds": [
         "0ar5g0",
         "1k51l3",
@@ -1045,7 +1397,7 @@
       "hash": "842333cb5a03966e"
     },
     "core/sanitize/sanitizer.go": {
-      "hash": "79fac3a1cd6fbd44",
+      "hash": "78461a14548ef00d",
       "noteIds": [
         "sanitize-type-blindness"
       ]
@@ -1060,10 +1412,13 @@
       "hash": "735bb2d8e1f1e0ba"
     },
     "core/schema/definition/compiled.go": {
-      "hash": "ca4822fa2a9cb8cd"
+      "hash": "ef237cc40312a5b0",
+      "noteIds": [
+        "smsm4t"
+      ]
     },
     "core/schema/definition/compiled_fuzz_test.go": {
-      "hash": "20bb997a242ca300"
+      "hash": "4f857a18c4a72123"
     },
     "core/schema/definition/constraints.go": {
       "hash": "cf850b63ffb9baa3"
@@ -1213,7 +1568,7 @@
       "hash": "5295d04856b7506b"
     },
     "core/schema/meta/predicates.go": {
-      "hash": "494fc6c087ce6ece",
+      "hash": "7130f914e9d00955",
       "noteIds": [
         "index-fields-dotted-path"
       ]
@@ -1391,31 +1746,31 @@
       "hash": "4a9c9b4fe9f8e4a8"
     },
     "packages/anansi/dist/index.cjs": {
-      "hash": "828b78ddfc426242"
+      "hash": "4e0d76b9ac804139"
     },
     "packages/anansi/dist/index.mjs": {
-      "hash": "74e962d0608fb659"
+      "hash": "4b61c86ab0c55dcf"
     },
     "packages/anansi/src/codec.ts": {
       "hash": "26f71563fbd29f1b"
     },
+    "packages/anansi/src/errors.ts": {
+      "hash": "8360aa620cc002a4"
+    },
     "packages/anansi/src/index.ts": {
-      "hash": "baa913c1d84b21df"
+      "hash": "6cc71a3019a569a3"
     },
     "packages/anansi/src/migration/engine.ts": {
-      "hash": "2a557446253dd481",
+      "hash": "7442538ea555ddbc",
       "noteIds": [
         "migration-id-sort"
       ]
     },
     "packages/anansi/src/migration/migration.ts": {
-      "hash": "3bef19c67c3a5b7f"
-    },
-    "packages/anansi/src/migration/version.ts": {
-      "hash": "d3626cb156adf61d"
+      "hash": "333d0a7c5adcdf09"
     },
     "packages/anansi/src/schema/compile.ts": {
-      "hash": "6e4c45c22cb2134a"
+      "hash": "e6e793db5718f7c0"
     },
     "packages/anansi/src/schema/dt.ts": {
       "hash": "f23e475a9f1195ff"
@@ -1424,76 +1779,85 @@
       "hash": "026171cfeb9e28ae"
     },
     "packages/anansi/src/schema/link.ts": {
-      "hash": "a00ffd91bb74ec42"
+      "hash": "0d06f05f02a80f88"
     },
     "packages/anansi/src/schema/types.ts": {
-      "hash": "9324fdf1f08944f1"
+      "hash": "10ab9fc308f8c868"
+    },
+    "packages/anansi/src/schema/util.ts": {
+      "hash": "d55b02a1ed989036"
     },
     "packages/anansi/src/utils.ts": {
       "hash": "7d4bf6f4d1fe2424"
     },
     "packages/anansi/src/validation/graph.ts": {
-      "hash": "e63eb72be36ee71a"
+      "hash": "514c1ac62af5061c"
     },
     "packages/anansi/src/validation/index.ts": {
       "hash": "a108b3bc86e3e3da"
     },
     "packages/anansi/src/validation/nodes.ts": {
-      "hash": "33c6e35f14151207"
+      "hash": "2233f433554be632"
     },
     "packages/anansi/src/validation/predicates.ts": {
-      "hash": "4e4704b8c6bb8203"
+      "hash": "785553b1f51bd874"
     },
     "packages/anansi/src/validation/schema-validator.ts": {
-      "hash": "039d14dc795b16de"
+      "hash": "7c5d20018ab2b6a7"
     },
     "packages/anansi/src/validation/standard-schema.ts": {
-      "hash": "6a58875859ccaca2"
+      "hash": "adc244d92637ef52"
     },
     "packages/anansi/src/validation/utils.ts": {
       "hash": "ff623339ea55ced9"
     },
     "packages/anansi/src/validation/validator-types.ts": {
-      "hash": "f4440f489ee10bf1"
+      "hash": "6f5d2cd60f5898e3"
     },
     "packages/anansi/src/validation/validator.ts": {
-      "hash": "c46c71dc71c523da"
+      "hash": "86a5de91e30f1e19"
     },
     "packages/anansi/src/wire/packet.ts": {
-      "hash": "b66f3b5817bfa01f"
+      "hash": "1cdc53aee2ee2008"
     },
     "packages/anansi/src/wire/transforms.ts": {
-      "hash": "a26c63c2c3e1a8c4"
+      "hash": "55dbc3a751166dd5"
     },
     "packages/anansi/src/wire/values.ts": {
-      "hash": "385ebca1a7e9e10f"
+      "hash": "eaf3d52e6d92e92c"
     },
     "packages/anansi/src/wire/varint.ts": {
-      "hash": "909555be1927f8ab"
+      "hash": "79077dadcb891358"
     },
     "packages/anansi/test/codec.test.ts": {
       "hash": "df7f5e84014b78de"
+    },
+    "packages/anansi/test/errors.test.ts": {
+      "hash": "7fa131972a48dd29"
     },
     "packages/anansi/test/helpers.ts": {
       "hash": "4c30b6c66ed09ac6"
     },
     "packages/anansi/test/migration/engine.test.ts": {
-      "hash": "e82ea3d321f31c21"
+      "hash": "46b445a60916beb7"
     },
     "packages/anansi/test/migration/migration.test.ts": {
       "hash": "aeab82d77d933b56"
     },
     "packages/anansi/test/migration/version.test.ts": {
-      "hash": "d461c9f6d806c219"
+      "hash": "593ef8ea9bd02d5f"
     },
     "packages/anansi/test/public-exports.test.ts": {
-      "hash": "4881a00396ee828e"
+      "hash": "677ec1da99c969ea"
     },
     "packages/anansi/test/schema/compile.test.ts": {
       "hash": "e6571c5d4b27e15f"
     },
     "packages/anansi/test/schema/parity.test.ts": {
       "hash": "58e5b0342d4a0217"
+    },
+    "packages/anansi/test/schema/util.test.ts": {
+      "hash": "104633f512a4b789"
     },
     "packages/anansi/test/utils.test.ts": {
       "hash": "56900c0281843999"
@@ -1502,7 +1866,7 @@
       "hash": "7d378c7564641b13"
     },
     "packages/anansi/test/validation/validation.test.ts": {
-      "hash": "62326e2749fd6353"
+      "hash": "9d570d4e52d17d3b"
     },
     "packages/anansi/test/wire/golden.test.ts": {
       "hash": "5fdbfe035cebe71e"
@@ -1586,7 +1950,7 @@
       "hash": "2375f167a2916180"
     },
     "sqlite/query/select.go": {
-      "hash": "05987056acd61a72",
+      "hash": "b7beb1e5d6775519",
       "noteIds": [
         "join-projection-ignored"
       ]

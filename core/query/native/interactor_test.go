@@ -4,6 +4,7 @@ import (
 	"context"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/asaidimu/go-anansi/v8/core/document"
 	"github.com/asaidimu/go-anansi/v8/core/query"
@@ -99,11 +100,15 @@ func TestStartTransactionWatcherRollsBackCancelableContext(t *testing.T) {
 
 func waitFor(t *testing.T, cond func() bool) {
 	t.Helper()
-	for i := 0; i < 200; i++ {
+	// Wall-clock bounded: a fixed runtime.Gosched budget (200 iterations)
+	// expires before the cancellation watcher gets scheduled when the full
+	// test suite saturates the CPUs, failing the test spuriously.
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
 		if cond() {
 			return
 		}
-		runtime.Gosched()
+		time.Sleep(time.Millisecond)
 	}
 	t.Fatal("condition not met")
 }

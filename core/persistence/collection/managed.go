@@ -241,7 +241,10 @@ func (c *managedCollection) Read(ctx context.Context, q *query.Query) (*base.Rea
         // Skip ensureMetadataProjection for materialized views to avoid
         // referencing non-existent columns.
         if !c.schemaProvider.IsMaterialized() {
-                // @note #metadata-ambiguous-on-joins status resolved issue priority=P1 : ensureMetadataProjection injects unqualified _metadata_
+                // @note #metadata-ambiguous-on-joins status : ensureMetadataProjection injects unqualified _metadata_
+                // @status resolved
+                // @issue
+                // @priority high
                 // ensureMetadataProjection injected an unqualified _metadata_
                 // include, which SQLite rejects with "ambiguous column name"
                 // when joins put _metadata_ on multiple tables.

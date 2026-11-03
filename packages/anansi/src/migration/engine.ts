@@ -552,7 +552,9 @@ export class MigrationEngine {
       .sort((a, b) => compareMigrationIds(b.id, a.id));
   }
 
-  // @note #migration-id-sort issue resolved P2 : Migration IDs ordered with localeCompare, not numeric order
+  // @note #migration-id-sort issue : Migration IDs ordered with localeCompare, not numeric order
+  // @status resolved
+  // @priority medium
   // Fixed: both ordering sites now use compareMigrationIds (exported, unit-tested in test/engine.test.ts) — numeric when both IDs are all digits, code-unit comparison otherwise; no locale dependence and mixed/external IDs sort correctly.
   //
   // Migration IDs are Date.now().toString() (set in add()). Two sites used

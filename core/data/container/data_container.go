@@ -62,7 +62,19 @@ func (k DataContainerKey) IsNull() bool {
 type DataContainer struct {
 	data      [16]unsafe.Pointer
 	positions map[int64]int32
-	holes     []DataContainerKey
+
+	// @note #hbivg7 issue : Wasted Storage
+	//
+	// holes []DataContainerKey — still a real inefficiency, scoped narrowly.
+	// claimHole reads only .Type() and .DataPoint().ID(). The descriptor half
+	// is dead weight in the current hole mechanism. That's not a critique of
+	// the 64-bit key design — it's a local observation that if holes are never
+	// matched by descriptor (and today they aren't), []DataPoint would halve
+	// the slice. If future code wants "same-descriptor hole claiming" for
+	// constraint-stable reuse, the descriptor matters; if not, it's carrying
+	// bytes no one reads.
+
+	holes []DataContainerKey
 
 	// backing is a private, immutable-after-fill byte buffer that decoded
 	// string values alias (zero-copy decode). Buffers are pooled implicitly:

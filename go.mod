@@ -1,6 +1,6 @@
 module github.com/asaidimu/go-anansi/v8
 
-go 1.27rc1
+go 1.27
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
