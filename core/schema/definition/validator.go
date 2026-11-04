@@ -2688,7 +2688,10 @@ func NewDocumentValidator(sc *Schema, fmap PredicateMap) (*DocumentValidator, er
 	return NewDocumentValidatorWithConfig(sc, fmap, DefaultValidationConfig())
 }
 
-func NewDocumentValidatorWithConfig(sc *Schema, fmap PredicateMap, config ValidationConfig) (*DocumentValidator, error) {
+// compileValidationGraph builds the standard ValidationGraph for a source
+// schema: compile to the resolved IR, then emit nodes. Shared by
+// NewDocumentValidatorWithConfig and the ContainerValidator's map lane.
+func compileValidationGraph(sc *Schema) (*ValidationGraph, error) {
 	// Compile the schema into its resolved IR.
 	rs, err := Compile(sc)
 	if err != nil {
@@ -2707,6 +2710,14 @@ func NewDocumentValidatorWithConfig(sc *Schema, fmap PredicateMap, config Valida
 	}
 
 	if err := graph.finalize(); err != nil {
+		return nil, err
+	}
+	return graph, nil
+}
+
+func NewDocumentValidatorWithConfig(sc *Schema, fmap PredicateMap, config ValidationConfig) (*DocumentValidator, error) {
+	graph, err := compileValidationGraph(sc)
+	if err != nil {
 		return nil, err
 	}
 
