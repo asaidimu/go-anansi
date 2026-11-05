@@ -488,6 +488,10 @@ func TestUnmarshalParity(t *testing.T) {
 		{"strings/escaped", `{"id":"a\"b\\c\nd\ne<>&"}`, &Order{}},
 		{"strings/unicode", `{"id":"héllo \u2028 \U0001F600"}`, &Order{}},
 		{"strings/surrogates", `{"id":"😀"}`, &Order{}},
+		{"strings/unpaired-high", `{"id":"\ud800"}`, &Order{}},
+		{"strings/unpaired-low", `{"id":"\udc00x"}`, &Order{}},
+		{"strings/unpaired-pair", `{"id":"\ud800\ud800"}`, &Order{}},
+		{"strings/escaped-keys", `{"\u0069d":"a","pri\u006frity":2}`, &Order{}},
 		{"numbers/floats", `{"total":3.5,"unit":0}`, &struct {
 			Total float64 `anansi:"total"`
 			Unit  float64 `anansi:"unit"`
@@ -521,6 +525,11 @@ func TestUnmarshalParityErrors(t *testing.T) {
 		{"int/object", `{"priority":{}}`, &Order{}},
 		{"int/array", `{"priority":[]}`, &Order{}},
 		{"float/string", `{"total":"3.5"}`, &Order{}},
+		{"float/trailing-dot", `{"total":1.}`, &Order{}},
+		{"float/trailing-dot-exp", `{"total":1.e5}`, &Order{}},
+		{"float/bare-exp", `{"total":1e}`, &Order{}},
+		{"float/bare-exp-sign", `{"total":1e+}`, &Order{}},
+		{"float/leading-dot", `{"total":.5}`, &Order{}},
 		{"bool/string", `{"paid":"true"}`, &Order{}},
 		{"bool/number", `{"paid":1}`, &Order{}},
 		{"string/number", `{"id":5}`, &Order{}},
@@ -558,6 +567,67 @@ func TestUnmarshalParityErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			assertUnmarshalParity(t, tc.name, []byte(tc.data), tc.target)
 		})
+	}
+}
+
+// escapedTagOrder exercises field names that the emitter escapes (`&`, `<`,
+// `"`) and therefore keys that the decoder must unescape before lookup.
+type escapedTagOrder struct {
+	Amp   string `anansi:"a&b"`
+	Lt    string `anansi:"c<d"`
+	Quote string `anansi:"e\"f"`
+	Plain string `anansi:"plain"`
+}
+
+func TestEscapedObjectKeysRoundTrip(t *testing.T) {
+	want := escapedTagOrder{Amp: "x", Lt: "y", Quote: "z", Plain: "p"}
+	data, err := Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(data, []byte(`\u0026`)) || !bytes.Contains(data, []byte(`\u003c`)) {
+		t.Fatalf("expected HTML-escaped keys, got %s", data)
+	}
+	var got escapedTagOrder
+	if err := Unmarshal(data, &got); err != nil {
+		t.Fatalf("round trip of escaped keys: %v (payload %s)", err, data)
+	}
+	if got != want {
+		t.Fatalf("escaped-key round trip mismatch: got %+v want %+v", got, want)
+	}
+	// Hand-written escapes (including a unicode escape inside a plain key)
+	// must resolve too, and agree with the container path.
+	for _, payload := range []string{
+		`{"a\u0026b":"x","c\u003cd":"y","e\"f":"z","plain":"p"}`,
+		`{"pl\u0061in":"p"}`,
+	} {
+		assertUnmarshalParity(t, "escaped-keys", []byte(payload), &escapedTagOrder{})
+	}
+}
+
+// TestUnmarshalReplacesExistingSlices pins that a decode replaces a field's
+// contents instead of appending to elements left over from a previous decode
+// into the same target (the container path always binds a fresh slice).
+func TestUnmarshalReplacesExistingSlices(t *testing.T) {
+	src := sampleOrder()
+	data := mustMarshalLegacy(t, src)
+	stale := sampleOrder()
+	stale.Tags = []string{"old-1", "old-2", "old-3", "old-4", "old-5"}
+	stale.Lines = []OrderLine{{SKU: "old-a"}, {SKU: "old-b"}, {SKU: "old-c"}}
+
+	legacyOut := stale
+	if err := unmarshalLegacy(data, &legacyOut); err != nil {
+		t.Fatal(err)
+	}
+	fastOut := stale
+	if err := Unmarshal(data, &fastOut); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(fastOut, legacyOut) {
+		t.Fatalf("fast path differs from legacy on prepopulated target:\nfast=%+v\nlegacy=%+v", fastOut, legacyOut)
+	}
+	if !reflect.DeepEqual(fastOut, src) {
+		t.Fatalf("prepopulated target not replaced: got %+v want %+v", fastOut, src)
 	}
 }
 

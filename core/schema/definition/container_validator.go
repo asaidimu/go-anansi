@@ -796,10 +796,11 @@ func cvMaterializeSlotPrefix(cs *CompiledSchema, slotIdx uint8, c *container.Dat
 			if _, ok := c.Position(k); !ok {
 				continue
 			}
-			if c.IsNull(k) {
-				m[name] = nil
-				continue
-			}
+			// Mirror the document layer's ToMap (binding.MaterializeSlot):
+			// an explicitly-null array-of-object materializes as an empty
+			// array, because GetArrayObject reports it as a present, empty
+			// slice. Keeping the null here would make the fallback lane see
+			// different data than a document user's map.
 			children, _, err := c.GetArrayObject(k)
 			if err != nil {
 				continue

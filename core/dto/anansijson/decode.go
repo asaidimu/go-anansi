@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strconv"
 	"sync"
+	"unicode/utf16"
+	"unicode/utf8"
 	"unsafe"
 )
 
@@ -161,7 +163,8 @@ func (ps *parser) parseKeySpan() (string, []byte, error) {
 		}
 		ps.pos++
 	}
-	ps.pos = start
+	// Rewind to the opening quote: parseString expects to consume it.
+	ps.pos = start - 1
 	s, err := ps.parseString()
 	return s, nil, err
 }
@@ -311,6 +314,10 @@ func decodeArrayObject(n *fieldNode, ps *parser, fp unsafe.Pointer, depth int) e
 	}
 	ps.pos++
 	h := (*sliceHeader)(fp)
+	// Decoding replaces the field's contents; it never appends to elements
+	// left over from a previous decode into the same target (the container
+	// path always binds a fresh slice).
+	h.len = 0
 	if ps.take(']') {
 		// An empty JSON array decodes to an empty (non-nil) slice, matching
 		// the container round-trip.
@@ -347,24 +354,36 @@ func setEmptySlice(fp unsafe.Pointer, n *fieldNode) {
 // growSlice doubles a slice in place through its header. Growth allocates
 // through the plan's array ladder — one reflect.New of a [cap]elem type —
 // because reflect.MakeSlice boxes a second, header-shaped object for its
-// Value on every call. The fresh array is zeroed, so a byte-wise copy of the
-// initialized prefix keeps the new memory GC-consistent; h.data (an
-// unsafe.Pointer field) keeps it reachable afterwards.
+// Value on every call. The initialized prefix is copied with reflect.Copy,
+// which runs the GC's write barriers for pointer-bearing elements (strings,
+// slices, child structs): a raw byte copy would move pointers into the new
+// backing array without shading them, which is unsafe during a concurrent
+// collection. h.data (an unsafe.Pointer field) keeps the new backing
+// reachable afterwards.
 func growSlice(n *fieldNode, h *sliceHeader) {
 	newCap := h.cap * 2
 	if newCap == 0 {
 		newCap = 4
 	}
+
+	var old reflect.Value
+	if h.len > 0 {
+		old = reflect.NewAt(n.sliceType, unsafe.Pointer(h)).Elem().Slice(0, h.len)
+	}
+
 	var nd unsafe.Pointer
 	if i := bits.Len32(uint32(newCap)) - 3; i >= 0 && i < len(n.growTypes) && newCap&(newCap-1) == 0 {
-		nd = reflect.New(n.growTypes[i]).UnsafePointer()
+		arr := reflect.New(n.growTypes[i]).Elem()
+		if h.len > 0 {
+			reflect.Copy(arr.Slice(0, h.len), old)
+		}
+		nd = arr.Addr().UnsafePointer()
 	} else {
-		nd = reflect.MakeSlice(n.sliceType, newCap, newCap).UnsafePointer()
-	}
-	if h.len > 0 {
-		src := unsafe.Slice((*byte)(h.data), uintptr(h.len)*n.elemSize)
-		dst := unsafe.Slice((*byte)(nd), uintptr(h.len)*n.elemSize)
-		copy(dst, src)
+		ns := reflect.MakeSlice(n.sliceType, newCap, newCap)
+		if h.len > 0 {
+			reflect.Copy(ns.Slice(0, h.len), old)
+		}
+		nd = ns.UnsafePointer()
 	}
 	h.data = nd
 	h.cap = newCap
@@ -380,6 +399,8 @@ func decodeArray(n *fieldNode, ps *parser, fp unsafe.Pointer) error {
 	}
 	ps.pos++
 	h := (*sliceHeader)(fp)
+	// Decoding replaces the field's contents (see decodeArrayObject).
+	h.len = 0
 	if ps.take(']') {
 		setEmptySlice(fp, n)
 		return nil
@@ -599,7 +620,7 @@ func (ps *parser) unescapeJSON(raw []byte) (string, error) {
 				return "", err
 			}
 			i += n
-			out = appendRune(out, r)
+			out = utf8.AppendRune(out, r)
 		default:
 			return "", fmt.Errorf("anansijson: invalid escape %q", string(raw[i]))
 		}
@@ -611,7 +632,9 @@ func (ps *parser) unescapeJSON(raw []byte) (string, error) {
 
 // decodeUnicodeEscape decodes \uXXXX at the head of b, joining surrogate
 // pairs. It returns the rune and the number of bytes consumed (excluding the
-// leading 'u').
+// leading 'u'). The logic — including consuming a second escape even when it
+// does not form a valid pair — mirrors the schema-driven JSON codec so both
+// decode paths produce identical strings.
 func decodeUnicodeEscape(b []byte) (rune, int, error) {
 	if len(b) < 4 {
 		return 0, 0, fmt.Errorf("anansijson: truncated unicode escape")
@@ -620,13 +643,16 @@ func decodeUnicodeEscape(b []byte) (rune, int, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	if r >= 0xD800 && r <= 0xDBFF && len(b) >= 10 && b[4] == '\\' && b[5] == 'u' {
-		lo, err := parseHex4(b[6:10])
-		if err != nil {
-			return 0, 0, err
-		}
-		if lo >= 0xDC00 && lo <= 0xDFFF {
-			return ((r-0xD800)<<10 | (lo - 0xDC00)) + 0x10000, 10, nil
+	if utf16.IsSurrogate(r) {
+		if len(b) >= 10 && b[4] == '\\' && b[5] == 'u' {
+			lo, err := parseHex4(b[6:10])
+			if err != nil {
+				return 0, 0, err
+			}
+			if dec := utf16.DecodeRune(r, lo); dec != utf8.RuneError {
+				r = dec
+			}
+			return r, 10, nil
 		}
 	}
 	return r, 4, nil
@@ -650,19 +676,6 @@ func parseHex4(b []byte) (rune, error) {
 	return v, nil
 }
 
-func appendRune(dst []byte, r rune) []byte {
-	switch {
-	case r < 0x80:
-		return append(dst, byte(r))
-	case r < 0x800:
-		return append(dst, byte(0xC0|r>>6), byte(0x80|r&0x3F))
-	case r < 0x10000:
-		return append(dst, byte(0xE0|r>>12), byte(0x80|(r>>6)&0x3F), byte(0x80|r&0x3F))
-	default:
-		return append(dst, byte(0xF0|r>>18), byte(0x80|(r>>12)&0x3F), byte(0x80|(r>>6)&0x3F), byte(0x80|r&0x3F))
-	}
-}
-
 // numberLit scans a JSON number token.
 func (ps *parser) numberLit() ([]byte, error) {
 	ps.skipWS()
@@ -674,6 +687,10 @@ func (ps *parser) numberLit() ([]byte, error) {
 	}
 	if ps.peek() == '0' {
 		ps.pos++
+		// Strict JSON forbids leading zeros ("01", "-01").
+		if !ps.eof() && ps.data[ps.pos] >= '0' && ps.data[ps.pos] <= '9' {
+			return nil, ps.errf("leading zero in number")
+		}
 	} else if c := ps.peek(); c >= '1' && c <= '9' {
 		for !ps.eof() && ps.data[ps.pos] >= '0' && ps.data[ps.pos] <= '9' {
 			ps.pos++
@@ -683,6 +700,9 @@ func (ps *parser) numberLit() ([]byte, error) {
 	}
 	if !ps.eof() && ps.data[ps.pos] == '.' {
 		ps.pos++
+		if ps.eof() || ps.data[ps.pos] < '0' || ps.data[ps.pos] > '9' {
+			return nil, ps.errf("expected digit after '.'")
+		}
 		for !ps.eof() && ps.data[ps.pos] >= '0' && ps.data[ps.pos] <= '9' {
 			ps.pos++
 		}
@@ -691,6 +711,9 @@ func (ps *parser) numberLit() ([]byte, error) {
 		ps.pos++
 		if !ps.eof() && (ps.data[ps.pos] == '+' || ps.data[ps.pos] == '-') {
 			ps.pos++
+		}
+		if ps.eof() || ps.data[ps.pos] < '0' || ps.data[ps.pos] > '9' {
+			return nil, ps.errf("expected digit in exponent")
 		}
 		for !ps.eof() && ps.data[ps.pos] >= '0' && ps.data[ps.pos] <= '9' {
 			ps.pos++

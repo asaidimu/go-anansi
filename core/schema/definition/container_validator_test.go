@@ -3,6 +3,7 @@ package definition_test
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"sort"
 	"testing"
 
@@ -489,6 +490,34 @@ func TestContainerValidator_Differential_ConstraintFallsBack(t *testing.T) {
 			c := cvBuild(t, cs, sc, payload, nil)
 			cvCompare(t, sc, fmap, c)
 		})
+	}
+}
+
+// TestMaterializeNullArrayObjectMatchesToMap pins Materialize to the document
+// layer's map semantics (binding.MaterializeSlot, which backs Document.ToMap):
+// an explicitly-null array-of-object field materializes as an empty array,
+// because GetArrayObject reports it as a present, empty slice. The fallback
+// lane validates this map, so the two must agree.
+func TestMaterializeNullArrayObjectMatchesToMap(t *testing.T) {
+	sc := cvSchema(t, cvArrObjSchemaJSON)
+	cs := cvCS(t, sc)
+
+	c := container.NewDataContainer()
+	if err := c.SetString(cvKey(t, cs, "id"), "x"); err != nil {
+		t.Fatal(err)
+	}
+	c.SetNull(cvKey(t, cs, "items"))
+
+	got := definition.Materialize(cs, c)
+	want, err := binding.MaterializeSlot(cs, c, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Materialize differs from the document layer's ToMap:\n got=%#v\nwant=%#v", got, want)
+	}
+	if arr, ok := got["items"].([]any); !ok || len(arr) != 0 {
+		t.Fatalf("null array-of-object should materialize as an empty array, got %#v", got["items"])
 	}
 }
 
