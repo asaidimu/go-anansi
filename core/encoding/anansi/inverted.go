@@ -851,6 +851,10 @@ func putPlain(pb *plainBuf) {
 // EncodeSparse: one scan pass, one exact allocation, one populate pass.
 // When forceType is false the packet type is auto-selected per spec 6.1.
 func encodeInverted(cs *definition.CompiledSchema, doc *container.DataContainer, fullVersion uint16, pt PacketType, forceType bool, opts ...EncodeOption) ([]byte, error) {
+	cfg := newEncodeConfig(opts)
+	if cfg.hasVersion {
+		fullVersion = cfg.version
+	}
 	epoch, version, err := schemaVersionByte(fullVersion)
 	if err != nil {
 		return nil, err
@@ -859,7 +863,6 @@ func encodeInverted(cs *definition.CompiledSchema, doc *container.DataContainer,
 	if err != nil {
 		return nil, err
 	}
-	cfg := newEncodeConfig(opts)
 
 	h := header{Version: version}
 	h.Flags = Flags(epoch) << flagEpochShift

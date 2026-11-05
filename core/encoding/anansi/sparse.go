@@ -14,7 +14,7 @@ import (
 // order — only on both sides sharing the same compiled schema (and
 // therefore the same field->key mapping). The index is built once per
 // schema in the resource tree instead of per packet.
-func decodeSparseBody(r *byteReader, cs *definition.CompiledSchema, version header, doc *container.DataContainer, res *slotCodec, pool *container.Pool) error {
+func decodeSparseBody(r *byteReader, cs *definition.CompiledSchema, version header, doc *container.DataContainer, res *slotCodec, factory container.Factory) error {
 	n, err := r.readUvarint()
 	if err != nil {
 		return fmt.Errorf("anansi: read sparse field count: %w", err)
@@ -43,7 +43,7 @@ func decodeSparseBody(r *byteReader, cs *definition.CompiledSchema, version head
 			doc.SetNull(wf.key)
 			continue
 		}
-		if err := fillValue(r, cs, doc, *wf, pool); err != nil {
+		if err := fillValue(r, cs, doc, *wf, factory); err != nil {
 			return fmt.Errorf("anansi: decode sparse field %q: %w", wf.name, err)
 		}
 	}

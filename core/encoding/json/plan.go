@@ -1,4 +1,4 @@
-package anansijson
+package json
 
 import (
 	"errors"
@@ -52,8 +52,8 @@ const (
 const maxPlanDepth = 32
 
 var (
-	errRefused = errors.New("anansijson: type not supported by the fast path")
-	errDepth   = errors.New("anansijson: struct nesting too deep for the fast path")
+	errRefused = errors.New("json: type not supported by the fast path")
+	errDepth   = errors.New("json: struct nesting too deep for the fast path")
 )
 
 type fieldNode struct {

@@ -1,4 +1,4 @@
-package anansijson
+package json
 
 import (
 	"encoding/base64"
@@ -44,7 +44,7 @@ func decodeWithPlan(root *objPlan, data []byte, v any) error {
 	rv := reflect.ValueOf(v)
 	for rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {
-			return fmt.Errorf("anansijson: unmarshal target must be a non-nil pointer to struct, got %T", v)
+			return fmt.Errorf("json: unmarshal target must be a non-nil pointer to struct, got %T", v)
 		}
 		rv = rv.Elem()
 	}
@@ -52,19 +52,19 @@ func decodeWithPlan(root *objPlan, data []byte, v any) error {
 	defer parserPool.Put(ps)
 	ps.data = data
 	ps.pos = 0
-	if err := decodeObject(root, ps, unsafe.Pointer(rv.UnsafeAddr()), 0); err != nil {
+	if err := decodeStructObject(root, ps, unsafe.Pointer(rv.UnsafeAddr()), 0); err != nil {
 		return err
 	}
 	ps.skipWS()
 	if !ps.eof() {
-		return fmt.Errorf("anansijson: trailing data after JSON document")
+		return fmt.Errorf("json: trailing data after JSON document")
 	}
 	return nil
 }
 
-func decodeObject(p *objPlan, ps *parser, base unsafe.Pointer, depth int) error {
+func decodeStructObject(p *objPlan, ps *parser, base unsafe.Pointer, depth int) error {
 	if depth > maxDecodeDepth {
-		return fmt.Errorf("anansijson: JSON nesting too deep")
+		return fmt.Errorf("json: JSON nesting too deep")
 	}
 	ps.skipWS()
 	if err := ps.expect('{'); err != nil {
@@ -124,7 +124,7 @@ func decodeObject(p *objPlan, ps *parser, base unsafe.Pointer, depth int) error 
 			seen = seenMask&(uint64(1)<<uint(i)) != 0
 		}
 		if !seen {
-			return fmt.Errorf("anansijson: missing required field %q", p.fields[p.required[i]].name)
+			return fmt.Errorf("json: missing required field %q", p.fields[p.required[i]].name)
 		}
 	}
 	return nil
@@ -260,7 +260,7 @@ func decodeField(n *fieldNode, ps *parser, fp unsafe.Pointer, depth int) error {
 		}
 		*(*[]byte)(fp) = decodeBytesValue(s)
 	case kObject:
-		return decodeObject(n.child, ps, fp, depth+1)
+		return decodeStructObject(n.child, ps, fp, depth+1)
 	case kArrayObject:
 		return decodeArrayObject(n, ps, fp, depth)
 	case kArrayString, kArrayInt, kArrayUint, kArrayFloat, kArrayBool:
@@ -331,7 +331,7 @@ func decodeArrayObject(n *fieldNode, ps *parser, fp unsafe.Pointer, depth int) e
 		}
 		ep := unsafe.Pointer(uintptr(h.data) + uintptr(h.len)*n.elemSize)
 		h.len++
-		if err := decodeObject(n.child, ps, ep, depth+1); err != nil {
+		if err := decodeStructObject(n.child, ps, ep, depth+1); err != nil {
 			return err
 		}
 		if ps.take(']') {
@@ -474,7 +474,7 @@ func (ps *parser) peek() byte {
 }
 
 func (ps *parser) errf(format string, args ...any) error {
-	return fmt.Errorf("anansijson: "+format, args...)
+	return fmt.Errorf("json: "+format, args...)
 }
 
 func (ps *parser) skipWS() {
@@ -588,14 +588,14 @@ func (ps *parser) unescapeJSON(raw []byte) (string, error) {
 		c := raw[i]
 		if c != '\\' {
 			if c < 0x20 {
-				return "", fmt.Errorf("anansijson: control character in string")
+				return "", fmt.Errorf("json: control character in string")
 			}
 			out = append(out, c)
 			continue
 		}
 		i++
 		if i >= len(raw) {
-			return "", fmt.Errorf("anansijson: unterminated escape")
+			return "", fmt.Errorf("json: unterminated escape")
 		}
 		switch raw[i] {
 		case '"':
@@ -622,7 +622,7 @@ func (ps *parser) unescapeJSON(raw []byte) (string, error) {
 			i += n
 			out = utf8.AppendRune(out, r)
 		default:
-			return "", fmt.Errorf("anansijson: invalid escape %q", string(raw[i]))
+			return "", fmt.Errorf("json: invalid escape %q", string(raw[i]))
 		}
 	}
 	s := ps.makeString(out)
@@ -637,7 +637,7 @@ func (ps *parser) unescapeJSON(raw []byte) (string, error) {
 // decode paths produce identical strings.
 func decodeUnicodeEscape(b []byte) (rune, int, error) {
 	if len(b) < 4 {
-		return 0, 0, fmt.Errorf("anansijson: truncated unicode escape")
+		return 0, 0, fmt.Errorf("json: truncated unicode escape")
 	}
 	r, err := parseHex4(b[:4])
 	if err != nil {
@@ -670,7 +670,7 @@ func parseHex4(b []byte) (rune, error) {
 		case c >= 'A' && c <= 'F':
 			v |= rune(c-'A') + 10
 		default:
-			return 0, fmt.Errorf("anansijson: invalid unicode escape")
+			return 0, fmt.Errorf("json: invalid unicode escape")
 		}
 	}
 	return v, nil

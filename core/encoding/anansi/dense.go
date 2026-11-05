@@ -16,7 +16,7 @@ const (
 )
 
 // decodeDenseBody reads a Dense packet body (state map + value blocks,
-// spec 3.1) from r into doc, given the slot resources and pool to use for any
+// spec 3.1) from r into doc, given the slot resources and factory to use for any
 // nested TypeArrayObject children.
 //
 // The decode path is built to the same standard as the encoder's populate
@@ -30,13 +30,13 @@ const (
 //     growth, exactly like the encoder sizing its output from the same map.
 //   - #dcd004: values are written through the typed AppendXxx API instead of
 //     SetXxx, skipping the positions-map probe and hole-claim scan that are
-//     guaranteed no-ops on a decode target (fresh, Clear()ed, or pool-fresh —
+//     guaranteed no-ops on a decode target (fresh, Clear()ed, or factory-fresh —
 //     the direct-write contract Walk documents).
 //   - #dcd006: the type dispatch is hoisted out of the per-field loop; the
 //     scalar types (int/float/string) read and append inline, the complex
 //     types share fillValue.
 //   - #dcd007: the bool block is unpacked in place — no intermediate []bool.
-func decodeDenseBody(r *byteReader, cs *definition.CompiledSchema, version header, doc *container.DataContainer, res *slotCodec, pool *container.Pool) error {
+func decodeDenseBody(r *byteReader, cs *definition.CompiledSchema, version header, doc *container.DataContainer, res *slotCodec, factory container.Factory) error {
 	packed, err := r.readN((2*len(res.fields) + 7) / 8)
 	if err != nil {
 		return fmt.Errorf("anansi: read dense state map: %w", err)
@@ -147,7 +147,7 @@ func decodeDenseBody(r *byteReader, cs *definition.CompiledSchema, version heade
 				case stateNull:
 					doc.SetNull(wf.key)
 				case stateHasValue:
-					if err := fillValue(r, cs, doc, wf, pool); err != nil {
+					if err := fillValue(r, cs, doc, wf, factory); err != nil {
 						return fmt.Errorf("anansi: decode dense field %q: %w", wf.name, err)
 					}
 				}

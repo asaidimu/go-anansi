@@ -5,6 +5,14 @@ import (
 	"unsafe"
 )
 
+// Factory supplies containers for nested structures. Codecs depend on this
+// one-method seam rather than on a concrete pool, so serialization never
+// imports or reasons about pooling: a pool, an arena, or the default
+// allocator all satisfy it.
+type Factory interface {
+	Get() *DataContainer
+}
+
 // Pool is a sync.Pool for DataContainers.
 //
 // Pool.Put recurses into TypeArrayObject slots before calling Clear, returning
@@ -16,7 +24,7 @@ import (
 //
 //	p := NewPool()
 //
-//	doc := p.Get(SizeSmall)
+//	doc := p.Get()
 //	doc.SetInt(key, 42)
 //	// ... fill ...
 //	p.Put(doc) // Clear() is called by Put; caller must not use doc after this.

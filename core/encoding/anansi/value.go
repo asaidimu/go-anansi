@@ -6,6 +6,8 @@ import (
 	"unsafe"
 
 	"github.com/asaidimu/go-anansi/v8/core/container"
+	"github.com/asaidimu/go-anansi/v8/core/schema"
+	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
 // This file implements the decode half of spec section 2.5 (Field Type
@@ -376,7 +378,7 @@ func readRecord(r *byteReader) (map[string]any, error) {
 // element slot's prebuilt resource tree. Nested packets never carry
 // transforms (the encoder strips those bits), so there is nothing to open
 // beyond the optional integrity digest.
-func decodeNestedPacket(res *slotCodec, r *byteReader, doc *container.DataContainer, pool *container.Pool) error {
+func decodeNestedPacket(res *slotCodec, r *byteReader, doc *container.DataContainer, factory container.Factory) error {
 	h, err := readHeader(r)
 	if err != nil {
 		return err
@@ -389,9 +391,9 @@ func decodeNestedPacket(res *slotCodec, r *byteReader, doc *container.DataContai
 	}
 	switch h.Flags.PacketType() {
 	case PacketDense:
-		return decodeDenseBody(r, res.cs, h, doc, res, pool)
+		return decodeDenseBody(r, res.cs, h, doc, res, factory)
 	case PacketSparse:
-		return decodeSparseBody(r, res.cs, h, doc, res, pool)
+		return decodeSparseBody(r, res.cs, h, doc, res, factory)
 	default:
 		return fmt.Errorf("anansi: unsupported nested packet type %s", h.Flags.PacketType())
 	}
@@ -400,7 +402,7 @@ func decodeNestedPacket(res *slotCodec, r *byteReader, doc *container.DataContai
 // readArrayObjectField decodes an array of schema-bound child documents.
 // Each element is an independently-framed complete Anansi packet. The
 // element slot's prebuilt resource tree means no per-element schema walks.
-func readArrayObjectField(r *byteReader, res *slotCodec, pool *container.Pool) ([]*container.DataContainer, error) {
+func readArrayObjectField(r *byteReader, res *slotCodec, childIdx uint8, childPath definition.ResolvedPath, factory container.Factory) ([]*container.DataContainer, error) {
 	n, err := r.readUvarint()
 	if err != nil {
 		return nil, err
@@ -420,17 +422,20 @@ func readArrayObjectField(r *byteReader, res *slotCodec, pool *container.Pool) (
 			return nil, err
 		}
 		var child *container.DataContainer
-		if pool != nil {
-			child = pool.Get()
+		if factory != nil {
+			child = factory.Get()
 		} else {
 			child = container.NewDataContainer()
 		}
+		// Stamp the element with its own slot and owning path so it can be
+		// serialized or decoded on its own, without its parent.
+		child.SetRef(unsafe.Pointer(schema.NewRef(res.cs, childIdx, childPath, factory)))
 		if r.alias {
 			// Element strings alias the root backing; attach it so an
 			// extracted child remains valid independently of its parent.
 			child.OwnBacking(r.data)
 		}
-		if err := decodeNestedPacket(res, r.child(payload), child, pool); err != nil {
+		if err := decodeNestedPacket(res, r.child(payload), child, factory); err != nil {
 			return nil, fmt.Errorf("anansi: decode array-object element %d: %w", i, err)
 		}
 		out = append(out, child)

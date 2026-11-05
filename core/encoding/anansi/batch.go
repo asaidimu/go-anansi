@@ -103,13 +103,13 @@ func EncodeBatchRows(cs *definition.CompiledSchema, docs []*container.DataContai
 }
 
 // DecodeBatchRows decodes a Batch packet produced by EncodeBatchRows or
-// EncodeBatchColumnar into freshly allocated (or pool-sourced, if pool is
+// EncodeBatchColumnar into freshly allocated (or factory-sourced, if factory is
 // non-nil) *container.DataContainer values bound to schema slot 0 of cs.
 // Both orientations are accepted; the packet's own batch_flags byte (with
 // the header flags bit 3 as a cross-check) selects the layout. Encrypted
 // packets require WithDecryptionKey; compression and integrity digests are
 // handled automatically.
-func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container.Pool, opts ...DecodeOption) ([]*container.DataContainer, uint16, error) {
+func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, factory container.Factory, opts ...DecodeOption) ([]*container.DataContainer, uint16, error) {
 	r := newByteReader(data)
 	h, err := readHeader(r)
 	if err != nil {
@@ -174,8 +174,8 @@ func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container
 
 	docs := make([]*container.DataContainer, recordCount)
 	for i := range docs {
-		if pool != nil {
-			docs[i] = pool.Get()
+		if factory != nil {
+			docs[i] = factory.Get()
 		} else {
 			docs[i] = container.NewDataContainer()
 		}
@@ -198,18 +198,18 @@ func DecodeBatchRows(cs *definition.CompiledSchema, data []byte, pool *container
 
 	switch {
 	case batchFlags&batchFlagColumnar != 0 || h.Flags.BatchColumnar():
-		if err := decodeColumnarBatch(body, docs, res, pool); err != nil {
+		if err := decodeColumnarBatch(body, docs, res, factory); err != nil {
 			return nil, 0, err
 		}
 	case batchFlags&batchFlagSparse != 0:
 		for i := uint64(0); i < recordCount; i++ {
-			if err := decodeSparseBody(body, res.cs, h, docs[i], res, pool); err != nil {
+			if err := decodeSparseBody(body, res.cs, h, docs[i], res, factory); err != nil {
 				return nil, 0, fmt.Errorf("anansi: decode batch record %d: %w", i, err)
 			}
 		}
 	default:
 		for i := uint64(0); i < recordCount; i++ {
-			if err := decodeDenseBody(body, res.cs, h, docs[i], res, pool); err != nil {
+			if err := decodeDenseBody(body, res.cs, h, docs[i], res, factory); err != nil {
 				return nil, 0, fmt.Errorf("anansi: decode batch record %d: %w", i, err)
 			}
 		}

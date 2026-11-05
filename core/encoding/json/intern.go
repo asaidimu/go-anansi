@@ -1,4 +1,4 @@
-package anansijson
+package json
 
 import (
 	"encoding/binary"

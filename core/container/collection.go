@@ -192,6 +192,7 @@ func copyDataContainer(src, dst *DataContainer, pool *Pool) error {
 	if b := src.Backing(); b != nil {
 		dst.OwnBacking(b)
 	}
+	dst.ref = src.ref
 	for k, idx := range src.positions {
 		dk := DataContainerKey(k)
 		if idx < 0 {
@@ -214,6 +215,7 @@ func projectDataContainer(src, dst *DataContainer, keys []DataContainerKey, pool
 	if b := src.Backing(); b != nil {
 		dst.OwnBacking(b)
 	}
+	dst.ref = src.ref
 	for _, key := range keys {
 		if !src.IsSet(key) {
 			continue

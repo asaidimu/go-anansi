@@ -15,6 +15,7 @@ func cloneContainer(c *container.DataContainer) *container.DataContainer {
 		return nil
 	}
 	out := container.NewDataContainer()
+	out.SetRef(c.Ref())
 	_, _ = c.Walk(func(positions map[int64]int32, slot func(t container.DataType, initialSize ...int) unsafe.Pointer) (any, error) {
 		for k, idx := range positions {
 			key := container.DataContainerKey(k)

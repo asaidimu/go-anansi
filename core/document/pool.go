@@ -2,11 +2,14 @@ package document
 
 import (
 	"context"
+	"sync"
+	"unsafe"
 
-	"github.com/asaidimu/go-anansi/v8/core/data"
 	"github.com/asaidimu/go-anansi/v8/core/container"
+	"github.com/asaidimu/go-anansi/v8/core/data"
 	canansi "github.com/asaidimu/go-anansi/v8/core/encoding/anansi"
 	cjson "github.com/asaidimu/go-anansi/v8/core/encoding/json"
+	"github.com/asaidimu/go-anansi/v8/core/schema"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
@@ -19,10 +22,20 @@ import (
 // pooled, and falls back to an unpooled container otherwise (schema-free
 // views).
 func newContainerFor(d *Document) *container.DataContainer {
+	var c *container.DataContainer
 	if d.pool != nil {
-		return d.pool.Get()
+		c = d.pool.Get()
+	} else {
+		c = container.NewDataContainer()
 	}
-	return container.NewDataContainer()
+	if d.cs != nil {
+		var factory container.Factory
+		if d.pool != nil {
+			factory = d.pool
+		}
+		c.SetRef(unsafe.Pointer(schema.RootRef(d.cs, factory)))
+	}
+	return c
 }
 
 // cloneUserContainer deep-copies c. When pool is non-nil the copy and its
@@ -53,8 +66,29 @@ func cloneUserContainer(c *container.DataContainer, pool *container.Pool) *conta
 // acquired from the same DocumentPool share its pool, so container slice sizes
 // stabilize at the schema's steady-state cardinality.
 type DocumentPool struct {
-	cs   *definition.CompiledSchema // user-data compiled schema
-	pool *container.Pool            // per-schema user-data container pool
+	cs      *definition.CompiledSchema // user-data compiled schema
+	pool    *container.Pool            // per-schema user-data container pool
+	ref     *schema.Ref                // immutable context stamped onto acquired containers
+	refOnce sync.Once
+}
+
+// Ref returns the pool's immutable schema context, creating it lazily for
+// pools built as literals.
+func (c *DocumentPool) Ref() *schema.Ref {
+	if c == nil {
+		return nil
+	}
+	c.refOnce.Do(func() {
+		if c.cs == nil {
+			return
+		}
+		var factory container.Factory
+		if c.pool != nil {
+			factory = c.pool
+		}
+		c.ref = schema.RootRef(c.cs, factory)
+	})
+	return c.ref
 }
 
 // DocumentPoolProvider is implemented by types that expose a container-backed
@@ -115,6 +149,9 @@ func (c *DocumentPool) newDocument() (*Document, error) {
 	} else {
 		user = container.NewDataContainer()
 	}
+	if r := c.Ref(); r != nil {
+		user.SetRef(unsafe.Pointer(r))
+	}
 	return &Document{
 		cs:   c.cs,
 		c:    user,
@@ -133,7 +170,7 @@ func (c *DocumentPool) FromJSON(data []byte, opts ...Option) (*Document, error) 
 	if err != nil {
 		return nil, err
 	}
-	if err := cjson.DecodeJSONInto(c.cs, data, d.c, c.pool); err != nil {
+	if err := cjson.Unmarshal(data, d.c); err != nil {
 		c.Release(d)
 		return nil, err
 	}
@@ -169,7 +206,7 @@ func (c *DocumentPool) FromAnansi(data []byte, opts ...Option) (*Document, error
 	if err != nil {
 		return nil, err
 	}
-	if _, err := canansi.DecodeAnansiInto(c.cs, data, d.c, c.pool); err != nil {
+	if err := canansi.Unmarshal(data, d.c); err != nil {
 		c.Release(d)
 		return nil, err
 	}

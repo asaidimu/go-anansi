@@ -656,7 +656,7 @@ func (d *Document) MarshalJSON() ([]byte, error) {
 	if len(d.prefix) > 0 {
 		return json.Marshal(d.ToMap())
 	}
-	return cjson.SerializeJSON(d.cs, d.c)
+	return cjson.Marshal(d.c)
 }
 
 // SerializeField serializes the value at a dotted path directly from the
@@ -734,7 +734,7 @@ func (d *Document) UnmarshalJSON(data []byte) error {
 	if d.cs == nil || d.c == nil {
 		return fmt.Errorf("document: document is not bound to a schema")
 	}
-	if err := cjson.DecodeJSONInto(d.cs, data, d.c, d.pool); err != nil {
+	if err := cjson.Unmarshal(data, d.c); err != nil {
 		return err
 	}
 	d.ensureMetadataDefaults()
@@ -755,7 +755,7 @@ func (d *Document) ToAnansi(fullVersion uint16) ([]byte, error) {
 	if d.isRecord() || len(d.prefix) > 0 {
 		return nil, fmt.Errorf("document: ToAnansi is only supported on root documents, not record or nested views")
 	}
-	return canansi.SerializeAnansi(d.cs, d.c, fullVersion)
+	return canansi.Marshal(d.c, canansi.WithVersion(fullVersion))
 }
 
 // UnmarshalAnansi decodes an Anansi binary wire format packet (as produced
@@ -770,7 +770,7 @@ func (d *Document) UnmarshalAnansi(data []byte) error {
 	if d.cs == nil || d.c == nil {
 		return fmt.Errorf("document: document is not bound to a schema")
 	}
-	if _, err := canansi.DecodeAnansiInto(d.cs, data, d.c, d.pool); err != nil {
+	if err := canansi.Unmarshal(data, d.c); err != nil {
 		return err
 	}
 	d.ensureMetadataDefaults()

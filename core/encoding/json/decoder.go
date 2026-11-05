@@ -4,8 +4,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"strconv"
+	"unsafe"
 
 	"github.com/asaidimu/go-anansi/v8/core/container"
+	"github.com/asaidimu/go-anansi/v8/core/schema"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
@@ -37,8 +39,8 @@ func DecodeJSON(cs *definition.CompiledSchema, data []byte) (*container.DataCont
 }
 
 // DecodeJSONInto decodes into a caller-provided document, sourcing
-// array-of-object child documents from pool when non-nil.
-func DecodeJSONInto(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, pool *container.Pool) error {
+// array-of-object child documents from factory when non-nil.
+func DecodeJSONInto(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, factory container.Factory) error {
 
 	// NOTE: 1/2026-08-07-20:29
 	// There is an inherent problem not addressed here:
@@ -48,7 +50,7 @@ func DecodeJSONInto(cs *definition.CompiledSchema, data []byte, doc *container.D
 	//
 	p := newJSONParser(data)
 	path := make(definition.ResolvedPath, 0, 16)
-	if err := decodeObject(cs, doc, 0, path, p, pool); err != nil {
+	if err := decodeObject(cs, doc, 0, path, p, factory); err != nil {
 		return err
 	}
 	p.skipWS()
@@ -62,7 +64,7 @@ func DecodeJSONInto(cs *definition.CompiledSchema, data []byte, doc *container.D
 // string values alias the input buffer directly instead of being copied.
 //
 // Contract: the caller must guarantee that data is not mutated, reused, or
-// returned to a pool for as long as the returned DataContainer — or anything
+// returned to a factory for as long as the returned DataContainer — or anything
 // derived from it (e.g. a value read back out with GetString) — is still in
 // use. Violating this contract will corrupt already-decoded string data or,
 // if data is later overwritten, silently return stale/incorrect strings.
@@ -87,10 +89,10 @@ func DecodeJSONUnsafe(cs *definition.CompiledSchema, data []byte) (*container.Da
 // DecodeJSONIntoUnsafe is the pooled-document counterpart of
 // DecodeJSONUnsafe. See its docstring for the buffer-lifetime contract this
 // places on the caller — it applies equally here.
-func DecodeJSONIntoUnsafe(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, pool *container.Pool) error {
+func DecodeJSONIntoUnsafe(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, factory container.Factory) error {
 	p := newJSONParserUnsafe(data)
 	path := make(definition.ResolvedPath, 0, 16)
-	if err := decodeObject(cs, doc, 0, path, p, pool); err != nil {
+	if err := decodeObject(cs, doc, 0, path, p, factory); err != nil {
 		return err
 	}
 	p.skipWS()
@@ -106,9 +108,9 @@ func DecodeJSONIntoUnsafe(cs *definition.CompiledSchema, data []byte, doc *conta
 // and nothing is validated, so stored fragments can be re-materialized even
 // when partial. Nested objects decode flattened into doc (their leaves land at
 // the deep addresses the schema assigns); array-of-object children are sourced
-// from pool when non-nil. data must be exactly what the encoder produced for
+// from factory when non-nil. data must be exactly what the encoder produced for
 // this field (e.g. SerializeJSONPrefix output).
-func DecodeJSONField(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, fieldName string, pool *container.Pool) error {
+func DecodeJSONField(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, fieldName string, factory container.Factory) error {
 	abs, fieldIdx, ok := findRootField(cs, fieldName)
 	if !ok {
 		return fmt.Errorf("json: field %q not found", fieldName)
@@ -116,7 +118,7 @@ func DecodeJSONField(cs *definition.CompiledSchema, data []byte, doc *container.
 	fd := cs.Descriptors[abs]
 	p := newJSONParser(data)
 	path := definition.ResolvedPath{definition.NewResolvedStep(0, uint8(fieldIdx))}
-	if err := parseValueInto(p, cs, doc, fd, path, pool, false); err != nil {
+	if err := parseValueInto(p, cs, doc, fd, path, factory, false); err != nil {
 		return fmt.Errorf("json: decode field %q: %w", fieldName, err)
 	}
 	p.skipWS()
@@ -143,19 +145,35 @@ func findRootField(cs *definition.CompiledSchema, name string) (abs int, fieldId
 
 // decodeObject parses one JSON object against one schema slot. Absent
 // required fields are validated (full-document decode).
-func decodeObject(cs *definition.CompiledSchema, doc *container.DataContainer, schemaIdx uint8, path definition.ResolvedPath, p *jsonParser, pool *container.Pool) error {
-	return decodeObjectInto(cs, doc, schemaIdx, path, p, pool, true)
+func decodeObject(cs *definition.CompiledSchema, doc *container.DataContainer, schemaIdx uint8, path definition.ResolvedPath, p *jsonParser, factory container.Factory) error {
+	return decodeObjectInto(cs, doc, schemaIdx, path, p, factory, true)
 }
 
 // decodeObjectLenient is decodeObject without required-field validation. It is
 // used when materializing stored fragments (row read-back) that may be partial
 // or structurally absent.
-func decodeObjectLenient(cs *definition.CompiledSchema, doc *container.DataContainer, schemaIdx uint8, path definition.ResolvedPath, p *jsonParser, pool *container.Pool) error {
-	return decodeObjectInto(cs, doc, schemaIdx, path, p, pool, false)
+func decodeObjectLenient(cs *definition.CompiledSchema, doc *container.DataContainer, schemaIdx uint8, path definition.ResolvedPath, p *jsonParser, factory container.Factory) error {
+	return decodeObjectInto(cs, doc, schemaIdx, path, p, factory, false)
+}
+
+// decodeContainerAt decodes a JSON object of local field names into a nested
+// container scoped to schema slot slotIdx. parentPath is the path of the field
+// that owns the child, so leaf addresses land in the root address space just
+// as they do when the child is decoded as part of its parent.
+func decodeContainerAt(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, slotIdx uint8, parentPath definition.ResolvedPath, factory container.Factory) error {
+	p := newJSONParser(data)
+	if err := decodeObjectInto(cs, doc, slotIdx, parentPath, p, factory, true); err != nil {
+		return err
+	}
+	p.skipWS()
+	if !p.eof() {
+		return fmt.Errorf("json: trailing data after JSON document")
+	}
+	return nil
 }
 
 // decodeObjectInto parses one JSON object against one schema slot.
-func decodeObjectInto(cs *definition.CompiledSchema, doc *container.DataContainer, schemaIdx uint8, path definition.ResolvedPath, p *jsonParser, pool *container.Pool, validate bool) error {
+func decodeObjectInto(cs *definition.CompiledSchema, doc *container.DataContainer, schemaIdx uint8, path definition.ResolvedPath, p *jsonParser, factory container.Factory, validate bool) error {
 	if int(schemaIdx) >= len(cs.Schemas) {
 		return fmt.Errorf("json: schema slot %d out of range", schemaIdx)
 	}
@@ -195,7 +213,7 @@ func decodeObjectInto(cs *definition.CompiledSchema, doc *container.DataContaine
 				fd := cs.Descriptors[abs]
 				step := definition.NewResolvedStep(schemaIdx, uint8(j))
 				fieldPath := appendStep(path, step)
-				if err := parseValueInto(p, cs, doc, fd, fieldPath, pool, validate); err != nil {
+				if err := parseValueInto(p, cs, doc, fd, fieldPath, factory, validate); err != nil {
 					return err
 				}
 			}
@@ -308,11 +326,11 @@ func equalBytesString(s string, b []byte) bool {
 	return true
 }
 
-func parseValue(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, pool *container.Pool) error {
-	return parseValueInto(p, cs, doc, fd, path, pool, true)
+func parseValue(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, factory container.Factory) error {
+	return parseValueInto(p, cs, doc, fd, path, factory, true)
 }
 
-func parseValueInto(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, pool *container.Pool, validate bool) error {
+func parseValueInto(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, factory container.Factory, validate bool) error {
 	// A null leaf is absence: consume it and leave the slot untouched. Stored
 	// fragments (row read-back) legitimately carry null for unset fields, and
 	// re-materializing them must not fail or invent a value.
@@ -327,7 +345,7 @@ func parseValueInto(p *jsonParser, cs *definition.CompiledSchema, doc *container
 		childIdx := fd.ChildSchemaIdx()
 		switch fd.DataType() {
 		case container.TypeArrayObject:
-			return parseArrayObjectInto(p, cs, doc, fd, path, childIdx, pool, validate)
+			return parseArrayObjectInto(p, cs, doc, fd, path, childIdx, factory, validate)
 
 		case container.TypeRecord:
 			m, err := p.parseObjectAny()
@@ -337,27 +355,30 @@ func parseValueInto(p *jsonParser, cs *definition.CompiledSchema, doc *container
 			return doc.SetRecord(internalKey(fd), m)
 
 		default:
-			return decodeObjectInto(cs, doc, childIdx, path, p, pool, validate)
+			return decodeObjectInto(cs, doc, childIdx, path, p, factory, validate)
 		}
 	}
 	return parseLeaf(p, cs, doc, fd, path)
 }
 
-func parseArrayObject(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, childIdx uint8, pool *container.Pool) error {
-	return parseArrayObjectInto(p, cs, doc, fd, path, childIdx, pool, true)
+func parseArrayObject(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, childIdx uint8, factory container.Factory) error {
+	return parseArrayObjectInto(p, cs, doc, fd, path, childIdx, factory, true)
 }
 
-func parseArrayObjectInto(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, childIdx uint8, pool *container.Pool, validate bool) error {
+func parseArrayObjectInto(p *jsonParser, cs *definition.CompiledSchema, doc *container.DataContainer, fd definition.FieldDescriptor, path definition.ResolvedPath, childIdx uint8, factory container.Factory, validate bool) error {
 	// Pre-allocate slice capacity to prevent growslice allocations
 	children := make([]*container.DataContainer, 0, 8)
 	err := p.parseArray(func() error {
 		var child *container.DataContainer
-		if pool != nil {
-			child = pool.Get()
+		if factory != nil {
+			child = factory.Get()
 		} else {
 			child = container.NewDataContainer()
 		}
-		if err := decodeObjectInto(cs, child, childIdx, path, p, pool, validate); err != nil {
+		// Stamp the element with its own slot and owning path so it can be
+		// serialized or decoded on its own, without its parent.
+		child.SetRef(unsafe.Pointer(schema.NewRef(cs, childIdx, path, factory)))
+		if err := decodeObjectInto(cs, child, childIdx, path, p, factory, validate); err != nil {
 			return err
 		}
 		children = append(children, child)

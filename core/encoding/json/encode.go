@@ -1,4 +1,4 @@
-package anansijson
+package json
 
 import (
 	"bytes"
@@ -38,7 +38,7 @@ type sliceHeader struct {
 	cap  int
 }
 
-var errNilValue = errors.New("anansijson: nil value")
+var errNilValue = errors.New("json: nil value")
 
 // planValue resolves v to an addressable struct value for offset-based field
 // access. Value inputs are copied into a fresh cell once (pointer inputs — the
@@ -52,7 +52,7 @@ func planValue(v any) (reflect.Value, error) {
 		rv = rv.Elem()
 	}
 	if rv.Kind() != reflect.Struct {
-		return reflect.Value{}, fmt.Errorf("anansijson: value must be a struct, got %T", v)
+		return reflect.Value{}, fmt.Errorf("json: value must be a struct, got %T", v)
 	}
 	if !rv.CanAddr() {
 		fresh := reflect.New(rv.Type())
@@ -397,7 +397,7 @@ func appendInt(dst []byte, v int64) []byte {
 
 func appendFloat(dst []byte, f float64) ([]byte, error) {
 	if math.IsNaN(f) || math.IsInf(f, 0) {
-		return nil, fmt.Errorf("anansijson: cannot serialize non-finite float %v", f)
+		return nil, fmt.Errorf("json: cannot serialize non-finite float %v", f)
 	}
 	format := byte('f')
 	abs := math.Abs(f)

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sync"
+	"unsafe"
 
 	"github.com/asaidimu/go-anansi/v8/core/container"
 	"github.com/asaidimu/go-anansi/v8/core/schema"
@@ -26,6 +27,30 @@ type Pool struct {
 	// Containers supplies pooled child containers for array-of-object fields
 	// and pooled views for Acquire/Release.
 	Containers *container.Pool
+
+	// ref is the immutable schema context stamped onto every acquired
+	// container so encoders can serialize it without being handed CS again.
+	ref     *schema.Ref
+	refOnce sync.Once
+}
+
+// Ref returns the pool's immutable schema context, creating it lazily for
+// pools built as literals.
+func (p *Pool) Ref() *schema.Ref {
+	if p == nil {
+		return nil
+	}
+	p.refOnce.Do(func() {
+		if p.CS == nil {
+			return
+		}
+		var factory container.Factory
+		if p.Containers != nil {
+			factory = p.Containers
+		}
+		p.ref = schema.RootRef(p.CS, factory)
+	})
+	return p.ref
 }
 
 // Compile compiles a schema JSON document into a Pool. The schema is used as
@@ -83,10 +108,15 @@ func PoolForType(t reflect.Type) (*Pool, error) {
 	return actual.(*Pool), nil
 }
 
-// Acquire returns an empty pooled container bound to nothing — populate it via
-// Populate or decode into it with the codecs, then Release it.
+// Acquire returns an empty pooled container stamped with the pool's schema
+// context — populate it via Populate or decode into it with the codecs, then
+// Release it.
 func (p *Pool) Acquire() *container.DataContainer {
-	return p.Containers.Get()
+	c := p.Containers.Get()
+	if r := p.Ref(); r != nil {
+		c.SetRef(unsafe.Pointer(r))
+	}
+	return c
 }
 
 // Release returns a container to the pool. Callers must not retain references

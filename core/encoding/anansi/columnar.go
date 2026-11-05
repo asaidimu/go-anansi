@@ -183,15 +183,15 @@ func EncodeBatchColumnar(cs *definition.CompiledSchema, docs []*container.DataCo
 }
 
 // decodeColumnarBatch decodes a columnar Batch body (after header,
-// record_count and batch_flags) into pre-allocated docs, using pool for any
+// record_count and batch_flags) into pre-allocated docs, using factory for any
 // nested TypeArrayObject children. The field-major state column is parsed
 // in place — no per-field state slices are materialized.
-func decodeColumnarBatch(r *byteReader, docs []*container.DataContainer, res *slotCodec, pool *container.Pool) error {
+func decodeColumnarBatch(r *byteReader, docs []*container.DataContainer, res *slotCodec, factory container.Factory) error {
 	for dt := container.DataType(0); dt <= container.TypeArrayGeometry; dt++ {
 		if len(res.byType[dt]) == 0 {
 			continue
 		}
-		if err := decodeColumnarBlock(r, res.cs, docs, res.byType[dt], pool); err != nil {
+		if err := decodeColumnarBlock(r, res.cs, docs, res.byType[dt], factory); err != nil {
 			return err
 		}
 	}
@@ -206,7 +206,7 @@ func stateAtBit(packed []byte, bit int) fieldState {
 	return fieldState(code)
 }
 
-func decodeColumnarBlock(r *byteReader, cs *definition.CompiledSchema, docs []*container.DataContainer, typeFields []wireField, pool *container.Pool) error {
+func decodeColumnarBlock(r *byteReader, cs *definition.CompiledSchema, docs []*container.DataContainer, typeFields []wireField, factory container.Factory) error {
 	nBits := 2 * len(typeFields) * len(docs)
 	packed, err := r.readN((nBits + 7) / 8)
 	if err != nil {
@@ -254,7 +254,7 @@ func decodeColumnarBlock(r *byteReader, cs *definition.CompiledSchema, docs []*c
 			case stateNull:
 				docs[ri].SetNull(wf.key)
 			case stateHasValue:
-				if err := fillValue(r, cs, docs[ri], *wf, pool); err != nil {
+				if err := fillValue(r, cs, docs[ri], *wf, factory); err != nil {
 					return fmt.Errorf("anansi: decode columnar field %q record %d: %w", wf.name, ri, err)
 				}
 			}

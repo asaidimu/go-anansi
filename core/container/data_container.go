@@ -83,6 +83,26 @@ type DataContainer struct {
 	// Strings are immutable in Go, so aliasing is safe for reads and field
 	// writes alike; only buffer lifetime matters, and the container holds it.
 	backing []byte
+
+	// ref is an opaque pointer to the immutable schema context this container
+	// belongs to (a *schema.Ref). It is stored as unsafe.Pointer so this leaf
+	// package does not import the schema packages — the codec that reads it
+	// casts it back. Owners (pools, codecs) stamp it; Clear drops it so a
+	// recycled container never serializes under a stale schema.
+	ref unsafe.Pointer
+}
+
+// SetRef attaches the opaque schema context for this container. The pointer
+// must reference a heap-allocated, immutable value (schema.Ref) that outlives
+// the container; the GC treats it as a normal pointer.
+func (d *DataContainer) SetRef(p unsafe.Pointer) {
+	d.ref = p
+}
+
+// Ref returns the opaque schema context attached by SetRef, or nil when the
+// container is unbound (freshly allocated or cleared for reuse).
+func (d *DataContainer) Ref() unsafe.Pointer {
+	return d.ref
 }
 
 // maxRetainedBacking caps the backing capacity a pooled container retains
@@ -1051,6 +1071,7 @@ func (d *DataContainer) Length() int {
 func (d *DataContainer) Clear() {
 	clear(d.positions)
 	d.holes = d.holes[:0]
+	d.ref = nil
 
 	// Retain backing capacity for the next aliased fill (amortization),
 	// unless it is large enough to be worth releasing.

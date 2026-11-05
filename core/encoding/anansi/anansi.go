@@ -26,6 +26,10 @@
 // Encoding is two-pass ("inverted reader", see inverted.go): a size scan
 // computes the exact final body size, then the body is populated directly
 // into one exactly-sized packet. Decoding is single-pass streaming.
+//
+// Marshal and Unmarshal accept either a schema-stamped *container.DataContainer
+// (any data structure) or an anansi-tagged struct, deriving and caching a
+// compiled schema per Go type for the struct form.
 package anansi
 
 import (
@@ -52,11 +56,11 @@ const rootSlot uint8 = 0
 //     Name() string
 // }
 // this native loop is not easily discoverable:
-// pool := document.NewPool(cs, nil)  // check NewPool signature
-// doc := pool.FromStruct(msg)        // struct → container
+// factory := document.NewPool(cs, nil)  // check NewPool signature
+// doc := factory.FromStruct(msg)        // struct → container
 // wire := doc.ToAnansi(0)            // container → anansi binary
 //
-// doc2 := pool.FromAnansi(wire)      // anansi binary → container (or pool.New + UnmarshalAnansi)
+// doc2 := factory.FromAnansi(wire)      // anansi binary → container (or factory.New + UnmarshalAnansi)
 // doc2.BindTo(&msg)                  // container → struct
 
 // SerializeAnansi encodes doc (bound to schema slot 0 of cs) as a complete
@@ -81,14 +85,14 @@ func DecodeAnansi(cs *definition.CompiledSchema, data []byte, opts ...DecodeOpti
 }
 
 // DecodeAnansiInto decodes a complete Anansi packet into doc (schema slot 0
-// of cs), using pool for any nested TypeArrayObject child containers if
+// of cs), using factory for any nested TypeArrayObject child containers if
 // non-nil. It returns the schema's full version as read from the header.
 // Encrypted packets require WithDecryptionKey; compression and integrity
 // digests are handled automatically. Strings decode zero-copy by default
 // into a container-owned backing buffer (one bulk copy, no per-string
 // allocations; the caller's input is never retained) — pass
 // WithCopyStrings to opt out.
-func DecodeAnansiInto(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, pool *container.Pool, opts ...DecodeOption) (uint16, error) {
+func DecodeAnansiInto(cs *definition.CompiledSchema, data []byte, doc *container.DataContainer, factory container.Factory, opts ...DecodeOption) (uint16, error) {
 	r := newByteReader(data)
 	h, err := readHeader(r)
 	if err != nil {
@@ -126,11 +130,11 @@ func DecodeAnansiInto(cs *definition.CompiledSchema, data []byte, doc *container
 
 	switch h.Flags.PacketType() {
 	case PacketDense:
-		if err := decodeDenseBody(body, res.cs, h, doc, res, pool); err != nil {
+		if err := decodeDenseBody(body, res.cs, h, doc, res, factory); err != nil {
 			return 0, err
 		}
 	case PacketSparse:
-		if err := decodeSparseBody(body, res.cs, h, doc, res, pool); err != nil {
+		if err := decodeSparseBody(body, res.cs, h, doc, res, factory); err != nil {
 			return 0, err
 		}
 	default:
@@ -256,7 +260,7 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 //     instructions earlier. The check cannot fail on valid input, and on
 //     invalid input the decode already produced garbage.
 //
-//   - doc was either freshly allocated (holes empty) or Clear()'d by the pool
+//   - doc was either freshly allocated (holes empty) or Clear()'d by the factory
 //     (Clear resets holes to [:0]). claimHole scans, finds nothing, returns -1,
 //     and AppendXxx runs. Decode pays for a scan that cannot succeed.
 //
@@ -267,7 +271,7 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 //
 // Resolved: readFieldPayload became fillValue and every decoder now writes
 // through the typed AppendXxx API. The positions-map probe and hole-claim
-// scan (guaranteed no-ops on a fresh/Clear()ed/pool-fresh decode target) are
+// scan (guaranteed no-ops on a fresh/Clear()ed/factory-fresh decode target) are
 // gone from the decode path; AppendXxx's own type check remains as one
 // well-predicted branch that also keeps the identifierMask guard. Sparse
 // additionally validates its wire field count against the schema so a
@@ -367,8 +371,8 @@ func EncodeSparse(cs *definition.CompiledSchema, doc *container.DataContainer, f
 // sits on the same hot path.
 //
 // Options: (a) accept it — the slice IS the return value, and callers can't
-// avoid needing the pointers; (b) pool the slice; (c) offer an iterator API
-// (DecodeBatchEach(pool, fn)) that avoids the slice entirely for streaming
+// avoid needing the pointers; (b) factory the slice; (c) offer an iterator API
+// (DecodeBatchEach(factory, fn)) that avoids the slice entirely for streaming
 // consumers. (c) is the most useful for large batches — the caller often
 // wants to process-and-release one record at a time anyway.
 //

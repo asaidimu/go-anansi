@@ -5,7 +5,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/asaidimu/go-anansi/v8/core/dto/anansijson"
+	cjson "github.com/asaidimu/go-anansi/v8/core/encoding/json"
 )
 
 // TestGCChurnProbe quantifies GC churn — garbage bytes, mallocs and GC cycles
@@ -37,30 +37,30 @@ func TestGCChurnProbe(t *testing.T) {
 		fn   func()
 	}{
 		{"marshal stdlib/small", marshalOps, func() { _, _ = json.Marshal(&small) }},
-		{"marshal anansijson/small", marshalOps, func() { _, _ = anansijson.Marshal(&small) }},
-		{"marshal anansijson-append/small", marshalOps, func() {
-			bufS, _ = anansijson.MarshalAppend(bufS[:0], &small)
+		{"marshal json/small", marshalOps, func() { _, _ = cjson.Marshal(&small) }},
+		{"marshal json-append/small", marshalOps, func() {
+			bufS, _ = cjson.MarshalAppend(bufS[:0], &small)
 		}},
 		{"marshal stdlib/large", marshalBig, func() { _, _ = json.Marshal(&large) }},
-		{"marshal anansijson/large", marshalBig, func() { _, _ = anansijson.Marshal(&large) }},
-		{"marshal anansijson-append/large", marshalBig, func() {
-			bufL, _ = anansijson.MarshalAppend(bufL[:0], &large)
+		{"marshal json/large", marshalBig, func() { _, _ = cjson.Marshal(&large) }},
+		{"marshal json-append/large", marshalBig, func() {
+			bufL, _ = cjson.MarshalAppend(bufL[:0], &large)
 		}},
 		{"unmarshal stdlib/small", unmarshalOps, func() {
 			var v Address
 			_ = json.Unmarshal(smallIn, &v)
 		}},
-		{"unmarshal anansijson/small", unmarshalOps, func() {
+		{"unmarshal json/small", unmarshalOps, func() {
 			var v Address
-			_ = anansijson.Unmarshal(smallIn, &v)
+			_ = cjson.Unmarshal(smallIn, &v)
 		}},
 		{"unmarshal stdlib/large", unmarshalBig, func() {
 			var v Order
 			_ = json.Unmarshal(largeIn, &v)
 		}},
-		{"unmarshal anansijson/large", unmarshalBig, func() {
+		{"unmarshal json/large", unmarshalBig, func() {
 			var v Order
-			_ = anansijson.Unmarshal(largeIn, &v)
+			_ = cjson.Unmarshal(largeIn, &v)
 		}},
 	}
 

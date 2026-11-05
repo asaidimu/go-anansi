@@ -37,12 +37,12 @@ func fieldStateOf(doc *container.DataContainer, key container.DataContainerKey) 
 // primitive shared by all four decoders (#dcd004/#dcd005). AppendXxx skips
 // the two SetXxx steps that are guaranteed no-ops on a decode target: the
 // positions-map probe (the field cannot already be set in a fresh, Clear()ed
-// or pool-fresh container) and the hole-claim scan (Clear resets holes; a
+// or factory-fresh container) and the hole-claim scan (Clear resets holes; a
 // decode target never frees positions mid-fill). The type check AppendXxx
 // itself performs is one well-predicted branch on a value the caller just
 // dispatched on. The caller is responsible for having already established
 // that a value follows (state == HasValue).
-func fillValue(r *byteReader, cs *definition.CompiledSchema, doc *container.DataContainer, wf wireField, pool *container.Pool) error {
+func fillValue(r *byteReader, cs *definition.CompiledSchema, doc *container.DataContainer, wf wireField, factory container.Factory) error {
 	switch wf.fd.DataType() {
 	case container.TypeInt:
 		v, err := readInt(r)
@@ -148,7 +148,7 @@ func fillValue(r *byteReader, cs *definition.CompiledSchema, doc *container.Data
 		}
 		return doc.AppendArrayUnknown(wf.key, v)
 	case container.TypeArrayObject:
-		v, err := readArrayObjectField(r, wf.child, pool)
+		v, err := readArrayObjectField(r, wf.child, wf.childIdx, wf.childPath, factory)
 		if err != nil {
 			return err
 		}

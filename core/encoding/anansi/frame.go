@@ -73,6 +73,18 @@ type encodeConfig struct {
 	compressed bool
 	integrity  bool
 	key        []byte // AES-256 key; nil disables encryption
+	version    uint16 // schema version override; zero unless hasVersion
+	hasVersion bool
+}
+
+// WithVersion overrides the schema version embedded in the packet header
+// (spec 2.2). It defaults to the version Marshal uses (WireVersion) or the
+// fullVersion argument of SerializeAnansi.
+func WithVersion(version uint16) EncodeOption {
+	return func(c *encodeConfig) {
+		c.version = version
+		c.hasVersion = true
+	}
 }
 
 // WithCompression compresses the packet body (flags bit 2). See the frame

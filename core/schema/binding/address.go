@@ -3,9 +3,11 @@ package binding
 import (
 	"fmt"
 	"strings"
+	"unsafe"
 
 	"github.com/asaidimu/go-anansi/v8/core/common"
 	"github.com/asaidimu/go-anansi/v8/core/container"
+	"github.com/asaidimu/go-anansi/v8/core/schema"
 	"github.com/asaidimu/go-anansi/v8/core/schema/definition"
 )
 
@@ -498,13 +500,20 @@ func setArrayObject(cs *definition.CompiledSchema, c *container.DataContainer, p
 		return err
 	}
 	children := make([]*container.DataContainer, len(items))
+	var factory container.Factory
+	if pool != nil {
+		factory = pool
+	}
 	for i, item := range items {
 		var child *container.DataContainer
-		if pool != nil {
-			child = pool.Get()
+		if factory != nil {
+			child = factory.Get()
 		} else {
 			child = container.NewDataContainer()
 		}
+		// Stamp the element with its own slot and owning path so it is a
+		// self-describing data structure, serializable without its parent.
+		child.SetRef(unsafe.Pointer(schema.NewRef(cs, childIdx, base, factory)))
 		if err := setMapInto(cs, child, pool, childIdx, base, item); err != nil {
 			return err
 		}

@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/asaidimu/go-anansi/v8/core/document"
-	anansi "github.com/asaidimu/go-anansi/v8/core/dto/anansi"
-	"github.com/asaidimu/go-anansi/v8/core/dto/anansijson"
+	anansi "github.com/asaidimu/go-anansi/v8/core/encoding/anansi"
+	cjson "github.com/asaidimu/go-anansi/v8/core/encoding/json"
 	cschema "github.com/asaidimu/go-anansi/v8/core/schema"
 )
 
@@ -67,12 +67,12 @@ func sampleOrder(i int) Order {
 
 func TestJSONRoundTrip(t *testing.T) {
 	for _, in := range []any{sampleAddress(1), sampleOrder(1)} {
-		b, err := anansijson.Marshal(in)
+		b, err := cjson.Marshal(in)
 		if err != nil {
 			t.Fatalf("Marshal(%T): %v", in, err)
 		}
 		out := reflect.New(reflect.TypeOf(in)).Interface()
-		if err := anansijson.Unmarshal(b, out); err != nil {
+		if err := cjson.Unmarshal(b, out); err != nil {
 			t.Fatalf("Unmarshal(%T): %v", in, err)
 		}
 		if got := reflect.ValueOf(out).Elem().Interface(); !reflect.DeepEqual(in, got) {
@@ -100,7 +100,7 @@ func TestAnansiRoundTrip(t *testing.T) {
 // TestJSONOutputShape checks that the document-model bookkeeping (_id_,
 // _metadata_) does not leak into the wire output.
 func TestJSONOutputShape(t *testing.T) {
-	b, err := anansijson.Marshal(sampleOrder(1))
+	b, err := cjson.Marshal(sampleOrder(1))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,10 +131,10 @@ func keysOf(m map[string]any) []string {
 func TestUnmarshalReleaseSafety(t *testing.T) {
 	var firstJSON, firstAnansi Order
 	bJSON, _ := json.Marshal(sampleOrder(1))
-	bAJSON, _ := anansijson.Marshal(sampleOrder(1))
+	bAJSON, _ := cjson.Marshal(sampleOrder(1))
 	bAnansi, _ := anansi.Marshal(sampleOrder(1))
 
-	if err := anansijson.Unmarshal(bAJSON, &firstJSON); err != nil {
+	if err := cjson.Unmarshal(bAJSON, &firstJSON); err != nil {
 		t.Fatal(err)
 	}
 	if err := anansi.Unmarshal(bAnansi, &firstAnansi); err != nil {
@@ -143,8 +143,8 @@ func TestUnmarshalReleaseSafety(t *testing.T) {
 
 	for i := 2; i < 8; i++ {
 		var x, y Order
-		bx, _ := anansijson.Marshal(sampleOrder(i))
-		if err := anansijson.Unmarshal(bx, &x); err != nil {
+		bx, _ := cjson.Marshal(sampleOrder(i))
+		if err := cjson.Unmarshal(bx, &x); err != nil {
 			t.Fatal(err)
 		}
 		if err := anansi.Unmarshal(bAnansi, &y); err != nil {
@@ -170,8 +170,8 @@ func TestDeterministicOutput(t *testing.T) {
 		name string
 		fn   func(any) ([]byte, error)
 	}{
-		{"json", anansijson.Marshal},
-		{"anansi", anansi.Marshal},
+		{"json", cjson.Marshal},
+		{"anansi", func(v any) ([]byte, error) { return anansi.Marshal(v) }},
 	} {
 		first, err := m.fn(sampleOrder(1))
 		if err != nil {
@@ -211,22 +211,22 @@ func BenchmarkJSONMarshal(b *testing.B) {
 			}
 		}
 	})
-	b.Run("anansijson/small", func(b *testing.B) {
+	b.Run("json/small", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ReportMetric(float64(len(stdSmall)), "bytes")
 		for i := 0; i < b.N; i++ {
-			if _, err := anansijson.Marshal(&small); err != nil {
+			if _, err := cjson.Marshal(&small); err != nil {
 				b.Fatal(err)
 			}
 		}
 	})
-	b.Run("anansijson-append/small", func(b *testing.B) {
+	b.Run("json-append/small", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ReportMetric(float64(len(stdSmall)), "bytes")
 		buf := make([]byte, 0, 1024)
 		for i := 0; i < b.N; i++ {
 			var err error
-			buf, err = anansijson.MarshalAppend(buf[:0], &small)
+			buf, err = cjson.MarshalAppend(buf[:0], &small)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -241,22 +241,22 @@ func BenchmarkJSONMarshal(b *testing.B) {
 			}
 		}
 	})
-	b.Run("anansijson/large", func(b *testing.B) {
+	b.Run("json/large", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ReportMetric(float64(len(stdLarge)), "bytes")
 		for i := 0; i < b.N; i++ {
-			if _, err := anansijson.Marshal(&large); err != nil {
+			if _, err := cjson.Marshal(&large); err != nil {
 				b.Fatal(err)
 			}
 		}
 	})
-	b.Run("anansijson-append/large", func(b *testing.B) {
+	b.Run("json-append/large", func(b *testing.B) {
 		b.ReportAllocs()
 		b.ReportMetric(float64(len(stdLarge)), "bytes")
 		buf := make([]byte, 0, 1024)
 		for i := 0; i < b.N; i++ {
 			var err error
-			buf, err = anansijson.MarshalAppend(buf[:0], &large)
+			buf, err = cjson.MarshalAppend(buf[:0], &large)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -280,12 +280,12 @@ func BenchmarkJSONUnmarshal(b *testing.B) {
 			}
 		}
 	})
-	b.Run("anansijson/small", func(b *testing.B) {
+	b.Run("json/small", func(b *testing.B) {
 		b.ReportAllocs()
 		b.SetBytes(int64(len(smallIn)))
 		for i := 0; i < b.N; i++ {
 			var v Address
-			if err := anansijson.Unmarshal(smallIn, &v); err != nil {
+			if err := cjson.Unmarshal(smallIn, &v); err != nil {
 				b.Fatal(err)
 			}
 		}
@@ -300,12 +300,12 @@ func BenchmarkJSONUnmarshal(b *testing.B) {
 			}
 		}
 	})
-	b.Run("anansijson/large", func(b *testing.B) {
+	b.Run("json/large", func(b *testing.B) {
 		b.ReportAllocs()
 		b.SetBytes(int64(len(largeIn)))
 		for i := 0; i < b.N; i++ {
 			var v Order
-			if err := anansijson.Unmarshal(largeIn, &v); err != nil {
+			if err := cjson.Unmarshal(largeIn, &v); err != nil {
 				b.Fatal(err)
 			}
 		}

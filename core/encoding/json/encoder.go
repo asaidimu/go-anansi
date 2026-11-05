@@ -178,6 +178,23 @@ func writePrefixed(cs *definition.CompiledSchema, doc *container.DataContainer, 
 	return nil
 }
 
+// serializeContainerAt serializes a nested container whose fields belong to
+// schema slot slotIdx, emitting local field names (the shape writeChildren
+// produces for one array element).
+func serializeContainerAt(cs *definition.CompiledSchema, doc *container.DataContainer, slotIdx uint8) ([]byte, error) {
+	buf := bufferPool.Get().(*bytes.Buffer)
+	buf.Reset()
+
+	if err := writeObjectAt(cs, doc, slotIdx, "", buf, nil); err != nil {
+		recycleBuffer(buf)
+		return nil, err
+	}
+
+	res := bytes.Clone(buf.Bytes())
+	recycleBuffer(buf)
+	return res, nil
+}
+
 func serializeJSONFiltered(cs *definition.CompiledSchema, doc *container.DataContainer, prefix string, skip map[string]bool) ([]byte, error) {
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
