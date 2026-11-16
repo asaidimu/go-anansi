@@ -99,3 +99,35 @@ export {
   FLAG_COMPRESSED, FLAG_ENCRYPTED, FLAG_HASH_PRESENT,
 } from "./wire/transforms.ts";
 export type { EncodeTransforms, DecodeTransforms } from "./wire/transforms.ts";
+
+// Inference from schemas
+export {
+  inferType,
+  buildRegistry,
+  formatTree,
+} from "./schema/infer-runtime.ts";
+
+export type {
+  InferredTypeNode,
+  InferredField,
+  InferOptions,
+  Registry,
+  SchemaLike,
+} from "./schema/infer-runtime.ts";
+
+export type { InferSchema } from "./schema/infer-schema.ts";
+
+// Schema builder
+export { s } from "./schema/builder.ts";
+export type {
+  BuiltSchema,
+  BuildDoc,
+  FieldBuilder,
+  InferBuilder,
+  InferFieldDocValue,
+  InferFieldValue,
+  NestedSchemaBuilder,
+  ScalarKind,
+  TopLevelSchemaBuilder,
+} from "./schema/builder.ts";
+export type { ComposeMeta, ShapeMeta } from "./schema/composer.ts";

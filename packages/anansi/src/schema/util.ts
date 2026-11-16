@@ -22,6 +22,8 @@ import type {
   PredicateMap,
   ValidationConfig,
 } from "../validation/validator-types.ts";
+import { omitSchema, pickSchema } from "./composer.ts";
+import type { ShapeMeta } from "./composer.ts";
 
 type Document = Record<string, unknown>;
 type Fields = NonNullable<SchemaDefinition["fields"]>;
@@ -37,7 +39,9 @@ function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-function parse(data: string | SchemaDefinition | Record<string, unknown>): SchemaDefinition {
+function parse(
+  data: string | SchemaDefinition | Record<string, unknown>,
+): SchemaDefinition {
   try {
     return parseSchema(data);
   } catch (e) {
@@ -65,26 +69,89 @@ function objectFieldId(field: FieldDefinition): string | undefined {
   return ref.id;
 }
 
-function nestedFor(root: SchemaDefinition, field: FieldDefinition): NestedSchemaDefinition | undefined {
+function nestedFor(
+  root: SchemaDefinition,
+  field: FieldDefinition,
+): NestedSchemaDefinition | undefined {
   const id = objectFieldId(field);
   return id !== undefined ? root.schemas?.[id] : undefined;
 }
 
-function cloneDefault(value: unknown): unknown {
-  return isPlainObject(value) || Array.isArray(value) ? structuredClone(value) : value;
+function arrayElementSchema(
+  root: SchemaDefinition,
+  field: FieldDefinition,
+): NestedSchemaDefinition | undefined {
+  if (field.type !== "array") return undefined;
+  const ref = namedRef(field);
+  if (!ref || !("id" in ref)) return undefined;
+  return root.schemas?.[ref.id];
 }
 
-function hydrateFields(root: SchemaDefinition, fields: Fields, src: Document): Document {
+function recordValueSchema(
+  root: SchemaDefinition,
+  field: FieldDefinition,
+): NestedSchemaDefinition | undefined {
+  if (field.type !== "record") return undefined;
+  const ref = namedRef(field);
+  if (!ref || !("id" in ref)) return undefined;
+  return root.schemas?.[ref.id];
+}
+
+function cloneDefault(value: unknown): unknown {
+  return isPlainObject(value) || Array.isArray(value)
+    ? structuredClone(value)
+    : value;
+}
+
+function hydrateFields(
+  root: SchemaDefinition,
+  fields: Fields,
+  src: Document,
+): Document {
   const out: Document = { ...src };
-  for (const [key, field] of Object.entries(fields)) {
+  for (const field of Object.values(fields)) {
+    const key = field.name;
     let value = out[key];
-    if (value === undefined && field.default !== undefined) {
-      value = cloneDefault(field.default);
-      out[key] = value;
+    const nested = nestedFor(root, field);
+
+    // Resolve absent values: field.default > nested.default > nothing.
+    if (value === undefined) {
+      if (field.default !== undefined) {
+        value = cloneDefault(field.default);
+        out[key] = value;
+      } else if (nested?.default !== undefined) {
+        value = cloneDefault(nested.default);
+        out[key] = value;
+      }
     }
-    if (isPlainObject(value)) {
-      const nested = nestedFor(root, field);
-      if (nested?.fields) out[key] = hydrateFields(root, nested.fields, value);
+
+    // Recurse into object values.
+    if (isPlainObject(value) && nested?.fields) {
+      out[key] = hydrateFields(root, nested.fields, value);
+      continue;
+    }
+
+    // Recurse into array elements whose schema is object-like.
+    if (Array.isArray(value)) {
+      const el = arrayElementSchema(root, field);
+      if (el?.fields) {
+        out[key] = value.map((item) =>
+          isPlainObject(item) ? hydrateFields(root, el.fields!, item) : item,
+        );
+      }
+      continue;
+    }
+
+    // Recurse into record values whose schema is object-like.
+    if (field.type === "record" && isPlainObject(value)) {
+      const val = recordValueSchema(root, field);
+      if (val?.fields) {
+        const next: Document = {};
+        for (const [k, v] of Object.entries(value)) {
+          next[k] = isPlainObject(v) ? hydrateFields(root, val.fields!, v) : v;
+        }
+        out[key] = next;
+      }
     }
   }
   return out;
@@ -105,14 +172,15 @@ function enumValues(
 
 function emptyFields(root: SchemaDefinition, fields: Fields): Document {
   const out: Document = {};
-  for (const [key, field] of Object.entries(fields)) {
+  for (const field of Object.values(fields)) {
     if (field.default !== undefined) continue;
-    out[key] = zeroValue(root, field);
+    out[field.name] = zeroValue(root, field);
   }
   return out;
 }
 
 function variantZero(root: SchemaDefinition, nested: NestedSchemaDefinition): unknown {
+  if (nested.default !== undefined) return cloneDefault(nested.default);
   if (nested.fields && Object.keys(nested.fields).length > 0) {
     return emptyFields(root, nested.fields);
   }
@@ -139,11 +207,17 @@ function zeroValue(root: SchemaDefinition, field: FieldDefinition): unknown {
     case "record":
       return {};
     case "enum": {
+      const ref = namedRef(field);
+      if (ref && "id" in ref) {
+        const nested = root.schemas?.[ref.id];
+        if (nested?.default !== undefined) return cloneDefault(nested.default);
+      }
       const values = enumValues(root, field);
       return values && values.length > 0 ? values[0] : null;
     }
     case "object": {
       const nested = nestedFor(root, field);
+      if (nested?.default !== undefined) return cloneDefault(nested.default);
       return nested?.fields ? emptyFields(root, nested.fields) : {};
     }
     case "union":
@@ -187,10 +261,7 @@ export class SchemaUtil {
   }
 
   /** Static variant — works without an instance; `schema` may be JSON text. */
-  static hydrate(
-    schema: SchemaDefinition | string,
-    input?: unknown,
-  ): Document {
+  static hydrate(schema: SchemaDefinition | string, input?: unknown): Document {
     const s = typeof schema === "string" ? parse(schema) : schema;
     const src = isPlainObject(input) ? input : {};
     return hydrateFields(s, s.fields ?? {}, src);
@@ -209,9 +280,9 @@ export class SchemaUtil {
    */
   empty(): Document {
     const zero: Document = {};
-    for (const [key, field] of Object.entries(this.schema.fields ?? {})) {
+    for (const field of Object.values(this.schema.fields ?? {})) {
       if (field.default !== undefined) continue;
-      zero[key] = zeroValue(this.schema, field);
+      zero[field.name] = zeroValue(this.schema, field);
     }
     return this.hydrate(zero);
   }
@@ -230,8 +301,8 @@ export class SchemaUtil {
   required(): string[] {
     const out: string[] = [];
     const walk = (fields: Fields, prefix: string): void => {
-      for (const [key, field] of Object.entries(fields)) {
-        const path = prefix === "" ? key : `${prefix}.${key}`;
+      for (const field of Object.values(fields)) {
+        const path = prefix === "" ? field.name : `${prefix}.${field.name}`;
         if (field.required) out.push(path);
         const nested = nestedFor(this.schema, field);
         if (nested?.fields) walk(nested.fields, path);
@@ -274,7 +345,10 @@ export class SchemaUtil {
     predicateMap?: PredicateMap,
     config?: ValidationConfig,
   ): StandardDocumentValidator {
-    return new StandardDocumentValidator(this.validator(predicateMap, config), this.schema);
+    return new StandardDocumentValidator(
+      this.validator(predicateMap, config),
+      this.schema,
+    );
   }
 
   private buildValidator(
@@ -290,5 +364,17 @@ export class SchemaUtil {
         { cause: e },
       );
     }
+  }
+  /**
+   * New `SchemaUtil` containing only the named top-level fields of this
+   * schema. See `pickSchema` for atomicity rules on indexes/constraints.
+   */
+  pickShape(meta: ShapeMeta, fields: readonly string[]): SchemaUtil {
+    return new SchemaUtil(pickSchema(this.schema, meta, fields));
+  }
+
+  /** Complement of `pickShape`. */
+  omitShape(meta: ShapeMeta, fields: readonly string[]): SchemaUtil {
+    return new SchemaUtil(omitSchema(this.schema, meta, fields));
   }
 }

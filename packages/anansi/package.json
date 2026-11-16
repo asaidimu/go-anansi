@@ -63,7 +63,8 @@
     "@asaidimu/utils-version": "^1.0.0",
     "@standard-schema/spec": "^1.1.0",
     "fzstd": "^0.1.1",
-    "hash-wasm": "^4.12.0"
+    "hash-wasm": "^4.12.0",
+    "uuid": "^14.0.3"
   },
   "devDependencies": {
     "@faker-js/faker": "^10.4.0",

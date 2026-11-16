@@ -212,3 +212,77 @@ describe("SchemaUtil failure modes", () => {
     expect((err as SystemError).cause).toBeInstanceOf(SystemError);
   });
 });
+
+describe("SchemaUtil canonical field keys and container hydration", () => {
+  const CANONICAL: SchemaDefinition = {
+    name: "canonical",
+    version: "1.0.0",
+    fields: {
+      f_title: { name: "title", type: "string", required: true, default: "untitled" },
+      f_author: { name: "author", type: "object", schema: { id: "author" } },
+      f_tags: { name: "tags", type: "array", schema: { id: "tag" } },
+      f_by_key: { name: "by_key", type: "record", schema: { id: "tag" } },
+    },
+    schemas: {
+      author: {
+        name: "author",
+        default: { name: "anon" },
+        fields: {
+          f_name: { name: "name", type: "string", default: "anon" },
+          f_age: { name: "age", type: "integer" },
+        },
+      },
+      tag: {
+        name: "tag",
+        fields: {
+          f_label: { name: "label", type: "string", default: "none" },
+          f_count: { name: "count", type: "integer" },
+        },
+      },
+    },
+  };
+
+  const util = new SchemaUtil(CANONICAL);
+
+  it("uses FieldDefinition.name, not the UUID record key", () => {
+    expect(util.hydrate({})).toEqual({
+      title: "untitled",
+      author: { name: "anon" },
+    });
+    expect(util.empty()).toEqual({
+      title: "untitled",
+      author: { name: "anon" },
+      tags: [],
+      by_key: {},
+    });
+    expect(util.required()).toEqual(["title"]);
+  });
+
+  it("applies nested defaults inside array elements and record values", () => {
+    const out = util.hydrate({
+      tags: [{}, { label: "custom" }],
+      by_key: { one: {}, two: { count: 2 } },
+    });
+    expect(out.tags).toEqual([
+      { label: "none" },
+      { label: "custom" },
+    ]);
+    expect(out.by_key).toEqual({
+      one: { label: "none" },
+      two: { label: "none", count: 2 },
+    });
+  });
+
+  it("projects schemas through pickShape/omitShape without touching document pick", () => {
+    const picked = util.pickShape({ name: "slim" }, ["title"]);
+    expect(picked.schema.name).toBe("slim");
+    expect(Object.values(picked.schema.fields ?? {}).map((f) => f.name)).toEqual(["title"]);
+    expect(picked.hydrate({})).toEqual({ title: "untitled" });
+
+    const omitted = util.omitShape({ name: "rest" }, ["title"]);
+    expect(Object.values(omitted.schema.fields ?? {}).map((f) => f.name).sort())
+      .toEqual(["author", "by_key", "tags"]);
+
+    expect(util.pick({ title: "T", extra: 1 }, ["title"])).toEqual({ title: "T" });
+  });
+});

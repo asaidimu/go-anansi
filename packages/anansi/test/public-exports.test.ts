@@ -9,6 +9,10 @@ import type {
   ValidatedSchemaDefinition as RootValidatedSchemaDefinition,
   SchemaUtil as RootSchemaUtil,
   AnansiCode as RootAnansiCode,
+  BuiltSchema,
+  InferBuilder,
+  InferSchema,
+  InferredTypeNode,
 } from "../src/index.ts";
 
 const _typePins: [
@@ -16,6 +20,10 @@ const _typePins: [
   RootValidatedSchemaDefinition | null,
   RootSchemaUtil | null,
   RootAnansiCode | null,
+  BuiltSchema | null,
+  InferBuilder<unknown> | null,
+  InferSchema<{ name: string; version: string }> | null,
+  InferredTypeNode | null,
 ] | null = null;
 void _typePins;
 
@@ -43,5 +51,14 @@ describe("public barrel (src/index.ts)", () => {
     const { SchemaUtil } = await import("../src/schema/util.ts");
     expect(root.SchemaUtil).toBe(SchemaUtil);
     expect(typeof root.SchemaUtil).toBe("function");
+  });
+
+  it("re-exports the schema builder and runtime inference helpers", async () => {
+    const builder = await import("../src/schema/builder.ts");
+    const inference = await import("../src/schema/infer-runtime.ts");
+    expect(root.s).toBe(builder.s);
+    expect(root.inferType).toBe(inference.inferType);
+    expect(root.buildRegistry).toBe(inference.buildRegistry);
+    expect(root.formatTree).toBe(inference.formatTree);
   });
 });
